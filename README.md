@@ -1,11 +1,7 @@
-# Tengra
+# Zihora
 
-Tengra is a cross-platform AI chat application rebuilt from a clean repository.
+A chat app for different AI models, from cloud services to models running locally.
 
-## Initial scope
-
-The first release focuses on a Windows chat experience with ChatGPT, conversation history, and model selection. Linux, macOS, Android, and iOS are later platform targets.
-
-## Project status
+The first release focuses on Windows, ChatGPT, conversation history, and model selection. Linux, macOS, Android, and iOS are planned for later.
 
 Early development.
