@@ -46,7 +46,9 @@ The roadmap describes project direction; it does not imply that a feature or pla
 
 ## Current status
 
-This repository is at the project setup stage. It currently contains the brand asset and this project overview. The application, provider connections, chat history, and model selection have not been implemented here yet, so there is no app to install or run from this repository.
+The Windows app uses Flutter for the interface and a local Rust service for ChatGPT OAuth, account and workspace selection, model and quota reads, and streaming Responses. When a selected model returns a reasoning summary, Zihora stores and displays that summary separately from the answer; the raw hidden reasoning is not exposed by the API. OAuth tokens are stored as byte blobs in Windows Credential Manager within its per-credential size limit. Conversations, messages, project names, and selected project folder paths are stored locally in `%LOCALAPPDATA%\Zihora\db\zihora.sqlite3`, with logs and cache directories under `%LOCALAPPDATA%\Zihora\`. A project folder is only an organization reference; Zihora does not read or modify its files. Sanitized OAuth, model catalog, and usage diagnostics are written to `%LOCALAPPDATA%\Zihora\logs\zihora-service.log`; they include safe error codes, HTTP statuses, durations, and item counts while excluding callback parameters, response bodies, tokens, and account details. The model catalog compatibility version is `0.157.0`, tracked independently of Zihora's product version and aligned with the Codex `client_version` query parameter. The integration follows the public Codex OAuth client configuration and private ChatGPT endpoints; provider compatibility can change and requires a real account sign-in to confirm.
+
+The Windows portable release is distributed as one `zihora.exe`. On first launch it unpacks the bundled release payload to a content-addressed directory under `%LOCALAPPDATA%\Zihora\cache` and starts the app from there. The database and logs remain in their separate persistent directories. Build this release with `tools/build_windows_portable.ps1`.
 
 ## License
 

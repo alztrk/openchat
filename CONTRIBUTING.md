@@ -1,6 +1,6 @@
 # Contributing to Zihora
 
-Thanks for your interest in contributing. Zihora is at the project setup stage. The first release is planned as a Windows AI chat app, beginning with ChatGPT, model selection, and conversation history. File editing is outside the first-release scope; see the [README](README.md) for the current project direction.
+Thanks for your interest in contributing. The first release is a Windows AI chat app, beginning with ChatGPT, model selection, and conversation history. File editing is outside the first-release scope; see the [README](README.md) for the current project direction and [ChatGPT implementation plan](docs/chatgpt-integration-plan.md) for the agreed integration behavior and delivery order.
 
 ## Before starting work
 
@@ -17,6 +17,13 @@ Thanks for your interest in contributing. Zihora is at the project setup stage. 
 - Update project documentation when a change affects user-facing behavior or setup instructions.
 - Do not include API keys, tokens, credentials, private data, or other secrets.
 
+## Build requirements
+
+Windows development requires Flutter, Rust with Cargo, and the Visual Studio C++ build tools used by Flutter's Windows runner. The Windows build compiles the Rust local service and packages it beside the application executable.
+
 ## Checks
 
-The application and its build and test workflow have not been added to this repository yet. Until they are available, review documentation changes for accuracy and run `git diff --check` before opening a pull request.
+- `flutter analyze`
+- `cargo fmt --manifest-path native/zihora-service/Cargo.toml -- --check`
+- `flutter build windows --release`
+- `git diff --check`
