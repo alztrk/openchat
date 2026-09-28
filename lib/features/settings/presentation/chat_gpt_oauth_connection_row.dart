@@ -34,8 +34,13 @@ class ChatGptOAuthConnectionRow extends StatelessWidget {
     final l10n = context.openchatL10n;
     final accountName = connection.email ?? l10n.accountEmailUnavailable;
     final planType = connection.planType;
-    return Padding(
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: BoxDecoration(
+        color: connection.isSelected ? palette.hover : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
