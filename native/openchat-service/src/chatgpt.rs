@@ -51,6 +51,15 @@ pub struct ChatGptService {
     refresh_locks: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
 }
 
+pub(super) struct StreamRequest<'a> {
+    method: Method,
+    url: String,
+    connection_id: &'a str,
+    external_workspace_id: &'a str,
+    body: Option<Value>,
+    response_context_id: &'a str,
+}
+
 impl ChatGptService {
     pub fn new(storage: Arc<AppStorage>) -> Result<Self, ServiceError> {
         let http = Client::builder()
@@ -388,18 +397,15 @@ impl ChatGptService {
 
     async fn authorized_stream_request(
         &self,
-        method: Method,
-        url: String,
-        connection_id: &str,
-        external_workspace_id: &str,
-        body: Option<Value>,
-        response_context_id: &str,
+        request: StreamRequest<'_>,
         cancellation: &mut watch::Receiver<bool>,
     ) -> Result<Option<Response>, ServiceError> {
         if *cancellation.borrow() {
             return Ok(None);
         }
-        let tokens = self.oauth.load_tokens(&self.storage, connection_id)?;
+        let tokens = self
+            .oauth
+            .load_tokens(&self.storage, request.connection_id)?;
         let observed_access_token = Zeroizing::new(tokens.access_token().to_owned());
         let first_result = tokio::select! {
             changed = cancellation.changed() => {
@@ -407,12 +413,12 @@ impl ChatGptService {
                 return Ok(None);
             }
             result = self.request_once(
-                method.clone(),
-                &url,
-                external_workspace_id,
+                request.method.clone(),
+                &request.url,
+                request.external_workspace_id,
                 &observed_access_token,
-                body.as_ref(),
-                Some(response_context_id),
+                request.body.as_ref(),
+                Some(request.response_context_id),
             ) => result?,
         };
         if first_result.status() != StatusCode::UNAUTHORIZED {
@@ -423,30 +429,32 @@ impl ChatGptService {
             return Ok(None);
         }
 
-        self.refresh_if_unchanged(connection_id, &observed_access_token)
+        self.refresh_if_unchanged(request.connection_id, &observed_access_token)
             .await?;
         if *cancellation.borrow() {
             return Ok(None);
         }
-        let refreshed = self.oauth.load_tokens(&self.storage, connection_id)?;
+        let refreshed = self
+            .oauth
+            .load_tokens(&self.storage, request.connection_id)?;
         let response = tokio::select! {
             changed = cancellation.changed() => {
                 let _ = changed;
                 return Ok(None);
             }
             result = self.request_once(
-                method,
-                &url,
-                external_workspace_id,
+                request.method,
+                &request.url,
+                request.external_workspace_id,
                 refreshed.access_token(),
-                body.as_ref(),
-                Some(response_context_id),
+                request.body.as_ref(),
+                Some(request.response_context_id),
             ) => result?,
         };
         if response.status() == StatusCode::UNAUTHORIZED {
             chatgpt_store::set_connection_auth_status(
                 &self.storage,
-                connection_id,
+                request.connection_id,
                 "reauth_required",
             )
             .map_err(database_error)?;

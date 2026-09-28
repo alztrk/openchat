@@ -11,8 +11,8 @@ use super::response_parser::{
     empty_response_shape, parse_responses_tool_calls, response_output_text,
 };
 use super::{
-    CHATGPT_CODEX_BASE, ChatGptService, MAX_STREAM_EVENT_BYTES, database_error, http_error,
-    invalid_response_error, network_error, now_unix_millis, protocol_error,
+    CHATGPT_CODEX_BASE, ChatGptService, MAX_STREAM_EVENT_BYTES, StreamRequest, database_error,
+    http_error, invalid_response_error, network_error, now_unix_millis, protocol_error,
 };
 use crate::{
     chat_operation::ChatSendContext,
@@ -29,6 +29,18 @@ struct ReasoningSummaryGroup {
     started_at: Instant,
     elapsed: Option<Duration>,
     is_complete: bool,
+}
+
+struct ResponseEventContext<'a> {
+    content: &'a mut String,
+    output_tokens: &'a mut Option<i64>,
+    reasoning_summaries: &'a mut Vec<ReasoningSummaryGroup>,
+    response_output_items: &'a mut Vec<Value>,
+    conversation_id: &'a str,
+    message_id: &'a str,
+    created_at: i64,
+    request_id: &'a Value,
+    events: &'a EventSink,
 }
 
 fn reasoning_summary_group_mut<'a>(
@@ -210,12 +222,14 @@ impl ChatGptService {
             let mut response_output_items = Vec::new();
             let response = match self
                 .authorized_stream_request(
-                    Method::POST,
-                    format!("{CHATGPT_CODEX_BASE}/responses"),
-                    &route.connection_id,
-                    external_workspace_id,
-                    Some(payload.clone()),
-                    conversation_id,
+                    StreamRequest {
+                        method: Method::POST,
+                        url: format!("{CHATGPT_CODEX_BASE}/responses"),
+                        connection_id: &route.connection_id,
+                        external_workspace_id,
+                        body: Some(payload.clone()),
+                        response_context_id: conversation_id,
+                    },
                     cancellation,
                 )
                 .await
@@ -412,16 +426,17 @@ impl ChatGptService {
                         match self
                             .process_response_event(
                                 &event,
-                                &mut content,
-                                &mut round_output_tokens,
-                                &mut reasoning_summaries,
-                                &mut response_output_items,
-                                conversation_id,
-                                &message_id,
-                                created_at,
-                                started,
-                                &request_id,
-                                &events,
+                                ResponseEventContext {
+                                    content: &mut content,
+                                    output_tokens: &mut round_output_tokens,
+                                    reasoning_summaries: &mut reasoning_summaries,
+                                    response_output_items: &mut response_output_items,
+                                    conversation_id,
+                                    message_id: &message_id,
+                                    created_at,
+                                    request_id: &request_id,
+                                    events: &events,
+                                },
                             )
                             .await
                         {
@@ -768,17 +783,19 @@ impl ChatGptService {
     async fn process_response_event(
         &self,
         event_data: &str,
-        content: &mut String,
-        output_tokens: &mut Option<i64>,
-        reasoning_summaries: &mut Vec<ReasoningSummaryGroup>,
-        response_output_items: &mut Vec<Value>,
-        conversation_id: &str,
-        message_id: &str,
-        created_at: i64,
-        started: Instant,
-        request_id: &Value,
-        events: &EventSink,
+        context: ResponseEventContext<'_>,
     ) -> Result<bool, ServiceError> {
+        let ResponseEventContext {
+            content,
+            output_tokens,
+            reasoning_summaries,
+            response_output_items,
+            conversation_id,
+            message_id,
+            created_at,
+            request_id,
+            events,
+        } = context;
         if event_data == "[DONE]" {
             finish_reasoning_summary_groups(reasoning_summaries);
             return Ok(true);
@@ -952,7 +969,6 @@ impl ChatGptService {
             }
             _ => {}
         }
-        let _ = started;
         Ok(false)
     }
 }
