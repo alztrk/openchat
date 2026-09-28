@@ -4,7 +4,7 @@ use sha2::{Digest, Sha256};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let payload =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../build/zihora-portable-payload.zip");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../build/openchat-portable-payload.zip");
     let payload_bytes = fs::read(&payload)?;
     let payload_hash = Sha256::digest(payload_bytes);
     let payload_hash = payload_hash
@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .join("../../windows/runner/resources/app_icon.ico");
     let icon_path = icon
         .to_str()
-        .ok_or("The Zihora application icon path is not valid UTF-8.")?;
+        .ok_or("The OpenChat application icon path is not valid UTF-8.")?;
 
     let mut resources = winres::WindowsResource::new();
     resources.set_icon(icon_path);

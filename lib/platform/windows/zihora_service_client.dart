@@ -42,7 +42,7 @@ class ZihoraServiceClient {
     if (!await executable.exists()) {
       throw const ZihoraServiceException(
         code: 'service_executable_missing',
-        message: 'The local service executable was not found beside Zihora.',
+        message: 'The local service executable was not found beside OpenChat.',
       );
     }
 

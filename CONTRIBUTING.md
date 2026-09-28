@@ -1,4 +1,4 @@
-# Contributing to Zihora
+# Contributing to OpenChat
 
 Thanks for your interest in contributing. The first release is a Windows AI chat app, beginning with ChatGPT, model selection, and conversation history. File editing is outside the first-release scope; see the [README](README.md) for the current project direction and [ChatGPT implementation plan](docs/chatgpt-integration-plan.md) for the agreed integration behavior and delivery order.
 

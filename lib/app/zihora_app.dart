@@ -221,7 +221,7 @@ class _ZihoraAppState extends State<ZihoraApp> {
   Widget build(BuildContext context) {
     return ToastificationWrapper(
       child: MaterialApp(
-        title: 'Zihora',
+        title: 'OpenChat',
         debugShowCheckedModeBanner: false,
         theme: ZihoraTheme.light,
         darkTheme: ZihoraTheme.dark,

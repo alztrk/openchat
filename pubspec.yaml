@@ -41,7 +41,7 @@ flutter:
     - assets/icons/window/dark/
     - assets/brand/light/
     - assets/brand/dark/
-    - brand/variants/zihora-horizontal.svg
+    - brand/variants/openchat-horizontal.svg
   fonts:
     - family: Manrope
       fonts:

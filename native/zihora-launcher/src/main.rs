@@ -17,10 +17,10 @@ include!(concat!(env!("OUT_DIR"), "/embedded_bundle_hash.rs"));
 
 const EMBEDDED_BUNDLE: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/../../build/zihora-portable-payload.zip"
+    "/../../build/openchat-portable-payload.zip"
 ));
 const REQUIRED_FILES: [&str; 3] = [
-    "zihora.exe",
+    "openchat.exe",
     "zihora_service.exe",
     "data/flutter_assets/AssetManifest.bin",
 ];
@@ -66,7 +66,7 @@ fn launch() -> Result<(), LaunchError> {
     let bundle_directory = cache_root.join(format!("bundle-{bundle_id}"));
     prepare_bundle(&cache_root, &bundle_directory, &bundle_id)?;
 
-    let application = bundle_directory.join("zihora.exe");
+    let application = bundle_directory.join("openchat.exe");
     let mut command = Command::new(application);
     command.current_dir(&bundle_directory);
     command.args(env::args_os().skip(1));
@@ -221,7 +221,7 @@ impl LaunchError {
     fn localized_message(&self, is_turkish: bool) -> (&'static str, String) {
         if is_turkish {
             (
-                "Zihora başlatılamadı",
+                "OpenChat başlatılamadı",
                 match self {
                     Self::LocalDataUnavailable => {
                         { "Windows yerel uygulama verileri klasörü bulunamadı." }.to_owned()
@@ -236,14 +236,14 @@ impl LaunchError {
                         original.summary()
                     ),
                     Self::EmbeddedBundleInvalid => {
-                        "Uygulama paketi geçersiz. Zihora dosyasını yeniden indirip tekrar deneyin."
+                        "Uygulama paketi geçersiz. OpenChat dosyasını yeniden indirip tekrar deneyin."
                             .to_owned()
                     }
                     Self::IncompleteCachedBundle(bundle_id) => format!(
                         "Önbellekteki uygulama dosyaları eksik. %LOCALAPPDATA%\\Zihora\\cache\\bundles\\bundle-{bundle_id} klasörünü silip tekrar deneyin."
                     ),
                     Self::RequiredFileMissing(file) => format!(
-                        "Uygulama paketinde gerekli `{file}` dosyası bulunamadı. Zihora dosyasını yeniden indirin."
+                        "Uygulama paketinde gerekli `{file}` dosyası bulunamadı. OpenChat dosyasını yeniden indirin."
                     ),
                     Self::ApplicationStart(error) => format!(
                         "Uygulama açılamadı ({:?}). Önbellek klasörüne erişimi kontrol edip tekrar deneyin.",
@@ -253,7 +253,7 @@ impl LaunchError {
             )
         } else {
             (
-                "Zihora could not start",
+                "OpenChat could not start",
                 match self {
                     Self::LocalDataUnavailable => {
                         "The Windows local application data folder could not be found.".to_owned()
@@ -268,14 +268,14 @@ impl LaunchError {
                         original.summary()
                     ),
                     Self::EmbeddedBundleInvalid => {
-                        "The application package is invalid. Download Zihora again and try again."
+                        "The application package is invalid. Download OpenChat again and try again."
                             .to_owned()
                     }
                     Self::IncompleteCachedBundle(bundle_id) => format!(
                         "The cached application files are incomplete. Delete %LOCALAPPDATA%\\Zihora\\cache\\bundles\\bundle-{bundle_id} and try again."
                     ),
                     Self::RequiredFileMissing(file) => format!(
-                        "The required `{file}` file is missing from the application package. Download Zihora again."
+                        "The required `{file}` file is missing from the application package. Download OpenChat again."
                     ),
                     Self::ApplicationStart(error) => format!(
                         "The application could not be opened ({:?}). Check access to the cache folder and try again.",

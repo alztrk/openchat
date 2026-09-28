@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 build = "build.rs"
-description = "Single-file Windows launcher for Zihora"
+description = "Single-file Windows launcher for OpenChat"
 
 [dependencies]
 sha2 = "0.10"
@@ -16,6 +16,6 @@ sha2 = "0.10"
 winres = "0.1.12"
 
 [package.metadata.winres]
-ProductName = "Zihora"
-FileDescription = "Zihora portable application launcher"
-OriginalFilename = "zihora.exe"
+ProductName = "OpenChat"
+FileDescription = "OpenChat portable application launcher"
+OriginalFilename = "OpenChat.exe"

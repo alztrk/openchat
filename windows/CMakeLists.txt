@@ -1,10 +1,10 @@
 # Project-level configuration.
 cmake_minimum_required(VERSION 3.14)
-project(zihora LANGUAGES CXX)
+project(openchat LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "zihora")
+set(BINARY_NAME "openchat")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.
@@ -53,7 +53,7 @@ add_subdirectory(${FLUTTER_MANAGED_DIR})
 get_filename_component(ZIHORA_PROJECT_ROOT "${CMAKE_SOURCE_DIR}/.." ABSOLUTE)
 find_program(CARGO_EXECUTABLE cargo)
 if(NOT CARGO_EXECUTABLE)
-  message(FATAL_ERROR "Cargo is required to build the Zihora local service.")
+  message(FATAL_ERROR "Cargo is required to build the OpenChat local service.")
 endif()
 
 set(ZIHORA_SERVICE_CRATE "${ZIHORA_PROJECT_ROOT}/native/zihora-service")
@@ -73,7 +73,7 @@ add_custom_command(
     "${ZIHORA_SERVICE_CRATE}/Cargo.lock"
     ${ZIHORA_SERVICE_SOURCES}
   WORKING_DIRECTORY "${ZIHORA_PROJECT_ROOT}"
-  COMMENT "Building the Zihora local service"
+  COMMENT "Building the OpenChat local service"
   VERBATIM
 )
 add_custom_target(zihora_service_build DEPENDS "${ZIHORA_SERVICE_EXECUTABLE}")

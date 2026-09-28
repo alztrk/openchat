@@ -2,11 +2,11 @@ $ErrorActionPreference = 'Stop'
 
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $releaseDirectory = Join-Path $projectRoot 'build/windows/x64/runner/Release'
-$payloadArchive = Join-Path $projectRoot 'build/zihora-portable-payload.zip'
+$payloadArchive = Join-Path $projectRoot 'build/openchat-portable-payload.zip'
 $launcherManifest = Join-Path $projectRoot 'native/zihora-launcher/Cargo.toml'
 $launcherTarget = Join-Path $projectRoot 'build/launcher-target'
 $outputDirectory = Join-Path $projectRoot 'build/outputs'
-$outputExecutable = Join-Path $outputDirectory 'zihora.exe'
+$outputExecutable = Join-Path $outputDirectory 'OpenChat.exe'
 
 Push-Location $projectRoot
 try {
@@ -16,7 +16,7 @@ try {
     }
 
     $requiredFiles = @(
-        'zihora.exe',
+        'openchat.exe',
         'zihora_service.exe',
         'data/flutter_assets/AssetManifest.bin'
     )
