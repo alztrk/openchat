@@ -75,16 +75,16 @@ class ChatComposer extends StatelessWidget {
         final compact = constraints.maxWidth < 900;
 
         return ConstrainedBox(
-          constraints: BoxConstraints(minHeight: compact ? 116 : 100),
+          constraints: BoxConstraints(minHeight: compact ? 104 : 100),
           child: Container(
             decoration: BoxDecoration(
               color: palette.composer,
-              border: Border.all(color: palette.controlBorder),
-              borderRadius: BorderRadius.circular(compact ? 12 : 16),
+              border: Border.all(color: palette.border),
+              borderRadius: BorderRadius.circular(compact ? 16 : 20),
             ),
             padding: EdgeInsets.fromLTRB(
               compact ? 15 : 18,
-              compact ? 11 : 16,
+              compact ? 12 : 16,
               compact ? 15 : 18,
               14,
             ),
@@ -141,7 +141,7 @@ class ChatComposer extends StatelessWidget {
                     ),
                   ),
                 ),
-                SizedBox(height: compact ? 32 : 12),
+                SizedBox(height: compact ? 16 : 12),
                 _ComposerActions(
                   availableWidth: constraints.maxWidth,
                   controller: controller,
@@ -430,7 +430,7 @@ class _ComposerActions extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: palette.secondaryText,
+                color: palette.text,
                 fontSize: 12,
                 fontWeight: FontWeight.w400,
                 height: 18 / 12,
