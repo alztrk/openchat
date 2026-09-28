@@ -12,6 +12,7 @@ import '../features/chat/data/zihora_database.dart';
 import '../features/chat/domain/history_storage_status.dart';
 import '../features/chat/presentation/chat_screen.dart';
 import '../features/settings/data/chat_gpt_api_key_store.dart';
+import '../features/settings/data/open_code_api_key_store.dart';
 import '../features/settings/data/settings_preferences.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../platform/windows/zihora_service_client.dart';
@@ -33,11 +34,14 @@ class _AppRuntime {
 
 class _ZihoraAppState extends State<ZihoraApp> {
   ThemeMode _themeMode = ThemeMode.light;
+  Locale? _locale;
   late final ChatGptApiKeyStore _chatGptApiKeyStore;
+  late final OpenCodeApiKeyStore _openCodeApiKeyStore;
   late final SettingsPreferences _settingsPreferences;
   late final ZihoraServiceClient _serviceClient;
   late final Future<_AppRuntime> _runtimeReady;
   late final Future<void> _themeModeReady;
+  late final Future<void> _localeReady;
   StreamSubscription<ZihoraServiceEvent>? _serviceEventSubscription;
 
   @override
@@ -45,12 +49,14 @@ class _ZihoraAppState extends State<ZihoraApp> {
     super.initState();
     _serviceClient = ZihoraServiceClient();
     _chatGptApiKeyStore = ChatGptApiKeyStore(FlutterSecureStorage());
+    _openCodeApiKeyStore = OpenCodeApiKeyStore(FlutterSecureStorage());
     _settingsPreferences = SettingsPreferences(SharedPreferencesAsync());
     _serviceEventSubscription = _serviceClient.events.listen(
       _handleServiceEvent,
     );
     _runtimeReady = _initializeRuntime();
     _themeModeReady = _loadThemeMode();
+    _localeReady = _loadLocale();
   }
 
   void _handleServiceEvent(ZihoraServiceEvent event) {
@@ -161,6 +167,24 @@ class _ZihoraAppState extends State<ZihoraApp> {
     }
   }
 
+  Future<void> _loadLocale() async {
+    try {
+      final locale = await _settingsPreferences.readLocale();
+      if (locale != _locale && mounted) {
+        setState(() => _locale = locale);
+      }
+    } on PlatformException catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription('while loading the saved app language'),
+        ),
+      );
+    }
+  }
+
   Future<void> _toggleTheme() async {
     await _themeModeReady;
     final platformBrightness =
@@ -179,6 +203,14 @@ class _ZihoraAppState extends State<ZihoraApp> {
 
     await _settingsPreferences.writeThemeMode(themeMode);
     if (mounted) setState(() => _themeMode = themeMode);
+  }
+
+  Future<void> _setLocale(Locale? locale) async {
+    await _localeReady;
+    if (_locale == locale) return;
+
+    await _settingsPreferences.writeLocale(locale);
+    if (mounted) setState(() => _locale = locale);
   }
 
   @override
@@ -226,6 +258,7 @@ class _ZihoraAppState extends State<ZihoraApp> {
         theme: ZihoraTheme.light,
         darkTheme: ZihoraTheme.dark,
         themeMode: _themeMode,
+        locale: _locale,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         home: FutureBuilder<_AppRuntime>(
@@ -240,10 +273,14 @@ class _ZihoraAppState extends State<ZihoraApp> {
 
             return ChatScreen(
               themeMode: _themeMode,
+              locale: _locale,
               onThemeModeChanged: _setThemeMode,
+              onLocaleChanged: _setLocale,
               onToggleTheme: _toggleTheme,
+              settingsPreferences: _settingsPreferences,
               chatRepository: runtime?.chatRepository,
               chatGptApiKeyStore: _chatGptApiKeyStore,
+              openCodeApiKeyStore: _openCodeApiKeyStore,
               serviceClient: _serviceClient,
               historyStorageStatus: storageStatus,
             );

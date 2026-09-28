@@ -11,6 +11,7 @@ class ChatNavigationRail extends StatelessWidget {
     required this.onOpenChat,
     required this.onOpenSettings,
     required this.onToggleTheme,
+    this.onCollapseSidebars,
     super.key,
   });
 
@@ -19,6 +20,7 @@ class ChatNavigationRail extends StatelessWidget {
   final VoidCallback onOpenChat;
   final VoidCallback onOpenSettings;
   final VoidCallback onToggleTheme;
+  final VoidCallback? onCollapseSidebars;
 
   @override
   Widget build(BuildContext context) {
@@ -45,9 +47,49 @@ class ChatNavigationRail extends StatelessWidget {
               children: [
                 const SizedBox(height: 20),
                 if (expanded)
-                  _Brand(dark: dark, palette: palette)
-                else
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _Brand(dark: dark, palette: palette),
+                      ),
+                      IconButton(
+                        tooltip: l10n.collapseSidebars,
+                        onPressed: onCollapseSidebars,
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 32,
+                          height: 32,
+                        ),
+                        padding: EdgeInsets.zero,
+                        icon: Icon(
+                          Icons.chevron_left_rounded,
+                          color: palette.secondaryIcon,
+                          size: 20,
+                        ),
+                      ),
+                    ],
+                  )
+                else ...[
                   _CompactBrand(dark: dark),
+                  const SizedBox(height: 8),
+                  Tooltip(
+                    message: l10n.collapseSidebars,
+                    child: IconButton(
+                      onPressed: onCollapseSidebars,
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 44,
+                        height: 32,
+                      ),
+                      padding: EdgeInsets.zero,
+                      icon: Icon(
+                        Icons.chevron_left_rounded,
+                        color: palette.secondaryIcon,
+                        size: 20,
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 10),
                 Align(
                   alignment: Alignment.center,
@@ -181,7 +223,7 @@ class _Brand extends StatelessWidget {
     final mark = _BrandMark(dark: dark, size: 58.8);
 
     return Semantics(
-      label: 'Zihora',
+      label: 'OpenChat',
       child: SizedBox(
         height: 68,
         child: Stack(
@@ -193,7 +235,7 @@ class _Brand extends StatelessWidget {
               top: 25.3,
               child: ExcludeSemantics(
                 child: Text(
-                  'Zihora',
+                  'OpenChat',
                   style: TextStyle(
                     color: palette.text,
                     fontSize: 17.6,

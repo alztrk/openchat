@@ -10,7 +10,7 @@ class AppLocalizationsEn extends AppLocalizations {
   AppLocalizationsEn([String locale = 'en']) : super(locale);
 
   @override
-  String get appTitle => 'Zihora';
+  String get appTitle => 'OpenChat';
 
   @override
   String get newChat => 'New chat';
@@ -19,7 +19,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chats => 'Chats';
 
   @override
-  String get collapseSidebar => 'Collapse sidebar';
+  String get collapseSidebars => 'Collapse sidebars';
+
+  @override
+  String get showSidebars => 'Show sidebars';
 
   @override
   String get home => 'Home';
@@ -47,6 +50,236 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get connections => 'Connections';
+
+  @override
+  String get sharedInstructions => 'Shared instructions';
+
+  @override
+  String get sharedInstructionsDescription =>
+      'These instructions are sent with every ChatGPT and OpenCode conversation. File tool access follows the Tool access setting.';
+
+  @override
+  String get sharedInstructionsHint =>
+      'Describe how you want responses to be written...';
+
+  @override
+  String get sharedInstructionsLoadFailed =>
+      'Shared instructions could not be loaded. Try again.';
+
+  @override
+  String get sharedInstructionsSaveFailed =>
+      'Shared instructions could not be saved.';
+
+  @override
+  String get sharedInstructionsSaved => 'Shared instructions saved.';
+
+  @override
+  String get sharedInstructionsTooLong =>
+      'Shared instructions cannot exceed 4096 characters.';
+
+  @override
+  String get chatGptProvider => 'ChatGPT';
+
+  @override
+  String get openCodeProvider => 'OpenCode';
+
+  @override
+  String get favoriteModels => 'Favorites';
+
+  @override
+  String get favoriteModelsEmpty => 'No favorite models yet.';
+
+  @override
+  String get modelSearchHint => 'Search models...';
+
+  @override
+  String get modelSearchNoResults => 'No models match your search.';
+
+  @override
+  String get addModelFavorite => 'Add to favorite models';
+
+  @override
+  String get removeModelFavorite => 'Remove from favorites';
+
+  @override
+  String get openCodeConsole => 'OpenCode Console';
+
+  @override
+  String get openCodeConsoleDescription =>
+      'Free models work without a key. Paid models are billed per request after adding Console credits. Add a Console service API key to use them.';
+
+  @override
+  String openCodeKeySaved(Object suffix) {
+    return 'Console API key ending in ••••$suffix is saved securely on this device.';
+  }
+
+  @override
+  String get openCodeNoKey => 'No Console API key. Free models are available.';
+
+  @override
+  String get openCodeApiKey => 'OpenCode Console API key';
+
+  @override
+  String get openCodeKeyInvalid =>
+      'Enter a non-empty, single-line API key (up to 4096 characters).';
+
+  @override
+  String get openCodeKeyStorageFailed =>
+      'The Console API key could not be read or saved securely.';
+
+  @override
+  String get openCodePaidModel => 'Paid';
+
+  @override
+  String get openCodeFreeModel => 'Free';
+
+  @override
+  String get add => 'Add';
+
+  @override
+  String get edit => 'Edit';
+
+  @override
+  String get exportConversation => 'Export conversation';
+
+  @override
+  String get deleteConversation => 'Delete conversation';
+
+  @override
+  String get confirmDeleteConversationTitle => 'Delete this conversation?';
+
+  @override
+  String confirmDeleteConversation(String title) {
+    return 'This will permanently delete “$title” and all its messages from this device.';
+  }
+
+  @override
+  String get stopResponseBeforeDelete =>
+      'Stop the active response before deleting this conversation.';
+
+  @override
+  String get conversationDeleted => 'Conversation deleted.';
+
+  @override
+  String get conversationDeleteFailed =>
+      'The conversation could not be deleted. Try again.';
+
+  @override
+  String get conversationExported =>
+      'Conversation exported as a Markdown file.';
+
+  @override
+  String get conversationExportFailed =>
+      'The conversation could not be exported. Try again.';
+
+  @override
+  String get conversationExportProvider => 'Provider';
+
+  @override
+  String get conversationExportModel => 'Model';
+
+  @override
+  String get conversationExportCreated => 'Created';
+
+  @override
+  String get conversationExportStatus => 'Status';
+
+  @override
+  String get toolPermissions => 'Tool access';
+
+  @override
+  String get toolPermissionsDescription =>
+      'Choose where AI file tools can operate and whether each call requires your approval.';
+
+  @override
+  String get toolPermissionRequireApproval => 'Ask for approval';
+
+  @override
+  String get toolPermissionRequireApprovalDescription =>
+      'Each tool call asks for permission. Access is limited to the project folder and %LOCALAPPDATA%\\Zihora.';
+
+  @override
+  String get toolPermissionFullAccess => 'Full access';
+
+  @override
+  String get toolPermissionFullAccessDescription =>
+      'Current read-only tools can access any folder without asking. Files are not changed and commands are not run.';
+
+  @override
+  String get toolPermissionSettingsLoadFailed =>
+      'Tool access settings could not be loaded.';
+
+  @override
+  String get toolPermissionSettingsSaveFailed =>
+      'Tool access settings could not be saved. Try again.';
+
+  @override
+  String get toolPermissionRequestTitle => 'Tool permission';
+
+  @override
+  String get toolPermissionRequestDescription =>
+      'The AI wants to use this tool at the selected location. Permission applies to this call only.';
+
+  @override
+  String get toolPermissionTarget => 'Location to access';
+
+  @override
+  String get toolPermissionTool => 'Tool';
+
+  @override
+  String get toolPermissionArguments => 'Request details';
+
+  @override
+  String get toolPermissionDeny => 'Deny';
+
+  @override
+  String get toolPermissionStopResponse => 'Stop response';
+
+  @override
+  String get toolPermissionAllowOnce => 'Allow this call';
+
+  @override
+  String get toolDenied => 'Denied';
+
+  @override
+  String get toolCancelled => 'Cancelled';
+
+  @override
+  String get toolAwaitingApproval => 'Waiting for approval';
+
+  @override
+  String get conversationExportToolActivity => 'Tool activity';
+
+  @override
+  String get responseReplaceFailed =>
+      'The new response was saved, but the earlier response could not be replaced.';
+
+  @override
+  String get responseRetryNotCompleted =>
+      'The new response did not finish. The earlier response was kept.';
+
+  @override
+  String get responseRetryCleanupFailed =>
+      'The retry could not be cleaned up. Refresh the conversation history.';
+
+  @override
+  String get responseInProgress => 'Response in progress';
+
+  @override
+  String get responseRetryUnavailable =>
+      'This response cannot be retried. Start a new message instead.';
+
+  @override
+  String get providerRateLimited =>
+      'The provider reported a usage limit. Try again later.';
+
+  @override
+  String get providerAuthenticationRequired =>
+      'The provider rejected the request. Check the connection and model access.';
+
+  @override
+  String get providerRequestFailed =>
+      'The provider could not complete the response. Your saved messages are still available.';
 
   @override
   String get apiKey => 'API key';
@@ -119,7 +352,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get oldCredentialCleanupFailed =>
-      'The account connected, but an older saved credential could not be removed. Restart Zihora and try again.';
+      'The account connected, but an older saved credential could not be removed. Restart OpenChat and try again.';
 
   @override
   String get connectionSelectionFailed =>
@@ -278,7 +511,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get titleGenerationTargetDescription =>
-      'When the conversation account has no different model available, Zihora can use the account you choose here. It skips title generation when ordinary usage is unavailable.';
+      'When the conversation account has no different model available, OpenChat can use the account you choose here. It skips title generation when ordinary usage is unavailable.';
 
   @override
   String get titleUseConversationAccount => 'Use the conversation account';
@@ -306,6 +539,26 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get themeSettingDescription => 'Choose how the app looks.';
+
+  @override
+  String get language => 'App language';
+
+  @override
+  String get languageSettingDescription =>
+      'Choose the language used by the app.';
+
+  @override
+  String get systemLanguage => 'Device language';
+
+  @override
+  String get englishLanguage => 'English';
+
+  @override
+  String get turkishLanguage => 'Turkish';
+
+  @override
+  String get languageSaveFailed =>
+      'The language preference could not be saved. Try again.';
 
   @override
   String get systemTheme => 'System';
@@ -516,9 +769,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get modelSelection => 'Choose model';
 
   @override
-  String get chatGptProvider => 'ChatGPT';
-
-  @override
   String get noModelConnected => 'No model is connected yet';
 
   @override
@@ -567,7 +817,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chatGptDataUnavailable =>
-      'ChatGPT returned information Zihora could not read. Refresh the connection and try again.';
+      'ChatGPT returned information OpenChat could not read. Refresh the connection and try again.';
 
   @override
   String get modelCatalogUnavailable =>
@@ -595,7 +845,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chatGptProviderChanged =>
-      'ChatGPT’s response format changed. Update Zihora and try again.';
+      'ChatGPT’s response format changed. Update OpenChat and try again.';
 
   @override
   String get cachedCatalog => 'cached models';
@@ -685,6 +935,69 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get reasoningSummaryTooltip =>
       'A summary provided by the model. The duration is how long it took to arrive in the stream; it is not hidden chain-of-thought data.';
+
+  @override
+  String get toolRunning => 'Running';
+
+  @override
+  String get toolCompleted => 'Completed';
+
+  @override
+  String get toolFailed => 'Failed';
+
+  @override
+  String get toolInput => 'Input';
+
+  @override
+  String get toolOutput => 'Output';
+
+  @override
+  String get toolListFiles => 'List files';
+
+  @override
+  String get toolSearchFiles => 'Search files';
+
+  @override
+  String get toolReadFile => 'Read file';
+
+  @override
+  String get toolGetFileInfo => 'Get file information';
+
+  @override
+  String get toolTechnicalDetails => 'Details';
+
+  @override
+  String toolFileCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count items',
+      one: '1 item',
+      zero: 'No items',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get toolEmptyListing => 'There are no items to show in this folder.';
+
+  @override
+  String get toolListingUnavailable => 'This file list could not be displayed.';
+
+  @override
+  String get toolListingIncomplete => 'Some items could not be listed.';
+
+  @override
+  String get toolMoreFilesAvailable => 'More items are available.';
+
+  @override
+  String get toolDesktopLocation => 'Desktop';
+
+  @override
+  String get toolProjectLocation => 'Project folder';
+
+  @override
+  String get toolZihoraLocation => 'Application data folder';
 
   @override
   String get responseFailed => 'Response failed';

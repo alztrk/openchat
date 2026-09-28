@@ -1,14 +1,19 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../app/zihora_theme.dart';
 import '../../../app/zihora_toast.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../l10n/zihora_localizations.dart';
 import '../../../platform/windows/zihora_service_client.dart';
 import '../../settings/data/chat_gpt_api_key_store.dart';
+import '../../settings/data/open_code_api_key_store.dart';
+import '../../settings/data/settings_preferences.dart';
 import '../../settings/presentation/settings_screen.dart';
 import '../data/chat_repository.dart';
 import '../domain/chat_conversation.dart';
@@ -17,9 +22,12 @@ import '../domain/chatgpt_connection.dart';
 import '../domain/chat_project.dart';
 import '../domain/conversation_sidebar_data.dart';
 import '../domain/history_storage_status.dart';
+import '../domain/model_favorite.dart';
 import 'widgets/chat_navigation_rail.dart';
 import 'widgets/conversation_pane.dart';
 import 'widgets/conversation_sidebar.dart';
+
+enum _ToolPermissionDecision { allow, deny, stop }
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
@@ -27,20 +35,28 @@ class ChatScreen extends StatefulWidget {
     required this.onThemeModeChanged,
     required this.onToggleTheme,
     required this.historyStorageStatus,
+    this.settingsPreferences,
+    this.locale,
+    this.onLocaleChanged,
     this.chatRepository,
     this.chatGptApiKeyStore,
+    this.openCodeApiKeyStore,
     this.serviceClient,
     this.selectedModelLabel,
     super.key,
   });
 
   final ThemeMode themeMode;
+  final Locale? locale;
   final Future<void> Function(ThemeMode) onThemeModeChanged;
+  final Future<void> Function(Locale?)? onLocaleChanged;
   final Future<void> Function() onToggleTheme;
   final ChatRepository? chatRepository;
   final ChatGptApiKeyStore? chatGptApiKeyStore;
+  final OpenCodeApiKeyStore? openCodeApiKeyStore;
   final ZihoraServiceClient? serviceClient;
   final HistoryStorageStatus historyStorageStatus;
+  final SettingsPreferences? settingsPreferences;
   final String? selectedModelLabel;
 
   @override
@@ -48,16 +64,27 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  late final SettingsPreferences _settingsPreferences =
+      widget.settingsPreferences ??
+      SettingsPreferences(SharedPreferencesAsync());
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   final _searchController = TextEditingController();
   final _messageController = TextEditingController();
+  final _messageScrollController = ScrollController();
   bool _settingsOpen = false;
-  bool _sidebarCollapsed = false;
+  bool _sidebarsCollapsed = false;
   bool _isSending = false;
+  bool _isLoadingToolPermissionMode = true;
+  bool _isSavingToolPermissionMode = false;
+  bool _toolPermissionModeReady = false;
+  ToolPermissionMode _toolPermissionMode = ToolPermissionMode.requireApproval;
+  String? _activeChatConversationId;
+  String? _replacingAssistantMessageId;
   bool _isLoadingConnections = false;
   bool _isLoadingModels = false;
   bool _isUpdatingConversationModel = false;
   String? _selectedConversationId;
+  String _selectedProviderId = 'chatgpt';
   String? _titleEditRequestId;
   String? _selectedConnectionId;
   String? _selectedWorkspaceId;
@@ -69,17 +96,21 @@ class _ChatScreenState extends State<ChatScreen> {
   int _modelSelectionGeneration = 0;
   int _nextLocalId = 0;
   List<ChatGptModel> _models = const <ChatGptModel>[];
+  bool _modelsLoaded = false;
   String? _loadedConnectionId;
   String? _loadedWorkspaceId;
+  String? _loadedProviderId;
   ZihoraServiceOperation? _activeChatOperation;
   Stream<List<ChatConversation>>? _conversationStream;
   Stream<List<ChatProject>>? _projectStream;
   Stream<List<chat.ChatMessage>>? _messageStream;
+  Stream<List<FavoriteModel>>? _favoriteModelsStream;
 
   @override
   void initState() {
     super.initState();
     _bindRepositoryStreams();
+    unawaited(_loadToolPermissionMode());
     if (widget.historyStorageStatus == HistoryStorageStatus.available) {
       unawaited(_loadProviderState());
     }
@@ -108,10 +139,12 @@ class _ChatScreenState extends State<ChatScreen> {
       _conversationStream = null;
       _projectStream = null;
       _messageStream = null;
+      _favoriteModelsStream = null;
       return;
     }
     _conversationStream = repository.watchConversations();
     _projectStream = repository.watchProjects();
+    _favoriteModelsStream = repository.watchModelFavorites();
     final selectedId = _selectedConversationId;
     _messageStream = selectedId == null
         ? null
@@ -120,8 +153,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _selectConversation(String conversationId) {
     _modelSelectionGeneration++;
+    _resetMessageScroll();
     setState(() {
       _selectedConversationId = conversationId;
+      _selectedProviderId = 'chatgpt';
       _messageStream = widget.chatRepository?.watchMessages(conversationId);
       _selectedModelId = null;
       _selectedReasoningEffort = null;
@@ -131,7 +166,7 @@ class _ChatScreenState extends State<ChatScreen> {
     unawaited(_loadConversationModels(conversationId));
   }
 
-  Future<void> _loadProviderState() async {
+  Future<void> _loadProviderState({bool forceRefresh = false}) async {
     final service = widget.serviceClient;
     if (service == null || _isLoadingConnections) return;
     setState(() => _isLoadingConnections = true);
@@ -167,12 +202,13 @@ class _ChatScreenState extends State<ChatScreen> {
       });
       final currentId = _selectedConversationId;
       if (currentId != null) {
-        await _loadConversationModels(currentId);
+        await _loadConversationModels(currentId, forceRefresh: forceRefresh);
       } else if (selectedConnection != null && selectedWorkspace != null) {
         await _loadModels(
           selectedConnection.id,
           selectedWorkspace.id,
           selectedModelId: null,
+          forceRefresh: forceRefresh,
         );
       } else {
         _clearModels();
@@ -186,13 +222,25 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _loadConversationModels(String conversationId) async {
+  Future<void> _loadConversationModels(
+    String conversationId, {
+    bool forceRefresh = false,
+  }) async {
     final repository = widget.chatRepository;
     if (repository == null) return;
     try {
       final conversation = await repository.getConversation(conversationId);
       if (!mounted || _selectedConversationId != conversationId) return;
-      if (conversation?.connectionId case final String connectionId) {
+      if (conversation?.providerId == 'opencode') {
+        setState(() => _selectedProviderId = 'opencode');
+        await _loadModels(
+          '',
+          '',
+          selectedModelId: conversation?.modelId,
+          forceRefresh: forceRefresh,
+        );
+      } else if (conversation?.connectionId case final String connectionId) {
+        setState(() => _selectedProviderId = 'chatgpt');
         final workspaceId = conversation?.workspaceId;
         final modelId = conversation?.modelId;
         if (workspaceId == null || modelId == null) {
@@ -200,7 +248,10 @@ class _ChatScreenState extends State<ChatScreen> {
             'The conversation provider selection was incomplete.',
           );
         }
-        if (_loadedConnectionId == connectionId &&
+        if (!forceRefresh &&
+            _modelsLoaded &&
+            _loadedProviderId == 'chatgpt' &&
+            _loadedConnectionId == connectionId &&
             _loadedWorkspaceId == workspaceId) {
           setState(() {
             _selectedModelId = modelId;
@@ -211,6 +262,7 @@ class _ChatScreenState extends State<ChatScreen> {
             connectionId,
             workspaceId,
             selectedModelId: modelId,
+            forceRefresh: forceRefresh,
           );
         }
       } else if (_selectedConnectionId != null &&
@@ -219,6 +271,7 @@ class _ChatScreenState extends State<ChatScreen> {
           _selectedConnectionId!,
           _selectedWorkspaceId!,
           selectedModelId: conversation?.modelId,
+          forceRefresh: forceRefresh,
         );
       } else {
         _clearModels();
@@ -242,27 +295,69 @@ class _ChatScreenState extends State<ChatScreen> {
     String connectionId,
     String workspaceId, {
     required String? selectedModelId,
+    bool forceRefresh = false,
   }) async {
     final service = widget.serviceClient;
     if (service == null) return;
+    final sameRoute =
+        _loadedProviderId == _selectedProviderId &&
+        (_selectedProviderId == 'opencode' ||
+            (_loadedConnectionId == connectionId &&
+                _loadedWorkspaceId == workspaceId));
+    if (!forceRefresh && sameRoute && _modelsLoaded) {
+      ChatGptModel? selectedModel;
+      for (final model in _models) {
+        if (model.id == selectedModelId && model.isAvailable) {
+          selectedModel = model;
+          break;
+        }
+      }
+      setState(() {
+        _selectedModelId = selectedModel?.id;
+        _selectedReasoningEffort = selectedModel?.defaultReasoningLevel;
+      });
+      return;
+    }
     final generation = ++_modelLoadGeneration;
     setState(() {
       _isLoadingModels = true;
       _modelLoadError = null;
       _modelFreshness = 'unavailable';
-      _models = const <ChatGptModel>[];
+      if (!sameRoute) {
+        _models = const <ChatGptModel>[];
+        _modelsLoaded = false;
+      }
       _selectedModelId = selectedModelId;
       _selectedReasoningEffort = null;
-      _loadedConnectionId = connectionId;
-      _loadedWorkspaceId = workspaceId;
+      _loadedConnectionId = _selectedProviderId == 'chatgpt'
+          ? connectionId
+          : null;
+      _loadedWorkspaceId = _selectedProviderId == 'chatgpt'
+          ? workspaceId
+          : null;
+      _loadedProviderId = _selectedProviderId;
     });
     try {
+      final openCodeApiKey = _selectedProviderId == 'opencode'
+          ? await widget.openCodeApiKeyStore?.readApiKey()
+          : null;
       final response = await service.call(
-        'chatgpt.models.list',
-        params: <String, Object?>{
-          'connectionId': connectionId,
-          'workspaceId': workspaceId,
-        },
+        _selectedProviderId == 'opencode'
+            ? 'opencode.models.list'
+            : 'chatgpt.models.list',
+        params: _selectedProviderId == 'opencode'
+            ? <String, Object?>{
+                ...?switch (openCodeApiKey) {
+                  final apiKey? => <String, Object?>{'apiKey': apiKey},
+                  _ => null,
+                },
+                if (forceRefresh) 'forceRefresh': true,
+              }
+            : <String, Object?>{
+                'connectionId': connectionId,
+                'workspaceId': workspaceId,
+                if (forceRefresh) 'forceRefresh': true,
+              },
       );
       final rawModels = response['models'];
       if (rawModels is! List<Object?>) {
@@ -279,6 +374,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted || generation != _modelLoadGeneration) return;
       setState(() {
         _models = models;
+        _modelsLoaded = true;
         _modelFreshness = freshness;
         _selectedModelId =
             models.any(
@@ -290,11 +386,20 @@ class _ChatScreenState extends State<ChatScreen> {
             ? null
             : 'empty';
       });
+    } on OpenCodeApiKeyStorageException {
+      if (!mounted || generation != _modelLoadGeneration) return;
+      setState(() {
+        _modelLoadError = 'key_storage';
+        _models = const <ChatGptModel>[];
+        _modelsLoaded = false;
+      });
+      _showMessage(context.zihoraL10n.openCodeKeyStorageFailed);
     } on ZihoraServiceException catch (error) {
       if (!mounted || generation != _modelLoadGeneration) return;
       setState(() {
         _modelLoadError = error.code;
         _models = const <ChatGptModel>[];
+        _modelsLoaded = false;
       });
       _showServiceFailure(error);
     } on FormatException {
@@ -302,6 +407,7 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {
         _modelLoadError = 'invalid_response';
         _models = const <ChatGptModel>[];
+        _modelsLoaded = false;
       });
       if (mounted) _showMessage(context.zihoraL10n.chatGptDataUnavailable);
     } finally {
@@ -316,10 +422,13 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!mounted) return;
     setState(() {
       _models = const <ChatGptModel>[];
+      _modelsLoaded = false;
       _selectedModelId = null;
       _selectedReasoningEffort = null;
       _loadedConnectionId = null;
       _loadedWorkspaceId = null;
+      _loadedProviderId = null;
+      _modelLoadError = null;
       _modelFreshness = 'unavailable';
       _isLoadingModels = false;
     });
@@ -357,6 +466,116 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _setModelFavorite({
+    required String providerId,
+    required String modelId,
+    required String displayName,
+    required bool isFavorite,
+  }) async {
+    final repository = widget.chatRepository;
+    if (repository == null) return;
+    try {
+      await repository.setModelFavorite(
+        providerId: providerId,
+        modelId: modelId,
+        displayName: displayName,
+        isFavorite: isFavorite,
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'model_favorites',
+          context: ErrorDescription('while saving a model favorite'),
+        ),
+      );
+      if (mounted) _showMessage(context.zihoraL10n.chatHistoryUnavailable);
+    }
+  }
+
+  Future<void> _selectFavoriteModel(FavoriteModel favorite) async {
+    final targetConversationId = _selectedConversationId;
+    var connectionId = _selectedConnectionId;
+    var workspaceId = _selectedWorkspaceId;
+
+    if (targetConversationId != null) {
+      final conversation = await widget.chatRepository?.getConversation(
+        targetConversationId,
+      );
+      if (!mounted || _selectedConversationId != targetConversationId) return;
+      final conversationProviderId =
+          conversation?.providerId ??
+          (conversation?.connectionId == null ? null : 'chatgpt');
+      if (conversation == null ||
+          conversationProviderId != favorite.providerId) {
+        return;
+      }
+      connectionId = conversation.connectionId;
+      workspaceId = conversation.workspaceId;
+    }
+
+    if (favorite.providerId == 'chatgpt' &&
+        (connectionId == null || workspaceId == null)) {
+      _showMessage(context.zihoraL10n.modelCatalogUnavailable);
+      return;
+    }
+    if (favorite.providerId != 'chatgpt' && favorite.providerId != 'opencode') {
+      return;
+    }
+
+    if (_selectedProviderId != favorite.providerId) {
+      setState(() {
+        _selectedProviderId = favorite.providerId;
+        _selectedModelId = null;
+        _selectedReasoningEffort = null;
+      });
+    }
+    await _loadModels(
+      connectionId ?? '',
+      workspaceId ?? '',
+      selectedModelId: null,
+    );
+    if (!mounted ||
+        _selectedConversationId != targetConversationId ||
+        _selectedProviderId != favorite.providerId ||
+        _modelLoadError != null) {
+      return;
+    }
+    if (!_models.any(
+      (model) => model.id == favorite.modelId && model.isAvailable,
+    )) {
+      _showMessage(context.zihoraL10n.modelCatalogUnavailable);
+      return;
+    }
+    _selectModel(favorite.modelId);
+  }
+
+  void _selectProvider(String providerId) {
+    if (providerId == _selectedProviderId ||
+        (providerId != 'chatgpt' && providerId != 'opencode')) {
+      return;
+    }
+    setState(() {
+      _selectedProviderId = providerId;
+      _selectedModelId = null;
+      _selectedReasoningEffort = null;
+    });
+    if (providerId == 'opencode') {
+      unawaited(_loadModels('', '', selectedModelId: null));
+    } else {
+      final connectionId = _selectedConnectionId;
+      final workspaceId = _selectedWorkspaceId;
+      if (connectionId != null && workspaceId != null) {
+        unawaited(
+          _loadModels(connectionId, workspaceId, selectedModelId: null),
+        );
+      } else {
+        _clearModels();
+      }
+    }
+  }
+
   Future<void> _persistConversationModel({
     required String conversationId,
     required String modelId,
@@ -373,7 +592,12 @@ class _ChatScreenState extends State<ChatScreen> {
       if (conversation == null) {
         throw StateError('The conversation no longer exists.');
       }
-      if (conversation.connectionId == null) {
+      if (conversation.providerId == 'opencode') {
+        await repository.setConversationModel(
+          conversationId: conversationId,
+          modelId: modelId,
+        );
+      } else if (conversation.connectionId == null) {
         final connectionId = _loadedConnectionId;
         final workspaceId = _loadedWorkspaceId;
         if (connectionId == null || workspaceId == null) {
@@ -428,10 +652,18 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _selectedReasoningEffort = effort);
   }
 
+  void _resetMessageScroll() {
+    if (_messageScrollController.hasClients) {
+      _messageScrollController.jumpTo(0);
+    }
+  }
+
   void _startNewConversation() {
     _modelSelectionGeneration++;
+    _resetMessageScroll();
     setState(() {
       _selectedConversationId = null;
+      _selectedProviderId = 'chatgpt';
       _messageStream = null;
       _selectedModelId = null;
       _selectedReasoningEffort = null;
@@ -475,6 +707,7 @@ class _ChatScreenState extends State<ChatScreen> {
     await repository.deleteAllConversations();
     if (!mounted) return;
     _modelSelectionGeneration++;
+    _resetMessageScroll();
     _messageController.clear();
     setState(() {
       _selectedConversationId = null;
@@ -484,36 +717,166 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  Future<void> _sendMessage(ChatConversation? selectedConversation) async {
-    if (_isSending || _isUpdatingConversationModel) return;
+  Future<void> _sendMessage(
+    ChatConversation? selectedConversation, {
+    chat.ChatMessage? responseToReplace,
+  }) async {
+    if (_isSending ||
+        _isUpdatingConversationModel ||
+        !_toolPermissionModeReady ||
+        _isLoadingToolPermissionMode ||
+        _isSavingToolPermissionMode) {
+      return;
+    }
+    final toolPermissionMode = _toolPermissionMode;
     final repository = widget.chatRepository;
     final service = widget.serviceClient;
-    final text = _messageController.text.trim();
-    if (repository == null || service == null || text.isEmpty) return;
+    final l10n = context.zihoraL10n;
+    final text = responseToReplace == null
+        ? _messageController.text.trim()
+        : '';
+    if (repository == null ||
+        service == null ||
+        (responseToReplace == null && text.isEmpty)) {
+      return;
+    }
 
-    final connectionId =
-        selectedConversation?.connectionId ?? _selectedConnectionId;
-    final workspaceId =
-        selectedConversation?.workspaceId ?? _selectedWorkspaceId;
+    final providerId = selectedConversation?.providerId ?? _selectedProviderId;
+    final connectionId = providerId == 'opencode'
+        ? null
+        : selectedConversation?.connectionId ?? _selectedConnectionId;
+    final workspaceId = providerId == 'opencode'
+        ? null
+        : selectedConversation?.workspaceId ?? _selectedWorkspaceId;
     final modelId = _selectedModelId ?? selectedConversation?.modelId;
-    if (connectionId == null || workspaceId == null || modelId == null) {
+    if (modelId == null ||
+        (providerId == 'chatgpt' &&
+            (connectionId == null || workspaceId == null))) {
       _showMessage(context.zihoraL10n.modelRequired);
       return;
     }
-    if (_loadedConnectionId != connectionId ||
-        _loadedWorkspaceId != workspaceId ||
+    if (_loadedProviderId != providerId ||
+        (providerId == 'chatgpt' &&
+            (_loadedConnectionId != connectionId ||
+                _loadedWorkspaceId != workspaceId)) ||
         !_models.any((model) => model.id == modelId && model.isAvailable)) {
-      _showMessage(context.zihoraL10n.modelCatalogUnavailable);
+      _showMessage(l10n.modelCatalogUnavailable);
       return;
     }
 
     final conversationId = selectedConversation?.id ?? _newLocalId();
+    if (mounted) {
+      setState(() {
+        _isSending = true;
+        _activeChatConversationId = conversationId;
+        _replacingAssistantMessageId = responseToReplace?.id;
+      });
+    }
+
+    late final String sharedInstructions;
     try {
+      sharedInstructions = await _settingsPreferences.readSharedInstructions();
+    } on PlatformException catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription('while loading instructions for a chat'),
+        ),
+      );
+      if (mounted) {
+        _showMessage(l10n.sharedInstructionsLoadFailed);
+        setState(() {
+          _isSending = false;
+          _activeChatConversationId = null;
+          _replacingAssistantMessageId = null;
+        });
+      }
+      return;
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription('while loading instructions for a chat'),
+        ),
+      );
+      if (mounted) {
+        _showMessage(l10n.sharedInstructionsLoadFailed);
+        setState(() {
+          _isSending = false;
+          _activeChatConversationId = null;
+          _replacingAssistantMessageId = null;
+        });
+      }
+      return;
+    }
+
+    if (responseToReplace != null) {
       if (selectedConversation == null) {
+        if (mounted) {
+          setState(() {
+            _isSending = false;
+            _activeChatConversationId = null;
+            _replacingAssistantMessageId = null;
+          });
+        }
+        return;
+      }
+      try {
+        final messages = await repository.getMessages(conversationId);
+        if (!mounted) return;
+        if (_selectedConversationId != conversationId) {
+          setState(() {
+            _isSending = false;
+            _activeChatConversationId = null;
+            _replacingAssistantMessageId = null;
+          });
+          return;
+        }
+        if (messages.length < 2 ||
+            messages.last.id != responseToReplace.id ||
+            messages.last.role != chat.ChatMessageRole.assistant ||
+            messages.last.status == chat.ChatMessageStatus.streaming ||
+            messages[messages.length - 2].role != chat.ChatMessageRole.user) {
+          _showMessage(l10n.responseRetryUnavailable);
+          setState(() {
+            _isSending = false;
+            _activeChatConversationId = null;
+            _replacingAssistantMessageId = null;
+          });
+          return;
+        }
+      } on Object catch (error, stackTrace) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'chat_history',
+            context: ErrorDescription('while preparing a response retry'),
+          ),
+        );
+        if (mounted) {
+          _showMessage(l10n.responseRetryUnavailable);
+          setState(() {
+            _isSending = false;
+            _activeChatConversationId = null;
+            _replacingAssistantMessageId = null;
+          });
+        }
+        return;
+      }
+    }
+
+    try {
+      if (responseToReplace == null && selectedConversation == null) {
         await repository.createConversation(
           id: conversationId,
-          title: context.zihoraL10n.conversationTitle,
+          title: l10n.conversationTitle,
           createdAt: DateTime.now().toUtc(),
+          providerId: providerId == 'opencode' ? providerId : null,
           connectionId: connectionId,
           workspaceId: workspaceId,
           modelId: modelId,
@@ -524,23 +887,36 @@ class _ChatScreenState extends State<ChatScreen> {
             _messageStream = repository.watchMessages(conversationId);
           });
         }
-      } else if (selectedConversation.connectionId == null) {
-        await repository.bindConversationProvider(
+      } else if (responseToReplace == null && providerId == 'chatgpt') {
+        final currentConversation = selectedConversation;
+        if (currentConversation == null) {
+          throw StateError('The conversation route is unavailable.');
+        }
+        if (currentConversation.connectionId == null) {
+          final selectedConnectionId = connectionId;
+          final selectedWorkspaceId = workspaceId;
+          if (selectedConnectionId == null || selectedWorkspaceId == null) {
+            throw StateError('The ChatGPT connection route is unavailable.');
+          }
+          await repository.bindConversationProvider(
+            conversationId: conversationId,
+            connectionId: selectedConnectionId,
+            workspaceId: selectedWorkspaceId,
+            modelId: modelId,
+          );
+        }
+      }
+      if (responseToReplace == null) {
+        await repository.saveMessage(
           conversationId: conversationId,
-          connectionId: connectionId,
-          workspaceId: workspaceId,
-          modelId: modelId,
+          message: chat.ChatMessage(
+            id: _newLocalId(),
+            role: chat.ChatMessageRole.user,
+            content: text,
+            createdAt: DateTime.now().toUtc(),
+          ),
         );
       }
-      await repository.saveMessage(
-        conversationId: conversationId,
-        message: chat.ChatMessage(
-          id: _newLocalId(),
-          role: chat.ChatMessageRole.user,
-          content: text,
-          createdAt: DateTime.now().toUtc(),
-        ),
-      );
     } on Object catch (error, stackTrace) {
       FlutterError.reportError(
         FlutterErrorDetails(
@@ -550,16 +926,28 @@ class _ChatScreenState extends State<ChatScreen> {
           context: ErrorDescription('while saving a new chat message'),
         ),
       );
-      if (mounted) _showMessage(context.zihoraL10n.messageSaveFailed);
+      if (mounted) _showMessage(l10n.messageSaveFailed);
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+          _activeChatConversationId = null;
+          _replacingAssistantMessageId = null;
+        });
+      }
       return;
     }
 
-    _messageController.clear();
-    if (mounted) setState(() => _isSending = true);
+    if (responseToReplace == null) _messageController.clear();
+    if (mounted) {
+      setState(() {
+        _activeChatConversationId = conversationId;
+      });
+    }
     String? assistantMessageId;
     String assistantContent = '';
     DateTime? assistantCreatedAt;
     var assistantReasoningSummaries = const <chat.ChatReasoningSummary>[];
+    var assistantToolActivities = const <chat.ChatToolActivity>[];
     var persistence = Future<void>.value();
     StreamSubscription<ZihoraServiceEvent>? subscription;
 
@@ -583,21 +971,69 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }
 
+    void updateToolActivity(Object? value) {
+      try {
+        final activity = chat.ChatToolActivity.fromJson(value);
+        final existingIndex = assistantToolActivities.indexWhere(
+          (item) => item.callId == activity.callId,
+        );
+        final updated = List<chat.ChatToolActivity>.of(assistantToolActivities);
+        if (existingIndex == -1) {
+          updated.add(activity);
+        } else {
+          updated[existingIndex] = activity;
+        }
+        assistantToolActivities = List<chat.ChatToolActivity>.unmodifiable(
+          updated,
+        );
+      } on FormatException catch (error, stackTrace) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'local_service',
+            context: ErrorDescription('while reading tool activity events'),
+          ),
+        );
+      }
+    }
+
     try {
+      final openCodeApiKey = providerId == 'opencode'
+          ? await widget.openCodeApiKeyStore?.readApiKey()
+          : null;
       final operation = await service.startOperation(
         'chat.send',
         params: <String, Object?>{
           'conversationId': conversationId,
+          if (sharedInstructions.trim().isNotEmpty)
+            'customInstructions': sharedInstructions,
+          ...?switch (openCodeApiKey) {
+            final apiKey? => <String, Object?>{'apiKey': apiKey},
+            _ => null,
+          },
+          ...?switch (responseToReplace) {
+            final replacement? => <String, Object?>{
+              'excludedAssistantMessageId': replacement.id,
+            },
+            _ => null,
+          },
           if (_selectedReasoningEffort != null)
             'reasoningEffort': _selectedReasoningEffort,
+          'toolPermissionMode': toolPermissionMode.serviceValue,
         },
       );
       _activeChatOperation = operation;
       subscription = operation.events.listen(
         (event) {
+          if (event.name == 'chat.tool.permission.requested') {
+            unawaited(_handleToolPermissionRequest(service, event.data));
+            return;
+          }
           if (event.name != 'chat.started' &&
               event.name != 'chat.delta' &&
-              event.name != 'chat.reasoning.delta') {
+              event.name != 'chat.reasoning.delta' &&
+              event.name != 'chat.tool.updated') {
             return;
           }
           final messageId = event.data['messageId'];
@@ -615,12 +1051,16 @@ class _ChatScreenState extends State<ChatScreen> {
           if (event.name == 'chat.reasoning.delta') {
             updateReasoningSummaries(event.data['reasoningGroups']);
           }
+          if (event.name == 'chat.tool.updated') {
+            updateToolActivity(event.data['toolActivity']);
+          }
           final snapshot = chat.ChatMessage(
             id: messageId,
             role: chat.ChatMessageRole.assistant,
             content: content,
             createdAt: assistantCreatedAt,
             reasoningSummaries: assistantReasoningSummaries,
+            toolActivities: assistantToolActivities,
             status: chat.ChatMessageStatus.streaming,
           );
           persistence = persistence.then(
@@ -691,42 +1131,106 @@ class _ChatScreenState extends State<ChatScreen> {
                 ? null
                 : Duration(microseconds: elapsedMicroseconds),
             reasoningSummaries: assistantReasoningSummaries,
+            toolActivities: assistantToolActivities,
             status: status,
           ),
         );
+        if (responseToReplace != null) {
+          if (status == chat.ChatMessageStatus.completed) {
+            try {
+              await repository.deleteMessage(
+                conversationId: conversationId,
+                messageId: responseToReplace.id,
+              );
+            } on Object catch (error, stackTrace) {
+              FlutterError.reportError(
+                FlutterErrorDetails(
+                  exception: error,
+                  stack: stackTrace,
+                  library: 'chat_history',
+                  context: ErrorDescription(
+                    'while replacing an earlier assistant response',
+                  ),
+                ),
+              );
+              if (mounted) {
+                _showMessage(context.zihoraL10n.responseReplaceFailed);
+              }
+            }
+          } else {
+            final discarded = await _discardReplacementAttempt(
+              repository,
+              conversationId,
+              savedMessageId,
+            );
+            if (mounted) {
+              _showMessage(
+                discarded
+                    ? context.zihoraL10n.responseRetryNotCompleted
+                    : context.zihoraL10n.responseRetryCleanupFailed,
+              );
+            }
+          }
+        }
       }
     } on ZihoraServiceException catch (error) {
       await persistence;
       final failedMessageId = assistantMessageId;
+      var retryCleanupSucceeded = true;
       if (failedMessageId != null) {
-        await repository.saveMessage(
-          conversationId: conversationId,
-          message: chat.ChatMessage(
-            id: failedMessageId,
-            role: chat.ChatMessageRole.assistant,
-            content: assistantContent,
-            createdAt: assistantCreatedAt,
-            reasoningSummaries: assistantReasoningSummaries,
-            status: chat.ChatMessageStatus.failed,
-          ),
-        );
+        if (responseToReplace == null) {
+          await repository.saveMessage(
+            conversationId: conversationId,
+            message: chat.ChatMessage(
+              id: failedMessageId,
+              role: chat.ChatMessageRole.assistant,
+              content: assistantContent,
+              createdAt: assistantCreatedAt,
+              reasoningSummaries: assistantReasoningSummaries,
+              toolActivities: assistantToolActivities,
+              status: chat.ChatMessageStatus.failed,
+            ),
+          );
+        } else {
+          retryCleanupSucceeded = await _discardReplacementAttempt(
+            repository,
+            conversationId,
+            failedMessageId,
+          );
+        }
       }
-      if (mounted) _showServiceFailure(error);
+      if (mounted) {
+        if (retryCleanupSucceeded) {
+          _showServiceFailure(error);
+        } else {
+          _showMessage(context.zihoraL10n.responseRetryCleanupFailed);
+        }
+      }
     } on Object catch (error, stackTrace) {
       await persistence;
       final failedMessageId = assistantMessageId;
+      var retryCleanupSucceeded = true;
       if (failedMessageId != null) {
-        await repository.saveMessage(
-          conversationId: conversationId,
-          message: chat.ChatMessage(
-            id: failedMessageId,
-            role: chat.ChatMessageRole.assistant,
-            content: assistantContent,
-            createdAt: assistantCreatedAt,
-            reasoningSummaries: assistantReasoningSummaries,
-            status: chat.ChatMessageStatus.failed,
-          ),
-        );
+        if (responseToReplace == null) {
+          await repository.saveMessage(
+            conversationId: conversationId,
+            message: chat.ChatMessage(
+              id: failedMessageId,
+              role: chat.ChatMessageRole.assistant,
+              content: assistantContent,
+              createdAt: assistantCreatedAt,
+              reasoningSummaries: assistantReasoningSummaries,
+              toolActivities: assistantToolActivities,
+              status: chat.ChatMessageStatus.failed,
+            ),
+          );
+        } else {
+          retryCleanupSucceeded = await _discardReplacementAttempt(
+            repository,
+            conversationId,
+            failedMessageId,
+          );
+        }
       }
       FlutterError.reportError(
         FlutterErrorDetails(
@@ -736,11 +1240,49 @@ class _ChatScreenState extends State<ChatScreen> {
           context: ErrorDescription('while sending a ChatGPT message'),
         ),
       );
-      if (mounted) _showMessage(context.zihoraL10n.chatRequestFailed);
+      if (mounted) {
+        _showMessage(
+          retryCleanupSucceeded
+              ? context.zihoraL10n.chatRequestFailed
+              : context.zihoraL10n.responseRetryCleanupFailed,
+        );
+      }
     } finally {
       await subscription?.cancel();
       _activeChatOperation = null;
-      if (mounted) setState(() => _isSending = false);
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+          if (_activeChatConversationId == conversationId) {
+            _activeChatConversationId = null;
+            _replacingAssistantMessageId = null;
+          }
+        });
+      }
+    }
+  }
+
+  Future<bool> _discardReplacementAttempt(
+    ChatRepository repository,
+    String conversationId,
+    String messageId,
+  ) async {
+    try {
+      await repository.deleteMessage(
+        conversationId: conversationId,
+        messageId: messageId,
+      );
+      return true;
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_history',
+          context: ErrorDescription('while discarding an incomplete retry'),
+        ),
+      );
+      return false;
     }
   }
 
@@ -749,16 +1291,158 @@ class _ChatScreenState extends State<ChatScreen> {
     if (operation != null) unawaited(operation.cancel());
   }
 
+  Future<void> _handleToolPermissionRequest(
+    ZihoraServiceClient service,
+    Map<String, Object?> data,
+  ) async {
+    final requestId = data['approvalRequestId'];
+    final toolName = data['toolName'];
+    final targetPath = data['targetPath'];
+    if (requestId is! String ||
+        requestId.isEmpty ||
+        toolName is! String ||
+        targetPath is! String) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: const FormatException(
+            'A tool permission request was invalid.',
+          ),
+          library: 'local_service',
+        ),
+      );
+      unawaited(_activeChatOperation?.cancel());
+      return;
+    }
+
+    var approved = false;
+    try {
+      if (mounted) {
+        final l10n = context.zihoraL10n;
+        final arguments = const JsonEncoder.withIndent('  ')
+            .convert(data['arguments']);
+        final decision = await showDialog<_ToolPermissionDecision>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => AlertDialog(
+            title: Text(l10n.toolPermissionRequestTitle),
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(l10n.toolPermissionRequestDescription),
+                    const SizedBox(height: 20),
+                    Text(
+                      l10n.toolPermissionTool,
+                      style: Theme.of(dialogContext).textTheme.labelLarge,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(_toolName(toolName, l10n)),
+                    const SizedBox(height: 16),
+                    Text(
+                      l10n.toolPermissionTarget,
+                      style: Theme.of(dialogContext).textTheme.labelLarge,
+                    ),
+                    const SizedBox(height: 6),
+                    SelectableText(targetPath),
+                    const SizedBox(height: 16),
+                    Text(
+                      l10n.toolPermissionArguments,
+                      style: Theme.of(dialogContext).textTheme.labelLarge,
+                    ),
+                    const SizedBox(height: 6),
+                    SelectableText(arguments),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () =>
+                    Navigator.of(dialogContext)
+                        .pop(_ToolPermissionDecision.deny),
+                child: Text(l10n.toolPermissionDeny),
+              ),
+              TextButton(
+                onPressed: () =>
+                    Navigator.of(dialogContext)
+                        .pop(_ToolPermissionDecision.stop),
+                child: Text(l10n.toolPermissionStopResponse),
+              ),
+              FilledButton(
+                onPressed: () =>
+                    Navigator.of(dialogContext)
+                        .pop(_ToolPermissionDecision.allow),
+                child: Text(l10n.toolPermissionAllowOnce),
+              ),
+            ],
+          ),
+        );
+        if (decision == _ToolPermissionDecision.stop) {
+          await _activeChatOperation?.cancel();
+          return;
+        }
+        approved = decision == _ToolPermissionDecision.allow;
+      }
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_tool_permissions',
+          context: ErrorDescription('while asking for tool permission'),
+        ),
+      );
+    }
+
+    try {
+      await service.call(
+        'chat.tool.permission.respond',
+        params: <String, Object?>{
+          'approvalRequestId': requestId,
+          'approved': approved,
+        },
+      );
+    } on Object catch (error, stackTrace) {
+      if (error is ZihoraServiceException &&
+          error.code == 'tool_permission_request_unavailable') {
+        unawaited(_activeChatOperation?.cancel());
+        return;
+      }
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'local_service',
+          context: ErrorDescription('while responding to tool permission'),
+        ),
+      );
+      unawaited(_activeChatOperation?.cancel());
+      if (mounted) _showMessage(context.zihoraL10n.chatRequestFailed);
+    }
+  }
+
+  String _toolName(String name, AppLocalizations l10n) => switch (name) {
+    'list_files' => l10n.toolListFiles,
+    'search_files' => l10n.toolSearchFiles,
+    'read_file' => l10n.toolReadFile,
+    'get_file_info' => l10n.toolGetFileInfo,
+    _ => name,
+  };
+
   void _showServiceFailure(ZihoraServiceException error) {
     final l10n = context.zihoraL10n;
     final message = switch (error.code) {
-      'rate_limited' => l10n.chatGptRateLimited,
+      'rate_limited' => l10n.providerRateLimited,
       'authentication_required' ||
-      'refresh_rejected' => l10n.chatGptReauthenticationRequired,
+      'refresh_rejected' => l10n.providerAuthenticationRequired,
       'provider_endpoint_unavailable' ||
-      'invalid_provider_response' => l10n.chatGptProviderChanged,
+      'invalid_provider_response' => l10n.providerRequestFailed,
       'model_unavailable' || 'conversation_not_routed' => l10n.modelRequired,
-      _ => l10n.chatRequestFailed,
+      'invalid_retry_target' => l10n.responseRetryUnavailable,
+      _ => l10n.providerRequestFailed,
     };
     showZihoraToast(context, message, type: ZihoraToastType.error);
   }
@@ -766,6 +1450,60 @@ class _ChatScreenState extends State<ChatScreen> {
   void _showMessage(String message) {
     if (!mounted) return;
     showZihoraToast(context, message, type: ZihoraToastType.error);
+  }
+
+  Future<void> _loadToolPermissionMode() async {
+    try {
+      final mode = await _settingsPreferences.readToolPermissionMode();
+      if (!mounted) return;
+      setState(() {
+        _toolPermissionMode = mode;
+        _toolPermissionModeReady = true;
+        _isLoadingToolPermissionMode = false;
+      });
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription('while loading tool access settings'),
+        ),
+      );
+      if (!mounted) return;
+      setState(() => _isLoadingToolPermissionMode = false);
+      _showMessage(context.zihoraL10n.toolPermissionSettingsLoadFailed);
+    }
+  }
+
+  Future<void> _selectToolPermissionMode(ToolPermissionMode mode) async {
+    if (_isLoadingToolPermissionMode ||
+        _isSavingToolPermissionMode ||
+        (mode == _toolPermissionMode && _toolPermissionModeReady)) {
+      return;
+    }
+    setState(() => _isSavingToolPermissionMode = true);
+    try {
+      await _settingsPreferences.writeToolPermissionMode(mode);
+      if (!mounted) return;
+      setState(() {
+        _toolPermissionMode = mode;
+        _toolPermissionModeReady = true;
+        _isSavingToolPermissionMode = false;
+      });
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription('while saving tool access settings'),
+        ),
+      );
+      if (!mounted) return;
+      setState(() => _isSavingToolPermissionMode = false);
+      _showMessage(context.zihoraL10n.toolPermissionSettingsSaveFailed);
+    }
   }
 
   Future<void> _toggleConversationPinned(String conversationId) async {
@@ -909,6 +1647,19 @@ class _ChatScreenState extends State<ChatScreen> {
     await _loadProviderState();
   }
 
+  Future<void> _refreshProviderState() async {
+    if (_selectedProviderId == 'opencode') {
+      await _loadModels(
+        '',
+        '',
+        selectedModelId: _selectedModelId,
+        forceRefresh: true,
+      );
+    } else {
+      await _loadProviderState(forceRefresh: true);
+    }
+  }
+
   void _requestConversationRename(String conversationId) {
     if (_selectedConversationId != conversationId) {
       _selectConversation(conversationId);
@@ -951,6 +1702,181 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _deleteConversation(String conversationId) async {
+    final repository = widget.chatRepository;
+    if (repository == null) return;
+    if (_activeChatConversationId == conversationId) {
+      _showMessage(context.zihoraL10n.stopResponseBeforeDelete);
+      return;
+    }
+
+    try {
+      final conversation = await repository.getConversation(conversationId);
+      if (conversation == null || !mounted) return;
+      final l10n = context.zihoraL10n;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(l10n.confirmDeleteConversationTitle),
+          content: Text(l10n.confirmDeleteConversation(conversation.title)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(l10n.cancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: Text(l10n.deleteConversation),
+            ),
+          ],
+        ),
+      );
+      if (confirmed != true || !mounted) return;
+      if (_activeChatConversationId == conversationId) {
+        _showMessage(context.zihoraL10n.stopResponseBeforeDelete);
+        return;
+      }
+
+      await repository.deleteConversation(conversationId);
+      if (!mounted) return;
+      if (_selectedConversationId == conversationId) _startNewConversation();
+      showZihoraToast(
+        context,
+        context.zihoraL10n.conversationDeleted,
+        type: ZihoraToastType.success,
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_history',
+          context: ErrorDescription('while deleting a conversation'),
+        ),
+      );
+      if (mounted) _showMessage(context.zihoraL10n.conversationDeleteFailed);
+    }
+  }
+
+  Future<void> _exportConversation(String conversationId) async {
+    final repository = widget.chatRepository;
+    if (repository == null) return;
+
+    try {
+      final conversation = await repository.getConversation(conversationId);
+      if (conversation == null || !mounted) return;
+      final messages = await repository.getMessages(conversationId);
+      if (!mounted) return;
+
+      final l10n = context.zihoraL10n;
+      final providerLabel = conversation.providerId == 'opencode'
+          ? l10n.openCodeProvider
+          : l10n.chatGptProvider;
+      final modelLabel = conversation.modelId ?? l10n.messageModelUnavailable;
+      final markdown = StringBuffer()
+        ..writeln('# ${conversation.title}')
+        ..writeln()
+        ..writeln('**${l10n.conversationExportProvider}:** $providerLabel')
+        ..writeln('**${l10n.conversationExportModel}:** $modelLabel')
+        ..writeln(
+          '**${l10n.conversationExportCreated}:** ${conversation.createdAt.toUtc().toIso8601String()}',
+        )
+        ..writeln()
+        ..writeln('---')
+        ..writeln();
+
+      for (final message in messages) {
+        final speaker = message.role == chat.ChatMessageRole.user
+            ? l10n.userMessage
+            : modelLabel;
+        final timestamp = message.createdAt?.toUtc().toIso8601String();
+        markdown
+          ..writeln('## $speaker${timestamp == null ? '' : ' · $timestamp'}')
+          ..writeln();
+        if (message.status != chat.ChatMessageStatus.completed) {
+          final status = switch (message.status) {
+            chat.ChatMessageStatus.streaming => l10n.responseInProgress,
+            chat.ChatMessageStatus.failed => l10n.responseFailed,
+            chat.ChatMessageStatus.stopped => l10n.responseStopped,
+            chat.ChatMessageStatus.completed => '',
+          };
+          markdown
+            ..writeln('> **${l10n.conversationExportStatus}:** $status')
+            ..writeln();
+        }
+        for (final summary in message.reasoningSummaries) {
+          if (summary.content.trim().isEmpty) continue;
+          final elapsed = summary.elapsed;
+          final duration = elapsed == null
+              ? ''
+              : ' · ${l10n.secondsShort(elapsed.inSeconds)}';
+          markdown
+            ..writeln('### ${l10n.reasoningSummary}$duration')
+            ..writeln()
+            ..writeln(summary.content)
+            ..writeln();
+        }
+        for (final activity in message.toolActivities) {
+          final toolData = <String, Object?>{
+            'name': activity.name,
+            'status': switch (activity.status) {
+              chat.ChatToolActivityStatus.awaitingApproval =>
+                l10n.toolAwaitingApproval,
+              chat.ChatToolActivityStatus.running => l10n.toolRunning,
+              chat.ChatToolActivityStatus.completed => l10n.toolCompleted,
+              chat.ChatToolActivityStatus.failed => l10n.toolFailed,
+              chat.ChatToolActivityStatus.denied => l10n.toolDenied,
+              chat.ChatToolActivityStatus.cancelled => l10n.toolCancelled,
+            },
+            'arguments': activity.arguments,
+            if (activity.targetPath != null) 'targetPath': activity.targetPath,
+            if (activity.output != null) 'output': activity.output,
+          };
+          final formattedToolData = const JsonEncoder.withIndent('  ')
+              .convert(toolData);
+          final codeFence = _markdownCodeFence(formattedToolData);
+          markdown
+            ..writeln('### ${l10n.conversationExportToolActivity}')
+            ..writeln()
+            ..writeln('${codeFence}json')
+            ..writeln(formattedToolData)
+            ..writeln(codeFence)
+            ..writeln();
+        }
+        markdown
+          ..writeln(message.content)
+          ..writeln();
+      }
+
+      final savedPath = await FilePicker.saveFile(
+        fileName: _conversationExportFileName(conversation.title),
+        bytes: Uint8List.fromList(utf8.encode(markdown.toString())),
+        mimeType: 'text/markdown',
+        dialogTitle: l10n.exportConversation,
+        type: FileType.custom,
+        allowedExtensions: const ['md'],
+        windowsOptions: const WindowsOptions(lockParentWindow: true),
+        linuxOptions: const LinuxOptions(lockParentWindow: true),
+      );
+      if (savedPath == null || !mounted) return;
+      showZihoraToast(
+        context,
+        context.zihoraL10n.conversationExported,
+        type: ZihoraToastType.success,
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_history',
+          context: ErrorDescription('while exporting a conversation'),
+        ),
+      );
+      if (mounted) _showMessage(context.zihoraL10n.conversationExportFailed);
+    }
+  }
+
   String _newLocalId() {
     _nextLocalId++;
     return '${DateTime.now().toUtc().microsecondsSinceEpoch}-$_nextLocalId';
@@ -960,6 +1886,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _searchController.dispose();
     _messageController.dispose();
+    _messageScrollController.dispose();
     super.dispose();
   }
 
@@ -1000,7 +1927,7 @@ class _ChatScreenState extends State<ChatScreen> {
           builder: (context, constraints) {
             final showSidebar =
                 !_settingsOpen &&
-                !_sidebarCollapsed &&
+                !_sidebarsCollapsed &&
                 constraints.maxWidth >= ZihoraSpacing.sidebarBreakpoint;
             final expandedRail =
                 constraints.maxWidth >= ZihoraSpacing.expandedRailBreakpoint;
@@ -1029,55 +1956,74 @@ class _ChatScreenState extends State<ChatScreen> {
                           selectedConversationId: _selectedConversationId,
                           isLoading: isLoading,
                           errorMessage: historyError,
-                          onCollapse: () =>
-                              setState(() => _sidebarCollapsed = true),
                         ),
                       ),
                     ),
-              body: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
+              body: Stack(
                 children: [
-                  ChatNavigationRail(
-                    expanded: expandedRail,
-                    settingsSelected: _settingsOpen,
-                    onOpenChat: _startNewConversation,
-                    onOpenSettings: () => setState(() => _settingsOpen = true),
-                    onToggleTheme: _handleThemeToggle,
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (!_sidebarsCollapsed)
+                        ChatNavigationRail(
+                          expanded: expandedRail,
+                          settingsSelected: _settingsOpen,
+                          onOpenChat: _startNewConversation,
+                          onOpenSettings: () =>
+                              setState(() => _settingsOpen = true),
+                          onToggleTheme: _handleThemeToggle,
+                          onCollapseSidebars: () =>
+                              setState(() => _sidebarsCollapsed = true),
+                        ),
+                      if (_settingsOpen)
+                        Expanded(
+                          child: SettingsScreen(
+                            themeMode: widget.themeMode,
+                            locale: widget.locale,
+                            settingsPreferences: _settingsPreferences,
+                            onThemeModeChanged: widget.onThemeModeChanged,
+                            onLocaleChanged: widget.onLocaleChanged,
+                            historyStorageStatus: resolvedStorageStatus,
+                            hasConversationHistory: conversations.isNotEmpty,
+                            onClearConversationHistory:
+                                widget.chatRepository == null
+                                ? null
+                                : _clearConversationHistory,
+                            chatGptApiKeyStore: widget.chatGptApiKeyStore,
+                            openCodeApiKeyStore: widget.openCodeApiKeyStore,
+                            serviceClient: widget.serviceClient,
+                            onProviderStateChanged: _refreshProviderState,
+                            onConnectionRemoved: _handleConnectionRemoved,
+                          ),
+                        )
+                      else ...[
+                        if (showSidebar)
+                          _buildSidebar(
+                            width: sidebarWidth,
+                            conversations: conversations,
+                            selectedConversationId: _selectedConversationId,
+                            isLoading: isLoading,
+                            errorMessage: historyError,
+                          ),
+                        Expanded(
+                          child: _buildConversationPane(
+                            selectedConversation: selectedConversation,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                  if (_settingsOpen)
-                    Expanded(
-                      child: SettingsScreen(
-                        themeMode: widget.themeMode,
-                        onThemeModeChanged: widget.onThemeModeChanged,
-                        historyStorageStatus: resolvedStorageStatus,
-                        hasConversationHistory: conversations.isNotEmpty,
-                        onClearConversationHistory:
-                            widget.chatRepository == null
-                            ? null
-                            : _clearConversationHistory,
-                        chatGptApiKeyStore: widget.chatGptApiKeyStore,
-                        serviceClient: widget.serviceClient,
-                        onProviderStateChanged: _loadProviderState,
-                        onConnectionRemoved: _handleConnectionRemoved,
-                      ),
-                    )
-                  else ...[
-                    if (showSidebar)
-                      _buildSidebar(
-                        width: sidebarWidth,
-                        conversations: conversations,
-                        selectedConversationId: _selectedConversationId,
-                        isLoading: isLoading,
-                        errorMessage: historyError,
-                        onCollapse: () =>
-                            setState(() => _sidebarCollapsed = true),
-                      ),
-                    Expanded(
-                      child: _buildConversationPane(
-                        selectedConversation: selectedConversation,
+                  if (_sidebarsCollapsed && _settingsOpen)
+                    Positioned(
+                      left: 12,
+                      top: 8,
+                      child: IconButton(
+                        tooltip: context.zihoraL10n.showSidebars,
+                        onPressed: () =>
+                            setState(() => _sidebarsCollapsed = false),
+                        icon: const Icon(Icons.chevron_right_rounded),
                       ),
                     ),
-                  ],
                 ],
               ),
             );
@@ -1094,7 +2040,6 @@ class _ChatScreenState extends State<ChatScreen> {
     required bool isLoading,
     required String? errorMessage,
     bool showDivider = true,
-    VoidCallback? onCollapse,
   }) {
     return StreamBuilder<List<ChatProject>>(
       stream: _projectStream,
@@ -1129,7 +2074,6 @@ class _ChatScreenState extends State<ChatScreen> {
         return ConversationSidebar(
           width: width,
           showDivider: showDivider,
-          onCollapse: onCollapse,
           searchController: _searchController,
           projects: sidebarProjects,
           projectsLoading:
@@ -1152,6 +2096,10 @@ class _ChatScreenState extends State<ChatScreen> {
           onPinConversation: (conversationId) =>
               unawaited(_pinConversation(conversationId)),
           onRenameConversation: _requestConversationRename,
+          onDeleteConversation: (conversationId) =>
+              unawaited(_deleteConversation(conversationId)),
+          onExportConversation: (conversationId) =>
+              unawaited(_exportConversation(conversationId)),
           onMoveConversationToProject: (conversationId, projectId) =>
               unawaited(_moveConversationToProject(conversationId, projectId)),
           onMoveConversationToChats: (conversationId) =>
@@ -1200,22 +2148,35 @@ class _ChatScreenState extends State<ChatScreen> {
         reasoningOptions.contains(_selectedReasoningEffort)
         ? _selectedReasoningEffort
         : selectedModel?.defaultReasoningLevel;
+    final routeProviderId =
+        selectedConversation?.providerId ?? _selectedProviderId;
     final routeConnectionId =
         selectedConversation?.connectionId ?? _selectedConnectionId;
     final routeWorkspaceId =
         selectedConversation?.workspaceId ?? _selectedWorkspaceId;
-    final routeReady = routeConnectionId != null && routeWorkspaceId != null;
+    final routeReady =
+        routeProviderId == 'opencode' ||
+        (routeConnectionId != null && routeWorkspaceId != null);
     final modelRouteReady =
-        routeConnectionId == _loadedConnectionId &&
-        routeWorkspaceId == _loadedWorkspaceId;
+        _loadedProviderId == routeProviderId &&
+        (routeProviderId == 'opencode' ||
+            (routeConnectionId == _loadedConnectionId &&
+                routeWorkspaceId == _loadedWorkspaceId));
     final canSend =
         widget.historyStorageStatus == HistoryStorageStatus.available &&
+        _toolPermissionModeReady &&
+        !_isLoadingToolPermissionMode &&
+        !_isSavingToolPermissionMode &&
         routeReady &&
         modelRouteReady &&
         selectedModel != null &&
         !_isUpdatingConversationModel &&
         !_isSending;
     final l10n = context.zihoraL10n;
+    final modelsEmptyLabel =
+        _modelLoadError == null || _modelLoadError == 'empty'
+        ? l10n.noModelsAvailable
+        : l10n.modelsUnavailable;
     final resolvedModelLabel = _isLoadingModels
         ? l10n.modelsLoading
         : _modelLoadError == 'empty'
@@ -1229,54 +2190,133 @@ class _ChatScreenState extends State<ChatScreen> {
     return StreamBuilder<List<chat.ChatMessage>>(
       stream: selectedConversation == null ? null : _messageStream,
       builder: (context, messageSnapshot) {
-        return ConversationPane(
-          messageController: _messageController,
-          showHistoryButton:
-              _sidebarCollapsed ||
-              MediaQuery.sizeOf(context).width <
-                  ZihoraSpacing.sidebarBreakpoint,
-          onOpenHistory: () {
-            if (_sidebarCollapsed) {
-              setState(() => _sidebarCollapsed = false);
-              if (MediaQuery.sizeOf(context).width <
-                  ZihoraSpacing.sidebarBreakpoint) {
-                _scaffoldKey.currentState?.openDrawer();
-              }
-            } else {
-              _scaffoldKey.currentState?.openDrawer();
-            }
+        final storedMessages = selectedConversation == null
+            ? const <chat.ChatMessage>[]
+            : messageSnapshot.data ?? const <chat.ChatMessage>[];
+        final messages =
+            _replacingAssistantMessageId != null &&
+                _activeChatConversationId == selectedConversation?.id
+            ? storedMessages
+                  .where(
+                    (message) => message.id != _replacingAssistantMessageId,
+                  )
+                  .toList(growable: false)
+            : storedMessages;
+        return StreamBuilder<List<FavoriteModel>>(
+          stream: _favoriteModelsStream,
+          builder: (context, favoriteSnapshot) {
+            return ConversationPane(
+              messageController: _messageController,
+              messageScrollController: _messageScrollController,
+              showHistoryButton:
+                  _sidebarsCollapsed ||
+                  MediaQuery.sizeOf(context).width <
+                      ZihoraSpacing.sidebarBreakpoint,
+              historyButtonTooltip: _sidebarsCollapsed
+                  ? context.zihoraL10n.showSidebars
+                  : null,
+              onOpenHistory: () {
+                if (_sidebarsCollapsed) {
+                  setState(() => _sidebarsCollapsed = false);
+                  if (MediaQuery.sizeOf(context).width <
+                      ZihoraSpacing.sidebarBreakpoint) {
+                    _scaffoldKey.currentState?.openDrawer();
+                  }
+                } else {
+                  _scaffoldKey.currentState?.openDrawer();
+                }
+              },
+              onSendMessage: () =>
+                  unawaited(_sendMessage(selectedConversation)),
+              onRetryResponse: selectedConversation == null
+                  ? null
+                  : (message) => unawaited(
+                      _sendMessage(
+                        selectedConversation,
+                        responseToReplace: message,
+                      ),
+                    ),
+              onStopMessage: _stopMessage,
+              canSendMessage: canSend,
+              isSending: _isSending,
+              isLoadingModels: _isLoadingModels,
+              models: modelOptions,
+              favoriteModels: favoriteSnapshot.data ?? const <FavoriteModel>[],
+              providerId: routeProviderId,
+              onProviderSelected: selectedConversation == null
+                  ? _selectProvider
+                  : null,
+              selectedModelId: selectedModelId,
+              onModelSelected: _isUpdatingConversationModel
+                  ? null
+                  : _selectModel,
+              onModelFavoriteChanged:
+                  (providerId, modelId, displayName, isFavorite) => unawaited(
+                    _setModelFavorite(
+                      providerId: providerId,
+                      modelId: modelId,
+                      displayName: displayName,
+                      isFavorite: isFavorite,
+                    ),
+                  ),
+              onFavoriteModelSelected: (favorite) =>
+                  unawaited(_selectFavoriteModel(favorite)),
+              reasoningOptions: reasoningOptions,
+              onReasoningSelected: _selectReasoning,
+              selectedModelLabel: resolvedModelLabel,
+              modelsEmptyLabel: modelsEmptyLabel,
+              reasoningLevel: selectedReasoning,
+              toolPermissionMode: _toolPermissionMode,
+              onToolPermissionModeChanged:
+                  _isLoadingToolPermissionMode || _isSavingToolPermissionMode
+                  ? null
+                  : _selectToolPermissionMode,
+              conversationTitle: selectedConversation?.title,
+              conversationId: selectedConversation?.id,
+              titleEditRequestId: _titleEditRequestId,
+              onRenameConversation: _renameConversation,
+              onConversationTitleEditFinished: _finishConversationTitleEdit,
+              assistantModelLabel: modelLabel,
+              messages: messages,
+              showAssistantLoading:
+                  _isSending &&
+                  _activeChatConversationId != null &&
+                  _activeChatConversationId == _selectedConversationId,
+              messagesLoading:
+                  selectedConversation != null &&
+                  !messageSnapshot.hasData &&
+                  !messageSnapshot.hasError,
+              messagesErrorDescription: messageSnapshot.hasError
+                  ? context.zihoraL10n.messageHistoryLoadFailed
+                  : null,
+            );
           },
-          onSendMessage: () => unawaited(_sendMessage(selectedConversation)),
-          onStopMessage: _stopMessage,
-          canSendMessage: canSend,
-          isSending: _isSending,
-          models: modelOptions,
-          selectedModelId: selectedModelId,
-          onModelSelected: _isUpdatingConversationModel ? null : _selectModel,
-          reasoningOptions: reasoningOptions,
-          onReasoningSelected: _selectReasoning,
-          selectedModelLabel: resolvedModelLabel,
-          reasoningLevel: selectedReasoning,
-          conversationTitle: selectedConversation?.title,
-          conversationId: selectedConversation?.id,
-          titleEditRequestId: _titleEditRequestId,
-          onRenameConversation: _renameConversation,
-          onConversationTitleEditFinished: _finishConversationTitleEdit,
-          assistantModelLabel: modelLabel,
-          messages: selectedConversation == null
-              ? const <chat.ChatMessage>[]
-              : messageSnapshot.data ?? const <chat.ChatMessage>[],
-          messagesLoading:
-              selectedConversation != null &&
-              !messageSnapshot.hasData &&
-              !messageSnapshot.hasError,
-          messagesErrorDescription: messageSnapshot.hasError
-              ? context.zihoraL10n.messageHistoryLoadFailed
-              : null,
         );
       },
     );
   }
+}
+
+String _conversationExportFileName(String title) {
+  final cleaned = title
+      .trim()
+      .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1f]'), '_')
+      .replaceAll(RegExp(r'\s+'), '_')
+      .replaceAll(RegExp(r'[. ]+$'), '');
+  if (cleaned.isEmpty) return 'conversation.md';
+  final baseName = cleaned.length > 80 ? cleaned.substring(0, 80) : cleaned;
+  return '$baseName.md';
+}
+
+String _markdownCodeFence(String content) {
+  var longestBacktickRun = 2;
+  for (final match in RegExp(r'`+').allMatches(content)) {
+    final runLength = match.group(0)?.length;
+    if (runLength != null && runLength > longestBacktickRun) {
+      longestBacktickRun = runLength;
+    }
+  }
+  return '`' * (longestBacktickRun + 1);
 }
 
 Map<String, Object?> _objectMap(Object? value) {

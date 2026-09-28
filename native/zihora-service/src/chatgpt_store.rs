@@ -78,8 +78,10 @@ pub struct TitlePreference {
 
 #[derive(Clone, Debug)]
 pub struct StoredMessage {
+    pub id: String,
     pub role: String,
     pub content: String,
+    pub status: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -656,7 +658,44 @@ pub fn save_models(
             ],
         )?;
     }
+    transaction.execute(
+        "INSERT INTO chatgpt_model_catalog_state (
+            connection_id, workspace_id, fetched_at_unix_ms, client_version
+        ) VALUES (?1, ?2, ?3, ?4)
+        ON CONFLICT(connection_id, workspace_id) DO UPDATE SET
+            fetched_at_unix_ms = excluded.fetched_at_unix_ms,
+            client_version = excluded.client_version",
+        params![connection_id, workspace_id, fetched_at, client_version],
+    )?;
     transaction.commit()
+}
+
+pub fn list_fresh_models(
+    storage: &AppStorage,
+    connection_id: &str,
+    workspace_id: &str,
+    client_version: &str,
+    max_age_millis: i64,
+) -> rusqlite::Result<Option<Vec<ChatGptModel>>> {
+    let database = storage.connect()?;
+    let cache_state = database
+        .query_row(
+            "SELECT fetched_at_unix_ms, client_version
+             FROM chatgpt_model_catalog_state
+             WHERE connection_id = ?1 AND workspace_id = ?2",
+            params![connection_id, workspace_id],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?;
+    let now = unix_time_millis()?;
+    let Some((fetched_at, cached_version)) = cache_state else {
+        return Ok(None);
+    };
+    if cached_version != client_version || fetched_at < now.saturating_sub(max_age_millis) {
+        return Ok(None);
+    }
+    drop(database);
+    list_models(storage, connection_id, workspace_id).map(Some)
 }
 
 pub fn list_models(
@@ -731,17 +770,34 @@ pub fn conversation_messages(
 ) -> rusqlite::Result<Vec<StoredMessage>> {
     let database = storage.connect()?;
     let mut statement = database.prepare(
-        "SELECT role, content FROM messages
+        "SELECT id, role, content, status FROM messages
          WHERE conversation_id = ?1 AND role IN ('user', 'assistant')
          ORDER BY created_at ASC, id ASC",
     )?;
     let rows = statement.query_map([conversation_id], |row| {
         Ok(StoredMessage {
-            role: row.get(0)?,
-            content: row.get(1)?,
+            id: row.get(0)?,
+            role: row.get(1)?,
+            content: row.get(2)?,
+            status: row.get(3)?,
         })
     })?;
     rows.collect()
+}
+
+pub fn is_retryable_latest_assistant_message(messages: &[StoredMessage], id: &str) -> bool {
+    let Some(last) = messages.last() else {
+        return false;
+    };
+    if last.id != id
+        || last.role != "assistant"
+        || !matches!(last.status.as_str(), "completed" | "failed" | "stopped")
+    {
+        return false;
+    }
+    messages
+        .get(messages.len().saturating_sub(2))
+        .is_some_and(|previous| previous.role == "user")
 }
 
 pub fn apply_generated_title(

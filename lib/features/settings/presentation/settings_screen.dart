@@ -8,6 +8,8 @@ import '../../../app/zihora_theme.dart';
 import '../../../app/zihora_toast.dart';
 import '../../chat/domain/chatgpt_connection.dart';
 import '../data/chat_gpt_api_key_store.dart';
+import '../data/open_code_api_key_store.dart';
+import '../data/settings_preferences.dart';
 import '../domain/chat_gpt_api_key_connection.dart';
 import '../domain/chat_gpt_usage_snapshot.dart';
 import '../../chat/domain/history_storage_status.dart';
@@ -22,8 +24,12 @@ class SettingsScreen extends StatefulWidget {
     required this.onThemeModeChanged,
     required this.historyStorageStatus,
     required this.hasConversationHistory,
+    required this.settingsPreferences,
+    this.locale,
+    this.onLocaleChanged,
     this.onClearConversationHistory,
     this.chatGptApiKeyStore,
+    this.openCodeApiKeyStore,
     this.serviceClient,
     this.onProviderStateChanged,
     this.onConnectionRemoved,
@@ -31,11 +37,15 @@ class SettingsScreen extends StatefulWidget {
   });
 
   final ThemeMode themeMode;
+  final Locale? locale;
   final Future<void> Function(ThemeMode) onThemeModeChanged;
+  final Future<void> Function(Locale?)? onLocaleChanged;
   final HistoryStorageStatus historyStorageStatus;
   final bool hasConversationHistory;
+  final SettingsPreferences settingsPreferences;
   final Future<void> Function()? onClearConversationHistory;
   final ChatGptApiKeyStore? chatGptApiKeyStore;
+  final OpenCodeApiKeyStore? openCodeApiKeyStore;
   final ZihoraServiceClient? serviceClient;
   final Future<void> Function()? onProviderStateChanged;
   final Future<void> Function(String connectionId)? onConnectionRemoved;
@@ -45,7 +55,27 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  late final TextEditingController _sharedInstructionsController;
   bool _isClearingHistory = false;
+  bool _isSavingLanguage = false;
+  bool _isLoadingInstructions = true;
+  bool _isSavingInstructions = false;
+  String _savedSharedInstructions = '';
+  String? _sharedInstructionsError;
+  int _languageSelectorRevision = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _sharedInstructionsController = TextEditingController();
+    unawaited(_loadSharedInstructions());
+  }
+
+  @override
+  void dispose() {
+    _sharedInstructionsController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -121,6 +151,94 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           onProviderStateChanged: widget.onProviderStateChanged,
                           onConnectionRemoved: widget.onConnectionRemoved,
                         ),
+                        const SizedBox(height: 22),
+                        _OpenCodeConnectionSection(
+                          apiKeyStore: widget.openCodeApiKeyStore,
+                          onChanged: widget.onProviderStateChanged,
+                        ),
+                        const SizedBox(height: 32),
+                        _SettingsDivider(color: palette.border),
+                        const SizedBox(height: 33),
+                        _SectionHeading(
+                          label: l10n.sharedInstructions,
+                          style: TextStyle(
+                            color: palette.text,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          l10n.sharedInstructionsDescription,
+                          style: TextStyle(
+                            color: palette.secondaryText,
+                            fontSize: 13,
+                            height: 1.45,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        if (_isLoadingInstructions)
+                          const LinearProgressIndicator()
+                        else if (_sharedInstructionsError != null)
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _sharedInstructionsError!,
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                ),
+                              ),
+                              TextButton.icon(
+                                onPressed: () =>
+                                    unawaited(_loadSharedInstructions()),
+                                icon: const Icon(Icons.refresh_rounded),
+                                label: Text(l10n.retry),
+                              ),
+                            ],
+                          )
+                        else ...[
+                          TextField(
+                            controller: _sharedInstructionsController,
+                            enabled: !_isSavingInstructions,
+                            minLines: 4,
+                            maxLines: 8,
+                            maxLength: 4096,
+                            textCapitalization: TextCapitalization.sentences,
+                            decoration: InputDecoration(
+                              hintText: l10n.sharedInstructionsHint,
+                              alignLabelWithHint: true,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            onChanged: (_) => setState(() {}),
+                          ),
+                          const SizedBox(height: 10),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: FilledButton.icon(
+                              onPressed:
+                                  _isSavingInstructions ||
+                                      _sharedInstructionsController.text ==
+                                          _savedSharedInstructions
+                                  ? null
+                                  : () => unawaited(_saveSharedInstructions()),
+                              icon: _isSavingInstructions
+                                  ? const SizedBox.square(
+                                      dimension: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.save_outlined),
+                              label: Text(
+                                _isSavingInstructions ? l10n.saving : l10n.save,
+                              ),
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 32),
                         _SettingsDivider(color: palette.border),
                         const SizedBox(height: 33),
@@ -149,6 +267,76 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             darkLabel: l10n.darkTheme,
                             palette: palette,
                           ),
+                        ),
+                        const SizedBox(height: 18),
+                        _SettingsRow(
+                          title: l10n.language,
+                          description: l10n.languageSettingDescription,
+                          textTheme: textTheme,
+                          controlWidth: 264,
+                          desktopControlTopInset: 0,
+                          controlBuilder: (width) {
+                            final languageCode =
+                                widget.locale?.languageCode ?? 'system';
+                            return SizedBox(
+                              width: width,
+                              height: 40,
+                              child: DropdownButtonFormField<String>(
+                                key: ValueKey<String>(
+                                  '$languageCode-$_languageSelectorRevision',
+                                ),
+                                initialValue: languageCode,
+                                isExpanded: true,
+                                decoration: InputDecoration(
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                                items: [
+                                  DropdownMenuItem<String>(
+                                    value: 'system',
+                                    child: Text(l10n.systemLanguage),
+                                  ),
+                                  DropdownMenuItem<String>(
+                                    value: 'tr',
+                                    child: Text(l10n.turkishLanguage),
+                                  ),
+                                  DropdownMenuItem<String>(
+                                    value: 'en',
+                                    child: Text(l10n.englishLanguage),
+                                  ),
+                                ],
+                                onChanged:
+                                    _isSavingLanguage ||
+                                        widget.onLocaleChanged == null
+                                    ? null
+                                    : (value) {
+                                        switch (value) {
+                                          case 'system':
+                                            unawaited(_changeLocale(null));
+                                          case 'tr':
+                                            unawaited(
+                                              _changeLocale(const Locale('tr')),
+                                            );
+                                          case 'en':
+                                            unawaited(
+                                              _changeLocale(const Locale('en')),
+                                            );
+                                          case null:
+                                            break;
+                                          default:
+                                            throw StateError(
+                                              'Unsupported language preference: $value',
+                                            );
+                                        }
+                                      },
+                              ),
+                            );
+                          },
                         ),
                         const SizedBox(height: 32),
                         _SettingsDivider(color: palette.border),
@@ -257,6 +445,108 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _loadSharedInstructions() async {
+    setState(() {
+      _isLoadingInstructions = true;
+      _sharedInstructionsError = null;
+    });
+    try {
+      final instructions = await widget.settingsPreferences
+          .readSharedInstructions();
+      if (!mounted) return;
+      _sharedInstructionsController.text = instructions;
+      setState(() {
+        _savedSharedInstructions = instructions;
+        _isLoadingInstructions = false;
+      });
+    } on PlatformException catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription('while loading shared chat instructions'),
+        ),
+      );
+      if (!mounted) return;
+      setState(() {
+        _sharedInstructionsError =
+            context.zihoraL10n.sharedInstructionsLoadFailed;
+        _isLoadingInstructions = false;
+      });
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription('while loading shared chat instructions'),
+        ),
+      );
+      if (!mounted) return;
+      setState(() {
+        _sharedInstructionsError =
+            context.zihoraL10n.sharedInstructionsLoadFailed;
+        _isLoadingInstructions = false;
+      });
+    }
+  }
+
+  Future<void> _saveSharedInstructions() async {
+    if (_isSavingInstructions || _isLoadingInstructions) return;
+    setState(() => _isSavingInstructions = true);
+    try {
+      final instructions = _sharedInstructionsController.text;
+      await widget.settingsPreferences.writeSharedInstructions(instructions);
+      if (!mounted) return;
+      setState(() => _savedSharedInstructions = instructions);
+      showZihoraToast(
+        context,
+        context.zihoraL10n.sharedInstructionsSaved,
+        type: ZihoraToastType.success,
+      );
+    } on PlatformException catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription('while saving shared chat instructions'),
+        ),
+      );
+      if (!mounted) return;
+      showZihoraToast(
+        context,
+        context.zihoraL10n.sharedInstructionsSaveFailed,
+        type: ZihoraToastType.error,
+      );
+    } on ArgumentError {
+      if (!mounted) return;
+      showZihoraToast(
+        context,
+        context.zihoraL10n.sharedInstructionsTooLong,
+        type: ZihoraToastType.error,
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription('while saving shared chat instructions'),
+        ),
+      );
+      if (!mounted) return;
+      showZihoraToast(
+        context,
+        context.zihoraL10n.sharedInstructionsSaveFailed,
+        type: ZihoraToastType.error,
+      );
+    } finally {
+      if (mounted) setState(() => _isSavingInstructions = false);
+    }
+  }
+
   Future<void> _changeThemeMode(ThemeMode mode) async {
     try {
       await widget.onThemeModeChanged(mode);
@@ -275,6 +565,37 @@ class _SettingsScreenState extends State<SettingsScreen> {
         context.zihoraL10n.themeSaveFailed,
         type: ZihoraToastType.error,
       );
+    }
+  }
+
+  Future<void> _changeLocale(Locale? locale) async {
+    final changeLocale = widget.onLocaleChanged;
+    if (_isSavingLanguage || changeLocale == null) return;
+    setState(() => _isSavingLanguage = true);
+    try {
+      await changeLocale(locale);
+    } on PlatformException catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription('while saving the app language'),
+        ),
+      );
+      if (!mounted) return;
+      showZihoraToast(
+        context,
+        context.zihoraL10n.languageSaveFailed,
+        type: ZihoraToastType.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSavingLanguage = false;
+          _languageSelectorRevision++;
+        });
+      }
     }
   }
 
@@ -336,6 +657,186 @@ class _SettingsScreenState extends State<SettingsScreen> {
 }
 
 enum _ConnectionLoadState { loading, loaded, failed }
+
+class _OpenCodeConnectionSection extends StatefulWidget {
+  const _OpenCodeConnectionSection({
+    required this.apiKeyStore,
+    required this.onChanged,
+  });
+
+  final OpenCodeApiKeyStore? apiKeyStore;
+  final Future<void> Function()? onChanged;
+
+  @override
+  State<_OpenCodeConnectionSection> createState() =>
+      _OpenCodeConnectionSectionState();
+}
+
+class _OpenCodeConnectionSectionState
+    extends State<_OpenCodeConnectionSection> {
+  final _controller = TextEditingController();
+  String? _keySuffix;
+  bool _loading = true;
+  bool _saving = false;
+  bool _showForm = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final store = widget.apiKeyStore;
+    if (store == null) {
+      if (mounted) setState(() => _loading = false);
+      return;
+    }
+    try {
+      final suffix = await store.readKeySuffix();
+      if (mounted) {
+        setState(() {
+          _keySuffix = suffix;
+          _loading = false;
+        });
+      }
+    } on OpenCodeApiKeyStorageException {
+      if (mounted) {
+        setState(() {
+          _error = 'storage';
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _save() async {
+    final store = widget.apiKeyStore;
+    if (store == null || _saving) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await store.saveApiKey(_controller.text);
+      _controller.clear();
+      await _load();
+      await widget.onChanged?.call();
+      if (mounted) setState(() => _showForm = false);
+    } on InvalidOpenCodeApiKeyException {
+      if (mounted) setState(() => _error = 'invalid');
+    } on OpenCodeApiKeyStorageException {
+      if (mounted) setState(() => _error = 'storage');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _remove() async {
+    final store = widget.apiKeyStore;
+    if (store == null || _saving) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await store.deleteApiKey();
+      await _load();
+      await widget.onChanged?.call();
+    } on OpenCodeApiKeyStorageException {
+      if (mounted) setState(() => _error = 'storage');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.zihoraL10n;
+    final palette = ZihoraPalette.of(context);
+    final hasKey = _keySuffix != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          l10n.openCodeConsole,
+          style: Theme.of(context).textTheme.titleSmall,
+        ),
+        const SizedBox(height: 6),
+        Text(
+          l10n.openCodeConsoleDescription,
+          style: TextStyle(color: palette.secondaryText, fontSize: 13),
+        ),
+        if (_error == 'storage' && !_showForm) ...[
+          const SizedBox(height: 6),
+          Text(
+            l10n.openCodeKeyStorageFailed,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ],
+        const SizedBox(height: 8),
+        if (_loading) const LinearProgressIndicator(),
+        if (!_loading)
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  hasKey
+                      ? l10n.openCodeKeySaved(_keySuffix!)
+                      : l10n.openCodeNoKey,
+                ),
+              ),
+              TextButton(
+                onPressed: _saving
+                    ? null
+                    : () => setState(() => _showForm = !_showForm),
+                child: Text(hasKey ? l10n.edit : l10n.add),
+              ),
+              if (hasKey)
+                TextButton(
+                  onPressed: _saving ? null : _remove,
+                  child: Text(l10n.deleteAll),
+                ),
+            ],
+          ),
+        if (_showForm)
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _controller,
+                  obscureText: true,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  decoration: InputDecoration(
+                    labelText: l10n.openCodeApiKey,
+                    errorText: _error == 'invalid'
+                        ? l10n.openCodeKeyInvalid
+                        : _error == 'storage'
+                        ? l10n.openCodeKeyStorageFailed
+                        : null,
+                  ),
+                  onSubmitted: (_) => unawaited(_save()),
+                ),
+              ),
+              const SizedBox(width: 12),
+              FilledButton(
+                onPressed: _saving ? null : _save,
+                child: Text(_saving ? l10n.saving : l10n.save),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+}
 
 enum _UsageLoadState { idle, loading, loaded, failed }
 
@@ -1298,13 +1799,6 @@ class _ChatGptConnectionSectionState extends State<_ChatGptConnectionSection> {
     final accountName = connection.email ?? l10n.accountEmailUnavailable;
     final isRemoving = _removingConnectionIds.contains(connection.id);
     final planType = connection.planType;
-    ChatGptWorkspace? workspace;
-    for (final item in connection.workspaces) {
-      if (item.isSelected) {
-        workspace = item;
-        break;
-      }
-    }
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       child: Column(
@@ -1406,14 +1900,6 @@ class _ChatGptConnectionSectionState extends State<_ChatGptConnectionSection> {
                           );
                         }
                       },
-              ),
-            )
-          else if (connection.isSelected && workspace != null)
-            Padding(
-              padding: const EdgeInsets.only(left: 30, top: 8),
-              child: Text(
-                workspace.displayName ?? l10n.workspace,
-                style: TextStyle(color: palette.secondaryText, fontSize: 12),
               ),
             )
           else if (connection.isSelected && connection.workspaces.isEmpty)

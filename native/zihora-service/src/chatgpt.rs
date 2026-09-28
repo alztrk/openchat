@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    path::Path,
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -16,9 +17,16 @@ use zeroize::Zeroizing;
 use crate::{
     chatgpt_store::{self, ChatGptModel, NewUsageSnapshot, ResetCredit, UsageBucket},
     credentials::OAuthCredentialReference,
+    instructions,
     oauth::{OAuthClient, parse_reference},
+    permissions::ToolPermissionBroker,
     protocol::{EventSink, Response as RpcResponse, ServiceError},
+    provider_schema::{
+        ChatStreamEvent, ChatStreamSnapshot, ProviderChatRequest, ProviderMessage,
+        ReasoningSummary, ToolCall, ToolDefinition,
+    },
     storage::AppStorage,
+    tools::{self, ToolExecutor, ToolPermissionMode},
 };
 
 struct ReasoningSummaryGroup {
@@ -55,24 +63,48 @@ fn reasoning_summary_group_mut<'a>(
     &mut groups[index]
 }
 
-fn reasoning_summary_groups_value(groups: &[ReasoningSummaryGroup]) -> Value {
+fn reasoning_summary_groups_value(groups: &[ReasoningSummaryGroup]) -> Vec<ReasoningSummary> {
     let now = Instant::now();
-    Value::Array(
-        groups
-            .iter()
-            .map(|group| {
-                let elapsed = group
-                    .elapsed
-                    .unwrap_or_else(|| now.saturating_duration_since(group.started_at));
-                json!({
-                    "id": format!("{}:{}", group.item_id, group.summary_index),
-                    "content": group.content,
-                    "elapsedMicroseconds": i64::try_from(elapsed.as_micros()).unwrap_or(i64::MAX),
-                    "isComplete": group.is_complete,
-                })
-            })
-            .collect(),
-    )
+    groups
+        .iter()
+        .map(|group| {
+            let elapsed = group
+                .elapsed
+                .unwrap_or_else(|| now.saturating_duration_since(group.started_at));
+            ReasoningSummary {
+                id: format!("{}:{}", group.item_id, group.summary_index),
+                content: group.content.clone(),
+                elapsed_microseconds: i64::try_from(elapsed.as_micros()).unwrap_or(i64::MAX),
+                is_complete: group.is_complete,
+            }
+        })
+        .collect()
+}
+
+async fn send_reasoning_snapshot(
+    events: &EventSink,
+    request_id: &Value,
+    conversation_id: &str,
+    message_id: &str,
+    content: &str,
+    created_at_unix_ms: i64,
+    groups: &[ReasoningSummaryGroup],
+) -> Result<(), ServiceError> {
+    events
+        .send(
+            &ChatStreamEvent::ReasoningSummariesUpdated {
+                snapshot: ChatStreamSnapshot::new(
+                    conversation_id,
+                    message_id,
+                    content,
+                    created_at_unix_ms,
+                ),
+                summaries: reasoning_summary_groups_value(groups),
+            }
+            .into_rpc(request_id.clone()),
+        )
+        .await
+        .map_err(|_| protocol_error())
 }
 
 fn finish_reasoning_summary_group(
@@ -101,6 +133,7 @@ const CHATGPT_CODEX_BASE: &str = "https://chatgpt.com/backend-api/codex";
 const CHATGPT_WHAM_BASE: &str = "https://chatgpt.com/backend-api/wham";
 // The private catalog filters entries by its Codex client compatibility version, not Zihora's product version.
 const CHATGPT_CLIENT_VERSION: &str = "0.157.0";
+const MODEL_CATALOG_CACHE_AGE: Duration = Duration::from_secs(6 * 60 * 60);
 const METADATA_REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
 const USAGE_REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
 const RESET_CREDITS_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
@@ -203,10 +236,38 @@ impl ChatGptService {
         &self,
         connection_id: &str,
         workspace_id: &str,
+        force_refresh: bool,
         cancellation: &mut watch::Receiver<bool>,
     ) -> Result<Value, ServiceError> {
         let started = Instant::now();
         self.record_chatgpt_event("request_started", "models", None, None, None, None);
+        if !force_refresh {
+            let cached = chatgpt_store::list_fresh_models(
+                &self.storage,
+                connection_id,
+                workspace_id,
+                CHATGPT_CLIENT_VERSION,
+                i64::try_from(MODEL_CATALOG_CACHE_AGE.as_millis()).unwrap_or(i64::MAX),
+            )
+            .map_err(database_error)?;
+            if let Some(models) = cached {
+                self.record_chatgpt_event(
+                    "request_cache_hit",
+                    "models",
+                    None,
+                    None,
+                    Some(started.elapsed().as_millis()),
+                    Some(models.len()),
+                );
+                return Ok(json!({
+                    "connectionId": connection_id,
+                    "workspaceId": workspace_id,
+                    "models": models,
+                    "freshness": "current",
+                    "errorCode": Value::Null,
+                }));
+            }
+        }
         let fetch_result = if *cancellation.borrow() {
             Err(request_cancelled())
         } else {
@@ -226,7 +287,7 @@ impl ChatGptService {
                     &self.storage,
                     connection_id,
                     workspace_id,
-                    env!("CARGO_PKG_VERSION"),
+                    CHATGPT_CLIENT_VERSION,
                     &models,
                 )
                 .map_err(database_error);
@@ -456,6 +517,12 @@ impl ChatGptService {
         request_id: Value,
         conversation_id: &str,
         reasoning_effort: Option<&str>,
+        excluded_assistant_message_id: Option<&str>,
+        custom_instructions: Option<&str>,
+        project_root: Option<&Path>,
+        data_root: &Path,
+        permission_mode: ToolPermissionMode,
+        permission_broker: &ToolPermissionBroker,
         cancellation: &mut watch::Receiver<bool>,
         events: EventSink,
     ) -> Result<Value, ServiceError> {
@@ -493,6 +560,11 @@ impl ChatGptService {
         })?;
         let messages = chatgpt_store::conversation_messages(&self.storage, conversation_id)
             .map_err(database_error)?;
+        if excluded_assistant_message_id
+            .is_some_and(|id| !chatgpt_store::is_retryable_latest_assistant_message(&messages, id))
+        {
+            return Err(invalid_retry_target_error());
+        }
         if messages.is_empty() {
             return Err(ServiceError::new(
                 "conversation_empty",
@@ -500,18 +572,50 @@ impl ChatGptService {
                 false,
             ));
         }
-        let input = messages
+        let history = messages
             .iter()
-            .map(|message| json!({"role": message.role, "content": message.content}))
+            .filter(|message| Some(message.id.as_str()) != excluded_assistant_message_id)
+            .map(|message| ProviderMessage::from_history(&message.role, &message.content))
+            .collect::<Result<Vec<_>, _>>()?;
+        let provider_request = ProviderChatRequest {
+            model: model.id.clone(),
+            instructions: instructions::shared_instructions(
+                custom_instructions,
+                permission_mode,
+                project_root.is_some(),
+            ),
+            messages: history,
+            tools: tools::definitions(),
+            reasoning_effort: reasoning_effort
+                .filter(|effort| model.reasoning_levels.iter().any(|level| level == *effort))
+                .map(str::to_owned),
+        };
+        let input = provider_request
+            .messages
+            .iter()
+            .map(|message| {
+                json!({"role": message.role.as_str(), "content": message.content.as_str()})
+            })
             .collect::<Vec<_>>();
         let mut payload = json!({
-            "model": model.id,
+            "model": provider_request.model.as_str(),
             "input": input,
+            "instructions": provider_request.instructions,
             "stream": true,
             "store": false,
         });
-        let effort = reasoning_effort
-            .filter(|effort| model.reasoning_levels.iter().any(|level| level == *effort));
+        if !provider_request.tools.is_empty() {
+            payload["tools"] = json!(
+                provider_request
+                    .tools
+                    .iter()
+                    .map(responses_tool)
+                    .collect::<Vec<_>>()
+            );
+            payload["tool_choice"] = json!("auto");
+            payload["parallel_tool_calls"] = json!(false);
+        }
+        let effort = provider_request.reasoning_effort.as_deref();
         if model.supports_reasoning_summary_parameter {
             let mut reasoning = json!({"summary": "auto"});
             if let Some(effort) = effort {
@@ -529,6 +633,11 @@ impl ChatGptService {
             &workspace.external_id,
             &model,
             payload,
+            excluded_assistant_message_id,
+            project_root,
+            data_root,
+            permission_mode,
+            permission_broker,
             cancellation,
             events,
         )
@@ -542,7 +651,12 @@ impl ChatGptService {
         route: &chatgpt_store::ConversationRoute,
         external_workspace_id: &str,
         model: &ChatGptModel,
-        payload: Value,
+        mut payload: Value,
+        excluded_assistant_message_id: Option<&str>,
+        project_root: Option<&Path>,
+        data_root: &Path,
+        permission_mode: ToolPermissionMode,
+        permission_broker: &ToolPermissionBroker,
         cancellation: &mut watch::Receiver<bool>,
         events: EventSink,
     ) -> Result<Value, ServiceError> {
@@ -566,16 +680,15 @@ impl ChatGptService {
         .map_err(database_error)?;
 
         events
-            .send(&RpcResponse::event(
-                request_id.clone(),
-                "chat.started",
-                json!({
-                    "conversationId": conversation_id,
-                    "messageId": message_id,
-                    "content": content,
-                    "createdAtUnixMs": created_at,
-                }),
-            ))
+            .send(
+                &ChatStreamEvent::Started(ChatStreamSnapshot {
+                    conversation_id: conversation_id.to_owned(),
+                    message_id: message_id.clone(),
+                    content: content.clone(),
+                    created_at_unix_ms: created_at,
+                })
+                .into_rpc(request_id.clone()),
+            )
             .await
             .map_err(|_| protocol_error())?;
 
@@ -607,36 +720,90 @@ impl ChatGptService {
             }));
         }
 
-        let response = match self
-            .authorized_stream_request(
-                Method::POST,
-                format!("{CHATGPT_CODEX_BASE}/responses"),
-                &route.connection_id,
-                external_workspace_id,
-                Some(payload),
-                conversation_id,
-                cancellation,
-            )
-            .await
-        {
-            Ok(Some(response)) => {
-                let status = response.status();
-                self.record_chatgpt_event(
-                    "http_response",
-                    "responses",
-                    Some(status.as_u16()),
-                    None,
-                    Some(started.elapsed().as_millis()),
-                    None,
-                );
-                if status.is_success() {
-                    response
-                } else {
-                    let error = http_error(status);
+        let mut output_tokens = None;
+        let mut tool_executor = ToolExecutor::new(project_root, data_root, permission_mode);
+        'model_turn: loop {
+            let mut round_output_tokens = None;
+            let mut response_output_items = Vec::new();
+            let response = match self
+                .authorized_stream_request(
+                    Method::POST,
+                    format!("{CHATGPT_CODEX_BASE}/responses"),
+                    &route.connection_id,
+                    external_workspace_id,
+                    Some(payload.clone()),
+                    conversation_id,
+                    cancellation,
+                )
+                .await
+            {
+                Ok(Some(response)) => {
+                    let status = response.status();
+                    self.record_chatgpt_event(
+                        "http_response",
+                        "responses",
+                        Some(status.as_u16()),
+                        None,
+                        Some(started.elapsed().as_millis()),
+                        None,
+                    );
+                    if status.is_success() {
+                        response
+                    } else {
+                        let error = http_error(status);
+                        self.record_chatgpt_event(
+                            "request_failed",
+                            "responses",
+                            Some(status.as_u16()),
+                            Some(error.code),
+                            Some(started.elapsed().as_millis()),
+                            None,
+                        );
+                        self.persist_terminal_message(
+                            conversation_id,
+                            &message_id,
+                            &content,
+                            "failed",
+                            created_at,
+                            None,
+                            started.elapsed(),
+                        )?;
+                        return Err(error);
+                    }
+                }
+                Ok(None) => {
+                    let elapsed = started.elapsed();
+                    self.record_chatgpt_event(
+                        "request_cancelled",
+                        "responses",
+                        None,
+                        Some("request_cancelled"),
+                        Some(elapsed.as_millis()),
+                        None,
+                    );
+                    self.persist_terminal_message(
+                        conversation_id,
+                        &message_id,
+                        &content,
+                        "stopped",
+                        created_at,
+                        None,
+                        elapsed,
+                    )?;
+                    return Ok(json!({
+                        "conversationId": conversation_id,
+                        "messageId": message_id,
+                        "status": "stopped",
+                        "outputTokens": Value::Null,
+                        "tokensPerSecond": Value::Null,
+                        "elapsedMicroseconds": elapsed.as_micros(),
+                    }));
+                }
+                Err(error) => {
                     self.record_chatgpt_event(
                         "request_failed",
                         "responses",
-                        Some(status.as_u16()),
+                        None,
                         Some(error.code),
                         Some(started.elapsed().as_millis()),
                         None,
@@ -652,36 +819,177 @@ impl ChatGptService {
                     )?;
                     return Err(error);
                 }
+            };
+
+            let mut body_stream = response.bytes_stream();
+            let mut pending_bytes = Vec::new();
+            let mut event_data = Vec::<String>::new();
+            let mut completed = false;
+            let mut failure = None;
+
+            loop {
+                let next = tokio::select! {
+                    changed = cancellation.changed() => {
+                        if changed.is_err() || *cancellation.borrow() {
+                            self.record_chatgpt_event(
+                                "request_cancelled",
+                                "responses",
+                                None,
+                                Some("request_cancelled"),
+                                Some(started.elapsed().as_millis()),
+                                None,
+                            );
+                            self.persist_terminal_message(
+                                conversation_id,
+                                &message_id,
+                                &content,
+                                "stopped",
+                                created_at,
+                                output_tokens,
+                                started.elapsed(),
+                            )?;
+                            return Ok(json!({
+                                "conversationId": conversation_id,
+                                "messageId": message_id,
+                                "status": "stopped",
+                                "outputTokens": output_tokens,
+                                "tokensPerSecond": output_tokens.and_then(|tokens| {
+                                    let seconds = started.elapsed().as_secs_f64();
+                                    (seconds > 0.0).then_some(tokens as f64 / seconds)
+                                }),
+                                "elapsedMicroseconds": started.elapsed().as_micros(),
+                            }));
+                        }
+                        continue;
+                    }
+                    chunk = body_stream.next() => chunk,
+                };
+
+                let Some(chunk) = next else { break };
+                let chunk = match chunk {
+                    Ok(chunk) => chunk,
+                    Err(_) => {
+                        self.record_chatgpt_event(
+                            "request_failed",
+                            "responses",
+                            None,
+                            Some("network_unavailable"),
+                            Some(started.elapsed().as_millis()),
+                            None,
+                        );
+                        self.persist_terminal_message(
+                            conversation_id,
+                            &message_id,
+                            &content,
+                            "failed",
+                            created_at,
+                            output_tokens,
+                            started.elapsed(),
+                        )?;
+                        return Err(network_error());
+                    }
+                };
+                pending_bytes.extend_from_slice(&chunk);
+                if pending_bytes.len() > MAX_STREAM_EVENT_BYTES {
+                    self.record_chatgpt_event(
+                        "request_failed",
+                        "responses",
+                        None,
+                        Some("response_event_too_large"),
+                        Some(started.elapsed().as_millis()),
+                        None,
+                    );
+                    self.persist_terminal_message(
+                        conversation_id,
+                        &message_id,
+                        &content,
+                        "failed",
+                        created_at,
+                        output_tokens,
+                        started.elapsed(),
+                    )?;
+                    return Err(ServiceError::new(
+                        "response_event_too_large",
+                        "ChatGPT returned an oversized stream event. The partial answer was saved.",
+                        false,
+                    ));
+                }
+                while let Some(line_end) = pending_bytes.iter().position(|byte| *byte == b'\n') {
+                    let mut line = pending_bytes.drain(..=line_end).collect::<Vec<_>>();
+                    line.pop();
+                    if line.last() == Some(&b'\r') {
+                        line.pop();
+                    }
+                    if line.is_empty() {
+                        if event_data.is_empty() {
+                            continue;
+                        }
+                        let event = event_data.join("\n");
+                        event_data.clear();
+                        match self
+                            .process_response_event(
+                                &event,
+                                &mut content,
+                                &mut round_output_tokens,
+                                &mut reasoning_summaries,
+                                &mut response_output_items,
+                                conversation_id,
+                                &message_id,
+                                created_at,
+                                started,
+                                &request_id,
+                                &events,
+                            )
+                            .await
+                        {
+                            Ok(true) => completed = true,
+                            Ok(false) => {}
+                            Err(error) => {
+                                failure = Some(error);
+                                break;
+                            }
+                        }
+                        if completed || failure.is_some() {
+                            break;
+                        }
+                    } else if let Some(data) = line.strip_prefix(b"data:") {
+                        let data = data.strip_prefix(b" ").unwrap_or(data);
+                        match String::from_utf8(data.to_vec()) {
+                            Ok(data) => event_data.push(data),
+                            Err(_) => {
+                                let error = ServiceError::new(
+                                    "invalid_provider_response",
+                                    "ChatGPT returned a malformed stream event.",
+                                    false,
+                                );
+                                self.record_chatgpt_event(
+                                    "request_failed",
+                                    "responses",
+                                    None,
+                                    Some(error.code),
+                                    Some(started.elapsed().as_millis()),
+                                    None,
+                                );
+                                self.persist_terminal_message(
+                                    conversation_id,
+                                    &message_id,
+                                    &content,
+                                    "failed",
+                                    created_at,
+                                    output_tokens,
+                                    started.elapsed(),
+                                )?;
+                                return Err(error);
+                            }
+                        }
+                    }
+                }
+                if completed || failure.is_some() {
+                    break;
+                }
             }
-            Ok(None) => {
-                let elapsed = started.elapsed();
-                self.record_chatgpt_event(
-                    "request_cancelled",
-                    "responses",
-                    None,
-                    Some("request_cancelled"),
-                    Some(elapsed.as_millis()),
-                    None,
-                );
-                self.persist_terminal_message(
-                    conversation_id,
-                    &message_id,
-                    &content,
-                    "stopped",
-                    created_at,
-                    None,
-                    elapsed,
-                )?;
-                return Ok(json!({
-                    "conversationId": conversation_id,
-                    "messageId": message_id,
-                    "status": "stopped",
-                    "outputTokens": Value::Null,
-                    "tokensPerSecond": Value::Null,
-                    "elapsedMicroseconds": elapsed.as_micros(),
-                }));
-            }
-            Err(error) => {
+
+            if let Some(error) = failure {
                 self.record_chatgpt_event(
                     "request_failed",
                     "responses",
@@ -696,89 +1004,22 @@ impl ChatGptService {
                     &content,
                     "failed",
                     created_at,
-                    None,
+                    output_tokens,
                     started.elapsed(),
                 )?;
                 return Err(error);
             }
-        };
-
-        let mut body_stream = response.bytes_stream();
-        let mut pending_bytes = Vec::new();
-        let mut event_data = Vec::<String>::new();
-        let mut output_tokens = None;
-        let mut completed = false;
-        let mut failure = None;
-
-        loop {
-            let next = tokio::select! {
-                changed = cancellation.changed() => {
-                    if changed.is_err() || *cancellation.borrow() {
-                        self.record_chatgpt_event(
-                            "request_cancelled",
-                            "responses",
-                            None,
-                            Some("request_cancelled"),
-                            Some(started.elapsed().as_millis()),
-                            None,
-                        );
-                        self.persist_terminal_message(
-                            conversation_id,
-                            &message_id,
-                            &content,
-                            "stopped",
-                            created_at,
-                            output_tokens,
-                            started.elapsed(),
-                        )?;
-                        return Ok(json!({
-                            "conversationId": conversation_id,
-                            "messageId": message_id,
-                            "status": "stopped",
-                            "outputTokens": output_tokens,
-                            "tokensPerSecond": output_tokens.and_then(|tokens| {
-                                let seconds = started.elapsed().as_secs_f64();
-                                (seconds > 0.0).then_some(tokens as f64 / seconds)
-                            }),
-                            "elapsedMicroseconds": started.elapsed().as_micros(),
-                        }));
-                    }
-                    continue;
-                }
-                chunk = body_stream.next() => chunk,
-            };
-
-            let Some(chunk) = next else { break };
-            let chunk = match chunk {
-                Ok(chunk) => chunk,
-                Err(_) => {
-                    self.record_chatgpt_event(
-                        "request_failed",
-                        "responses",
-                        None,
-                        Some("network_unavailable"),
-                        Some(started.elapsed().as_millis()),
-                        None,
-                    );
-                    self.persist_terminal_message(
-                        conversation_id,
-                        &message_id,
-                        &content,
-                        "failed",
-                        created_at,
-                        output_tokens,
-                        started.elapsed(),
-                    )?;
-                    return Err(network_error());
-                }
-            };
-            pending_bytes.extend_from_slice(&chunk);
-            if pending_bytes.len() > MAX_STREAM_EVENT_BYTES {
+            if !completed {
+                let error = ServiceError::new(
+                    "response_incomplete",
+                    "The ChatGPT response ended before completion. The partial answer was saved.",
+                    true,
+                );
                 self.record_chatgpt_event(
                     "request_failed",
                     "responses",
                     None,
-                    Some("response_event_too_large"),
+                    Some(error.code),
                     Some(started.elapsed().as_millis()),
                     None,
                 );
@@ -791,67 +1032,117 @@ impl ChatGptService {
                     output_tokens,
                     started.elapsed(),
                 )?;
-                return Err(ServiceError::new(
-                    "response_event_too_large",
-                    "ChatGPT returned an oversized stream event. The partial answer was saved.",
-                    false,
-                ));
+                return Err(error);
             }
-            while let Some(line_end) = pending_bytes.iter().position(|byte| *byte == b'\n') {
-                let mut line = pending_bytes.drain(..=line_end).collect::<Vec<_>>();
-                line.pop();
-                if line.last() == Some(&b'\r') {
-                    line.pop();
-                }
-                if line.is_empty() {
-                    if event_data.is_empty() {
-                        continue;
-                    }
-                    let event = event_data.join("\n");
-                    event_data.clear();
-                    match self
-                        .process_response_event(
-                            &event,
-                            &mut content,
-                            &mut output_tokens,
-                            &mut reasoning_summaries,
+
+            if let Some(round_tokens) = round_output_tokens {
+                output_tokens = Some(output_tokens.unwrap_or(0i64).saturating_add(round_tokens));
+            }
+            let final_text = response_output_text(&response_output_items);
+            if !final_text.is_empty() && final_text != content.as_str() {
+                content = final_text;
+                chatgpt_store::save_assistant_message(
+                    &self.storage,
+                    conversation_id,
+                    &message_id,
+                    &content,
+                    "streaming",
+                    created_at,
+                    None,
+                    None,
+                    None,
+                )
+                .map_err(database_error)?;
+                events
+                    .send(
+                        &ChatStreamEvent::TextUpdated(ChatStreamSnapshot::new(
                             conversation_id,
                             &message_id,
+                            &content,
                             created_at,
-                            started,
+                        ))
+                        .into_rpc(request_id.clone()),
+                    )
+                    .await
+                    .map_err(|_| protocol_error())?;
+            }
+            let tool_calls = match parse_responses_tool_calls(&response_output_items) {
+                Ok(tool_calls) => tool_calls,
+                Err(error) => {
+                    self.persist_terminal_message(
+                        conversation_id,
+                        &message_id,
+                        &content,
+                        "failed",
+                        created_at,
+                        output_tokens,
+                        started.elapsed(),
+                    )?;
+                    return Err(error);
+                }
+            };
+            if !tool_calls.is_empty() {
+                if let Err(error) = tool_executor.begin_round(&tool_calls) {
+                    self.persist_terminal_message(
+                        conversation_id,
+                        &message_id,
+                        &content,
+                        "failed",
+                        created_at,
+                        output_tokens,
+                        started.elapsed(),
+                    )?;
+                    return Err(error);
+                }
+                let mut results = Vec::with_capacity(tool_calls.len());
+                for call in &tool_calls {
+                    let snapshot =
+                        ChatStreamSnapshot::new(conversation_id, &message_id, &content, created_at);
+                    let result = match tool_executor
+                        .execute_call(
+                            call,
+                            permission_broker,
                             &request_id,
+                            &snapshot,
                             &events,
+                            cancellation,
                         )
                         .await
                     {
-                        Ok(true) => completed = true,
-                        Ok(false) => {}
-                        Err(error) => {
-                            failure = Some(error);
-                            break;
-                        }
-                    }
-                    if completed || failure.is_some() {
-                        break;
-                    }
-                } else if let Some(data) = line.strip_prefix(b"data:") {
-                    let data = data.strip_prefix(b" ").unwrap_or(data);
-                    match String::from_utf8(data.to_vec()) {
-                        Ok(data) => event_data.push(data),
-                        Err(_) => {
-                            let error = ServiceError::new(
-                                "invalid_provider_response",
-                                "ChatGPT returned a malformed stream event.",
-                                false,
-                            );
+                        Ok(result) => result,
+                        Err(error) if error.code == "operation_cancelled" => {
+                            let elapsed = started.elapsed();
                             self.record_chatgpt_event(
-                                "request_failed",
+                                "request_cancelled",
                                 "responses",
                                 None,
-                                Some(error.code),
-                                Some(started.elapsed().as_millis()),
+                                Some("request_cancelled"),
+                                Some(elapsed.as_millis()),
                                 None,
                             );
+                            self.persist_terminal_message(
+                                conversation_id,
+                                &message_id,
+                                &content,
+                                "stopped",
+                                created_at,
+                                output_tokens,
+                                elapsed,
+                            )?;
+                            return Ok(json!({
+                                "conversationId": conversation_id,
+                                "messageId": message_id,
+                                "status": "stopped",
+                                "outputTokens": output_tokens,
+                                "tokensPerSecond": output_tokens.and_then(|tokens| {
+                                    let seconds = elapsed.as_secs_f64();
+                                    (seconds > 0.0).then_some(tokens as f64 / seconds)
+                                }),
+                                "elapsedMicroseconds": elapsed.as_micros(),
+                                "reasoningGroups": reasoning_summary_groups_value(&reasoning_summaries),
+                            }));
+                        }
+                        Err(error) => {
                             self.persist_terminal_message(
                                 conversation_id,
                                 &message_id,
@@ -863,58 +1154,80 @@ impl ChatGptService {
                             )?;
                             return Err(error);
                         }
-                    }
+                    };
+                    results.push(result);
                 }
+                let Some(input) = payload.get_mut("input").and_then(Value::as_array_mut) else {
+                    self.persist_terminal_message(
+                        conversation_id,
+                        &message_id,
+                        &content,
+                        "failed",
+                        created_at,
+                        output_tokens,
+                        started.elapsed(),
+                    )?;
+                    return Err(invalid_response_error());
+                };
+                input.extend(response_output_items);
+                for result in results {
+                    let output = match serde_json::to_string(&result.output) {
+                        Ok(output) => output,
+                        Err(_) => {
+                            self.persist_terminal_message(
+                                conversation_id,
+                                &message_id,
+                                &content,
+                                "failed",
+                                created_at,
+                                output_tokens,
+                                started.elapsed(),
+                            )?;
+                            return Err(invalid_response_error());
+                        }
+                    };
+                    input.push(json!({
+                        "type": "function_call_output",
+                        "call_id": result.call_id,
+                        "output": output
+                    }));
+                }
+                continue 'model_turn;
             }
-            if completed || failure.is_some() {
-                break;
+            if content.trim().is_empty() {
+                let error = ServiceError::new(
+                    "empty_provider_response",
+                    "ChatGPT completed without returning visible text or requesting a tool.",
+                    true,
+                );
+                self.record_chatgpt_event(
+                    "response_without_content",
+                    "responses",
+                    None,
+                    Some(empty_response_shape(&response_output_items)),
+                    None,
+                    Some(response_output_items.len()),
+                );
+                self.persist_terminal_message(
+                    conversation_id,
+                    &message_id,
+                    &content,
+                    "failed",
+                    created_at,
+                    output_tokens,
+                    started.elapsed(),
+                )?;
+                self.record_chatgpt_event(
+                    "request_failed",
+                    "responses",
+                    None,
+                    Some(error.code),
+                    Some(started.elapsed().as_millis()),
+                    None,
+                );
+                return Err(error);
             }
-        }
-
-        if let Some(error) = failure {
-            self.record_chatgpt_event(
-                "request_failed",
-                "responses",
-                None,
-                Some(error.code),
-                Some(started.elapsed().as_millis()),
-                None,
-            );
-            self.persist_terminal_message(
-                conversation_id,
-                &message_id,
-                &content,
-                "failed",
-                created_at,
-                output_tokens,
-                started.elapsed(),
-            )?;
-            return Err(error);
-        }
-        if !completed {
-            let error = ServiceError::new(
-                "response_incomplete",
-                "The ChatGPT response ended before completion. The partial answer was saved.",
-                true,
-            );
-            self.record_chatgpt_event(
-                "request_failed",
-                "responses",
-                None,
-                Some(error.code),
-                Some(started.elapsed().as_millis()),
-                None,
-            );
-            self.persist_terminal_message(
-                conversation_id,
-                &message_id,
-                &content,
-                "failed",
-                created_at,
-                output_tokens,
-                started.elapsed(),
-            )?;
-            return Err(error);
+            break 'model_turn;
         }
 
         let elapsed = started.elapsed();
@@ -937,6 +1250,7 @@ impl ChatGptService {
         );
         let title_route = route.clone();
         let title_conversation_id = conversation_id.to_owned();
+        let title_excluded_assistant_message_id = excluded_assistant_message_id.map(str::to_owned);
         let title_events = events.clone();
         let service = Arc::clone(self);
         let conversation_model_id = model.id.clone();
@@ -948,6 +1262,7 @@ impl ChatGptService {
                         &title_conversation_id,
                         &title_route,
                         &conversation_model_id,
+                        title_excluded_assistant_message_id.as_deref(),
                         title_events,
                     )
                     .await;
@@ -973,6 +1288,7 @@ impl ChatGptService {
         content: &mut String,
         output_tokens: &mut Option<i64>,
         reasoning_summaries: &mut Vec<ReasoningSummaryGroup>,
+        response_output_items: &mut Vec<Value>,
         conversation_id: &str,
         message_id: &str,
         created_at: i64,
@@ -999,6 +1315,13 @@ impl ChatGptService {
             )
         })?;
         match kind {
+            "response.output_item.done" => {
+                let item = event
+                    .get("item")
+                    .filter(|item| item.is_object())
+                    .ok_or_else(invalid_response_error)?;
+                response_output_items.push(item.clone());
+            }
             "response.output_text.delta" => {
                 let delta = event.get("delta").and_then(Value::as_str).ok_or_else(|| {
                     ServiceError::new(
@@ -1021,16 +1344,15 @@ impl ChatGptService {
                 )
                 .map_err(database_error)?;
                 events
-                    .send(&RpcResponse::event(
-                        request_id.clone(),
-                        "chat.delta",
-                        json!({
-                            "conversationId": conversation_id,
-                            "messageId": message_id,
-                            "content": content,
-                            "createdAtUnixMs": created_at,
-                        }),
-                    ))
+                    .send(
+                        &ChatStreamEvent::TextUpdated(ChatStreamSnapshot::new(
+                            conversation_id,
+                            message_id,
+                            content,
+                            created_at,
+                        ))
+                        .into_rpc(request_id.clone()),
+                    )
                     .await
                     .map_err(|_| protocol_error())?;
             }
@@ -1059,20 +1381,16 @@ impl ChatGptService {
                     let group =
                         reasoning_summary_group_mut(reasoning_summaries, item_id, summary_index);
                     group.content.push_str(delta);
-                    events
-                        .send(&RpcResponse::event(
-                            request_id.clone(),
-                            "chat.reasoning.delta",
-                            json!({
-                                "conversationId": conversation_id,
-                                "messageId": message_id,
-                                "content": content,
-                                "createdAtUnixMs": created_at,
-                                "reasoningGroups": reasoning_summary_groups_value(reasoning_summaries),
-                            }),
-                        ))
-                        .await
-                        .map_err(|_| protocol_error())?;
+                    send_reasoning_snapshot(
+                        events,
+                        request_id,
+                        conversation_id,
+                        message_id,
+                        content,
+                        created_at,
+                        reasoning_summaries,
+                    )
+                    .await?;
                 }
             }
             "response.reasoning_summary_text.done" => {
@@ -1086,20 +1404,16 @@ impl ChatGptService {
                         summary_index,
                         event.get("text").and_then(Value::as_str),
                     );
-                    events
-                        .send(&RpcResponse::event(
-                            request_id.clone(),
-                            "chat.reasoning.delta",
-                            json!({
-                                "conversationId": conversation_id,
-                                "messageId": message_id,
-                                "content": content,
-                                "createdAtUnixMs": created_at,
-                                "reasoningGroups": reasoning_summary_groups_value(reasoning_summaries),
-                            }),
-                        ))
-                        .await
-                        .map_err(|_| protocol_error())?;
+                    send_reasoning_snapshot(
+                        events,
+                        request_id,
+                        conversation_id,
+                        message_id,
+                        content,
+                        created_at,
+                        reasoning_summaries,
+                    )
+                    .await?;
                 }
             }
             "response.reasoning_summary_part.done" => {
@@ -1116,29 +1430,34 @@ impl ChatGptService {
                             .and_then(|part| part.get("text"))
                             .and_then(Value::as_str),
                     );
-                    events
-                        .send(&RpcResponse::event(
-                            request_id.clone(),
-                            "chat.reasoning.delta",
-                            json!({
-                                "conversationId": conversation_id,
-                                "messageId": message_id,
-                                "content": content,
-                                "createdAtUnixMs": created_at,
-                                "reasoningGroups": reasoning_summary_groups_value(reasoning_summaries),
-                            }),
-                        ))
-                        .await
-                        .map_err(|_| protocol_error())?;
+                    send_reasoning_snapshot(
+                        events,
+                        request_id,
+                        conversation_id,
+                        message_id,
+                        content,
+                        created_at,
+                        reasoning_summaries,
+                    )
+                    .await?;
                 }
             }
             "response.completed" => {
                 finish_reasoning_summary_groups(reasoning_summaries);
-                *output_tokens = event
-                    .get("response")
-                    .and_then(|response| response.get("usage"))
-                    .and_then(|usage| usage.get("output_tokens"))
-                    .and_then(Value::as_i64);
+                if let Some(response) = event.get("response") {
+                    *output_tokens = response
+                        .get("usage")
+                        .and_then(|usage| usage.get("output_tokens"))
+                        .and_then(Value::as_i64);
+                    if let Some(items) = response
+                        .get("output")
+                        .and_then(Value::as_array)
+                        .filter(|items| !items.is_empty())
+                    {
+                        response_output_items.clear();
+                        response_output_items.extend(items.iter().cloned());
+                    }
+                }
                 return Ok(true);
             }
             "response.failed" | "response.incomplete" | "error" => {
@@ -1308,6 +1627,7 @@ impl ChatGptService {
         conversation_id: &str,
         route: &chatgpt_store::ConversationRoute,
         conversation_model_id: &str,
+        excluded_assistant_message_id: Option<&str>,
         events: EventSink,
     ) {
         let started = Instant::now();
@@ -1429,7 +1749,13 @@ impl ChatGptService {
         }
         let _ = chatgpt_store::finish_title_job(&self.storage, &job_id, "running", None);
         let title = match self
-            .request_title(conversation_id, &title_route, &model, conversation_model_id)
+            .request_title(
+                conversation_id,
+                &title_route,
+                &model,
+                conversation_model_id,
+                excluded_assistant_message_id,
+            )
             .await
         {
             Ok(title) => title,
@@ -1511,6 +1837,7 @@ impl ChatGptService {
         route: &chatgpt_store::ConversationRoute,
         title_model: &ChatGptModel,
         conversation_model_id: &str,
+        excluded_assistant_message_id: Option<&str>,
     ) -> Result<String, ServiceError> {
         if title_model.id == conversation_model_id {
             return Err(ServiceError::new(
@@ -1526,8 +1853,11 @@ impl ChatGptService {
         )
         .map_err(database_error)?
         .ok_or_else(connection_unavailable)?;
-        let messages = chatgpt_store::conversation_messages(&self.storage, conversation_id)
+        let mut messages = chatgpt_store::conversation_messages(&self.storage, conversation_id)
             .map_err(database_error)?;
+        if let Some(excluded_id) = excluded_assistant_message_id {
+            messages.retain(|message| message.id != excluded_id);
+        }
         let first_user = messages.iter().find(|message| message.role == "user");
         let first_assistant = messages.iter().find(|message| message.role == "assistant");
         let user_text = first_user.map(|message| truncate_chars(&message.content, 1200));
@@ -2324,6 +2654,96 @@ fn now_unix_millis() -> Result<i64, ServiceError> {
     })
 }
 
+fn parse_responses_tool_calls(output_items: &[Value]) -> Result<Vec<ToolCall>, ServiceError> {
+    output_items
+        .iter()
+        .filter(|item| item.get("type").and_then(Value::as_str) == Some("function_call"))
+        .map(|item| {
+            let id = item
+                .get("call_id")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(invalid_response_error)?;
+            let name = item
+                .get("name")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(invalid_response_error)?;
+            let arguments = item
+                .get("arguments")
+                .and_then(Value::as_str)
+                .ok_or_else(invalid_response_error)?;
+            if arguments.len() > tools::MAX_TOOL_ARGUMENT_BYTES {
+                return Err(invalid_response_error());
+            }
+            let arguments =
+                serde_json::from_str(arguments).map_err(|_| invalid_response_error())?;
+            Ok(ToolCall {
+                id: id.to_owned(),
+                name: name.to_owned(),
+                arguments,
+            })
+        })
+        .collect()
+}
+
+fn response_output_text(output_items: &[Value]) -> String {
+    let mut text = String::new();
+    for item in output_items {
+        if item.get("type").and_then(Value::as_str) != Some("message") {
+            continue;
+        }
+        let Some(content) = item.get("content").and_then(Value::as_array) else {
+            continue;
+        };
+        for part in content {
+            match part.get("type").and_then(Value::as_str) {
+                Some("output_text") => {
+                    if let Some(value) = part.get("text").and_then(Value::as_str) {
+                        text.push_str(value);
+                    }
+                }
+                Some("refusal") => {
+                    if let Some(value) = part.get("refusal").and_then(Value::as_str) {
+                        text.push_str(value);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    text
+}
+
+fn empty_response_shape(output_items: &[Value]) -> &'static str {
+    if output_items.is_empty() {
+        return "no_output_items";
+    }
+    if output_items
+        .iter()
+        .all(|item| item.get("type").and_then(Value::as_str) == Some("reasoning"))
+    {
+        return "reasoning_only";
+    }
+    if output_items
+        .iter()
+        .any(|item| item.get("type").and_then(Value::as_str) == Some("message"))
+    {
+        return "message_without_visible_text";
+    }
+    "other_output_items"
+}
+
+fn responses_tool(tool: &ToolDefinition) -> Value {
+    json!({
+        "type": "function",
+        "name": tool.name,
+        "description": tool.description,
+        "strict": false,
+        "parameters": tool.parameters.clone(),
+    })
+}
+
 fn database_error(_: DatabaseError) -> ServiceError {
     ServiceError::new(
         "local_storage_failed",
@@ -2368,6 +2788,14 @@ fn invalid_response_error() -> ServiceError {
     ServiceError::new(
         "invalid_provider_response",
         "ChatGPT returned data that Zihora could not read. The provider response format may have changed.",
+        false,
+    )
+}
+
+fn invalid_retry_target_error() -> ServiceError {
+    ServiceError::new(
+        "invalid_retry_target",
+        "The selected response can no longer be retried. Refresh the conversation and try again.",
         false,
     )
 }

@@ -21,6 +21,8 @@ class ConversationSidebar extends StatelessWidget {
     this.onSelectConversation,
     this.onToggleConversationPinned,
     this.onRenameConversation,
+    this.onDeleteConversation,
+    this.onExportConversation,
     this.onMoveConversationToProject,
     this.onCreateProject,
     this.projectsLoading = false,
@@ -29,7 +31,6 @@ class ConversationSidebar extends StatelessWidget {
     this.onCreateProjectConversation,
     this.onShowMoreProjectConversations,
     this.onCreateConversation,
-    this.onCollapse,
     this.onMoveConversationToChats,
     this.onPinConversation,
     super.key,
@@ -49,6 +50,8 @@ class ConversationSidebar extends StatelessWidget {
   final ValueChanged<String>? onSelectConversation;
   final ValueChanged<String>? onToggleConversationPinned;
   final ValueChanged<String>? onRenameConversation;
+  final ValueChanged<String>? onDeleteConversation;
+  final ValueChanged<String>? onExportConversation;
   final void Function(String conversationId, String projectId)?
   onMoveConversationToProject;
   final VoidCallback? onCreateProject;
@@ -58,7 +61,6 @@ class ConversationSidebar extends StatelessWidget {
   final ValueChanged<String>? onCreateProjectConversation;
   final ValueChanged<String>? onShowMoreProjectConversations;
   final VoidCallback? onCreateConversation;
-  final VoidCallback? onCollapse;
   final ValueChanged<String>? onMoveConversationToChats;
   final ValueChanged<String>? onPinConversation;
 
@@ -90,21 +92,6 @@ class ConversationSidebar extends StatelessWidget {
                       child: Text(
                         l10n.chats,
                         style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: l10n.collapseSidebar,
-                      onPressed: onCollapse,
-                      visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 28,
-                        height: 28,
-                      ),
-                      padding: EdgeInsets.zero,
-                      icon: Icon(
-                        Icons.chevron_left_rounded,
-                        color: palette.secondaryIcon,
-                        size: 18,
                       ),
                     ),
                     IconButton(
@@ -263,6 +250,8 @@ class ConversationSidebar extends StatelessWidget {
                             onToggleConversationPinned:
                                 onToggleConversationPinned,
                             onRenameConversation: onRenameConversation,
+                            onDeleteConversation: onDeleteConversation,
+                            onExportConversation: onExportConversation,
                             onCreateProject: onCreateProject,
                             loading: projectsLoading,
                             errorMessage: projectLoadError,
@@ -283,6 +272,8 @@ class ConversationSidebar extends StatelessWidget {
                             onSelectConversation: onSelectConversation,
                             onTogglePinned: onToggleConversationPinned,
                             onRenameConversation: onRenameConversation,
+                            onDeleteConversation: onDeleteConversation,
+                            onExportConversation: onExportConversation,
                             onDropConversation: onPinConversation,
                           ),
                           const SizedBox(height: 24),
@@ -298,6 +289,8 @@ class ConversationSidebar extends StatelessWidget {
                             onSelectConversation: onSelectConversation,
                             onTogglePinned: onToggleConversationPinned,
                             onRenameConversation: onRenameConversation,
+                            onDeleteConversation: onDeleteConversation,
+                            onExportConversation: onExportConversation,
                             onDropConversation: onMoveConversationToChats,
                           ),
                         ],
@@ -327,6 +320,8 @@ class ConversationSidebar extends StatelessWidget {
                           onToggleConversationPinned:
                               onToggleConversationPinned,
                           onRenameConversation: onRenameConversation,
+                          onDeleteConversation: onDeleteConversation,
+                          onExportConversation: onExportConversation,
                           onCreateProject: onCreateProject,
                           loading: projectsLoading,
                           errorMessage: projectLoadError,
@@ -372,6 +367,8 @@ class _ProjectSidebarSection extends StatelessWidget {
     required this.onMoveConversationToProject,
     required this.onToggleConversationPinned,
     required this.onRenameConversation,
+    required this.onDeleteConversation,
+    required this.onExportConversation,
     required this.onCreateProject,
     required this.loading,
     required this.errorMessage,
@@ -396,6 +393,8 @@ class _ProjectSidebarSection extends StatelessWidget {
   onMoveConversationToProject;
   final ValueChanged<String>? onToggleConversationPinned;
   final ValueChanged<String>? onRenameConversation;
+  final ValueChanged<String>? onDeleteConversation;
+  final ValueChanged<String>? onExportConversation;
   final VoidCallback? onCreateProject;
   final bool loading;
   final String? errorMessage;
@@ -521,6 +520,16 @@ class _ProjectSidebarSection extends StatelessWidget {
                                 onRename: onRenameConversation == null
                                     ? null
                                     : () => onRenameConversation!(
+                                        entry.conversations[index].id,
+                                      ),
+                                onDelete: onDeleteConversation == null
+                                    ? null
+                                    : () => onDeleteConversation!(
+                                        entry.conversations[index].id,
+                                      ),
+                                onExport: onExportConversation == null
+                                    ? null
+                                    : () => onExportConversation!(
                                         entry.conversations[index].id,
                                       ),
                                 key: ValueKey<String>(
@@ -826,6 +835,8 @@ class _SidebarConversationSection extends StatelessWidget {
     required this.onSelectConversation,
     required this.onTogglePinned,
     required this.onRenameConversation,
+    required this.onDeleteConversation,
+    required this.onExportConversation,
     required this.onDropConversation,
   });
 
@@ -838,6 +849,8 @@ class _SidebarConversationSection extends StatelessWidget {
   final ValueChanged<String>? onSelectConversation;
   final ValueChanged<String>? onTogglePinned;
   final ValueChanged<String>? onRenameConversation;
+  final ValueChanged<String>? onDeleteConversation;
+  final ValueChanged<String>? onExportConversation;
   final ValueChanged<String>? onDropConversation;
 
   @override
@@ -899,6 +912,12 @@ class _SidebarConversationSection extends StatelessWidget {
                     onRename: onRenameConversation == null
                         ? null
                         : () => onRenameConversation!(conversations[index].id),
+                    onDelete: onDeleteConversation == null
+                        ? null
+                        : () => onDeleteConversation!(conversations[index].id),
+                    onExport: onExportConversation == null
+                        ? null
+                        : () => onExportConversation!(conversations[index].id),
                     key: ValueKey<String>(
                       'sidebar-conversation-${conversations[index].id}',
                     ),
@@ -975,6 +994,8 @@ class _SidebarConversationTile extends StatefulWidget {
     this.showChatIcon = false,
     this.onTogglePinned,
     this.onRename,
+    this.onDelete,
+    this.onExport,
     super.key,
   });
 
@@ -986,6 +1007,8 @@ class _SidebarConversationTile extends StatefulWidget {
   final bool showChatIcon;
   final VoidCallback? onTogglePinned;
   final VoidCallback? onRename;
+  final VoidCallback? onDelete;
+  final VoidCallback? onExport;
 
   @override
   State<_SidebarConversationTile> createState() =>
@@ -1000,7 +1023,11 @@ class _SidebarConversationTileState extends State<_SidebarConversationTile> {
   Widget build(BuildContext context) {
     final palette = ZihoraPalette.of(context);
     final l10n = context.zihoraL10n;
-    final hasActions = widget.onTogglePinned != null || widget.onRename != null;
+    final hasActions =
+        widget.onTogglePinned != null ||
+        widget.onRename != null ||
+        widget.onDelete != null ||
+        widget.onExport != null;
     final showActions =
         hasActions &&
         (_hovered ||
@@ -1081,7 +1108,9 @@ class _SidebarConversationTileState extends State<_SidebarConversationTile> {
                                     size: 15,
                                   ),
                                 ),
-                              if (widget.onRename != null)
+                              if (widget.onRename != null ||
+                                  widget.onDelete != null ||
+                                  widget.onExport != null)
                                 SizedBox(
                                   width: 32,
                                   height: 36,
@@ -1098,13 +1127,35 @@ class _SidebarConversationTileState extends State<_SidebarConversationTile> {
                                       setState(() => _menuOpen = false);
                                       if (value == 'rename') {
                                         widget.onRename?.call();
+                                      } else if (value == 'export') {
+                                        widget.onExport?.call();
+                                      } else if (value == 'delete') {
+                                        widget.onDelete?.call();
                                       }
                                     },
                                     itemBuilder: (context) => [
-                                      PopupMenuItem<String>(
-                                        value: 'rename',
-                                        child: Text(l10n.renameConversation),
-                                      ),
+                                      if (widget.onRename != null)
+                                        PopupMenuItem<String>(
+                                          value: 'rename',
+                                          child: Text(l10n.renameConversation),
+                                        ),
+                                      if (widget.onExport != null)
+                                        PopupMenuItem<String>(
+                                          value: 'export',
+                                          child: Text(l10n.exportConversation),
+                                        ),
+                                      if (widget.onDelete != null)
+                                        PopupMenuItem<String>(
+                                          value: 'delete',
+                                          child: Text(
+                                            l10n.deleteConversation,
+                                            style: TextStyle(
+                                              color: Theme.of(
+                                                context,
+                                              ).colorScheme.error,
+                                            ),
+                                          ),
+                                        ),
                                     ],
                                     icon: const Icon(Icons.more_horiz_rounded),
                                   ),

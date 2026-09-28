@@ -4,6 +4,7 @@ import 'package:drift/drift.dart';
 
 import '../domain/chat_conversation.dart';
 import '../domain/chat_message.dart' as domain;
+import '../domain/model_favorite.dart';
 import '../domain/chat_project.dart';
 import 'zihora_database.dart';
 
@@ -51,6 +52,62 @@ class ChatRepository {
           )
           .toList(growable: false),
     );
+  }
+
+  Stream<List<FavoriteModel>> watchModelFavorites() {
+    final query = _database.select(_database.modelFavorites)
+      ..orderBy([
+        (favorite) => OrderingTerm.asc(favorite.providerId),
+        (favorite) => OrderingTerm.asc(favorite.displayName),
+        (favorite) => OrderingTerm.asc(favorite.modelId),
+      ]);
+
+    return query.watch().map(
+      (rows) => rows
+          .map(
+            (row) => FavoriteModel(
+              providerId: row.providerId,
+              modelId: row.modelId,
+              displayName: row.displayName,
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  Future<void> setModelFavorite({
+    required String providerId,
+    required String modelId,
+    required String displayName,
+    required bool isFavorite,
+  }) async {
+    if (providerId != 'chatgpt' && providerId != 'opencode') {
+      throw ArgumentError.value(providerId, 'providerId', 'Unknown provider.');
+    }
+    final normalizedModelId = _requireValue(modelId, 'modelId');
+    final normalizedDisplayName = _requireValue(displayName, 'displayName');
+    final query = _database.delete(_database.modelFavorites)
+      ..where(
+        (favorite) =>
+            favorite.providerId.equals(providerId) &
+            favorite.modelId.equals(normalizedModelId),
+      );
+
+    if (!isFavorite) {
+      await query.go();
+      return;
+    }
+
+    await _database
+        .into(_database.modelFavorites)
+        .insertOnConflictUpdate(
+          ModelFavoritesCompanion.insert(
+            providerId: providerId,
+            modelId: normalizedModelId,
+            displayName: normalizedDisplayName,
+            favoritedAt: DateTime.now().toUtc().millisecondsSinceEpoch,
+          ),
+        );
   }
 
   Future<void> createProject({
@@ -160,12 +217,24 @@ class ChatRepository {
     );
   }
 
+  Future<List<domain.ChatMessage>> getMessages(String conversationId) async {
+    final query = _database.select(_database.messages)
+      ..where((message) => message.conversationId.equals(conversationId))
+      ..orderBy([
+        (message) => OrderingTerm.asc(message.createdAt),
+        (message) => OrderingTerm.asc(message.id),
+      ]);
+    final rows = await query.get();
+    return rows.map(_messageFromRow).toList(growable: false);
+  }
+
   Future<void> createConversation({
     required String id,
     required String title,
     required DateTime createdAt,
     String? connectionId,
     String? workspaceId,
+    String? providerId,
     String? modelId,
   }) async {
     final normalizedId = id.trim();
@@ -180,14 +249,15 @@ class ChatRepository {
         'Conversation title cannot be empty.',
       );
     }
-    final providerSelection = [connectionId, workspaceId, modelId];
-    if (providerSelection.any((value) => value != null) &&
-        providerSelection.any(
-          (value) => value == null || value.trim().isEmpty,
-        )) {
-      throw ArgumentError(
-        'Connection, workspace, and model must be provided together.',
-      );
+    final selectedProvider = providerId?.trim();
+    final isOpenCode = selectedProvider == 'opencode';
+    final hasChatGptRoute = connectionId != null || workspaceId != null;
+    if ((isOpenCode && (hasChatGptRoute || modelId == null)) ||
+        (!isOpenCode &&
+            ((connectionId == null) != (workspaceId == null) ||
+                (modelId != null &&
+                    (connectionId == null || workspaceId == null))))) {
+      throw ArgumentError('The provider route is incomplete or incompatible.');
     }
 
     final timestamp = createdAt.toUtc().millisecondsSinceEpoch;
@@ -199,6 +269,7 @@ class ChatRepository {
             title: normalizedTitle,
             connectionId: Value(connectionId?.trim()),
             workspaceId: Value(workspaceId?.trim()),
+            providerId: Value(selectedProvider),
             modelId: Value(modelId?.trim()),
             createdAt: timestamp,
             updatedAt: timestamp,
@@ -208,6 +279,7 @@ class ChatRepository {
 
   Future<void> bindConversationProvider({
     required String conversationId,
+    String? providerId,
     required String connectionId,
     required String workspaceId,
     required String modelId,
@@ -234,6 +306,7 @@ class ChatRepository {
           _database.conversations,
         )..where((row) => row.id.equals(conversationId))).write(
           ConversationsCompanion(
+            providerId: Value(providerId?.trim()),
             connectionId: Value(normalizedConnectionId),
             workspaceId: Value(normalizedWorkspaceId),
             modelId: Value(normalizedModelId),
@@ -283,8 +356,10 @@ class ChatRepository {
       if (conversation == null) {
         throw ConversationNotFoundException(conversationId);
       }
-      if (conversation.connectionId == null ||
-          conversation.workspaceId == null) {
+      final isOpenCode = conversation.providerId == 'opencode';
+      if (!isOpenCode &&
+          (conversation.connectionId == null ||
+              conversation.workspaceId == null)) {
         throw StateError('The conversation has no provider route.');
       }
       if (conversation.modelId == normalizedModelId) return;
@@ -356,6 +431,13 @@ class ChatRepository {
                       .toList(growable: false),
                 ),
               ),
+              toolActivities: Value(
+                jsonEncode(
+                  message.toolActivities
+                      .map((activity) => activity.toJson())
+                      .toList(growable: false),
+                ),
+              ),
               status: message.status.name,
             ),
           );
@@ -387,6 +469,41 @@ class ChatRepository {
     }
   }
 
+  Future<void> deleteConversation(String conversationId) async {
+    final deletedRows = await _database.transaction(
+      () => (_database.delete(
+        _database.conversations,
+      )..where((conversation) => conversation.id.equals(conversationId))).go(),
+    );
+    if (deletedRows == 0) {
+      throw ConversationNotFoundException(conversationId);
+    }
+  }
+
+  Future<void> deleteMessage({
+    required String conversationId,
+    required String messageId,
+  }) async {
+    final normalizedMessageId = messageId.trim();
+    if (normalizedMessageId.isEmpty) {
+      throw ArgumentError.value(
+        messageId,
+        'messageId',
+        'Message ID cannot be empty.',
+      );
+    }
+    final deletedRows =
+        await (_database.delete(_database.messages)..where(
+              (message) =>
+                  message.conversationId.equals(conversationId) &
+                  message.id.equals(normalizedMessageId),
+            ))
+            .go();
+    if (deletedRows == 0) {
+      throw MessageNotFoundException(conversationId, normalizedMessageId);
+    }
+  }
+
   Future<void> deleteAllConversations() async {
     await _database.transaction(() async {
       await _database.delete(_database.conversations).go();
@@ -400,6 +517,7 @@ class ChatRepository {
       titleSource: ChatConversationTitleSource.values.byName(row.titleSource),
       connectionId: row.connectionId,
       workspaceId: row.workspaceId,
+      providerId: row.providerId,
       modelId: row.modelId,
       projectId: row.projectId,
       isPinned: row.isPinned,
@@ -442,6 +560,9 @@ class ChatRepository {
       reasoningSummaries: domain.ChatReasoningSummary.listFromJson(
         jsonDecode(row.reasoningSummaries),
       ),
+      toolActivities: domain.ChatToolActivity.listFromJson(
+        jsonDecode(row.toolActivities),
+      ),
       status: domain.ChatMessageStatus.values.byName(row.status),
     );
   }
@@ -454,6 +575,17 @@ class ConversationNotFoundException implements Exception {
 
   @override
   String toString() => 'Conversation "$conversationId" was not found.';
+}
+
+class MessageNotFoundException implements Exception {
+  const MessageNotFoundException(this.conversationId, this.messageId);
+
+  final String conversationId;
+  final String messageId;
+
+  @override
+  String toString() =>
+      'Message "$messageId" was not found in conversation "$conversationId".';
 }
 
 class ConversationProviderAlreadyBoundException implements Exception {

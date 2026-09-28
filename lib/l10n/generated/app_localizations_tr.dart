@@ -10,7 +10,7 @@ class AppLocalizationsTr extends AppLocalizations {
   AppLocalizationsTr([String locale = 'tr']) : super(locale);
 
   @override
-  String get appTitle => 'Zihora';
+  String get appTitle => 'OpenChat';
 
   @override
   String get newChat => 'Yeni sohbet';
@@ -19,7 +19,10 @@ class AppLocalizationsTr extends AppLocalizations {
   String get chats => 'Sohbetler';
 
   @override
-  String get collapseSidebar => 'Kenar çubuğunu daralt';
+  String get collapseSidebars => 'Kenar çubuklarını daralt';
+
+  @override
+  String get showSidebars => 'Kenar çubuklarını göster';
 
   @override
   String get home => 'Anasayfa';
@@ -47,6 +50,235 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get connections => 'Bağlantılar';
+
+  @override
+  String get sharedInstructions => 'Ortak talimatlar';
+
+  @override
+  String get sharedInstructionsDescription =>
+      'Bu talimatlar ChatGPT ve OpenCode\'a her sohbette gönderilir. Dosya araçlarının erişimi Araç erişimi ayarına uyar.';
+
+  @override
+  String get sharedInstructionsHint =>
+      'Yanıtların nasıl verilmesini istediğini yaz...';
+
+  @override
+  String get sharedInstructionsLoadFailed =>
+      'Ortak talimatlar yüklenemedi. Yeniden deneyin.';
+
+  @override
+  String get sharedInstructionsSaveFailed => 'Ortak talimatlar kaydedilemedi.';
+
+  @override
+  String get sharedInstructionsSaved => 'Ortak talimatlar kaydedildi.';
+
+  @override
+  String get sharedInstructionsTooLong =>
+      'Ortak talimatlar 4096 karakteri aşamaz.';
+
+  @override
+  String get chatGptProvider => 'ChatGPT';
+
+  @override
+  String get openCodeProvider => 'OpenCode';
+
+  @override
+  String get favoriteModels => 'Favoriler';
+
+  @override
+  String get favoriteModelsEmpty => 'Henüz favori model yok.';
+
+  @override
+  String get modelSearchHint => 'Model ara...';
+
+  @override
+  String get modelSearchNoResults => 'Aramayla eşleşen model yok.';
+
+  @override
+  String get addModelFavorite => 'Favori modellere ekle';
+
+  @override
+  String get removeModelFavorite => 'Favorilerden çıkar';
+
+  @override
+  String get openCodeConsole => 'OpenCode Console';
+
+  @override
+  String get openCodeConsoleDescription =>
+      'Ücretsiz modeller anahtar olmadan kullanılabilir. Console bakiyesi ekledikten sonra ücretli modeller istek başına ücretlendirilir. Bu modeller için Console servis API anahtarı ekleyin.';
+
+  @override
+  String openCodeKeySaved(Object suffix) {
+    return 'Sonu ••••$suffix olan Console API anahtarı bu cihazda güvenli şekilde kayıtlı.';
+  }
+
+  @override
+  String get openCodeNoKey =>
+      'Console API anahtarı yok. Ücretsiz modeller kullanılabilir.';
+
+  @override
+  String get openCodeApiKey => 'OpenCode Console API anahtarı';
+
+  @override
+  String get openCodeKeyInvalid =>
+      'Boş olmayan, tek satırlı ve en fazla 4096 karakterlik bir API anahtarı girin.';
+
+  @override
+  String get openCodeKeyStorageFailed =>
+      'Console API anahtarı güvenli şekilde okunamadı veya kaydedilemedi.';
+
+  @override
+  String get openCodePaidModel => 'Ücretli';
+
+  @override
+  String get openCodeFreeModel => 'Ücretsiz';
+
+  @override
+  String get add => 'Ekle';
+
+  @override
+  String get edit => 'Düzenle';
+
+  @override
+  String get exportConversation => 'Sohbeti dışa aktar';
+
+  @override
+  String get deleteConversation => 'Sohbeti sil';
+
+  @override
+  String get confirmDeleteConversationTitle => 'Sohbet silinsin mi?';
+
+  @override
+  String confirmDeleteConversation(String title) {
+    return '“$title” sohbeti ve içindeki tüm mesajlar bu cihazdan silinecek. Bu işlem geri alınamaz.';
+  }
+
+  @override
+  String get stopResponseBeforeDelete =>
+      'Silmeden önce devam eden yanıtı durdur.';
+
+  @override
+  String get conversationDeleted => 'Sohbet silindi.';
+
+  @override
+  String get conversationDeleteFailed => 'Sohbet silinemedi. Tekrar dene.';
+
+  @override
+  String get conversationExported =>
+      'Sohbet Markdown dosyası olarak dışa aktarıldı.';
+
+  @override
+  String get conversationExportFailed =>
+      'Sohbet dışa aktarılamadı. Tekrar dene.';
+
+  @override
+  String get conversationExportProvider => 'Sağlayıcı';
+
+  @override
+  String get conversationExportModel => 'Model';
+
+  @override
+  String get conversationExportCreated => 'Oluşturulma';
+
+  @override
+  String get conversationExportStatus => 'Durum';
+
+  @override
+  String get toolPermissions => 'Araç erişimi';
+
+  @override
+  String get toolPermissionsDescription =>
+      'Yapay zekanın yerel dosya araçlarını hangi klasörlerde ve hangi izinle kullanacağını seç.';
+
+  @override
+  String get toolPermissionRequireApproval => 'Onay İste';
+
+  @override
+  String get toolPermissionRequireApprovalDescription =>
+      'Her araç çağrısında izin sorulur. Erişim proje klasörü ve %LOCALAPPDATA%\\Zihora ile sınırlıdır.';
+
+  @override
+  String get toolPermissionFullAccess => 'Tam erişim';
+
+  @override
+  String get toolPermissionFullAccessDescription =>
+      'Mevcut okuma araçları izin sormadan tüm klasörlere erişebilir. Dosyalar değiştirilmez ve komut çalıştırılmaz.';
+
+  @override
+  String get toolPermissionSettingsLoadFailed =>
+      'Araç erişim ayarı yüklenemedi.';
+
+  @override
+  String get toolPermissionSettingsSaveFailed =>
+      'Araç erişim ayarı kaydedilemedi. Tekrar dene.';
+
+  @override
+  String get toolPermissionRequestTitle => 'Araç kullanım izni';
+
+  @override
+  String get toolPermissionRequestDescription =>
+      'Yapay zeka bu aracı belirtilen konumda kullanmak istiyor. İzin yalnızca bu çağrı için geçerli olacak.';
+
+  @override
+  String get toolPermissionTarget => 'Erişilecek konum';
+
+  @override
+  String get toolPermissionTool => 'Araç';
+
+  @override
+  String get toolPermissionArguments => 'İşlem ayrıntıları';
+
+  @override
+  String get toolPermissionDeny => 'Reddet';
+
+  @override
+  String get toolPermissionStopResponse => 'Yanıtı durdur';
+
+  @override
+  String get toolPermissionAllowOnce => 'Bu çağrıya izin ver';
+
+  @override
+  String get toolDenied => 'Reddedildi';
+
+  @override
+  String get toolCancelled => 'İptal edildi';
+
+  @override
+  String get toolAwaitingApproval => 'İzin bekleniyor';
+
+  @override
+  String get conversationExportToolActivity => 'Araç etkinliği';
+
+  @override
+  String get responseReplaceFailed =>
+      'Yeni yanıt kaydedildi ancak önceki yanıt değiştirilemedi.';
+
+  @override
+  String get responseRetryNotCompleted =>
+      'Yeni yanıt tamamlanmadı. Önceki yanıt korundu.';
+
+  @override
+  String get responseRetryCleanupFailed =>
+      'Yeni deneme temizlenemedi. Sohbet geçmişini yenile.';
+
+  @override
+  String get responseInProgress => 'Yanıt sürüyor';
+
+  @override
+  String get responseRetryUnavailable =>
+      'Bu yanıt yeniden denenemiyor. Yeni bir mesaj gönder.';
+
+  @override
+  String get providerRateLimited =>
+      'Sağlayıcı bir kullanım sınırı bildirdi. Daha sonra tekrar dene.';
+
+  @override
+  String get providerAuthenticationRequired =>
+      'Sağlayıcı isteği reddetti. Bağlantıyı ve model erişimini kontrol et.';
+
+  @override
+  String get providerRequestFailed =>
+      'Sağlayıcı yanıtı tamamlayamadı. Kayıtlı mesajların kullanılabilir durumda.';
 
   @override
   String get apiKey => 'API anahtarı';
@@ -120,7 +352,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get oldCredentialCleanupFailed =>
-      'Hesap bağlandı ancak eski bir kimlik bilgisi silinemedi. Zihora’yı yeniden başlatıp tekrar dene.';
+      'Hesap bağlandı ancak eski bir kimlik bilgisi silinemedi. OpenChat’i yeniden başlatıp tekrar dene.';
 
   @override
   String get connectionSelectionFailed => 'ChatGPT hesabı seçilemedi.';
@@ -274,7 +506,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get titleGenerationTargetDescription =>
-      'Sohbet hesabında farklı bir model yoksa Zihora burada seçtiğin hesabı kullanabilir. Normal kullanım hakkı yoksa başlık oluşturmaz.';
+      'Sohbet hesabında farklı bir model yoksa OpenChat burada seçtiğin hesabı kullanabilir. Normal kullanım hakkı yoksa başlık oluşturmaz.';
 
   @override
   String get titleUseConversationAccount => 'Sohbet hesabını kullan';
@@ -301,6 +533,26 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get themeSettingDescription => 'Uygulamanın görünümünü seçin.';
+
+  @override
+  String get language => 'Uygulama dili';
+
+  @override
+  String get languageSettingDescription =>
+      'Uygulamanın kullanacağı dili seçin.';
+
+  @override
+  String get systemLanguage => 'Cihaz dili';
+
+  @override
+  String get englishLanguage => 'İngilizce';
+
+  @override
+  String get turkishLanguage => 'Türkçe';
+
+  @override
+  String get languageSaveFailed =>
+      'Dil tercihi kaydedilemedi. Lütfen tekrar deneyin.';
 
   @override
   String get systemTheme => 'Sistem';
@@ -508,9 +760,6 @@ class AppLocalizationsTr extends AppLocalizations {
   String get modelSelection => 'Model seç';
 
   @override
-  String get chatGptProvider => 'ChatGPT';
-
-  @override
   String get noModelConnected => 'Henüz bağlı bir model yok';
 
   @override
@@ -559,7 +808,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get chatGptDataUnavailable =>
-      'ChatGPT, Zihora’nın okuyamadığı bir bilgi döndürdü. Bağlantıyı yenileyip tekrar dene.';
+      'ChatGPT, OpenChat’in okuyamadığı bir bilgi döndürdü. Bağlantıyı yenileyip tekrar dene.';
 
   @override
   String get modelCatalogUnavailable =>
@@ -587,7 +836,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get chatGptProviderChanged =>
-      'ChatGPT’nin yanıt biçimi değişti. Zihora’yı güncelleyip tekrar dene.';
+      'ChatGPT’nin yanıt biçimi değişti. OpenChat’i güncelleyip tekrar dene.';
 
   @override
   String get cachedCatalog => 'önbellekteki modeller';
@@ -676,6 +925,69 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get reasoningSummaryTooltip =>
       'Modelin sağladığı özet. Süre, özetin akışta görünmesi için geçen zamandır; gizli düşünce verisi değildir.';
+
+  @override
+  String get toolRunning => 'Çalışıyor';
+
+  @override
+  String get toolCompleted => 'Tamamlandı';
+
+  @override
+  String get toolFailed => 'Hata';
+
+  @override
+  String get toolInput => 'Girdi';
+
+  @override
+  String get toolOutput => 'Çıktı';
+
+  @override
+  String get toolListFiles => 'Dosyaları listele';
+
+  @override
+  String get toolSearchFiles => 'Dosyalarda ara';
+
+  @override
+  String get toolReadFile => 'Dosyayı oku';
+
+  @override
+  String get toolGetFileInfo => 'Dosya bilgisi al';
+
+  @override
+  String get toolTechnicalDetails => 'Ayrıntılar';
+
+  @override
+  String toolFileCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count öğe',
+      one: '1 öğe',
+      zero: '0 öğe',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get toolEmptyListing => 'Bu klasörde gösterilecek öğe yok.';
+
+  @override
+  String get toolListingUnavailable => 'Dosya listesi görüntülenemiyor.';
+
+  @override
+  String get toolListingIncomplete => 'Bazı öğeler listelenemedi.';
+
+  @override
+  String get toolMoreFilesAvailable => 'Diğer öğeler de var.';
+
+  @override
+  String get toolDesktopLocation => 'Masaüstü';
+
+  @override
+  String get toolProjectLocation => 'Proje klasörü';
+
+  @override
+  String get toolZihoraLocation => 'Uygulama veri klasörü';
 
   @override
   String get responseFailed => 'Yanıt alınamadı';

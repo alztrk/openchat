@@ -12,7 +12,7 @@ use std::{
 
 use rusqlite::{Connection, OpenFlags};
 
-const SCHEMA_VERSION: i64 = 6;
+const SCHEMA_VERSION: i64 = 8;
 const INITIAL_SCHEMA_VERSION: i64 = 2;
 
 pub struct AppStorage {
@@ -442,6 +442,51 @@ fn initialize_schema(connection: &Connection, target_version: i64) -> rusqlite::
         )?;
         transaction.execute(
             "INSERT INTO zihora_backend_migrations (version, applied_at_unix_ms) VALUES (6, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+    }
+
+    if current_version < 7 {
+        let has_provider_id = {
+            let mut statement = connection.prepare("PRAGMA table_info(conversations)")?;
+            let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+            columns
+                .collect::<rusqlite::Result<Vec<_>>>()?
+                .iter()
+                .any(|name| name == "provider_id")
+        };
+        let transaction = connection.unchecked_transaction()?;
+        if !has_provider_id {
+            transaction.execute_batch("ALTER TABLE conversations ADD COLUMN provider_id TEXT;")?;
+        }
+        transaction.execute(
+            "INSERT INTO zihora_backend_migrations (version, applied_at_unix_ms) VALUES (7, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+    }
+
+    if current_version < 8 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE chatgpt_model_catalog_state (
+                connection_id TEXT NOT NULL,
+                workspace_id TEXT NOT NULL,
+                fetched_at_unix_ms INTEGER NOT NULL,
+                client_version TEXT NOT NULL,
+                PRIMARY KEY (connection_id, workspace_id),
+                FOREIGN KEY (connection_id, workspace_id)
+                    REFERENCES chatgpt_workspaces(connection_id, id) ON DELETE CASCADE
+            );
+            CREATE TABLE opencode_model_catalog (
+                catalog_id INTEGER PRIMARY KEY CHECK (catalog_id = 1),
+                fetched_at_unix_ms INTEGER NOT NULL,
+                models_json TEXT NOT NULL
+            );",
+        )?;
+        transaction.execute(
+            "INSERT INTO zihora_backend_migrations (version, applied_at_unix_ms) VALUES (8, ?1)",
             [unix_time_millis()?],
         )?;
         transaction.commit()?;

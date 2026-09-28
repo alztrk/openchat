@@ -101,7 +101,7 @@ abstract class AppLocalizations {
   /// No description provided for @appTitle.
   ///
   /// In en, this message translates to:
-  /// **'Zihora'**
+  /// **'OpenChat'**
   String get appTitle;
 
   /// No description provided for @newChat.
@@ -116,11 +116,17 @@ abstract class AppLocalizations {
   /// **'Chats'**
   String get chats;
 
-  /// No description provided for @collapseSidebar.
+  /// No description provided for @collapseSidebars.
   ///
   /// In en, this message translates to:
-  /// **'Collapse sidebar'**
-  String get collapseSidebar;
+  /// **'Collapse sidebars'**
+  String get collapseSidebars;
+
+  /// No description provided for @showSidebars.
+  ///
+  /// In en, this message translates to:
+  /// **'Show sidebars'**
+  String get showSidebars;
 
   /// No description provided for @home.
   ///
@@ -175,6 +181,408 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Connections'**
   String get connections;
+
+  /// No description provided for @sharedInstructions.
+  ///
+  /// In en, this message translates to:
+  /// **'Shared instructions'**
+  String get sharedInstructions;
+
+  /// No description provided for @sharedInstructionsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'These instructions are sent with every ChatGPT and OpenCode conversation. File tool access follows the Tool access setting.'**
+  String get sharedInstructionsDescription;
+
+  /// No description provided for @sharedInstructionsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Describe how you want responses to be written...'**
+  String get sharedInstructionsHint;
+
+  /// No description provided for @sharedInstructionsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Shared instructions could not be loaded. Try again.'**
+  String get sharedInstructionsLoadFailed;
+
+  /// No description provided for @sharedInstructionsSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Shared instructions could not be saved.'**
+  String get sharedInstructionsSaveFailed;
+
+  /// No description provided for @sharedInstructionsSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Shared instructions saved.'**
+  String get sharedInstructionsSaved;
+
+  /// No description provided for @sharedInstructionsTooLong.
+  ///
+  /// In en, this message translates to:
+  /// **'Shared instructions cannot exceed 4096 characters.'**
+  String get sharedInstructionsTooLong;
+
+  /// No description provided for @chatGptProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'ChatGPT'**
+  String get chatGptProvider;
+
+  /// No description provided for @openCodeProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenCode'**
+  String get openCodeProvider;
+
+  /// No description provided for @favoriteModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Favorites'**
+  String get favoriteModels;
+
+  /// No description provided for @favoriteModelsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No favorite models yet.'**
+  String get favoriteModelsEmpty;
+
+  /// No description provided for @modelSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search models...'**
+  String get modelSearchHint;
+
+  /// No description provided for @modelSearchNoResults.
+  ///
+  /// In en, this message translates to:
+  /// **'No models match your search.'**
+  String get modelSearchNoResults;
+
+  /// No description provided for @addModelFavorite.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to favorite models'**
+  String get addModelFavorite;
+
+  /// No description provided for @removeModelFavorite.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from favorites'**
+  String get removeModelFavorite;
+
+  /// No description provided for @openCodeConsole.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenCode Console'**
+  String get openCodeConsole;
+
+  /// No description provided for @openCodeConsoleDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Free models work without a key. Paid models are billed per request after adding Console credits. Add a Console service API key to use them.'**
+  String get openCodeConsoleDescription;
+
+  /// No description provided for @openCodeKeySaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Console API key ending in ••••{suffix} is saved securely on this device.'**
+  String openCodeKeySaved(Object suffix);
+
+  /// No description provided for @openCodeNoKey.
+  ///
+  /// In en, this message translates to:
+  /// **'No Console API key. Free models are available.'**
+  String get openCodeNoKey;
+
+  /// No description provided for @openCodeApiKey.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenCode Console API key'**
+  String get openCodeApiKey;
+
+  /// No description provided for @openCodeKeyInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a non-empty, single-line API key (up to 4096 characters).'**
+  String get openCodeKeyInvalid;
+
+  /// No description provided for @openCodeKeyStorageFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The Console API key could not be read or saved securely.'**
+  String get openCodeKeyStorageFailed;
+
+  /// No description provided for @openCodePaidModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Paid'**
+  String get openCodePaidModel;
+
+  /// No description provided for @openCodeFreeModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Free'**
+  String get openCodeFreeModel;
+
+  /// No description provided for @add.
+  ///
+  /// In en, this message translates to:
+  /// **'Add'**
+  String get add;
+
+  /// No description provided for @edit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit'**
+  String get edit;
+
+  /// No description provided for @exportConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Export conversation'**
+  String get exportConversation;
+
+  /// No description provided for @deleteConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete conversation'**
+  String get deleteConversation;
+
+  /// No description provided for @confirmDeleteConversationTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this conversation?'**
+  String get confirmDeleteConversationTitle;
+
+  /// No description provided for @confirmDeleteConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'This will permanently delete “{title}” and all its messages from this device.'**
+  String confirmDeleteConversation(String title);
+
+  /// No description provided for @stopResponseBeforeDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop the active response before deleting this conversation.'**
+  String get stopResponseBeforeDelete;
+
+  /// No description provided for @conversationDeleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation deleted.'**
+  String get conversationDeleted;
+
+  /// No description provided for @conversationDeleteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The conversation could not be deleted. Try again.'**
+  String get conversationDeleteFailed;
+
+  /// No description provided for @conversationExported.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation exported as a Markdown file.'**
+  String get conversationExported;
+
+  /// No description provided for @conversationExportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The conversation could not be exported. Try again.'**
+  String get conversationExportFailed;
+
+  /// No description provided for @conversationExportProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Provider'**
+  String get conversationExportProvider;
+
+  /// No description provided for @conversationExportModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model'**
+  String get conversationExportModel;
+
+  /// No description provided for @conversationExportCreated.
+  ///
+  /// In en, this message translates to:
+  /// **'Created'**
+  String get conversationExportCreated;
+
+  /// No description provided for @conversationExportStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get conversationExportStatus;
+
+  /// No description provided for @toolPermissions.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool access'**
+  String get toolPermissions;
+
+  /// No description provided for @toolPermissionsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose where AI file tools can operate and whether each call requires your approval.'**
+  String get toolPermissionsDescription;
+
+  /// No description provided for @toolPermissionRequireApproval.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask for approval'**
+  String get toolPermissionRequireApproval;
+
+  /// No description provided for @toolPermissionRequireApprovalDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Each tool call asks for permission. Access is limited to the project folder and %LOCALAPPDATA%\\Zihora.'**
+  String get toolPermissionRequireApprovalDescription;
+
+  /// No description provided for @toolPermissionFullAccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Full access'**
+  String get toolPermissionFullAccess;
+
+  /// No description provided for @toolPermissionFullAccessDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Current read-only tools can access any folder without asking. Files are not changed and commands are not run.'**
+  String get toolPermissionFullAccessDescription;
+
+  /// No description provided for @toolPermissionSettingsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool access settings could not be loaded.'**
+  String get toolPermissionSettingsLoadFailed;
+
+  /// No description provided for @toolPermissionSettingsSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool access settings could not be saved. Try again.'**
+  String get toolPermissionSettingsSaveFailed;
+
+  /// No description provided for @toolPermissionRequestTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool permission'**
+  String get toolPermissionRequestTitle;
+
+  /// No description provided for @toolPermissionRequestDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'The AI wants to use this tool at the selected location. Permission applies to this call only.'**
+  String get toolPermissionRequestDescription;
+
+  /// No description provided for @toolPermissionTarget.
+  ///
+  /// In en, this message translates to:
+  /// **'Location to access'**
+  String get toolPermissionTarget;
+
+  /// No description provided for @toolPermissionTool.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool'**
+  String get toolPermissionTool;
+
+  /// No description provided for @toolPermissionArguments.
+  ///
+  /// In en, this message translates to:
+  /// **'Request details'**
+  String get toolPermissionArguments;
+
+  /// No description provided for @toolPermissionDeny.
+  ///
+  /// In en, this message translates to:
+  /// **'Deny'**
+  String get toolPermissionDeny;
+
+  /// No description provided for @toolPermissionStopResponse.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop response'**
+  String get toolPermissionStopResponse;
+
+  /// No description provided for @toolPermissionAllowOnce.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow this call'**
+  String get toolPermissionAllowOnce;
+
+  /// No description provided for @toolDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'Denied'**
+  String get toolDenied;
+
+  /// No description provided for @toolCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get toolCancelled;
+
+  /// No description provided for @toolAwaitingApproval.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for approval'**
+  String get toolAwaitingApproval;
+
+  /// No description provided for @conversationExportToolActivity.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool activity'**
+  String get conversationExportToolActivity;
+
+  /// No description provided for @responseReplaceFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The new response was saved, but the earlier response could not be replaced.'**
+  String get responseReplaceFailed;
+
+  /// No description provided for @responseRetryNotCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'The new response did not finish. The earlier response was kept.'**
+  String get responseRetryNotCompleted;
+
+  /// No description provided for @responseRetryCleanupFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The retry could not be cleaned up. Refresh the conversation history.'**
+  String get responseRetryCleanupFailed;
+
+  /// No description provided for @responseInProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Response in progress'**
+  String get responseInProgress;
+
+  /// No description provided for @responseRetryUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This response cannot be retried. Start a new message instead.'**
+  String get responseRetryUnavailable;
+
+  /// No description provided for @providerRateLimited.
+  ///
+  /// In en, this message translates to:
+  /// **'The provider reported a usage limit. Try again later.'**
+  String get providerRateLimited;
+
+  /// No description provided for @providerAuthenticationRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'The provider rejected the request. Check the connection and model access.'**
+  String get providerAuthenticationRequired;
+
+  /// No description provided for @providerRequestFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The provider could not complete the response. Your saved messages are still available.'**
+  String get providerRequestFailed;
 
   /// No description provided for @apiKey.
   ///
@@ -305,7 +713,7 @@ abstract class AppLocalizations {
   /// No description provided for @oldCredentialCleanupFailed.
   ///
   /// In en, this message translates to:
-  /// **'The account connected, but an older saved credential could not be removed. Restart Zihora and try again.'**
+  /// **'The account connected, but an older saved credential could not be removed. Restart OpenChat and try again.'**
   String get oldCredentialCleanupFailed;
 
   /// No description provided for @connectionSelectionFailed.
@@ -563,7 +971,7 @@ abstract class AppLocalizations {
   /// No description provided for @titleGenerationTargetDescription.
   ///
   /// In en, this message translates to:
-  /// **'When the conversation account has no different model available, Zihora can use the account you choose here. It skips title generation when ordinary usage is unavailable.'**
+  /// **'When the conversation account has no different model available, OpenChat can use the account you choose here. It skips title generation when ordinary usage is unavailable.'**
   String get titleGenerationTargetDescription;
 
   /// No description provided for @titleUseConversationAccount.
@@ -613,6 +1021,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Choose how the app looks.'**
   String get themeSettingDescription;
+
+  /// No description provided for @language.
+  ///
+  /// In en, this message translates to:
+  /// **'App language'**
+  String get language;
+
+  /// No description provided for @languageSettingDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the language used by the app.'**
+  String get languageSettingDescription;
+
+  /// No description provided for @systemLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Device language'**
+  String get systemLanguage;
+
+  /// No description provided for @englishLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'English'**
+  String get englishLanguage;
+
+  /// No description provided for @turkishLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Turkish'**
+  String get turkishLanguage;
+
+  /// No description provided for @languageSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The language preference could not be saved. Try again.'**
+  String get languageSaveFailed;
 
   /// No description provided for @systemTheme.
   ///
@@ -1010,12 +1454,6 @@ abstract class AppLocalizations {
   /// **'Choose model'**
   String get modelSelection;
 
-  /// No description provided for @chatGptProvider.
-  ///
-  /// In en, this message translates to:
-  /// **'ChatGPT'**
-  String get chatGptProvider;
-
   /// No description provided for @noModelConnected.
   ///
   /// In en, this message translates to:
@@ -1109,7 +1547,7 @@ abstract class AppLocalizations {
   /// No description provided for @chatGptDataUnavailable.
   ///
   /// In en, this message translates to:
-  /// **'ChatGPT returned information Zihora could not read. Refresh the connection and try again.'**
+  /// **'ChatGPT returned information OpenChat could not read. Refresh the connection and try again.'**
   String get chatGptDataUnavailable;
 
   /// No description provided for @modelCatalogUnavailable.
@@ -1151,7 +1589,7 @@ abstract class AppLocalizations {
   /// No description provided for @chatGptProviderChanged.
   ///
   /// In en, this message translates to:
-  /// **'ChatGPT’s response format changed. Update Zihora and try again.'**
+  /// **'ChatGPT’s response format changed. Update OpenChat and try again.'**
   String get chatGptProviderChanged;
 
   /// No description provided for @cachedCatalog.
@@ -1309,6 +1747,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'A summary provided by the model. The duration is how long it took to arrive in the stream; it is not hidden chain-of-thought data.'**
   String get reasoningSummaryTooltip;
+
+  /// No description provided for @toolRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Running'**
+  String get toolRunning;
+
+  /// No description provided for @toolCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get toolCompleted;
+
+  /// No description provided for @toolFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get toolFailed;
+
+  /// No description provided for @toolInput.
+  ///
+  /// In en, this message translates to:
+  /// **'Input'**
+  String get toolInput;
+
+  /// No description provided for @toolOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'Output'**
+  String get toolOutput;
+
+  /// No description provided for @toolListFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'List files'**
+  String get toolListFiles;
+
+  /// No description provided for @toolSearchFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Search files'**
+  String get toolSearchFiles;
+
+  /// No description provided for @toolReadFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Read file'**
+  String get toolReadFile;
+
+  /// No description provided for @toolGetFileInfo.
+  ///
+  /// In en, this message translates to:
+  /// **'Get file information'**
+  String get toolGetFileInfo;
+
+  /// No description provided for @toolTechnicalDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Details'**
+  String get toolTechnicalDetails;
+
+  /// No description provided for @toolFileCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No items} one{1 item} other{{count} items}}'**
+  String toolFileCount(int count);
+
+  /// No description provided for @toolEmptyListing.
+  ///
+  /// In en, this message translates to:
+  /// **'There are no items to show in this folder.'**
+  String get toolEmptyListing;
+
+  /// No description provided for @toolListingUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This file list could not be displayed.'**
+  String get toolListingUnavailable;
+
+  /// No description provided for @toolListingIncomplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Some items could not be listed.'**
+  String get toolListingIncomplete;
+
+  /// No description provided for @toolMoreFilesAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'More items are available.'**
+  String get toolMoreFilesAvailable;
+
+  /// No description provided for @toolDesktopLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'Desktop'**
+  String get toolDesktopLocation;
+
+  /// No description provided for @toolProjectLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'Project folder'**
+  String get toolProjectLocation;
+
+  /// No description provided for @toolZihoraLocation.
+  ///
+  /// In en, this message translates to:
+  /// **'Application data folder'**
+  String get toolZihoraLocation;
 
   /// No description provided for @responseFailed.
   ///

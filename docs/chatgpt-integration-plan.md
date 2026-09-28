@@ -2,7 +2,7 @@
 
 ## Goal
 
-Deliver the first Windows release of Zihora as a local-first chat application. The first provider is ChatGPT. Flutter presents the interface; a local Rust service owns provider authentication and requests; one SQLite file stores conversation and integration data under `%LOCALAPPDATA%\Zihora\db`.
+Deliver the first Windows release of OpenChat as a local-first chat application. The first provider is ChatGPT. Flutter presents the interface; a local Rust service owns provider authentication and requests; one SQLite file stores conversation and integration data under `%LOCALAPPDATA%\Zihora\db`.
 
 This document is the working plan for the ChatGPT implementation. It records the agreed behavior, security boundaries, failure handling, and delivery order in one place.
 
@@ -14,13 +14,15 @@ This document is the working plan for the ChatGPT implementation. It records the
 - Local conversation and message history.
 - Account and plan information, usage limits, reset times, and reset-credit details when the service returns them.
 - A separate, non-blocking mechanism for AI-generated conversation titles.
+- Shared built-in instructions and locally saved user instructions, with provider-specific request mapping.
+- Read-only project file tools for conversations linked to a project.
 - Windows as the first supported release target. The service boundary should remain usable by future desktop and mobile clients.
 - All durable application files under `%LOCALAPPDATA%\Zihora\`: the SQLite database in `db`, logs in `logs`, and cache in `cache`.
 
 ## Out of scope for this release
 
 - Providers other than ChatGPT.
-- File editing, tools, or agents.
+- File editing, write-capable tools, or agents.
 - Cloud synchronization or a centrally hosted service.
 - Treating an OpenAI Platform API key as ChatGPT OAuth, or silently using it as a fallback.
 - Automatically consuming a banked reset credit.
@@ -35,12 +37,13 @@ Flutter UI
        └─ Rust service
             ├─ OAuth PKCE and token refresh
             ├─ ChatGPT account, workspace, model, quota, and response clients
+            ├─ shared instructions and bounded, read-only project file tools
             ├─ title eligibility and background work
             ├─ Windows credential storage for OAuth tokens
             └─ SQLite: %LOCALAPPDATA%\Zihora\db\zihora.sqlite3
 ```
 
-The service is a child process owned by Zihora. It communicates over standard input and output, so it does not open a network listener. Standard output is reserved for protocol messages. Diagnostics must never contain access tokens, refresh tokens, authorization codes, API keys, message contents, or full provider responses.
+The service is a child process owned by OpenChat. It communicates over standard input and output, so it does not open a network listener. Standard output is reserved for protocol messages. Diagnostics must never contain access tokens, refresh tokens, authorization codes, API keys, message contents, or full provider responses.
 
 OAuth tokens belong in Windows Credential Manager. SQLite stores a credential reference and non-secret account metadata. The SQLite database uses WAL mode and a bounded busy timeout. The first implementation shares the one database file with the existing Drift conversation tables; Rust-owned integration tables have their own migration version table and do not use SQLite's global `user_version`, which Drift owns.
 
@@ -75,6 +78,9 @@ OAuth tokens belong in Windows Credential Manager. SQLite stores only a credenti
 - Distinguish completed, failed, incomplete, stopped, rate-limited, and authentication-required outcomes.
 - Treat stream deltas as provider events, not as guaranteed individual token boundaries. Compute displayed token counts and throughput only from authoritative usage/measurement data; otherwise show them as unavailable.
 - Preserve the exact account, workspace, and model used for each conversation. A changed default applies only to new conversations.
+- Send one shared instruction bundle through ChatGPT Responses `instructions` and OpenCode Chat Completions `system` messages.
+- Expose read-only file tools in conversations. Bind any project root from the saved conversation-project relationship; never accept it from model arguments. Without a project, approval mode confines access to the local application data directory.
+- Treat file contents returned by tools as untrusted data. Reject absolute paths, parent traversal, symlinks, unsupported tools, oversized arguments, and tool loops above six rounds or sixteen calls.
 
 ### Quota, account, and reset information
 
@@ -144,6 +150,7 @@ Title creation is a separate background operation. It never holds the chat respo
 7. **Text chat (implemented):** Responses request, SSE streaming, cancellation, partial-output persistence, and request error mapping.
 8. **Title generation (implemented):** different-model selection, fresh ordinary-usage gate, non-blocking generation, and the failure behavior from the matrix above.
 9. **Windows UI and package completion (implemented):** connect settings/chat and title-target settings, bundle the Rust service, produce the Windows executable and portable package, and verify the packaged artifacts.
+10. **Shared instructions and project tools (implemented):** save user instructions locally, map the shared instruction bundle to each provider API, expose the existing read-only file tools only to project-linked chats, and continue streamed provider responses after tool results.
 
 ## Acceptance criteria
 
@@ -155,21 +162,23 @@ Title creation is a separate background operation. It never holds the chat respo
 - A text response streams, survives restart in local history, and exposes interruption, authentication, and quota failures accurately.
 - Title generation never delays a response, never spends a reset credit, never silently changes accounts, and never overwrites a manual title.
 - OpenAI Platform API-key behavior remains separate from ChatGPT OAuth behavior.
+- Shared instructions persist locally and are included in ChatGPT and OpenCode requests.
+- Project file tools cannot select or escape their trusted root and cannot change project files.
 - Windows packaging includes the Rust service executable beside the app.
-- OAuth uses the public Codex client ID `app_EMoamEEZ73f0CkXaXp7hrann`; provider acceptance of Zihora's callback and private ChatGPT endpoints must be confirmed by a real account sign-in.
+- OAuth uses the public Codex client ID `app_EMoamEEZ73f0CkXaXp7hrann`; provider acceptance of OpenChat's callback and private ChatGPT endpoints must be confirmed by a real account sign-in.
 
 ## Compatibility and setup risks
 
 The Codex repository is an implementation reference, not a guarantee that ChatGPT web backend endpoints are a supported public API. Model catalogs, Responses, account/profile, usage, and reset-credit routes can change without notice. Keep endpoint parsing isolated, validate all returned data, and show explicit compatibility errors. The public OpenAI Platform API has a separate API-key authentication and billing contract; it is not a drop-in replacement for ChatGPT OAuth.
 
-The initial OAuth implementation uses the public Codex client ID already present in the Tengra archive and open-source Codex. It follows Codex's current loopback callback contract: `http://127.0.0.1:1455/auth/callback`, with its registered fallback port `1457`, Authorization Code with PKCE, and the current Codex scopes and authorization parameters. This does not make ChatGPT/Codex's private endpoints a supported public API or guarantee that OpenAI will accept Zihora's redirect and originator behavior. Keep the OAuth parameters isolated and handle provider rejection explicitly. A live account sign-in is required to establish provider acceptance; a successful local build alone cannot establish it.
+The initial OAuth implementation uses the public Codex client ID already present in the Tengra archive and open-source Codex. It follows Codex's current loopback callback contract: `http://127.0.0.1:1455/auth/callback`, with its registered fallback port `1457`, Authorization Code with PKCE, and the current Codex scopes and authorization parameters. This does not make ChatGPT/Codex's private endpoints a supported public API or guarantee that OpenAI will accept OpenChat's redirect and originator behavior. Keep the OAuth parameters isolated and handle provider rejection explicitly. A live account sign-in is required to establish provider acceptance; a successful local build alone cannot establish it.
 
 ## Windows build status
 
-- Single-file portable release: `build/outputs/zihora.exe`.
-- Build it with `tools/build_windows_portable.ps1`. The script builds the Flutter release, embeds the complete release folder in a small native launcher, and preserves the Zihora icon.
+- Single-file portable release: `build/outputs/OpenChat.exe`.
+- Build it with `tools/build_windows_portable.ps1`. The script builds the Flutter release, embeds the complete release folder in a small native launcher, and preserves the OpenChat icon.
 - On first launch, the launcher checks the embedded archive against its build-time SHA-256, rejects unsafe archive paths, and verifies required files. It extracts atomically to `%LOCALAPPDATA%\Zihora\cache\bundles\bundle-<sha256>`, then starts the Flutter app from that directory. The app starts its Rust service beside itself. The database, logs, and other application data remain under their agreed directories.
-- Content-addressed cache bundles prevent updated executables from reusing a partial or stale extraction. Old bundle directories are retained; they can be removed from `%LOCALAPPDATA%\Zihora\cache\bundles` when Zihora is closed.
+- Content-addressed cache bundles prevent updated executables from reusing a partial or stale extraction. Old bundle directories are retained; they can be removed from `%LOCALAPPDATA%\Zihora\cache\bundles` when OpenChat is closed.
 - `flutter analyze`, `cargo fmt --all --check`, and `cargo check --locked` completed successfully for the ChatGPT implementation. Automated tests were not run at Alican's request.
 - A live ChatGPT OAuth sign-in and provider endpoint compatibility remain unverified until an account completes the browser flow in the packaged application.
 

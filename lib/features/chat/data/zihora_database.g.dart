@@ -422,6 +422,17 @@ class $ConversationsTable extends Conversations
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _providerIdMeta = const VerificationMeta(
+    'providerId',
+  );
+  @override
+  late final GeneratedColumn<String> providerId = GeneratedColumn<String>(
+    'provider_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _modelIdMeta = const VerificationMeta(
     'modelId',
   );
@@ -491,6 +502,7 @@ class $ConversationsTable extends Conversations
     titleSource,
     connectionId,
     workspaceId,
+    providerId,
     modelId,
     projectId,
     isPinned,
@@ -547,6 +559,12 @@ class $ConversationsTable extends Conversations
           data['workspace_id']!,
           _workspaceIdMeta,
         ),
+      );
+    }
+    if (data.containsKey('provider_id')) {
+      context.handle(
+        _providerIdMeta,
+        providerId.isAcceptableOrUnknown(data['provider_id']!, _providerIdMeta),
       );
     }
     if (data.containsKey('model_id')) {
@@ -612,6 +630,10 @@ class $ConversationsTable extends Conversations
         DriftSqlType.string,
         data['${effectivePrefix}workspace_id'],
       ),
+      providerId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}provider_id'],
+      ),
       modelId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}model_id'],
@@ -647,6 +669,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
   final String titleSource;
   final String? connectionId;
   final String? workspaceId;
+  final String? providerId;
   final String? modelId;
   final String? projectId;
   final bool isPinned;
@@ -658,6 +681,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     required this.titleSource,
     this.connectionId,
     this.workspaceId,
+    this.providerId,
     this.modelId,
     this.projectId,
     required this.isPinned,
@@ -675,6 +699,9 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     }
     if (!nullToAbsent || workspaceId != null) {
       map['workspace_id'] = Variable<String>(workspaceId);
+    }
+    if (!nullToAbsent || providerId != null) {
+      map['provider_id'] = Variable<String>(providerId);
     }
     if (!nullToAbsent || modelId != null) {
       map['model_id'] = Variable<String>(modelId);
@@ -699,6 +726,9 @@ class Conversation extends DataClass implements Insertable<Conversation> {
       workspaceId: workspaceId == null && nullToAbsent
           ? const Value.absent()
           : Value(workspaceId),
+      providerId: providerId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(providerId),
       modelId: modelId == null && nullToAbsent
           ? const Value.absent()
           : Value(modelId),
@@ -722,6 +752,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
       titleSource: serializer.fromJson<String>(json['titleSource']),
       connectionId: serializer.fromJson<String?>(json['connectionId']),
       workspaceId: serializer.fromJson<String?>(json['workspaceId']),
+      providerId: serializer.fromJson<String?>(json['providerId']),
       modelId: serializer.fromJson<String?>(json['modelId']),
       projectId: serializer.fromJson<String?>(json['projectId']),
       isPinned: serializer.fromJson<bool>(json['isPinned']),
@@ -738,6 +769,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
       'titleSource': serializer.toJson<String>(titleSource),
       'connectionId': serializer.toJson<String?>(connectionId),
       'workspaceId': serializer.toJson<String?>(workspaceId),
+      'providerId': serializer.toJson<String?>(providerId),
       'modelId': serializer.toJson<String?>(modelId),
       'projectId': serializer.toJson<String?>(projectId),
       'isPinned': serializer.toJson<bool>(isPinned),
@@ -752,6 +784,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     String? titleSource,
     Value<String?> connectionId = const Value.absent(),
     Value<String?> workspaceId = const Value.absent(),
+    Value<String?> providerId = const Value.absent(),
     Value<String?> modelId = const Value.absent(),
     Value<String?> projectId = const Value.absent(),
     bool? isPinned,
@@ -763,6 +796,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     titleSource: titleSource ?? this.titleSource,
     connectionId: connectionId.present ? connectionId.value : this.connectionId,
     workspaceId: workspaceId.present ? workspaceId.value : this.workspaceId,
+    providerId: providerId.present ? providerId.value : this.providerId,
     modelId: modelId.present ? modelId.value : this.modelId,
     projectId: projectId.present ? projectId.value : this.projectId,
     isPinned: isPinned ?? this.isPinned,
@@ -782,6 +816,9 @@ class Conversation extends DataClass implements Insertable<Conversation> {
       workspaceId: data.workspaceId.present
           ? data.workspaceId.value
           : this.workspaceId,
+      providerId: data.providerId.present
+          ? data.providerId.value
+          : this.providerId,
       modelId: data.modelId.present ? data.modelId.value : this.modelId,
       projectId: data.projectId.present ? data.projectId.value : this.projectId,
       isPinned: data.isPinned.present ? data.isPinned.value : this.isPinned,
@@ -798,6 +835,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
           ..write('titleSource: $titleSource, ')
           ..write('connectionId: $connectionId, ')
           ..write('workspaceId: $workspaceId, ')
+          ..write('providerId: $providerId, ')
           ..write('modelId: $modelId, ')
           ..write('projectId: $projectId, ')
           ..write('isPinned: $isPinned, ')
@@ -814,6 +852,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     titleSource,
     connectionId,
     workspaceId,
+    providerId,
     modelId,
     projectId,
     isPinned,
@@ -829,6 +868,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
           other.titleSource == this.titleSource &&
           other.connectionId == this.connectionId &&
           other.workspaceId == this.workspaceId &&
+          other.providerId == this.providerId &&
           other.modelId == this.modelId &&
           other.projectId == this.projectId &&
           other.isPinned == this.isPinned &&
@@ -842,6 +882,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
   final Value<String> titleSource;
   final Value<String?> connectionId;
   final Value<String?> workspaceId;
+  final Value<String?> providerId;
   final Value<String?> modelId;
   final Value<String?> projectId;
   final Value<bool> isPinned;
@@ -854,6 +895,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     this.titleSource = const Value.absent(),
     this.connectionId = const Value.absent(),
     this.workspaceId = const Value.absent(),
+    this.providerId = const Value.absent(),
     this.modelId = const Value.absent(),
     this.projectId = const Value.absent(),
     this.isPinned = const Value.absent(),
@@ -867,6 +909,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     this.titleSource = const Value.absent(),
     this.connectionId = const Value.absent(),
     this.workspaceId = const Value.absent(),
+    this.providerId = const Value.absent(),
     this.modelId = const Value.absent(),
     this.projectId = const Value.absent(),
     this.isPinned = const Value.absent(),
@@ -883,6 +926,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     Expression<String>? titleSource,
     Expression<String>? connectionId,
     Expression<String>? workspaceId,
+    Expression<String>? providerId,
     Expression<String>? modelId,
     Expression<String>? projectId,
     Expression<bool>? isPinned,
@@ -896,6 +940,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
       if (titleSource != null) 'title_source': titleSource,
       if (connectionId != null) 'connection_id': connectionId,
       if (workspaceId != null) 'workspace_id': workspaceId,
+      if (providerId != null) 'provider_id': providerId,
       if (modelId != null) 'model_id': modelId,
       if (projectId != null) 'project_id': projectId,
       if (isPinned != null) 'is_pinned': isPinned,
@@ -911,6 +956,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     Value<String>? titleSource,
     Value<String?>? connectionId,
     Value<String?>? workspaceId,
+    Value<String?>? providerId,
     Value<String?>? modelId,
     Value<String?>? projectId,
     Value<bool>? isPinned,
@@ -924,6 +970,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
       titleSource: titleSource ?? this.titleSource,
       connectionId: connectionId ?? this.connectionId,
       workspaceId: workspaceId ?? this.workspaceId,
+      providerId: providerId ?? this.providerId,
       modelId: modelId ?? this.modelId,
       projectId: projectId ?? this.projectId,
       isPinned: isPinned ?? this.isPinned,
@@ -950,6 +997,9 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     }
     if (workspaceId.present) {
       map['workspace_id'] = Variable<String>(workspaceId.value);
+    }
+    if (providerId.present) {
+      map['provider_id'] = Variable<String>(providerId.value);
     }
     if (modelId.present) {
       map['model_id'] = Variable<String>(modelId.value);
@@ -980,6 +1030,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
           ..write('titleSource: $titleSource, ')
           ..write('connectionId: $connectionId, ')
           ..write('workspaceId: $workspaceId, ')
+          ..write('providerId: $providerId, ')
           ..write('modelId: $modelId, ')
           ..write('projectId: $projectId, ')
           ..write('isPinned: $isPinned, ')
@@ -1094,6 +1145,18 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         requiredDuringInsert: false,
         defaultValue: const Constant('[]'),
       );
+  static const VerificationMeta _toolActivitiesMeta = const VerificationMeta(
+    'toolActivities',
+  );
+  @override
+  late final GeneratedColumn<String> toolActivities = GeneratedColumn<String>(
+    'tool_activities',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('[]'),
+  );
   static const VerificationMeta _statusMeta = const VerificationMeta('status');
   @override
   late final GeneratedColumn<String> status = GeneratedColumn<String>(
@@ -1114,6 +1177,7 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     tokensPerSecond,
     elapsedMicroseconds,
     reasoningSummaries,
+    toolActivities,
     status,
   ];
   @override
@@ -1202,6 +1266,15 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         ),
       );
     }
+    if (data.containsKey('tool_activities')) {
+      context.handle(
+        _toolActivitiesMeta,
+        toolActivities.isAcceptableOrUnknown(
+          data['tool_activities']!,
+          _toolActivitiesMeta,
+        ),
+      );
+    }
     if (data.containsKey('status')) {
       context.handle(
         _statusMeta,
@@ -1255,6 +1328,10 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.string,
         data['${effectivePrefix}reasoning_summaries'],
       )!,
+      toolActivities: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tool_activities'],
+      )!,
       status: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}status'],
@@ -1278,6 +1355,7 @@ class Message extends DataClass implements Insertable<Message> {
   final double? tokensPerSecond;
   final int? elapsedMicroseconds;
   final String reasoningSummaries;
+  final String toolActivities;
   final String status;
   const Message({
     required this.id,
@@ -1289,6 +1367,7 @@ class Message extends DataClass implements Insertable<Message> {
     this.tokensPerSecond,
     this.elapsedMicroseconds,
     required this.reasoningSummaries,
+    required this.toolActivities,
     required this.status,
   });
   @override
@@ -1311,6 +1390,7 @@ class Message extends DataClass implements Insertable<Message> {
       map['elapsed_microseconds'] = Variable<int>(elapsedMicroseconds);
     }
     map['reasoning_summaries'] = Variable<String>(reasoningSummaries);
+    map['tool_activities'] = Variable<String>(toolActivities);
     map['status'] = Variable<String>(status);
     return map;
   }
@@ -1334,6 +1414,7 @@ class Message extends DataClass implements Insertable<Message> {
           ? const Value.absent()
           : Value(elapsedMicroseconds),
       reasoningSummaries: Value(reasoningSummaries),
+      toolActivities: Value(toolActivities),
       status: Value(status),
     );
   }
@@ -1357,6 +1438,7 @@ class Message extends DataClass implements Insertable<Message> {
       reasoningSummaries: serializer.fromJson<String>(
         json['reasoningSummaries'],
       ),
+      toolActivities: serializer.fromJson<String>(json['toolActivities']),
       status: serializer.fromJson<String>(json['status']),
     );
   }
@@ -1373,6 +1455,7 @@ class Message extends DataClass implements Insertable<Message> {
       'tokensPerSecond': serializer.toJson<double?>(tokensPerSecond),
       'elapsedMicroseconds': serializer.toJson<int?>(elapsedMicroseconds),
       'reasoningSummaries': serializer.toJson<String>(reasoningSummaries),
+      'toolActivities': serializer.toJson<String>(toolActivities),
       'status': serializer.toJson<String>(status),
     };
   }
@@ -1387,6 +1470,7 @@ class Message extends DataClass implements Insertable<Message> {
     Value<double?> tokensPerSecond = const Value.absent(),
     Value<int?> elapsedMicroseconds = const Value.absent(),
     String? reasoningSummaries,
+    String? toolActivities,
     String? status,
   }) => Message(
     id: id ?? this.id,
@@ -1402,6 +1486,7 @@ class Message extends DataClass implements Insertable<Message> {
         ? elapsedMicroseconds.value
         : this.elapsedMicroseconds,
     reasoningSummaries: reasoningSummaries ?? this.reasoningSummaries,
+    toolActivities: toolActivities ?? this.toolActivities,
     status: status ?? this.status,
   );
   Message copyWithCompanion(MessagesCompanion data) {
@@ -1425,6 +1510,9 @@ class Message extends DataClass implements Insertable<Message> {
       reasoningSummaries: data.reasoningSummaries.present
           ? data.reasoningSummaries.value
           : this.reasoningSummaries,
+      toolActivities: data.toolActivities.present
+          ? data.toolActivities.value
+          : this.toolActivities,
       status: data.status.present ? data.status.value : this.status,
     );
   }
@@ -1441,6 +1529,7 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('tokensPerSecond: $tokensPerSecond, ')
           ..write('elapsedMicroseconds: $elapsedMicroseconds, ')
           ..write('reasoningSummaries: $reasoningSummaries, ')
+          ..write('toolActivities: $toolActivities, ')
           ..write('status: $status')
           ..write(')'))
         .toString();
@@ -1457,6 +1546,7 @@ class Message extends DataClass implements Insertable<Message> {
     tokensPerSecond,
     elapsedMicroseconds,
     reasoningSummaries,
+    toolActivities,
     status,
   );
   @override
@@ -1472,6 +1562,7 @@ class Message extends DataClass implements Insertable<Message> {
           other.tokensPerSecond == this.tokensPerSecond &&
           other.elapsedMicroseconds == this.elapsedMicroseconds &&
           other.reasoningSummaries == this.reasoningSummaries &&
+          other.toolActivities == this.toolActivities &&
           other.status == this.status);
 }
 
@@ -1485,6 +1576,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<double?> tokensPerSecond;
   final Value<int?> elapsedMicroseconds;
   final Value<String> reasoningSummaries;
+  final Value<String> toolActivities;
   final Value<String> status;
   final Value<int> rowid;
   const MessagesCompanion({
@@ -1497,6 +1589,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.tokensPerSecond = const Value.absent(),
     this.elapsedMicroseconds = const Value.absent(),
     this.reasoningSummaries = const Value.absent(),
+    this.toolActivities = const Value.absent(),
     this.status = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -1510,6 +1603,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.tokensPerSecond = const Value.absent(),
     this.elapsedMicroseconds = const Value.absent(),
     this.reasoningSummaries = const Value.absent(),
+    this.toolActivities = const Value.absent(),
     required String status,
     this.rowid = const Value.absent(),
   }) : id = Value(id),
@@ -1527,6 +1621,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<double>? tokensPerSecond,
     Expression<int>? elapsedMicroseconds,
     Expression<String>? reasoningSummaries,
+    Expression<String>? toolActivities,
     Expression<String>? status,
     Expression<int>? rowid,
   }) {
@@ -1541,6 +1636,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (elapsedMicroseconds != null)
         'elapsed_microseconds': elapsedMicroseconds,
       if (reasoningSummaries != null) 'reasoning_summaries': reasoningSummaries,
+      if (toolActivities != null) 'tool_activities': toolActivities,
       if (status != null) 'status': status,
       if (rowid != null) 'rowid': rowid,
     });
@@ -1556,6 +1652,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<double?>? tokensPerSecond,
     Value<int?>? elapsedMicroseconds,
     Value<String>? reasoningSummaries,
+    Value<String>? toolActivities,
     Value<String>? status,
     Value<int>? rowid,
   }) {
@@ -1569,6 +1666,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       tokensPerSecond: tokensPerSecond ?? this.tokensPerSecond,
       elapsedMicroseconds: elapsedMicroseconds ?? this.elapsedMicroseconds,
       reasoningSummaries: reasoningSummaries ?? this.reasoningSummaries,
+      toolActivities: toolActivities ?? this.toolActivities,
       status: status ?? this.status,
       rowid: rowid ?? this.rowid,
     );
@@ -1604,6 +1702,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (reasoningSummaries.present) {
       map['reasoning_summaries'] = Variable<String>(reasoningSummaries.value);
     }
+    if (toolActivities.present) {
+      map['tool_activities'] = Variable<String>(toolActivities.value);
+    }
     if (status.present) {
       map['status'] = Variable<String>(status.value);
     }
@@ -1625,7 +1726,341 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('tokensPerSecond: $tokensPerSecond, ')
           ..write('elapsedMicroseconds: $elapsedMicroseconds, ')
           ..write('reasoningSummaries: $reasoningSummaries, ')
+          ..write('toolActivities: $toolActivities, ')
           ..write('status: $status, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $ModelFavoritesTable extends ModelFavorites
+    with TableInfo<$ModelFavoritesTable, ModelFavorite> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $ModelFavoritesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _providerIdMeta = const VerificationMeta(
+    'providerId',
+  );
+  @override
+  late final GeneratedColumn<String> providerId = GeneratedColumn<String>(
+    'provider_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _modelIdMeta = const VerificationMeta(
+    'modelId',
+  );
+  @override
+  late final GeneratedColumn<String> modelId = GeneratedColumn<String>(
+    'model_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _displayNameMeta = const VerificationMeta(
+    'displayName',
+  );
+  @override
+  late final GeneratedColumn<String> displayName = GeneratedColumn<String>(
+    'display_name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _favoritedAtMeta = const VerificationMeta(
+    'favoritedAt',
+  );
+  @override
+  late final GeneratedColumn<int> favoritedAt = GeneratedColumn<int>(
+    'favorited_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    providerId,
+    modelId,
+    displayName,
+    favoritedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'model_favorites';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<ModelFavorite> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('provider_id')) {
+      context.handle(
+        _providerIdMeta,
+        providerId.isAcceptableOrUnknown(data['provider_id']!, _providerIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_providerIdMeta);
+    }
+    if (data.containsKey('model_id')) {
+      context.handle(
+        _modelIdMeta,
+        modelId.isAcceptableOrUnknown(data['model_id']!, _modelIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_modelIdMeta);
+    }
+    if (data.containsKey('display_name')) {
+      context.handle(
+        _displayNameMeta,
+        displayName.isAcceptableOrUnknown(
+          data['display_name']!,
+          _displayNameMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_displayNameMeta);
+    }
+    if (data.containsKey('favorited_at')) {
+      context.handle(
+        _favoritedAtMeta,
+        favoritedAt.isAcceptableOrUnknown(
+          data['favorited_at']!,
+          _favoritedAtMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_favoritedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {providerId, modelId};
+  @override
+  ModelFavorite map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return ModelFavorite(
+      providerId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}provider_id'],
+      )!,
+      modelId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}model_id'],
+      )!,
+      displayName: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}display_name'],
+      )!,
+      favoritedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}favorited_at'],
+      )!,
+    );
+  }
+
+  @override
+  $ModelFavoritesTable createAlias(String alias) {
+    return $ModelFavoritesTable(attachedDatabase, alias);
+  }
+}
+
+class ModelFavorite extends DataClass implements Insertable<ModelFavorite> {
+  final String providerId;
+  final String modelId;
+  final String displayName;
+  final int favoritedAt;
+  const ModelFavorite({
+    required this.providerId,
+    required this.modelId,
+    required this.displayName,
+    required this.favoritedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['provider_id'] = Variable<String>(providerId);
+    map['model_id'] = Variable<String>(modelId);
+    map['display_name'] = Variable<String>(displayName);
+    map['favorited_at'] = Variable<int>(favoritedAt);
+    return map;
+  }
+
+  ModelFavoritesCompanion toCompanion(bool nullToAbsent) {
+    return ModelFavoritesCompanion(
+      providerId: Value(providerId),
+      modelId: Value(modelId),
+      displayName: Value(displayName),
+      favoritedAt: Value(favoritedAt),
+    );
+  }
+
+  factory ModelFavorite.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return ModelFavorite(
+      providerId: serializer.fromJson<String>(json['providerId']),
+      modelId: serializer.fromJson<String>(json['modelId']),
+      displayName: serializer.fromJson<String>(json['displayName']),
+      favoritedAt: serializer.fromJson<int>(json['favoritedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'providerId': serializer.toJson<String>(providerId),
+      'modelId': serializer.toJson<String>(modelId),
+      'displayName': serializer.toJson<String>(displayName),
+      'favoritedAt': serializer.toJson<int>(favoritedAt),
+    };
+  }
+
+  ModelFavorite copyWith({
+    String? providerId,
+    String? modelId,
+    String? displayName,
+    int? favoritedAt,
+  }) => ModelFavorite(
+    providerId: providerId ?? this.providerId,
+    modelId: modelId ?? this.modelId,
+    displayName: displayName ?? this.displayName,
+    favoritedAt: favoritedAt ?? this.favoritedAt,
+  );
+  ModelFavorite copyWithCompanion(ModelFavoritesCompanion data) {
+    return ModelFavorite(
+      providerId: data.providerId.present
+          ? data.providerId.value
+          : this.providerId,
+      modelId: data.modelId.present ? data.modelId.value : this.modelId,
+      displayName: data.displayName.present
+          ? data.displayName.value
+          : this.displayName,
+      favoritedAt: data.favoritedAt.present
+          ? data.favoritedAt.value
+          : this.favoritedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ModelFavorite(')
+          ..write('providerId: $providerId, ')
+          ..write('modelId: $modelId, ')
+          ..write('displayName: $displayName, ')
+          ..write('favoritedAt: $favoritedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(providerId, modelId, displayName, favoritedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is ModelFavorite &&
+          other.providerId == this.providerId &&
+          other.modelId == this.modelId &&
+          other.displayName == this.displayName &&
+          other.favoritedAt == this.favoritedAt);
+}
+
+class ModelFavoritesCompanion extends UpdateCompanion<ModelFavorite> {
+  final Value<String> providerId;
+  final Value<String> modelId;
+  final Value<String> displayName;
+  final Value<int> favoritedAt;
+  final Value<int> rowid;
+  const ModelFavoritesCompanion({
+    this.providerId = const Value.absent(),
+    this.modelId = const Value.absent(),
+    this.displayName = const Value.absent(),
+    this.favoritedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  ModelFavoritesCompanion.insert({
+    required String providerId,
+    required String modelId,
+    required String displayName,
+    required int favoritedAt,
+    this.rowid = const Value.absent(),
+  }) : providerId = Value(providerId),
+       modelId = Value(modelId),
+       displayName = Value(displayName),
+       favoritedAt = Value(favoritedAt);
+  static Insertable<ModelFavorite> custom({
+    Expression<String>? providerId,
+    Expression<String>? modelId,
+    Expression<String>? displayName,
+    Expression<int>? favoritedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (providerId != null) 'provider_id': providerId,
+      if (modelId != null) 'model_id': modelId,
+      if (displayName != null) 'display_name': displayName,
+      if (favoritedAt != null) 'favorited_at': favoritedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  ModelFavoritesCompanion copyWith({
+    Value<String>? providerId,
+    Value<String>? modelId,
+    Value<String>? displayName,
+    Value<int>? favoritedAt,
+    Value<int>? rowid,
+  }) {
+    return ModelFavoritesCompanion(
+      providerId: providerId ?? this.providerId,
+      modelId: modelId ?? this.modelId,
+      displayName: displayName ?? this.displayName,
+      favoritedAt: favoritedAt ?? this.favoritedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (providerId.present) {
+      map['provider_id'] = Variable<String>(providerId.value);
+    }
+    if (modelId.present) {
+      map['model_id'] = Variable<String>(modelId.value);
+    }
+    if (displayName.present) {
+      map['display_name'] = Variable<String>(displayName.value);
+    }
+    if (favoritedAt.present) {
+      map['favorited_at'] = Variable<int>(favoritedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('ModelFavoritesCompanion(')
+          ..write('providerId: $providerId, ')
+          ..write('modelId: $modelId, ')
+          ..write('displayName: $displayName, ')
+          ..write('favoritedAt: $favoritedAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1638,6 +2073,7 @@ abstract class _$ZihoraDatabase extends GeneratedDatabase {
   late final $ProjectsTable projects = $ProjectsTable(this);
   late final $ConversationsTable conversations = $ConversationsTable(this);
   late final $MessagesTable messages = $MessagesTable(this);
+  late final $ModelFavoritesTable modelFavorites = $ModelFavoritesTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -1646,6 +2082,7 @@ abstract class _$ZihoraDatabase extends GeneratedDatabase {
     projects,
     conversations,
     messages,
+    modelFavorites,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -1975,6 +2412,7 @@ typedef $$ConversationsTableCreateCompanionBuilder =
       Value<String> titleSource,
       Value<String?> connectionId,
       Value<String?> workspaceId,
+      Value<String?> providerId,
       Value<String?> modelId,
       Value<String?> projectId,
       Value<bool> isPinned,
@@ -1989,6 +2427,7 @@ typedef $$ConversationsTableUpdateCompanionBuilder =
       Value<String> titleSource,
       Value<String?> connectionId,
       Value<String?> workspaceId,
+      Value<String?> providerId,
       Value<String?> modelId,
       Value<String?> projectId,
       Value<bool> isPinned,
@@ -2074,6 +2513,11 @@ class $$ConversationsTableFilterComposer
 
   ColumnFilters<String> get workspaceId => $composableBuilder(
     column: $table.workspaceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get providerId => $composableBuilder(
+    column: $table.providerId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2180,6 +2624,11 @@ class $$ConversationsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get providerId => $composableBuilder(
+    column: $table.providerId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get modelId => $composableBuilder(
     column: $table.modelId,
     builder: (column) => ColumnOrderings(column),
@@ -2251,6 +2700,11 @@ class $$ConversationsTableAnnotationComposer
 
   GeneratedColumn<String> get workspaceId => $composableBuilder(
     column: $table.workspaceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get providerId => $composableBuilder(
+    column: $table.providerId,
     builder: (column) => column,
   );
 
@@ -2350,6 +2804,7 @@ class $$ConversationsTableTableManager
                 Value<String> titleSource = const Value.absent(),
                 Value<String?> connectionId = const Value.absent(),
                 Value<String?> workspaceId = const Value.absent(),
+                Value<String?> providerId = const Value.absent(),
                 Value<String?> modelId = const Value.absent(),
                 Value<String?> projectId = const Value.absent(),
                 Value<bool> isPinned = const Value.absent(),
@@ -2362,6 +2817,7 @@ class $$ConversationsTableTableManager
                 titleSource: titleSource,
                 connectionId: connectionId,
                 workspaceId: workspaceId,
+                providerId: providerId,
                 modelId: modelId,
                 projectId: projectId,
                 isPinned: isPinned,
@@ -2376,6 +2832,7 @@ class $$ConversationsTableTableManager
                 Value<String> titleSource = const Value.absent(),
                 Value<String?> connectionId = const Value.absent(),
                 Value<String?> workspaceId = const Value.absent(),
+                Value<String?> providerId = const Value.absent(),
                 Value<String?> modelId = const Value.absent(),
                 Value<String?> projectId = const Value.absent(),
                 Value<bool> isPinned = const Value.absent(),
@@ -2388,6 +2845,7 @@ class $$ConversationsTableTableManager
                 titleSource: titleSource,
                 connectionId: connectionId,
                 workspaceId: workspaceId,
+                providerId: providerId,
                 modelId: modelId,
                 projectId: projectId,
                 isPinned: isPinned,
@@ -2492,6 +2950,7 @@ typedef $$MessagesTableCreateCompanionBuilder = MessagesCompanion Function({
   Value<double?> tokensPerSecond,
   Value<int?> elapsedMicroseconds,
   Value<String> reasoningSummaries,
+  Value<String> toolActivities,
   required String status,
   Value<int> rowid,
 });
@@ -2505,6 +2964,7 @@ typedef $$MessagesTableUpdateCompanionBuilder = MessagesCompanion Function({
   Value<double?> tokensPerSecond,
   Value<int?> elapsedMicroseconds,
   Value<String> reasoningSummaries,
+  Value<String> toolActivities,
   Value<String> status,
   Value<int> rowid,
 });
@@ -2578,6 +3038,11 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<String> get reasoningSummaries => $composableBuilder(
     column: $table.reasoningSummaries,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get toolActivities => $composableBuilder(
+    column: $table.toolActivities,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2659,6 +3124,11 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get toolActivities => $composableBuilder(
+    column: $table.toolActivities,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get status => $composableBuilder(
     column: $table.status,
     builder: (column) => ColumnOrderings(column),
@@ -2729,6 +3199,11 @@ class $$MessagesTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get toolActivities => $composableBuilder(
+    column: $table.toolActivities,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get status =>
       $composableBuilder(column: $table.status, builder: (column) => column);
 
@@ -2793,6 +3268,7 @@ class $$MessagesTableTableManager
                 Value<double?> tokensPerSecond = const Value.absent(),
                 Value<int?> elapsedMicroseconds = const Value.absent(),
                 Value<String> reasoningSummaries = const Value.absent(),
+                Value<String> toolActivities = const Value.absent(),
                 Value<String> status = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MessagesCompanion(
@@ -2805,6 +3281,7 @@ class $$MessagesTableTableManager
                 tokensPerSecond: tokensPerSecond,
                 elapsedMicroseconds: elapsedMicroseconds,
                 reasoningSummaries: reasoningSummaries,
+                toolActivities: toolActivities,
                 status: status,
                 rowid: rowid,
               ),
@@ -2819,6 +3296,7 @@ class $$MessagesTableTableManager
                 Value<double?> tokensPerSecond = const Value.absent(),
                 Value<int?> elapsedMicroseconds = const Value.absent(),
                 Value<String> reasoningSummaries = const Value.absent(),
+                Value<String> toolActivities = const Value.absent(),
                 required String status,
                 Value<int> rowid = const Value.absent(),
               }) => MessagesCompanion.insert(
@@ -2831,6 +3309,7 @@ class $$MessagesTableTableManager
                 tokensPerSecond: tokensPerSecond,
                 elapsedMicroseconds: elapsedMicroseconds,
                 reasoningSummaries: reasoningSummaries,
+                toolActivities: toolActivities,
                 status: status,
                 rowid: rowid,
               ),
@@ -2899,6 +3378,208 @@ typedef $$MessagesTableProcessedTableManager =
       Message,
       PrefetchHooks Function({bool conversationId})
     >;
+typedef $$ModelFavoritesTableCreateCompanionBuilder =
+    ModelFavoritesCompanion Function({
+      required String providerId,
+      required String modelId,
+      required String displayName,
+      required int favoritedAt,
+      Value<int> rowid,
+    });
+typedef $$ModelFavoritesTableUpdateCompanionBuilder =
+    ModelFavoritesCompanion Function({
+      Value<String> providerId,
+      Value<String> modelId,
+      Value<String> displayName,
+      Value<int> favoritedAt,
+      Value<int> rowid,
+    });
+
+class $$ModelFavoritesTableFilterComposer
+    extends Composer<_$ZihoraDatabase, $ModelFavoritesTable> {
+  $$ModelFavoritesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get providerId => $composableBuilder(
+    column: $table.providerId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get modelId => $composableBuilder(
+    column: $table.modelId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get favoritedAt => $composableBuilder(
+    column: $table.favoritedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$ModelFavoritesTableOrderingComposer
+    extends Composer<_$ZihoraDatabase, $ModelFavoritesTable> {
+  $$ModelFavoritesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get providerId => $composableBuilder(
+    column: $table.providerId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get modelId => $composableBuilder(
+    column: $table.modelId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get favoritedAt => $composableBuilder(
+    column: $table.favoritedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$ModelFavoritesTableAnnotationComposer
+    extends Composer<_$ZihoraDatabase, $ModelFavoritesTable> {
+  $$ModelFavoritesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get providerId => $composableBuilder(
+    column: $table.providerId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get modelId =>
+      $composableBuilder(column: $table.modelId, builder: (column) => column);
+
+  GeneratedColumn<String> get displayName => $composableBuilder(
+    column: $table.displayName,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get favoritedAt => $composableBuilder(
+    column: $table.favoritedAt,
+    builder: (column) => column,
+  );
+}
+
+class $$ModelFavoritesTableTableManager
+    extends
+        RootTableManager<
+          _$ZihoraDatabase,
+          $ModelFavoritesTable,
+          ModelFavorite,
+          $$ModelFavoritesTableFilterComposer,
+          $$ModelFavoritesTableOrderingComposer,
+          $$ModelFavoritesTableAnnotationComposer,
+          $$ModelFavoritesTableCreateCompanionBuilder,
+          $$ModelFavoritesTableUpdateCompanionBuilder,
+          (
+            ModelFavorite,
+            BaseReferences<
+              _$ZihoraDatabase,
+              $ModelFavoritesTable,
+              ModelFavorite
+            >,
+          ),
+          ModelFavorite,
+          PrefetchHooks Function()
+        > {
+  $$ModelFavoritesTableTableManager(
+    _$ZihoraDatabase db,
+    $ModelFavoritesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$ModelFavoritesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$ModelFavoritesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$ModelFavoritesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> providerId = const Value.absent(),
+                Value<String> modelId = const Value.absent(),
+                Value<String> displayName = const Value.absent(),
+                Value<int> favoritedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => ModelFavoritesCompanion(
+                providerId: providerId,
+                modelId: modelId,
+                displayName: displayName,
+                favoritedAt: favoritedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String providerId,
+                required String modelId,
+                required String displayName,
+                required int favoritedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => ModelFavoritesCompanion.insert(
+                providerId: providerId,
+                modelId: modelId,
+                displayName: displayName,
+                favoritedAt: favoritedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$ModelFavoritesTable, ModelFavorite>(table),
+                  BaseReferences<
+                    _$ZihoraDatabase,
+                    $ModelFavoritesTable,
+                    ModelFavorite
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$ModelFavoritesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$ZihoraDatabase,
+      $ModelFavoritesTable,
+      ModelFavorite,
+      $$ModelFavoritesTableFilterComposer,
+      $$ModelFavoritesTableOrderingComposer,
+      $$ModelFavoritesTableAnnotationComposer,
+      $$ModelFavoritesTableCreateCompanionBuilder,
+      $$ModelFavoritesTableUpdateCompanionBuilder,
+      (
+        ModelFavorite,
+        BaseReferences<_$ZihoraDatabase, $ModelFavoritesTable, ModelFavorite>,
+      ),
+      ModelFavorite,
+      PrefetchHooks Function()
+    >;
 
 class $ZihoraDatabaseManager {
   final _$ZihoraDatabase _db;
@@ -2909,4 +3590,6 @@ class $ZihoraDatabaseManager {
       $$ConversationsTableTableManager(_db, _db.conversations);
   $$MessagesTableTableManager get messages =>
       $$MessagesTableTableManager(_db, _db.messages);
+  $$ModelFavoritesTableTableManager get modelFavorites =>
+      $$ModelFavoritesTableTableManager(_db, _db.modelFavorites);
 }

@@ -7,6 +7,7 @@ class ChatConversation {
     this.titleSource = ChatConversationTitleSource.automatic,
     this.connectionId,
     this.workspaceId,
+    this.providerId,
     this.modelId,
     this.projectId,
     this.isPinned = false,
@@ -19,6 +20,7 @@ class ChatConversation {
   final DateTime updatedAt;
   final String? connectionId;
   final String? workspaceId;
+  final String? providerId;
   final String? modelId;
   final String? projectId;
   final bool isPinned;

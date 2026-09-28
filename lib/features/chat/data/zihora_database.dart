@@ -21,6 +21,7 @@ class Conversations extends Table {
       text().withDefault(const Constant('automatic'))();
   TextColumn get connectionId => text().nullable()();
   TextColumn get workspaceId => text().nullable()();
+  TextColumn get providerId => text().nullable()();
   TextColumn get modelId => text().nullable()();
   TextColumn get projectId => text().nullable().references(
     Projects,
@@ -47,13 +48,24 @@ class Messages extends Table {
   IntColumn get elapsedMicroseconds => integer().nullable()();
   TextColumn get reasoningSummaries =>
       text().withDefault(const Constant('[]'))();
+  TextColumn get toolActivities => text().withDefault(const Constant('[]'))();
   TextColumn get status => text()();
 
   @override
   Set<Column<Object>> get primaryKey => {conversationId, id};
 }
 
-@DriftDatabase(tables: [Projects, Conversations, Messages])
+class ModelFavorites extends Table {
+  TextColumn get providerId => text()();
+  TextColumn get modelId => text()();
+  TextColumn get displayName => text()();
+  IntColumn get favoritedAt => integer()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {providerId, modelId};
+}
+
+@DriftDatabase(tables: [Projects, Conversations, Messages, ModelFavorites])
 class ZihoraDatabase extends _$ZihoraDatabase {
   ZihoraDatabase([QueryExecutor? executor])
     : super(executor ?? driftDatabase(name: 'zihora_chat'));
@@ -62,7 +74,7 @@ class ZihoraDatabase extends _$ZihoraDatabase {
     : super(_databaseAtPath(databasePath));
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -79,6 +91,15 @@ class ZihoraDatabase extends _$ZihoraDatabase {
       }
       if (from < 4) {
         await migrator.addColumn(messages, messages.reasoningSummaries);
+      }
+      if (from < 5) {
+        await migrator.addColumn(conversations, conversations.providerId);
+      }
+      if (from < 6) {
+        await migrator.createTable(modelFavorites);
+      }
+      if (from < 7) {
+        await migrator.addColumn(messages, messages.toolActivities);
       }
     },
     beforeOpen: (_) async => customStatement('PRAGMA foreign_keys = ON'),
