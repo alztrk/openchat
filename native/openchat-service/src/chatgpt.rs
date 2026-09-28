@@ -25,6 +25,7 @@ use crate::{
 };
 
 mod account;
+mod response_events;
 mod response_parser;
 mod streaming;
 mod title_generation;
