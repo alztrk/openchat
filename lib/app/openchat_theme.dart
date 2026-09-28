@@ -48,12 +48,12 @@ class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
   );
 
   static const dark = OpenChatPalette(
-    navigation: Color(0xFF201E1B),
-    surface: Color(0xFF201E1B),
-    composer: Color(0xFF201E1B),
+    navigation: Color(0xFF1B1917),
+    surface: Color(0xFF24211E),
+    composer: Color(0xFF2B2723),
     selected: Color(0xFF39332D),
-    hover: Color(0xFF39332D),
-    border: Color(0xFF3B3732),
+    hover: Color(0xFF322D28),
+    border: Color(0xFF403A34),
     controlBorder: Color(0xFF847B70),
     text: Color(0xFFEEE9E2),
     brandInk: Color(0xFFEEE9E2),
@@ -135,6 +135,7 @@ abstract final class OpenChatSpacing {
   static const compactSidebarWidth = 280.0;
   static const expandedRailWidth = 260.0;
   static const compactRailWidth = 72.0;
+  static const conversationMaxWidth = 920.0;
   static const fullSidebarBreakpoint = 1440.0;
   static const expandedRailBreakpoint = 1600.0;
   static const sidebarBreakpoint = 900.0;

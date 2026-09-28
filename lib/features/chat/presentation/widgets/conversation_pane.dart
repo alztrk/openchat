@@ -276,10 +276,17 @@ class _ConversationHistory extends StatelessWidget {
                   : previousMessage.role == ChatMessageRole.user
                   ? 2.0
                   : 18.0;
-              return Padding(
-                padding: EdgeInsets.only(top: messageGap),
-                child: AssistantMessageSkeleton(
-                  modelLabel: assistantModelLabel,
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: OpenChatSpacing.conversationMaxWidth,
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.only(top: messageGap),
+                    child: AssistantMessageSkeleton(
+                      modelLabel: assistantModelLabel,
+                    ),
+                  ),
                 ),
               );
             }
@@ -295,33 +302,36 @@ class _ConversationHistory extends StatelessWidget {
                 ? 2.0
                 : 18.0;
 
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (index > 0) SizedBox(height: startsNewDay ? 18 : messageGap),
-                if (startsNewDay) ...[
-                  _ConversationDateLabel(createdAt: message.createdAt),
-                  const SizedBox(height: 12),
-                ],
-                KeyedSubtree(
-                  key: ValueKey<String>(message.id),
-                  child: switch (message.role) {
-                    ChatMessageRole.user => _UserMessage(
-                      message: message,
-                      minHeight: index == 0 ? 70 : 62,
-                      topPadding: index == 0 ? 13 : 10,
-                      contentHeight: index == 0 ? 44 : 42,
-                    ),
-                    ChatMessageRole.assistant => AssistantMessage(
-                      message: message,
-                      modelLabel: assistantModelLabel,
-                      onRetry: _canRetryMessage(index)
-                          ? () => onRetryResponse?.call(message)
-                          : null,
-                    ),
-                  },
+            return Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: OpenChatSpacing.conversationMaxWidth,
                 ),
-              ],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (index > 0)
+                      SizedBox(height: startsNewDay ? 18 : messageGap),
+                    if (startsNewDay) ...[
+                      _ConversationDateLabel(createdAt: message.createdAt),
+                      const SizedBox(height: 12),
+                    ],
+                    KeyedSubtree(
+                      key: ValueKey<String>(message.id),
+                      child: switch (message.role) {
+                        ChatMessageRole.user => _UserMessage(message: message),
+                        ChatMessageRole.assistant => AssistantMessage(
+                          message: message,
+                          modelLabel: assistantModelLabel,
+                          onRetry: _canRetryMessage(index)
+                              ? () => onRetryResponse?.call(message)
+                              : null,
+                        ),
+                      },
+                    ),
+                  ],
+                ),
+              ),
             );
           },
         ),
@@ -377,17 +387,9 @@ class _ConversationDateLabel extends StatelessWidget {
 }
 
 class _UserMessage extends StatelessWidget {
-  const _UserMessage({
-    required this.message,
-    required this.minHeight,
-    required this.topPadding,
-    required this.contentHeight,
-  });
+  const _UserMessage({required this.message});
 
   final ChatMessage message;
-  final double minHeight;
-  final double topPadding;
-  final double contentHeight;
 
   @override
   Widget build(BuildContext context) {
@@ -396,7 +398,6 @@ class _UserMessage extends StatelessWidget {
     final timestamp = message.createdAt == null
         ? l10n.unavailableTime
         : DateFormat.Hm(l10n.localeName).format(message.createdAt!.toLocal());
-    final availableWidth = MediaQuery.sizeOf(context).width;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -405,56 +406,53 @@ class _UserMessage extends StatelessWidget {
           alignment: Alignment.centerRight,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: availableWidth < 80
-                    ? availableWidth
-                    : availableWidth - 80,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Flexible(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 540),
-                      child: Container(
-                        constraints: BoxConstraints(minHeight: minHeight),
-                        padding: EdgeInsets.fromLTRB(13, topPadding, 13, 0),
-                        decoration: BoxDecoration(
-                          color: palette.composer,
-                          borderRadius: BorderRadius.circular(10),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Flexible(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 540),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: palette.composer,
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(16),
+                          topRight: Radius.circular(16),
+                          bottomLeft: Radius.circular(16),
+                          bottomRight: Radius.circular(4),
                         ),
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(minHeight: contentHeight),
-                          child: Text(
-                            message.content,
-                            style: TextStyle(
-                              color: palette.text,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w400,
-                              height: 22 / 15,
-                            ),
-                          ),
+                      ),
+                      child: Text(
+                        message.content,
+                        style: TextStyle(
+                          color: palette.text,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w400,
+                          height: 22 / 15,
                         ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
-                  Padding(
-                    padding: const EdgeInsets.only(top: 10),
-                    child: Tooltip(
-                      message: l10n.userMessage,
-                      child: Icon(
-                        Icons.person_outline_rounded,
-                        size: 20,
-                        color: palette.secondaryIcon,
-                        semanticLabel: l10n.userMessage,
-                      ),
+                ),
+                const SizedBox(width: 8),
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Tooltip(
+                    message: l10n.userMessage,
+                    child: Icon(
+                      Icons.person_outline_rounded,
+                      size: 20,
+                      color: palette.secondaryIcon,
+                      semanticLabel: l10n.userMessage,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
