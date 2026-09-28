@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/openchat_theme.dart';
 import '../../../l10n/openchat_localizations.dart';
+import '../../chat/presentation/widgets/provider_icon.dart';
 import '../data/open_code_api_key_store.dart';
 
 class OpenCodeConnectionSection extends StatefulWidget {
@@ -110,78 +111,110 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
     final hasKey = _keySuffix != null;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          l10n.openCodeConsole,
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
-        const SizedBox(height: 6),
-        Text(
-          l10n.openCodeConsoleDescription,
-          style: TextStyle(color: palette.secondaryText, fontSize: 13),
-        ),
-        if (_error == 'storage' && !_showForm) ...[
-          const SizedBox(height: 6),
-          Text(
-            l10n.openCodeKeyStorageFailed,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-        ],
-        const SizedBox(height: 8),
-        if (_loading) const LinearProgressIndicator(),
-        if (!_loading)
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  hasKey
-                      ? l10n.openCodeKeySaved(_keySuffix!)
-                      : l10n.openCodeNoKey,
+    return Card(
+      margin: EdgeInsets.zero,
+      color: palette.surface,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: palette.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                ProviderIcon(
+                  providerId: 'opencode',
+                  color: palette.text,
+                  size: 24,
                 ),
-              ),
-              TextButton(
-                onPressed: _saving
-                    ? null
-                    : () => setState(() => _showForm = !_showForm),
-                child: Text(hasKey ? l10n.edit : l10n.add),
-              ),
-              if (hasKey)
-                TextButton(
-                  onPressed: _saving ? null : _remove,
-                  child: Text(l10n.deleteAll),
-                ),
-            ],
-          ),
-        if (_showForm)
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _controller,
-                  obscureText: true,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  decoration: InputDecoration(
-                    labelText: l10n.openCodeApiKey,
-                    errorText: _error == 'invalid'
-                        ? l10n.openCodeKeyInvalid
-                        : _error == 'storage'
-                        ? l10n.openCodeKeyStorageFailed
-                        : null,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l10n.openCodeConsole,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        l10n.openCodeConsoleDescription,
+                        style: TextStyle(
+                          color: palette.secondaryText,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
                   ),
-                  onSubmitted: (_) => unawaited(_save()),
                 ),
-              ),
-              const SizedBox(width: 12),
-              FilledButton(
-                onPressed: _saving ? null : _save,
-                child: Text(_saving ? l10n.saving : l10n.save),
+              ],
+            ),
+            if (_error == 'storage' && !_showForm) ...[
+              const SizedBox(height: 10),
+              Text(
+                l10n.openCodeKeyStorageFailed,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ],
-          ),
-      ],
+            const SizedBox(height: 12),
+            if (_loading) const LinearProgressIndicator(),
+            if (!_loading)
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      hasKey
+                          ? l10n.openCodeKeySaved(_keySuffix!)
+                          : l10n.openCodeNoKey,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _saving
+                        ? null
+                        : () => setState(() => _showForm = !_showForm),
+                    child: Text(hasKey ? l10n.edit : l10n.add),
+                  ),
+                  if (hasKey)
+                    TextButton(
+                      onPressed: _saving ? null : _remove,
+                      child: Text(l10n.deleteAll),
+                    ),
+                ],
+              ),
+            if (_showForm)
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _controller,
+                      obscureText: true,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      decoration: InputDecoration(
+                        labelText: l10n.openCodeApiKey,
+                        errorText: _error == 'invalid'
+                            ? l10n.openCodeKeyInvalid
+                            : _error == 'storage'
+                            ? l10n.openCodeKeyStorageFailed
+                            : null,
+                      ),
+                      onSubmitted: (_) => unawaited(_save()),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  FilledButton(
+                    onPressed: _saving ? null : _save,
+                    child: Text(_saving ? l10n.saving : l10n.save),
+                  ),
+                ],
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
