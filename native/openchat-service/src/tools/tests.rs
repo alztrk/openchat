@@ -7,10 +7,8 @@ use std::{
 
 use serde_json::json;
 
-use super::{
-    ascii_shift_table, contains_ascii_case_insensitive, get_file_info, list_files, read_file,
-    search_files,
-};
+use super::search::{ascii_shift_table, contains_ascii_case_insensitive};
+use super::{get_file_info, list_files, read_file, search_files};
 
 static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
 
@@ -205,8 +203,9 @@ fn direct_search_keeps_pagination_order_after_parallel_file_reads() {
     fs::write(&first_match_path, "parallel marker first\n").expect("write first match");
     fs::write(&second_match_path, "parallel marker second\n").expect("write second match");
 
-    let all = super::search_files_direct(&root, &root, "parallel marker", false, false, 0, 40)
-        .expect("search parallel candidates");
+    let all =
+        super::search::search_files_direct(&root, &root, "parallel marker", false, false, 0, 40)
+            .expect("search parallel candidates");
     assert_eq!(
         all["matches"],
         json!([
@@ -215,10 +214,12 @@ fn direct_search_keeps_pagination_order_after_parallel_file_reads() {
         ])
     );
 
-    let first = super::search_files_direct(&root, &root, "parallel marker", false, false, 0, 1)
-        .expect("search first page");
-    let second = super::search_files_direct(&root, &root, "parallel marker", false, false, 1, 1)
-        .expect("search second page");
+    let first =
+        super::search::search_files_direct(&root, &root, "parallel marker", false, false, 0, 1)
+            .expect("search first page");
+    let second =
+        super::search::search_files_direct(&root, &root, "parallel marker", false, false, 1, 1)
+            .expect("search second page");
     assert_eq!(first["matches"][0], all["matches"][0]);
     assert_eq!(first["nextOffset"], json!(1));
     assert_eq!(second["matches"][0], all["matches"][1]);
@@ -348,7 +349,7 @@ fn benchmark_tool_latency_and_output_size() {
         measure("search_files_direct_no_app_cache", || {
             let canonical_root =
                 super::canonical_root(root).expect("canonical benchmark workspace root");
-            super::search_files_direct(
+            super::search::search_files_direct(
                 &canonical_root,
                 &canonical_root,
                 "needle",
@@ -454,7 +455,7 @@ fn benchmark_search_scale(file_count: usize) {
         super::directory_listing_response(Path::new("src"), &listing, 0, 100)
     });
     let direct_search = measure_iterations("search_files_direct_no_app_cache", 3, || {
-        super::search_files_direct(
+        super::search::search_files_direct(
             &canonical_root,
             &canonical_root,
             "no-such-marker",
