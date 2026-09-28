@@ -119,13 +119,15 @@ impl ChatGptService {
         let job_id = Uuid::new_v4().simple().to_string();
         if chatgpt_store::create_title_job(
             &self.storage,
-            &job_id,
-            conversation_id,
-            &title_route.connection_id,
-            &title_route.workspace_id,
-            Some(&model.id),
-            "queued",
-            None,
+            chatgpt_store::NewTitleJob {
+                id: &job_id,
+                conversation_id,
+                connection_id: &title_route.connection_id,
+                workspace_id: &title_route.workspace_id,
+                model_id: Some(&model.id),
+                status: "queued",
+                reason_code: None,
+            },
         )
         .is_err()
         {
@@ -404,13 +406,15 @@ impl ChatGptService {
         let job_id = Uuid::new_v4().simple().to_string();
         let _ = chatgpt_store::create_title_job(
             &self.storage,
-            &job_id,
-            conversation_id,
-            &route.connection_id,
-            &route.workspace_id,
-            None,
-            "skipped",
-            Some(reason),
+            chatgpt_store::NewTitleJob {
+                id: &job_id,
+                conversation_id,
+                connection_id: &route.connection_id,
+                workspace_id: &route.workspace_id,
+                model_id: None,
+                status: "skipped",
+                reason_code: Some(reason),
+            },
         );
     }
 }

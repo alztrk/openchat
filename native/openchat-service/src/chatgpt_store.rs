@@ -76,6 +76,16 @@ pub struct TitlePreference {
     pub workspace_id: Option<String>,
 }
 
+pub struct NewTitleJob<'a> {
+    pub id: &'a str,
+    pub conversation_id: &'a str,
+    pub connection_id: &'a str,
+    pub workspace_id: &'a str,
+    pub model_id: Option<&'a str>,
+    pub status: &'a str,
+    pub reason_code: Option<&'a str>,
+}
+
 #[derive(Clone, Debug)]
 pub struct StoredMessage {
     pub id: String,
@@ -854,31 +864,24 @@ pub fn save_assistant_message(
     Ok(())
 }
 
-pub fn create_title_job(
-    storage: &AppStorage,
-    job_id: &str,
-    conversation_id: &str,
-    connection_id: &str,
-    workspace_id: &str,
-    model_id: Option<&str>,
-    status: &str,
-    reason_code: Option<&str>,
-) -> rusqlite::Result<()> {
+pub fn create_title_job(storage: &AppStorage, job: NewTitleJob<'_>) -> rusqlite::Result<()> {
     storage.connect()?.execute(
         "INSERT INTO title_generation_jobs (
             id, conversation_id, connection_id, workspace_id, model_id,
             status, reason_code, created_at_unix_ms, completed_at_unix_ms
          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
-            job_id,
-            conversation_id,
-            connection_id,
-            workspace_id,
-            model_id,
-            status,
-            reason_code,
+            job.id,
+            job.conversation_id,
+            job.connection_id,
+            job.workspace_id,
+            job.model_id,
+            job.status,
+            job.reason_code,
             unix_time_millis()?,
-            (status != "queued").then(unix_time_millis).transpose()?,
+            (job.status != "queued")
+                .then(unix_time_millis)
+                .transpose()?,
         ],
     )?;
     Ok(())
