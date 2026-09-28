@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    path::Path,
     sync::Arc,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -14,15 +13,15 @@ use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use crate::{
+    chat_operation::ChatSendContext,
     chatgpt_store::{self, ChatGptModel},
     credentials::OAuthCredentialReference,
     instructions,
     oauth::OAuthClient,
-    permissions::ToolPermissionBroker,
-    protocol::{EventSink, ServiceError},
+    protocol::ServiceError,
     provider_schema::{ProviderChatRequest, ProviderMessage},
     storage::AppStorage,
-    tools::{self, ToolPermissionMode},
+    tools,
 };
 
 mod account;
@@ -77,18 +76,13 @@ impl ChatGptService {
 
     pub async fn send_message(
         self: &Arc<Self>,
-        request_id: Value,
-        conversation_id: &str,
+        context: ChatSendContext<'_>,
         reasoning_effort: Option<&str>,
-        excluded_assistant_message_id: Option<&str>,
-        custom_instructions: Option<&str>,
-        project_root: Option<&Path>,
-        data_root: &Path,
-        permission_mode: ToolPermissionMode,
-        permission_broker: &ToolPermissionBroker,
-        cancellation: &mut watch::Receiver<bool>,
-        events: EventSink,
     ) -> Result<Value, ServiceError> {
+        let conversation_id = context.conversation_id;
+        let excluded_assistant_message_id = context.excluded_assistant_message_id;
+        let custom_instructions = context.custom_instructions;
+        let project_root = context.project_root;
         let route = chatgpt_store::conversation_route(&self.storage, conversation_id)
             .map_err(database_error)?
             .ok_or_else(|| {
@@ -144,7 +138,7 @@ impl ChatGptService {
             model: model.id.clone(),
             instructions: instructions::shared_instructions(
                 custom_instructions,
-                permission_mode,
+                context.permission_mode,
                 project_root.is_some(),
             ),
             messages: history,
@@ -189,22 +183,8 @@ impl ChatGptService {
             payload["reasoning"] = json!({"effort": effort});
         }
 
-        self.stream_response(
-            request_id,
-            conversation_id,
-            &route,
-            &workspace.external_id,
-            &model,
-            payload,
-            excluded_assistant_message_id,
-            project_root,
-            data_root,
-            permission_mode,
-            permission_broker,
-            cancellation,
-            events,
-        )
-        .await
+        self.stream_response(context, &route, &workspace.external_id, &model, payload)
+            .await
     }
 
     async fn fetch_models(

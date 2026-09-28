@@ -1,6 +1,5 @@
 use std::{
     collections::BTreeMap,
-    path::Path,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
@@ -12,15 +11,15 @@ use tokio::sync::watch;
 use uuid::Uuid;
 
 use crate::{
+    chat_operation::ChatSendContext,
     instructions,
-    permissions::ToolPermissionBroker,
-    protocol::{EventSink, ServiceError},
+    protocol::ServiceError,
     provider_schema::{
         ChatStreamEvent, ChatStreamSnapshot, ProviderChatRequest, ProviderMessage, ToolCall,
         ToolDefinition,
     },
     storage::AppStorage,
-    tools::{self, ToolExecutor, ToolPermissionMode},
+    tools::{self, ToolExecutor},
 };
 
 const MODELS_URL: &str = "https://opencode.ai/inference/v1/models";
@@ -205,18 +204,21 @@ pub async fn models(
 
 pub async fn send_message(
     storage: &AppStorage,
-    request_id: Value,
-    conversation_id: &str,
-    excluded_assistant_message_id: Option<&str>,
+    context: ChatSendContext<'_>,
     api_key: Option<&str>,
-    custom_instructions: Option<&str>,
-    project_root: Option<&Path>,
-    data_root: &Path,
-    permission_mode: ToolPermissionMode,
-    permission_broker: &ToolPermissionBroker,
-    cancellation: &mut watch::Receiver<bool>,
-    events: EventSink,
 ) -> Result<Value, ServiceError> {
+    let ChatSendContext {
+        request_id,
+        conversation_id,
+        excluded_assistant_message_id,
+        custom_instructions,
+        project_root,
+        data_root,
+        permission_mode,
+        permission_broker,
+        cancellation,
+        events,
+    } = context;
     let route = storage
         .connect()
         .map_err(|_| storage_error())?

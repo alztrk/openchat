@@ -2,11 +2,9 @@ use futures_util::StreamExt;
 use reqwest::Method;
 use serde_json::{Value, json};
 use std::{
-    path::Path,
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::sync::watch;
 use uuid::Uuid;
 
 use super::response_parser::{
@@ -17,11 +15,11 @@ use super::{
     invalid_response_error, network_error, now_unix_millis, protocol_error,
 };
 use crate::{
+    chat_operation::ChatSendContext,
     chatgpt_store::{self, ChatGptModel},
-    permissions::ToolPermissionBroker,
     protocol::{EventSink, ServiceError},
     provider_schema::{ChatStreamEvent, ChatStreamSnapshot, ReasoningSummary},
-    tools::{ToolExecutor, ToolPermissionMode},
+    tools::ToolExecutor,
 };
 
 struct ReasoningSummaryGroup {
@@ -127,20 +125,24 @@ fn finish_reasoning_summary_groups(groups: &mut [ReasoningSummaryGroup]) {
 impl ChatGptService {
     pub(super) async fn stream_response(
         self: &Arc<Self>,
-        request_id: Value,
-        conversation_id: &str,
+        context: ChatSendContext<'_>,
         route: &chatgpt_store::ConversationRoute,
         external_workspace_id: &str,
         model: &ChatGptModel,
         mut payload: Value,
-        excluded_assistant_message_id: Option<&str>,
-        project_root: Option<&Path>,
-        data_root: &Path,
-        permission_mode: ToolPermissionMode,
-        permission_broker: &ToolPermissionBroker,
-        cancellation: &mut watch::Receiver<bool>,
-        events: EventSink,
     ) -> Result<Value, ServiceError> {
+        let ChatSendContext {
+            request_id,
+            conversation_id,
+            excluded_assistant_message_id,
+            project_root,
+            data_root,
+            permission_mode,
+            permission_broker,
+            cancellation,
+            events,
+            ..
+        } = context;
         let message_id = Uuid::new_v4().simple().to_string();
         let created_at = now_unix_millis()?;
         let started = Instant::now();

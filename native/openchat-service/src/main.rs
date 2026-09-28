@@ -1,3 +1,4 @@
+mod chat_operation;
 mod chatgpt;
 mod chatgpt_store;
 mod instructions;
@@ -14,6 +15,7 @@ mod credentials;
 
 use std::{collections::HashMap, path::Path, sync::Arc};
 
+use chat_operation::ChatSendContext;
 use chatgpt::ChatGptService;
 use permissions::ToolPermissionBroker;
 use protocol::{EventSink, Request, Response, ServiceError};
@@ -318,38 +320,22 @@ async fn dispatch(
                     )
                 })?;
             let (provider_id, project_root) = route.unwrap_or((None, None));
+            let context = ChatSendContext {
+                request_id: request.id,
+                conversation_id,
+                excluded_assistant_message_id,
+                custom_instructions,
+                project_root: project_root.as_deref().map(Path::new),
+                data_root: storage.root(),
+                permission_mode,
+                permission_broker: &permission_broker,
+                cancellation: &mut cancellation,
+                events,
+            };
             if provider_id.as_deref() == Some("opencode") {
-                opencode::send_message(
-                    storage,
-                    request.id,
-                    conversation_id,
-                    excluded_assistant_message_id,
-                    open_code_api_key,
-                    custom_instructions,
-                    project_root.as_deref().map(Path::new),
-                    storage.root(),
-                    permission_mode,
-                    &permission_broker,
-                    &mut cancellation,
-                    events,
-                )
-                .await
+                opencode::send_message(storage, context, open_code_api_key).await
             } else {
-                service
-                    .send_message(
-                        request.id,
-                        conversation_id,
-                        reasoning_effort,
-                        excluded_assistant_message_id,
-                        custom_instructions,
-                        project_root.as_deref().map(Path::new),
-                        storage.root(),
-                        permission_mode,
-                        &permission_broker,
-                        &mut cancellation,
-                        events,
-                    )
-                    .await
+                service.send_message(context, reasoning_effort).await
             }
         }
         "chat.tool.permission.respond" => {
