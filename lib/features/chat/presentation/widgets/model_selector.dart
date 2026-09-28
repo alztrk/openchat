@@ -8,6 +8,7 @@ import '../../../../l10n/openchat_localizations.dart';
 import '../../domain/chatgpt_connection.dart';
 import '../../domain/model_favorite.dart';
 import 'composer_control_style.dart';
+import 'provider_icon.dart';
 
 class ModelSelector extends StatefulWidget {
   const ModelSelector({
@@ -418,10 +419,10 @@ class _ModelSelectorState extends State<ModelSelector> {
                 width: 16,
                 height: 16,
                 child: Center(
-                  child: _providerIcon(
-                    widget.providerId,
-                    widget.palette.secondaryIcon,
-                    16,
+                  child: ProviderIcon(
+                    providerId: widget.providerId,
+                    color: widget.palette.secondaryIcon,
+                    size: 16,
                   ),
                 ),
               ),
@@ -621,10 +622,12 @@ class _ModelProviderTab extends StatelessWidget {
               width: 18,
               height: 18,
               child: Center(
-                child: _providerIcon(
-                  providerId,
-                  selected ? palette.secondaryIcon : palette.secondaryText,
-                  18,
+                child: ProviderIcon(
+                  providerId: providerId,
+                  color: selected
+                      ? palette.secondaryIcon
+                      : palette.secondaryText,
+                  size: 18,
                 ),
               ),
             ),
@@ -644,30 +647,5 @@ class _ModelProviderTab extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-Widget _providerIcon(String providerId, Color color, double size) {
-  switch (providerId) {
-    case 'chatgpt':
-      return SvgPicture.asset(
-        'assets/icons/chatgpt.svg',
-        width: size,
-        height: size,
-        colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
-        excludeFromSemantics: true,
-      );
-    case 'opencode':
-      return SvgPicture.asset(
-        'assets/icons/opencode.svg',
-        width: size,
-        height: size,
-        colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
-        excludeFromSemantics: true,
-      );
-    case 'favorites':
-      return Icon(Icons.star_outline_rounded, size: size, color: color);
-    default:
-      return const SizedBox.shrink();
   }
 }

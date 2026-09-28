@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:intl/intl.dart';
@@ -13,6 +12,7 @@ import '../../../../app/openchat_toast.dart';
 import '../../../../l10n/generated/app_localizations.dart';
 import '../../../../l10n/openchat_localizations.dart';
 import '../../domain/chat_message.dart';
+import 'provider_icon.dart';
 import 'tool_activity.dart';
 
 class AssistantMessage extends StatelessWidget {
@@ -20,11 +20,13 @@ class AssistantMessage extends StatelessWidget {
     super.key,
     required this.message,
     required this.modelLabel,
+    required this.providerId,
     this.onRetry,
   });
 
   final ChatMessage message;
   final String? modelLabel;
+  final String providerId;
   final VoidCallback? onRetry;
 
   @override
@@ -53,7 +55,10 @@ class AssistantMessage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _AssistantModelHeader(modelLabel: modelLabel),
+            _AssistantModelHeader(
+              modelLabel: modelLabel,
+              providerId: providerId,
+            ),
             for (final summary in message.reasoningSummaries.where(
               (summary) => summary.content.trim().isNotEmpty,
             )) ...[
@@ -139,9 +144,13 @@ class AssistantMessage extends StatelessWidget {
 }
 
 class _AssistantModelHeader extends StatelessWidget {
-  const _AssistantModelHeader({required this.modelLabel});
+  const _AssistantModelHeader({
+    required this.modelLabel,
+    required this.providerId,
+  });
 
   final String? modelLabel;
+  final String providerId;
 
   @override
   Widget build(BuildContext context) {
@@ -153,15 +162,10 @@ class _AssistantModelHeader extends StatelessWidget {
       height: 20,
       child: Row(
         children: [
-          SvgPicture.asset(
-            'assets/icons/chatgpt.svg',
-            width: 18,
-            height: 18,
-            colorFilter: ColorFilter.mode(
-              palette.secondaryIcon,
-              BlendMode.srcIn,
-            ),
-            excludeFromSemantics: true,
+          ProviderIcon(
+            providerId: providerId,
+            color: palette.secondaryIcon,
+            size: 18,
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -186,9 +190,14 @@ class _AssistantModelHeader extends StatelessWidget {
 }
 
 class AssistantMessageSkeleton extends StatelessWidget {
-  const AssistantMessageSkeleton({required this.modelLabel, super.key});
+  const AssistantMessageSkeleton({
+    required this.modelLabel,
+    required this.providerId,
+    super.key,
+  });
 
   final String? modelLabel;
+  final String providerId;
 
   @override
   Widget build(BuildContext context) {
@@ -201,7 +210,10 @@ class AssistantMessageSkeleton extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _AssistantModelHeader(modelLabel: modelLabel),
+            _AssistantModelHeader(
+              modelLabel: modelLabel,
+              providerId: providerId,
+            ),
             const SizedBox(height: 22),
             _AssistantResponseSkeleton(palette: palette),
           ],

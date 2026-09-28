@@ -156,6 +156,7 @@ class ConversationPane extends StatelessWidget {
                       assistantModelLabel: assistantModelLabel,
                       onRetryResponse: onRetryResponse,
                       controller: messageScrollController,
+                      providerId: providerId,
                     ),
             ),
             Padding(
@@ -233,6 +234,7 @@ class _ConversationHistory extends StatelessWidget {
     required this.assistantModelLabel,
     required this.onRetryResponse,
     required this.controller,
+    required this.providerId,
   });
 
   final List<ChatMessage> messages;
@@ -240,6 +242,7 @@ class _ConversationHistory extends StatelessWidget {
   final String? assistantModelLabel;
   final ValueChanged<ChatMessage>? onRetryResponse;
   final ScrollController? controller;
+  final String providerId;
 
   @override
   Widget build(BuildContext context) {
@@ -285,6 +288,7 @@ class _ConversationHistory extends StatelessWidget {
                     padding: EdgeInsets.only(top: messageGap),
                     child: AssistantMessageSkeleton(
                       modelLabel: assistantModelLabel,
+                      providerId: providerId,
                     ),
                   ),
                 ),
@@ -323,6 +327,7 @@ class _ConversationHistory extends StatelessWidget {
                         ChatMessageRole.assistant => AssistantMessage(
                           message: message,
                           modelLabel: assistantModelLabel,
+                          providerId: providerId,
                           onRetry: _canRetryMessage(index)
                               ? () => onRetryResponse?.call(message)
                               : null,
