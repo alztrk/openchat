@@ -31,8 +31,12 @@ try {
         New-Item -ItemType Directory -Path $outputDirectory | Out-Null
     }
 
+    $releaseContents = @(
+        Get-ChildItem -LiteralPath $releaseDirectory -Force |
+            Where-Object { $_.Name -ne 'zihora.exe' }
+    )
     Compress-Archive `
-        -Path (Join-Path $releaseDirectory '*') `
+        -Path $releaseContents.FullName `
         -DestinationPath $payloadArchive `
         -CompressionLevel Optimal `
         -Force
