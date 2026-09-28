@@ -1,10 +1,10 @@
-import 'package:zihora/features/chat/domain/chat_message.dart';
+import 'package:openchat/features/chat/domain/chat_message.dart';
 
 const figmaChatMessages = <ChatMessage>[
   ChatMessage(
     id: 'question-about-first-release',
     role: ChatMessageRole.user,
-    content: 'Zihora’nın ilk sürümünde sohbet ekranında hangi alanlar olmalı?',
+    content: "OpenChat'in ilk sürümünde sohbet ekranında hangi alanlar olmalı?",
   ),
   ChatMessage(
     id: 'first-release-answer',

@@ -1,9 +1,9 @@
-import 'package:zihora/features/chat/domain/conversation_sidebar_data.dart';
+import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
 
 const figmaSidebarProjects = <ConversationSidebarProject>[
   ConversationSidebarProject(
-    id: 'zihora-project',
-    title: 'Zihora',
+    id: 'openchat-project',
+    title: 'OpenChat',
     conversations: [
       ConversationSidebarConversation(
         id: 'first-chat-experience',
@@ -11,7 +11,7 @@ const figmaSidebarProjects = <ConversationSidebarProject>[
       ),
       ConversationSidebarConversation(
         id: 'model-selection-project',
-        title: 'Zihora’da model seçimi',
+        title: 'OpenChat’te model seçimi',
       ),
       ConversationSidebarConversation(
         id: 'chat-history-draft',

@@ -2,15 +2,15 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zihora/app/zihora_theme.dart';
-import 'package:zihora/features/chat/domain/chat_message.dart';
-import 'package:zihora/features/chat/domain/history_storage_status.dart';
-import 'package:zihora/features/chat/presentation/chat_screen.dart';
-import 'package:zihora/features/chat/presentation/widgets/chat_composer.dart';
-import 'package:zihora/features/chat/presentation/widgets/chat_navigation_rail.dart';
-import 'package:zihora/features/chat/presentation/widgets/conversation_pane.dart';
-import 'package:zihora/features/chat/presentation/widgets/conversation_sidebar.dart';
-import 'package:zihora/l10n/generated/app_localizations.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/features/chat/domain/chat_message.dart';
+import 'package:openchat/features/chat/domain/history_storage_status.dart';
+import 'package:openchat/features/chat/presentation/chat_screen.dart';
+import 'package:openchat/features/chat/presentation/widgets/chat_composer.dart';
+import 'package:openchat/features/chat/presentation/widgets/chat_navigation_rail.dart';
+import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
+import 'package:openchat/features/chat/presentation/widgets/conversation_sidebar.dart';
+import 'package:openchat/l10n/generated/app_localizations.dart';
 
 import 'fixtures/figma_chat_messages.dart';
 import 'fixtures/figma_sidebar_items.dart';
@@ -32,8 +32,8 @@ void main() {
   tearDownAll(() => goldenFileComparator = _previousGoldenComparator);
 
   for (final appearance in [
-    (name: 'light', theme: ZihoraTheme.light),
-    (name: 'dark', theme: ZihoraTheme.dark),
+    (name: 'light', theme: OpenChatTheme.light),
+    (name: 'dark', theme: OpenChatTheme.dark),
   ]) {
     testWidgets('matches the empty ${appearance.name} Figma pane', (
       tester,
@@ -53,7 +53,7 @@ void main() {
         tester,
         theme: appearance.theme,
         messages: figmaChatMessages,
-        conversationTitle: 'Zihora sohbeti',
+        conversationTitle: 'OpenChat sohbeti',
         selectedModelLabel: 'Örnek 1',
         reasoningLevel: 'Orta',
         goldenPath: 'goldens/figma-active-pane-${appearance.name}.png',
@@ -207,7 +207,7 @@ Future<void> _expectCompactNavigationRailMatchesFigma(
     tester.getRect(find.byKey(const ValueKey<String>('compact-brand'))),
     const Rect.fromLTWH(14, 21, 44, 44),
   );
-  expect(find.text('Zihora'), findsNothing);
+  expect(find.text('OpenChat'), findsNothing);
 
   await expectLater(
     find.byKey(const ValueKey<String>('compact-navigation-rail-screenshot')),
@@ -232,7 +232,7 @@ Future<void> _expectCompositionGeometry(
       locale: const Locale('tr'),
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      theme: ZihoraTheme.light.copyWith(platform: TargetPlatform.windows),
+      theme: OpenChatTheme.light.copyWith(platform: TargetPlatform.windows),
       home: const ChatScreen(
         themeMode: ThemeMode.light,
         onThemeModeChanged: _ignoreThemeMode,
@@ -355,7 +355,7 @@ Future<void> _expectActiveScreenMatchesFigma(
   required String goldenPath,
   Size size = const Size(1680, 900),
   bool expandedRail = true,
-  double sidebarWidth = ZihoraSpacing.sidebarWidth,
+  double sidebarWidth = OpenChatSpacing.sidebarWidth,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -392,7 +392,7 @@ Future<void> _expectActiveScreenMatchesFigma(
                 projects: figmaSidebarProjects,
                 pinnedConversations: figmaPinnedConversations,
                 conversations: figmaConversations,
-                selectedProjectId: 'zihora-project',
+                selectedProjectId: 'openchat-project',
                 selectedConversationId: 'first-chat-experience',
                 onSelectProject: (_) {},
                 onSelectConversation: (_) {},
@@ -407,7 +407,7 @@ Future<void> _expectActiveScreenMatchesFigma(
                   onOpenHistory: () {},
                   onSendMessage: () {},
                   messages: figmaChatMessages,
-                  conversationTitle: 'Zihora sohbeti',
+                  conversationTitle: 'OpenChat sohbeti',
                   selectedModelLabel: 'Örnek 1',
                   reasoningLevel: 'Orta',
                   showWindowControls: true,
@@ -422,7 +422,7 @@ Future<void> _expectActiveScreenMatchesFigma(
   await tester.pumpAndSettle();
   if (expandedRail) {
     _expectFigmaSidebarGeometry(tester);
-  } else if (sidebarWidth == ZihoraSpacing.compactSidebarWidth) {
+  } else if (sidebarWidth == OpenChatSpacing.compactSidebarWidth) {
     _expectNarrowFigmaSidebarGeometry(tester);
   } else {
     _expectCompactFigmaSidebarGeometry(tester);
@@ -463,14 +463,14 @@ void _expectNarrowFigmaSidebarGeometry(WidgetTester tester) {
   );
   expect(
     tester.getRect(
-      find.byKey(const ValueKey<String>('sidebar-project-zihora-project')),
+      find.byKey(const ValueKey<String>('sidebar-project-openchat-project')),
     ),
     const Rect.fromLTWH(92, 158, 232, 38),
   );
   expect(
     tester.getRect(
       find.byKey(
-        const ValueKey<String>('sidebar-project-options-zihora-project'),
+        const ValueKey<String>('sidebar-project-options-openchat-project'),
       ),
     ),
     const Rect.fromLTWH(256, 163, 24, 28),
@@ -478,7 +478,7 @@ void _expectNarrowFigmaSidebarGeometry(WidgetTester tester) {
   expect(
     tester.getRect(
       find.byKey(
-        const ValueKey<String>('sidebar-project-new-chat-zihora-project'),
+        const ValueKey<String>('sidebar-project-new-chat-openchat-project'),
       ),
     ),
     const Rect.fromLTWH(281, 163, 24, 28),
@@ -519,14 +519,14 @@ void _expectCompactFigmaSidebarGeometry(WidgetTester tester) {
   );
   expect(
     tester.getRect(
-      find.byKey(const ValueKey<String>('sidebar-project-zihora-project')),
+      find.byKey(const ValueKey<String>('sidebar-project-openchat-project')),
     ),
     const Rect.fromLTWH(92, 158, 272, 38),
   );
   expect(
     tester.getRect(
       find.byKey(
-        const ValueKey<String>('sidebar-project-options-zihora-project'),
+        const ValueKey<String>('sidebar-project-options-openchat-project'),
       ),
     ),
     const Rect.fromLTWH(296, 163, 24, 28),
@@ -534,7 +534,7 @@ void _expectCompactFigmaSidebarGeometry(WidgetTester tester) {
   expect(
     tester.getRect(
       find.byKey(
-        const ValueKey<String>('sidebar-project-new-chat-zihora-project'),
+        const ValueKey<String>('sidebar-project-new-chat-openchat-project'),
       ),
     ),
     const Rect.fromLTWH(321, 163, 24, 28),
@@ -567,14 +567,14 @@ void _expectFigmaSidebarGeometry(WidgetTester tester) {
   );
   expect(
     tester.getRect(
-      find.byKey(const ValueKey<String>('sidebar-project-zihora-project')),
+      find.byKey(const ValueKey<String>('sidebar-project-openchat-project')),
     ),
     const Rect.fromLTWH(280, 158, 272, 38),
   );
   expect(
     tester.getRect(
       find.byKey(
-        const ValueKey<String>('sidebar-project-label-zihora-project'),
+        const ValueKey<String>('sidebar-project-label-openchat-project'),
       ),
     ),
     const Rect.fromLTWH(292, 167, 184, 20),
@@ -582,7 +582,7 @@ void _expectFigmaSidebarGeometry(WidgetTester tester) {
   expect(
     tester.getRect(
       find.byKey(
-        const ValueKey<String>('sidebar-project-options-zihora-project'),
+        const ValueKey<String>('sidebar-project-options-openchat-project'),
       ),
     ),
     const Rect.fromLTWH(484, 163, 24, 28),
@@ -590,7 +590,7 @@ void _expectFigmaSidebarGeometry(WidgetTester tester) {
   expect(
     tester.getRect(
       find.byKey(
-        const ValueKey<String>('sidebar-project-new-chat-zihora-project'),
+        const ValueKey<String>('sidebar-project-new-chat-openchat-project'),
       ),
     ),
     const Rect.fromLTWH(509, 163, 24, 28),
@@ -650,7 +650,7 @@ Future<void> _expectNarrowComposerGeometry(
             onOpenHistory: () {},
             onSendMessage: () {},
             messages: figmaChatMessages,
-            conversationTitle: 'Zihora sohbeti',
+            conversationTitle: 'OpenChat sohbeti',
             selectedModelLabel: 'Örnek 1',
             reasoningLevel: 'Orta',
             showWindowControls: true,

@@ -2,13 +2,13 @@ import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zihora/app/zihora_theme.dart';
-import 'package:zihora/features/chat/data/chat_repository.dart';
-import 'package:zihora/features/chat/data/zihora_database.dart';
-import 'package:zihora/features/chat/domain/chat_message.dart';
-import 'package:zihora/features/chat/domain/history_storage_status.dart';
-import 'package:zihora/features/chat/presentation/chat_screen.dart';
-import 'package:zihora/l10n/generated/app_localizations.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/features/chat/data/chat_repository.dart';
+import 'package:openchat/features/chat/data/openchat_database.dart';
+import 'package:openchat/features/chat/domain/chat_message.dart';
+import 'package:openchat/features/chat/domain/history_storage_status.dart';
+import 'package:openchat/features/chat/presentation/chat_screen.dart';
+import 'package:openchat/l10n/generated/app_localizations.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -27,7 +27,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final database = ZihoraDatabase(NativeDatabase.memory());
+    final database = OpenChatDatabase(NativeDatabase.memory());
     final repository = ChatRepository(database);
 
     await repository.createConversation(
@@ -49,7 +49,7 @@ void main() {
         locale: const Locale('tr'),
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        theme: ZihoraTheme.light.copyWith(platform: TargetPlatform.windows),
+        theme: OpenChatTheme.light.copyWith(platform: TargetPlatform.windows),
         home: ChatScreen(
           themeMode: ThemeMode.light,
           onThemeModeChanged: (_) async {},

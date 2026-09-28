@@ -2,18 +2,18 @@ import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:zihora/features/chat/data/chat_repository.dart';
-import 'package:zihora/features/chat/data/zihora_database.dart';
-import 'package:zihora/features/chat/domain/chat_message.dart';
+import 'package:openchat/features/chat/data/chat_repository.dart';
+import 'package:openchat/features/chat/data/openchat_database.dart';
+import 'package:openchat/features/chat/domain/chat_message.dart';
 
 void main() {
   test(
     'conversation and messages survive closing and reopening the database',
     () async {
       final directory = await Directory.systemTemp.createTemp(
-        'zihora-history-',
+        'openchat-history-',
       );
-      final openDatabases = <ZihoraDatabase>[];
+      final openDatabases = <OpenChatDatabase>[];
       addTearDown(() async {
         for (final database in openDatabases) {
           await database.close();
@@ -22,7 +22,7 @@ void main() {
       });
 
       final createdAt = DateTime.utc(2026, 9, 26, 12, 30);
-      final firstDatabase = ZihoraDatabase(
+      final firstDatabase = OpenChatDatabase(
         NativeDatabase(
           File('${directory.path}${Platform.pathSeparator}history.sqlite'),
         ),
@@ -68,7 +68,7 @@ void main() {
       await firstDatabase.close();
       openDatabases.remove(firstDatabase);
 
-      final reopenedDatabase = ZihoraDatabase(
+      final reopenedDatabase = OpenChatDatabase(
         NativeDatabase(
           File('${directory.path}${Platform.pathSeparator}history.sqlite'),
         ),
@@ -99,7 +99,7 @@ void main() {
   );
 
   test('does not save a message without its conversation', () async {
-    final database = ZihoraDatabase(NativeDatabase.memory());
+    final database = OpenChatDatabase(NativeDatabase.memory());
     addTearDown(database.close);
     final repository = ChatRepository(database);
 
