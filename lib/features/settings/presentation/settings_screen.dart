@@ -458,21 +458,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _savedSharedInstructions = instructions;
         _isLoadingInstructions = false;
       });
-    } on PlatformException catch (error, stackTrace) {
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: error,
-          stack: stackTrace,
-          library: 'settings',
-          context: ErrorDescription('while loading shared chat instructions'),
-        ),
-      );
-      if (!mounted) return;
-      setState(() {
-        _sharedInstructionsError =
-            context.openchatL10n.sharedInstructionsLoadFailed;
-        _isLoadingInstructions = false;
-      });
     } on Object catch (error, stackTrace) {
       FlutterError.reportError(
         FlutterErrorDetails(
@@ -503,21 +488,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         context,
         context.openchatL10n.sharedInstructionsSaved,
         type: OpenChatToastType.success,
-      );
-    } on PlatformException catch (error, stackTrace) {
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: error,
-          stack: stackTrace,
-          library: 'settings',
-          context: ErrorDescription('while saving shared chat instructions'),
-        ),
-      );
-      if (!mounted) return;
-      showOpenChatToast(
-        context,
-        context.openchatL10n.sharedInstructionsSaveFailed,
-        type: OpenChatToastType.error,
       );
     } on ArgumentError {
       if (!mounted) return;
