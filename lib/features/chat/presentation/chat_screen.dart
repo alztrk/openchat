@@ -776,20 +776,6 @@ class _ChatScreenState extends State<ChatScreen> {
     late final String sharedInstructions;
     try {
       sharedInstructions = await _settingsPreferences.readSharedInstructions();
-    } on PlatformException catch (error, stackTrace) {
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: error,
-          stack: stackTrace,
-          library: 'settings',
-          context: ErrorDescription('while loading instructions for a chat'),
-        ),
-      );
-      if (mounted) {
-        _showMessage(l10n.sharedInstructionsLoadFailed);
-      }
-      _clearActiveSendState();
-      return;
     } on Object catch (error, stackTrace) {
       FlutterError.reportError(
         FlutterErrorDetails(
@@ -916,6 +902,32 @@ class _ChatScreenState extends State<ChatScreen> {
     var assistantToolActivities = const <chat.ChatToolActivity>[];
     var persistence = Future<void>.value();
     StreamSubscription<OpenChatServiceEvent>? subscription;
+
+    Future<bool> preserveFailedResponse() async {
+      final failedMessageId = assistantMessageId;
+      if (failedMessageId == null) return true;
+      if (responseToReplace != null) {
+        return _discardReplacementAttempt(
+          repository,
+          conversationId,
+          failedMessageId,
+        );
+      }
+
+      await repository.saveMessage(
+        conversationId: conversationId,
+        message: chat.ChatMessage(
+          id: failedMessageId,
+          role: chat.ChatMessageRole.assistant,
+          content: assistantContent,
+          createdAt: assistantCreatedAt,
+          reasoningSummaries: assistantReasoningSummaries,
+          toolActivities: assistantToolActivities,
+          status: chat.ChatMessageStatus.failed,
+        ),
+      );
+      return true;
+    }
 
     void updateReasoningSummaries(Object? value) {
       if (value == null) return;
@@ -1141,30 +1153,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } on OpenChatServiceException catch (error) {
       await persistence;
-      final failedMessageId = assistantMessageId;
-      var retryCleanupSucceeded = true;
-      if (failedMessageId != null) {
-        if (responseToReplace == null) {
-          await repository.saveMessage(
-            conversationId: conversationId,
-            message: chat.ChatMessage(
-              id: failedMessageId,
-              role: chat.ChatMessageRole.assistant,
-              content: assistantContent,
-              createdAt: assistantCreatedAt,
-              reasoningSummaries: assistantReasoningSummaries,
-              toolActivities: assistantToolActivities,
-              status: chat.ChatMessageStatus.failed,
-            ),
-          );
-        } else {
-          retryCleanupSucceeded = await _discardReplacementAttempt(
-            repository,
-            conversationId,
-            failedMessageId,
-          );
-        }
-      }
+      final retryCleanupSucceeded = await preserveFailedResponse();
       if (mounted) {
         if (retryCleanupSucceeded) {
           _showServiceFailure(error);
@@ -1174,30 +1163,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } on Object catch (error, stackTrace) {
       await persistence;
-      final failedMessageId = assistantMessageId;
-      var retryCleanupSucceeded = true;
-      if (failedMessageId != null) {
-        if (responseToReplace == null) {
-          await repository.saveMessage(
-            conversationId: conversationId,
-            message: chat.ChatMessage(
-              id: failedMessageId,
-              role: chat.ChatMessageRole.assistant,
-              content: assistantContent,
-              createdAt: assistantCreatedAt,
-              reasoningSummaries: assistantReasoningSummaries,
-              toolActivities: assistantToolActivities,
-              status: chat.ChatMessageStatus.failed,
-            ),
-          );
-        } else {
-          retryCleanupSucceeded = await _discardReplacementAttempt(
-            repository,
-            conversationId,
-            failedMessageId,
-          );
-        }
-      }
+      final retryCleanupSucceeded = await preserveFailedResponse();
       FlutterError.reportError(
         FlutterErrorDetails(
           exception: error,
