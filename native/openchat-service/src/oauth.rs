@@ -496,8 +496,13 @@ impl OAuthClient {
                 false,
             ));
         }
-        let (email, display_name, plan_type, external_user_id, external_workspaces) =
-            parse_identity(&id_token)?;
+        let ParsedIdentity {
+            email,
+            display_name,
+            plan_type,
+            external_user_id,
+            workspaces: external_workspaces,
+        } = parse_identity(&id_token)?;
         let id = Uuid::new_v4().simple().to_string();
         let workspaces = external_workspaces
             .into_iter()
@@ -900,18 +905,15 @@ struct ExternalWorkspace {
     is_default: bool,
 }
 
-fn parse_identity(
-    token: &str,
-) -> Result<
-    (
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        Option<String>,
-        Vec<ExternalWorkspace>,
-    ),
-    ServiceError,
-> {
+struct ParsedIdentity {
+    email: Option<String>,
+    display_name: Option<String>,
+    plan_type: Option<String>,
+    external_user_id: Option<String>,
+    workspaces: Vec<ExternalWorkspace>,
+}
+
+fn parse_identity(token: &str) -> Result<ParsedIdentity, ServiceError> {
     let claims = decode_id_token_claims(token)?;
     let auth = claims
         .get("https://api.openai.com/auth")
@@ -978,7 +980,13 @@ fn parse_identity(
             workspace.is_default = false;
         }
     }
-    Ok((email, display_name, plan_type, external_user_id, workspaces))
+    Ok(ParsedIdentity {
+        email,
+        display_name,
+        plan_type,
+        external_user_id,
+        workspaces,
+    })
 }
 
 fn decode_id_token_claims(token: &str) -> Result<Value, ServiceError> {
