@@ -111,54 +111,6 @@ class ChatNavigationRail extends StatelessWidget {
                           palette: palette,
                           onPressed: onOpenChat,
                         ),
-                        const SizedBox(height: 6),
-                        _RailNavigationButton(
-                          expanded: expanded,
-                          label: l10n.extensions,
-                          selected: false,
-                          icon: _RailIcon(
-                            assetPath: 'assets/icons/wrench.svg',
-                            color: palette.secondaryIcon,
-                          ),
-                          palette: palette,
-                          unavailableHint: l10n.sectionUnavailable,
-                        ),
-                        const SizedBox(height: 6),
-                        _RailNavigationButton(
-                          expanded: expanded,
-                          label: l10n.scheduled,
-                          selected: false,
-                          icon: _RailIcon(
-                            assetPath: 'assets/icons/clock.svg',
-                            color: palette.secondaryIcon,
-                          ),
-                          palette: palette,
-                          unavailableHint: l10n.sectionUnavailable,
-                        ),
-                        const SizedBox(height: 6),
-                        _RailNavigationButton(
-                          expanded: expanded,
-                          label: l10n.design,
-                          selected: false,
-                          icon: _RailIcon(
-                            assetPath: 'assets/icons/pen-tool.svg',
-                            color: palette.secondaryIcon,
-                          ),
-                          palette: palette,
-                          unavailableHint: l10n.sectionUnavailable,
-                        ),
-                        const SizedBox(height: 6),
-                        _RailNavigationButton(
-                          expanded: expanded,
-                          label: l10n.security,
-                          selected: false,
-                          icon: _RailIcon(
-                            assetPath: 'assets/icons/shield.svg',
-                            color: palette.secondaryIcon,
-                          ),
-                          palette: palette,
-                          unavailableHint: l10n.sectionUnavailable,
-                        ),
                       ],
                     ),
                   ),
@@ -374,7 +326,6 @@ class _RailNavigationButton extends StatelessWidget {
     required this.selected,
     required this.icon,
     required this.palette,
-    this.unavailableHint,
     this.onPressed,
   });
 
@@ -383,7 +334,6 @@ class _RailNavigationButton extends StatelessWidget {
   final bool selected;
   final Widget icon;
   final OpenChatPalette palette;
-  final String? unavailableHint;
   final VoidCallback? onPressed;
 
   bool get enabled => onPressed != null;
@@ -396,7 +346,6 @@ class _RailNavigationButton extends StatelessWidget {
       enabled: enabled,
       selected: selected,
       label: label,
-      hint: unavailableHint,
       child: ExcludeSemantics(
         child: Material(
           color: selected ? palette.selected : Colors.transparent,
@@ -434,13 +383,7 @@ class _RailNavigationButton extends StatelessWidget {
       ),
     );
 
-    if (!expanded || unavailableHint != null) {
-      final tooltip = unavailableHint == null
-          ? label
-          : '$label · $unavailableHint';
-      return Tooltip(message: tooltip, child: item);
-    }
-    return item;
+    return expanded ? item : Tooltip(message: label, child: item);
   }
 }
 
