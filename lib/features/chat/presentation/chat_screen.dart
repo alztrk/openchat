@@ -787,12 +787,8 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       if (mounted) {
         _showMessage(l10n.sharedInstructionsLoadFailed);
-        setState(() {
-          _isSending = false;
-          _activeChatConversationId = null;
-          _replacingAssistantMessageId = null;
-        });
       }
+      _clearActiveSendState();
       return;
     } on Object catch (error, stackTrace) {
       FlutterError.reportError(
@@ -805,35 +801,21 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       if (mounted) {
         _showMessage(l10n.sharedInstructionsLoadFailed);
-        setState(() {
-          _isSending = false;
-          _activeChatConversationId = null;
-          _replacingAssistantMessageId = null;
-        });
       }
+      _clearActiveSendState();
       return;
     }
 
     if (responseToReplace != null) {
       if (selectedConversation == null) {
-        if (mounted) {
-          setState(() {
-            _isSending = false;
-            _activeChatConversationId = null;
-            _replacingAssistantMessageId = null;
-          });
-        }
+        _clearActiveSendState();
         return;
       }
       try {
         final messages = await repository.getMessages(conversationId);
         if (!mounted) return;
         if (_selectedConversationId != conversationId) {
-          setState(() {
-            _isSending = false;
-            _activeChatConversationId = null;
-            _replacingAssistantMessageId = null;
-          });
+          _clearActiveSendState();
           return;
         }
         if (messages.length < 2 ||
@@ -842,11 +824,7 @@ class _ChatScreenState extends State<ChatScreen> {
             messages.last.status == chat.ChatMessageStatus.streaming ||
             messages[messages.length - 2].role != chat.ChatMessageRole.user) {
           _showMessage(l10n.responseRetryUnavailable);
-          setState(() {
-            _isSending = false;
-            _activeChatConversationId = null;
-            _replacingAssistantMessageId = null;
-          });
+          _clearActiveSendState();
           return;
         }
       } on Object catch (error, stackTrace) {
@@ -858,14 +836,8 @@ class _ChatScreenState extends State<ChatScreen> {
             context: ErrorDescription('while preparing a response retry'),
           ),
         );
-        if (mounted) {
-          _showMessage(l10n.responseRetryUnavailable);
-          setState(() {
-            _isSending = false;
-            _activeChatConversationId = null;
-            _replacingAssistantMessageId = null;
-          });
-        }
+        if (mounted) _showMessage(l10n.responseRetryUnavailable);
+        _clearActiveSendState();
         return;
       }
     }
@@ -927,13 +899,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
       if (mounted) _showMessage(l10n.messageSaveFailed);
-      if (mounted) {
-        setState(() {
-          _isSending = false;
-          _activeChatConversationId = null;
-          _replacingAssistantMessageId = null;
-        });
-      }
+      _clearActiveSendState();
       return;
     }
 
@@ -1284,6 +1250,15 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       return false;
     }
+  }
+
+  void _clearActiveSendState() {
+    if (!mounted) return;
+    setState(() {
+      _isSending = false;
+      _activeChatConversationId = null;
+      _replacingAssistantMessageId = null;
+    });
   }
 
   void _stopMessage() {
