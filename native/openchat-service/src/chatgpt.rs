@@ -657,7 +657,7 @@ impl ChatGptService {
                 None,
             )
             .await
-            .map_err(|error| {
+            .inspect_err(|error| {
                 self.record_chatgpt_event(
                     "request_failed",
                     operation,
@@ -666,7 +666,6 @@ impl ChatGptService {
                     Some(started.elapsed().as_millis()),
                     None,
                 );
-                error
             })?;
         let status = response.status().as_u16();
         self.record_chatgpt_event(
@@ -680,7 +679,7 @@ impl ChatGptService {
         response_json(response, MAX_JSON_BODY_BYTES)
             .await
             .map(|value| (status, value))
-            .map_err(|error| {
+            .inspect_err(|error| {
                 self.record_chatgpt_event(
                     "response_failed",
                     operation,
@@ -689,7 +688,6 @@ impl ChatGptService {
                     Some(started.elapsed().as_millis()),
                     None,
                 );
-                error
             })
     }
 

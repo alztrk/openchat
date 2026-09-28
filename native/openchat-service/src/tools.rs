@@ -108,7 +108,7 @@ fn read_directory_listing(
     let mut total_entries = 0usize;
     let mut scanned = 0usize;
     let mut incomplete = false;
-    for entry in fs::read_dir(&directory)
+    for entry in fs::read_dir(directory)
         .map_err(|_| unavailable("The requested directory could not be read."))?
     {
         let Ok(entry) = entry else {

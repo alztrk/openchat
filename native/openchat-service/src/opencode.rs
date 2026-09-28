@@ -158,12 +158,11 @@ pub async fn models(
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<Value, ServiceError> {
     let cached = load_model_catalog(storage)?;
-    if !force_refresh {
-        if let Some((models, fetched_at)) = &cached {
-            if current_time_millis()?.saturating_sub(*fetched_at) < MODEL_CATALOG_CACHE_AGE_MS {
-                return Ok(models_response(&visible_models(models, api_key), "current"));
-            }
-        }
+    if !force_refresh
+        && let Some((models, fetched_at)) = &cached
+        && current_time_millis()?.saturating_sub(*fetched_at) < MODEL_CATALOG_CACHE_AGE_MS
+    {
+        return Ok(models_response(&visible_models(models, api_key), "current"));
     }
 
     let mut request = client()?.get(MODELS_URL);
@@ -360,10 +359,8 @@ pub async fn send_message(
             }
             response = {
                 let mut request = client()?.post(CHAT_URL);
-                if !is_free {
-                    if let Some(api_key) = api_key {
-                        request = request.bearer_auth(api_key);
-                    }
+                if !is_free && let Some(api_key) = api_key {
+                    request = request.bearer_auth(api_key);
                 }
                 request
                 .header(ACCEPT, "text/event-stream")

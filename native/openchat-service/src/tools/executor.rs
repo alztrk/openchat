@@ -751,7 +751,7 @@ fn qualify_path(root: &Path, relative_path: &str, scope: ToolPathScope) -> Strin
 }
 
 fn trim_root_separator(path: &str) -> &str {
-    path.trim_start_matches(|character| character == '/' || character == '\\')
+    path.trim_start_matches(['/', '\\'])
 }
 
 fn only_keys(value: &Value, allowed: &[&str]) -> bool {
