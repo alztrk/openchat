@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{OptionalExtension, params, types::Type};
 use serde::Serialize;
@@ -92,6 +92,16 @@ pub struct StoredMessage {
     pub role: String,
     pub content: String,
     pub status: String,
+}
+
+pub struct AssistantMessageWrite<'a> {
+    pub conversation_id: &'a str,
+    pub message_id: &'a str,
+    pub content: &'a str,
+    pub status: &'a str,
+    pub created_at_unix_ms: i64,
+    pub output_tokens: Option<i64>,
+    pub elapsed: Option<Duration>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -825,15 +835,15 @@ pub fn apply_generated_title(
 
 pub fn save_assistant_message(
     storage: &AppStorage,
-    conversation_id: &str,
-    message_id: &str,
-    content: &str,
-    status: &str,
-    created_at_unix_ms: i64,
-    output_tokens: Option<i64>,
-    tokens_per_second: Option<f64>,
-    elapsed_microseconds: Option<i64>,
+    message: AssistantMessageWrite<'_>,
 ) -> rusqlite::Result<()> {
+    let elapsed_microseconds = message
+        .elapsed
+        .and_then(|elapsed| i64::try_from(elapsed.as_micros()).ok());
+    let tokens_per_second = message.output_tokens.and_then(|tokens| {
+        let seconds = message.elapsed?.as_secs_f64();
+        (seconds > 0.0).then_some(tokens as f64 / seconds)
+    });
     let database = storage.connect()?;
     database.execute(
         "INSERT INTO messages (
@@ -847,19 +857,19 @@ pub fn save_assistant_message(
             elapsed_microseconds = excluded.elapsed_microseconds,
             status = excluded.status",
         params![
-            message_id,
-            conversation_id,
-            content,
-            created_at_unix_ms,
-            output_tokens,
+            message.message_id,
+            message.conversation_id,
+            message.content,
+            message.created_at_unix_ms,
+            message.output_tokens,
             tokens_per_second,
             elapsed_microseconds,
-            status,
+            message.status,
         ],
     )?;
     database.execute(
         "UPDATE conversations SET updated_at = MAX(updated_at, ?2) WHERE id = ?1",
-        params![conversation_id, created_at_unix_ms],
+        params![message.conversation_id, message.created_at_unix_ms],
     )?;
     Ok(())
 }

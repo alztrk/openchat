@@ -16,7 +16,7 @@ use super::{
 };
 use crate::{
     chat_operation::ChatSendContext,
-    chatgpt_store::{self, ChatGptModel},
+    chatgpt_store::{self, AssistantMessageWrite, ChatGptModel},
     protocol::{EventSink, ServiceError},
     provider_schema::{ChatStreamEvent, ChatStreamSnapshot, ReasoningSummary},
     tools::ToolExecutor,
@@ -163,14 +163,15 @@ impl ChatGptService {
         self.record_chatgpt_event("request_started", "responses", None, None, None, None);
         chatgpt_store::save_assistant_message(
             &self.storage,
-            conversation_id,
-            &message_id,
-            &content,
-            "streaming",
-            created_at,
-            None,
-            None,
-            None,
+            AssistantMessageWrite {
+                conversation_id,
+                message_id: &message_id,
+                content: &content,
+                status: "streaming",
+                created_at_unix_ms: created_at,
+                output_tokens: None,
+                elapsed: None,
+            },
         )
         .map_err(database_error)?;
 
@@ -196,15 +197,15 @@ impl ChatGptService {
                 Some(started.elapsed().as_millis()),
                 None,
             );
-            self.persist_terminal_message(
+            self.persist_terminal_message(AssistantMessageWrite {
                 conversation_id,
-                &message_id,
-                &content,
-                "stopped",
-                created_at,
-                None,
-                started.elapsed(),
-            )?;
+                message_id: &message_id,
+                content: &content,
+                status: "stopped",
+                created_at_unix_ms: created_at,
+                output_tokens: None,
+                elapsed: Some(started.elapsed()),
+            })?;
             return Ok(json!({
                 "conversationId": conversation_id,
                 "messageId": message_id,
@@ -256,15 +257,15 @@ impl ChatGptService {
                             Some(started.elapsed().as_millis()),
                             None,
                         );
-                        self.persist_terminal_message(
+                        self.persist_terminal_message(AssistantMessageWrite {
                             conversation_id,
-                            &message_id,
-                            &content,
-                            "failed",
-                            created_at,
-                            None,
-                            started.elapsed(),
-                        )?;
+                            message_id: &message_id,
+                            content: &content,
+                            status: "failed",
+                            created_at_unix_ms: created_at,
+                            output_tokens: None,
+                            elapsed: Some(started.elapsed()),
+                        })?;
                         return Err(error);
                     }
                 }
@@ -278,15 +279,15 @@ impl ChatGptService {
                         Some(elapsed.as_millis()),
                         None,
                     );
-                    self.persist_terminal_message(
+                    self.persist_terminal_message(AssistantMessageWrite {
                         conversation_id,
-                        &message_id,
-                        &content,
-                        "stopped",
-                        created_at,
-                        None,
-                        elapsed,
-                    )?;
+                        message_id: &message_id,
+                        content: &content,
+                        status: "stopped",
+                        created_at_unix_ms: created_at,
+                        output_tokens: None,
+                        elapsed: Some(elapsed),
+                    })?;
                     return Ok(json!({
                         "conversationId": conversation_id,
                         "messageId": message_id,
@@ -305,15 +306,15 @@ impl ChatGptService {
                         Some(started.elapsed().as_millis()),
                         None,
                     );
-                    self.persist_terminal_message(
+                    self.persist_terminal_message(AssistantMessageWrite {
                         conversation_id,
-                        &message_id,
-                        &content,
-                        "failed",
-                        created_at,
-                        None,
-                        started.elapsed(),
-                    )?;
+                        message_id: &message_id,
+                        content: &content,
+                        status: "failed",
+                        created_at_unix_ms: created_at,
+                        output_tokens: None,
+                        elapsed: Some(started.elapsed()),
+                    })?;
                     return Err(error);
                 }
             };
@@ -336,15 +337,15 @@ impl ChatGptService {
                                 Some(started.elapsed().as_millis()),
                                 None,
                             );
-                            self.persist_terminal_message(
+                            self.persist_terminal_message(AssistantMessageWrite {
                                 conversation_id,
-                                &message_id,
-                                &content,
-                                "stopped",
-                                created_at,
+                                message_id: &message_id,
+                                content: &content,
+                                status: "stopped",
+                                created_at_unix_ms: created_at,
                                 output_tokens,
-                                started.elapsed(),
-                            )?;
+                                elapsed: Some(started.elapsed()),
+                            })?;
                             return Ok(json!({
                                 "conversationId": conversation_id,
                                 "messageId": message_id,
@@ -374,15 +375,15 @@ impl ChatGptService {
                             Some(started.elapsed().as_millis()),
                             None,
                         );
-                        self.persist_terminal_message(
+                        self.persist_terminal_message(AssistantMessageWrite {
                             conversation_id,
-                            &message_id,
-                            &content,
-                            "failed",
-                            created_at,
+                            message_id: &message_id,
+                            content: &content,
+                            status: "failed",
+                            created_at_unix_ms: created_at,
                             output_tokens,
-                            started.elapsed(),
-                        )?;
+                            elapsed: Some(started.elapsed()),
+                        })?;
                         return Err(network_error());
                     }
                 };
@@ -396,15 +397,15 @@ impl ChatGptService {
                         Some(started.elapsed().as_millis()),
                         None,
                     );
-                    self.persist_terminal_message(
+                    self.persist_terminal_message(AssistantMessageWrite {
                         conversation_id,
-                        &message_id,
-                        &content,
-                        "failed",
-                        created_at,
+                        message_id: &message_id,
+                        content: &content,
+                        status: "failed",
+                        created_at_unix_ms: created_at,
                         output_tokens,
-                        started.elapsed(),
-                    )?;
+                        elapsed: Some(started.elapsed()),
+                    })?;
                     return Err(ServiceError::new(
                         "response_event_too_large",
                         "ChatGPT returned an oversized stream event. The partial answer was saved.",
@@ -468,15 +469,15 @@ impl ChatGptService {
                                     Some(started.elapsed().as_millis()),
                                     None,
                                 );
-                                self.persist_terminal_message(
+                                self.persist_terminal_message(AssistantMessageWrite {
                                     conversation_id,
-                                    &message_id,
-                                    &content,
-                                    "failed",
-                                    created_at,
+                                    message_id: &message_id,
+                                    content: &content,
+                                    status: "failed",
+                                    created_at_unix_ms: created_at,
                                     output_tokens,
-                                    started.elapsed(),
-                                )?;
+                                    elapsed: Some(started.elapsed()),
+                                })?;
                                 return Err(error);
                             }
                         }
@@ -496,15 +497,15 @@ impl ChatGptService {
                     Some(started.elapsed().as_millis()),
                     None,
                 );
-                self.persist_terminal_message(
+                self.persist_terminal_message(AssistantMessageWrite {
                     conversation_id,
-                    &message_id,
-                    &content,
-                    "failed",
-                    created_at,
+                    message_id: &message_id,
+                    content: &content,
+                    status: "failed",
+                    created_at_unix_ms: created_at,
                     output_tokens,
-                    started.elapsed(),
-                )?;
+                    elapsed: Some(started.elapsed()),
+                })?;
                 return Err(error);
             }
             if !completed {
@@ -521,15 +522,15 @@ impl ChatGptService {
                     Some(started.elapsed().as_millis()),
                     None,
                 );
-                self.persist_terminal_message(
+                self.persist_terminal_message(AssistantMessageWrite {
                     conversation_id,
-                    &message_id,
-                    &content,
-                    "failed",
-                    created_at,
+                    message_id: &message_id,
+                    content: &content,
+                    status: "failed",
+                    created_at_unix_ms: created_at,
                     output_tokens,
-                    started.elapsed(),
-                )?;
+                    elapsed: Some(started.elapsed()),
+                })?;
                 return Err(error);
             }
 
@@ -541,14 +542,15 @@ impl ChatGptService {
                 content = final_text;
                 chatgpt_store::save_assistant_message(
                     &self.storage,
-                    conversation_id,
-                    &message_id,
-                    &content,
-                    "streaming",
-                    created_at,
-                    None,
-                    None,
-                    None,
+                    AssistantMessageWrite {
+                        conversation_id,
+                        message_id: &message_id,
+                        content: &content,
+                        status: "streaming",
+                        created_at_unix_ms: created_at,
+                        output_tokens: None,
+                        elapsed: None,
+                    },
                 )
                 .map_err(database_error)?;
                 events
@@ -567,29 +569,29 @@ impl ChatGptService {
             let tool_calls = match parse_responses_tool_calls(&response_output_items) {
                 Ok(tool_calls) => tool_calls,
                 Err(error) => {
-                    self.persist_terminal_message(
+                    self.persist_terminal_message(AssistantMessageWrite {
                         conversation_id,
-                        &message_id,
-                        &content,
-                        "failed",
-                        created_at,
+                        message_id: &message_id,
+                        content: &content,
+                        status: "failed",
+                        created_at_unix_ms: created_at,
                         output_tokens,
-                        started.elapsed(),
-                    )?;
+                        elapsed: Some(started.elapsed()),
+                    })?;
                     return Err(error);
                 }
             };
             if !tool_calls.is_empty() {
                 if let Err(error) = tool_executor.begin_round(&tool_calls) {
-                    self.persist_terminal_message(
+                    self.persist_terminal_message(AssistantMessageWrite {
                         conversation_id,
-                        &message_id,
-                        &content,
-                        "failed",
-                        created_at,
+                        message_id: &message_id,
+                        content: &content,
+                        status: "failed",
+                        created_at_unix_ms: created_at,
                         output_tokens,
-                        started.elapsed(),
-                    )?;
+                        elapsed: Some(started.elapsed()),
+                    })?;
                     return Err(error);
                 }
                 let mut results = Vec::with_capacity(tool_calls.len());
@@ -618,15 +620,15 @@ impl ChatGptService {
                                 Some(elapsed.as_millis()),
                                 None,
                             );
-                            self.persist_terminal_message(
+                            self.persist_terminal_message(AssistantMessageWrite {
                                 conversation_id,
-                                &message_id,
-                                &content,
-                                "stopped",
-                                created_at,
+                                message_id: &message_id,
+                                content: &content,
+                                status: "stopped",
+                                created_at_unix_ms: created_at,
                                 output_tokens,
-                                elapsed,
-                            )?;
+                                elapsed: Some(elapsed),
+                            })?;
                             return Ok(json!({
                                 "conversationId": conversation_id,
                                 "messageId": message_id,
@@ -641,30 +643,30 @@ impl ChatGptService {
                             }));
                         }
                         Err(error) => {
-                            self.persist_terminal_message(
+                            self.persist_terminal_message(AssistantMessageWrite {
                                 conversation_id,
-                                &message_id,
-                                &content,
-                                "failed",
-                                created_at,
+                                message_id: &message_id,
+                                content: &content,
+                                status: "failed",
+                                created_at_unix_ms: created_at,
                                 output_tokens,
-                                started.elapsed(),
-                            )?;
+                                elapsed: Some(started.elapsed()),
+                            })?;
                             return Err(error);
                         }
                     };
                     results.push(result);
                 }
                 let Some(input) = payload.get_mut("input").and_then(Value::as_array_mut) else {
-                    self.persist_terminal_message(
+                    self.persist_terminal_message(AssistantMessageWrite {
                         conversation_id,
-                        &message_id,
-                        &content,
-                        "failed",
-                        created_at,
+                        message_id: &message_id,
+                        content: &content,
+                        status: "failed",
+                        created_at_unix_ms: created_at,
                         output_tokens,
-                        started.elapsed(),
-                    )?;
+                        elapsed: Some(started.elapsed()),
+                    })?;
                     return Err(invalid_response_error());
                 };
                 input.extend(response_output_items);
@@ -672,15 +674,15 @@ impl ChatGptService {
                     let output = match serde_json::to_string(&result.output) {
                         Ok(output) => output,
                         Err(_) => {
-                            self.persist_terminal_message(
+                            self.persist_terminal_message(AssistantMessageWrite {
                                 conversation_id,
-                                &message_id,
-                                &content,
-                                "failed",
-                                created_at,
+                                message_id: &message_id,
+                                content: &content,
+                                status: "failed",
+                                created_at_unix_ms: created_at,
                                 output_tokens,
-                                started.elapsed(),
-                            )?;
+                                elapsed: Some(started.elapsed()),
+                            })?;
                             return Err(invalid_response_error());
                         }
                     };
@@ -706,15 +708,15 @@ impl ChatGptService {
                     None,
                     Some(response_output_items.len()),
                 );
-                self.persist_terminal_message(
+                self.persist_terminal_message(AssistantMessageWrite {
                     conversation_id,
-                    &message_id,
-                    &content,
-                    "failed",
-                    created_at,
+                    message_id: &message_id,
+                    content: &content,
+                    status: "failed",
+                    created_at_unix_ms: created_at,
                     output_tokens,
-                    started.elapsed(),
-                )?;
+                    elapsed: Some(started.elapsed()),
+                })?;
                 self.record_chatgpt_event(
                     "request_failed",
                     "responses",
@@ -729,15 +731,15 @@ impl ChatGptService {
         }
 
         let elapsed = started.elapsed();
-        self.persist_terminal_message(
+        self.persist_terminal_message(AssistantMessageWrite {
             conversation_id,
-            &message_id,
-            &content,
-            "completed",
-            created_at,
+            message_id: &message_id,
+            content: &content,
+            status: "completed",
+            created_at_unix_ms: created_at,
             output_tokens,
-            elapsed,
-        )?;
+            elapsed: Some(elapsed),
+        })?;
         self.record_chatgpt_event(
             "request_completed",
             "responses",
@@ -833,14 +835,15 @@ impl ChatGptService {
                 content.push_str(delta);
                 chatgpt_store::save_assistant_message(
                     &self.storage,
-                    conversation_id,
-                    message_id,
-                    content,
-                    "streaming",
-                    created_at,
-                    None,
-                    None,
-                    None,
+                    AssistantMessageWrite {
+                        conversation_id,
+                        message_id,
+                        content,
+                        status: "streaming",
+                        created_at_unix_ms: created_at,
+                        output_tokens: None,
+                        elapsed: None,
+                    },
                 )
                 .map_err(database_error)?;
                 events

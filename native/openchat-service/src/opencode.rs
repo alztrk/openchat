@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::{
     chat_operation::ChatSendContext,
+    chatgpt_store::AssistantMessageWrite,
     instructions,
     protocol::ServiceError,
     provider_schema::{
@@ -298,13 +299,15 @@ pub async fn send_message(
     let message_id = Uuid::new_v4().simple().to_string();
     save_message(
         storage,
-        conversation_id,
-        &message_id,
-        "",
-        "streaming",
-        created_at,
-        None,
-        None,
+        AssistantMessageWrite {
+            conversation_id,
+            message_id: &message_id,
+            content: "",
+            status: "streaming",
+            created_at_unix_ms: created_at,
+            output_tokens: None,
+            elapsed: None,
+        },
     )?;
     if events
         .send(
@@ -321,13 +324,15 @@ pub async fn send_message(
     {
         save_message(
             storage,
-            conversation_id,
-            &message_id,
-            "",
-            "failed",
-            created_at,
-            None,
-            Some(started.elapsed()),
+            AssistantMessageWrite {
+                conversation_id,
+                message_id: &message_id,
+                content: "",
+                status: "failed",
+                created_at_unix_ms: created_at,
+                output_tokens: None,
+                elapsed: Some(started.elapsed()),
+            },
         )?;
         return Err(protocol_error());
     }
@@ -356,7 +361,15 @@ pub async fn send_message(
         let response = tokio::select! {
             changed = cancellation.changed() => {
                 let _ = changed;
-                save_message(storage, conversation_id, &message_id, &content, "stopped", created_at, output_tokens, Some(started.elapsed()))?;
+                save_message(storage, AssistantMessageWrite {
+                    conversation_id,
+                    message_id: &message_id,
+                    content: &content,
+                    status: "stopped",
+                    created_at_unix_ms: created_at,
+                    output_tokens,
+                    elapsed: Some(started.elapsed()),
+                })?;
                 return Ok(terminal_result(conversation_id, &message_id, "stopped", started.elapsed(), output_tokens));
             }
             response = {
@@ -371,16 +384,15 @@ pub async fn send_message(
             } => match response {
                 Ok(response) => response,
                 Err(_) => {
-                    save_message(
-                        storage,
+                    save_message(storage, AssistantMessageWrite {
                         conversation_id,
-                        &message_id,
-                        &content,
-                        "failed",
-                        created_at,
-                        None,
-                        Some(started.elapsed()),
-                    )?;
+                        message_id: &message_id,
+                        content: &content,
+                        status: "failed",
+                        created_at_unix_ms: created_at,
+                        output_tokens: None,
+                        elapsed: Some(started.elapsed()),
+                    })?;
                     return Err(network_error());
                 }
             },
@@ -388,13 +400,15 @@ pub async fn send_message(
         if !response.status().is_success() {
             save_message(
                 storage,
-                conversation_id,
-                &message_id,
-                &content,
-                "failed",
-                created_at,
-                None,
-                Some(started.elapsed()),
+                AssistantMessageWrite {
+                    conversation_id,
+                    message_id: &message_id,
+                    content: &content,
+                    status: "failed",
+                    created_at_unix_ms: created_at,
+                    output_tokens: None,
+                    elapsed: Some(started.elapsed()),
+                },
             )?;
             return Err(http_error(response.status()));
         }
@@ -419,13 +433,15 @@ pub async fn send_message(
                 Err(_) => {
                     save_message(
                         storage,
-                        conversation_id,
-                        &message_id,
-                        &content,
-                        "failed",
-                        created_at,
-                        output_tokens,
-                        Some(started.elapsed()),
+                        AssistantMessageWrite {
+                            conversation_id,
+                            message_id: &message_id,
+                            content: &content,
+                            status: "failed",
+                            created_at_unix_ms: created_at,
+                            output_tokens,
+                            elapsed: Some(started.elapsed()),
+                        },
                     )?;
                     return Err(network_error());
                 }
@@ -434,13 +450,15 @@ pub async fn send_message(
             if pending.len() > MAX_EVENT_BYTES {
                 save_message(
                     storage,
-                    conversation_id,
-                    &message_id,
-                    &content,
-                    "failed",
-                    created_at,
-                    output_tokens,
-                    Some(started.elapsed()),
+                    AssistantMessageWrite {
+                        conversation_id,
+                        message_id: &message_id,
+                        content: &content,
+                        status: "failed",
+                        created_at_unix_ms: created_at,
+                        output_tokens,
+                        elapsed: Some(started.elapsed()),
+                    },
                 )?;
                 return Err(invalid_response_error());
             }
@@ -455,13 +473,15 @@ pub async fn send_message(
                     Err(_) => {
                         save_message(
                             storage,
-                            conversation_id,
-                            &message_id,
-                            &content,
-                            "failed",
-                            created_at,
-                            output_tokens,
-                            Some(started.elapsed()),
+                            AssistantMessageWrite {
+                                conversation_id,
+                                message_id: &message_id,
+                                content: &content,
+                                status: "failed",
+                                created_at_unix_ms: created_at,
+                                output_tokens,
+                                elapsed: Some(started.elapsed()),
+                            },
                         )?;
                         return Err(invalid_response_error());
                     }
@@ -480,13 +500,15 @@ pub async fn send_message(
                         Err(_) => {
                             save_message(
                                 storage,
-                                conversation_id,
-                                &message_id,
-                                &content,
-                                "failed",
-                                created_at,
-                                output_tokens,
-                                Some(started.elapsed()),
+                                AssistantMessageWrite {
+                                    conversation_id,
+                                    message_id: &message_id,
+                                    content: &content,
+                                    status: "failed",
+                                    created_at_unix_ms: created_at,
+                                    output_tokens,
+                                    elapsed: Some(started.elapsed()),
+                                },
                             )?;
                             return Err(invalid_response_error());
                         }
@@ -512,13 +534,15 @@ pub async fn send_message(
                         {
                             save_message(
                                 storage,
-                                conversation_id,
-                                &message_id,
-                                &content,
-                                "failed",
-                                created_at,
-                                output_tokens,
-                                Some(started.elapsed()),
+                                AssistantMessageWrite {
+                                    conversation_id,
+                                    message_id: &message_id,
+                                    content: &content,
+                                    status: "failed",
+                                    created_at_unix_ms: created_at,
+                                    output_tokens,
+                                    elapsed: Some(started.elapsed()),
+                                },
                             )?;
                             return Err(protocol_error());
                         }
@@ -541,13 +565,15 @@ pub async fn send_message(
                             else {
                                 save_message(
                                     storage,
-                                    conversation_id,
-                                    &message_id,
-                                    &content,
-                                    "failed",
-                                    created_at,
-                                    output_tokens,
-                                    Some(started.elapsed()),
+                                    AssistantMessageWrite {
+                                        conversation_id,
+                                        message_id: &message_id,
+                                        content: &content,
+                                        status: "failed",
+                                        created_at_unix_ms: created_at,
+                                        output_tokens,
+                                        elapsed: Some(started.elapsed()),
+                                    },
                                 )?;
                                 return Err(invalid_response_error());
                             };
@@ -556,13 +582,15 @@ pub async fn send_message(
                             {
                                 save_message(
                                     storage,
-                                    conversation_id,
-                                    &message_id,
-                                    &content,
-                                    "failed",
-                                    created_at,
-                                    output_tokens,
-                                    Some(started.elapsed()),
+                                    AssistantMessageWrite {
+                                        conversation_id,
+                                        message_id: &message_id,
+                                        content: &content,
+                                        status: "failed",
+                                        created_at_unix_ms: created_at,
+                                        output_tokens,
+                                        elapsed: Some(started.elapsed()),
+                                    },
                                 )?;
                                 return Err(tools::tool_call_limit_error());
                             }
@@ -582,13 +610,15 @@ pub async fn send_message(
                                     {
                                         save_message(
                                             storage,
-                                            conversation_id,
-                                            &message_id,
-                                            &content,
-                                            "failed",
-                                            created_at,
-                                            output_tokens,
-                                            Some(started.elapsed()),
+                                            AssistantMessageWrite {
+                                                conversation_id,
+                                                message_id: &message_id,
+                                                content: &content,
+                                                status: "failed",
+                                                created_at_unix_ms: created_at,
+                                                output_tokens,
+                                                elapsed: Some(started.elapsed()),
+                                            },
                                         )?;
                                         return Err(invalid_response_error());
                                     }
@@ -607,13 +637,15 @@ pub async fn send_message(
         if !saw_done {
             save_message(
                 storage,
-                conversation_id,
-                &message_id,
-                &content,
-                "failed",
-                created_at,
-                output_tokens,
-                Some(elapsed),
+                AssistantMessageWrite {
+                    conversation_id,
+                    message_id: &message_id,
+                    content: &content,
+                    status: "failed",
+                    created_at_unix_ms: created_at,
+                    output_tokens,
+                    elapsed: Some(elapsed),
+                },
             )?;
             return Err(invalid_response_error());
         }
@@ -622,13 +654,15 @@ pub async fn send_message(
             Err(error) => {
                 save_message(
                     storage,
-                    conversation_id,
-                    &message_id,
-                    &content,
-                    "failed",
-                    created_at,
-                    output_tokens,
-                    Some(elapsed),
+                    AssistantMessageWrite {
+                        conversation_id,
+                        message_id: &message_id,
+                        content: &content,
+                        status: "failed",
+                        created_at_unix_ms: created_at,
+                        output_tokens,
+                        elapsed: Some(elapsed),
+                    },
                 )?;
                 return Err(error);
             }
@@ -637,13 +671,15 @@ pub async fn send_message(
             if let Err(error) = tool_executor.begin_round(&tool_calls) {
                 save_message(
                     storage,
-                    conversation_id,
-                    &message_id,
-                    &content,
-                    "failed",
-                    created_at,
-                    output_tokens,
-                    Some(elapsed),
+                    AssistantMessageWrite {
+                        conversation_id,
+                        message_id: &message_id,
+                        content: &content,
+                        status: "failed",
+                        created_at_unix_ms: created_at,
+                        output_tokens,
+                        elapsed: Some(elapsed),
+                    },
                 )?;
                 return Err(error);
             }
@@ -667,13 +703,15 @@ pub async fn send_message(
                         let elapsed = started.elapsed();
                         save_message(
                             storage,
-                            conversation_id,
-                            &message_id,
-                            &content,
-                            "stopped",
-                            created_at,
-                            output_tokens,
-                            Some(elapsed),
+                            AssistantMessageWrite {
+                                conversation_id,
+                                message_id: &message_id,
+                                content: &content,
+                                status: "stopped",
+                                created_at_unix_ms: created_at,
+                                output_tokens,
+                                elapsed: Some(elapsed),
+                            },
                         )?;
                         return Ok(terminal_result(
                             conversation_id,
@@ -686,13 +724,15 @@ pub async fn send_message(
                     Err(error) => {
                         save_message(
                             storage,
-                            conversation_id,
-                            &message_id,
-                            &content,
-                            "failed",
-                            created_at,
-                            output_tokens,
-                            Some(elapsed),
+                            AssistantMessageWrite {
+                                conversation_id,
+                                message_id: &message_id,
+                                content: &content,
+                                status: "failed",
+                                created_at_unix_ms: created_at,
+                                output_tokens,
+                                elapsed: Some(elapsed),
+                            },
                         )?;
                         return Err(error);
                     }
@@ -716,13 +756,15 @@ pub async fn send_message(
                 Err(error) => {
                     save_message(
                         storage,
-                        conversation_id,
-                        &message_id,
-                        &content,
-                        "failed",
-                        created_at,
-                        output_tokens,
-                        Some(elapsed),
+                        AssistantMessageWrite {
+                            conversation_id,
+                            message_id: &message_id,
+                            content: &content,
+                            status: "failed",
+                            created_at_unix_ms: created_at,
+                            output_tokens,
+                            elapsed: Some(elapsed),
+                        },
                     )?;
                     return Err(error);
                 }
@@ -738,13 +780,15 @@ pub async fn send_message(
                     Err(_) => {
                         save_message(
                             storage,
-                            conversation_id,
-                            &message_id,
-                            &content,
-                            "failed",
-                            created_at,
-                            output_tokens,
-                            Some(elapsed),
+                            AssistantMessageWrite {
+                                conversation_id,
+                                message_id: &message_id,
+                                content: &content,
+                                status: "failed",
+                                created_at_unix_ms: created_at,
+                                output_tokens,
+                                elapsed: Some(elapsed),
+                            },
                         )?;
                         return Err(invalid_response_error());
                     }
@@ -763,13 +807,15 @@ pub async fn send_message(
     let status = if stopped { "stopped" } else { "completed" };
     save_message(
         storage,
-        conversation_id,
-        &message_id,
-        &content,
-        status,
-        created_at,
-        output_tokens,
-        Some(elapsed),
+        AssistantMessageWrite {
+            conversation_id,
+            message_id: &message_id,
+            content: &content,
+            status,
+            created_at_unix_ms: created_at,
+            output_tokens,
+            elapsed: Some(elapsed),
+        },
     )?;
     Ok(terminal_result(
         conversation_id,
@@ -829,31 +875,9 @@ fn client() -> Result<Client, ServiceError> {
 
 fn save_message(
     storage: &AppStorage,
-    conversation_id: &str,
-    message_id: &str,
-    content: &str,
-    status: &str,
-    created_at: i64,
-    output_tokens: Option<i64>,
-    elapsed: Option<Duration>,
+    message: AssistantMessageWrite<'_>,
 ) -> Result<(), ServiceError> {
-    let tokens_per_second = output_tokens.and_then(|tokens| {
-        elapsed.and_then(|duration| {
-            (duration.as_secs_f64() > 0.0).then_some(tokens as f64 / duration.as_secs_f64())
-        })
-    });
-    crate::chatgpt_store::save_assistant_message(
-        storage,
-        conversation_id,
-        message_id,
-        content,
-        status,
-        created_at,
-        output_tokens,
-        tokens_per_second,
-        elapsed.and_then(|value| i64::try_from(value.as_micros()).ok()),
-    )
-    .map_err(|_| storage_error())
+    crate::chatgpt_store::save_assistant_message(storage, message).map_err(|_| storage_error())
 }
 
 fn terminal_result(

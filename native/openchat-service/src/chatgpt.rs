@@ -584,31 +584,9 @@ impl ChatGptService {
 
     fn persist_terminal_message(
         &self,
-        conversation_id: &str,
-        message_id: &str,
-        content: &str,
-        status: &str,
-        created_at: i64,
-        output_tokens: Option<i64>,
-        elapsed: Duration,
+        message: chatgpt_store::AssistantMessageWrite<'_>,
     ) -> Result<(), ServiceError> {
-        let elapsed_microseconds = i64::try_from(elapsed.as_micros()).ok();
-        let tokens_per_second = output_tokens.and_then(|tokens| {
-            let seconds = elapsed.as_secs_f64();
-            (seconds > 0.0).then_some(tokens as f64 / seconds)
-        });
-        chatgpt_store::save_assistant_message(
-            &self.storage,
-            conversation_id,
-            message_id,
-            content,
-            status,
-            created_at,
-            output_tokens,
-            tokens_per_second,
-            elapsed_microseconds,
-        )
-        .map_err(database_error)
+        chatgpt_store::save_assistant_message(&self.storage, message).map_err(database_error)
     }
 
     fn record_chatgpt_event(
