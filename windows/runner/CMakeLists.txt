@@ -19,7 +19,7 @@ add_executable(${BINARY_NAME} WIN32
 # Apply the standard set of build settings. This can be removed for applications
 # that need different build settings.
 apply_standard_settings(${BINARY_NAME})
-add_dependencies(${BINARY_NAME} zihora_service_build)
+add_dependencies(${BINARY_NAME} openchat_service_build)
 
 # Add preprocessor definitions for the build version.
 target_compile_definitions(${BINARY_NAME} PRIVATE "FLUTTER_VERSION=\"${FLUTTER_VERSION}\"")
@@ -42,7 +42,7 @@ add_dependencies(${BINARY_NAME} flutter_assemble)
 
 add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
-    "${ZIHORA_SERVICE_EXECUTABLE}"
-    "$<TARGET_FILE_DIR:${BINARY_NAME}>/zihora_service.exe"
+    "${OPENCHAT_SERVICE_EXECUTABLE}"
+    "$<TARGET_FILE_DIR:${BINARY_NAME}>/openchat_service.exe"
   VERBATIM
 )

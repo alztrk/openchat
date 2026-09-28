@@ -3,7 +3,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 class OpenCodeApiKeyStore {
   OpenCodeApiKeyStore(this._secureStorage);
 
-  static const _storageKey = 'zihora.opencode.console_api_key';
+  static const _storageKey = 'openchat.opencode.console_api_key';
   static const _maximumKeyLength = 4096;
 
   final FlutterSecureStorage _secureStorage;

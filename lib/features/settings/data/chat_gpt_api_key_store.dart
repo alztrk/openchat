@@ -8,7 +8,7 @@ import '../domain/chat_gpt_api_key_connection.dart';
 class ChatGptApiKeyStore {
   ChatGptApiKeyStore(this._secureStorage);
 
-  static const _storageKeyPrefix = 'zihora.chatgpt.api_key.';
+  static const _storageKeyPrefix = 'openchat.chatgpt.api_key.';
   static final _apiKeyPattern = RegExp(r'^sk-[A-Za-z0-9][A-Za-z0-9_-]*$');
 
   final FlutterSecureStorage _secureStorage;

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import '../../../../app/zihora_theme.dart';
-import '../../../../l10n/zihora_localizations.dart';
+import '../../../../app/openchat_theme.dart';
+import '../../../../l10n/openchat_localizations.dart';
 
 class ChatNavigationRail extends StatelessWidget {
   const ChatNavigationRail({
@@ -24,15 +24,15 @@ class ChatNavigationRail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.zihoraL10n;
-    final palette = ZihoraPalette.of(context);
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
     final railContentWidth = expanded ? 226.0 : 44.0;
 
     return Container(
       width: expanded
-          ? ZihoraSpacing.expandedRailWidth
-          : ZihoraSpacing.compactRailWidth,
+          ? OpenChatSpacing.expandedRailWidth
+          : OpenChatSpacing.compactRailWidth,
       decoration: BoxDecoration(color: palette.navigation),
       foregroundDecoration: BoxDecoration(
         border: Border.all(color: palette.border),
@@ -216,7 +216,7 @@ class _Brand extends StatelessWidget {
   const _Brand({required this.dark, required this.palette});
 
   final bool dark;
-  final ZihoraPalette palette;
+  final OpenChatPalette palette;
 
   @override
   Widget build(BuildContext context) {
@@ -382,7 +382,7 @@ class _RailNavigationButton extends StatelessWidget {
   final String label;
   final bool selected;
   final Widget icon;
-  final ZihoraPalette palette;
+  final OpenChatPalette palette;
   final String? unavailableHint;
   final VoidCallback? onPressed;
 
@@ -454,7 +454,7 @@ class _ThemeButton extends StatelessWidget {
 
   final bool expanded;
   final String label;
-  final ZihoraPalette palette;
+  final OpenChatPalette palette;
   final VoidCallback onPressed;
 
   @override

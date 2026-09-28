@@ -6,17 +6,17 @@ import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../../app/zihora_theme.dart';
-import '../../../app/zihora_toast.dart';
-import '../../../l10n/generated/app_localizations.dart';
-import '../../../l10n/zihora_localizations.dart';
-import '../../../platform/windows/zihora_service_client.dart';
+import '../../../app/openchat_theme.dart';
+import '../../../app/openchat_toast.dart';
+import '../../../l10n/openchat_localizations.dart';
+import '../../../platform/windows/openchat_service_client.dart';
 import '../../settings/data/chat_gpt_api_key_store.dart';
 import '../../settings/data/open_code_api_key_store.dart';
 import '../../settings/data/settings_preferences.dart';
 import '../../settings/presentation/settings_screen.dart';
 import '../data/chat_repository.dart';
 import '../domain/chat_conversation.dart';
+import 'conversation_markdown_export.dart';
 import '../domain/chat_message.dart' as chat;
 import '../domain/chatgpt_connection.dart';
 import '../domain/chat_project.dart';
@@ -26,8 +26,8 @@ import '../domain/model_favorite.dart';
 import 'widgets/chat_navigation_rail.dart';
 import 'widgets/conversation_pane.dart';
 import 'widgets/conversation_sidebar.dart';
-
-enum _ToolPermissionDecision { allow, deny, stop }
+import 'widgets/create_project_dialog.dart';
+import 'widgets/tool_permission_dialog.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
@@ -54,7 +54,7 @@ class ChatScreen extends StatefulWidget {
   final ChatRepository? chatRepository;
   final ChatGptApiKeyStore? chatGptApiKeyStore;
   final OpenCodeApiKeyStore? openCodeApiKeyStore;
-  final ZihoraServiceClient? serviceClient;
+  final OpenChatServiceClient? serviceClient;
   final HistoryStorageStatus historyStorageStatus;
   final SettingsPreferences? settingsPreferences;
   final String? selectedModelLabel;
@@ -100,7 +100,7 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _loadedConnectionId;
   String? _loadedWorkspaceId;
   String? _loadedProviderId;
-  ZihoraServiceOperation? _activeChatOperation;
+  OpenChatServiceOperation? _activeChatOperation;
   Stream<List<ChatConversation>>? _conversationStream;
   Stream<List<ChatProject>>? _projectStream;
   Stream<List<chat.ChatMessage>>? _messageStream;
@@ -213,10 +213,10 @@ class _ChatScreenState extends State<ChatScreen> {
       } else {
         _clearModels();
       }
-    } on ZihoraServiceException catch (error) {
+    } on OpenChatServiceException catch (error) {
       _showServiceFailure(error);
     } on FormatException {
-      if (mounted) _showMessage(context.zihoraL10n.chatGptDataUnavailable);
+      if (mounted) _showMessage(context.openchatL10n.providerDataUnavailable);
     } finally {
       if (mounted) setState(() => _isLoadingConnections = false);
     }
@@ -287,7 +287,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         ),
       );
-      if (mounted) _showMessage(context.zihoraL10n.chatGptDataUnavailable);
+      if (mounted) _showMessage(context.openchatL10n.providerDataUnavailable);
     }
   }
 
@@ -361,7 +361,7 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       final rawModels = response['models'];
       if (rawModels is! List<Object?>) {
-        throw const FormatException('The ChatGPT model list was invalid.');
+        throw const FormatException('The provider model list was invalid.');
       }
       final models = rawModels
           .map((value) => ChatGptModel.fromJson(_objectMap(value)))
@@ -393,8 +393,8 @@ class _ChatScreenState extends State<ChatScreen> {
         _models = const <ChatGptModel>[];
         _modelsLoaded = false;
       });
-      _showMessage(context.zihoraL10n.openCodeKeyStorageFailed);
-    } on ZihoraServiceException catch (error) {
+      _showMessage(context.openchatL10n.openCodeKeyStorageFailed);
+    } on OpenChatServiceException catch (error) {
       if (!mounted || generation != _modelLoadGeneration) return;
       setState(() {
         _modelLoadError = error.code;
@@ -409,7 +409,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _models = const <ChatGptModel>[];
         _modelsLoaded = false;
       });
-      if (mounted) _showMessage(context.zihoraL10n.chatGptDataUnavailable);
+      if (mounted) _showMessage(context.openchatL10n.providerDataUnavailable);
     } finally {
       if (mounted && generation == _modelLoadGeneration) {
         setState(() => _isLoadingModels = false);
@@ -490,7 +490,7 @@ class _ChatScreenState extends State<ChatScreen> {
           context: ErrorDescription('while saving a model favorite'),
         ),
       );
-      if (mounted) _showMessage(context.zihoraL10n.chatHistoryUnavailable);
+      if (mounted) _showMessage(context.openchatL10n.chatHistoryUnavailable);
     }
   }
 
@@ -517,7 +517,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (favorite.providerId == 'chatgpt' &&
         (connectionId == null || workspaceId == null)) {
-      _showMessage(context.zihoraL10n.modelCatalogUnavailable);
+      _showMessage(context.openchatL10n.modelCatalogUnavailable);
       return;
     }
     if (favorite.providerId != 'chatgpt' && favorite.providerId != 'opencode') {
@@ -545,7 +545,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!_models.any(
       (model) => model.id == favorite.modelId && model.isAvailable,
     )) {
-      _showMessage(context.zihoraL10n.modelCatalogUnavailable);
+      _showMessage(context.openchatL10n.modelCatalogUnavailable);
       return;
     }
     _selectModel(favorite.modelId);
@@ -632,10 +632,10 @@ class _ChatScreenState extends State<ChatScreen> {
           _selectedReasoningEffort = previousReasoningEffort;
           _isUpdatingConversationModel = false;
         });
-        showZihoraToast(
+        showOpenChatToast(
           context,
-          context.zihoraL10n.conversationModelSaveFailed,
-          type: ZihoraToastType.error,
+          context.openchatL10n.conversationModelSaveFailed,
+          type: OpenChatToastType.error,
         );
       }
       return;
@@ -695,7 +695,7 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
       if (!mounted) return;
-      _showMessage(context.zihoraL10n.themeSaveFailed);
+      _showMessage(context.openchatL10n.themeSaveFailed);
     }
   }
 
@@ -731,7 +731,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final toolPermissionMode = _toolPermissionMode;
     final repository = widget.chatRepository;
     final service = widget.serviceClient;
-    final l10n = context.zihoraL10n;
+    final l10n = context.openchatL10n;
     final text = responseToReplace == null
         ? _messageController.text.trim()
         : '';
@@ -752,7 +752,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (modelId == null ||
         (providerId == 'chatgpt' &&
             (connectionId == null || workspaceId == null))) {
-      _showMessage(context.zihoraL10n.modelRequired);
+      _showMessage(context.openchatL10n.modelRequired);
       return;
     }
     if (_loadedProviderId != providerId ||
@@ -949,7 +949,7 @@ class _ChatScreenState extends State<ChatScreen> {
     var assistantReasoningSummaries = const <chat.ChatReasoningSummary>[];
     var assistantToolActivities = const <chat.ChatToolActivity>[];
     var persistence = Future<void>.value();
-    StreamSubscription<ZihoraServiceEvent>? subscription;
+    StreamSubscription<OpenChatServiceEvent>? subscription;
 
     void updateReasoningSummaries(Object? value) {
       if (value == null) return;
@@ -1154,7 +1154,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
               );
               if (mounted) {
-                _showMessage(context.zihoraL10n.responseReplaceFailed);
+                _showMessage(context.openchatL10n.responseReplaceFailed);
               }
             }
           } else {
@@ -1166,14 +1166,14 @@ class _ChatScreenState extends State<ChatScreen> {
             if (mounted) {
               _showMessage(
                 discarded
-                    ? context.zihoraL10n.responseRetryNotCompleted
-                    : context.zihoraL10n.responseRetryCleanupFailed,
+                    ? context.openchatL10n.responseRetryNotCompleted
+                    : context.openchatL10n.responseRetryCleanupFailed,
               );
             }
           }
         }
       }
-    } on ZihoraServiceException catch (error) {
+    } on OpenChatServiceException catch (error) {
       await persistence;
       final failedMessageId = assistantMessageId;
       var retryCleanupSucceeded = true;
@@ -1203,7 +1203,7 @@ class _ChatScreenState extends State<ChatScreen> {
         if (retryCleanupSucceeded) {
           _showServiceFailure(error);
         } else {
-          _showMessage(context.zihoraL10n.responseRetryCleanupFailed);
+          _showMessage(context.openchatL10n.responseRetryCleanupFailed);
         }
       }
     } on Object catch (error, stackTrace) {
@@ -1237,14 +1237,14 @@ class _ChatScreenState extends State<ChatScreen> {
           exception: error,
           stack: stackTrace,
           library: 'chat',
-          context: ErrorDescription('while sending a ChatGPT message'),
+          context: ErrorDescription('while sending a chat message'),
         ),
       );
       if (mounted) {
         _showMessage(
           retryCleanupSucceeded
-              ? context.zihoraL10n.chatRequestFailed
-              : context.zihoraL10n.responseRetryCleanupFailed,
+              ? context.openchatL10n.chatRequestFailed
+              : context.openchatL10n.responseRetryCleanupFailed,
         );
       }
     } finally {
@@ -1292,7 +1292,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _handleToolPermissionRequest(
-    ZihoraServiceClient service,
+    OpenChatServiceClient service,
     Map<String, Object?> data,
   ) async {
     final requestId = data['approvalRequestId'];
@@ -1317,74 +1317,17 @@ class _ChatScreenState extends State<ChatScreen> {
     var approved = false;
     try {
       if (mounted) {
-        final l10n = context.zihoraL10n;
-        final arguments = const JsonEncoder.withIndent('  ')
-            .convert(data['arguments']);
-        final decision = await showDialog<_ToolPermissionDecision>(
+        final decision = await showToolPermissionDialog(
           context: context,
-          barrierDismissible: false,
-          builder: (dialogContext) => AlertDialog(
-            title: Text(l10n.toolPermissionRequestTitle),
-            content: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(l10n.toolPermissionRequestDescription),
-                    const SizedBox(height: 20),
-                    Text(
-                      l10n.toolPermissionTool,
-                      style: Theme.of(dialogContext).textTheme.labelLarge,
-                    ),
-                    const SizedBox(height: 6),
-                    Text(_toolName(toolName, l10n)),
-                    const SizedBox(height: 16),
-                    Text(
-                      l10n.toolPermissionTarget,
-                      style: Theme.of(dialogContext).textTheme.labelLarge,
-                    ),
-                    const SizedBox(height: 6),
-                    SelectableText(targetPath),
-                    const SizedBox(height: 16),
-                    Text(
-                      l10n.toolPermissionArguments,
-                      style: Theme.of(dialogContext).textTheme.labelLarge,
-                    ),
-                    const SizedBox(height: 6),
-                    SelectableText(arguments),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () =>
-                    Navigator.of(dialogContext)
-                        .pop(_ToolPermissionDecision.deny),
-                child: Text(l10n.toolPermissionDeny),
-              ),
-              TextButton(
-                onPressed: () =>
-                    Navigator.of(dialogContext)
-                        .pop(_ToolPermissionDecision.stop),
-                child: Text(l10n.toolPermissionStopResponse),
-              ),
-              FilledButton(
-                onPressed: () =>
-                    Navigator.of(dialogContext)
-                        .pop(_ToolPermissionDecision.allow),
-                child: Text(l10n.toolPermissionAllowOnce),
-              ),
-            ],
-          ),
+          toolName: toolName,
+          targetPath: targetPath,
+          arguments: data['arguments'],
         );
-        if (decision == _ToolPermissionDecision.stop) {
+        if (decision == ToolPermissionDecision.stop) {
           await _activeChatOperation?.cancel();
           return;
         }
-        approved = decision == _ToolPermissionDecision.allow;
+        approved = decision == ToolPermissionDecision.allow;
       }
     } on Object catch (error, stackTrace) {
       FlutterError.reportError(
@@ -1406,7 +1349,7 @@ class _ChatScreenState extends State<ChatScreen> {
         },
       );
     } on Object catch (error, stackTrace) {
-      if (error is ZihoraServiceException &&
+      if (error is OpenChatServiceException &&
           error.code == 'tool_permission_request_unavailable') {
         unawaited(_activeChatOperation?.cancel());
         return;
@@ -1420,20 +1363,12 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
       unawaited(_activeChatOperation?.cancel());
-      if (mounted) _showMessage(context.zihoraL10n.chatRequestFailed);
+      if (mounted) _showMessage(context.openchatL10n.chatRequestFailed);
     }
   }
 
-  String _toolName(String name, AppLocalizations l10n) => switch (name) {
-    'list_files' => l10n.toolListFiles,
-    'search_files' => l10n.toolSearchFiles,
-    'read_file' => l10n.toolReadFile,
-    'get_file_info' => l10n.toolGetFileInfo,
-    _ => name,
-  };
-
-  void _showServiceFailure(ZihoraServiceException error) {
-    final l10n = context.zihoraL10n;
+  void _showServiceFailure(OpenChatServiceException error) {
+    final l10n = context.openchatL10n;
     final message = switch (error.code) {
       'rate_limited' => l10n.providerRateLimited,
       'authentication_required' ||
@@ -1444,12 +1379,12 @@ class _ChatScreenState extends State<ChatScreen> {
       'invalid_retry_target' => l10n.responseRetryUnavailable,
       _ => l10n.providerRequestFailed,
     };
-    showZihoraToast(context, message, type: ZihoraToastType.error);
+    showOpenChatToast(context, message, type: OpenChatToastType.error);
   }
 
   void _showMessage(String message) {
     if (!mounted) return;
-    showZihoraToast(context, message, type: ZihoraToastType.error);
+    showOpenChatToast(context, message, type: OpenChatToastType.error);
   }
 
   Future<void> _loadToolPermissionMode() async {
@@ -1472,7 +1407,7 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       if (!mounted) return;
       setState(() => _isLoadingToolPermissionMode = false);
-      _showMessage(context.zihoraL10n.toolPermissionSettingsLoadFailed);
+      _showMessage(context.openchatL10n.toolPermissionSettingsLoadFailed);
     }
   }
 
@@ -1502,7 +1437,7 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       if (!mounted) return;
       setState(() => _isSavingToolPermissionMode = false);
-      _showMessage(context.zihoraL10n.toolPermissionSettingsSaveFailed);
+      _showMessage(context.openchatL10n.toolPermissionSettingsSaveFailed);
     }
   }
 
@@ -1540,7 +1475,7 @@ class _ChatScreenState extends State<ChatScreen> {
           context: ErrorDescription('while changing the pinned state'),
         ),
       );
-      if (mounted) _showMessage(context.zihoraL10n.chatHistoryUnavailable);
+      if (mounted) _showMessage(context.openchatL10n.chatHistoryUnavailable);
     }
   }
 
@@ -1558,7 +1493,7 @@ class _ChatScreenState extends State<ChatScreen> {
           context: ErrorDescription('while moving a chat out of a project'),
         ),
       );
-      if (mounted) _showMessage(context.zihoraL10n.projectMoveFailed);
+      if (mounted) _showMessage(context.openchatL10n.projectMoveFailed);
     }
   }
 
@@ -1571,7 +1506,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
     final projectDetails = await showDialog<({String name, String folderPath})>(
       context: context,
-      builder: (context) => const _CreateProjectDialog(),
+      builder: (context) => const CreateProjectDialog(),
     );
     if (!mounted || projectDetails == null) return;
 
@@ -1583,10 +1518,10 @@ class _ChatScreenState extends State<ChatScreen> {
         createdAt: DateTime.now().toUtc(),
       );
       if (mounted) {
-        showZihoraToast(
+        showOpenChatToast(
           context,
-          context.zihoraL10n.projectCreated,
-          type: ZihoraToastType.success,
+          context.openchatL10n.projectCreated,
+          type: OpenChatToastType.success,
         );
       }
     } on Exception catch (error, stackTrace) {
@@ -1598,7 +1533,7 @@ class _ChatScreenState extends State<ChatScreen> {
           context: ErrorDescription('while creating a local project'),
         ),
       );
-      if (mounted) _showMessage(context.zihoraL10n.projectCreateFailed);
+      if (mounted) _showMessage(context.openchatL10n.projectCreateFailed);
     }
   }
 
@@ -1622,7 +1557,7 @@ class _ChatScreenState extends State<ChatScreen> {
           context: ErrorDescription('while moving a chat into a project'),
         ),
       );
-      if (mounted) _showMessage(context.zihoraL10n.projectMoveFailed);
+      if (mounted) _showMessage(context.openchatL10n.projectMoveFailed);
     }
   }
 
@@ -1692,10 +1627,10 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
       if (mounted) {
-        showZihoraToast(
+        showOpenChatToast(
           context,
-          context.zihoraL10n.conversationTitleSaveFailed,
-          type: ZihoraToastType.error,
+          context.openchatL10n.conversationTitleSaveFailed,
+          type: OpenChatToastType.error,
         );
       }
       rethrow;
@@ -1706,14 +1641,14 @@ class _ChatScreenState extends State<ChatScreen> {
     final repository = widget.chatRepository;
     if (repository == null) return;
     if (_activeChatConversationId == conversationId) {
-      _showMessage(context.zihoraL10n.stopResponseBeforeDelete);
+      _showMessage(context.openchatL10n.stopResponseBeforeDelete);
       return;
     }
 
     try {
       final conversation = await repository.getConversation(conversationId);
       if (conversation == null || !mounted) return;
-      final l10n = context.zihoraL10n;
+      final l10n = context.openchatL10n;
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -1733,17 +1668,17 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       if (confirmed != true || !mounted) return;
       if (_activeChatConversationId == conversationId) {
-        _showMessage(context.zihoraL10n.stopResponseBeforeDelete);
+        _showMessage(context.openchatL10n.stopResponseBeforeDelete);
         return;
       }
 
       await repository.deleteConversation(conversationId);
       if (!mounted) return;
       if (_selectedConversationId == conversationId) _startNewConversation();
-      showZihoraToast(
+      showOpenChatToast(
         context,
-        context.zihoraL10n.conversationDeleted,
-        type: ZihoraToastType.success,
+        context.openchatL10n.conversationDeleted,
+        type: OpenChatToastType.success,
       );
     } on Object catch (error, stackTrace) {
       FlutterError.reportError(
@@ -1754,7 +1689,7 @@ class _ChatScreenState extends State<ChatScreen> {
           context: ErrorDescription('while deleting a conversation'),
         ),
       );
-      if (mounted) _showMessage(context.zihoraL10n.conversationDeleteFailed);
+      if (mounted) _showMessage(context.openchatL10n.conversationDeleteFailed);
     }
   }
 
@@ -1768,88 +1703,11 @@ class _ChatScreenState extends State<ChatScreen> {
       final messages = await repository.getMessages(conversationId);
       if (!mounted) return;
 
-      final l10n = context.zihoraL10n;
-      final providerLabel = conversation.providerId == 'opencode'
-          ? l10n.openCodeProvider
-          : l10n.chatGptProvider;
-      final modelLabel = conversation.modelId ?? l10n.messageModelUnavailable;
-      final markdown = StringBuffer()
-        ..writeln('# ${conversation.title}')
-        ..writeln()
-        ..writeln('**${l10n.conversationExportProvider}:** $providerLabel')
-        ..writeln('**${l10n.conversationExportModel}:** $modelLabel')
-        ..writeln(
-          '**${l10n.conversationExportCreated}:** ${conversation.createdAt.toUtc().toIso8601String()}',
-        )
-        ..writeln()
-        ..writeln('---')
-        ..writeln();
-
-      for (final message in messages) {
-        final speaker = message.role == chat.ChatMessageRole.user
-            ? l10n.userMessage
-            : modelLabel;
-        final timestamp = message.createdAt?.toUtc().toIso8601String();
-        markdown
-          ..writeln('## $speaker${timestamp == null ? '' : ' · $timestamp'}')
-          ..writeln();
-        if (message.status != chat.ChatMessageStatus.completed) {
-          final status = switch (message.status) {
-            chat.ChatMessageStatus.streaming => l10n.responseInProgress,
-            chat.ChatMessageStatus.failed => l10n.responseFailed,
-            chat.ChatMessageStatus.stopped => l10n.responseStopped,
-            chat.ChatMessageStatus.completed => '',
-          };
-          markdown
-            ..writeln('> **${l10n.conversationExportStatus}:** $status')
-            ..writeln();
-        }
-        for (final summary in message.reasoningSummaries) {
-          if (summary.content.trim().isEmpty) continue;
-          final elapsed = summary.elapsed;
-          final duration = elapsed == null
-              ? ''
-              : ' · ${l10n.secondsShort(elapsed.inSeconds)}';
-          markdown
-            ..writeln('### ${l10n.reasoningSummary}$duration')
-            ..writeln()
-            ..writeln(summary.content)
-            ..writeln();
-        }
-        for (final activity in message.toolActivities) {
-          final toolData = <String, Object?>{
-            'name': activity.name,
-            'status': switch (activity.status) {
-              chat.ChatToolActivityStatus.awaitingApproval =>
-                l10n.toolAwaitingApproval,
-              chat.ChatToolActivityStatus.running => l10n.toolRunning,
-              chat.ChatToolActivityStatus.completed => l10n.toolCompleted,
-              chat.ChatToolActivityStatus.failed => l10n.toolFailed,
-              chat.ChatToolActivityStatus.denied => l10n.toolDenied,
-              chat.ChatToolActivityStatus.cancelled => l10n.toolCancelled,
-            },
-            'arguments': activity.arguments,
-            if (activity.targetPath != null) 'targetPath': activity.targetPath,
-            if (activity.output != null) 'output': activity.output,
-          };
-          final formattedToolData = const JsonEncoder.withIndent('  ')
-              .convert(toolData);
-          final codeFence = _markdownCodeFence(formattedToolData);
-          markdown
-            ..writeln('### ${l10n.conversationExportToolActivity}')
-            ..writeln()
-            ..writeln('${codeFence}json')
-            ..writeln(formattedToolData)
-            ..writeln(codeFence)
-            ..writeln();
-        }
-        markdown
-          ..writeln(message.content)
-          ..writeln();
-      }
+      final l10n = context.openchatL10n;
+      final markdown = buildConversationMarkdown(conversation, messages, l10n);
 
       final savedPath = await FilePicker.saveFile(
-        fileName: _conversationExportFileName(conversation.title),
+        fileName: conversationExportFileName(conversation.title),
         bytes: Uint8List.fromList(utf8.encode(markdown.toString())),
         mimeType: 'text/markdown',
         dialogTitle: l10n.exportConversation,
@@ -1859,10 +1717,10 @@ class _ChatScreenState extends State<ChatScreen> {
         linuxOptions: const LinuxOptions(lockParentWindow: true),
       );
       if (savedPath == null || !mounted) return;
-      showZihoraToast(
+      showOpenChatToast(
         context,
-        context.zihoraL10n.conversationExported,
-        type: ZihoraToastType.success,
+        context.openchatL10n.conversationExported,
+        type: OpenChatToastType.success,
       );
     } on Object catch (error, stackTrace) {
       FlutterError.reportError(
@@ -1873,7 +1731,7 @@ class _ChatScreenState extends State<ChatScreen> {
           context: ErrorDescription('while exporting a conversation'),
         ),
       );
-      if (mounted) _showMessage(context.zihoraL10n.conversationExportFailed);
+      if (mounted) _showMessage(context.openchatL10n.conversationExportFailed);
     }
   }
 
@@ -1892,7 +1750,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = ZihoraPalette.of(context);
+    final palette = OpenChatPalette.of(context);
     return StreamBuilder<List<ChatConversation>>(
       stream: _conversationStream,
       builder: (context, conversationSnapshot) {
@@ -1913,7 +1771,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 !conversationSnapshot.hasError &&
                 conversationSnapshot.connectionState ==
                     ConnectionState.waiting);
-        final l10n = context.zihoraL10n;
+        final l10n = context.openchatL10n;
         final historyError = conversationSnapshot.hasError
             ? l10n.historyLoadFailed
             : widget.historyStorageStatus == HistoryStorageStatus.unavailable
@@ -1928,13 +1786,13 @@ class _ChatScreenState extends State<ChatScreen> {
             final showSidebar =
                 !_settingsOpen &&
                 !_sidebarsCollapsed &&
-                constraints.maxWidth >= ZihoraSpacing.sidebarBreakpoint;
+                constraints.maxWidth >= OpenChatSpacing.sidebarBreakpoint;
             final expandedRail =
-                constraints.maxWidth >= ZihoraSpacing.expandedRailBreakpoint;
+                constraints.maxWidth >= OpenChatSpacing.expandedRailBreakpoint;
             final sidebarWidth =
-                constraints.maxWidth >= ZihoraSpacing.fullSidebarBreakpoint
-                ? ZihoraSpacing.sidebarWidth
-                : ZihoraSpacing.compactSidebarWidth;
+                constraints.maxWidth >= OpenChatSpacing.fullSidebarBreakpoint
+                ? OpenChatSpacing.sidebarWidth
+                : OpenChatSpacing.compactSidebarWidth;
             final drawerWidth = constraints.maxWidth < sidebarWidth
                 ? constraints.maxWidth
                 : sidebarWidth;
@@ -1943,7 +1801,7 @@ class _ChatScreenState extends State<ChatScreen> {
               key: _scaffoldKey,
               drawer:
                   _settingsOpen ||
-                      constraints.maxWidth >= ZihoraSpacing.sidebarBreakpoint
+                      constraints.maxWidth >= OpenChatSpacing.sidebarBreakpoint
                   ? null
                   : Drawer(
                       width: drawerWidth,
@@ -2018,7 +1876,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       left: 12,
                       top: 8,
                       child: IconButton(
-                        tooltip: context.zihoraL10n.showSidebars,
+                        tooltip: context.openchatL10n.showSidebars,
                         onPressed: () =>
                             setState(() => _sidebarsCollapsed = false),
                         icon: const Icon(Icons.chevron_right_rounded),
@@ -2081,7 +1939,7 @@ class _ChatScreenState extends State<ChatScreen> {
               !projectSnapshot.hasData &&
               !projectSnapshot.hasError,
           projectLoadError: projectSnapshot.hasError
-              ? context.zihoraL10n.projectLoadFailed
+              ? context.openchatL10n.projectLoadFailed
               : null,
           pinnedConversations: pinnedConversations
               .map(_sidebarConversationFromModel)
@@ -2172,7 +2030,7 @@ class _ChatScreenState extends State<ChatScreen> {
         selectedModel != null &&
         !_isUpdatingConversationModel &&
         !_isSending;
-    final l10n = context.zihoraL10n;
+    final l10n = context.openchatL10n;
     final modelsEmptyLabel =
         _modelLoadError == null || _modelLoadError == 'empty'
         ? l10n.noModelsAvailable
@@ -2211,15 +2069,15 @@ class _ChatScreenState extends State<ChatScreen> {
               showHistoryButton:
                   _sidebarsCollapsed ||
                   MediaQuery.sizeOf(context).width <
-                      ZihoraSpacing.sidebarBreakpoint,
+                      OpenChatSpacing.sidebarBreakpoint,
               historyButtonTooltip: _sidebarsCollapsed
-                  ? context.zihoraL10n.showSidebars
+                  ? context.openchatL10n.showSidebars
                   : null,
               onOpenHistory: () {
                 if (_sidebarsCollapsed) {
                   setState(() => _sidebarsCollapsed = false);
                   if (MediaQuery.sizeOf(context).width <
-                      ZihoraSpacing.sidebarBreakpoint) {
+                      OpenChatSpacing.sidebarBreakpoint) {
                     _scaffoldKey.currentState?.openDrawer();
                   }
                 } else {
@@ -2287,7 +2145,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   !messageSnapshot.hasData &&
                   !messageSnapshot.hasError,
               messagesErrorDescription: messageSnapshot.hasError
-                  ? context.zihoraL10n.messageHistoryLoadFailed
+                  ? context.openchatL10n.messageHistoryLoadFailed
                   : null,
             );
           },
@@ -2295,28 +2153,6 @@ class _ChatScreenState extends State<ChatScreen> {
       },
     );
   }
-}
-
-String _conversationExportFileName(String title) {
-  final cleaned = title
-      .trim()
-      .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1f]'), '_')
-      .replaceAll(RegExp(r'\s+'), '_')
-      .replaceAll(RegExp(r'[. ]+$'), '');
-  if (cleaned.isEmpty) return 'conversation.md';
-  final baseName = cleaned.length > 80 ? cleaned.substring(0, 80) : cleaned;
-  return '$baseName.md';
-}
-
-String _markdownCodeFence(String content) {
-  var longestBacktickRun = 2;
-  for (final match in RegExp(r'`+').allMatches(content)) {
-    final runLength = match.group(0)?.length;
-    if (runLength != null && runLength > longestBacktickRun) {
-      longestBacktickRun = runLength;
-    }
-  }
-  return '`' * (longestBacktickRun + 1);
 }
 
 Map<String, Object?> _objectMap(Object? value) {
@@ -2331,166 +2167,4 @@ Map<String, Object?> _objectMap(Object? value) {
     result[entry.key as String] = entry.value;
   }
   return result;
-}
-
-class _CreateProjectDialog extends StatefulWidget {
-  const _CreateProjectDialog();
-
-  @override
-  State<_CreateProjectDialog> createState() => _CreateProjectDialogState();
-}
-
-class _CreateProjectDialogState extends State<_CreateProjectDialog> {
-  final _nameController = TextEditingController();
-  String? _folderPath;
-  String? _errorMessage;
-  bool _isSelectingFolder = false;
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _selectFolder() async {
-    if (_isSelectingFolder) return;
-    setState(() {
-      _isSelectingFolder = true;
-      _errorMessage = null;
-    });
-    try {
-      final folderPath = await FilePicker.getDirectoryPath(
-        dialogTitle: context.zihoraL10n.chooseProjectFolder,
-        windowsOptions: const WindowsOptions(lockParentWindow: true),
-        linuxOptions: const LinuxOptions(lockParentWindow: true),
-      );
-      if (!mounted) return;
-      if (folderPath != null && folderPath.trim().isNotEmpty) {
-        setState(() => _folderPath = folderPath.trim());
-      }
-    } on Exception {
-      if (mounted) {
-        setState(
-          () => _errorMessage = context.zihoraL10n.projectFolderSelectionFailed,
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSelectingFolder = false);
-    }
-  }
-
-  void _createProject() {
-    final name = _nameController.text.trim();
-    final folderPath = _folderPath;
-    if (name.isEmpty) {
-      setState(() => _errorMessage = context.zihoraL10n.projectNameRequired);
-      return;
-    }
-    if (folderPath == null) {
-      setState(
-        () => _errorMessage = context.zihoraL10n.projectFolderNotSelected,
-      );
-      return;
-    }
-    Navigator.of(context).pop((name: name, folderPath: folderPath));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.zihoraL10n;
-    final palette = ZihoraPalette.of(context);
-
-    return AlertDialog(
-      title: Text(l10n.createProject),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              controller: _nameController,
-              autofocus: true,
-              maxLines: 1,
-              textInputAction: TextInputAction.next,
-              onChanged: (_) {
-                if (_errorMessage != null) {
-                  setState(() => _errorMessage = null);
-                }
-              },
-              decoration: InputDecoration(labelText: l10n.projectName),
-            ),
-            const SizedBox(height: 18),
-            Text(
-              l10n.projectFolder,
-              style: Theme.of(context).textTheme.labelLarge,
-            ),
-            const SizedBox(height: 8),
-            Container(
-              constraints: const BoxConstraints(minHeight: 52),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: palette.composer,
-                border: Border.all(color: palette.border),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.folder_outlined,
-                    size: 18,
-                    color: palette.secondaryIcon,
-                  ),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: Text(
-                      _folderPath ?? l10n.projectFolderNotSelected,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: _folderPath == null
-                            ? palette.secondaryText
-                            : palette.text,
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: _isSelectingFolder ? null : _selectFolder,
-              icon: _isSelectingFolder
-                  ? const SizedBox.square(
-                      dimension: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.folder_open_outlined, size: 18),
-              label: Text(l10n.chooseProjectFolder),
-            ),
-            if (_errorMessage case final String error) ...[
-              const SizedBox(height: 8),
-              Text(
-                error,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _isSelectingFolder
-              ? null
-              : () => Navigator.of(context).pop(),
-          child: Text(l10n.cancel),
-        ),
-        FilledButton(
-          onPressed: _isSelectingFolder ? null : _createProject,
-          child: Text(l10n.createProject),
-        ),
-      ],
-    );
-  }
 }

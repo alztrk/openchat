@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import '../../../../app/zihora_theme.dart';
-import '../../../../l10n/zihora_localizations.dart';
+import '../../../../app/openchat_theme.dart';
+import '../../../../l10n/openchat_localizations.dart';
 import '../../../../platform/windows/window_controls.dart';
 
 class WindowControlBar extends StatefulWidget {
@@ -18,7 +18,7 @@ class _WindowControlBarState extends State<WindowControlBar> {
   bool _maximized = false;
 
   Future<void> _toggleMaximize() async {
-    await ZihoraWindowControls.toggleMaximize();
+    await OpenChatWindowControls.toggleMaximize();
     if (mounted) {
       setState(() => _maximized = !_maximized);
     }
@@ -26,8 +26,8 @@ class _WindowControlBarState extends State<WindowControlBar> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.zihoraL10n;
-    final palette = ZihoraPalette.of(context);
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
     final iconRoot = dark
         ? 'assets/icons/window/dark'
@@ -41,7 +41,7 @@ class _WindowControlBarState extends State<WindowControlBar> {
           iconPath: '$iconRoot/minimize.svg',
           iconSize: const Size(10.667, 1.333),
           color: palette.secondaryText,
-          onPressed: () => unawaited(ZihoraWindowControls.minimize()),
+          onPressed: () => unawaited(OpenChatWindowControls.minimize()),
         ),
         const SizedBox(width: 8),
         _WindowButton(
@@ -57,7 +57,7 @@ class _WindowControlBarState extends State<WindowControlBar> {
           iconPath: '$iconRoot/close.svg',
           iconSize: const Size(10.667, 10.667),
           color: palette.secondaryText,
-          onPressed: () => unawaited(ZihoraWindowControls.close()),
+          onPressed: () => unawaited(OpenChatWindowControls.close()),
         ),
       ],
     );

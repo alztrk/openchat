@@ -196,7 +196,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolPermissionRequireApprovalDescription =>
-      'Each tool call asks for permission. Access is limited to the project folder and %LOCALAPPDATA%\\Zihora.';
+      'Each tool call asks for permission. Access is limited to the project folder and %LOCALAPPDATA%\\OpenChat.';
 
   @override
   String get toolPermissionFullAccess => 'Full access';
@@ -816,8 +816,12 @@ class AppLocalizationsEn extends AppLocalizations {
       'No models are currently available for this account.';
 
   @override
-  String get chatGptDataUnavailable =>
-      'ChatGPT returned information OpenChat could not read. Refresh the connection and try again.';
+  String get providerDataUnavailable =>
+      'The provider returned data that OpenChat could not read. Refresh the connection and try again.';
+
+  @override
+  String get oauthResponseInvalid =>
+      'The sign-in result could not be read. Try connecting again.';
 
   @override
   String get modelCatalogUnavailable =>
@@ -833,19 +837,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chatRequestFailed =>
-      'ChatGPT could not complete the response. Your saved messages are still available.';
-
-  @override
-  String get chatGptRateLimited =>
-      'ChatGPT reported a usage limit. Check this account’s usage details.';
-
-  @override
-  String get chatGptReauthenticationRequired =>
-      'This ChatGPT connection needs a new sign-in. Reconnect the account in Settings.';
-
-  @override
-  String get chatGptProviderChanged =>
-      'ChatGPT’s response format changed. Update OpenChat and try again.';
+      'The response could not be completed. Your saved messages are still available.';
 
   @override
   String get cachedCatalog => 'cached models';
@@ -997,7 +989,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolProjectLocation => 'Project folder';
 
   @override
-  String get toolZihoraLocation => 'Application data folder';
+  String get toolOpenChatLocation => 'Application data folder';
 
   @override
   String get responseFailed => 'Response failed';

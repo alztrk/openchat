@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $releaseDirectory = Join-Path $projectRoot 'build/windows/x64/runner/Release'
 $payloadArchive = Join-Path $projectRoot 'build/openchat-portable-payload.zip'
-$launcherManifest = Join-Path $projectRoot 'native/zihora-launcher/Cargo.toml'
+$launcherManifest = Join-Path $projectRoot 'native/openchat-launcher/Cargo.toml'
 $launcherTarget = Join-Path $projectRoot 'build/launcher-target'
 $outputDirectory = Join-Path $projectRoot 'build/outputs'
 $outputExecutable = Join-Path $outputDirectory 'OpenChat.exe'
@@ -17,7 +17,7 @@ try {
 
     $requiredFiles = @(
         'openchat.exe',
-        'zihora_service.exe',
+        'openchat_service.exe',
         'data/flutter_assets/AssetManifest.bin'
     )
     foreach ($relativePath in $requiredFiles) {
@@ -31,9 +31,16 @@ try {
         New-Item -ItemType Directory -Path $outputDirectory | Out-Null
     }
 
+    $requiredExecutableNames = @(
+        $requiredFiles |
+            Where-Object { [System.IO.Path]::GetExtension($_) -eq '.exe' } |
+            ForEach-Object { Split-Path -Leaf $_ }
+    )
     $releaseContents = @(
         Get-ChildItem -LiteralPath $releaseDirectory -Force |
-            Where-Object { $_.Name -ne 'zihora.exe' }
+            Where-Object {
+                $_.Extension -ne '.exe' -or $_.Name -in $requiredExecutableNames
+            }
     )
     Compress-Archive `
         -Path $releaseContents.FullName `
@@ -65,9 +72,9 @@ try {
         throw "cargo build for the portable launcher exited with code $LASTEXITCODE."
     }
 
-    $launcherExecutable = Join-Path $launcherTarget 'release/zihora_launcher.exe'
+    $launcherExecutable = Join-Path $launcherTarget 'release/openchat_launcher.exe'
     if (-not (Test-Path -LiteralPath $launcherExecutable -PathType Leaf)) {
-        throw 'The portable launcher build did not produce zihora_launcher.exe.'
+        throw 'The portable launcher build did not produce openchat_launcher.exe.'
     }
 
     Copy-Item -LiteralPath $launcherExecutable -Destination $outputExecutable -Force

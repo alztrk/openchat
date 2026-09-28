@@ -2,21 +2,20 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
-import '../../../app/zihora_theme.dart';
-import '../../../app/zihora_toast.dart';
-import '../../chat/domain/chatgpt_connection.dart';
+import '../../../app/openchat_theme.dart';
+import '../../../app/openchat_toast.dart';
+import '../../../l10n/openchat_localizations.dart';
+import '../../../platform/windows/openchat_service_client.dart';
+import '../../../platform/windows/window_controls.dart';
+import '../../chat/domain/history_storage_status.dart';
+import '../../chat/presentation/widgets/window_control_bar.dart';
 import '../data/chat_gpt_api_key_store.dart';
 import '../data/open_code_api_key_store.dart';
 import '../data/settings_preferences.dart';
-import '../domain/chat_gpt_api_key_connection.dart';
-import '../domain/chat_gpt_usage_snapshot.dart';
-import '../../chat/domain/history_storage_status.dart';
-import '../../../l10n/zihora_localizations.dart';
-import '../../../platform/windows/zihora_service_client.dart';
-import '../../../platform/windows/window_controls.dart';
-import '../../chat/presentation/widgets/window_control_bar.dart';
+import 'chat_gpt_connection_section.dart';
+import 'open_code_connection_section.dart';
+import 'settings_widgets.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
@@ -46,7 +45,7 @@ class SettingsScreen extends StatefulWidget {
   final Future<void> Function()? onClearConversationHistory;
   final ChatGptApiKeyStore? chatGptApiKeyStore;
   final OpenCodeApiKeyStore? openCodeApiKeyStore;
-  final ZihoraServiceClient? serviceClient;
+  final OpenChatServiceClient? serviceClient;
   final Future<void> Function()? onProviderStateChanged;
   final Future<void> Function(String connectionId)? onConnectionRemoved;
 
@@ -79,8 +78,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = ZihoraPalette.of(context);
-    final l10n = context.zihoraL10n;
+    final palette = OpenChatPalette.of(context);
+    final l10n = context.openchatL10n;
     final textTheme = Theme.of(context).textTheme;
 
     return LayoutBuilder(
@@ -134,7 +133,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                         const SizedBox(height: 20),
-                        _SettingsDivider(color: palette.border),
+                        SettingsDivider(color: palette.border),
                         const SizedBox(height: 33),
                         _SectionHeading(
                           label: l10n.connections,
@@ -145,19 +144,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ),
                         const SizedBox(height: 20),
-                        _ChatGptConnectionSection(
+                        ChatGptConnectionSection(
                           apiKeyStore: widget.chatGptApiKeyStore,
                           serviceClient: widget.serviceClient,
                           onProviderStateChanged: widget.onProviderStateChanged,
                           onConnectionRemoved: widget.onConnectionRemoved,
                         ),
                         const SizedBox(height: 22),
-                        _OpenCodeConnectionSection(
+                        OpenCodeConnectionSection(
                           apiKeyStore: widget.openCodeApiKeyStore,
                           onChanged: widget.onProviderStateChanged,
                         ),
                         const SizedBox(height: 32),
-                        _SettingsDivider(color: palette.border),
+                        SettingsDivider(color: palette.border),
                         const SizedBox(height: 33),
                         _SectionHeading(
                           label: l10n.sharedInstructions,
@@ -240,7 +239,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           ),
                         ],
                         const SizedBox(height: 32),
-                        _SettingsDivider(color: palette.border),
+                        SettingsDivider(color: palette.border),
                         const SizedBox(height: 33),
                         _SectionHeading(
                           label: l10n.appearance,
@@ -339,7 +338,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           },
                         ),
                         const SizedBox(height: 32),
-                        _SettingsDivider(color: palette.border),
+                        SettingsDivider(color: palette.border),
                         const SizedBox(height: 33),
                         _SectionHeading(
                           label: l10n.localData,
@@ -432,7 +431,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ),
-              if (ZihoraWindowControls.isSupported)
+              if (OpenChatWindowControls.isSupported)
                 Positioned(
                   right: windowControlInset,
                   top: 18,
@@ -471,7 +470,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) return;
       setState(() {
         _sharedInstructionsError =
-            context.zihoraL10n.sharedInstructionsLoadFailed;
+            context.openchatL10n.sharedInstructionsLoadFailed;
         _isLoadingInstructions = false;
       });
     } on Object catch (error, stackTrace) {
@@ -486,7 +485,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (!mounted) return;
       setState(() {
         _sharedInstructionsError =
-            context.zihoraL10n.sharedInstructionsLoadFailed;
+            context.openchatL10n.sharedInstructionsLoadFailed;
         _isLoadingInstructions = false;
       });
     }
@@ -500,10 +499,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await widget.settingsPreferences.writeSharedInstructions(instructions);
       if (!mounted) return;
       setState(() => _savedSharedInstructions = instructions);
-      showZihoraToast(
+      showOpenChatToast(
         context,
-        context.zihoraL10n.sharedInstructionsSaved,
-        type: ZihoraToastType.success,
+        context.openchatL10n.sharedInstructionsSaved,
+        type: OpenChatToastType.success,
       );
     } on PlatformException catch (error, stackTrace) {
       FlutterError.reportError(
@@ -515,17 +514,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
       if (!mounted) return;
-      showZihoraToast(
+      showOpenChatToast(
         context,
-        context.zihoraL10n.sharedInstructionsSaveFailed,
-        type: ZihoraToastType.error,
+        context.openchatL10n.sharedInstructionsSaveFailed,
+        type: OpenChatToastType.error,
       );
     } on ArgumentError {
       if (!mounted) return;
-      showZihoraToast(
+      showOpenChatToast(
         context,
-        context.zihoraL10n.sharedInstructionsTooLong,
-        type: ZihoraToastType.error,
+        context.openchatL10n.sharedInstructionsTooLong,
+        type: OpenChatToastType.error,
       );
     } on Object catch (error, stackTrace) {
       FlutterError.reportError(
@@ -537,10 +536,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
       if (!mounted) return;
-      showZihoraToast(
+      showOpenChatToast(
         context,
-        context.zihoraL10n.sharedInstructionsSaveFailed,
-        type: ZihoraToastType.error,
+        context.openchatL10n.sharedInstructionsSaveFailed,
+        type: OpenChatToastType.error,
       );
     } finally {
       if (mounted) setState(() => _isSavingInstructions = false);
@@ -560,10 +559,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
       if (!mounted) return;
-      showZihoraToast(
+      showOpenChatToast(
         context,
-        context.zihoraL10n.themeSaveFailed,
-        type: ZihoraToastType.error,
+        context.openchatL10n.themeSaveFailed,
+        type: OpenChatToastType.error,
       );
     }
   }
@@ -584,10 +583,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
       if (!mounted) return;
-      showZihoraToast(
+      showOpenChatToast(
         context,
-        context.zihoraL10n.languageSaveFailed,
-        type: ZihoraToastType.error,
+        context.openchatL10n.languageSaveFailed,
+        type: OpenChatToastType.error,
       );
     } finally {
       if (mounted) {
@@ -603,7 +602,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final clearHistory = widget.onClearConversationHistory;
     if (clearHistory == null || !widget.hasConversationHistory) return;
 
-    final l10n = context.zihoraL10n;
+    final l10n = context.openchatL10n;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -630,10 +629,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     try {
       await clearHistory();
       if (!mounted) return;
-      showZihoraToast(
+      showOpenChatToast(
         context,
-        context.zihoraL10n.clearHistorySucceeded,
-        type: ZihoraToastType.success,
+        context.openchatL10n.clearHistorySucceeded,
+        type: OpenChatToastType.success,
       );
     } on Exception catch (error, stackTrace) {
       FlutterError.reportError(
@@ -645,1658 +644,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
       if (!mounted) return;
-      showZihoraToast(
+      showOpenChatToast(
         context,
-        context.zihoraL10n.clearHistoryFailed,
-        type: ZihoraToastType.error,
+        context.openchatL10n.clearHistoryFailed,
+        type: OpenChatToastType.error,
       );
     } finally {
       if (mounted) setState(() => _isClearingHistory = false);
     }
-  }
-}
-
-enum _ConnectionLoadState { loading, loaded, failed }
-
-class _OpenCodeConnectionSection extends StatefulWidget {
-  const _OpenCodeConnectionSection({
-    required this.apiKeyStore,
-    required this.onChanged,
-  });
-
-  final OpenCodeApiKeyStore? apiKeyStore;
-  final Future<void> Function()? onChanged;
-
-  @override
-  State<_OpenCodeConnectionSection> createState() =>
-      _OpenCodeConnectionSectionState();
-}
-
-class _OpenCodeConnectionSectionState
-    extends State<_OpenCodeConnectionSection> {
-  final _controller = TextEditingController();
-  String? _keySuffix;
-  bool _loading = true;
-  bool _saving = false;
-  bool _showForm = false;
-  String? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_load());
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Future<void> _load() async {
-    final store = widget.apiKeyStore;
-    if (store == null) {
-      if (mounted) setState(() => _loading = false);
-      return;
-    }
-    try {
-      final suffix = await store.readKeySuffix();
-      if (mounted) {
-        setState(() {
-          _keySuffix = suffix;
-          _loading = false;
-        });
-      }
-    } on OpenCodeApiKeyStorageException {
-      if (mounted) {
-        setState(() {
-          _error = 'storage';
-          _loading = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _save() async {
-    final store = widget.apiKeyStore;
-    if (store == null || _saving) return;
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-    try {
-      await store.saveApiKey(_controller.text);
-      _controller.clear();
-      await _load();
-      await widget.onChanged?.call();
-      if (mounted) setState(() => _showForm = false);
-    } on InvalidOpenCodeApiKeyException {
-      if (mounted) setState(() => _error = 'invalid');
-    } on OpenCodeApiKeyStorageException {
-      if (mounted) setState(() => _error = 'storage');
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  Future<void> _remove() async {
-    final store = widget.apiKeyStore;
-    if (store == null || _saving) return;
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-    try {
-      await store.deleteApiKey();
-      await _load();
-      await widget.onChanged?.call();
-    } on OpenCodeApiKeyStorageException {
-      if (mounted) setState(() => _error = 'storage');
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.zihoraL10n;
-    final palette = ZihoraPalette.of(context);
-    final hasKey = _keySuffix != null;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          l10n.openCodeConsole,
-          style: Theme.of(context).textTheme.titleSmall,
-        ),
-        const SizedBox(height: 6),
-        Text(
-          l10n.openCodeConsoleDescription,
-          style: TextStyle(color: palette.secondaryText, fontSize: 13),
-        ),
-        if (_error == 'storage' && !_showForm) ...[
-          const SizedBox(height: 6),
-          Text(
-            l10n.openCodeKeyStorageFailed,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-        ],
-        const SizedBox(height: 8),
-        if (_loading) const LinearProgressIndicator(),
-        if (!_loading)
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  hasKey
-                      ? l10n.openCodeKeySaved(_keySuffix!)
-                      : l10n.openCodeNoKey,
-                ),
-              ),
-              TextButton(
-                onPressed: _saving
-                    ? null
-                    : () => setState(() => _showForm = !_showForm),
-                child: Text(hasKey ? l10n.edit : l10n.add),
-              ),
-              if (hasKey)
-                TextButton(
-                  onPressed: _saving ? null : _remove,
-                  child: Text(l10n.deleteAll),
-                ),
-            ],
-          ),
-        if (_showForm)
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _controller,
-                  obscureText: true,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  decoration: InputDecoration(
-                    labelText: l10n.openCodeApiKey,
-                    errorText: _error == 'invalid'
-                        ? l10n.openCodeKeyInvalid
-                        : _error == 'storage'
-                        ? l10n.openCodeKeyStorageFailed
-                        : null,
-                  ),
-                  onSubmitted: (_) => unawaited(_save()),
-                ),
-              ),
-              const SizedBox(width: 12),
-              FilledButton(
-                onPressed: _saving ? null : _save,
-                child: Text(_saving ? l10n.saving : l10n.save),
-              ),
-            ],
-          ),
-      ],
-    );
-  }
-}
-
-enum _UsageLoadState { idle, loading, loaded, failed }
-
-class _ChatGptConnectionSection extends StatefulWidget {
-  const _ChatGptConnectionSection({
-    required this.apiKeyStore,
-    required this.serviceClient,
-    required this.onProviderStateChanged,
-    required this.onConnectionRemoved,
-  });
-
-  final ChatGptApiKeyStore? apiKeyStore;
-  final ZihoraServiceClient? serviceClient;
-  final Future<void> Function()? onProviderStateChanged;
-  final Future<void> Function(String connectionId)? onConnectionRemoved;
-
-  @override
-  State<_ChatGptConnectionSection> createState() =>
-      _ChatGptConnectionSectionState();
-}
-
-class _ChatGptConnectionSectionState extends State<_ChatGptConnectionSection> {
-  final _apiKeyController = TextEditingController();
-  List<ChatGptApiKeyConnection> _connections = const [];
-  List<ChatGptConnection> _oauthConnections = const [];
-  _ConnectionLoadState _loadState = _ConnectionLoadState.loading;
-  _ConnectionLoadState _oauthLoadState = _ConnectionLoadState.loading;
-  _ConnectionLoadState _titlePreferenceLoadState = _ConnectionLoadState.loading;
-  _UsageLoadState _usageLoadState = _UsageLoadState.idle;
-  ChatGptUsageSnapshot? _usageSnapshot;
-  ChatGptTitlePreference _titlePreference = const ChatGptTitlePreference();
-  ZihoraServiceOperation? _oauthOperation;
-  String? _oauthError;
-  String? _selectedWorkspaceId;
-  String? _formError;
-  bool _showApiKeyForm = false;
-  bool _showApiKey = false;
-  bool _isSaving = false;
-  bool _isSigningIn = false;
-  bool _isSavingTitlePreference = false;
-  final Set<String> _removingConnectionIds = <String>{};
-  int _usageRequestGeneration = 0;
-  int _loadRequestGeneration = 0;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_loadConnections());
-    unawaited(_loadOAuthConnections());
-  }
-
-  @override
-  void dispose() {
-    final operation = _oauthOperation;
-    if (operation != null) unawaited(operation.cancel());
-    _apiKeyController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _loadConnections() async {
-    final store = widget.apiKeyStore;
-    final requestGeneration = ++_loadRequestGeneration;
-    if (store == null) {
-      setState(() => _loadState = _ConnectionLoadState.loaded);
-      return;
-    }
-
-    setState(() => _loadState = _ConnectionLoadState.loading);
-    try {
-      final connections = await store.readConnections();
-      if (!mounted || requestGeneration != _loadRequestGeneration) return;
-      setState(() {
-        _connections = connections;
-        _loadState = _ConnectionLoadState.loaded;
-      });
-    } on ChatGptApiKeyStorageException {
-      if (!mounted || requestGeneration != _loadRequestGeneration) return;
-      setState(() => _loadState = _ConnectionLoadState.failed);
-    }
-  }
-
-  Future<void> _loadOAuthConnections() async {
-    final service = widget.serviceClient;
-    if (service == null) {
-      if (mounted) {
-        setState(() => _oauthLoadState = _ConnectionLoadState.loaded);
-      }
-      return;
-    }
-    setState(() => _oauthLoadState = _ConnectionLoadState.loading);
-    try {
-      final response = await service.call('chatgpt.connections.list');
-      final rawConnections = response['connections'];
-      if (rawConnections is! List<Object?>) {
-        throw const FormatException('The ChatGPT connection list was invalid.');
-      }
-      final connections = rawConnections
-          .map((value) => ChatGptConnection.fromJson(_serviceObjectMap(value)))
-          .toList(growable: false);
-      ChatGptConnection? selectedConnection;
-      for (final connection in connections) {
-        if (connection.isSelected) {
-          selectedConnection = connection;
-          break;
-        }
-      }
-      ChatGptWorkspace? selectedWorkspace;
-      for (final workspace in selectedConnection?.workspaces ?? const []) {
-        if (workspace.isSelected) {
-          selectedWorkspace = workspace;
-          break;
-        }
-      }
-      if (!mounted) return;
-      setState(() {
-        _oauthConnections = connections;
-        _selectedWorkspaceId = selectedWorkspace?.id;
-        _oauthLoadState = _ConnectionLoadState.loaded;
-      });
-      unawaited(_loadTitlePreference());
-      if (selectedConnection != null && selectedWorkspace != null) {
-        unawaited(_loadUsage(selectedConnection.id, selectedWorkspace.id));
-      } else {
-        setState(() {
-          _usageSnapshot = null;
-          _usageLoadState = _UsageLoadState.idle;
-        });
-      }
-    } on ZihoraServiceException {
-      if (!mounted) return;
-      setState(() => _oauthLoadState = _ConnectionLoadState.failed);
-    } on FormatException {
-      if (!mounted) return;
-      setState(() => _oauthLoadState = _ConnectionLoadState.failed);
-    }
-  }
-
-  Future<void> _loadTitlePreference() async {
-    final service = widget.serviceClient;
-    if (service == null) {
-      if (mounted) {
-        setState(() => _titlePreferenceLoadState = _ConnectionLoadState.loaded);
-      }
-      return;
-    }
-    setState(() => _titlePreferenceLoadState = _ConnectionLoadState.loading);
-    try {
-      final response = await service.call('chatgpt.titles.get');
-      final preference = ChatGptTitlePreference.fromJson(response);
-      if (!mounted) return;
-      setState(() {
-        _titlePreference = preference;
-        _titlePreferenceLoadState = _ConnectionLoadState.loaded;
-      });
-    } on ZihoraServiceException {
-      if (!mounted) return;
-      setState(() => _titlePreferenceLoadState = _ConnectionLoadState.failed);
-    } on FormatException {
-      if (!mounted) return;
-      setState(() => _titlePreferenceLoadState = _ConnectionLoadState.failed);
-    }
-  }
-
-  Future<void> _selectTitleConnection(String? connectionId) async {
-    if (connectionId == null || _isSavingTitlePreference) return;
-    final selectedId = connectionId.isEmpty ? null : connectionId;
-    String? workspaceId;
-    if (selectedId != null) {
-      for (final connection in _oauthConnections) {
-        if (connection.id == selectedId && connection.workspaces.length == 1) {
-          workspaceId = connection.workspaces.single.id;
-          break;
-        }
-      }
-    }
-    await _saveTitlePreference(selectedId, workspaceId);
-  }
-
-  Future<void> _selectTitleWorkspace(String? workspaceId) async {
-    if (workspaceId == null || _isSavingTitlePreference) return;
-    final connectionId = _titlePreference.connectionId;
-    if (connectionId == null) return;
-    await _saveTitlePreference(connectionId, workspaceId);
-  }
-
-  Future<void> _saveTitlePreference(
-    String? connectionId,
-    String? workspaceId,
-  ) async {
-    final service = widget.serviceClient;
-    if (service == null) return;
-    setState(() => _isSavingTitlePreference = true);
-    try {
-      final response = await service.call(
-        'chatgpt.titles.select',
-        params: <String, Object?>{
-          'connectionId': connectionId,
-          'workspaceId': workspaceId,
-        },
-      );
-      final preference = ChatGptTitlePreference.fromJson(response);
-      if (!mounted) return;
-      setState(() {
-        _titlePreference = preference;
-        _titlePreferenceLoadState = _ConnectionLoadState.loaded;
-      });
-    } on ZihoraServiceException {
-      if (mounted) _showMessage(context.zihoraL10n.titlePreferenceSaveFailed);
-    } on FormatException {
-      if (mounted) _showMessage(context.zihoraL10n.chatGptDataUnavailable);
-    } finally {
-      if (mounted) setState(() => _isSavingTitlePreference = false);
-    }
-  }
-
-  Future<void> _startOAuth() async {
-    final service = widget.serviceClient;
-    if (service == null || _isSigningIn) {
-      if (service == null) {
-        _showMessage(context.zihoraL10n.oauthConnectionUnavailable);
-      }
-      return;
-    }
-    setState(() {
-      _isSigningIn = true;
-      _oauthError = null;
-    });
-    try {
-      final operation = await service.startOperation('chatgpt.oauth.start');
-      _oauthOperation = operation;
-      final result = await operation.result;
-      final cleanupWarning = result['oldCredentialCleanupFailed'];
-      if (cleanupWarning != null && cleanupWarning is! bool) {
-        throw const FormatException(
-          'The ChatGPT connection result was invalid.',
-        );
-      }
-      if (!mounted) return;
-      await _loadOAuthConnections();
-      await widget.onProviderStateChanged?.call();
-      if (mounted) {
-        showZihoraToast(
-          context,
-          cleanupWarning == true
-              ? context.zihoraL10n.oldCredentialCleanupFailed
-              : context.zihoraL10n.oauthConnectionAdded,
-          type: cleanupWarning == true
-              ? ZihoraToastType.warning
-              : ZihoraToastType.success,
-        );
-      }
-    } on ZihoraServiceException catch (error) {
-      if (!mounted || error.code == 'oauth_cancelled') return;
-      setState(
-        () => _oauthError =
-            '${context.zihoraL10n.oauthSignInFailed} (${error.code})',
-      );
-    } on FormatException {
-      if (mounted) {
-        setState(() => _oauthError = context.zihoraL10n.chatGptDataUnavailable);
-      }
-    } finally {
-      _oauthOperation = null;
-      if (mounted) setState(() => _isSigningIn = false);
-    }
-  }
-
-  void _cancelOAuth() {
-    final operation = _oauthOperation;
-    if (operation != null) unawaited(operation.cancel());
-  }
-
-  Future<void> _selectOAuthConnection(ChatGptConnection connection) async {
-    final service = widget.serviceClient;
-    if (service == null || connection.isSelected) return;
-    try {
-      await service.call(
-        'chatgpt.connections.select',
-        params: <String, Object?>{'connectionId': connection.id},
-      );
-      await _loadOAuthConnections();
-      await widget.onProviderStateChanged?.call();
-    } on ZihoraServiceException {
-      if (mounted) _showMessage(context.zihoraL10n.connectionSelectionFailed);
-    }
-  }
-
-  Future<void> _selectOAuthWorkspace(
-    ChatGptConnection connection,
-    String workspaceId,
-  ) async {
-    final service = widget.serviceClient;
-    if (service == null || workspaceId == _selectedWorkspaceId) return;
-    try {
-      await service.call(
-        'chatgpt.workspaces.select',
-        params: <String, Object?>{
-          'connectionId': connection.id,
-          'workspaceId': workspaceId,
-        },
-      );
-      await _loadOAuthConnections();
-      await widget.onProviderStateChanged?.call();
-    } on ZihoraServiceException {
-      if (mounted) _showMessage(context.zihoraL10n.workspaceSelectionFailed);
-    }
-  }
-
-  Future<void> _loadUsage(String connectionId, String workspaceId) async {
-    final service = widget.serviceClient;
-    if (service == null) return;
-    final generation = ++_usageRequestGeneration;
-    setState(() {
-      _usageLoadState = _UsageLoadState.loading;
-      _usageSnapshot = null;
-    });
-    try {
-      final response = await service.call(
-        'chatgpt.usage.get',
-        params: <String, Object?>{
-          'connectionId': connectionId,
-          'workspaceId': workspaceId,
-        },
-      );
-      final snapshot = ChatGptUsageSnapshot.fromJson(response);
-      if (!mounted || generation != _usageRequestGeneration) return;
-      setState(() {
-        _usageSnapshot = snapshot;
-        _usageLoadState = _UsageLoadState.loaded;
-      });
-    } on ZihoraServiceException {
-      if (!mounted || generation != _usageRequestGeneration) return;
-      setState(() => _usageLoadState = _UsageLoadState.failed);
-    } on FormatException {
-      if (!mounted || generation != _usageRequestGeneration) return;
-      setState(() => _usageLoadState = _UsageLoadState.failed);
-    } on Object catch (error, stackTrace) {
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: error,
-          stack: stackTrace,
-          library: 'settings',
-          context: ErrorDescription('while loading ChatGPT usage'),
-        ),
-      );
-      if (!mounted || generation != _usageRequestGeneration) return;
-      setState(() => _usageLoadState = _UsageLoadState.failed);
-    }
-  }
-
-  void _toggleApiKeyForm() {
-    if (widget.apiKeyStore == null) {
-      _showMessage(context.zihoraL10n.apiKeyConnectionUnavailable);
-      return;
-    }
-
-    setState(() {
-      _showApiKeyForm = !_showApiKeyForm;
-      _formError = null;
-      if (!_showApiKeyForm) _apiKeyController.clear();
-    });
-  }
-
-  Future<void> _saveApiKey() async {
-    final store = widget.apiKeyStore;
-    if (store == null || _isSaving || _apiKeyController.text.trim().isEmpty) {
-      if (_apiKeyController.text.trim().isEmpty && mounted) {
-        setState(() => _formError = context.zihoraL10n.apiKeyRequired);
-      }
-      return;
-    }
-
-    setState(() {
-      _isSaving = true;
-      _formError = null;
-    });
-
-    try {
-      final connections = await store.saveApiKey(_apiKeyController.text);
-      if (!mounted) return;
-      _loadRequestGeneration++;
-      _apiKeyController.clear();
-      setState(() {
-        _connections = connections;
-        _loadState = _ConnectionLoadState.loaded;
-        _showApiKeyForm = false;
-      });
-      _showMessage(
-        context.zihoraL10n.apiKeySaved,
-        type: ZihoraToastType.success,
-      );
-    } on EmptyChatGptApiKeyException {
-      if (mounted) {
-        setState(() => _formError = context.zihoraL10n.apiKeyRequired);
-      }
-    } on InvalidChatGptApiKeyFormatException {
-      if (mounted) {
-        setState(() => _formError = context.zihoraL10n.apiKeyInvalidFormat);
-      }
-    } on DuplicateChatGptApiKeyException {
-      if (mounted) {
-        setState(() => _formError = context.zihoraL10n.apiKeyAlreadySaved);
-      }
-    } on ChatGptApiKeyStorageException {
-      if (!mounted) return;
-      _showMessage(context.zihoraL10n.apiKeySaveFailed);
-    } finally {
-      if (mounted) setState(() => _isSaving = false);
-    }
-  }
-
-  Future<bool> _confirmConnectionRemoval(String connectionName) async {
-    final l10n = context.zihoraL10n;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.removeChatGptConnection),
-        content: Text(l10n.confirmRemoveConnection(connectionName)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.cancel),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(dialogContext).colorScheme.error,
-            ),
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(l10n.removeConnectionAction),
-          ),
-        ],
-      ),
-    );
-    return confirmed == true;
-  }
-
-  Future<void> _removeApiKeyConnection(
-    ChatGptApiKeyConnection connection,
-  ) async {
-    final store = widget.apiKeyStore;
-    if (store == null || _removingConnectionIds.contains(connection.id)) return;
-    final l10n = context.zihoraL10n;
-    final connectionName = switch (connection.keySuffix) {
-      final String suffix => l10n.savedApiKeyWithSuffix(suffix),
-      null => l10n.savedApiKey,
-    };
-    if (!await _confirmConnectionRemoval(connectionName) || !mounted) return;
-
-    setState(() => _removingConnectionIds.add(connection.id));
-    try {
-      await store.deleteApiKey(connection.id);
-      await _loadConnections();
-      if (mounted) {
-        _showMessage(
-          context.zihoraL10n.connectionRemoveSucceeded,
-          type: ZihoraToastType.success,
-        );
-      }
-    } on ChatGptApiKeyStorageException catch (error, stackTrace) {
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: error,
-          stack: stackTrace,
-          library: 'settings',
-          context: ErrorDescription('while removing a saved API key'),
-        ),
-      );
-      if (mounted) _showMessage(context.zihoraL10n.connectionRemoveFailed);
-    } on InvalidChatGptApiKeyConnectionIdException catch (error, stackTrace) {
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: error,
-          stack: stackTrace,
-          library: 'settings',
-          context: ErrorDescription('while validating a saved API key'),
-        ),
-      );
-      if (mounted) _showMessage(context.zihoraL10n.connectionRemoveFailed);
-    } finally {
-      if (mounted) setState(() => _removingConnectionIds.remove(connection.id));
-    }
-  }
-
-  Future<void> _removeOAuthConnection(ChatGptConnection connection) async {
-    final service = widget.serviceClient;
-    if (service == null || _removingConnectionIds.contains(connection.id)) {
-      return;
-    }
-    final connectionName =
-        connection.email ?? context.zihoraL10n.accountEmailUnavailable;
-    if (!await _confirmConnectionRemoval(connectionName) || !mounted) return;
-
-    setState(() => _removingConnectionIds.add(connection.id));
-    try {
-      await service.call(
-        'chatgpt.connections.delete',
-        params: <String, Object?>{'connectionId': connection.id},
-      );
-      await widget.onConnectionRemoved?.call(connection.id);
-      await _loadOAuthConnections();
-      if (mounted) {
-        _showMessage(
-          context.zihoraL10n.connectionRemoveSucceeded,
-          type: ZihoraToastType.success,
-        );
-      }
-    } on ZihoraServiceException catch (error, stackTrace) {
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: error,
-          stack: stackTrace,
-          library: 'settings',
-          context: ErrorDescription('while removing a ChatGPT OAuth account'),
-        ),
-      );
-      if (mounted) _showMessage(context.zihoraL10n.connectionRemoveFailed);
-    } finally {
-      if (mounted) setState(() => _removingConnectionIds.remove(connection.id));
-    }
-  }
-
-  void _showMessage(
-    String message, {
-    ZihoraToastType type = ZihoraToastType.error,
-  }) {
-    showZihoraToast(context, message, type: type);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = ZihoraPalette.of(context);
-    final l10n = context.zihoraL10n;
-    final textTheme = Theme.of(context).textTheme;
-    final logoColor = Theme.of(context).brightness == Brightness.dark
-        ? Colors.white
-        : Colors.black;
-
-    final actions = Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        OutlinedButton.icon(
-          onPressed: _isSaving ? null : _toggleApiKeyForm,
-          icon: const Icon(Icons.key_outlined, size: 16),
-          label: Text(l10n.apiKey),
-        ),
-        OutlinedButton.icon(
-          onPressed: _isSigningIn ? null : () => unawaited(_startOAuth()),
-          icon: const Icon(Icons.login_rounded, size: 16),
-          label: Text(_isSigningIn ? l10n.oauthSigningIn : l10n.oauth),
-        ),
-      ],
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Card(
-          margin: EdgeInsets.zero,
-          color: palette.surface,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-            side: BorderSide(color: palette.border),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final provider = Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SvgPicture.asset(
-                      'assets/icons/chatgpt.svg',
-                      width: 24,
-                      height: 24,
-                      colorFilter: ColorFilter.mode(logoColor, BlendMode.srcIn),
-                      excludeFromSemantics: true,
-                    ),
-                    const SizedBox(width: 12),
-                    Flexible(
-                      child: Text(
-                        'ChatGPT',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textTheme.titleMedium,
-                      ),
-                    ),
-                  ],
-                );
-
-                if (constraints.maxWidth < 520) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [provider, const SizedBox(height: 14), actions],
-                  );
-                }
-
-                return Row(
-                  children: [
-                    Expanded(child: provider),
-                    const SizedBox(width: 16),
-                    actions,
-                  ],
-                );
-              },
-            ),
-          ),
-        ),
-        if (_showApiKeyForm) _buildApiKeyForm(palette),
-        if (_isSigningIn)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Row(
-              children: [
-                const SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                const SizedBox(width: 10),
-                Expanded(child: Text(l10n.oauthBrowserWaiting)),
-                TextButton(onPressed: _cancelOAuth, child: Text(l10n.cancel)),
-              ],
-            ),
-          ),
-        if (_oauthError case final String error)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    error,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: () => unawaited(_startOAuth()),
-                  icon: const Icon(Icons.refresh_rounded, size: 16),
-                  label: Text(l10n.retry),
-                ),
-              ],
-            ),
-          ),
-        if (_oauthLoadState == _ConnectionLoadState.loading)
-          const Padding(
-            padding: EdgeInsets.fromLTRB(12, 18, 12, 0),
-            child: LinearProgressIndicator(),
-          )
-        else if (_oauthLoadState == _ConnectionLoadState.failed)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 14, 12, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    l10n.oauthConnectionsLoadFailed,
-                    style: TextStyle(
-                      color: palette.secondaryText,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: () => unawaited(_loadOAuthConnections()),
-                  icon: const Icon(Icons.refresh_rounded, size: 16),
-                  label: Text(l10n.retry),
-                ),
-              ],
-            ),
-          )
-        else if (_oauthConnections.isNotEmpty)
-          _buildOAuthConnections(palette),
-        if (_loadState == _ConnectionLoadState.loading)
-          const Padding(
-            padding: EdgeInsets.fromLTRB(12, 18, 12, 0),
-            child: LinearProgressIndicator(),
-          )
-        else if (_loadState == _ConnectionLoadState.failed)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 14, 12, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    l10n.apiKeyLoadFailed,
-                    style: TextStyle(
-                      color: palette.secondaryText,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: () => unawaited(_loadConnections()),
-                  icon: const Icon(Icons.refresh_rounded, size: 16),
-                  label: Text(l10n.retry),
-                ),
-              ],
-            ),
-          )
-        else if (_connections.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Column(
-              children: [
-                for (var index = 0; index < _connections.length; index++) ...[
-                  _ChatGptConnectionThread(
-                    key: ValueKey(_connections[index].id),
-                    connection: _connections[index],
-                    isRemoving: _removingConnectionIds.contains(
-                      _connections[index].id,
-                    ),
-                    onRemove: () =>
-                        unawaited(_removeApiKeyConnection(_connections[index])),
-                  ),
-                  if (index < _connections.length - 1)
-                    _SettingsDivider(color: palette.border),
-                ],
-              ],
-            ),
-          )
-        else if (_oauthLoadState == _ConnectionLoadState.loaded &&
-            _oauthConnections.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 14, 12, 0),
-            child: Text(
-              l10n.noChatGptConnections,
-              style: TextStyle(color: palette.secondaryText, fontSize: 13),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildOAuthConnections(ZihoraPalette palette) {
-    ChatGptConnection? selectedConnection;
-    for (final connection in _oauthConnections) {
-      if (connection.isSelected) {
-        selectedConnection = connection;
-        break;
-      }
-    }
-    ChatGptWorkspace? selectedWorkspace;
-    for (final workspace
-        in selectedConnection?.workspaces ?? const <ChatGptWorkspace>[]) {
-      if (workspace.isSelected) {
-        selectedWorkspace = workspace;
-        break;
-      }
-    }
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var index = 0; index < _oauthConnections.length; index++) ...[
-            _buildOAuthConnectionRow(_oauthConnections[index], palette),
-            if (index < _oauthConnections.length - 1)
-              _SettingsDivider(color: palette.border),
-          ],
-          if (selectedConnection != null && selectedWorkspace != null)
-            _buildUsageDetails(selectedConnection, selectedWorkspace, palette),
-          if (_oauthConnections.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: _SettingsDivider(color: palette.border),
-            ),
-            _buildTitlePreference(palette),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTitlePreference(ZihoraPalette palette) {
-    final l10n = context.zihoraL10n;
-    final connectionId = _titlePreference.connectionId;
-    ChatGptConnection? titleConnection;
-    for (final connection in _oauthConnections) {
-      if (connection.id == connectionId) {
-        titleConnection = connection;
-        break;
-      }
-    }
-    final connectionItems = <DropdownMenuItem<String>>[
-      DropdownMenuItem<String>(
-        value: '',
-        child: Text(l10n.titleUseConversationAccount),
-      ),
-      for (final connection in _oauthConnections)
-        DropdownMenuItem<String>(
-          value: connection.id,
-          child: Text(
-            connection.email ?? l10n.accountEmailUnavailable,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      if (connectionId != null && titleConnection == null)
-        DropdownMenuItem<String>(
-          value: connectionId,
-          enabled: false,
-          child: Text(l10n.titleAccountUnavailable),
-        ),
-    ];
-    final selectedConnectionValue =
-        connectionId != null &&
-            connectionItems.any((item) => item.value == connectionId)
-        ? connectionId
-        : '';
-    final workspaces =
-        titleConnection?.workspaces ?? const <ChatGptWorkspace>[];
-    final selectedWorkspaceId = _titlePreference.workspaceId;
-    final selectedWorkspaceIsAvailable = workspaces.any(
-      (workspace) => workspace.id == selectedWorkspaceId,
-    );
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 18, 12, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            l10n.titleGenerationTarget,
-            style: TextStyle(
-              color: palette.text,
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            l10n.titleGenerationTargetDescription,
-            style: TextStyle(color: palette.secondaryText, fontSize: 12),
-          ),
-          if (_titlePreferenceLoadState == _ConnectionLoadState.loading)
-            const Padding(
-              padding: EdgeInsets.only(top: 10),
-              child: LinearProgressIndicator(),
-            )
-          else if (_titlePreferenceLoadState == _ConnectionLoadState.failed)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      l10n.titlePreferenceLoadFailed,
-                      style: TextStyle(
-                        color: palette.secondaryText,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                  TextButton.icon(
-                    onPressed: () => unawaited(_loadTitlePreference()),
-                    icon: const Icon(Icons.refresh_rounded, size: 16),
-                    label: Text(l10n.retry),
-                  ),
-                ],
-              ),
-            )
-          else ...[
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              initialValue: selectedConnectionValue,
-              isExpanded: true,
-              decoration: InputDecoration(
-                labelText: l10n.titleGenerationTarget,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              items: connectionItems,
-              onChanged: _isSavingTitlePreference
-                  ? null
-                  : _selectTitleConnection,
-            ),
-            if (_isSavingTitlePreference)
-              const Padding(
-                padding: EdgeInsets.only(top: 8),
-                child: LinearProgressIndicator(),
-              ),
-            if (connectionId != null && titleConnection != null) ...[
-              if (workspaces.length > 1 ||
-                  (workspaces.length == 1 && !selectedWorkspaceIsAvailable))
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: DropdownButtonFormField<String>(
-                    initialValue: selectedWorkspaceIsAvailable
-                        ? selectedWorkspaceId
-                        : null,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                      labelText: l10n.titleWorkspaceHint,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    items: workspaces
-                        .map(
-                          (workspace) => DropdownMenuItem<String>(
-                            value: workspace.id,
-                            child: Text(
-                              workspace.displayName ??
-                                  l10n.workspaceWithoutName,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        )
-                        .toList(growable: false),
-                    onChanged: _isSavingTitlePreference
-                        ? null
-                        : _selectTitleWorkspace,
-                  ),
-                )
-              else if (workspaces.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    l10n.workspaceUnavailable,
-                    style: TextStyle(
-                      color: palette.secondaryText,
-                      fontSize: 12,
-                    ),
-                  ),
-                )
-              else if (workspaces.length == 1)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    workspaces.single.displayName ?? l10n.workspace,
-                    style: TextStyle(
-                      color: palette.secondaryText,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-            ],
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildOAuthConnectionRow(
-    ChatGptConnection connection,
-    ZihoraPalette palette,
-  ) {
-    final l10n = context.zihoraL10n;
-    final accountName = connection.email ?? l10n.accountEmailUnavailable;
-    final isRemoving = _removingConnectionIds.contains(connection.id);
-    final planType = connection.planType;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.account_circle_outlined,
-                size: 20,
-                color: palette.secondaryIcon,
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      accountName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: palette.text,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      connection.authStatus == 'active'
-                          ? l10n.accountPlan(planType ?? l10n.planUnavailable)
-                          : l10n.connectionNeedsSignIn,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: palette.secondaryText,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              connection.isSelected
-                  ? TextButton.icon(
-                      onPressed: null,
-                      icon: const Icon(Icons.check_circle_outline, size: 16),
-                      label: Text(l10n.connectionSelected),
-                    )
-                  : OutlinedButton(
-                      onPressed: _isSigningIn || isRemoving
-                          ? null
-                          : () => unawaited(_selectOAuthConnection(connection)),
-                      child: Text(l10n.useConnection),
-                    ),
-              IconButton(
-                tooltip: l10n.removeChatGptConnection,
-                onPressed: isRemoving || _isSigningIn
-                    ? null
-                    : () => unawaited(_removeOAuthConnection(connection)),
-                icon: isRemoving
-                    ? const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.delete_outline_rounded, size: 18),
-              ),
-            ],
-          ),
-          if (connection.isSelected && connection.workspaces.length > 1)
-            Padding(
-              padding: const EdgeInsets.only(left: 30, top: 10),
-              child: DropdownButton<String>(
-                value:
-                    connection.workspaces.any(
-                      (item) => item.id == _selectedWorkspaceId,
-                    )
-                    ? _selectedWorkspaceId
-                    : null,
-                isExpanded: true,
-                hint: Text(l10n.selectWorkspace),
-                items: connection.workspaces
-                    .map(
-                      (workspace) => DropdownMenuItem<String>(
-                        value: workspace.id,
-                        child: Text(
-                          workspace.displayName ?? l10n.workspaceWithoutName,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    )
-                    .toList(growable: false),
-                onChanged: _isSigningIn || isRemoving
-                    ? null
-                    : (workspaceId) {
-                        if (workspaceId != null) {
-                          unawaited(
-                            _selectOAuthWorkspace(connection, workspaceId),
-                          );
-                        }
-                      },
-              ),
-            )
-          else if (connection.isSelected && connection.workspaces.isEmpty)
-            Padding(
-              padding: const EdgeInsets.only(left: 30, top: 8),
-              child: Text(
-                l10n.workspaceUnavailable,
-                style: TextStyle(color: palette.secondaryText, fontSize: 12),
-              ),
-            )
-          else if (!connection.isSelected && connection.workspaces.length > 1)
-            Padding(
-              padding: const EdgeInsets.only(left: 30, top: 8),
-              child: Text(
-                l10n.selectAccountForWorkspace,
-                style: TextStyle(color: palette.secondaryText, fontSize: 12),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildUsageDetails(
-    ChatGptConnection connection,
-    ChatGptWorkspace workspace,
-    ZihoraPalette palette,
-  ) {
-    final l10n = context.zihoraL10n;
-    final allowed = _usageSnapshot?.ordinaryUsageAllowed;
-    final permissionLabel = switch (allowed) {
-      true => l10n.ordinaryUsageAvailable,
-      false => l10n.ordinaryUsageUnavailable,
-      null => l10n.ordinaryUsageUnknown,
-    };
-    final permissionColor = switch (allowed) {
-      true => Theme.of(context).colorScheme.primary,
-      false => Theme.of(context).colorScheme.error,
-      null => palette.secondaryText,
-    };
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(30, 10, 0, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  l10n.accountUsage(
-                    workspace.planType ??
-                        connection.planType ??
-                        l10n.planUnavailable,
-                  ),
-                  style: TextStyle(
-                    color: palette.text,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              IconButton(
-                tooltip: l10n.refreshUsage,
-                onPressed: _usageLoadState == _UsageLoadState.loading
-                    ? null
-                    : () => unawaited(_loadUsage(connection.id, workspace.id)),
-                icon: const Icon(Icons.refresh_rounded, size: 18),
-              ),
-            ],
-          ),
-          if (_usageLoadState == _UsageLoadState.loading)
-            const LinearProgressIndicator()
-          else if (_usageLoadState == _UsageLoadState.failed)
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    l10n.usageLoadFailed,
-                    style: TextStyle(
-                      color: palette.secondaryText,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () =>
-                      unawaited(_loadUsage(connection.id, workspace.id)),
-                  child: Text(l10n.retry),
-                ),
-              ],
-            )
-          else if (_usageLoadState == _UsageLoadState.loaded &&
-              _usageSnapshot != null)
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        permissionLabel,
-                        style: TextStyle(color: permissionColor, fontSize: 12),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        l10n.usageUpdatedAt(
-                          _localizedTimestamp(
-                            context,
-                            _usageSnapshot!.fetchedAtUnixMs,
-                          ),
-                        ),
-                        style: TextStyle(
-                          color: palette.secondaryText,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                for (final bucket in _usageSnapshot!.buckets) ...[
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8, bottom: 5),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            switch (bucket.limitId) {
-                              'codex:primary' => l10n.usageFiveHour,
-                              'codex:secondary' => l10n.usageWeekly,
-                              _ => bucket.limitId,
-                            },
-                            style: TextStyle(
-                              color: palette.secondaryText,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          bucket.usedPercent == null
-                              ? l10n.unavailableValue
-                              : l10n.usageUsedPercent(
-                                  bucket.usedPercent!.toStringAsFixed(0),
-                                ),
-                          style: TextStyle(
-                            color: palette.secondaryText,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  LinearProgressIndicator(
-                    value: bucket.usedPercent == null
-                        ? null
-                        : (bucket.usedPercent! / 100).clamp(0, 1),
-                  ),
-                  if (bucket.resetAtUnixMs case final int resetAt)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 5),
-                      child: Text(
-                        l10n.quotaResetsAt(
-                          _localizedTimestamp(context, resetAt),
-                        ),
-                        style: TextStyle(
-                          color: palette.secondaryText,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-                ],
-                const SizedBox(height: 12),
-                Text(
-                  _usageSnapshot!.resetCreditCount == null
-                      ? l10n.resetCreditCountUnavailable
-                      : l10n.resetCreditsAvailable(
-                          _usageSnapshot!.resetCreditCount!,
-                        ),
-                  style: TextStyle(color: palette.secondaryText, fontSize: 12),
-                ),
-                if (_usageSnapshot!.resetCredits.isNotEmpty)
-                  for (final credit in _usageSnapshot!.resetCredits)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        [
-                          credit.title ?? credit.resetType ?? l10n.resetCredit,
-                          credit.status ?? l10n.statusUnavailable,
-                          if (credit.grantedAtUnixMs case final int grantedAt)
-                            l10n.creditGrantedAt(
-                              _localizedTimestamp(context, grantedAt),
-                            ),
-                          if (credit.expiresAtUnixMs case final int expiresAt)
-                            l10n.creditExpiresAt(
-                              _localizedTimestamp(context, expiresAt),
-                            ),
-                        ].join(' · '),
-                        style: TextStyle(
-                          color: palette.secondaryText,
-                          fontSize: 12,
-                        ),
-                      ),
-                    )
-                else if (_usageSnapshot!.resetCreditDetailsState == 'available')
-                  Padding(
-                    padding: const EdgeInsets.only(top: 5),
-                    child: Text(
-                      l10n.noResetCredits,
-                      style: TextStyle(
-                        color: palette.secondaryText,
-                        fontSize: 12,
-                      ),
-                    ),
-                  )
-                else if (_usageSnapshot!.resetCreditDetailsState != 'available')
-                  Padding(
-                    padding: const EdgeInsets.only(top: 5),
-                    child: Text(
-                      l10n.resetCreditDetailsUnavailable,
-                      style: TextStyle(
-                        color: palette.secondaryText,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                for (final credit in _usageSnapshot!.resetCredits)
-                  if (credit.description case final String description)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 3),
-                      child: Text(
-                        description,
-                        style: TextStyle(
-                          color: palette.secondaryText,
-                          fontSize: 11,
-                        ),
-                      ),
-                    ),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildApiKeyForm(ZihoraPalette palette) {
-    final l10n = context.zihoraL10n;
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Card(
-        margin: EdgeInsets.zero,
-        color: palette.surface,
-        elevation: 0,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(10),
-          side: BorderSide(color: palette.border),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              TextField(
-                controller: _apiKeyController,
-                autofocus: true,
-                autocorrect: false,
-                enableSuggestions: false,
-                obscureText: !_showApiKey,
-                keyboardType: TextInputType.visiblePassword,
-                textInputAction: TextInputAction.done,
-                onChanged: (_) {
-                  setState(() => _formError = null);
-                },
-                onSubmitted: (_) => unawaited(_saveApiKey()),
-                decoration: InputDecoration(
-                  labelText: l10n.apiKeyInputLabel,
-                  errorText: _formError,
-                  suffixIcon: IconButton(
-                    tooltip: _showApiKey ? l10n.hideApiKey : l10n.showApiKey,
-                    onPressed: () => setState(() => _showApiKey = !_showApiKey),
-                    icon: Icon(
-                      _showApiKey
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                alignment: WrapAlignment.end,
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  TextButton(
-                    onPressed: _isSaving ? null : _toggleApiKeyForm,
-                    child: Text(l10n.cancel),
-                  ),
-                  FilledButton.icon(
-                    onPressed:
-                        _isSaving || _apiKeyController.text.trim().isEmpty
-                        ? null
-                        : () => unawaited(_saveApiKey()),
-                    icon: _isSaving
-                        ? const SizedBox.square(
-                            dimension: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.save_outlined, size: 16),
-                    label: Text(_isSaving ? l10n.saving : l10n.save),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-Map<String, Object?> _serviceObjectMap(Object? value) {
-  if (value is! Map) {
-    throw const FormatException('A ChatGPT response item was invalid.');
-  }
-  final result = <String, Object?>{};
-  for (final entry in value.entries) {
-    final key = entry.key;
-    if (key is! String) {
-      throw const FormatException('A ChatGPT response key was invalid.');
-    }
-    result[key] = entry.value;
-  }
-  return result;
-}
-
-String _localizedTimestamp(BuildContext context, int timestamp) {
-  final dateTime = DateTime.fromMillisecondsSinceEpoch(timestamp).toLocal();
-  final localizations = MaterialLocalizations.of(context);
-  final date = localizations.formatMediumDate(dateTime);
-  final time = localizations.formatTimeOfDay(TimeOfDay.fromDateTime(dateTime));
-  return '$date, $time';
-}
-
-class _ChatGptConnectionThread extends StatelessWidget {
-  const _ChatGptConnectionThread({
-    required this.connection,
-    required this.isRemoving,
-    required this.onRemove,
-    super.key,
-  });
-
-  final ChatGptApiKeyConnection connection;
-  final bool isRemoving;
-  final VoidCallback onRemove;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = ZihoraPalette.of(context);
-    final l10n = context.zihoraL10n;
-    final keySuffix = connection.keySuffix;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      child: Row(
-        children: [
-          Icon(Icons.key_outlined, size: 18, color: palette.secondaryIcon),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              keySuffix == null
-                  ? l10n.savedApiKey
-                  : l10n.savedApiKeyWithSuffix(keySuffix),
-              style: TextStyle(
-                color: palette.text,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          Text(
-            l10n.apiKey,
-            style: TextStyle(color: palette.secondaryText, fontSize: 12),
-          ),
-          const SizedBox(width: 4),
-          IconButton(
-            tooltip: l10n.removeChatGptConnection,
-            onPressed: isRemoving ? null : onRemove,
-            icon: isRemoving
-                ? const SizedBox.square(
-                    dimension: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.delete_outline_rounded, size: 18),
-          ),
-        ],
-      ),
-    );
   }
 }
 
@@ -2399,7 +754,7 @@ class _SettingDescription extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = ZihoraPalette.of(context);
+    final palette = OpenChatPalette.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2449,7 +804,7 @@ class _ThemeSelector extends StatelessWidget {
   final String systemLabel;
   final String lightLabel;
   final String darkLabel;
-  final ZihoraPalette palette;
+  final OpenChatPalette palette;
 
   @override
   Widget build(BuildContext context) {
@@ -2511,7 +866,7 @@ class _ThemeChoice extends StatelessWidget {
   final String label;
   final bool selected;
   final String selectedSemanticsLabel;
-  final ZihoraPalette palette;
+  final OpenChatPalette palette;
   final VoidCallback onPressed;
 
   @override
@@ -2553,7 +908,7 @@ class _StatusLabel extends StatelessWidget {
 
   final double width;
   final String label;
-  final ZihoraPalette palette;
+  final OpenChatPalette palette;
 
   @override
   Widget build(BuildContext context) {
@@ -2574,16 +929,5 @@ class _StatusLabel extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _SettingsDivider extends StatelessWidget {
-  const _SettingsDivider({required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(height: 1, child: ColoredBox(color: color));
   }
 }

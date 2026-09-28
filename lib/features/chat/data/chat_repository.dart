@@ -6,12 +6,12 @@ import '../domain/chat_conversation.dart';
 import '../domain/chat_message.dart' as domain;
 import '../domain/model_favorite.dart';
 import '../domain/chat_project.dart';
-import 'zihora_database.dart';
+import 'openchat_database.dart';
 
 class ChatRepository {
   const ChatRepository(this._database);
 
-  final ZihoraDatabase _database;
+  final OpenChatDatabase _database;
 
   Stream<List<ChatConversation>> watchConversations() {
     final query = _database.select(_database.conversations)

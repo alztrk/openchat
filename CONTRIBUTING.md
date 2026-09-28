@@ -24,6 +24,6 @@ Windows development requires Flutter, Rust with Cargo, and the Visual Studio C++
 ## Checks
 
 - `flutter analyze`
-- `cargo fmt --manifest-path native/zihora-service/Cargo.toml -- --check`
+- `cargo fmt --manifest-path native/openchat-service/Cargo.toml -- --check`
 - `flutter build windows --release`
 - `git diff --check`

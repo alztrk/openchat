@@ -1,23 +1,19 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
-import 'package:html/parser.dart' as html_parser;
-import 'package:markdown/markdown.dart' as markdown;
 import 'package:intl/intl.dart';
 
-import '../../../../app/zihora_theme.dart';
-import '../../../../app/zihora_toast.dart';
+import '../../../../app/openchat_theme.dart';
+import '../../../../app/openchat_toast.dart';
 import '../../domain/chat_message.dart';
 import '../../domain/chatgpt_connection.dart';
 import '../../domain/model_favorite.dart';
-import '../../../../l10n/generated/app_localizations.dart';
-import '../../../../l10n/zihora_localizations.dart';
+import '../../../../l10n/openchat_localizations.dart';
 import '../../../../platform/windows/window_controls.dart';
 import '../../../settings/data/settings_preferences.dart';
+import 'assistant_message.dart';
 import 'chat_composer.dart';
 import 'window_control_bar.dart';
 
@@ -110,15 +106,15 @@ class ConversationPane extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.zihoraL10n;
+    final l10n = context.openchatL10n;
     final hasSelectedModel = selectedModelLabel?.trim().isNotEmpty ?? false;
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 640;
         final horizontalPadding = compact
-            ? ZihoraSpacing.compactPageHorizontal
-            : ZihoraSpacing.pageHorizontal;
+            ? OpenChatSpacing.compactPageHorizontal
+            : OpenChatSpacing.pageHorizontal;
 
         return Column(
           children: [
@@ -132,7 +128,7 @@ class ConversationPane extends StatelessWidget {
               onOpenHistory: onOpenHistory,
               historyButtonTooltip: historyButtonTooltip,
               showWindowControls:
-                  showWindowControls ?? ZihoraWindowControls.isSupported,
+                  showWindowControls ?? OpenChatWindowControls.isSupported,
             ),
             Expanded(
               child: messagesErrorDescription != null
@@ -222,7 +218,7 @@ class _ConversationMessageError extends StatelessWidget {
             description,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium
-                ?.copyWith(color: ZihoraPalette.of(context).secondaryText),
+                ?.copyWith(color: OpenChatPalette.of(context).secondaryText),
           ),
         ),
       ),
@@ -266,9 +262,9 @@ class _ConversationHistory extends StatelessWidget {
           primary: controller == null,
           controller: controller,
           padding: const EdgeInsets.fromLTRB(
-            ZihoraSpacing.pageHorizontal,
+            OpenChatSpacing.pageHorizontal,
             18,
-            ZihoraSpacing.pageHorizontal,
+            OpenChatSpacing.pageHorizontal,
             24,
           ),
           itemCount: messages.length + (appendLoadingMessage ? 1 : 0),
@@ -282,7 +278,7 @@ class _ConversationHistory extends StatelessWidget {
                   : 18.0;
               return Padding(
                 padding: EdgeInsets.only(top: messageGap),
-                child: _AssistantMessageSkeleton(
+                child: AssistantMessageSkeleton(
                   modelLabel: assistantModelLabel,
                 ),
               );
@@ -316,7 +312,7 @@ class _ConversationHistory extends StatelessWidget {
                       topPadding: index == 0 ? 13 : 10,
                       contentHeight: index == 0 ? 44 : 42,
                     ),
-                    ChatMessageRole.assistant => _AssistantMessage(
+                    ChatMessageRole.assistant => AssistantMessage(
                       message: message,
                       modelLabel: assistantModelLabel,
                       onRetry: _canRetryMessage(index)
@@ -356,7 +352,7 @@ class _ConversationDateLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.zihoraL10n;
+    final l10n = context.openchatL10n;
     final localDate = createdAt?.toLocal();
     final label =
         localDate == null || DateUtils.isSameDay(localDate, DateTime.now())
@@ -369,7 +365,7 @@ class _ConversationDateLabel extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-            color: ZihoraPalette.of(context).secondaryText,
+            color: OpenChatPalette.of(context).secondaryText,
             fontSize: 12,
             fontWeight: FontWeight.w400,
             height: 18 / 12,
@@ -395,8 +391,8 @@ class _UserMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = ZihoraPalette.of(context);
-    final l10n = context.zihoraL10n;
+    final palette = OpenChatPalette.of(context);
+    final l10n = context.openchatL10n;
     final timestamp = message.createdAt == null
         ? l10n.unavailableTime
         : DateFormat.Hm(l10n.localeName).format(message.createdAt!.toLocal());
@@ -481,7 +477,7 @@ class _UserMessage extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 4),
-                _CopyMessageButton(content: message.content),
+                CopyMessageButton(content: message.content),
                 const SizedBox(width: 28),
               ],
             ),
@@ -489,1084 +485,6 @@ class _UserMessage extends StatelessWidget {
         ),
       ],
     );
-  }
-}
-
-class _AssistantMessage extends StatelessWidget {
-  const _AssistantMessage({
-    required this.message,
-    required this.modelLabel,
-    this.onRetry,
-  });
-
-  final ChatMessage message;
-  final String? modelLabel;
-  final VoidCallback? onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = ZihoraPalette.of(context);
-    final l10n = context.zihoraL10n;
-    final localeName = l10n.localeName;
-    final tokensPerSecond = message.tokensPerSecond == null
-        ? l10n.unavailableValue
-        : NumberFormat('0.#', localeName).format(message.tokensPerSecond);
-    final outputTokens = message.outputTokens == null
-        ? l10n.unavailableValue
-        : NumberFormat.decimalPattern(localeName).format(message.outputTokens);
-    final timestamp = message.createdAt == null
-        ? l10n.unavailableTime
-        : DateFormat.Hm(localeName).format(message.createdAt!.toLocal());
-    final responseStatus = _responseStatusLabel(context, message);
-    final waitingForFirstText =
-        message.status == ChatMessageStatus.streaming &&
-        message.content.trim().isEmpty;
-
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 780),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _AssistantModelHeader(modelLabel: modelLabel),
-            for (final summary in message.reasoningSummaries.where(
-              (summary) => summary.content.trim().isNotEmpty,
-            )) ...[
-              const SizedBox(height: 8),
-              _ReasoningSummaryAccordion(summary: summary, palette: palette),
-            ],
-            for (final activity in message.toolActivities) ...[
-              const SizedBox(height: 8),
-              _ToolActivityAccordion(activity: activity, palette: palette),
-            ],
-            if (waitingForFirstText) ...[
-              const SizedBox(height: 8),
-              _AssistantResponseSkeleton(palette: palette),
-            ] else ...[
-              const SizedBox(height: 6),
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: message.content.contains('\n\n') ? 96 : 40,
-                ),
-                child: _AssistantResponseContent(
-                  content: message.content,
-                  isStreaming: message.status == ChatMessageStatus.streaming,
-                  palette: palette,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 8,
-                runSpacing: 0,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  Text(
-                    l10n.responseMetadata(
-                      tokensPerSecond,
-                      outputTokens,
-                      timestamp,
-                    ),
-                    style: TextStyle(
-                      color: palette.secondaryText,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                      height: 18 / 12,
-                    ),
-                  ),
-                  if (responseStatus != null)
-                    Text(
-                      responseStatus,
-                      style: TextStyle(
-                        color: palette.secondaryText,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w400,
-                        height: 18 / 12,
-                      ),
-                    ),
-                  if (onRetry != null)
-                    IconButton(
-                      tooltip: l10n.retry,
-                      visualDensity: VisualDensity.compact,
-                      onPressed: onRetry,
-                      icon: const Icon(Icons.refresh_rounded, size: 17),
-                      color: palette.secondaryIcon,
-                    ),
-                  _CopyMessageButton(content: message.content),
-                ],
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
-  String? _responseStatusLabel(BuildContext context, ChatMessage message) {
-    final l10n = context.zihoraL10n;
-
-    return switch (message.status) {
-      ChatMessageStatus.streaming => null,
-      ChatMessageStatus.completed => null,
-      ChatMessageStatus.failed => l10n.responseFailed,
-      ChatMessageStatus.stopped => l10n.responseStopped,
-    };
-  }
-}
-
-class _AssistantModelHeader extends StatelessWidget {
-  const _AssistantModelHeader({required this.modelLabel});
-
-  final String? modelLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = ZihoraPalette.of(context);
-    final l10n = context.zihoraL10n;
-    final displayModelLabel = modelLabel?.trim();
-
-    return SizedBox(
-      height: 20,
-      child: Row(
-        children: [
-          SvgPicture.asset(
-            'assets/icons/chatgpt.svg',
-            width: 18,
-            height: 18,
-            colorFilter: ColorFilter.mode(
-              palette.secondaryIcon,
-              BlendMode.srcIn,
-            ),
-            excludeFromSemantics: true,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              displayModelLabel == null || displayModelLabel.isEmpty
-                  ? l10n.messageModelUnavailable
-                  : displayModelLabel,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: palette.accent,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                height: 20 / 13,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AssistantMessageSkeleton extends StatelessWidget {
-  const _AssistantMessageSkeleton({required this.modelLabel});
-
-  final String? modelLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = ZihoraPalette.of(context);
-
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 780),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _AssistantModelHeader(modelLabel: modelLabel),
-            const SizedBox(height: 22),
-            _AssistantResponseSkeleton(palette: palette),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AssistantResponseSkeleton extends StatefulWidget {
-  const _AssistantResponseSkeleton({required this.palette});
-
-  final ZihoraPalette palette;
-
-  @override
-  State<_AssistantResponseSkeleton> createState() =>
-      _AssistantResponseSkeletonState();
-}
-
-class _AssistantResponseSkeletonState extends State<_AssistantResponseSkeleton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _shineController;
-
-  @override
-  void initState() {
-    super.initState();
-    _shineController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1500),
-    );
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (MediaQuery.disableAnimationsOf(context)) {
-      _shineController.stop();
-    } else if (!_shineController.isAnimating) {
-      _shineController.repeat();
-    }
-  }
-
-  @override
-  void dispose() {
-    _shineController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = widget.palette;
-
-    return Semantics(
-      liveRegion: true,
-      label: context.zihoraL10n.responseInProgress,
-      child: ExcludeSemantics(
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final width = constraints.maxWidth.isFinite
-                ? constraints.maxWidth
-                : 480.0;
-            return AnimatedBuilder(
-              animation: _shineController,
-              child: SizedBox(
-                width: width,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _skeletonLine(width * 0.76, palette),
-                    const SizedBox(height: 9),
-                    _skeletonLine(width * 0.92, palette),
-                    const SizedBox(height: 9),
-                    _skeletonLine(width * 0.48, palette),
-                  ],
-                ),
-              ),
-              builder: (context, child) {
-                if (MediaQuery.disableAnimationsOf(context)) {
-                  return child ?? const SizedBox.shrink();
-                }
-
-                final progress = _shineController.value;
-                final highlight =
-                    Color.lerp(palette.selected, palette.accent, 0.18) ??
-                    palette.accent;
-                return ShaderMask(
-                  blendMode: BlendMode.srcATop,
-                  shaderCallback: (bounds) => LinearGradient(
-                    begin: Alignment(-1.4 + progress * 2.8, 0),
-                    end: Alignment(-0.8 + progress * 2.8, 0),
-                    colors: [palette.selected, highlight, palette.selected],
-                    stops: const [0, 0.5, 1],
-                  ).createShader(bounds),
-                  child: child,
-                );
-              },
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _skeletonLine(double width, ZihoraPalette palette) {
-    return Container(
-      width: width,
-      height: 12,
-      decoration: BoxDecoration(
-        color: palette.selected,
-        borderRadius: BorderRadius.circular(5),
-      ),
-    );
-  }
-}
-
-class _ToolActivityAccordion extends StatelessWidget {
-  const _ToolActivityAccordion({required this.activity, required this.palette});
-
-  final ChatToolActivity activity;
-  final ZihoraPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.zihoraL10n;
-    final statusLabel = switch (activity.status) {
-      ChatToolActivityStatus.awaitingApproval => l10n.toolAwaitingApproval,
-      ChatToolActivityStatus.running => l10n.toolRunning,
-      ChatToolActivityStatus.completed => l10n.toolCompleted,
-      ChatToolActivityStatus.failed => l10n.toolFailed,
-      ChatToolActivityStatus.denied => l10n.toolDenied,
-      ChatToolActivityStatus.cancelled => l10n.toolCancelled,
-    };
-    final leading = switch (activity.status) {
-      ChatToolActivityStatus.awaitingApproval => Icon(
-        Icons.lock_outline_rounded,
-        size: 17,
-        color: palette.accent,
-      ),
-      ChatToolActivityStatus.running => SizedBox.square(
-        dimension: 16,
-        child: CircularProgressIndicator(
-          strokeWidth: 1.8,
-          color: palette.accent,
-        ),
-      ),
-      ChatToolActivityStatus.completed => Icon(
-        Icons.check_circle_outline_rounded,
-        size: 17,
-        color: palette.secondaryIcon,
-      ),
-      ChatToolActivityStatus.failed => Icon(
-        Icons.error_outline_rounded,
-        size: 17,
-        color: Theme.of(context).colorScheme.error,
-      ),
-      ChatToolActivityStatus.denied => Icon(
-        Icons.block_rounded,
-        size: 17,
-        color: Theme.of(context).colorScheme.error,
-      ),
-      ChatToolActivityStatus.cancelled => Icon(
-        Icons.cancel_outlined,
-        size: 17,
-        color: palette.secondaryIcon,
-      ),
-    };
-    final statusColor = switch (activity.status) {
-      ChatToolActivityStatus.awaitingApproval ||
-      ChatToolActivityStatus.running => palette.accent,
-      ChatToolActivityStatus.failed ||
-      ChatToolActivityStatus.denied => Theme.of(context).colorScheme.error,
-      ChatToolActivityStatus.completed ||
-      ChatToolActivityStatus.cancelled => palette.secondaryIcon,
-    };
-    final fileListing = activity.name == 'list_files'
-        ? _ToolFileListing.fromOutput(activity.output)
-        : null;
-    const cardRadius = BorderRadius.all(Radius.circular(14));
-
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: palette.selected,
-        borderRadius: cardRadius,
-        border: Border.all(color: palette.border),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            key: ValueKey<String>('tool-${activity.callId}'),
-            initiallyExpanded:
-                activity.status == ChatToolActivityStatus.running ||
-                activity.status == ChatToolActivityStatus.awaitingApproval,
-            tilePadding: const EdgeInsets.symmetric(horizontal: 10),
-            childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
-            visualDensity: VisualDensity.compact,
-            iconColor: palette.secondaryIcon,
-            collapsedIconColor: palette.secondaryIcon,
-            shape: const RoundedRectangleBorder(borderRadius: cardRadius),
-            collapsedShape: const RoundedRectangleBorder(
-              borderRadius: cardRadius,
-            ),
-            leading: Tooltip(
-              message: statusLabel,
-              child: Semantics(
-                label: statusLabel,
-                child: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: palette.surface,
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  alignment: Alignment.center,
-                  child: leading,
-                ),
-              ),
-            ),
-            title: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    _toolActivityName(activity.name, l10n),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: palette.text,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      height: 18 / 12,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 3,
-                  ),
-                  decoration: BoxDecoration(
-                    color: palette.surface,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    statusLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: statusColor,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w500,
-                      height: 14 / 10,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            children: [
-              if (activity.name == 'list_files')
-                if (fileListing == null)
-                  _ToolActivityNotice(
-                    message: activity.output == null
-                        ? statusLabel
-                        : l10n.toolListingUnavailable,
-                    palette: palette,
-                  )
-                else
-                  _ToolFileListingResult(
-                    listing: fileListing,
-                    locationLabel: _toolLocationLabel(activity, l10n),
-                    palette: palette,
-                  ),
-              _ToolActivityTechnicalDetails(
-                activity: activity,
-                palette: palette,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  String _toolActivityName(String name, AppLocalizations l10n) =>
-      switch (name) {
-        'list_files' => l10n.toolListFiles,
-        'search_files' => l10n.toolSearchFiles,
-        'read_file' => l10n.toolReadFile,
-        'get_file_info' => l10n.toolGetFileInfo,
-        _ => name,
-      };
-}
-
-class _ToolFileListing {
-  const _ToolFileListing({
-    required this.entries,
-    required this.hasMore,
-    required this.isIncomplete,
-  });
-
-  final List<_ToolFileEntry> entries;
-  final bool hasMore;
-  final bool isIncomplete;
-
-  static _ToolFileListing? fromOutput(Object? output) {
-    final value = _toolObjectMap(output);
-    final rawEntries = value?['entries'];
-    if (value == null || rawEntries is! List) return null;
-
-    final entries = <_ToolFileEntry>[];
-    for (final rawEntry in rawEntries) {
-      final entry = _toolObjectMap(rawEntry);
-      final path = entry?['path'];
-      final type = entry?['type'];
-      if (entry == null ||
-          path is! String ||
-          path.isEmpty ||
-          (type != 'file' && type != 'directory')) {
-        return null;
-      }
-      entries.add(_ToolFileEntry(path: path, isDirectory: type == 'directory'));
-    }
-
-    return _ToolFileListing(
-      entries: entries,
-      hasMore: value['nextOffset'] is int,
-      isIncomplete: value['truncated'] == true,
-    );
-  }
-}
-
-class _ToolFileEntry {
-  const _ToolFileEntry({required this.path, required this.isDirectory});
-
-  final String path;
-  final bool isDirectory;
-
-  String get name {
-    final segments = path.replaceAll('\\', '/').split('/');
-    return segments.isEmpty ? path : segments.last;
-  }
-}
-
-class _ToolFileListingResult extends StatelessWidget {
-  const _ToolFileListingResult({
-    required this.listing,
-    required this.locationLabel,
-    required this.palette,
-  });
-
-  final _ToolFileListing listing;
-  final String? locationLabel;
-  final ZihoraPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.zihoraL10n;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              if (locationLabel case final label?) ...[
-                Icon(
-                  Icons.folder_open_rounded,
-                  size: 15,
-                  color: palette.secondaryIcon,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: palette.secondaryText,
-                      fontSize: 11,
-                      height: 16 / 11,
-                    ),
-                  ),
-                ),
-              ] else
-                const Spacer(),
-              Text(
-                l10n.toolFileCount(listing.entries.length),
-                style: TextStyle(
-                  color: palette.secondaryText,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                  height: 16 / 11,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 7),
-          if (listing.entries.isEmpty)
-            _ToolActivityNotice(
-              message: l10n.toolEmptyListing,
-              palette: palette,
-            )
-          else
-            Container(
-              decoration: BoxDecoration(
-                color: palette.surface,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: palette.border),
-              ),
-              constraints: const BoxConstraints(maxHeight: 216),
-              child: ListView.separated(
-                shrinkWrap: true,
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                itemCount: listing.entries.length,
-                separatorBuilder: (context, index) => Divider(
-                  height: 1,
-                  indent: 32,
-                  endIndent: 10,
-                  color: palette.border.withValues(alpha: 0.65),
-                ),
-                itemBuilder: (context, index) {
-                  final entry = listing.entries[index];
-                  return SizedBox(
-                    height: 32,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Row(
-                        children: [
-                          Icon(
-                            entry.isDirectory
-                                ? Icons.folder_rounded
-                                : Icons.insert_drive_file_outlined,
-                            size: 16,
-                            color: entry.isDirectory
-                                ? palette.accent
-                                : palette.secondaryIcon,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Tooltip(
-                              message: entry.name,
-                              child: Text(
-                                entry.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: palette.text,
-                                  fontSize: 12,
-                                  height: 18 / 12,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          if (listing.hasMore || listing.isIncomplete) ...[
-            const SizedBox(height: 7),
-            if (listing.hasMore)
-              _ToolListingFootnote(
-                message: l10n.toolMoreFilesAvailable,
-                palette: palette,
-              ),
-            if (listing.isIncomplete)
-              _ToolListingFootnote(
-                message: l10n.toolListingIncomplete,
-                palette: palette,
-              ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-class _ToolListingFootnote extends StatelessWidget {
-  const _ToolListingFootnote({required this.message, required this.palette});
-
-  final String message;
-  final ZihoraPalette palette;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 3),
-    child: Row(
-      children: [
-        Icon(
-          Icons.info_outline_rounded,
-          size: 14,
-          color: palette.secondaryIcon,
-        ),
-        const SizedBox(width: 6),
-        Expanded(
-          child: Text(
-            message,
-            style: TextStyle(
-              color: palette.secondaryText,
-              fontSize: 11,
-              height: 16 / 11,
-            ),
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _ToolActivityNotice extends StatelessWidget {
-  const _ToolActivityNotice({required this.message, required this.palette});
-
-  final String message;
-  final ZihoraPalette palette;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-    decoration: BoxDecoration(
-      color: palette.surface,
-      borderRadius: BorderRadius.circular(10),
-    ),
-    child: Text(
-      message,
-      style: TextStyle(
-        color: palette.secondaryText,
-        fontSize: 12,
-        height: 18 / 12,
-      ),
-    ),
-  );
-}
-
-class _ToolActivityTechnicalDetails extends StatelessWidget {
-  const _ToolActivityTechnicalDetails({
-    required this.activity,
-    required this.palette,
-  });
-
-  final ChatToolActivity activity;
-  final ZihoraPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.zihoraL10n;
-
-    return Theme(
-      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        key: ValueKey<String>('tool-details-${activity.callId}'),
-        tilePadding: const EdgeInsets.symmetric(horizontal: 2),
-        childrenPadding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-        visualDensity: VisualDensity.compact,
-        iconColor: palette.secondaryIcon,
-        collapsedIconColor: palette.secondaryIcon,
-        title: Text(
-          l10n.toolTechnicalDetails,
-          style: TextStyle(
-            color: palette.secondaryText,
-            fontSize: 11,
-            fontWeight: FontWeight.w500,
-            height: 16 / 11,
-          ),
-        ),
-        leading: Icon(
-          Icons.tune_rounded,
-          size: 15,
-          color: palette.secondaryIcon,
-        ),
-        children: [
-          if (activity.targetPath case final targetPath?) ...[
-            _ToolActivityValue(
-              label: l10n.toolPermissionTarget,
-              value: targetPath,
-              palette: palette,
-            ),
-            const SizedBox(height: 8),
-          ],
-          _ToolActivityValue(
-            label: l10n.toolInput,
-            value: activity.arguments,
-            palette: palette,
-          ),
-          if (activity.output != null) ...[
-            const SizedBox(height: 8),
-            _ToolActivityValue(
-              label: l10n.toolOutput,
-              value: activity.output,
-              palette: palette,
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-Map<String, Object?>? _toolObjectMap(Object? value) {
-  if (value is! Map) return null;
-  final result = <String, Object?>{};
-  for (final key in value.keys) {
-    if (key is! String) return null;
-    result[key] = value[key];
-  }
-  return result;
-}
-
-String? _toolLocationLabel(ChatToolActivity activity, AppLocalizations l10n) {
-  final arguments = _toolObjectMap(activity.arguments);
-  final path = arguments?['path'];
-  if (path is! String) return null;
-  final normalized = path.trim().toLowerCase();
-  if (normalized == 'desktop:/' || normalized == 'desktop:') {
-    return l10n.toolDesktopLocation;
-  }
-  if (normalized == 'project:/' || normalized == 'project:') {
-    return l10n.toolProjectLocation;
-  }
-  if (normalized == 'zihora:/' || normalized == 'zihora:') {
-    return l10n.toolZihoraLocation;
-  }
-  return null;
-}
-
-class _ToolActivityValue extends StatelessWidget {
-  const _ToolActivityValue({
-    required this.label,
-    required this.value,
-    required this.palette,
-  });
-
-  final String label;
-  final Object? value;
-  final ZihoraPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    final formattedValue = JsonEncoder.withIndent('  ').convert(value);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(bottom: 4),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: palette.secondaryText,
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-              height: 16 / 11,
-            ),
-          ),
-        ),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: palette.composer,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: palette.border),
-          ),
-          child: SelectableText(
-            formattedValue,
-            style: TextStyle(
-              color: palette.text,
-              fontFamily: 'monospace',
-              fontSize: 12,
-              height: 18 / 12,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _ReasoningSummaryAccordion extends StatelessWidget {
-  const _ReasoningSummaryAccordion({
-    required this.summary,
-    required this.palette,
-  });
-
-  final ChatReasoningSummary summary;
-  final ZihoraPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.zihoraL10n;
-    final duration = summary.elapsed;
-    final title = duration == null
-        ? l10n.reasoningSummary
-        : l10n.reasoningSummaryWithDuration(_formatDuration(duration, l10n));
-
-    return Tooltip(
-      message: l10n.reasoningSummaryTooltip,
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          tilePadding: const EdgeInsets.symmetric(horizontal: 10),
-          childrenPadding: const EdgeInsets.fromLTRB(36, 0, 10, 8),
-          visualDensity: VisualDensity.compact,
-          iconColor: palette.secondaryIcon,
-          collapsedIconColor: palette.secondaryIcon,
-          leading: Icon(
-            Icons.psychology_alt_outlined,
-            color: palette.secondaryIcon,
-            size: 17,
-          ),
-          title: Text(
-            title,
-            style: TextStyle(
-              color: palette.secondaryText,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              height: 18 / 12,
-            ),
-          ),
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: _AssistantResponseContent(
-                content: summary.content,
-                isStreaming: !summary.isComplete,
-                palette: palette,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _formatDuration(Duration duration, AppLocalizations l10n) {
-    final seconds = duration.inSeconds;
-    if (seconds < 60) return l10n.secondsShort(seconds);
-
-    final minutes = seconds ~/ 60;
-    final remainingSeconds = (seconds % 60).toString().padLeft(2, '0');
-    return '$minutes:$remainingSeconds';
-  }
-}
-
-class _AssistantResponseContent extends StatelessWidget {
-  const _AssistantResponseContent({
-    required this.content,
-    required this.isStreaming,
-    required this.palette,
-  });
-
-  final String content;
-  final bool isStreaming;
-  final ZihoraPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    final textStyle = TextStyle(
-      color: palette.text,
-      fontSize: 14,
-      fontWeight: FontWeight.w400,
-      height: 22 / 14,
-    );
-    if (isStreaming) return Text(content, style: textStyle);
-
-    final markdownHtml = markdown.markdownToHtml(
-      content,
-      extensionSet: markdown.ExtensionSet.gitHubFlavored,
-      encodeHtml: false,
-    );
-    final safeHtml = _sanitizeAssistantHtml(markdownHtml);
-
-    return HtmlWidget(
-      safeHtml,
-      enableCaching: true,
-      renderMode: RenderMode.column,
-      textStyle: textStyle,
-      onTapUrl: (_) => true,
-      customStylesBuilder: (element) => switch (element.localName) {
-        'pre' => {
-          'background-color': _cssColor(palette.composer),
-          'padding': '12px',
-          'white-space': 'pre-wrap',
-        },
-        'code' => {
-          'background-color': _cssColor(palette.composer),
-          'font-family': 'monospace',
-        },
-        'blockquote' => {
-          'border-left': '2px solid ${_cssColor(palette.border)}',
-          'padding-left': '12px',
-          'color': _cssColor(palette.secondaryText),
-        },
-        _ => null,
-      },
-    );
-  }
-}
-
-String _sanitizeAssistantHtml(String source) {
-  final fragment = html_parser.parseFragment(source);
-  const blockedTags = <String>{
-    'script',
-    'style',
-    'iframe',
-    'object',
-    'embed',
-    'form',
-    'input',
-    'textarea',
-    'select',
-    'option',
-    'button',
-    'img',
-    'video',
-    'audio',
-    'source',
-    'link',
-    'meta',
-    'base',
-    'svg',
-    'canvas',
-  };
-  for (final element in fragment.querySelectorAll('*').toList()) {
-    if (blockedTags.contains(element.localName)) {
-      element.remove();
-      continue;
-    }
-    element.attributes.removeWhere(
-      (name, _) =>
-          !const {'class', 'colspan', 'rowspan', 'start'}.contains(name),
-    );
-  }
-  return fragment.outerHtml;
-}
-
-String _cssColor(Color color) {
-  final rgb = color.toARGB32() & 0x00ffffff;
-  return '#${rgb.toRadixString(16).padLeft(6, '0')}';
-}
-
-class _CopyMessageButton extends StatelessWidget {
-  const _CopyMessageButton({required this.content});
-
-  final String content;
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      tooltip: context.zihoraL10n.copyMessage,
-      visualDensity: VisualDensity.compact,
-      padding: EdgeInsets.zero,
-      constraints: const BoxConstraints.tightFor(width: 44, height: 44),
-      onPressed: () => unawaited(_copyMessage(context, content)),
-      icon: const Icon(Icons.copy_rounded, size: 16),
-    );
-  }
-}
-
-Future<void> _copyMessage(BuildContext context, String content) async {
-  final l10n = context.zihoraL10n;
-  try {
-    await Clipboard.setData(ClipboardData(text: content));
-  } on PlatformException {
-    if (context.mounted) {
-      showZihoraToast(
-        context,
-        l10n.messageCopyFailed,
-        type: ZihoraToastType.error,
-      );
-    }
-    return;
-  } on MissingPluginException {
-    if (context.mounted) {
-      showZihoraToast(
-        context,
-        l10n.messageCopyFailed,
-        type: ZihoraToastType.error,
-      );
-    }
-    return;
-  }
-
-  if (context.mounted) {
-    showZihoraToast(context, l10n.messageCopied, type: ZihoraToastType.success);
   }
 }
 
@@ -1581,7 +499,7 @@ class _NewConversationEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = ZihoraPalette.of(context);
+    final palette = OpenChatPalette.of(context);
 
     return Center(
       child: Padding(
@@ -1722,10 +640,10 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
     final normalizedTitle = _titleController.text.trim();
     if (conversationId == null || saveTitle == null) return;
     if (normalizedTitle.isEmpty) {
-      showZihoraToast(
+      showOpenChatToast(
         context,
-        context.zihoraL10n.conversationTitleRequired,
-        type: ZihoraToastType.error,
+        context.openchatL10n.conversationTitleRequired,
+        type: OpenChatToastType.error,
       );
       return;
     }
@@ -1759,21 +677,21 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.zihoraL10n;
-    final palette = ZihoraPalette.of(context);
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
     final canRename =
         widget.conversationId != null && widget.onRenameConversation != null;
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
-      onPanStart: ZihoraWindowControls.isSupported
-          ? (_) => unawaited(ZihoraWindowControls.startDragging())
+      onPanStart: OpenChatWindowControls.isSupported
+          ? (_) => unawaited(OpenChatWindowControls.startDragging())
           : null,
       child: SizedBox(
         height: 68,
         child: Padding(
           padding: const EdgeInsets.symmetric(
-            horizontal: ZihoraSpacing.pageHorizontal,
+            horizontal: OpenChatSpacing.pageHorizontal,
           ),
           child: Row(
             children: [

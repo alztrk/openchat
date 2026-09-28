@@ -195,7 +195,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get toolPermissionRequireApprovalDescription =>
-      'Her araç çağrısında izin sorulur. Erişim proje klasörü ve %LOCALAPPDATA%\\Zihora ile sınırlıdır.';
+      'Her araç çağrısında izin sorulur. Erişim proje klasörü ve %LOCALAPPDATA%\\OpenChat ile sınırlıdır.';
 
   @override
   String get toolPermissionFullAccess => 'Tam erişim';
@@ -807,8 +807,12 @@ class AppLocalizationsTr extends AppLocalizations {
       'Bu hesap için şu anda kullanılabilir model yok.';
 
   @override
-  String get chatGptDataUnavailable =>
-      'ChatGPT, OpenChat’in okuyamadığı bir bilgi döndürdü. Bağlantıyı yenileyip tekrar dene.';
+  String get providerDataUnavailable =>
+      'Sağlayıcıdan alınan veri okunamadı. Bağlantıyı yenileyip tekrar dene.';
+
+  @override
+  String get oauthResponseInvalid =>
+      'Oturum açma sonucu okunamadı. Yeniden bağlanmayı dene.';
 
   @override
   String get modelCatalogUnavailable =>
@@ -824,19 +828,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get chatRequestFailed =>
-      'ChatGPT yanıtı tamamlayamadı. Kayıtlı mesajların kullanılabilir durumda.';
-
-  @override
-  String get chatGptRateLimited =>
-      'ChatGPT kullanım sınırı bildirdi. Bu hesabın kullanım ayrıntılarını kontrol et.';
-
-  @override
-  String get chatGptReauthenticationRequired =>
-      'Bu ChatGPT bağlantısı için yeniden oturum açmalısın. Ayarlar’dan hesabı yeniden bağla.';
-
-  @override
-  String get chatGptProviderChanged =>
-      'ChatGPT’nin yanıt biçimi değişti. OpenChat’i güncelleyip tekrar dene.';
+      'Yanıt tamamlanamadı. Kayıtlı mesajların kullanılabilir durumda.';
 
   @override
   String get cachedCatalog => 'önbellekteki modeller';
@@ -987,7 +979,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get toolProjectLocation => 'Proje klasörü';
 
   @override
-  String get toolZihoraLocation => 'Uygulama veri klasörü';
+  String get toolOpenChatLocation => 'Uygulama veri klasörü';
 
   @override
   String get responseFailed => 'Yanıt alınamadı';

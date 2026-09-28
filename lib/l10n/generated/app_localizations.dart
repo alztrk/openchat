@@ -437,7 +437,7 @@ abstract class AppLocalizations {
   /// No description provided for @toolPermissionRequireApprovalDescription.
   ///
   /// In en, this message translates to:
-  /// **'Each tool call asks for permission. Access is limited to the project folder and %LOCALAPPDATA%\\Zihora.'**
+  /// **'Each tool call asks for permission. Access is limited to the project folder and %LOCALAPPDATA%\\OpenChat.'**
   String get toolPermissionRequireApprovalDescription;
 
   /// No description provided for @toolPermissionFullAccess.
@@ -1544,11 +1544,17 @@ abstract class AppLocalizations {
   /// **'No models are currently available for this account.'**
   String get noModelsAvailable;
 
-  /// No description provided for @chatGptDataUnavailable.
+  /// No description provided for @providerDataUnavailable.
   ///
   /// In en, this message translates to:
-  /// **'ChatGPT returned information OpenChat could not read. Refresh the connection and try again.'**
-  String get chatGptDataUnavailable;
+  /// **'The provider returned data that OpenChat could not read. Refresh the connection and try again.'**
+  String get providerDataUnavailable;
+
+  /// No description provided for @oauthResponseInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'The sign-in result could not be read. Try connecting again.'**
+  String get oauthResponseInvalid;
 
   /// No description provided for @modelCatalogUnavailable.
   ///
@@ -1571,26 +1577,8 @@ abstract class AppLocalizations {
   /// No description provided for @chatRequestFailed.
   ///
   /// In en, this message translates to:
-  /// **'ChatGPT could not complete the response. Your saved messages are still available.'**
+  /// **'The response could not be completed. Your saved messages are still available.'**
   String get chatRequestFailed;
-
-  /// No description provided for @chatGptRateLimited.
-  ///
-  /// In en, this message translates to:
-  /// **'ChatGPT reported a usage limit. Check this account’s usage details.'**
-  String get chatGptRateLimited;
-
-  /// No description provided for @chatGptReauthenticationRequired.
-  ///
-  /// In en, this message translates to:
-  /// **'This ChatGPT connection needs a new sign-in. Reconnect the account in Settings.'**
-  String get chatGptReauthenticationRequired;
-
-  /// No description provided for @chatGptProviderChanged.
-  ///
-  /// In en, this message translates to:
-  /// **'ChatGPT’s response format changed. Update OpenChat and try again.'**
-  String get chatGptProviderChanged;
 
   /// No description provided for @cachedCatalog.
   ///
@@ -1850,11 +1838,11 @@ abstract class AppLocalizations {
   /// **'Project folder'**
   String get toolProjectLocation;
 
-  /// No description provided for @toolZihoraLocation.
+  /// No description provided for @toolOpenChatLocation.
   ///
   /// In en, this message translates to:
   /// **'Application data folder'**
-  String get toolZihoraLocation;
+  String get toolOpenChatLocation;
 
   /// No description provided for @responseFailed.
   ///

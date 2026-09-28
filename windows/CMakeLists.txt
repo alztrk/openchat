@@ -50,33 +50,33 @@ set(FLUTTER_MANAGED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/flutter")
 add_subdirectory(${FLUTTER_MANAGED_DIR})
 
 # Build the local Rust service as a sidecar and ship it beside the Flutter app.
-get_filename_component(ZIHORA_PROJECT_ROOT "${CMAKE_SOURCE_DIR}/.." ABSOLUTE)
+get_filename_component(OPENCHAT_PROJECT_ROOT "${CMAKE_SOURCE_DIR}/.." ABSOLUTE)
 find_program(CARGO_EXECUTABLE cargo)
 if(NOT CARGO_EXECUTABLE)
   message(FATAL_ERROR "Cargo is required to build the OpenChat local service.")
 endif()
 
-set(ZIHORA_SERVICE_CRATE "${ZIHORA_PROJECT_ROOT}/native/zihora-service")
-set(ZIHORA_SERVICE_EXECUTABLE "${CMAKE_BINARY_DIR}/rust-target/release/zihora_service.exe")
-file(GLOB_RECURSE ZIHORA_SERVICE_SOURCES CONFIGURE_DEPENDS
-  "${ZIHORA_SERVICE_CRATE}/src/*.rs"
+set(OPENCHAT_SERVICE_CRATE "${OPENCHAT_PROJECT_ROOT}/native/openchat-service")
+set(OPENCHAT_SERVICE_EXECUTABLE "${CMAKE_BINARY_DIR}/rust-target/release/openchat_service.exe")
+file(GLOB_RECURSE OPENCHAT_SERVICE_SOURCES CONFIGURE_DEPENDS
+  "${OPENCHAT_SERVICE_CRATE}/src/*.rs"
 )
 add_custom_command(
-  OUTPUT "${ZIHORA_SERVICE_EXECUTABLE}"
+  OUTPUT "${OPENCHAT_SERVICE_EXECUTABLE}"
   COMMAND "${CARGO_EXECUTABLE}" build
-    --manifest-path "${ZIHORA_SERVICE_CRATE}/Cargo.toml"
+    --manifest-path "${OPENCHAT_SERVICE_CRATE}/Cargo.toml"
     --locked
     --target-dir "${CMAKE_BINARY_DIR}/rust-target"
     --release
   DEPENDS
-    "${ZIHORA_SERVICE_CRATE}/Cargo.toml"
-    "${ZIHORA_SERVICE_CRATE}/Cargo.lock"
-    ${ZIHORA_SERVICE_SOURCES}
-  WORKING_DIRECTORY "${ZIHORA_PROJECT_ROOT}"
+    "${OPENCHAT_SERVICE_CRATE}/Cargo.toml"
+    "${OPENCHAT_SERVICE_CRATE}/Cargo.lock"
+    ${OPENCHAT_SERVICE_SOURCES}
+  WORKING_DIRECTORY "${OPENCHAT_PROJECT_ROOT}"
   COMMENT "Building the OpenChat local service"
   VERBATIM
 )
-add_custom_target(zihora_service_build DEPENDS "${ZIHORA_SERVICE_EXECUTABLE}")
+add_custom_target(openchat_service_build DEPENDS "${OPENCHAT_SERVICE_EXECUTABLE}")
 
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")
@@ -102,7 +102,7 @@ set(INSTALL_BUNDLE_LIB_DIR "${CMAKE_INSTALL_PREFIX}")
 
 install(TARGETS ${BINARY_NAME} RUNTIME DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
-install(FILES "${ZIHORA_SERVICE_EXECUTABLE}"
+install(FILES "${OPENCHAT_SERVICE_EXECUTABLE}"
   DESTINATION "${CMAKE_INSTALL_PREFIX}"
   COMPONENT Runtime)
 

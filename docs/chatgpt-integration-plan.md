@@ -2,7 +2,7 @@
 
 ## Goal
 
-Deliver the first Windows release of OpenChat as a local-first chat application. The first provider is ChatGPT. Flutter presents the interface; a local Rust service owns provider authentication and requests; one SQLite file stores conversation and integration data under `%LOCALAPPDATA%\Zihora\db`.
+Deliver the first Windows release of OpenChat as a local-first chat application. The first provider is ChatGPT. Flutter presents the interface; a local Rust service owns provider authentication and requests; one SQLite file stores conversation and integration data under `%LOCALAPPDATA%\OpenChat\db`.
 
 This document is the working plan for the ChatGPT implementation. It records the agreed behavior, security boundaries, failure handling, and delivery order in one place.
 
@@ -17,7 +17,7 @@ This document is the working plan for the ChatGPT implementation. It records the
 - Shared built-in instructions and locally saved user instructions, with provider-specific request mapping.
 - Read-only project file tools for conversations linked to a project.
 - Windows as the first supported release target. The service boundary should remain usable by future desktop and mobile clients.
-- All durable application files under `%LOCALAPPDATA%\Zihora\`: the SQLite database in `db`, logs in `logs`, and cache in `cache`.
+- All durable application files under `%LOCALAPPDATA%\OpenChat\`: the SQLite database in `db`, logs in `logs`, and cache in `cache`.
 
 ## Out of scope for this release
 
@@ -40,7 +40,7 @@ Flutter UI
             ├─ shared instructions and bounded, read-only project file tools
             ├─ title eligibility and background work
             ├─ Windows credential storage for OAuth tokens
-            └─ SQLite: %LOCALAPPDATA%\Zihora\db\zihora.sqlite3
+            └─ SQLite: %LOCALAPPDATA%\OpenChat\db\openchat.sqlite3
 ```
 
 The service is a child process owned by OpenChat. It communicates over standard input and output, so it does not open a network listener. Standard output is reserved for protocol messages. Diagnostics must never contain access tokens, refresh tokens, authorization codes, API keys, message contents, or full provider responses.
@@ -56,7 +56,7 @@ OAuth tokens belong in Windows Credential Manager. SQLite stores only a credenti
 ### OAuth and accounts
 
 - Use Authorization Code with PKCE, a cryptographically random state and verifier, a loopback callback, and strict state validation.
-- Use the public Codex OAuth client ID `app_EMoamEEZ73f0CkXaXp7hrann` as the initial ChatGPT OAuth client identifier. It matches the value already used by archived Tengra and exposed by the open-source Codex login flow. Keep it in one named backend constant so it can be replaced without changing UI or persistence code.
+- Use the public Codex OAuth client ID `app_EMoamEEZ73f0CkXaXp7hrann` as the initial ChatGPT OAuth client identifier. It matches the value already used by the earlier archived app and exposed by the open-source Codex login flow. Keep it in one named backend constant so it can be replaced without changing UI or persistence code.
 - Match the Codex Authorization Code with PKCE contract for the initial flow: `https://auth.openai.com/oauth/authorize`, `https://auth.openai.com/oauth/token`, the registered loopback callback, `openid profile email offline_access api.connectors.read api.connectors.invoke`, `id_token_add_organizations=true`, and `codex_cli_simplified_flow=true`. Keep the client identifier separate from any confidential credential; a native desktop client cannot keep a client secret.
 - Treat this as an implementation reference, not a stable public ChatGPT API contract. OpenAI may change client registration, allowed callbacks, scopes, OAuth consent, or private ChatGPT/Codex endpoints. Surface those failures clearly and keep the OAuth client identifier replaceable.
 - Keep each local OAuth connection distinct from the external ChatGPT user and from each workspace. Do not use email as a stable identity key.
@@ -155,7 +155,7 @@ Title creation is a separate background operation. It never holds the chat respo
 ## Acceptance criteria
 
 - Windows starts the packaged Rust service without exposing a listening port.
-- The service and Flutter conversation storage use the same SQLite file at `%LOCALAPPDATA%\Zihora\db\zihora.sqlite3`; logs and cache stay under the matching `logs` and `cache` directories.
+- The service and Flutter conversation storage use the same SQLite file at `%LOCALAPPDATA%\OpenChat\db\openchat.sqlite3`; logs and cache stay under the matching `logs` and `cache` directories.
 - No OAuth token or secret is written to SQLite, application preferences, protocol output, or logs.
 - A user can add and select more than one ChatGPT connection and workspace without cross-account chat history or silent fallback.
 - Models, account/plan information, usage buckets, and reset details are presented only when returned by the selected connection, with freshness/unavailable states retained.
@@ -171,14 +171,14 @@ Title creation is a separate background operation. It never holds the chat respo
 
 The Codex repository is an implementation reference, not a guarantee that ChatGPT web backend endpoints are a supported public API. Model catalogs, Responses, account/profile, usage, and reset-credit routes can change without notice. Keep endpoint parsing isolated, validate all returned data, and show explicit compatibility errors. The public OpenAI Platform API has a separate API-key authentication and billing contract; it is not a drop-in replacement for ChatGPT OAuth.
 
-The initial OAuth implementation uses the public Codex client ID already present in the Tengra archive and open-source Codex. It follows Codex's current loopback callback contract: `http://127.0.0.1:1455/auth/callback`, with its registered fallback port `1457`, Authorization Code with PKCE, and the current Codex scopes and authorization parameters. This does not make ChatGPT/Codex's private endpoints a supported public API or guarantee that OpenAI will accept OpenChat's redirect and originator behavior. Keep the OAuth parameters isolated and handle provider rejection explicitly. A live account sign-in is required to establish provider acceptance; a successful local build alone cannot establish it.
+The initial OAuth implementation uses the public Codex client ID already present in the earlier app archive and open-source Codex. It follows Codex's current loopback callback contract: `http://127.0.0.1:1455/auth/callback`, with its registered fallback port `1457`, Authorization Code with PKCE, and the current Codex scopes and authorization parameters. This does not make ChatGPT/Codex's private endpoints a supported public API or guarantee that OpenAI will accept OpenChat's redirect and originator behavior. Keep the OAuth parameters isolated and handle provider rejection explicitly. A live account sign-in is required to establish provider acceptance; a successful local build alone cannot establish it.
 
 ## Windows build status
 
 - Single-file portable release: `build/outputs/OpenChat.exe`.
 - Build it with `tools/build_windows_portable.ps1`. The script builds the Flutter release, embeds the complete release folder in a small native launcher, and preserves the OpenChat icon.
-- On first launch, the launcher checks the embedded archive against its build-time SHA-256, rejects unsafe archive paths, and verifies required files. It extracts atomically to `%LOCALAPPDATA%\Zihora\cache\bundles\bundle-<sha256>`, then starts the Flutter app from that directory. The app starts its Rust service beside itself. The database, logs, and other application data remain under their agreed directories.
-- Content-addressed cache bundles prevent updated executables from reusing a partial or stale extraction. Old bundle directories are retained; they can be removed from `%LOCALAPPDATA%\Zihora\cache\bundles` when OpenChat is closed.
+- On first launch, the launcher checks the embedded archive against its build-time SHA-256, rejects unsafe archive paths, and verifies required files. It extracts atomically to `%LOCALAPPDATA%\OpenChat\cache\bundles\bundle-<sha256>`, then starts the Flutter app from that directory. The app starts its Rust service beside itself. The database, logs, and other application data remain under their agreed directories.
+- Content-addressed cache bundles prevent updated executables from reusing a partial or stale extraction. Old bundle directories are retained; they can be removed from `%LOCALAPPDATA%\OpenChat\cache\bundles` when OpenChat is closed.
 - `flutter analyze`, `cargo fmt --all --check`, and `cargo check --locked` completed successfully for the ChatGPT implementation. Automated tests were not run at Alican's request.
 - A live ChatGPT OAuth sign-in and provider endpoint compatibility remain unverified until an account completes the browser flow in the packaged application.
 

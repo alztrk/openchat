@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'app/zihora_app.dart';
+import 'app/openchat_app.dart';
 
 void main() {
-  runApp(const ZihoraApp());
+  runApp(const OpenChatApp());
 }

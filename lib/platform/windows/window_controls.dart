@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
-abstract final class ZihoraWindowControls {
-  static const MethodChannel _channel = MethodChannel('zihora/window');
+abstract final class OpenChatWindowControls {
+  static const MethodChannel _channel = MethodChannel('openchat/window');
 
   static bool get isSupported =>
       !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;

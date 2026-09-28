@@ -4,7 +4,7 @@ This roadmap reflects the repository's current implementation. It has no calenda
 
 ## Current implementation
 
-- Flutter desktop UI with a local Rust child service and SQLite conversation storage under `%LOCALAPPDATA%\Zihora`.
+- Flutter desktop UI with a local Rust child service and SQLite conversation storage under `%LOCALAPPDATA%\OpenChat`.
 - ChatGPT OAuth connections, account/workspace selection, model catalog, account and quota information, streamed Responses, cancellation, and background conversation titles.
 - OpenCode Console through its OpenAI Chat Completions endpoint. Other OpenCode protocol families are not supported.
 - Shared provider request, tool, and stream event types for ChatGPT and OpenCode, plus local shared instructions.
