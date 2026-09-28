@@ -1,7 +1,7 @@
 use super::{
     MAX_LIST_OFFSET, MAX_READ_LINES, MAX_TOOL_ARGUMENT_BYTES, MAX_TOOL_CALLS_PER_TURN,
-    MAX_TOOL_ROUNDS, canonical_root, get_file_info, invalid, list_files, read_file,
-    safe_relative_path, search_files,
+    MAX_TOOL_ROUNDS, canonical_root, get_file_info, list_files, read_file, safe_relative_path,
+    search_files,
 };
 use crate::{
     permissions::ToolPermissionBroker,
@@ -32,12 +32,28 @@ impl ToolPermissionMode {
     }
 }
 
-#[derive(Clone, Copy)]
 enum ToolOperation {
-    List,
-    Search,
-    Read,
+    List {
+        offset: usize,
+        limit: usize,
+    },
+    Search {
+        query: String,
+        include_hidden: bool,
+        offset: usize,
+        limit: usize,
+    },
+    Read {
+        start_line: usize,
+        line_count: usize,
+    },
     Info,
+}
+
+impl ToolOperation {
+    fn targets_directory(&self) -> bool {
+        matches!(self, Self::List { .. } | Self::Search { .. })
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -49,7 +65,8 @@ enum ToolPathScope {
 
 struct PreparedToolCall {
     root: PathBuf,
-    call: ToolCall,
+    relative_path: String,
+    requested_path: String,
     target_path: PathBuf,
     scope: ToolPathScope,
     operation: ToolOperation,
@@ -190,8 +207,16 @@ impl ToolExecutor {
                 });
             }
 
-            prepared = match self.prepare_call(call) {
-                Ok(prepared) if prepared.target_path == approved_target => prepared,
+            match self.resolve_tool_path(
+                &prepared.requested_path,
+                prepared.operation.targets_directory(),
+            ) {
+                Ok((root, relative_path, target, scope)) if target == approved_target => {
+                    prepared.root = root;
+                    prepared.relative_path = relative_path;
+                    prepared.target_path = target;
+                    prepared.scope = scope;
+                }
                 Ok(_) => {
                     let output = tool_error(
                         "permission_target_changed",
@@ -226,7 +251,7 @@ impl ToolExecutor {
                         output,
                     });
                 }
-            };
+            }
         }
 
         self.send_running_activity(
@@ -250,7 +275,7 @@ impl ToolExecutor {
             .await?;
             return Err(crate::permissions::operation_cancelled_error());
         }
-        let mut output = execute_model_tool(&prepared.root, &prepared.call);
+        let mut output = execute_model_tool(&prepared);
         qualify_output_paths(&mut output, &prepared);
         self.send_activity(
             call,
@@ -283,49 +308,89 @@ impl ToolExecutor {
                 "The tool arguments must be a JSON object.",
             ));
         };
-        let (operation, directory) = match call.name.as_str() {
+        let operation = match call.name.as_str() {
             "list_files" if only_keys(&call.arguments, &["path", "offset", "limit"]) => {
-                if usize_argument(&call.arguments, "offset")
-                    .is_some_and(|value| value <= MAX_LIST_OFFSET)
-                    && usize_argument(&call.arguments, "limit").is_some_and(|value| value > 0)
-                {
-                    (ToolOperation::List, true)
-                } else {
+                let (Some(offset), Some(limit)) = (
+                    usize_argument(&call.arguments, "offset"),
+                    usize_argument(&call.arguments, "limit"),
+                ) else {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The file listing arguments are invalid.",
+                    ));
+                };
+                if offset > MAX_LIST_OFFSET || limit == 0 {
                     return Err(tool_error(
                         "invalid_tool_input",
                         "The file listing arguments are invalid.",
                     ));
                 }
+                ToolOperation::List { offset, limit }
             }
-            "search_files"
-                if only_keys(
+            "search_files" => {
+                if !only_keys(
                     &call.arguments,
                     &["path", "query", "includeHidden", "offset", "limit"],
-                ) && string_argument(&call.arguments, "query").is_some()
-                    && bool_argument(&call.arguments, "includeHidden").is_some()
-                    && usize_argument(&call.arguments, "offset")
-                        .is_some_and(|value| value <= 1_000_000)
-                    && usize_argument(&call.arguments, "limit").is_some_and(|value| value > 0)
-                    && string_argument(&call.arguments, "query").is_some_and(|query| {
-                        !query.is_empty()
-                            && query.len() <= 4096
-                            && !query.chars().any(char::is_control)
-                    }) =>
-            {
-                (ToolOperation::Search, true)
+                ) {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The requested file tool or its arguments are invalid.",
+                    ));
+                }
+                let (Some(query), Some(include_hidden), Some(offset), Some(limit)) = (
+                    string_argument(&call.arguments, "query"),
+                    bool_argument(&call.arguments, "includeHidden"),
+                    usize_argument(&call.arguments, "offset"),
+                    usize_argument(&call.arguments, "limit"),
+                ) else {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The requested file tool or its arguments are invalid.",
+                    ));
+                };
+                if query.is_empty()
+                    || query.len() > 4096
+                    || query.chars().any(char::is_control)
+                    || offset > 1_000_000
+                    || limit == 0
+                {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The requested file tool or its arguments are invalid.",
+                    ));
+                }
+                ToolOperation::Search {
+                    query: query.to_owned(),
+                    include_hidden,
+                    offset,
+                    limit,
+                }
             }
-            "read_file"
-                if only_keys(&call.arguments, &["path", "startLine", "lineCount"])
-                    && usize_argument(&call.arguments, "startLine")
-                        .is_some_and(|line| line > 0)
-                    && usize_argument(&call.arguments, "lineCount")
-                        .is_some_and(|count| (1..=MAX_READ_LINES).contains(&count)) =>
-            {
-                (ToolOperation::Read, false)
+            "read_file" => {
+                let (Some(start_line), Some(line_count)) = (
+                    usize_argument(&call.arguments, "startLine"),
+                    usize_argument(&call.arguments, "lineCount"),
+                ) else {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The requested file tool or its arguments are invalid.",
+                    ));
+                };
+                if !only_keys(&call.arguments, &["path", "startLine", "lineCount"])
+                    || start_line == 0
+                    || !(1..=MAX_READ_LINES).contains(&line_count)
+                {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The requested file tool or its arguments are invalid.",
+                    ));
+                }
+                ToolOperation::Read {
+                    start_line,
+                    line_count,
+                }
             }
-            "get_file_info" if only_keys(&call.arguments, &["path"]) => {
-                (ToolOperation::Info, false)
-            }
+            "get_file_info" if only_keys(&call.arguments, &["path"]) => ToolOperation::Info,
             _ => {
                 return Err(tool_error(
                     "invalid_tool_input",
@@ -340,22 +405,27 @@ impl ToolExecutor {
             ));
         };
 
-        let resolved = match self.permission_mode {
-            ToolPermissionMode::RequireApproval => self.resolve_approved_scope(path, directory),
-            ToolPermissionMode::FullAccess => self.resolve_full_access(path, directory),
-        }?;
-        let (root, relative, target_path, scope) = resolved;
-        let mut normalized_call = call.clone();
-        if let Some(arguments) = normalized_call.arguments.as_object_mut() {
-            arguments.insert("path".to_owned(), json!(relative));
-        }
+        let (root, relative, target_path, scope) =
+            self.resolve_tool_path(path, operation.targets_directory())?;
         Ok(PreparedToolCall {
             root,
-            call: normalized_call,
+            relative_path: relative,
+            requested_path: path.to_owned(),
             target_path,
             scope,
             operation,
         })
+    }
+
+    fn resolve_tool_path(
+        &self,
+        path: &str,
+        directory: bool,
+    ) -> Result<(PathBuf, String, PathBuf, ToolPathScope), Value> {
+        match self.permission_mode {
+            ToolPermissionMode::RequireApproval => self.resolve_approved_scope(path, directory),
+            ToolPermissionMode::FullAccess => self.resolve_full_access(path, directory),
+        }
     }
 
     fn resolve_approved_scope(
@@ -602,73 +672,34 @@ impl ToolExecutor {
     }
 }
 
-fn execute_model_tool(root: &Path, call: &ToolCall) -> Value {
-    let arguments = match serde_json::to_vec(&call.arguments) {
-        Ok(arguments) if arguments.len() <= MAX_TOOL_ARGUMENT_BYTES => &call.arguments,
-        _ => {
-            return tool_error(
-                "invalid_tool_input",
-                "The tool arguments exceed the supported size.",
-            );
+fn execute_model_tool(prepared: &PreparedToolCall) -> Value {
+    let result = match &prepared.operation {
+        ToolOperation::List { offset, limit } => {
+            list_files(&prepared.root, &prepared.relative_path, *offset, *limit)
         }
-    };
-    if !arguments.is_object() {
-        return tool_error(
-            "invalid_tool_input",
-            "The tool arguments must be a JSON object.",
-        );
-    }
-    let result = match call.name.as_str() {
-        "list_files" if only_keys(arguments, &["path", "offset", "limit"]) => {
-            match (
-                string_argument(arguments, "path"),
-                usize_argument(arguments, "offset"),
-                usize_argument(arguments, "limit"),
-            ) {
-                (Some(path), Some(offset), Some(limit)) => list_files(root, path, offset, limit),
-                _ => Err(invalid("The file listing arguments are invalid.")),
-            }
-        }
-        "search_files"
-            if only_keys(
-                arguments,
-                &["path", "query", "includeHidden", "offset", "limit"],
-            ) =>
-        {
-            match (
-                string_argument(arguments, "path"),
-                string_argument(arguments, "query"),
-                bool_argument(arguments, "includeHidden"),
-                usize_argument(arguments, "offset"),
-                usize_argument(arguments, "limit"),
-            ) {
-                (Some(path), Some(query), Some(include_hidden), Some(offset), Some(limit)) => {
-                    search_files(root, path, query, include_hidden, offset, limit)
-                }
-                _ => Err(invalid("The file search arguments are invalid.")),
-            }
-        }
-        "read_file" if only_keys(arguments, &["path", "startLine", "lineCount"]) => {
-            match (
-                string_argument(arguments, "path"),
-                usize_argument(arguments, "startLine"),
-                usize_argument(arguments, "lineCount"),
-            ) {
-                (Some(path), Some(start_line), Some(line_count)) => {
-                    read_file(root, path, start_line, line_count)
-                }
-                _ => Err(invalid("The file read arguments are invalid.")),
-            }
-        }
-        "get_file_info" if only_keys(arguments, &["path"]) => {
-            match string_argument(arguments, "path") {
-                Some(path) => get_file_info(root, path),
-                None => Err(invalid("The file information arguments are invalid.")),
-            }
-        }
-        _ => Err(invalid(
-            "The requested file tool or its arguments are invalid.",
-        )),
+        ToolOperation::Search {
+            query,
+            include_hidden,
+            offset,
+            limit,
+        } => search_files(
+            &prepared.root,
+            &prepared.relative_path,
+            query,
+            *include_hidden,
+            *offset,
+            *limit,
+        ),
+        ToolOperation::Read {
+            start_line,
+            line_count,
+        } => read_file(
+            &prepared.root,
+            &prepared.relative_path,
+            *start_line,
+            *line_count,
+        ),
+        ToolOperation::Info => get_file_info(&prepared.root, &prepared.relative_path),
     };
 
     match result {
@@ -698,18 +729,18 @@ fn qualify_output_paths(output: &mut Value, prepared: &PreparedToolCall) {
     if output.get("error").is_some() {
         return;
     }
-    match prepared.operation {
-        ToolOperation::List => qualify_path_array(
+    match &prepared.operation {
+        ToolOperation::List { .. } => qualify_path_array(
             output.get_mut("entries").and_then(Value::as_array_mut),
             &prepared.root,
             prepared.scope,
         ),
-        ToolOperation::Search => qualify_path_array(
+        ToolOperation::Search { .. } => qualify_path_array(
             output.get_mut("matches").and_then(Value::as_array_mut),
             &prepared.root,
             prepared.scope,
         ),
-        ToolOperation::Read | ToolOperation::Info => {
+        ToolOperation::Read { .. } | ToolOperation::Info => {
             if let Some(path) = output
                 .get("path")
                 .and_then(Value::as_str)
