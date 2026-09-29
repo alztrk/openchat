@@ -272,14 +272,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolPermissionRequireApprovalDescription =>
-      'Each tool call asks for permission. Access is limited to the project folder and %LOCALAPPDATA%\\OpenChat.';
+      'File tools ask before each call and are limited to the project folder and %LOCALAPPDATA%\\OpenChat. Command execution is unavailable.';
 
   @override
   String get toolPermissionFullAccess => 'Full access';
 
   @override
   String get toolPermissionFullAccessDescription =>
-      'Current read-only tools can access any folder without asking. Files are not changed and commands are not run.';
+      'File tools can read and change files in any folder without asking. Command execution is unavailable.';
 
   @override
   String get toolPermissionSettingsLoadFailed =>
@@ -303,6 +303,39 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get toolPermissionResponseFailed =>
       'Your choice could not be sent. You can try again.';
+
+  @override
+  String get toolPermissionContent => 'Content to write';
+
+  @override
+  String get toolPermissionOldText => 'Text to find';
+
+  @override
+  String get toolPermissionNewText => 'Replacement text';
+
+  @override
+  String get toolPermissionQuery => 'Search text';
+
+  @override
+  String get toolPermissionOffset => 'Starting position';
+
+  @override
+  String get toolPermissionLimit => 'Maximum results';
+
+  @override
+  String get toolPermissionStartLine => 'Starting line';
+
+  @override
+  String get toolPermissionLineCount => 'Number of lines';
+
+  @override
+  String get toolPermissionIncludeHidden => 'Include hidden files';
+
+  @override
+  String get commonYes => 'Yes';
+
+  @override
+  String get commonNo => 'No';
 
   @override
   String get toolPermissionTarget => 'Location to access';
@@ -1081,6 +1114,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolGetFileInfo => 'Get file information';
+
+  @override
+  String get toolWriteFile => 'Write to file';
+
+  @override
+  String get toolEditFile => 'Edit file';
 
   @override
   String get toolTechnicalDetails => 'Details';

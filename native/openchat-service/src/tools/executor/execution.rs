@@ -71,3 +71,31 @@ fn service_error(error: ServiceError) -> Value {
         }
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::execute_model_tool;
+    use crate::tools::executor::{
+        PreparedToolCall, ToolOperation,
+        paths::ToolPathScope,
+    };
+    use std::path::PathBuf;
+
+    #[test]
+    fn unsupported_command_returns_an_error_instead_of_fake_success() {
+        let prepared = PreparedToolCall {
+            root: PathBuf::new(),
+            relative_path: String::new(),
+            requested_path: "echo hi".to_owned(),
+            target_path: PathBuf::new(),
+            scope: ToolPathScope::Project,
+            operation: ToolOperation::Bash {
+                command: "echo hi".to_owned(),
+            },
+        };
+
+        let result = execute_model_tool(&prepared);
+
+        assert_eq!(result["error"]["code"], "tool_not_supported");
+    }
+}

@@ -288,14 +288,12 @@ List<({String label, String value})> _requestDetails(
   String? scalar(Object? value) => switch (value) {
     String value => value,
     num value => value.toString(),
-    bool value => value ? l10n.yes : l10n.no,
+    bool value => value ? l10n.commonYes : l10n.commonNo,
     _ => null,
   };
 
-  ({String label, String value})? detail(
-    String label,
-    String? value,
-  ) => value == null ? null : (label: label, value: value);
+  ({String label, String value})? detail(String label, String? value) =>
+      value == null ? null : (label: label, value: value);
 
   final operationDetails = switch (request.toolName) {
     'list_files' || 'glob' || 'list_directory' => [
@@ -329,16 +327,19 @@ List<({String label, String value})> _requestDetails(
     'read_file' || 'read' => [
       detail(
         l10n.toolPermissionStartLine,
-        scalar(request.arguments['startLine'] ?? request.arguments['offset'] ?? 1),
+        scalar(
+          request.arguments['startLine'] ?? request.arguments['offset'] ?? 1,
+        ),
       ),
       detail(
         l10n.toolPermissionLineCount,
-        scalar(request.arguments['lineCount'] ?? request.arguments['limit'] ?? 500),
+        scalar(
+          request.arguments['lineCount'] ?? request.arguments['limit'] ?? 500,
+        ),
       ),
     ],
-    'write_file' || 'write' => [
-      detail(l10n.toolPermissionContent, argument('content')),
-    ],
+    'write_file' ||
+    'write' => [detail(l10n.toolPermissionContent, argument('content'))],
     'edit_file' || 'edit' => [
       detail(
         l10n.toolPermissionOldText,

@@ -272,14 +272,14 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get toolPermissionRequireApprovalDescription =>
-      'Her araç çağrısında izin sorulur. Erişim proje klasörü ve %LOCALAPPDATA%\\OpenChat ile sınırlıdır.';
+      'Dosya araçları her çağrıda izin ister; proje klasörü ve %LOCALAPPDATA%\\OpenChat ile sınırlıdır. Komut çalıştırma desteklenmez.';
 
   @override
   String get toolPermissionFullAccess => 'Tam erişim';
 
   @override
   String get toolPermissionFullAccessDescription =>
-      'Mevcut okuma araçları izin sormadan tüm klasörlere erişebilir. Dosyalar değiştirilmez ve komut çalıştırılmaz.';
+      'Dosya araçları izin sormadan her klasörde okuyabilir ve değişiklik yapabilir. Komut çalıştırma desteklenmez.';
 
   @override
   String get toolPermissionSettingsLoadFailed =>
@@ -303,6 +303,39 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get toolPermissionResponseFailed =>
       'Seçimin gönderilemedi. İsteği yeniden deneyebilirsin.';
+
+  @override
+  String get toolPermissionContent => 'Yazılacak içerik';
+
+  @override
+  String get toolPermissionOldText => 'Bulunacak metin';
+
+  @override
+  String get toolPermissionNewText => 'Yerine yazılacak metin';
+
+  @override
+  String get toolPermissionQuery => 'Arama metni';
+
+  @override
+  String get toolPermissionOffset => 'Başlangıç noktası';
+
+  @override
+  String get toolPermissionLimit => 'En çok sonuç';
+
+  @override
+  String get toolPermissionStartLine => 'Başlangıç satırı';
+
+  @override
+  String get toolPermissionLineCount => 'Satır sayısı';
+
+  @override
+  String get toolPermissionIncludeHidden => 'Gizli dosyaları dahil et';
+
+  @override
+  String get commonYes => 'Evet';
+
+  @override
+  String get commonNo => 'Hayır';
 
   @override
   String get toolPermissionTarget => 'Erişilecek konum';
@@ -1072,6 +1105,12 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get toolGetFileInfo => 'Dosya bilgisi al';
+
+  @override
+  String get toolWriteFile => 'Dosyaya yaz';
+
+  @override
+  String get toolEditFile => 'Dosyayı düzenle';
 
   @override
   String get toolTechnicalDetails => 'Ayrıntılar';

@@ -563,7 +563,7 @@ abstract class AppLocalizations {
   /// No description provided for @toolPermissionRequireApprovalDescription.
   ///
   /// In en, this message translates to:
-  /// **'Each tool call asks for permission. Access is limited to the project folder and %LOCALAPPDATA%\\OpenChat.'**
+  /// **'File tools ask before each call and are limited to the project folder and %LOCALAPPDATA%\\OpenChat. Command execution is unavailable.'**
   String get toolPermissionRequireApprovalDescription;
 
   /// No description provided for @toolPermissionFullAccess.
@@ -575,7 +575,7 @@ abstract class AppLocalizations {
   /// No description provided for @toolPermissionFullAccessDescription.
   ///
   /// In en, this message translates to:
-  /// **'Current read-only tools can access any folder without asking. Files are not changed and commands are not run.'**
+  /// **'File tools can read and change files in any folder without asking. Command execution is unavailable.'**
   String get toolPermissionFullAccessDescription;
 
   /// No description provided for @toolPermissionSettingsLoadFailed.
@@ -613,6 +613,72 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Your choice could not be sent. You can try again.'**
   String get toolPermissionResponseFailed;
+
+  /// No description provided for @toolPermissionContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Content to write'**
+  String get toolPermissionContent;
+
+  /// No description provided for @toolPermissionOldText.
+  ///
+  /// In en, this message translates to:
+  /// **'Text to find'**
+  String get toolPermissionOldText;
+
+  /// No description provided for @toolPermissionNewText.
+  ///
+  /// In en, this message translates to:
+  /// **'Replacement text'**
+  String get toolPermissionNewText;
+
+  /// No description provided for @toolPermissionQuery.
+  ///
+  /// In en, this message translates to:
+  /// **'Search text'**
+  String get toolPermissionQuery;
+
+  /// No description provided for @toolPermissionOffset.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting position'**
+  String get toolPermissionOffset;
+
+  /// No description provided for @toolPermissionLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'Maximum results'**
+  String get toolPermissionLimit;
+
+  /// No description provided for @toolPermissionStartLine.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting line'**
+  String get toolPermissionStartLine;
+
+  /// No description provided for @toolPermissionLineCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Number of lines'**
+  String get toolPermissionLineCount;
+
+  /// No description provided for @toolPermissionIncludeHidden.
+  ///
+  /// In en, this message translates to:
+  /// **'Include hidden files'**
+  String get toolPermissionIncludeHidden;
+
+  /// No description provided for @commonYes.
+  ///
+  /// In en, this message translates to:
+  /// **'Yes'**
+  String get commonYes;
+
+  /// No description provided for @commonNo.
+  ///
+  /// In en, this message translates to:
+  /// **'No'**
+  String get commonNo;
 
   /// No description provided for @toolPermissionTarget.
   ///
@@ -2005,6 +2071,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Get file information'**
   String get toolGetFileInfo;
+
+  /// No description provided for @toolWriteFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Write to file'**
+  String get toolWriteFile;
+
+  /// No description provided for @toolEditFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit file'**
+  String get toolEditFile;
 
   /// No description provided for @toolTechnicalDetails.
   ///
