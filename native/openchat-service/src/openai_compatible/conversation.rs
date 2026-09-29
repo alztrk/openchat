@@ -94,15 +94,17 @@ pub async fn send_message(
         .await
         .is_err()
     {
-        save_terminal_message(
+        save_message(
             storage,
-            conversation_id,
-            &message_id,
-            &content,
-            "failed",
-            created_at,
-            output_tokens,
-            started.elapsed(),
+            AssistantMessageWrite {
+                conversation_id,
+                message_id: &message_id,
+                content: &content,
+                status: "failed",
+                created_at_unix_ms: created_at,
+                output_tokens,
+                elapsed: Some(started.elapsed()),
+            },
         )?;
         return Err(protocol_error());
     }
@@ -135,29 +137,33 @@ pub async fn send_message(
         Ok(()) => "completed",
         Err(error) if is_cancelled(&error) => "stopped",
         Err(error) => {
-            save_terminal_message(
+            save_message(
                 storage,
-                conversation_id,
-                &message_id,
-                &content,
-                "failed",
-                created_at,
-                output_tokens,
-                started.elapsed(),
+                AssistantMessageWrite {
+                    conversation_id,
+                    message_id: &message_id,
+                    content: &content,
+                    status: "failed",
+                    created_at_unix_ms: created_at,
+                    output_tokens,
+                    elapsed: Some(started.elapsed()),
+                },
             )?;
             return Err(error);
         }
     };
     let elapsed = started.elapsed();
-    save_terminal_message(
+    save_message(
         storage,
-        conversation_id,
-        &message_id,
-        &content,
-        status,
-        created_at,
-        output_tokens,
-        elapsed,
+        AssistantMessageWrite {
+            conversation_id,
+            message_id: &message_id,
+            content: &content,
+            status,
+            created_at_unix_ms: created_at,
+            output_tokens,
+            elapsed: Some(elapsed),
+        },
     )?;
     Ok(terminal_result(
         conversation_id,
@@ -253,30 +259,6 @@ struct ResponseStreamRequest<'a> {
     started: Instant,
     cancellation: &'a mut tokio::sync::watch::Receiver<bool>,
     events: &'a crate::protocol::EventSink,
-}
-
-fn save_terminal_message(
-    storage: &AppStorage,
-    conversation_id: &str,
-    message_id: &str,
-    content: &str,
-    status: &str,
-    created_at: i64,
-    output_tokens: Option<i64>,
-    elapsed: std::time::Duration,
-) -> Result<(), ServiceError> {
-    save_message(
-        storage,
-        AssistantMessageWrite {
-            conversation_id,
-            message_id,
-            content,
-            status,
-            created_at_unix_ms: created_at,
-            output_tokens,
-            elapsed: Some(elapsed),
-        },
-    )
 }
 
 fn is_cancelled(error: &ServiceError) -> bool {

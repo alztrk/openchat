@@ -75,10 +75,7 @@ fn service_error(error: ServiceError) -> Value {
 #[cfg(test)]
 mod tests {
     use super::execute_model_tool;
-    use crate::tools::executor::{
-        PreparedToolCall, ToolOperation,
-        paths::ToolPathScope,
-    };
+    use crate::tools::executor::{PreparedToolCall, ToolOperation, paths::ToolPathScope};
     use std::path::PathBuf;
 
     #[test]
