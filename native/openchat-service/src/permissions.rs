@@ -56,16 +56,9 @@ impl ToolPermissionBroker {
             return Err(protocol_error());
         }
 
-        tokio::select! {
-            decision = receiver => {
-                self.pending.lock().await.remove(&approval_request_id);
-                decision.map_err(|_| permission_response_error())
-            }
-            _ = cancellation.changed() => {
-                self.pending.lock().await.remove(&approval_request_id);
-                Err(operation_cancelled_error())
-            }
-        }
+        let decision = wait_for_approval(receiver, cancellation).await;
+        self.pending.lock().await.remove(&approval_request_id);
+        decision
     }
 
     pub async fn respond(
@@ -110,6 +103,16 @@ fn permission_response_error() -> ServiceError {
     )
 }
 
+async fn wait_for_approval(
+    receiver: oneshot::Receiver<bool>,
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<bool, ServiceError> {
+    tokio::select! {
+        decision = receiver => decision.map_err(|_| permission_response_error()),
+        _ = cancellation.changed() => Err(operation_cancelled_error()),
+    }
+}
+
 fn protocol_error() -> ServiceError {
     ServiceError::new(
         "local_service_protocol_failed",
@@ -120,12 +123,11 @@ fn protocol_error() -> ServiceError {
 
 #[cfg(test)]
 mod tests {
-    use super::ToolPermissionBroker;
-    use serde_json::Value;
+    use super::{ToolPermissionBroker, wait_for_approval};
     use tokio::sync::{oneshot, watch};
 
     #[tokio::test]
-    async fn approval_decision_resolves_without_cancelling_the_chat() {
+    async fn approval_decision_resumes_the_pending_tool_without_cancelling_chat() {
         for approved in [true, false] {
             let broker = ToolPermissionBroker::default();
             let (sender, receiver) = oneshot::channel();
@@ -133,20 +135,26 @@ mod tests {
                 .pending
                 .lock()
                 .await
-                .insert("request-1".to_owned(), sender);
-            let (_cancel_sender, cancellation) = watch::channel(false);
+                .insert("approval-1".to_owned(), sender);
+            let (cancellation_sender, mut cancellation) = watch::channel(false);
+            let waiting =
+                tokio::spawn(async move { wait_for_approval(receiver, &mut cancellation).await });
+            tokio::task::yield_now().await;
 
-            let result = broker.respond("request-1", approved).await;
-
+            assert!(!waiting.is_finished(), "the tool waits for the choice");
+            let response = broker
+                .respond("approval-1", approved)
+                .await
+                .expect("the permission response is accepted");
+            assert_eq!(response["accepted"].as_bool(), Some(true));
             assert_eq!(
-                result.expect("permission reply is accepted")["accepted"],
-                Value::Bool(true)
-            );
-            assert_eq!(
-                receiver.await.expect("decision reaches the active tool"),
+                waiting
+                    .await
+                    .expect("the waiting chat operation does not panic")
+                    .expect("the tool receives the decision"),
                 approved
             );
-            assert!(!*cancellation.borrow(), "the chat remains active");
+            assert!(!*cancellation_sender.borrow(), "the chat remains active");
         }
     }
 }

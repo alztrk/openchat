@@ -1688,8 +1688,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void _handleToolPermissionRequest(Map<String, Object?> data) {
     final request = ToolPermissionRequest.fromEvent(data);
     final existingRequest = _pendingToolPermissionRequest;
-    if (request == null ||
-        (existingRequest != null && existingRequest.id != request.id)) {
+    if (request == null) {
       FlutterError.reportError(
         FlutterErrorDetails(
           exception: const FormatException(
@@ -1700,6 +1699,21 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       unawaited(_activeChatOperation?.cancel());
       return;
+    }
+    if (existingRequest != null) {
+      if (existingRequest.id == request.id) return;
+      if (!_isRespondingToToolPermission) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: const FormatException(
+              'A second tool permission request arrived before the first was answered.',
+            ),
+            library: 'local_service',
+          ),
+        );
+        unawaited(_activeChatOperation?.cancel());
+        return;
+      }
     }
     if (!mounted) return;
     setState(() {
@@ -1712,9 +1726,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _respondToToolPermission({required bool approved}) async {
     final request = _pendingToolPermissionRequest;
     final service = widget.serviceClient;
-    if (request == null ||
-        service == null ||
-        _isRespondingToToolPermission) {
+    if (request == null || service == null || _isRespondingToToolPermission) {
       return;
     }
     setState(() {
@@ -1768,6 +1780,7 @@ class _ChatScreenState extends State<ChatScreen> {
       });
     }
   }
+
   void _showServiceFailure(OpenChatServiceException error) {
     final l10n = context.openchatL10n;
     final message = switch (error.code) {
@@ -2567,12 +2580,10 @@ class _ChatScreenState extends State<ChatScreen> {
               toolPermissionRequest: _pendingToolPermissionRequest,
               isRespondingToToolPermission: _isRespondingToToolPermission,
               toolPermissionError: _toolPermissionError,
-              onApproveToolPermission: () => unawaited(
-                _respondToToolPermission(approved: true),
-              ),
-              onDenyToolPermission: () => unawaited(
-                _respondToToolPermission(approved: false),
-              ),
+              onApproveToolPermission: () =>
+                  unawaited(_respondToToolPermission(approved: true)),
+              onDenyToolPermission: () =>
+                  unawaited(_respondToToolPermission(approved: false)),
               conversationTitle: selectedConversation?.title,
               conversationId: selectedConversation?.id,
               titleEditRequestId: _titleEditRequestId,
