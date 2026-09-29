@@ -578,24 +578,70 @@ class _ToolPermissionSelector extends StatelessWidget {
       ToolPermissionMode.fullAccess => l10n.toolPermissionFullAccess,
     };
     return MenuAnchor(
+      alignmentOffset: const Offset(0, -6),
+      style: MenuStyle(
+        backgroundColor: WidgetStatePropertyAll(palette.surface),
+        elevation: const WidgetStatePropertyAll(6),
+        padding: const WidgetStatePropertyAll(EdgeInsets.all(4)),
+        side: WidgetStatePropertyAll(BorderSide(color: palette.border)),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      ),
       menuChildren: [
         for (final option in ToolPermissionMode.values)
           MenuItemButton(
             onPressed: onSelected == null ? null : () => onSelected!(option),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(switch (option) {
-                  ToolPermissionMode.requireApproval =>
-                    l10n.toolPermissionRequireApproval,
-                  ToolPermissionMode.fullAccess =>
-                    l10n.toolPermissionFullAccess,
-                }),
-                if (option == mode) ...[
-                  const SizedBox(width: 16),
-                  const Icon(Icons.check_rounded, size: 16),
-                ],
-              ],
+            style: ButtonStyle(
+              minimumSize: const WidgetStatePropertyAll(Size(0, 42)),
+              padding: const WidgetStatePropertyAll(EdgeInsets.zero),
+              overlayColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.pressed)) {
+                  return palette.selected;
+                }
+                if (states.contains(WidgetState.hovered) ||
+                    states.contains(WidgetState.focused)) {
+                  return palette.hover;
+                }
+                return Colors.transparent;
+              }),
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+              ),
+            ),
+            child: SizedBox(
+              width: 168,
+              height: 42,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        switch (option) {
+                          ToolPermissionMode.requireApproval =>
+                            l10n.toolPermissionRequireApproval,
+                          ToolPermissionMode.fullAccess =>
+                            l10n.toolPermissionFullAccess,
+                        },
+                        style: TextStyle(
+                          color: palette.text,
+                          fontSize: 13,
+                          fontWeight: option == mode
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                    if (option == mode)
+                      Icon(
+                        Icons.check_rounded,
+                        size: 16,
+                        color: palette.accentIcon,
+                      ),
+                  ],
+                ),
+              ),
             ),
           ),
       ],
