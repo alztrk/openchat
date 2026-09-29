@@ -617,14 +617,9 @@ class _ToolPermissionSelector extends StatelessWidget {
                 child: Row(
                   children: [
                     Icon(
-                      switch (option) {
-                        ToolPermissionMode.requireApproval =>
-                          Icons.lock_outline_rounded,
-                        ToolPermissionMode.fullAccess =>
-                          Icons.lock_open_rounded,
-                      },
+                      Icons.admin_panel_settings_outlined,
                       size: 16,
-                      color: palette.secondaryIcon,
+                      color: palette.secondaryText,
                     ),
                     const SizedBox(width: 10),
                     Expanded(
