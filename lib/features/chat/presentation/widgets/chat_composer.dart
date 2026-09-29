@@ -582,44 +582,20 @@ class _ToolPermissionSelector extends StatelessWidget {
         for (final option in ToolPermissionMode.values)
           MenuItemButton(
             onPressed: onSelected == null ? null : () => onSelected!(option),
-            child: SizedBox(
-              width: 280,
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(switch (option) {
-                          ToolPermissionMode.requireApproval =>
-                            l10n.toolPermissionRequireApproval,
-                          ToolPermissionMode.fullAccess =>
-                            l10n.toolPermissionFullAccess,
-                        }),
-                        const SizedBox(height: 3),
-                        Text(
-                          switch (option) {
-                            ToolPermissionMode.requireApproval =>
-                              l10n.toolPermissionRequireApprovalDescription,
-                            ToolPermissionMode.fullAccess =>
-                              l10n.toolPermissionFullAccessDescription,
-                          },
-                          style: TextStyle(
-                            color: palette.secondaryText,
-                            fontSize: 12,
-                            height: 1.35,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (option == mode) ...[
-                    const SizedBox(width: 12),
-                    const Icon(Icons.check_rounded, size: 16),
-                  ],
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(switch (option) {
+                  ToolPermissionMode.requireApproval =>
+                    l10n.toolPermissionRequireApproval,
+                  ToolPermissionMode.fullAccess =>
+                    l10n.toolPermissionFullAccess,
+                }),
+                if (option == mode) ...[
+                  const SizedBox(width: 16),
+                  const Icon(Icons.check_rounded, size: 16),
                 ],
-              ),
+              ],
             ),
           ),
       ],

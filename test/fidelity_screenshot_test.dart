@@ -44,7 +44,9 @@ void main() {
     SharedPreferencesAsyncPlatform.instance = null;
   });
 
-  testWidgets('shows permission details only inside its menu', (tester) async {
+  testWidgets('keeps the permission menu compact and without tooltips', (
+    tester,
+  ) async {
     const locale = Locale('tr');
     final l10n = await AppLocalizations.delegate.load(locale);
     final controller = TextEditingController();
@@ -97,9 +99,9 @@ void main() {
 
     expect(
       find.text(l10n.toolPermissionRequireApprovalDescription),
-      findsOneWidget,
+      findsNothing,
     );
-    expect(find.text(l10n.toolPermissionFullAccessDescription), findsOneWidget);
+    expect(find.text(l10n.toolPermissionFullAccessDescription), findsNothing);
   });
 
   for (final appearance in [
