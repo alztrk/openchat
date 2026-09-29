@@ -160,7 +160,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return SingleChildScrollView(
       key: PageStorageKey<_SettingsSection>(section),
       padding: EdgeInsets.fromLTRB(horizontalInset, 24, horizontalInset, 32),
-      child: Center(
+      child: Align(
+        alignment: Alignment.topLeft,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 840),
           child: Column(
@@ -229,7 +230,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           TextField(
             controller: _sharedInstructionsController,
             enabled: !_isSavingInstructions,
-            minLines: 3,
+            minLines: 4,
             maxLines: 8,
             maxLength: _sharedInstructionsMaxLength,
             buildCounter: (
@@ -238,40 +239,63 @@ class _SettingsScreenState extends State<SettingsScreen> {
               required isFocused,
               maxLength,
             }) => null,
+            style: Theme.of(context).textTheme.bodyLarge,
+            cursorColor: palette.accent,
             textCapitalization: TextCapitalization.sentences,
+            textAlignVertical: TextAlignVertical.top,
             decoration: InputDecoration(
               hintText: l10n.sharedInstructionsHint,
+              hintStyle: TextStyle(
+                color: palette.secondaryText,
+                fontSize: 13,
+                height: 1.5,
+              ),
               alignLabelWithHint: true,
+              filled: true,
+              fillColor: palette.composer,
+              contentPadding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: palette.border),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: palette.border),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: palette.accent, width: 1.4),
               ),
             ),
             onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Text(
-                '${_sharedInstructionsController.text.characters.length}/$_sharedInstructionsMaxLength',
-                style: TextStyle(color: palette.secondaryText, fontSize: 12),
-              ),
-              const Spacer(),
-              FilledButton.icon(
-                onPressed:
-                    _isSavingInstructions ||
-                        _sharedInstructionsController.text ==
-                            _savedSharedInstructions
-                    ? null
-                    : () => unawaited(_saveSharedInstructions()),
-                icon: _isSavingInstructions
-                    ? const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save_outlined),
-                label: Text(_isSavingInstructions ? l10n.saving : l10n.save),
-              ),
-            ],
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                Text(
+                  '${_sharedInstructionsController.text.characters.length}/$_sharedInstructionsMaxLength',
+                  style: TextStyle(color: palette.secondaryText, fontSize: 12),
+                ),
+                const Spacer(),
+                FilledButton.icon(
+                  onPressed:
+                      _isSavingInstructions ||
+                          _sharedInstructionsController.text ==
+                              _savedSharedInstructions
+                      ? null
+                      : () => unawaited(_saveSharedInstructions()),
+                  icon: _isSavingInstructions
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.save_outlined),
+                  label: Text(_isSavingInstructions ? l10n.saving : l10n.save),
+                ),
+              ],
+            ),
           ),
         ],
       ],
