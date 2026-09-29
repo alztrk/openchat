@@ -593,7 +593,7 @@ class _ToolPermissionSelector extends StatelessWidget {
           MenuItemButton(
             onPressed: onSelected == null ? null : () => onSelected!(option),
             style: ButtonStyle(
-              minimumSize: const WidgetStatePropertyAll(Size(0, 42)),
+              minimumSize: const WidgetStatePropertyAll(Size(0, 36)),
               padding: const WidgetStatePropertyAll(EdgeInsets.zero),
               overlayColor: WidgetStateProperty.resolveWith((states) {
                 if (states.contains(WidgetState.pressed)) {
@@ -611,7 +611,7 @@ class _ToolPermissionSelector extends StatelessWidget {
             ),
             child: SizedBox(
               width: 168,
-              height: 42,
+              height: 36,
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Row(
