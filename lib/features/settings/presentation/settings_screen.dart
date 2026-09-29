@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../app/openchat_theme.dart';
 import '../../../app/openchat_toast.dart';
@@ -15,7 +16,6 @@ import '../data/open_code_api_key_store.dart';
 import '../data/settings_preferences.dart';
 import 'chat_gpt_connection_section.dart';
 import 'open_code_connection_section.dart';
-import 'settings_widgets.dart';
 
 const _sharedInstructionsMaxLength = 4096;
 
@@ -90,7 +90,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context, constraints) {
         final compactSidebar = constraints.maxWidth < 960;
         final horizontalInset = constraints.maxWidth < 640 ? 16.0 : 24.0;
-        final windowControlInset = constraints.maxWidth < 640 ? 16.0 : 32.0;
+        final headerInset = constraints.maxWidth < 640 ? 20.0 : 32.0;
+        final sectionTitle = switch (_selectedSection) {
+          _SettingsSection.connections => l10n.connections,
+          _SettingsSection.sharedInstructions => l10n.sharedInstructions,
+          _SettingsSection.appearance => l10n.appearance,
+          _SettingsSection.localData => l10n.localData,
+        };
 
         return ColoredBox(
           color: palette.surface,
@@ -103,43 +109,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     setState(() => _selectedSection = section),
               ),
               Expanded(
-                child: Stack(
+                child: Column(
                   children: [
-                    IndexedStack(
-                      index: _selectedSection.index,
-                      children: [
-                        _buildSectionPage(
-                          section: _SettingsSection.connections,
-                          title: l10n.connections,
-                          horizontalInset: horizontalInset,
-                          child: _buildConnectionsSection(),
-                        ),
-                        _buildSectionPage(
-                          section: _SettingsSection.sharedInstructions,
-                          title: l10n.sharedInstructions,
-                          horizontalInset: horizontalInset,
-                          child: _buildSharedInstructionsSection(),
-                        ),
-                        _buildSectionPage(
-                          section: _SettingsSection.appearance,
-                          title: l10n.appearance,
-                          horizontalInset: horizontalInset,
-                          child: _buildAppearanceSection(),
-                        ),
-                        _buildSectionPage(
-                          section: _SettingsSection.localData,
-                          title: l10n.localData,
-                          horizontalInset: horizontalInset,
-                          child: _buildLocalDataSection(),
-                        ),
-                      ],
+                    _SettingsHeader(
+                      title: sectionTitle,
+                      horizontalInset: headerInset,
                     ),
-                    if (OpenChatWindowControls.isSupported)
-                      Positioned(
-                        right: windowControlInset,
-                        top: 18,
-                        child: const WindowControlBar(),
+                    Expanded(
+                      child: IndexedStack(
+                        index: _selectedSection.index,
+                        children: [
+                          _buildSectionPage(
+                            section: _SettingsSection.connections,
+                            horizontalInset: horizontalInset,
+                            child: _buildConnectionsSection(),
+                          ),
+                          _buildSectionPage(
+                            section: _SettingsSection.sharedInstructions,
+                            horizontalInset: horizontalInset,
+                            child: _buildSharedInstructionsSection(),
+                          ),
+                          _buildSectionPage(
+                            section: _SettingsSection.appearance,
+                            horizontalInset: horizontalInset,
+                            child: _buildAppearanceSection(),
+                          ),
+                          _buildSectionPage(
+                            section: _SettingsSection.localData,
+                            horizontalInset: horizontalInset,
+                            child: _buildLocalDataSection(),
+                          ),
+                        ],
                       ),
+                    ),
                   ],
                 ),
               ),
@@ -152,40 +154,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Widget _buildSectionPage({
     required _SettingsSection section,
-    required String title,
     required double horizontalInset,
     required Widget child,
   }) {
-    final palette = OpenChatPalette.of(context);
-    final textTheme = Theme.of(context).textTheme;
-
     return SingleChildScrollView(
       key: PageStorageKey<_SettingsSection>(section),
-      padding: EdgeInsets.fromLTRB(horizontalInset, 52, horizontalInset, 32),
+      padding: EdgeInsets.fromLTRB(horizontalInset, 24, horizontalInset, 32),
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 840),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              SizedBox(
-                height: 40,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    title,
-                    style: textTheme.headlineSmall?.copyWith(
-                      fontSize: 30,
-                      height: 4 / 3,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              SettingsDivider(color: palette.border),
-              const SizedBox(height: 33),
-              child,
-            ],
+            children: [child],
           ),
         ),
       ),
@@ -705,6 +685,59 @@ class _SettingsRow extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+class _SettingsHeader extends StatelessWidget {
+  const _SettingsHeader({required this.title, required this.horizontalInset});
+
+  final String title;
+  final double horizontalInset;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = OpenChatPalette.of(context);
+
+    return GestureDetector(
+      onPanStart: OpenChatWindowControls.isSupported
+          ? (_) => unawaited(OpenChatWindowControls.startDragging())
+          : null,
+      child: SizedBox(
+        height: 68,
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: horizontalInset),
+          child: Row(
+            children: [
+              SvgPicture.asset(
+                'assets/icons/settings.svg',
+                width: 18,
+                height: 18,
+                colorFilter: ColorFilter.mode(
+                  palette.secondaryIcon,
+                  BlendMode.srcIn,
+                ),
+                excludeFromSemantics: true,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: palette.text,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    height: 24 / 16,
+                  ),
+                ),
+              ),
+              if (OpenChatWindowControls.isSupported) const WindowControlBar(),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
