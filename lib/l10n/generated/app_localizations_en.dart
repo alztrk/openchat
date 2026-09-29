@@ -56,7 +56,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sharedInstructionsDescription =>
-      'These instructions are sent with every ChatGPT and OpenCode conversation. File tool access follows the Tool access setting.';
+      'These instructions are sent with every connected provider. File tool access follows the Tool access setting.';
 
   @override
   String get sharedInstructionsHint =>
@@ -82,6 +82,60 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get openCodeProvider => 'OpenCode';
+
+  @override
+  String get geminiProvider => 'Gemini';
+
+  @override
+  String get groqProvider => 'Groq';
+
+  @override
+  String get cerebrasProvider => 'Cerebras';
+
+  @override
+  String get openRouterProvider => 'OpenRouter';
+
+  @override
+  String get geminiApiDescription =>
+      'Connect a Google AI account to browse and use its available Gemini API models.';
+
+  @override
+  String get groqApiDescription =>
+      'Browse the models enabled for your Groq API account. Pricing and limits depend on your plan.';
+
+  @override
+  String get cerebrasApiDescription =>
+      'Browse the models enabled for your Cerebras API account. Pricing and limits depend on your plan.';
+
+  @override
+  String get openRouterApiDescription =>
+      'Only text chat models currently listed at \$0 for both input and output appear here. Availability and limits can change.';
+
+  @override
+  String get geminiUnpaidDataNotice =>
+      'Google may use content sent through unpaid Gemini API services to improve its products. Review Google\'s API terms before sending sensitive information.';
+
+  @override
+  String get providerApiKey => 'API key';
+
+  @override
+  String get providerKeySaved => 'API key is saved securely on this device.';
+
+  @override
+  String providerKeySavedSuffix(Object suffix) {
+    return 'API key ending in ••••$suffix is saved securely on this device.';
+  }
+
+  @override
+  String get providerNoKey => 'No API key is connected.';
+
+  @override
+  String get providerKeyInvalid =>
+      'Enter a non-empty, single-line API key up to 4096 characters.';
+
+  @override
+  String get providerKeyStorageFailed =>
+      'The API key could not be read or saved securely.';
 
   @override
   String get favoriteModels => 'Favorites';
@@ -132,6 +186,28 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get openCodeFreeModel => 'Free';
+
+  @override
+  String get modelSourceApi => 'API';
+
+  @override
+  String get modelSourceOAuth => 'OAuth';
+
+  @override
+  String get openCodeFreeModels => 'Free models';
+
+  @override
+  String get openCodeApiModels => 'API models';
+
+  @override
+  String modelContextWindow(String value) {
+    return 'Context window · $value tokens';
+  }
+
+  @override
+  String openCodeModelContextWindow(String value) {
+    return 'OpenCode catalog (Models.dev) · context: $value tokens';
+  }
 
   @override
   String get add => 'Add';
@@ -219,6 +295,14 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get toolPermissionRequestDescription =>
       'The AI wants to use this tool at the selected location. Permission applies to this call only.';
+
+  @override
+  String get toolPermissionRequestExpired =>
+      'This tool permission request is no longer active.';
+
+  @override
+  String get toolPermissionResponseFailed =>
+      'Your choice could not be sent. You can try again.';
 
   @override
   String get toolPermissionTarget => 'Location to access';
@@ -561,7 +645,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get conversationTextSizeDescription =>
-      'Choose the text size used in chat messages.';
+      'Choose the text size used across the app.';
 
   @override
   String get textSizeSmall => 'Small';
@@ -573,11 +657,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get textSizeLarge => 'Large';
 
   @override
-  String get conversationFont => 'Font';
+  String get appFont => 'App font';
 
   @override
-  String get conversationFontDescription =>
-      'Choose the typeface used in chat messages.';
+  String get appFontDescription =>
+      'Choose the typeface used throughout OpenChat.';
 
   @override
   String get appearancePreferenceSaveFailed =>
@@ -816,7 +900,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get noModelConnectedBody =>
-      'Connect a ChatGPT account and choose a model to start a conversation.';
+      'Connect a provider and choose one of its models to start a conversation.';
 
   @override
   String get close => 'Close';
@@ -868,7 +952,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get modelCatalogUnavailable =>
-      'The model list is unavailable. Refresh the account connection and try again.';
+      'The model list is unavailable. Refresh the provider connection and try again.';
 
   @override
   String get messageSaveFailed =>

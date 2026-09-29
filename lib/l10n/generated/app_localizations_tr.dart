@@ -56,7 +56,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get sharedInstructionsDescription =>
-      'Bu talimatlar ChatGPT ve OpenCode\'a her sohbette gönderilir. Dosya araçlarının erişimi Araç erişimi ayarına uyar.';
+      'Bu talimatlar bağlı olan tüm sağlayıcılara her sohbette gönderilir. Dosya araçlarının erişimi Araç erişimi ayarına uyar.';
 
   @override
   String get sharedInstructionsHint =>
@@ -81,6 +81,61 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get openCodeProvider => 'OpenCode';
+
+  @override
+  String get geminiProvider => 'Gemini';
+
+  @override
+  String get groqProvider => 'Groq';
+
+  @override
+  String get cerebrasProvider => 'Cerebras';
+
+  @override
+  String get openRouterProvider => 'OpenRouter';
+
+  @override
+  String get geminiApiDescription =>
+      'Gemini API modellerini görüntülemek ve kullanmak için Google AI hesabını bağla.';
+
+  @override
+  String get groqApiDescription =>
+      'Groq API hesabında erişilebilen modelleri görüntüle. Ücretler ve limitler hesabına bağlıdır.';
+
+  @override
+  String get cerebrasApiDescription =>
+      'Cerebras API hesabında erişilebilen modelleri görüntüle. Ücretler ve limitler hesabına bağlıdır.';
+
+  @override
+  String get openRouterApiDescription =>
+      'Burada yalnızca girdi ve çıktı fiyatı şu anda 0 \$ olan metin sohbet modelleri görünür. Erişim ve limitler değişebilir.';
+
+  @override
+  String get geminiUnpaidDataNotice =>
+      'Google, ücretsiz Gemini API hizmetlerine gönderilen içerikleri ürünlerini geliştirmek için kullanabilir. Hassas bilgi göndermeden önce Google API koşullarını incele.';
+
+  @override
+  String get providerApiKey => 'API anahtarı';
+
+  @override
+  String get providerKeySaved =>
+      'API anahtarı bu cihazda güvenli şekilde kayıtlı.';
+
+  @override
+  String providerKeySavedSuffix(Object suffix) {
+    return 'Sonu ••••$suffix olan API anahtarı bu cihazda güvenli şekilde kayıtlı.';
+  }
+
+  @override
+  String get providerNoKey => 'API anahtarı bağlı değil.';
+
+  @override
+  String get providerKeyInvalid =>
+      'Boş olmayan, tek satırlı ve en fazla 4096 karakterlik bir API anahtarı gir.';
+
+  @override
+  String get providerKeyStorageFailed =>
+      'API anahtarı güvenli şekilde okunamadı veya kaydedilemedi.';
 
   @override
   String get favoriteModels => 'Favoriler';
@@ -132,6 +187,28 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get openCodeFreeModel => 'Ücretsiz';
+
+  @override
+  String get modelSourceApi => 'API';
+
+  @override
+  String get modelSourceOAuth => 'OAuth';
+
+  @override
+  String get openCodeFreeModels => 'Ücretsiz modeller';
+
+  @override
+  String get openCodeApiModels => 'API modelleri';
+
+  @override
+  String modelContextWindow(String value) {
+    return 'Bağlam penceresi · $value token';
+  }
+
+  @override
+  String openCodeModelContextWindow(String value) {
+    return 'OpenCode kataloğu (Models.dev) · bağlam: $value token';
+  }
 
   @override
   String get add => 'Ekle';
@@ -218,6 +295,14 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get toolPermissionRequestDescription =>
       'Yapay zeka bu aracı belirtilen konumda kullanmak istiyor. İzin yalnızca bu çağrı için geçerli olacak.';
+
+  @override
+  String get toolPermissionRequestExpired =>
+      'Bu araç izni isteği artık etkin değil.';
+
+  @override
+  String get toolPermissionResponseFailed =>
+      'Seçimin gönderilemedi. İsteği yeniden deneyebilirsin.';
 
   @override
   String get toolPermissionTarget => 'Erişilecek konum';
@@ -555,7 +640,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get conversationTextSizeDescription =>
-      'Sohbet mesajlarının yazı boyutunu seçin.';
+      'Uygulamadaki yazıların boyutunu seçin.';
 
   @override
   String get textSizeSmall => 'Küçük';
@@ -567,11 +652,11 @@ class AppLocalizationsTr extends AppLocalizations {
   String get textSizeLarge => 'Büyük';
 
   @override
-  String get conversationFont => 'Yazı tipi';
+  String get appFont => 'Uygulama yazı tipi';
 
   @override
-  String get conversationFontDescription =>
-      'Sohbet mesajlarında kullanılacak yazı tipini seçin.';
+  String get appFontDescription =>
+      'OpenChat genelinde kullanılacak yazı tipini seçin.';
 
   @override
   String get appearancePreferenceSaveFailed =>
@@ -807,7 +892,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get noModelConnectedBody =>
-      'Sohbet başlatmak için bir ChatGPT hesabı bağlayıp model seç.';
+      'Sohbet başlatmak için bir sağlayıcı bağlayıp model seç.';
 
   @override
   String get close => 'Kapat';
@@ -859,7 +944,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get modelCatalogUnavailable =>
-      'Model listesi kullanılamıyor. Hesap bağlantısını yenileyip tekrar dene.';
+      'Model listesi kullanılamıyor. Sağlayıcı bağlantısını yenileyip tekrar dene.';
 
   @override
   String get messageSaveFailed =>

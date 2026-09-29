@@ -191,7 +191,7 @@ abstract class AppLocalizations {
   /// No description provided for @sharedInstructionsDescription.
   ///
   /// In en, this message translates to:
-  /// **'These instructions are sent with every ChatGPT and OpenCode conversation. File tool access follows the Tool access setting.'**
+  /// **'These instructions are sent with every connected provider. File tool access follows the Tool access setting.'**
   String get sharedInstructionsDescription;
 
   /// No description provided for @sharedInstructionsHint.
@@ -235,6 +235,96 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'OpenCode'**
   String get openCodeProvider;
+
+  /// No description provided for @geminiProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Gemini'**
+  String get geminiProvider;
+
+  /// No description provided for @groqProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Groq'**
+  String get groqProvider;
+
+  /// No description provided for @cerebrasProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Cerebras'**
+  String get cerebrasProvider;
+
+  /// No description provided for @openRouterProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenRouter'**
+  String get openRouterProvider;
+
+  /// No description provided for @geminiApiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect a Google AI account to browse and use its available Gemini API models.'**
+  String get geminiApiDescription;
+
+  /// No description provided for @groqApiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse the models enabled for your Groq API account. Pricing and limits depend on your plan.'**
+  String get groqApiDescription;
+
+  /// No description provided for @cerebrasApiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse the models enabled for your Cerebras API account. Pricing and limits depend on your plan.'**
+  String get cerebrasApiDescription;
+
+  /// No description provided for @openRouterApiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Only text chat models currently listed at \$0 for both input and output appear here. Availability and limits can change.'**
+  String get openRouterApiDescription;
+
+  /// No description provided for @geminiUnpaidDataNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Google may use content sent through unpaid Gemini API services to improve its products. Review Google\'s API terms before sending sensitive information.'**
+  String get geminiUnpaidDataNotice;
+
+  /// No description provided for @providerApiKey.
+  ///
+  /// In en, this message translates to:
+  /// **'API key'**
+  String get providerApiKey;
+
+  /// No description provided for @providerKeySaved.
+  ///
+  /// In en, this message translates to:
+  /// **'API key is saved securely on this device.'**
+  String get providerKeySaved;
+
+  /// No description provided for @providerKeySavedSuffix.
+  ///
+  /// In en, this message translates to:
+  /// **'API key ending in ••••{suffix} is saved securely on this device.'**
+  String providerKeySavedSuffix(Object suffix);
+
+  /// No description provided for @providerNoKey.
+  ///
+  /// In en, this message translates to:
+  /// **'No API key is connected.'**
+  String get providerNoKey;
+
+  /// No description provided for @providerKeyInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a non-empty, single-line API key up to 4096 characters.'**
+  String get providerKeyInvalid;
+
+  /// No description provided for @providerKeyStorageFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The API key could not be read or saved securely.'**
+  String get providerKeyStorageFailed;
 
   /// No description provided for @favoriteModels.
   ///
@@ -325,6 +415,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Free'**
   String get openCodeFreeModel;
+
+  /// No description provided for @modelSourceApi.
+  ///
+  /// In en, this message translates to:
+  /// **'API'**
+  String get modelSourceApi;
+
+  /// No description provided for @modelSourceOAuth.
+  ///
+  /// In en, this message translates to:
+  /// **'OAuth'**
+  String get modelSourceOAuth;
+
+  /// No description provided for @openCodeFreeModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Free models'**
+  String get openCodeFreeModels;
+
+  /// No description provided for @openCodeApiModels.
+  ///
+  /// In en, this message translates to:
+  /// **'API models'**
+  String get openCodeApiModels;
+
+  /// No description provided for @modelContextWindow.
+  ///
+  /// In en, this message translates to:
+  /// **'Context window · {value} tokens'**
+  String modelContextWindow(String value);
+
+  /// No description provided for @openCodeModelContextWindow.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenCode catalog (Models.dev) · context: {value} tokens'**
+  String openCodeModelContextWindow(String value);
 
   /// No description provided for @add.
   ///
@@ -475,6 +601,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The AI wants to use this tool at the selected location. Permission applies to this call only.'**
   String get toolPermissionRequestDescription;
+
+  /// No description provided for @toolPermissionRequestExpired.
+  ///
+  /// In en, this message translates to:
+  /// **'This tool permission request is no longer active.'**
+  String get toolPermissionRequestExpired;
+
+  /// No description provided for @toolPermissionResponseFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Your choice could not be sent. You can try again.'**
+  String get toolPermissionResponseFailed;
 
   /// No description provided for @toolPermissionTarget.
   ///
@@ -1061,7 +1199,7 @@ abstract class AppLocalizations {
   /// No description provided for @conversationTextSizeDescription.
   ///
   /// In en, this message translates to:
-  /// **'Choose the text size used in chat messages.'**
+  /// **'Choose the text size used across the app.'**
   String get conversationTextSizeDescription;
 
   /// No description provided for @textSizeSmall.
@@ -1082,17 +1220,17 @@ abstract class AppLocalizations {
   /// **'Large'**
   String get textSizeLarge;
 
-  /// No description provided for @conversationFont.
+  /// No description provided for @appFont.
   ///
   /// In en, this message translates to:
-  /// **'Font'**
-  String get conversationFont;
+  /// **'App font'**
+  String get appFont;
 
-  /// No description provided for @conversationFontDescription.
+  /// No description provided for @appFontDescription.
   ///
   /// In en, this message translates to:
-  /// **'Choose the typeface used in chat messages.'**
-  String get conversationFontDescription;
+  /// **'Choose the typeface used throughout OpenChat.'**
+  String get appFontDescription;
 
   /// No description provided for @appearancePreferenceSaveFailed.
   ///
@@ -1541,7 +1679,7 @@ abstract class AppLocalizations {
   /// No description provided for @noModelConnectedBody.
   ///
   /// In en, this message translates to:
-  /// **'Connect a ChatGPT account and choose a model to start a conversation.'**
+  /// **'Connect a provider and choose one of its models to start a conversation.'**
   String get noModelConnectedBody;
 
   /// No description provided for @close.
@@ -1637,7 +1775,7 @@ abstract class AppLocalizations {
   /// No description provided for @modelCatalogUnavailable.
   ///
   /// In en, this message translates to:
-  /// **'The model list is unavailable. Refresh the account connection and try again.'**
+  /// **'The model list is unavailable. Refresh the provider connection and try again.'**
   String get modelCatalogUnavailable;
 
   /// No description provided for @messageSaveFailed.

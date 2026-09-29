@@ -1,6 +1,6 @@
 import 'package:flutter/widgets.dart';
 
-import 'generated/app_localizations.dart';
+import 'package:openchat/l10n/generated/app_localizations.dart';
 
 extension OpenChatLocalizationsX on BuildContext {
   AppLocalizations get openchatL10n {
