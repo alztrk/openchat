@@ -19,6 +19,8 @@ import 'settings_widgets.dart';
 
 const _sharedInstructionsMaxLength = 4096;
 
+enum _SettingsSection { connections, sharedInstructions, appearance, localData }
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     required this.themeMode,
@@ -64,6 +66,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _savedSharedInstructions = '';
   String? _sharedInstructionsError;
   int _languageSelectorRevision = 0;
+  _SettingsSection _selectedSection = _SettingsSection.connections;
 
   @override
   void initState() {
@@ -82,385 +85,380 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Widget build(BuildContext context) {
     final palette = OpenChatPalette.of(context);
     final l10n = context.openchatL10n;
-    final textTheme = Theme.of(context).textTheme;
 
     return LayoutBuilder(
       builder: (context, constraints) {
+        final compactSidebar = constraints.maxWidth < 960;
         final horizontalInset = constraints.maxWidth < 640 ? 16.0 : 24.0;
         final windowControlInset = constraints.maxWidth < 640 ? 16.0 : 32.0;
 
         return ColoredBox(
           color: palette.surface,
-          child: Stack(
+          child: Row(
             children: [
-              SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(
-                  horizontalInset,
-                  52,
-                  horizontalInset,
-                  32,
-                ),
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 840),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+              _SettingsSidebar(
+                compact: compactSidebar,
+                selectedSection: _selectedSection,
+                onSelectSection: (section) =>
+                    setState(() => _selectedSection = section),
+              ),
+              Expanded(
+                child: Stack(
+                  children: [
+                    IndexedStack(
+                      index: _selectedSection.index,
                       children: [
-                        SizedBox(
-                          height: 40,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              l10n.settings,
-                              style: textTheme.headlineSmall?.copyWith(
-                                fontSize: 30,
-                                height: 4 / 3,
-                              ),
-                            ),
-                          ),
+                        _buildSectionPage(
+                          section: _SettingsSection.connections,
+                          title: l10n.connections,
+                          horizontalInset: horizontalInset,
+                          child: _buildConnectionsSection(),
                         ),
-                        const SizedBox(height: 6),
-                        SizedBox(
-                          height: 22,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              l10n.settingsDescription,
-                              style: TextStyle(
-                                color: palette.secondaryText,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                          ),
+                        _buildSectionPage(
+                          section: _SettingsSection.sharedInstructions,
+                          title: l10n.sharedInstructions,
+                          horizontalInset: horizontalInset,
+                          child: _buildSharedInstructionsSection(),
                         ),
-                        const SizedBox(height: 20),
-                        SettingsDivider(color: palette.border),
-                        const SizedBox(height: 33),
-                        _SectionHeading(
-                          label: l10n.connections,
-                          style: TextStyle(
-                            color: palette.text,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
+                        _buildSectionPage(
+                          section: _SettingsSection.appearance,
+                          title: l10n.appearance,
+                          horizontalInset: horizontalInset,
+                          child: _buildAppearanceSection(),
                         ),
-                        const SizedBox(height: 20),
-                        ChatGptConnectionSection(
-                          apiKeyStore: widget.chatGptApiKeyStore,
-                          serviceClient: widget.serviceClient,
-                          onProviderStateChanged: widget.onProviderStateChanged,
-                          onConnectionRemoved: widget.onConnectionRemoved,
-                        ),
-                        const SizedBox(height: 22),
-                        OpenCodeConnectionSection(
-                          apiKeyStore: widget.openCodeApiKeyStore,
-                          onChanged: widget.onProviderStateChanged,
-                        ),
-                        const SizedBox(height: 32),
-                        SettingsDivider(color: palette.border),
-                        const SizedBox(height: 33),
-                        _SectionHeading(
-                          label: l10n.sharedInstructions,
-                          style: TextStyle(
-                            color: palette.text,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          l10n.sharedInstructionsDescription,
-                          style: TextStyle(
-                            color: palette.secondaryText,
-                            fontSize: 13,
-                            height: 1.45,
-                          ),
-                        ),
-                        const SizedBox(height: 14),
-                        if (_isLoadingInstructions)
-                          const LinearProgressIndicator()
-                        else if (_sharedInstructionsError != null)
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  _sharedInstructionsError!,
-                                  style: TextStyle(
-                                    color: Theme.of(context).colorScheme.error,
-                                  ),
-                                ),
-                              ),
-                              TextButton.icon(
-                                onPressed: () =>
-                                    unawaited(_loadSharedInstructions()),
-                                icon: const Icon(Icons.refresh_rounded),
-                                label: Text(l10n.retry),
-                              ),
-                            ],
-                          )
-                        else ...[
-                          TextField(
-                            controller: _sharedInstructionsController,
-                            enabled: !_isSavingInstructions,
-                            minLines: 3,
-                            maxLines: 8,
-                            maxLength: _sharedInstructionsMaxLength,
-                            buildCounter: (
-                              context, {
-                              required currentLength,
-                              required isFocused,
-                              maxLength,
-                            }) => null,
-                            textCapitalization: TextCapitalization.sentences,
-                            decoration: InputDecoration(
-                              hintText: l10n.sharedInstructionsHint,
-                              alignLabelWithHint: true,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            onChanged: (_) => setState(() {}),
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Text(
-                                '${_sharedInstructionsController.text.characters.length}/$_sharedInstructionsMaxLength',
-                                style: TextStyle(
-                                  color: palette.secondaryText,
-                                  fontSize: 12,
-                                ),
-                              ),
-                              const Spacer(),
-                              FilledButton.icon(
-                                onPressed:
-                                    _isSavingInstructions ||
-                                        _sharedInstructionsController.text ==
-                                            _savedSharedInstructions
-                                    ? null
-                                    : () =>
-                                          unawaited(_saveSharedInstructions()),
-                                icon: _isSavingInstructions
-                                    ? const SizedBox.square(
-                                        dimension: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(Icons.save_outlined),
-                                label: Text(
-                                  _isSavingInstructions
-                                      ? l10n.saving
-                                      : l10n.save,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                        const SizedBox(height: 32),
-                        SettingsDivider(color: palette.border),
-                        const SizedBox(height: 33),
-                        _SectionHeading(
-                          label: l10n.appearance,
-                          style: TextStyle(
-                            color: palette.text,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 22),
-                        _SettingsRow(
-                          title: l10n.theme,
-                          description: l10n.themeSettingDescription,
-                          textTheme: textTheme,
-                          controlWidth: 264,
-                          desktopControlTopInset: 0,
-                          controlBuilder: (width) => _ThemeSelector(
-                            width: width,
-                            mode: widget.themeMode,
-                            onChanged: (mode) =>
-                                unawaited(_changeThemeMode(mode)),
-                            systemLabel: l10n.systemTheme,
-                            lightLabel: l10n.lightTheme,
-                            darkLabel: l10n.darkTheme,
-                            palette: palette,
-                          ),
-                        ),
-                        const SizedBox(height: 18),
-                        _SettingsRow(
-                          title: l10n.language,
-                          description: l10n.languageSettingDescription,
-                          textTheme: textTheme,
-                          controlWidth: 264,
-                          desktopControlTopInset: 0,
-                          controlBuilder: (width) {
-                            final languageCode =
-                                widget.locale?.languageCode ?? 'system';
-                            return SizedBox(
-                              width: width,
-                              height: 40,
-                              child: DropdownButtonFormField<String>(
-                                key: ValueKey<String>(
-                                  '$languageCode-$_languageSelectorRevision',
-                                ),
-                                initialValue: languageCode,
-                                isExpanded: true,
-                                decoration: InputDecoration(
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 10,
-                                  ),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                ),
-                                items: [
-                                  DropdownMenuItem<String>(
-                                    value: 'system',
-                                    child: Text(l10n.systemLanguage),
-                                  ),
-                                  DropdownMenuItem<String>(
-                                    value: 'tr',
-                                    child: Text(l10n.turkishLanguage),
-                                  ),
-                                  DropdownMenuItem<String>(
-                                    value: 'en',
-                                    child: Text(l10n.englishLanguage),
-                                  ),
-                                ],
-                                onChanged:
-                                    _isSavingLanguage ||
-                                        widget.onLocaleChanged == null
-                                    ? null
-                                    : (value) {
-                                        switch (value) {
-                                          case 'system':
-                                            unawaited(_changeLocale(null));
-                                          case 'tr':
-                                            unawaited(
-                                              _changeLocale(const Locale('tr')),
-                                            );
-                                          case 'en':
-                                            unawaited(
-                                              _changeLocale(const Locale('en')),
-                                            );
-                                          case null:
-                                            break;
-                                          default:
-                                            throw StateError(
-                                              'Unsupported language preference: $value',
-                                            );
-                                        }
-                                      },
-                              ),
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 32),
-                        SettingsDivider(color: palette.border),
-                        const SizedBox(height: 33),
-                        _SectionHeading(
-                          label: l10n.localData,
-                          style: TextStyle(
-                            color: palette.text,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 22),
-                        _SettingsRow(
-                          title: l10n.conversationHistory,
-                          description: switch (widget.historyStorageStatus) {
-                            HistoryStorageStatus.loading =>
-                              l10n.historyCheckingDescription,
-                            HistoryStorageStatus.available =>
-                              l10n.historyDeviceDescription,
-                            HistoryStorageStatus.unavailable =>
-                              l10n.historyStorageUnavailableDescription,
-                          },
-                          textTheme: textTheme,
-                          controlWidth: 144,
-                          desktopControlTopInset: 4,
-                          controlBuilder: (width) => _StatusLabel(
-                            width: width,
-                            label: switch (widget.historyStorageStatus) {
-                              HistoryStorageStatus.loading =>
-                                l10n.historyCheckingStatus,
-                              HistoryStorageStatus.available =>
-                                l10n.historyDeviceStatus,
-                              HistoryStorageStatus.unavailable =>
-                                l10n.historyStorageUnavailableStatus,
-                            },
-                            palette: palette,
-                          ),
-                        ),
-                        const SizedBox(height: 22),
-                        _SettingsRow(
-                          title: l10n.clearConversationHistory,
-                          description: l10n.clearConversationHistoryDescription,
-                          textTheme: textTheme,
-                          controlWidth: 176,
-                          desktopControlTopInset: 0,
-                          controlBuilder: (width) => SizedBox(
-                            width: width,
-                            height: 36,
-                            child: OutlinedButton.icon(
-                              onPressed:
-                                  widget.hasConversationHistory &&
-                                      widget.onClearConversationHistory !=
-                                          null &&
-                                      !_isClearingHistory
-                                  ? () => unawaited(_confirmClearHistory())
-                                  : null,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Theme.of(context)
-                                    .colorScheme
-                                    .error,
-                                disabledForegroundColor: palette.secondaryText,
-                                side: BorderSide(
-                                  color: Theme.of(context).colorScheme.error,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                              icon: _isClearingHistory
-                                  ? const SizedBox.square(
-                                      dimension: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(
-                                      Icons.delete_outline_rounded,
-                                      size: 18,
-                                    ),
-                              label: Text(
-                                _isClearingHistory
-                                    ? l10n.clearingHistory
-                                    : l10n.deleteAll,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ),
+                        _buildSectionPage(
+                          section: _SettingsSection.localData,
+                          title: l10n.localData,
+                          horizontalInset: horizontalInset,
+                          child: _buildLocalDataSection(),
                         ),
                       ],
                     ),
-                  ),
+                    if (OpenChatWindowControls.isSupported)
+                      Positioned(
+                        right: windowControlInset,
+                        top: 18,
+                        child: const WindowControlBar(),
+                      ),
+                  ],
                 ),
               ),
-              if (OpenChatWindowControls.isSupported)
-                Positioned(
-                  right: windowControlInset,
-                  top: 18,
-                  child: const WindowControlBar(),
-                ),
             ],
           ),
         );
       },
+    );
+  }
+
+  Widget _buildSectionPage({
+    required _SettingsSection section,
+    required String title,
+    required double horizontalInset,
+    required Widget child,
+  }) {
+    final palette = OpenChatPalette.of(context);
+    final textTheme = Theme.of(context).textTheme;
+
+    return SingleChildScrollView(
+      key: PageStorageKey<_SettingsSection>(section),
+      padding: EdgeInsets.fromLTRB(horizontalInset, 52, horizontalInset, 32),
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 840),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              SizedBox(
+                height: 40,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    title,
+                    style: textTheme.headlineSmall?.copyWith(
+                      fontSize: 30,
+                      height: 4 / 3,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+              SettingsDivider(color: palette.border),
+              const SizedBox(height: 33),
+              child,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildConnectionsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ChatGptConnectionSection(
+          apiKeyStore: widget.chatGptApiKeyStore,
+          serviceClient: widget.serviceClient,
+          onProviderStateChanged: widget.onProviderStateChanged,
+          onConnectionRemoved: widget.onConnectionRemoved,
+        ),
+        const SizedBox(height: 22),
+        OpenCodeConnectionSection(
+          apiKeyStore: widget.openCodeApiKeyStore,
+          onChanged: widget.onProviderStateChanged,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSharedInstructionsSection() {
+    final palette = OpenChatPalette.of(context);
+    final l10n = context.openchatL10n;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          l10n.sharedInstructionsDescription,
+          style: TextStyle(
+            color: palette.secondaryText,
+            fontSize: 13,
+            height: 1.45,
+          ),
+        ),
+        const SizedBox(height: 14),
+        if (_isLoadingInstructions)
+          const LinearProgressIndicator()
+        else if (_sharedInstructionsError != null)
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _sharedInstructionsError!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => unawaited(_loadSharedInstructions()),
+                icon: const Icon(Icons.refresh_rounded),
+                label: Text(l10n.retry),
+              ),
+            ],
+          )
+        else ...[
+          TextField(
+            controller: _sharedInstructionsController,
+            enabled: !_isSavingInstructions,
+            minLines: 3,
+            maxLines: 8,
+            maxLength: _sharedInstructionsMaxLength,
+            buildCounter: (
+              context, {
+              required currentLength,
+              required isFocused,
+              maxLength,
+            }) => null,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: InputDecoration(
+              hintText: l10n.sharedInstructionsHint,
+              alignLabelWithHint: true,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Text(
+                '${_sharedInstructionsController.text.characters.length}/$_sharedInstructionsMaxLength',
+                style: TextStyle(color: palette.secondaryText, fontSize: 12),
+              ),
+              const Spacer(),
+              FilledButton.icon(
+                onPressed:
+                    _isSavingInstructions ||
+                        _sharedInstructionsController.text ==
+                            _savedSharedInstructions
+                    ? null
+                    : () => unawaited(_saveSharedInstructions()),
+                icon: _isSavingInstructions
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save_outlined),
+                label: Text(_isSavingInstructions ? l10n.saving : l10n.save),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildAppearanceSection() {
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
+    final textTheme = Theme.of(context).textTheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SettingsRow(
+          title: l10n.theme,
+          description: l10n.themeSettingDescription,
+          textTheme: textTheme,
+          controlWidth: 264,
+          desktopControlTopInset: 0,
+          controlBuilder: (width) => _ThemeSelector(
+            width: width,
+            mode: widget.themeMode,
+            onChanged: (mode) => unawaited(_changeThemeMode(mode)),
+            systemLabel: l10n.systemTheme,
+            lightLabel: l10n.lightTheme,
+            darkLabel: l10n.darkTheme,
+            palette: palette,
+          ),
+        ),
+        const SizedBox(height: 18),
+        _SettingsRow(
+          title: l10n.language,
+          description: l10n.languageSettingDescription,
+          textTheme: textTheme,
+          controlWidth: 264,
+          desktopControlTopInset: 0,
+          controlBuilder: (width) {
+            final languageCode = widget.locale?.languageCode ?? 'system';
+            return SizedBox(
+              width: width,
+              height: 40,
+              child: DropdownButtonFormField<String>(
+                key: ValueKey<String>(
+                  '$languageCode-$_languageSelectorRevision',
+                ),
+                initialValue: languageCode,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+                items: [
+                  DropdownMenuItem<String>(
+                    value: 'system',
+                    child: Text(l10n.systemLanguage),
+                  ),
+                  DropdownMenuItem<String>(
+                    value: 'tr',
+                    child: Text(l10n.turkishLanguage),
+                  ),
+                  DropdownMenuItem<String>(
+                    value: 'en',
+                    child: Text(l10n.englishLanguage),
+                  ),
+                ],
+                onChanged: _isSavingLanguage || widget.onLocaleChanged == null
+                    ? null
+                    : (value) {
+                        switch (value) {
+                          case 'system':
+                            unawaited(_changeLocale(null));
+                          case 'tr':
+                            unawaited(_changeLocale(const Locale('tr')));
+                          case 'en':
+                            unawaited(_changeLocale(const Locale('en')));
+                          case null:
+                            break;
+                          default:
+                            throw StateError(
+                              'Unsupported language preference: $value',
+                            );
+                        }
+                      },
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLocalDataSection() {
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
+    final textTheme = Theme.of(context).textTheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SettingsRow(
+          title: l10n.conversationHistory,
+          description: switch (widget.historyStorageStatus) {
+            HistoryStorageStatus.loading => l10n.historyCheckingDescription,
+            HistoryStorageStatus.available => l10n.historyDeviceDescription,
+            HistoryStorageStatus.unavailable =>
+              l10n.historyStorageUnavailableDescription,
+          },
+          textTheme: textTheme,
+          controlWidth: 144,
+          desktopControlTopInset: 4,
+          controlBuilder: (width) => _StatusLabel(
+            width: width,
+            label: switch (widget.historyStorageStatus) {
+              HistoryStorageStatus.loading => l10n.historyCheckingStatus,
+              HistoryStorageStatus.available => l10n.historyDeviceStatus,
+              HistoryStorageStatus.unavailable =>
+                l10n.historyStorageUnavailableStatus,
+            },
+            palette: palette,
+          ),
+        ),
+        const SizedBox(height: 22),
+        _SettingsRow(
+          title: l10n.clearConversationHistory,
+          description: l10n.clearConversationHistoryDescription,
+          textTheme: textTheme,
+          controlWidth: 176,
+          desktopControlTopInset: 0,
+          controlBuilder: (width) => SizedBox(
+            width: width,
+            height: 36,
+            child: OutlinedButton.icon(
+              onPressed:
+                  widget.hasConversationHistory &&
+                      widget.onClearConversationHistory != null &&
+                      !_isClearingHistory
+                  ? () => unawaited(_confirmClearHistory())
+                  : null,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.error,
+                disabledForegroundColor: palette.secondaryText,
+                side: BorderSide(color: Theme.of(context).colorScheme.error),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              icon: _isClearingHistory
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.delete_outline_rounded, size: 18),
+              label: Text(
+                _isClearingHistory ? l10n.clearingHistory : l10n.deleteAll,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -711,19 +709,189 @@ class _SettingsRow extends StatelessWidget {
   }
 }
 
-class _SectionHeading extends StatelessWidget {
-  const _SectionHeading({required this.label, required this.style});
+class _SettingsSidebar extends StatelessWidget {
+  const _SettingsSidebar({
+    required this.compact,
+    required this.selectedSection,
+    required this.onSelectSection,
+  });
 
-  final String label;
-  final TextStyle? style;
+  final bool compact;
+  final _SettingsSection selectedSection;
+  final ValueChanged<_SettingsSection> onSelectSection;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 24,
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Text(label, style: style),
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
+    final entries = [
+      (
+        section: _SettingsSection.connections,
+        label: l10n.connections,
+        icon: Icons.link_rounded,
+      ),
+      (
+        section: _SettingsSection.sharedInstructions,
+        label: l10n.sharedInstructions,
+        icon: Icons.notes_rounded,
+      ),
+      (
+        section: _SettingsSection.appearance,
+        label: l10n.appearance,
+        icon: Icons.palette_outlined,
+      ),
+      (
+        section: _SettingsSection.localData,
+        label: l10n.localData,
+        icon: Icons.storage_rounded,
+      ),
+    ];
+
+    return Container(
+      width: compact ? 64 : 252,
+      decoration: BoxDecoration(color: palette.navigation),
+      foregroundDecoration: BoxDecoration(
+        border: Border(right: BorderSide(color: palette.border)),
+      ),
+      child: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            compact ? 8 : 18,
+            18,
+            compact ? 8 : 14,
+            16,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (compact)
+                SizedBox(
+                  height: 38,
+                  child: Center(
+                    child: Icon(
+                      Icons.settings_outlined,
+                      color: palette.secondaryIcon,
+                      size: 20,
+                    ),
+                  ),
+                )
+              else ...[
+                Text(
+                  l10n.settings,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  l10n.settingsDescription,
+                  style: TextStyle(
+                    color: palette.secondaryText,
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+              Divider(height: 1, color: palette.border),
+              const SizedBox(height: 12),
+              for (final entry in entries) ...[
+                _SettingsSidebarItem(
+                  compact: compact,
+                  label: entry.label,
+                  icon: entry.icon,
+                  selected: selectedSection == entry.section,
+                  onPressed: () => onSelectSection(entry.section),
+                ),
+                const SizedBox(height: 4),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsSidebarItem extends StatelessWidget {
+  const _SettingsSidebarItem({
+    required this.compact,
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onPressed,
+  });
+
+  final bool compact;
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = OpenChatPalette.of(context);
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: ExcludeSemantics(
+        child: Tooltip(
+          message: label,
+          child: Material(
+            color: selected ? palette.selected : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            child: InkWell(
+              onTap: onPressed,
+              borderRadius: BorderRadius.circular(8),
+              overlayColor: WidgetStateProperty.resolveWith((states) {
+                if (states.contains(WidgetState.hovered)) return palette.hover;
+                if (states.contains(WidgetState.pressed)) {
+                  return palette.selected;
+                }
+                return null;
+              }),
+              child: SizedBox(
+                height: 44,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: compact ? 0 : 12),
+                  child: Row(
+                    mainAxisAlignment: compact
+                        ? MainAxisAlignment.center
+                        : MainAxisAlignment.start,
+                    children: [
+                      Icon(
+                        icon,
+                        color: selected
+                            ? palette.accentIcon
+                            : palette.secondaryIcon,
+                        size: 18,
+                      ),
+                      if (!compact) ...[
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: selected
+                                  ? palette.text
+                                  : palette.secondaryText,
+                              fontSize: 13,
+                              fontWeight: selected
+                                  ? FontWeight.w600
+                                  : FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
