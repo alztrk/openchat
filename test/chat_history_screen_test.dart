@@ -9,15 +9,24 @@ import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/domain/history_storage_status.dart';
 import 'package:openchat/features/chat/presentation/chat_screen.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
+    SharedPreferencesAsyncPlatform.instance =
+        InMemorySharedPreferencesAsync.empty();
+    final iconFont = FontLoader('MaterialIcons')
+      ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await iconFont.load();
     final fontLoader = FontLoader('Manrope')
       ..addFont(rootBundle.load('assets/fonts/Manrope[wght].ttf'));
     await fontLoader.load();
   });
+
+  tearDownAll(() => SharedPreferencesAsyncPlatform.instance = null);
 
   testWidgets('opens saved chats and reflects local storage in settings', (
     tester,
@@ -34,6 +43,10 @@ void main() {
       id: 'saved-conversation',
       title: 'Kaydedilmiş sohbet',
       createdAt: DateTime.utc(2026, 9, 26, 12),
+      providerId: 'chatgpt',
+      connectionId: 'connection-1',
+      workspaceId: 'workspace-1',
+      modelId: 'model-1',
     );
     await repository.saveMessage(
       conversationId: 'saved-conversation',
@@ -61,15 +74,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Eklentiler'), findsOneWidget);
-    expect(find.text('Zamanlananlar'), findsOneWidget);
-    expect(find.text('Tasarım'), findsOneWidget);
-    expect(find.text('Güvenlik'), findsOneWidget);
+    expect(find.text('Eklentiler'), findsNothing);
+    expect(find.text('Zamanlananlar'), findsNothing);
+    expect(find.text('Tasarım'), findsNothing);
+    expect(find.text('Güvenlik'), findsNothing);
     expect(find.text('Kaydedilmiş sohbet'), findsOneWidget);
 
     await tester.tap(find.text('Kaydedilmiş sohbet'));
     await tester.pumpAndSettle();
-    expect(find.text('Kaydedilmiş yanıt'), findsOneWidget);
+    expect(find.text('Kaydedilmiş yanıt', findRichText: true), findsOneWidget);
 
     await tester.tap(find.text('Ayarlar').first);
     await tester.pumpAndSettle();

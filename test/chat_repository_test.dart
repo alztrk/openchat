@@ -33,6 +33,9 @@ void main() {
         id: 'conversation-1',
         title: 'Sohbet geçmişi',
         createdAt: createdAt,
+        providerId: 'chatgpt',
+        connectionId: 'connection-1',
+        workspaceId: 'workspace-1',
         modelId: 'chat-model-1',
       );
       await firstRepository.saveMessage(
@@ -80,6 +83,9 @@ void main() {
       expect(conversations, hasLength(1));
       expect(conversations.single.id, 'conversation-1');
       expect(conversations.single.title, 'Sohbet geçmişi');
+      expect(conversations.single.providerId, 'chatgpt');
+      expect(conversations.single.connectionId, 'connection-1');
+      expect(conversations.single.workspaceId, 'workspace-1');
       expect(conversations.single.modelId, 'chat-model-1');
       expect(conversations.single.isPinned, isTrue);
       expect(conversations.single.createdAt, createdAt);

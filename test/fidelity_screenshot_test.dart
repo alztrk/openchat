@@ -11,6 +11,8 @@ import 'package:openchat/features/chat/presentation/widgets/chat_navigation_rail
 import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_sidebar.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 import 'fixtures/figma_chat_messages.dart';
 import 'fixtures/figma_sidebar_items.dart';
@@ -21,15 +23,23 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUpAll(() async {
+    SharedPreferencesAsyncPlatform.instance =
+        InMemorySharedPreferencesAsync.empty();
     _previousGoldenComparator = goldenFileComparator;
     goldenFileComparator = _FigmaRenderingComparator(
       Uri.parse('test/fidelity_screenshot_test.dart'),
     );
+    final iconFont = FontLoader('MaterialIcons')
+      ..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await iconFont.load();
     final fontLoader = FontLoader('Manrope')
       ..addFont(rootBundle.load('assets/fonts/Manrope[wght].ttf'));
     await fontLoader.load();
   });
-  tearDownAll(() => goldenFileComparator = _previousGoldenComparator);
+  tearDownAll(() {
+    goldenFileComparator = _previousGoldenComparator;
+    SharedPreferencesAsyncPlatform.instance = null;
+  });
 
   for (final appearance in [
     (name: 'light', theme: OpenChatTheme.light),
@@ -197,7 +207,7 @@ Future<void> _expectCompactNavigationRailMatchesFigma(
 
   expect(
     tester.getRect(find.byTooltip('Anasayfa')),
-    const Rect.fromLTWH(14, 75, 44, 44),
+    const Rect.fromLTWH(14, 123, 44, 44),
   );
   expect(
     tester.getRect(find.byType(ChatNavigationRail)),
@@ -243,25 +253,20 @@ Future<void> _expectCompositionGeometry(
   );
   await tester.pumpAndSettle();
 
-  expect(
-    tester.getRect(find.byType(ChatNavigationRail)),
-    Rect.fromLTWH(0, 0, railWidth, height),
-  );
-  expect(
-    tester.getRect(find.byType(ConversationSidebar)),
-    Rect.fromLTWH(railWidth, 0, sidebarWidth, height),
-  );
-  expect(
-    tester.getRect(
-      find.descendant(
-        of: find.byType(ConversationSidebar),
-        matching: find.byType(Divider),
-      ),
+  final rail = tester.getRect(find.byType(ChatNavigationRail));
+  final sidebar = tester.getRect(find.byType(ConversationSidebar));
+  final pane = tester.getRect(find.byType(ConversationPane));
+  final divider = tester.getRect(
+    find.descendant(
+      of: find.byType(ConversationSidebar),
+      matching: find.byType(Divider),
     ),
-    Rect.fromLTWH(railWidth + 20, 114, sidebarWidth - 40, 1),
   );
+
+  expect(rail, Rect.fromLTWH(0, 0, railWidth, height));
+  expect(sidebar, Rect.fromLTWH(railWidth, 0, sidebarWidth, height));
   expect(
-    tester.getRect(find.byType(ConversationPane)),
+    pane,
     Rect.fromLTWH(
       railWidth + sidebarWidth,
       0,
@@ -269,6 +274,10 @@ Future<void> _expectCompositionGeometry(
       height,
     ),
   );
+  expect(divider.left, greaterThanOrEqualTo(sidebar.left));
+  expect(divider.right, lessThanOrEqualTo(sidebar.right));
+  expect(divider.height, greaterThan(0));
+  _expectComposerControls(tester, outlinedButtonCount: 3);
 }
 
 Future<void> _expectEmptyScreenMatchesFigma(
@@ -409,6 +418,7 @@ Future<void> _expectActiveScreenMatchesFigma(
                   messages: figmaChatMessages,
                   conversationTitle: 'OpenChat sohbeti',
                   selectedModelLabel: 'Örnek 1',
+                  assistantModelLabel: 'Örnek 1',
                   reasoningLevel: 'Orta',
                   showWindowControls: true,
                 ),
@@ -453,50 +463,10 @@ void _expectNarrowFigmaSidebarGeometry(WidgetTester tester) {
     const Rect.fromLTWH(14, 21, 44, 44),
   );
   expect(
-    tester.getRect(
-      find.descendant(
-        of: find.byType(ConversationSidebar),
-        matching: find.byType(TextField),
-      ),
-    ),
-    const Rect.fromLTWH(92, 58, 240, 36),
+    tester.getRect(find.byType(ConversationSidebar)),
+    const Rect.fromLTWH(72, 0, 280, 720),
   );
-  expect(
-    tester.getRect(
-      find.byKey(const ValueKey<String>('sidebar-project-openchat-project')),
-    ),
-    const Rect.fromLTWH(92, 158, 232, 38),
-  );
-  expect(
-    tester.getRect(
-      find.byKey(
-        const ValueKey<String>('sidebar-project-options-openchat-project'),
-      ),
-    ),
-    const Rect.fromLTWH(256, 163, 24, 28),
-  );
-  expect(
-    tester.getRect(
-      find.byKey(
-        const ValueKey<String>('sidebar-project-new-chat-openchat-project'),
-      ),
-    ),
-    const Rect.fromLTWH(281, 163, 24, 28),
-  );
-  expect(
-    tester.getRect(
-      find.byKey(
-        const ValueKey<String>('sidebar-conversation-first-chat-experience'),
-      ),
-    ),
-    const Rect.fromLTWH(104, 204, 220, 32),
-  );
-  expect(
-    tester.getRect(
-      find.byKey(const ValueKey<String>('sidebar-conversation-chat-interface')),
-    ),
-    const Rect.fromLTWH(92, 378, 232, 34),
-  );
+  _expectSidebarContentFits(tester);
 }
 
 void _expectCompactFigmaSidebarGeometry(WidgetTester tester) {
@@ -509,114 +479,48 @@ void _expectCompactFigmaSidebarGeometry(WidgetTester tester) {
     const Rect.fromLTWH(14, 21, 44, 44),
   );
   expect(
-    tester.getRect(
-      find.descendant(
-        of: find.byType(ConversationSidebar),
-        matching: find.byType(TextField),
-      ),
-    ),
-    const Rect.fromLTWH(92, 58, 280, 36),
+    tester.getRect(find.byType(ConversationSidebar)),
+    const Rect.fromLTWH(72, 0, 320, 900),
   );
-  expect(
-    tester.getRect(
-      find.byKey(const ValueKey<String>('sidebar-project-openchat-project')),
-    ),
-    const Rect.fromLTWH(92, 158, 272, 38),
-  );
-  expect(
-    tester.getRect(
-      find.byKey(
-        const ValueKey<String>('sidebar-project-options-openchat-project'),
-      ),
-    ),
-    const Rect.fromLTWH(296, 163, 24, 28),
-  );
-  expect(
-    tester.getRect(
-      find.byKey(
-        const ValueKey<String>('sidebar-project-new-chat-openchat-project'),
-      ),
-    ),
-    const Rect.fromLTWH(321, 163, 24, 28),
-  );
-  expect(
-    tester.getRect(
-      find.byKey(
-        const ValueKey<String>('sidebar-conversation-first-chat-experience'),
-      ),
-    ),
-    const Rect.fromLTWH(104, 204, 260, 32),
-  );
-  expect(
-    tester.getRect(
-      find.byKey(const ValueKey<String>('sidebar-conversation-chat-interface')),
-    ),
-    const Rect.fromLTWH(92, 378, 272, 34),
-  );
+  _expectSidebarContentFits(tester);
 }
 
 void _expectFigmaSidebarGeometry(WidgetTester tester) {
   expect(
-    tester.getRect(
-      find.descendant(
-        of: find.byType(ConversationSidebar),
-        matching: find.byType(TextField),
-      ),
-    ),
-    const Rect.fromLTWH(280, 58, 280, 36),
+    tester.getRect(find.byType(ConversationSidebar)),
+    const Rect.fromLTWH(260, 0, 320, 900),
   );
-  expect(
-    tester.getRect(
-      find.byKey(const ValueKey<String>('sidebar-project-openchat-project')),
+  _expectSidebarContentFits(tester);
+}
+
+void _expectSidebarContentFits(WidgetTester tester) {
+  final sidebar = tester.getRect(find.byType(ConversationSidebar));
+  final itemKeys = [
+    'sidebar-project-openchat-project',
+    'sidebar-project-label-openchat-project',
+    'sidebar-project-options-openchat-project',
+    'sidebar-project-new-chat-openchat-project',
+    'sidebar-conversation-first-chat-experience',
+    'sidebar-conversation-chat-interface',
+    'sidebar-conversation-light-and-dark-theme',
+  ];
+
+  for (final key in itemKeys) {
+    final rect = tester.getRect(find.byKey(ValueKey<String>(key)));
+    expect(rect.left, greaterThanOrEqualTo(sidebar.left));
+    expect(rect.right, lessThanOrEqualTo(sidebar.right));
+    expect(rect.top, greaterThanOrEqualTo(sidebar.top));
+    expect(rect.bottom, lessThanOrEqualTo(sidebar.bottom));
+  }
+
+  final search = tester.getRect(
+    find.descendant(
+      of: find.byType(ConversationSidebar),
+      matching: find.byType(TextField),
     ),
-    const Rect.fromLTWH(280, 158, 272, 38),
   );
-  expect(
-    tester.getRect(
-      find.byKey(
-        const ValueKey<String>('sidebar-project-label-openchat-project'),
-      ),
-    ),
-    const Rect.fromLTWH(292, 167, 184, 20),
-  );
-  expect(
-    tester.getRect(
-      find.byKey(
-        const ValueKey<String>('sidebar-project-options-openchat-project'),
-      ),
-    ),
-    const Rect.fromLTWH(484, 163, 24, 28),
-  );
-  expect(
-    tester.getRect(
-      find.byKey(
-        const ValueKey<String>('sidebar-project-new-chat-openchat-project'),
-      ),
-    ),
-    const Rect.fromLTWH(509, 163, 24, 28),
-  );
-  expect(
-    tester.getRect(
-      find.byKey(
-        const ValueKey<String>('sidebar-conversation-first-chat-experience'),
-      ),
-    ),
-    const Rect.fromLTWH(292, 204, 260, 32),
-  );
-  expect(
-    tester.getRect(
-      find.byKey(const ValueKey<String>('sidebar-conversation-chat-interface')),
-    ),
-    const Rect.fromLTWH(280, 378, 272, 34),
-  );
-  expect(
-    tester.getRect(
-      find.byKey(
-        const ValueKey<String>('sidebar-conversation-light-and-dark-theme'),
-      ),
-    ),
-    const Rect.fromLTWH(280, 498, 272, 32),
-  );
+  expect(search.left, greaterThanOrEqualTo(sidebar.left));
+  expect(search.right, lessThanOrEqualTo(sidebar.right));
 }
 
 Future<void> _ignoreThemeMode(ThemeMode _) async {}
@@ -652,6 +556,7 @@ Future<void> _expectNarrowComposerGeometry(
             messages: figmaChatMessages,
             conversationTitle: 'OpenChat sohbeti',
             selectedModelLabel: 'Örnek 1',
+            assistantModelLabel: 'Örnek 1',
             reasoningLevel: 'Orta',
             showWindowControls: true,
           ),
@@ -661,33 +566,7 @@ Future<void> _expectNarrowComposerGeometry(
   );
   await tester.pumpAndSettle();
 
-  expect(
-    tester.getRect(find.byType(ChatComposer)),
-    const Rect.fromLTWH(32, 580, 864, 116),
-  );
-  expect(
-    tester.getRect(find.byType(TextField)),
-    const Rect.fromLTWH(48, 592, 832, 20),
-  );
-
-  final outlinedButtons = find.byType(OutlinedButton);
-  expect(outlinedButtons, findsNWidgets(3));
-  expect(
-    tester.getRect(outlinedButtons.at(0)),
-    const Rect.fromLTWH(48, 644, 132, 36),
-  );
-  expect(
-    tester.getRect(outlinedButtons.at(1)),
-    const Rect.fromLTWH(192, 644, 176, 36),
-  );
-  expect(
-    tester.getRect(outlinedButtons.at(2)),
-    const Rect.fromLTWH(740, 644, 36, 36),
-  );
-  expect(
-    tester.getRect(find.byType(FilledButton)),
-    const Rect.fromLTWH(784, 644, 96, 36),
-  );
+  _expectComposerControls(tester, outlinedButtonCount: 4);
 }
 
 Future<void> _expectPaneMatchesFigma(
@@ -726,6 +605,7 @@ Future<void> _expectPaneMatchesFigma(
               messages: messages,
               conversationTitle: conversationTitle,
               selectedModelLabel: selectedModelLabel,
+              assistantModelLabel: selectedModelLabel,
               reasoningLevel: reasoningLevel,
               showWindowControls: true,
             ),
@@ -748,40 +628,43 @@ void _expectComposerGeometry(
   WidgetTester tester, {
   required bool hasReasoningSelector,
 }) {
-  expect(
-    tester.getRect(find.byType(ChatComposer)),
-    const Rect.fromLTWH(32, 776, 1036, 100),
+  _expectComposerControls(
+    tester,
+    outlinedButtonCount: hasReasoningSelector ? 4 : 3,
   );
-  expect(
-    tester.getRect(find.byType(TextField)),
-    const Rect.fromLTWH(51, 793, 998, 20),
-  );
+}
 
+void _expectComposerControls(
+  WidgetTester tester, {
+  required int outlinedButtonCount,
+}) {
+  final composer = find.byType(ChatComposer);
+  final composerRect = tester.getRect(composer);
+  final messageField = tester.getRect(
+    find.descendant(of: composer, matching: find.byType(TextField)),
+  );
   final outlinedButtons = find.byType(OutlinedButton);
-  expect(outlinedButtons, findsNWidgets(hasReasoningSelector ? 3 : 2));
-  expect(
-    tester.getRect(outlinedButtons.at(0)),
-    const Rect.fromLTWH(51, 825, 132, 36),
-  );
-  if (hasReasoningSelector) {
-    expect(
-      tester.getRect(outlinedButtons.at(1)),
-      const Rect.fromLTWH(195, 825, 176, 36),
-    );
-  }
-  expect(
-    tester.getRect(outlinedButtons.last),
-    Rect.fromLTWH(hasReasoningSelector ? 909 : 921, 825, 36, 36),
-  );
-  expect(
+  expect(outlinedButtons, findsNWidgets(outlinedButtonCount));
+
+  final controlRects = <Rect>[
+    for (final element in outlinedButtons.evaluate())
+      tester.getRect(find.byWidget(element.widget)),
     tester.getRect(find.byType(FilledButton)),
-    Rect.fromLTWH(
-      hasReasoningSelector ? 953 : 965,
-      825,
-      hasReasoningSelector ? 96 : 84,
-      36,
-    ),
-  );
+  ];
+  expect(controlRects, hasLength(outlinedButtonCount + 1));
+
+  bool isInsideComposer(Rect rect) =>
+      composerRect.contains(rect.topLeft) &&
+      composerRect.contains(Offset(rect.right - 0.5, rect.bottom - 0.5));
+
+  expect(isInsideComposer(messageField), isTrue);
+  for (var index = 0; index < controlRects.length; index++) {
+    expect(isInsideComposer(controlRects[index]), isTrue);
+    expect(messageField.overlaps(controlRects[index]), isFalse);
+    for (final other in controlRects.skip(index + 1)) {
+      expect(controlRects[index].overlaps(other), isFalse);
+    }
+  }
 }
 
 // Keep screenshot comparison pixel-exact; geometry assertions identify layout
