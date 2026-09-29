@@ -22,21 +22,21 @@ enum ConversationWidthPreference {
 }
 
 enum ConversationTextSizePreference {
-  small(0.9),
+  small(0.85),
   normal(1),
-  large(1.15);
+  large(1.25);
 
   const ConversationTextSizePreference(this.scale);
 
   final double scale;
 }
 
-enum ConversationFontPreference {
+enum AppFontPreference {
   manrope('Manrope'),
   segoeUi('Segoe UI'),
   georgia('Georgia');
 
-  const ConversationFontPreference(this.familyName);
+  const AppFontPreference(this.familyName);
 
   final String familyName;
 }
@@ -50,7 +50,7 @@ class SettingsPreferences {
   static const _toolPermissionModeKey = 'tools.permission_mode';
   static const _conversationWidthKey = 'appearance.conversation_width';
   static const _conversationTextSizeKey = 'appearance.conversation_text_size';
-  static const _conversationFontKey = 'appearance.conversation_font';
+  static const _appFontKey = 'appearance.conversation_font';
   static const maxSharedInstructionsCharacters = 4096;
 
   final SharedPreferencesAsync _preferences;
@@ -101,20 +101,20 @@ class SettingsPreferences {
     return _preferences.setString(_conversationTextSizeKey, size.name);
   }
 
-  Future<ConversationFontPreference> readConversationFont() async {
-    final value = await _preferences.getString(_conversationFontKey);
+  Future<AppFontPreference> readAppFont() async {
+    final value = await _preferences.getString(_appFontKey);
     return switch (value) {
-      null || 'manrope' => ConversationFontPreference.manrope,
-      'segoeUi' => ConversationFontPreference.segoeUi,
-      'georgia' => ConversationFontPreference.georgia,
+      null || 'manrope' => AppFontPreference.manrope,
+      'segoeUi' => AppFontPreference.segoeUi,
+      'georgia' => AppFontPreference.georgia,
       _ => throw const FormatException(
-        'The saved conversation font preference is invalid.',
+        'The saved app font preference is invalid.',
       ),
     };
   }
 
-  Future<void> writeConversationFont(ConversationFontPreference font) {
-    return _preferences.setString(_conversationFontKey, font.name);
+  Future<void> writeAppFont(AppFontPreference font) {
+    return _preferences.setString(_appFontKey, font.name);
   }
 
   Future<Locale?> readLocale() async {

@@ -3,19 +3,19 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import '../../../app/openchat_theme.dart';
-import '../../../app/openchat_toast.dart';
-import '../../../l10n/openchat_localizations.dart';
-import '../../../platform/windows/openchat_service_client.dart';
-import '../../chat/domain/chatgpt_connection.dart';
-import '../data/chat_gpt_api_key_store.dart';
-import '../domain/chat_gpt_api_key_connection.dart';
-import '../domain/chat_gpt_usage_snapshot.dart';
-import 'chat_gpt_usage_details.dart';
-import 'chat_gpt_oauth_connection_row.dart';
-import 'chat_gpt_title_preference_section.dart';
-import 'chat_gpt_api_key_form.dart';
-import 'settings_widgets.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/app/openchat_toast.dart';
+import 'package:openchat/l10n/openchat_localizations.dart';
+import 'package:openchat/platform/windows/openchat_service_client.dart';
+import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
+import 'package:openchat/features/settings/data/chat_gpt_api_key_store.dart';
+import 'package:openchat/features/settings/domain/chat_gpt_api_key_connection.dart';
+import 'package:openchat/features/settings/domain/chat_gpt_usage_snapshot.dart';
+import 'package:openchat/features/settings/presentation/chat_gpt_usage_details.dart';
+import 'package:openchat/features/settings/presentation/chat_gpt_oauth_connection_row.dart';
+import 'package:openchat/features/settings/presentation/chat_gpt_title_preference_section.dart';
+import 'package:openchat/features/settings/presentation/chat_gpt_api_key_form.dart';
+import 'package:openchat/features/settings/presentation/settings_widgets.dart';
 
 enum _ConnectionLoadState { loading, loaded, failed }
 

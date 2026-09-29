@@ -3,28 +3,32 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
-import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/features/chat/presentation/widgets/provider_icon.dart';
-import 'package:openchat/features/settings/data/open_code_api_key_store.dart';
+import 'package:openchat/features/settings/data/api_compatible_provider_key_store.dart';
+import 'package:openchat/l10n/generated/app_localizations.dart';
+import 'package:openchat/l10n/openchat_localizations.dart';
 
-class OpenCodeConnectionSection extends StatefulWidget {
-  const OpenCodeConnectionSection({
-    super.key,
+class CompatibleProviderConnectionSection extends StatefulWidget {
+  const CompatibleProviderConnectionSection({
+    required this.providerId,
     required this.apiKeyStore,
     required this.onChanged,
+    super.key,
   });
 
-  final OpenCodeApiKeyStore? apiKeyStore;
+  final String providerId;
+  final ApiCompatibleProviderKeyStore? apiKeyStore;
   final Future<void> Function()? onChanged;
 
   @override
-  State<OpenCodeConnectionSection> createState() =>
-      _OpenCodeConnectionSectionState();
+  State<CompatibleProviderConnectionSection> createState() =>
+      _CompatibleProviderConnectionSectionState();
 }
 
-class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
+class _CompatibleProviderConnectionSectionState
+    extends State<CompatibleProviderConnectionSection> {
   final _controller = TextEditingController();
-  String? _keySuffix;
+  ApiCompatibleProviderKeyStatus? _status;
   bool _loading = true;
   bool _saving = false;
   bool _showForm = false;
@@ -49,14 +53,15 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
       return;
     }
     try {
-      final suffix = await store.readKeySuffix();
+      final status = await store.readStatus(widget.providerId);
       if (mounted) {
         setState(() {
-          _keySuffix = suffix;
+          _status = status;
           _loading = false;
+          _error = null;
         });
       }
-    } on OpenCodeApiKeyStorageException {
+    } on ApiCompatibleProviderKeyStorageException {
       if (mounted) {
         setState(() {
           _error = 'storage';
@@ -74,14 +79,14 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
       _error = null;
     });
     try {
-      await store.saveApiKey(_controller.text);
+      await store.saveApiKey(widget.providerId, _controller.text);
       _controller.clear();
       await _load();
       await widget.onChanged?.call();
       if (mounted) setState(() => _showForm = false);
-    } on InvalidOpenCodeApiKeyException {
+    } on InvalidApiCompatibleProviderKeyException {
       if (mounted) setState(() => _error = 'invalid');
-    } on OpenCodeApiKeyStorageException {
+    } on ApiCompatibleProviderKeyStorageException {
       if (mounted) setState(() => _error = 'storage');
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -96,10 +101,10 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
       _error = null;
     });
     try {
-      await store.deleteApiKey();
+      await store.deleteApiKey(widget.providerId);
       await _load();
       await widget.onChanged?.call();
-    } on OpenCodeApiKeyStorageException {
+    } on ApiCompatibleProviderKeyStorageException {
       if (mounted) setState(() => _error = 'storage');
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -110,7 +115,9 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
   Widget build(BuildContext context) {
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
-    final hasKey = _keySuffix != null;
+    final configured = _status?.isConfigured == true;
+    final name = _name(l10n);
+    final description = _description(l10n);
     final actions = Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -120,12 +127,12 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
               ? null
               : () => setState(() => _showForm = !_showForm),
           icon: Icon(
-            hasKey ? Icons.edit_outlined : Icons.add_rounded,
+            configured ? Icons.edit_outlined : Icons.add_rounded,
             size: 16,
           ),
-          label: Text(hasKey ? l10n.edit : l10n.add),
+          label: Text(configured ? l10n.edit : l10n.add),
         ),
-        if (hasKey)
+        if (configured)
           TextButton.icon(
             onPressed: _saving ? null : _remove,
             icon: const Icon(Icons.delete_outline_rounded, size: 16),
@@ -133,6 +140,7 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
           ),
       ],
     );
+
     return Card(
       margin: EdgeInsets.zero,
       color: palette.surface,
@@ -149,7 +157,7 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
             Row(
               children: [
                 ProviderIcon(
-                  providerId: 'opencode',
+                  providerId: widget.providerId,
                   color: palette.text,
                   size: 24,
                 ),
@@ -159,12 +167,12 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        l10n.openCodeConsole,
+                        name,
                         style: Theme.of(context).textTheme.titleMedium,
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        l10n.openCodeConsoleDescription,
+                        description,
                         style: TextStyle(
                           color: palette.secondaryText,
                           fontSize: 13,
@@ -175,22 +183,50 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
                 ),
               ],
             ),
+            if (widget.providerId == 'gemini') ...[
+              const SizedBox(height: 12),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 16,
+                    color: palette.secondaryIcon,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      l10n.geminiUnpaidDataNotice,
+                      style: TextStyle(
+                        color: palette.secondaryText,
+                        fontSize: 12,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
             if (_error == 'storage' && !_showForm) ...[
               const SizedBox(height: 10),
               Text(
-                l10n.openCodeKeyStorageFailed,
+                l10n.providerKeyStorageFailed,
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ],
             const SizedBox(height: 12),
-            if (_loading) const LinearProgressIndicator(),
-            if (!_loading)
+            if (_loading)
+              const LinearProgressIndicator()
+            else
               LayoutBuilder(
                 builder: (context, constraints) {
+                  final suffix = _status?.keySuffix;
                   final status = Text(
-                    hasKey
-                        ? l10n.openCodeKeySaved(_keySuffix!)
-                        : l10n.openCodeNoKey,
+                    configured
+                        ? suffix == null
+                              ? l10n.providerKeySaved
+                              : l10n.providerKeySavedSuffix(suffix)
+                        : l10n.providerNoKey,
                   );
                   if (constraints.maxWidth < 520) {
                     return Column(
@@ -211,7 +247,8 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
                   );
                 },
               ),
-            if (_showForm)
+            if (_showForm) ...[
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
@@ -221,11 +258,11 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
                       autocorrect: false,
                       enableSuggestions: false,
                       decoration: InputDecoration(
-                        labelText: l10n.openCodeApiKey,
+                        labelText: l10n.providerApiKey,
                         errorText: _error == 'invalid'
-                            ? l10n.openCodeKeyInvalid
+                            ? l10n.providerKeyInvalid
                             : _error == 'storage'
-                            ? l10n.openCodeKeyStorageFailed
+                            ? l10n.providerKeyStorageFailed
                             : null,
                       ),
                       onSubmitted: (_) => unawaited(_save()),
@@ -238,9 +275,26 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
                   ),
                 ],
               ),
+            ],
           ],
         ),
       ),
     );
   }
+
+  String _name(AppLocalizations l10n) => switch (widget.providerId) {
+    'gemini' => l10n.geminiProvider,
+    'groq' => l10n.groqProvider,
+    'cerebras' => l10n.cerebrasProvider,
+    'openrouter' => l10n.openRouterProvider,
+    _ => widget.providerId,
+  };
+
+  String _description(AppLocalizations l10n) => switch (widget.providerId) {
+    'gemini' => l10n.geminiApiDescription,
+    'groq' => l10n.groqApiDescription,
+    'cerebras' => l10n.cerebrasApiDescription,
+    'openrouter' => l10n.openRouterApiDescription,
+    _ => '',
+  };
 }

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../../../app/openchat_select.dart';
-import '../../../../app/openchat_theme.dart';
-import '../../../../l10n/openchat_localizations.dart';
-import '../../chat/domain/chatgpt_connection.dart';
+import 'package:openchat/app/openchat_select.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/l10n/openchat_localizations.dart';
+
+import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 
 class ChatGptOAuthConnectionRow extends StatelessWidget {
   const ChatGptOAuthConnectionRow({

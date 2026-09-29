@@ -3,7 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-import '../domain/chat_gpt_api_key_connection.dart';
+import 'package:openchat/features/settings/domain/chat_gpt_api_key_connection.dart';
 
 class ChatGptApiKeyStore {
   ChatGptApiKeyStore(this._secureStorage);
@@ -19,6 +19,23 @@ class ChatGptApiKeyStore {
     return List<ChatGptApiKeyConnection>.unmodifiable(
       storedKeys.map(_toConnection),
     );
+  }
+
+  Future<String> readApiKey(String id) async {
+    if (!RegExp(r'^[A-Za-z0-9_-]{1,64}$').hasMatch(id)) {
+      throw const InvalidChatGptApiKeyConnectionIdException();
+    }
+    try {
+      final apiKey = await _secureStorage.read(key: '$_storageKeyPrefix$id');
+      if (apiKey == null || !_apiKeyPattern.hasMatch(apiKey)) {
+        throw const ChatGptApiKeyStorageException();
+      }
+      return apiKey;
+    } on ChatGptApiKeyStorageException {
+      rethrow;
+    } on Exception {
+      throw const ChatGptApiKeyStorageException();
+    }
   }
 
   Future<List<ChatGptApiKeyConnection>> saveApiKey(String input) async {

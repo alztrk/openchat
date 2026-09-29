@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../../../app/openchat_theme.dart';
-import '../../../../l10n/openchat_localizations.dart';
-import '../../chat/domain/chatgpt_connection.dart';
-import '../domain/chat_gpt_usage_snapshot.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/l10n/openchat_localizations.dart';
+
+import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
+import 'package:openchat/features/settings/domain/chat_gpt_usage_snapshot.dart';
 
 class ChatGptUsageDetails extends StatelessWidget {
   const ChatGptUsageDetails({

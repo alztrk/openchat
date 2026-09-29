@@ -4,19 +4,22 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import '../../../app/openchat_select.dart';
-import '../../../app/openchat_theme.dart';
-import '../../../app/openchat_toast.dart';
-import '../../../l10n/openchat_localizations.dart';
-import '../../../platform/windows/openchat_service_client.dart';
-import '../../../platform/windows/window_controls.dart';
-import '../../chat/domain/history_storage_status.dart';
-import '../../chat/presentation/widgets/window_control_bar.dart';
-import '../data/chat_gpt_api_key_store.dart';
-import '../data/open_code_api_key_store.dart';
-import '../data/settings_preferences.dart';
-import 'chat_gpt_connection_section.dart';
-import 'open_code_connection_section.dart';
+import 'package:openchat/app/openchat_select.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/app/openchat_toast.dart';
+import 'package:openchat/features/chat/domain/history_storage_status.dart';
+import 'package:openchat/features/chat/presentation/widgets/window_control_bar.dart';
+import 'package:openchat/features/settings/data/api_compatible_provider_key_store.dart';
+import 'package:openchat/features/settings/data/chat_gpt_api_key_store.dart';
+import 'package:openchat/features/settings/data/open_code_api_key_store.dart';
+import 'package:openchat/features/settings/data/settings_preferences.dart';
+import 'package:openchat/l10n/openchat_localizations.dart';
+import 'package:openchat/platform/windows/openchat_service_client.dart';
+import 'package:openchat/platform/windows/window_controls.dart';
+
+import 'package:openchat/features/settings/presentation/chat_gpt_connection_section.dart';
+import 'package:openchat/features/settings/presentation/compatible_provider_connection_section.dart';
+import 'package:openchat/features/settings/presentation/open_code_connection_section.dart';
 
 const _sharedInstructionsMaxLength = 4096;
 
@@ -32,13 +35,14 @@ class SettingsScreen extends StatefulWidget {
     this.locale,
     this.conversationWidth = ConversationWidthPreference.normal,
     this.conversationTextSize = ConversationTextSizePreference.normal,
-    this.conversationFont = ConversationFontPreference.manrope,
+    this.appFont = AppFontPreference.manrope,
     this.onLocaleChanged,
     this.onConversationWidthChanged,
     this.onConversationTextSizeChanged,
-    this.onConversationFontChanged,
+    this.onAppFontChanged,
     this.onClearConversationHistory,
     this.chatGptApiKeyStore,
+    this.apiCompatibleProviderKeyStore,
     this.openCodeApiKeyStore,
     this.serviceClient,
     this.onProviderStateChanged,
@@ -50,20 +54,20 @@ class SettingsScreen extends StatefulWidget {
   final Locale? locale;
   final ConversationWidthPreference conversationWidth;
   final ConversationTextSizePreference conversationTextSize;
-  final ConversationFontPreference conversationFont;
+  final AppFontPreference appFont;
   final Future<void> Function(ThemeMode) onThemeModeChanged;
   final Future<void> Function(Locale?)? onLocaleChanged;
   final Future<void> Function(ConversationWidthPreference)?
   onConversationWidthChanged;
   final Future<void> Function(ConversationTextSizePreference)?
   onConversationTextSizeChanged;
-  final Future<void> Function(ConversationFontPreference)?
-  onConversationFontChanged;
+  final Future<void> Function(AppFontPreference)? onAppFontChanged;
   final HistoryStorageStatus historyStorageStatus;
   final bool hasConversationHistory;
   final SettingsPreferences settingsPreferences;
   final Future<void> Function()? onClearConversationHistory;
   final ChatGptApiKeyStore? chatGptApiKeyStore;
+  final ApiCompatibleProviderKeyStore? apiCompatibleProviderKeyStore;
   final OpenCodeApiKeyStore? openCodeApiKeyStore;
   final OpenChatServiceClient? serviceClient;
   final Future<void> Function()? onProviderStateChanged;
@@ -204,6 +208,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           apiKeyStore: widget.openCodeApiKeyStore,
           onChanged: widget.onProviderStateChanged,
         ),
+        for (final providerId in ApiCompatibleProviderKeyStore.providerIds) ...[
+          const SizedBox(height: 14),
+          CompatibleProviderConnectionSection(
+            providerId: providerId,
+            apiKeyStore: widget.apiCompatibleProviderKeyStore,
+            onChanged: widget.onProviderStateChanged,
+          ),
+        ],
       ],
     );
   }
@@ -440,26 +452,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const SizedBox(height: 18),
         _SettingsRow(
-          title: l10n.conversationFont,
-          description: l10n.conversationFontDescription,
+          title: l10n.appFont,
+          description: l10n.appFontDescription,
           textTheme: textTheme,
           controlWidth: 264,
           desktopControlTopInset: 0,
-          controlBuilder: (width) => OpenChatSelect<ConversationFontPreference>(
+          controlBuilder: (width) => OpenChatSelect<AppFontPreference>(
             options: [
-              for (final font in ConversationFontPreference.values)
-                OpenChatSelectOption<ConversationFontPreference>(
+              for (final font in AppFontPreference.values)
+                OpenChatSelectOption<AppFontPreference>(
                   value: font,
                   label: font.familyName,
                   textStyle: TextStyle(fontFamily: font.familyName),
                 ),
             ],
-            value: widget.conversationFont,
+            value: widget.appFont,
             onChanged:
-                widget.onConversationFontChanged == null ||
-                    _isSavingAppearancePreference
+                widget.onAppFontChanged == null || _isSavingAppearancePreference
                 ? null
-                : (value) => unawaited(_changeConversationFont(value)),
+                : (value) => unawaited(_changeAppFont(value)),
             palette: palette,
             width: width,
             height: 40,
@@ -516,14 +527,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       !_isClearingHistory
                   ? () => unawaited(_confirmClearHistory())
                   : null,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Theme.of(context).colorScheme.error,
-                disabledForegroundColor: palette.secondaryText,
-                side: BorderSide(color: Theme.of(context).colorScheme.error),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
+              style:
+                  OutlinedButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                    disabledForegroundColor: palette.disabledForeground,
+                    disabledBackgroundColor: palette.disabledSurface,
+                    side: BorderSide(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ).copyWith(
+                    side: WidgetStateProperty.resolveWith<BorderSide?>((
+                      states,
+                    ) {
+                      final color = states.contains(WidgetState.disabled)
+                          ? palette.disabledBorder
+                          : Theme.of(context).colorScheme.error;
+                      return BorderSide(color: color);
+                    }),
+                  ),
               icon: _isClearingHistory
                   ? const SizedBox.square(
                       dimension: 16,
@@ -651,8 +675,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     await _saveAppearancePreference(() => onChanged(size));
   }
 
-  Future<void> _changeConversationFont(ConversationFontPreference font) async {
-    final onChanged = widget.onConversationFontChanged;
+  Future<void> _changeAppFont(AppFontPreference font) async {
+    final onChanged = widget.onAppFontChanged;
     if (onChanged == null) return;
     await _saveAppearancePreference(() => onChanged(font));
   }
@@ -1163,8 +1187,14 @@ class _SegmentedSelector<T> extends StatelessWidget {
       height: 40,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: palette.hover,
-        border: Border.all(color: palette.controlBorder),
+        color: changeSelection == null
+            ? palette.disabledSurface
+            : palette.hover,
+        border: Border.all(
+          color: changeSelection == null
+              ? palette.disabledBorder
+              : palette.controlBorder,
+        ),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Row(children: selectorOptions),
@@ -1189,6 +1219,8 @@ class _ThemeChoice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isEnabled = onPressed != null;
+
     return Semantics(
       button: true,
       enabled: onPressed != null,
@@ -1207,7 +1239,11 @@ class _ThemeChoice extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
-                  color: selected ? palette.text : palette.secondaryText,
+                  color: selected
+                      ? palette.text
+                      : isEnabled
+                      ? palette.secondaryText
+                      : palette.disabledForeground,
                 ),
               ),
             ),
