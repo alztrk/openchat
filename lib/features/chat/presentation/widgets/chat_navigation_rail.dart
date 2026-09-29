@@ -7,20 +7,22 @@ import '../../../../l10n/openchat_localizations.dart';
 class ChatNavigationRail extends StatelessWidget {
   const ChatNavigationRail({
     required this.expanded,
+    this.collapsed = false,
     required this.settingsSelected,
     required this.onOpenChat,
     required this.onOpenSettings,
     required this.onToggleTheme,
-    this.onCollapseSidebars,
+    this.onToggleSidebars,
     super.key,
   });
 
   final bool expanded;
+  final bool collapsed;
   final bool settingsSelected;
   final VoidCallback onOpenChat;
   final VoidCallback onOpenSettings;
   final VoidCallback onToggleTheme;
-  final VoidCallback? onCollapseSidebars;
+  final VoidCallback? onToggleSidebars;
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +56,7 @@ class ChatNavigationRail extends StatelessWidget {
                       ),
                       IconButton(
                         tooltip: l10n.collapseSidebars,
-                        onPressed: onCollapseSidebars,
+                        onPressed: onToggleSidebars,
                         visualDensity: VisualDensity.compact,
                         constraints: const BoxConstraints.tightFor(
                           width: 32,
@@ -73,9 +75,11 @@ class ChatNavigationRail extends StatelessWidget {
                   _CompactBrand(dark: dark),
                   const SizedBox(height: 8),
                   Tooltip(
-                    message: l10n.collapseSidebars,
+                    message: collapsed
+                        ? l10n.showSidebars
+                        : l10n.collapseSidebars,
                     child: IconButton(
-                      onPressed: onCollapseSidebars,
+                      onPressed: onToggleSidebars,
                       visualDensity: VisualDensity.compact,
                       constraints: const BoxConstraints.tightFor(
                         width: 44,
@@ -83,7 +87,9 @@ class ChatNavigationRail extends StatelessWidget {
                       ),
                       padding: EdgeInsets.zero,
                       icon: Icon(
-                        Icons.chevron_left_rounded,
+                        collapsed
+                            ? Icons.chevron_right_rounded
+                            : Icons.chevron_left_rounded,
                         color: palette.secondaryIcon,
                         size: 20,
                       ),

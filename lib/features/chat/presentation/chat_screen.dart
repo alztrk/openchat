@@ -72,7 +72,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _messageController = TextEditingController();
   final _messageScrollController = ScrollController();
   bool _settingsOpen = false;
-  bool _sidebarsCollapsed = false;
+  bool _navigationRailCollapsed = false;
   bool _isSending = false;
   bool _isLoadingToolPermissionMode = true;
   bool _isSavingToolPermissionMode = false;
@@ -1726,9 +1726,10 @@ class _ChatScreenState extends State<ChatScreen> {
           builder: (context, constraints) {
             final showSidebar =
                 !_settingsOpen &&
-                !_sidebarsCollapsed &&
+                !_navigationRailCollapsed &&
                 constraints.maxWidth >= OpenChatSpacing.sidebarBreakpoint;
             final expandedRail =
+                !_navigationRailCollapsed &&
                 constraints.maxWidth >= OpenChatSpacing.expandedRailBreakpoint;
             final sidebarWidth =
                 constraints.maxWidth >= OpenChatSpacing.fullSidebarBreakpoint
@@ -1763,17 +1764,19 @@ class _ChatScreenState extends State<ChatScreen> {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      if (!_sidebarsCollapsed)
-                        ChatNavigationRail(
-                          expanded: expandedRail,
-                          settingsSelected: _settingsOpen,
-                          onOpenChat: _startNewConversation,
-                          onOpenSettings: () =>
-                              setState(() => _settingsOpen = true),
-                          onToggleTheme: _handleThemeToggle,
-                          onCollapseSidebars: () =>
-                              setState(() => _sidebarsCollapsed = true),
+                      ChatNavigationRail(
+                        expanded: expandedRail,
+                        collapsed: _navigationRailCollapsed,
+                        settingsSelected: _settingsOpen,
+                        onOpenChat: _startNewConversation,
+                        onOpenSettings: () =>
+                            setState(() => _settingsOpen = true),
+                        onToggleTheme: _handleThemeToggle,
+                        onToggleSidebars: () => setState(
+                          () => _navigationRailCollapsed =
+                              !_navigationRailCollapsed,
                         ),
+                      ),
                       if (_settingsOpen)
                         Expanded(
                           child: SettingsScreen(
@@ -1812,17 +1815,6 @@ class _ChatScreenState extends State<ChatScreen> {
                       ],
                     ],
                   ),
-                  if (_sidebarsCollapsed && _settingsOpen)
-                    Positioned(
-                      left: 12,
-                      top: 8,
-                      child: IconButton(
-                        tooltip: context.openchatL10n.showSidebars,
-                        onPressed: () =>
-                            setState(() => _sidebarsCollapsed = false),
-                        icon: const Icon(Icons.chevron_right_rounded),
-                      ),
-                    ),
                 ],
               ),
             );
@@ -2008,15 +2000,15 @@ class _ChatScreenState extends State<ChatScreen> {
               messageController: _messageController,
               messageScrollController: _messageScrollController,
               showHistoryButton:
-                  _sidebarsCollapsed ||
+                  _navigationRailCollapsed ||
                   MediaQuery.sizeOf(context).width <
                       OpenChatSpacing.sidebarBreakpoint,
-              historyButtonTooltip: _sidebarsCollapsed
+              historyButtonTooltip: _navigationRailCollapsed
                   ? context.openchatL10n.showSidebars
                   : null,
               onOpenHistory: () {
-                if (_sidebarsCollapsed) {
-                  setState(() => _sidebarsCollapsed = false);
+                if (_navigationRailCollapsed) {
+                  setState(() => _navigationRailCollapsed = false);
                   if (MediaQuery.sizeOf(context).width <
                       OpenChatSpacing.sidebarBreakpoint) {
                     _scaffoldKey.currentState?.openDrawer();
