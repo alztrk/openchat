@@ -617,9 +617,16 @@ class _ToolPermissionSelector extends StatelessWidget {
                 child: Row(
                   children: [
                     Icon(
-                      Icons.admin_panel_settings_outlined,
+                      switch (option) {
+                        ToolPermissionMode.requireApproval =>
+                          Icons.admin_panel_settings_outlined,
+                        ToolPermissionMode.fullAccess =>
+                          Icons.gpp_maybe_outlined,
+                      },
                       size: 16,
-                      color: palette.secondaryText,
+                      color: option == ToolPermissionMode.fullAccess
+                          ? palette.accentIcon
+                          : palette.secondaryText,
                     ),
                     const SizedBox(width: 10),
                     Expanded(
