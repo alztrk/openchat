@@ -111,6 +111,28 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
     final hasKey = _keySuffix != null;
+    final actions = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        OutlinedButton.icon(
+          onPressed: _saving
+              ? null
+              : () => setState(() => _showForm = !_showForm),
+          icon: Icon(
+            hasKey ? Icons.edit_outlined : Icons.add_rounded,
+            size: 16,
+          ),
+          label: Text(hasKey ? l10n.edit : l10n.add),
+        ),
+        if (hasKey)
+          TextButton.icon(
+            onPressed: _saving ? null : _remove,
+            icon: const Icon(Icons.delete_outline_rounded, size: 16),
+            label: Text(l10n.deleteAll),
+          ),
+      ],
+    );
     return Card(
       margin: EdgeInsets.zero,
       color: palette.surface,
@@ -163,27 +185,31 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
             const SizedBox(height: 12),
             if (_loading) const LinearProgressIndicator(),
             if (!_loading)
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      hasKey
-                          ? l10n.openCodeKeySaved(_keySuffix!)
-                          : l10n.openCodeNoKey,
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: _saving
-                        ? null
-                        : () => setState(() => _showForm = !_showForm),
-                    child: Text(hasKey ? l10n.edit : l10n.add),
-                  ),
-                  if (hasKey)
-                    TextButton(
-                      onPressed: _saving ? null : _remove,
-                      child: Text(l10n.deleteAll),
-                    ),
-                ],
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final status = Text(
+                    hasKey
+                        ? l10n.openCodeKeySaved(_keySuffix!)
+                        : l10n.openCodeNoKey,
+                  );
+                  if (constraints.maxWidth < 520) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        status,
+                        const SizedBox(height: 8),
+                        Align(alignment: Alignment.centerRight, child: actions),
+                      ],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      Expanded(child: status),
+                      const SizedBox(width: 12),
+                      actions,
+                    ],
+                  );
+                },
               ),
             if (_showForm)
               Row(

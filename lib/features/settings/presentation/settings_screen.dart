@@ -17,6 +17,8 @@ import 'chat_gpt_connection_section.dart';
 import 'open_code_connection_section.dart';
 import 'settings_widgets.dart';
 
+const _sharedInstructionsMaxLength = 4096;
+
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
     required this.themeMode,
@@ -201,9 +203,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           TextField(
                             controller: _sharedInstructionsController,
                             enabled: !_isSavingInstructions,
-                            minLines: 4,
+                            minLines: 3,
                             maxLines: 8,
-                            maxLength: 4096,
+                            maxLength: _sharedInstructionsMaxLength,
+                            buildCounter: (
+                              context, {
+                              required currentLength,
+                              required isFocused,
+                              maxLength,
+                            }) => null,
                             textCapitalization: TextCapitalization.sentences,
                             decoration: InputDecoration(
                               hintText: l10n.sharedInstructionsHint,
@@ -214,28 +222,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                             onChanged: (_) => setState(() {}),
                           ),
-                          const SizedBox(height: 10),
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: FilledButton.icon(
-                              onPressed:
-                                  _isSavingInstructions ||
-                                      _sharedInstructionsController.text ==
-                                          _savedSharedInstructions
-                                  ? null
-                                  : () => unawaited(_saveSharedInstructions()),
-                              icon: _isSavingInstructions
-                                  ? const SizedBox.square(
-                                      dimension: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Icon(Icons.save_outlined),
-                              label: Text(
-                                _isSavingInstructions ? l10n.saving : l10n.save,
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Text(
+                                '${_sharedInstructionsController.text.characters.length}/$_sharedInstructionsMaxLength',
+                                style: TextStyle(
+                                  color: palette.secondaryText,
+                                  fontSize: 12,
+                                ),
                               ),
-                            ),
+                              const Spacer(),
+                              FilledButton.icon(
+                                onPressed:
+                                    _isSavingInstructions ||
+                                        _sharedInstructionsController.text ==
+                                            _savedSharedInstructions
+                                    ? null
+                                    : () =>
+                                          unawaited(_saveSharedInstructions()),
+                                icon: _isSavingInstructions
+                                    ? const SizedBox.square(
+                                        dimension: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.save_outlined),
+                                label: Text(
+                                  _isSavingInstructions
+                                      ? l10n.saving
+                                      : l10n.save,
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                         const SizedBox(height: 32),
@@ -669,24 +689,22 @@ class _SettingsRow extends StatelessWidget {
           );
         }
 
-        return SizedBox(
-          height: 46,
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: _SettingDescription(
-                  title: title,
-                  description: description,
-                  textTheme: textTheme,
-                ),
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _SettingDescription(
+                title: title,
+                description: description,
+                textTheme: textTheme,
               ),
-              Padding(
-                padding: EdgeInsets.only(top: desktopControlTopInset),
-                child: controlBuilder(controlWidth),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(width: 24),
+            Padding(
+              padding: EdgeInsets.only(top: desktopControlTopInset),
+              child: controlBuilder(controlWidth),
+            ),
+          ],
         );
       },
     );

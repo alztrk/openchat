@@ -577,85 +577,99 @@ class _ToolPermissionSelector extends StatelessWidget {
       ToolPermissionMode.requireApproval => l10n.toolPermissionRequireApproval,
       ToolPermissionMode.fullAccess => l10n.toolPermissionFullAccess,
     };
-    final description = switch (mode) {
-      ToolPermissionMode.requireApproval =>
-        l10n.toolPermissionRequireApprovalDescription,
-      ToolPermissionMode.fullAccess => l10n.toolPermissionFullAccessDescription,
-    };
-
-    return Tooltip(
-      message: '$label\n$description',
-      child: MenuAnchor(
-        menuChildren: [
-          for (final option in ToolPermissionMode.values)
-            MenuItemButton(
-              onPressed: onSelected == null ? null : () => onSelected!(option),
+    return MenuAnchor(
+      menuChildren: [
+        for (final option in ToolPermissionMode.values)
+          MenuItemButton(
+            onPressed: onSelected == null ? null : () => onSelected!(option),
+            child: SizedBox(
+              width: 280,
               child: Row(
-                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(switch (option) {
-                    ToolPermissionMode.requireApproval =>
-                      l10n.toolPermissionRequireApproval,
-                    ToolPermissionMode.fullAccess =>
-                      l10n.toolPermissionFullAccess,
-                  }),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(switch (option) {
+                          ToolPermissionMode.requireApproval =>
+                            l10n.toolPermissionRequireApproval,
+                          ToolPermissionMode.fullAccess =>
+                            l10n.toolPermissionFullAccess,
+                        }),
+                        const SizedBox(height: 3),
+                        Text(
+                          switch (option) {
+                            ToolPermissionMode.requireApproval =>
+                              l10n.toolPermissionRequireApprovalDescription,
+                            ToolPermissionMode.fullAccess =>
+                              l10n.toolPermissionFullAccessDescription,
+                          },
+                          style: TextStyle(
+                            color: palette.secondaryText,
+                            fontSize: 12,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                   if (option == mode) ...[
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 12),
                     const Icon(Icons.check_rounded, size: 16),
                   ],
                 ],
               ),
             ),
-        ],
-        builder: (context, controller, _) => SizedBox(
-          width: 148,
-          height: 36,
-          child: OutlinedButton(
-            onPressed: onSelected == null
-                ? null
-                : () => controller.isOpen
-                      ? controller.close()
-                      : controller.open(),
-            style: composerControlStyle(palette, width: 148, compact: compact),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.admin_panel_settings_outlined,
-                  size: 16,
-                  color: palette.secondaryText,
-                ),
-                const SizedBox(width: 5),
-                Expanded(
-                  child: Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: palette.text,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      height: 16 / 12,
-                    ),
+          ),
+      ],
+      builder: (context, controller, _) => SizedBox(
+        width: 148,
+        height: 36,
+        child: OutlinedButton(
+          onPressed: onSelected == null
+              ? null
+              : () =>
+                    controller.isOpen ? controller.close() : controller.open(),
+          style: composerControlStyle(palette, width: 148, compact: compact),
+          child: Row(
+            children: [
+              Icon(
+                Icons.admin_panel_settings_outlined,
+                size: 16,
+                color: palette.secondaryText,
+              ),
+              const SizedBox(width: 5),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: palette.text,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    height: 16 / 12,
                   ),
                 ),
-                SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: Center(
-                    child: SvgPicture.asset(
-                      '$iconRoot/chevron.svg',
-                      width: 10.6667,
-                      height: 6.66668,
-                      colorFilter: ColorFilter.mode(
-                        palette.secondaryText,
-                        BlendMode.srcIn,
-                      ),
-                      excludeFromSemantics: true,
+              ),
+              SizedBox(
+                width: 16,
+                height: 16,
+                child: Center(
+                  child: SvgPicture.asset(
+                    '$iconRoot/chevron.svg',
+                    width: 10.6667,
+                    height: 6.66668,
+                    colorFilter: ColorFilter.mode(
+                      palette.secondaryText,
+                      BlendMode.srcIn,
                     ),
+                    excludeFromSemantics: true,
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),

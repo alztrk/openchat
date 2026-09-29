@@ -554,6 +554,11 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
     final logoColor = Theme.of(context).brightness == Brightness.dark
         ? Colors.white
         : Colors.black;
+    final noConnections =
+        _oauthLoadState == _ConnectionLoadState.loaded &&
+        _oauthConnections.isEmpty &&
+        _loadState == _ConnectionLoadState.loaded &&
+        _connections.isEmpty;
 
     final actions = Wrap(
       spacing: 8,
@@ -585,45 +590,67 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
           ),
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final provider = Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    SvgPicture.asset(
-                      'assets/icons/chatgpt.svg',
-                      width: 24,
-                      height: 24,
-                      colorFilter: ColorFilter.mode(logoColor, BlendMode.srcIn),
-                      excludeFromSemantics: true,
-                    ),
-                    const SizedBox(width: 12),
-                    Flexible(
-                      child: Text(
-                        'ChatGPT',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textTheme.titleMedium,
-                      ),
-                    ),
-                  ],
-                );
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final provider = Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SvgPicture.asset(
+                          'assets/icons/chatgpt.svg',
+                          width: 24,
+                          height: 24,
+                          colorFilter: ColorFilter.mode(
+                            logoColor,
+                            BlendMode.srcIn,
+                          ),
+                          excludeFromSemantics: true,
+                        ),
+                        const SizedBox(width: 12),
+                        Flexible(
+                          child: Text(
+                            'ChatGPT',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: textTheme.titleMedium,
+                          ),
+                        ),
+                      ],
+                    );
 
-                if (constraints.maxWidth < 520) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [provider, const SizedBox(height: 14), actions],
-                  );
-                }
+                    if (constraints.maxWidth < 520) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          provider,
+                          const SizedBox(height: 14),
+                          actions,
+                        ],
+                      );
+                    }
 
-                return Row(
-                  children: [
-                    Expanded(child: provider),
-                    const SizedBox(width: 16),
-                    actions,
-                  ],
-                );
-              },
+                    return Row(
+                      children: [
+                        Expanded(child: provider),
+                        const SizedBox(width: 16),
+                        actions,
+                      ],
+                    );
+                  },
+                ),
+                if (noConnections) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    l10n.noChatGptConnections,
+                    style: TextStyle(
+                      color: palette.secondaryText,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ),
@@ -747,15 +774,6 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
                     SettingsDivider(color: palette.border),
                 ],
               ],
-            ),
-          )
-        else if (_oauthLoadState == _ConnectionLoadState.loaded &&
-            _oauthConnections.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 14, 12, 0),
-            child: Text(
-              l10n.noChatGptConnections,
-              style: TextStyle(color: palette.secondaryText, fontSize: 13),
             ),
           ),
       ],

@@ -10,7 +10,10 @@ import 'package:openchat/features/chat/presentation/widgets/chat_composer.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_navigation_rail.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_sidebar.dart';
+import 'package:openchat/features/settings/data/settings_preferences.dart';
+import 'package:openchat/features/settings/presentation/settings_screen.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
@@ -39,6 +42,64 @@ void main() {
   tearDownAll(() {
     goldenFileComparator = _previousGoldenComparator;
     SharedPreferencesAsyncPlatform.instance = null;
+  });
+
+  testWidgets('shows permission details only inside its menu', (tester) async {
+    const locale = Locale('tr');
+    final l10n = await AppLocalizations.delegate.load(locale);
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: locale,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.light,
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 1000,
+              child: ChatComposer(
+                controller: controller,
+                onSendMessage: () {},
+                canSendMessage: false,
+                showReasoningSelector: false,
+                onToolPermissionModeChanged: (_) {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final permissionButton = find.widgetWithText(
+      OutlinedButton,
+      l10n.toolPermissionRequireApproval,
+    );
+    expect(permissionButton, findsOneWidget);
+    expect(
+      find.ancestor(of: permissionButton, matching: find.byType(Tooltip)),
+      findsNothing,
+    );
+    expect(
+      find.text(l10n.toolPermissionRequireApprovalDescription),
+      findsNothing,
+    );
+
+    await tester.tap(permissionButton);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(l10n.toolPermissionRequireApprovalDescription),
+      findsOneWidget,
+    );
+    expect(find.text(l10n.toolPermissionFullAccessDescription), findsOneWidget);
   });
 
   for (final appearance in [
@@ -171,6 +232,34 @@ void main() {
       );
     });
   }
+
+  testWidgets('settings rows grow to fit wrapped descriptions', (tester) async {
+    tester.view.physicalSize = const Size(700, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('tr'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.light.copyWith(platform: TargetPlatform.windows),
+        home: Scaffold(
+          body: SettingsScreen(
+            themeMode: ThemeMode.light,
+            onThemeModeChanged: (_) async {},
+            historyStorageStatus: HistoryStorageStatus.available,
+            hasConversationHistory: false,
+            settingsPreferences: SettingsPreferences(SharedPreferencesAsync()),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Future<void> _expectCompactNavigationRailMatchesFigma(
@@ -323,8 +412,22 @@ Future<void> _expectSettingsScreenMatchesFigma(
   WidgetTester tester, {
   required ThemeData theme,
   required String goldenPath,
+  Size size = const Size(1680, 900),
 }) async {
-  tester.view.physicalSize = const Size(1680, 900);
+  await _pumpSettingsScreen(tester, theme: theme, size: size);
+
+  await expectLater(
+    find.byKey(const ValueKey<String>('settings-screen-screenshot')),
+    matchesGoldenFile(goldenPath),
+  );
+}
+
+Future<void> _pumpSettingsScreen(
+  WidgetTester tester, {
+  required ThemeData theme,
+  Size size = const Size(1680, 900),
+}) async {
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -351,11 +454,6 @@ Future<void> _expectSettingsScreenMatchesFigma(
   await tester.pumpAndSettle();
   await tester.tap(find.text('Ayarlar').first);
   await tester.pumpAndSettle();
-
-  await expectLater(
-    find.byKey(const ValueKey<String>('settings-screen-screenshot')),
-    matchesGoldenFile(goldenPath),
-  );
 }
 
 Future<void> _expectActiveScreenMatchesFigma(
