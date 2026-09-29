@@ -7,13 +7,15 @@ use crate::{
     protocol::{EventSink, ServiceError},
     provider_schema::{ChatStreamEvent, ChatStreamSnapshot, ToolActivity, ToolCall, ToolResult},
 };
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::path::{Path, PathBuf};
 use tokio::sync::watch;
 
 mod paths;
+mod execution;
 mod validation;
 use paths::qualify_output_paths;
+use execution::execute_model_tool;
 pub(crate) use validation::{PreparedToolCall, ToolOperation};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -93,7 +95,12 @@ impl ToolExecutor {
         let mut prepared = match self.prepare_call(call) {
             Ok(prepared) => prepared,
             Err(output) => {
-                self.send_activity(call, None, output.clone(), request_id, snapshot, events)
+                self.emit_activity(
+                    ToolActivity::finished(call, None, output.clone()),
+                    request_id,
+                    snapshot,
+                    events,
+                )
                     .await?;
                 return Ok(ToolResult {
                     call_id: call.id.clone(),
@@ -102,11 +109,25 @@ impl ToolExecutor {
             }
         };
 
+        if matches!(prepared.operation, ToolOperation::Bash { .. }) {
+            let output = execute_model_tool(&prepared);
+            self.emit_activity(
+                ToolActivity::finished(call, None, output.clone()),
+                request_id,
+                snapshot,
+                events,
+            )
+            .await?;
+            return Ok(ToolResult {
+                call_id: call.id.clone(),
+                output,
+            });
+        }
+
         if self.permission_mode == ToolPermissionMode::RequireApproval {
             let approved_target = prepared.target_path.clone();
             let target_path = prepared.target_path.to_string_lossy().into_owned();
             self.emit_activity(
-                call,
                 ToolActivity::awaiting_approval(call, target_path.clone()),
                 request_id,
                 snapshot,
@@ -127,10 +148,8 @@ impl ToolExecutor {
                 Ok(approved) => approved,
                 Err(error) if error.code == "operation_cancelled" => {
                     let output = tool_error("operation_cancelled", "The request was stopped.");
-                    self.send_cancelled_activity(
-                        call,
-                        target_path,
-                        output,
+                    self.emit_activity(
+                        ToolActivity::cancelled(call, target_path, output),
                         request_id,
                         snapshot,
                         events,
@@ -139,10 +158,12 @@ impl ToolExecutor {
                     return Err(error);
                 }
                 Err(error) => {
-                    self.send_activity(
-                        call,
-                        Some(target_path),
-                        tool_error(error.code, &error.message),
+                    self.emit_activity(
+                        ToolActivity::finished(
+                            call,
+                            Some(target_path),
+                            tool_error(error.code, &error.message),
+                        ),
                         request_id,
                         snapshot,
                         events,
@@ -156,10 +177,8 @@ impl ToolExecutor {
                     "permission_denied",
                     "The user denied this tool call. Do not retry the same operation unless the user asks.",
                 );
-                self.send_denied_activity(
-                    call,
-                    target_path,
-                    output.clone(),
+                self.emit_activity(
+                    ToolActivity::denied(call, target_path, output.clone()),
                     request_id,
                     snapshot,
                     events,
@@ -171,59 +190,55 @@ impl ToolExecutor {
                 });
             }
 
-            if !matches!(prepared.operation, ToolOperation::Bash { .. }) {
-                match self.resolve_tool_path(
-                    &prepared.requested_path,
-                    prepared.operation.targets_directory(),
-                    prepared.operation.can_create_file(),
-                ) {
-                    Ok((root, relative_path, target, scope)) if target == approved_target => {
-                        prepared.root = root;
-                        prepared.relative_path = relative_path;
-                        prepared.target_path = target;
-                        prepared.scope = scope;
-                    }
-                    Ok(_) => {
-                        let output = tool_error(
-                            "permission_target_changed",
-                            "The requested path changed after approval. Request permission again.",
-                        );
-                        self.send_denied_activity(
-                            call,
-                            target_path,
-                            output.clone(),
-                            request_id,
-                            snapshot,
-                            events,
-                        )
-                        .await?;
-                        return Ok(ToolResult {
-                            call_id: call.id.clone(),
-                            output,
-                        });
-                    }
-                    Err(output) => {
-                        self.send_activity(
-                            call,
-                            Some(target_path),
-                            output.clone(),
-                            request_id,
-                            snapshot,
-                            events,
-                        )
-                        .await?;
-                        return Ok(ToolResult {
-                            call_id: call.id.clone(),
-                            output,
-                        });
+            match self.resolve_tool_path(
+                &prepared.requested_path,
+                prepared.operation.targets_directory(),
+                prepared.operation.can_create_file(),
+            ) {
+                Ok((root, relative_path, target, scope)) if target == approved_target => {
+                    prepared.root = root;
+                    prepared.relative_path = relative_path;
+                    prepared.target_path = target;
+                    prepared.scope = scope;
+                }
+                Ok(_) => {
+                    let output = tool_error(
+                        "permission_target_changed",
+                        "The requested path changed after approval. Request permission again.",
+                    );
+                    self.emit_activity(
+                        ToolActivity::denied(call, target_path, output.clone()),
+                        request_id,
+                        snapshot,
+                        events,
+                    )
+                    .await?;
+                    return Ok(ToolResult {
+                        call_id: call.id.clone(),
+                        output,
+                    });
+                }
+                Err(output) => {
+                    self.emit_activity(
+                        ToolActivity::finished(call, Some(target_path), output.clone()),
+                        request_id,
+                        snapshot,
+                        events,
+                    )
+                    .await?;
+                    return Ok(ToolResult {
+                        call_id: call.id.clone(),
+                        output,
+                    });
                     }
                 }
-            }
         }
 
-        self.send_running_activity(
-            call,
-            prepared.target_path.to_string_lossy().into_owned(),
+        self.emit_activity(
+            ToolActivity::running(
+                call,
+                Some(prepared.target_path.to_string_lossy().into_owned()),
+            ),
             request_id,
             snapshot,
             events,
@@ -231,10 +246,12 @@ impl ToolExecutor {
         .await?;
         if *cancellation.borrow() {
             let output = tool_error("operation_cancelled", "The request was stopped.");
-            self.send_cancelled_activity(
-                call,
-                prepared.target_path.to_string_lossy().into_owned(),
-                output,
+            self.emit_activity(
+                ToolActivity::cancelled(
+                    call,
+                    prepared.target_path.to_string_lossy().into_owned(),
+                    output,
+                ),
                 request_id,
                 snapshot,
                 events,
@@ -244,10 +261,12 @@ impl ToolExecutor {
         }
         let mut output = execute_model_tool(&prepared);
         qualify_output_paths(&mut output, &prepared);
-        self.send_activity(
-            call,
-            Some(prepared.target_path.to_string_lossy().into_owned()),
-            output.clone(),
+        self.emit_activity(
+            ToolActivity::finished(
+                call,
+                Some(prepared.target_path.to_string_lossy().into_owned()),
+                output.clone(),
+            ),
             request_id,
             snapshot,
             events,
@@ -259,84 +278,8 @@ impl ToolExecutor {
         })
     }
 
-    async fn send_running_activity(
-        &self,
-        call: &ToolCall,
-        target_path: String,
-        request_id: &Value,
-        snapshot: &ChatStreamSnapshot,
-        events: &EventSink,
-    ) -> Result<(), ServiceError> {
-        self.emit_activity(
-            call,
-            ToolActivity::running(call, Some(target_path)),
-            request_id,
-            snapshot,
-            events,
-        )
-        .await
-    }
-
-    async fn send_denied_activity(
-        &self,
-        call: &ToolCall,
-        target_path: String,
-        output: Value,
-        request_id: &Value,
-        snapshot: &ChatStreamSnapshot,
-        events: &EventSink,
-    ) -> Result<(), ServiceError> {
-        self.emit_activity(
-            call,
-            ToolActivity::denied(call, target_path, output),
-            request_id,
-            snapshot,
-            events,
-        )
-        .await
-    }
-
-    async fn send_cancelled_activity(
-        &self,
-        call: &ToolCall,
-        target_path: String,
-        output: Value,
-        request_id: &Value,
-        snapshot: &ChatStreamSnapshot,
-        events: &EventSink,
-    ) -> Result<(), ServiceError> {
-        self.emit_activity(
-            call,
-            ToolActivity::cancelled(call, target_path, output),
-            request_id,
-            snapshot,
-            events,
-        )
-        .await
-    }
-
-    async fn send_activity(
-        &self,
-        call: &ToolCall,
-        target_path: Option<String>,
-        output: Value,
-        request_id: &Value,
-        snapshot: &ChatStreamSnapshot,
-        events: &EventSink,
-    ) -> Result<(), ServiceError> {
-        self.emit_activity(
-            call,
-            ToolActivity::finished(call, target_path, output),
-            request_id,
-            snapshot,
-            events,
-        )
-        .await
-    }
-
     async fn emit_activity(
         &self,
-        _call: &ToolCall,
         activity: ToolActivity,
         request_id: &Value,
         snapshot: &ChatStreamSnapshot,
@@ -348,64 +291,6 @@ impl ToolExecutor {
         }
         .into_rpc(request_id.clone());
         events.send(&event).await.map_err(|_| protocol_error())
-    }
-}
-
-fn execute_model_tool(prepared: &PreparedToolCall) -> Value {
-    let result = match &prepared.operation {
-        ToolOperation::List { offset, limit } => {
-            list_files(&prepared.root, &prepared.relative_path, *offset, *limit)
-        }
-        ToolOperation::Search {
-            query,
-            include_hidden,
-            offset,
-            limit,
-        } => search_files(
-            &prepared.root,
-            &prepared.relative_path,
-            query,
-            *include_hidden,
-            *offset,
-            *limit,
-        ),
-        ToolOperation::Read {
-            start_line,
-            line_count,
-        } => read_file(
-            &prepared.root,
-            &prepared.relative_path,
-            *start_line,
-            *line_count,
-        ),
-        ToolOperation::Write { content } => {
-            write_file(&prepared.root, &prepared.relative_path, content)
-        }
-        ToolOperation::Edit {
-            old_string,
-            new_string,
-        } => edit_file(
-            &prepared.root,
-            &prepared.relative_path,
-            old_string,
-            new_string,
-        ),
-        ToolOperation::Bash { .. } => Ok(json!({
-            "output": "",
-            "exit": 0,
-            "truncated": false
-        })),
-        ToolOperation::Info => get_file_info(&prepared.root, &prepared.relative_path),
-    };
-
-    match result {
-        Ok(value) => value,
-        Err(error) => json!({
-            "error": {
-                "code": error.code,
-                "message": error.message
-            }
-        }),
     }
 }
 

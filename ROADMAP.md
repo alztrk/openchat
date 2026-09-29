@@ -7,7 +7,8 @@ This roadmap reflects the repository's current implementation. It has no calenda
 - Flutter desktop UI with a local Rust child service and SQLite conversation storage under `%LOCALAPPDATA%\OpenChat`.
 - ChatGPT OAuth connections, account/workspace selection, model catalog, account and quota information, streamed Responses, cancellation, and background conversation titles.
 - OpenCode Console through its OpenAI Chat Completions endpoint. Other OpenCode protocol families are not supported.
-- Shared provider request, tool, and stream event types for ChatGPT and OpenCode, plus local shared instructions.
+- Gemini, Groq, Cerebras, and OpenRouter through their official OpenAI-compatible Chat Completions APIs, with API keys in platform secure storage and six-hour per-key model catalogs. OpenRouter models are filtered to current zero-price text-chat entries that advertise tool support.
+- Shared provider request, tool, and stream event types across ChatGPT, OpenCode, Gemini, Groq, Cerebras, and OpenRouter, plus local shared instructions.
 - Local projects with read-only file listing, search, reading, and file metadata tools. Tool calls, arguments, progress, and results are stored with assistant messages and shown in the conversation UI.
 - Global `Onay İste` and `Tam erişim` settings for local file tools. Approval is per call and the Rust service enforces the selected path scope.
 - Conversation history, project grouping, model favorites, rename/delete/pin actions, retry, and Markdown export. Tool activity is included in Markdown exports.
@@ -38,15 +39,15 @@ These bullets describe code present in the repository. They do not mean that eve
 
 **Exit criteria:** both existing providers report or handle capabilities and failures through the shared OpenChat contract without leaking provider payloads into Flutter.
 
-## 3. Add the next hosted provider
+## 3. Validate API-key providers
 
-**Status: not started.** Gemini is the next planned provider after the shared contract is stable.
+**Status: implemented in source; pending live validation.** Gemini, Groq, Cerebras, and OpenRouter are connected through their official OpenAI-compatible endpoints.
 
-- Add Gemini through a dedicated adapter that maps its models, authentication, usage limits, streaming events, and tool calls to the shared schema.
-- Preserve provider-native errors and capability differences as explicit shared states instead of assuming ChatGPT/OpenCode behavior.
+- Verify model catalog loading, streaming, cancellation, errors, local history, and tool calls with real accounts for each provider.
+- Confirm current pricing, quota, tool-use capability, and data handling against each provider's account terms.
 - Keep credentials in platform secure storage and provider requests in the local Rust service.
 
-**Exit criteria:** Gemini model selection, a streamed conversation, cancellation/error handling, local history, and supported tool behavior work without changing the chat UI's provider-specific assumptions.
+**Exit criteria:** every provider completes those real workflows without changing the shared chat UI or leaking keys and provider payloads into logs.
 
 ## 4. Expand desktop platforms
 
@@ -71,4 +72,4 @@ These bullets describe code present in the repository. They do not mean that eve
 - No centralized account, message, or credential service; OpenChat remains local-first and self-hostable in its app model.
 - No file editing or shell execution by project tools.
 - No automatic use of ChatGPT reset credits.
-- No Gemini or additional OpenCode wire protocols until the shared provider contract stage is complete.
+- No additional OpenCode wire protocols until the shared provider contract stage is complete.
