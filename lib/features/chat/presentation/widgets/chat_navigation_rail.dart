@@ -11,6 +11,8 @@ class ChatNavigationRail extends StatelessWidget {
     required this.onOpenChat,
     required this.onOpenSettings,
     required this.onToggleTheme,
+    this.sidebarsCompact = false,
+    this.onToggleSidebars,
     super.key,
   });
 
@@ -19,6 +21,8 @@ class ChatNavigationRail extends StatelessWidget {
   final VoidCallback onOpenChat;
   final VoidCallback onOpenSettings;
   final VoidCallback onToggleTheme;
+  final bool sidebarsCompact;
+  final VoidCallback? onToggleSidebars;
 
   @override
   Widget build(BuildContext context) {
@@ -110,6 +114,25 @@ class ChatNavigationRail extends StatelessWidget {
                           palette: palette,
                           onPressed: onOpenSettings,
                         ),
+                        if (onToggleSidebars case final toggleSidebars?) ...[
+                          const SizedBox(height: 8),
+                          _RailNavigationButton(
+                            expanded: expanded,
+                            label: sidebarsCompact
+                                ? l10n.showSidebars
+                                : l10n.collapseSidebars,
+                            selected: false,
+                            icon: Icon(
+                              sidebarsCompact
+                                  ? Icons.chevron_right_rounded
+                                  : Icons.chevron_left_rounded,
+                              color: palette.secondaryIcon,
+                              size: 20,
+                            ),
+                            palette: palette,
+                            onPressed: toggleSidebars,
+                          ),
+                        ],
                       ],
                     ),
                   ),
