@@ -72,7 +72,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _messageController = TextEditingController();
   final _messageScrollController = ScrollController();
   bool _settingsOpen = false;
-  bool _navigationRailCollapsed = false;
+  bool _sidebarsCompact = false;
   bool _isSending = false;
   bool _isLoadingToolPermissionMode = true;
   bool _isSavingToolPermissionMode = false;
@@ -1726,13 +1726,13 @@ class _ChatScreenState extends State<ChatScreen> {
           builder: (context, constraints) {
             final showSidebar =
                 !_settingsOpen &&
-                !_navigationRailCollapsed &&
                 constraints.maxWidth >= OpenChatSpacing.sidebarBreakpoint;
             final expandedRail =
-                !_navigationRailCollapsed &&
+                !_sidebarsCompact &&
                 constraints.maxWidth >= OpenChatSpacing.expandedRailBreakpoint;
-            final sidebarWidth =
-                constraints.maxWidth >= OpenChatSpacing.fullSidebarBreakpoint
+            final sidebarWidth = _sidebarsCompact
+                ? OpenChatSpacing.collapsedSidebarWidth
+                : constraints.maxWidth >= OpenChatSpacing.fullSidebarBreakpoint
                 ? OpenChatSpacing.sidebarWidth
                 : OpenChatSpacing.compactSidebarWidth;
             final drawerWidth = constraints.maxWidth < sidebarWidth
@@ -1766,15 +1766,14 @@ class _ChatScreenState extends State<ChatScreen> {
                     children: [
                       ChatNavigationRail(
                         expanded: expandedRail,
-                        collapsed: _navigationRailCollapsed,
+                        collapsed: _sidebarsCompact,
                         settingsSelected: _settingsOpen,
                         onOpenChat: _startNewConversation,
                         onOpenSettings: () =>
                             setState(() => _settingsOpen = true),
                         onToggleTheme: _handleThemeToggle,
                         onToggleSidebars: () => setState(
-                          () => _navigationRailCollapsed =
-                              !_navigationRailCollapsed,
+                          () => _sidebarsCompact = !_sidebarsCompact,
                         ),
                       ),
                       if (_settingsOpen)
@@ -2000,23 +1999,9 @@ class _ChatScreenState extends State<ChatScreen> {
               messageController: _messageController,
               messageScrollController: _messageScrollController,
               showHistoryButton:
-                  _navigationRailCollapsed ||
                   MediaQuery.sizeOf(context).width <
-                      OpenChatSpacing.sidebarBreakpoint,
-              historyButtonTooltip: _navigationRailCollapsed
-                  ? context.openchatL10n.showSidebars
-                  : null,
-              onOpenHistory: () {
-                if (_navigationRailCollapsed) {
-                  setState(() => _navigationRailCollapsed = false);
-                  if (MediaQuery.sizeOf(context).width <
-                      OpenChatSpacing.sidebarBreakpoint) {
-                    _scaffoldKey.currentState?.openDrawer();
-                  }
-                } else {
-                  _scaffoldKey.currentState?.openDrawer();
-                }
-              },
+                  OpenChatSpacing.sidebarBreakpoint,
+              onOpenHistory: () => _scaffoldKey.currentState?.openDrawer(),
               onSendMessage: () =>
                   unawaited(_sendMessage(selectedConversation)),
               onRetryResponse: selectedConversation == null
