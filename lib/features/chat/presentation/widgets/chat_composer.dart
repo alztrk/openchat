@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../../../app/openchat_select.dart';
 import '../../../../app/openchat_theme.dart';
 import 'composer_control_style.dart';
 import 'model_selector.dart';
@@ -470,85 +471,65 @@ class _ReasoningSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     return Tooltip(
       message: options.isEmpty ? unavailableHint : label,
-      child: MenuAnchor(
-        menuChildren: [
+      child: OpenChatSelect<String>(
+        options: [
           for (final option in options)
-            MenuItemButton(
-              onPressed: onSelected == null ? null : () => onSelected!(option),
-              child: Text(_reasoningLabel(context, option)),
+            OpenChatSelectOption<String>(
+              value: option,
+              label: _reasoningLabel(context, option),
             ),
         ],
-        builder: (context, controller, _) => SizedBox(
+        value: level,
+        onChanged: onSelected,
+        palette: palette,
+        width: 176,
+        menuWidth: 176,
+        height: 36,
+        compact: compact,
+        triggerStyle: composerControlStyle(
+          palette,
           width: 176,
-          height: 36,
-          child: OutlinedButton(
-            onPressed: options.isEmpty || onSelected == null
-                ? null
-                : () => controller.isOpen
-                      ? controller.close()
-                      : controller.open(),
-            style: composerControlStyle(palette, width: 176, compact: compact),
-            child: Row(
-              children: [
-                SvgPicture.asset(
-                  '$iconRoot/brain.svg',
-                  width: 16,
-                  height: 16,
-                  colorFilter: ColorFilter.mode(
-                    palette.secondaryText,
-                    BlendMode.srcIn,
-                  ),
-                  excludeFromSemantics: true,
-                ),
-                const SizedBox(width: 4),
-                Expanded(
-                  child: Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          '$label ·',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: palette.secondaryText,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w400,
-                            height: 16 / 11,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _reasoningLabel(context, level),
-                        style: TextStyle(
-                          color: palette.text,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          height: 16 / 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: Center(
-                    child: SvgPicture.asset(
-                      '$iconRoot/chevron.svg',
-                      width: 10.6667,
-                      height: 6.66668,
-                      colorFilter: ColorFilter.mode(
-                        palette.secondaryText,
-                        BlendMode.srcIn,
-                      ),
-                      excludeFromSemantics: true,
-                    ),
-                  ),
-                ),
-              ],
+          compact: compact,
+        ),
+        trailingContent: _composerChevron(iconRoot, palette),
+        trailingGap: 0,
+        selectedContent: Row(
+          children: [
+            SvgPicture.asset(
+              '$iconRoot/brain.svg',
+              width: 16,
+              height: 16,
+              colorFilter: ColorFilter.mode(
+                palette.secondaryText,
+                BlendMode.srcIn,
+              ),
+              excludeFromSemantics: true,
             ),
-          ),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                '$label ·',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: palette.secondaryText,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w400,
+                  height: 16 / 11,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              _reasoningLabel(context, level),
+              style: TextStyle(
+                color: palette.text,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                height: 16 / 12,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -577,139 +558,74 @@ class _ToolPermissionSelector extends StatelessWidget {
       ToolPermissionMode.requireApproval => l10n.toolPermissionRequireApproval,
       ToolPermissionMode.fullAccess => l10n.toolPermissionFullAccess,
     };
-    return MenuAnchor(
-      alignmentOffset: const Offset(0, 6),
-      style: MenuStyle(
-        backgroundColor: WidgetStatePropertyAll(palette.surface),
-        elevation: const WidgetStatePropertyAll(6),
-        padding: const WidgetStatePropertyAll(EdgeInsets.all(4)),
-        side: WidgetStatePropertyAll(BorderSide(color: palette.border)),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      ),
-      menuChildren: [
+    return OpenChatSelect<ToolPermissionMode>(
+      options: [
         for (final option in ToolPermissionMode.values)
-          MenuItemButton(
-            onPressed: onSelected == null ? null : () => onSelected!(option),
-            style: ButtonStyle(
-              minimumSize: const WidgetStatePropertyAll(Size(0, 42)),
-              padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-              overlayColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.pressed)) {
-                  return palette.selected;
-                }
-                if (states.contains(WidgetState.hovered) ||
-                    states.contains(WidgetState.focused)) {
-                  return palette.hover;
-                }
-                return Colors.transparent;
-              }),
-              shape: WidgetStatePropertyAll(
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
-              ),
-            ),
-            child: SizedBox(
-              width: 168,
-              height: 42,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Row(
-                  children: [
-                    Icon(
-                      switch (option) {
-                        ToolPermissionMode.requireApproval =>
-                          Icons.admin_panel_settings_outlined,
-                        ToolPermissionMode.fullAccess =>
-                          Icons.gpp_maybe_outlined,
-                      },
-                      size: 16,
-                      color: option == ToolPermissionMode.fullAccess
-                          ? palette.accentIcon
-                          : palette.secondaryText,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        switch (option) {
-                          ToolPermissionMode.requireApproval =>
-                            l10n.toolPermissionRequireApproval,
-                          ToolPermissionMode.fullAccess =>
-                            l10n.toolPermissionFullAccess,
-                        },
-                        style: TextStyle(
-                          color: palette.text,
-                          fontSize: 13,
-                          fontWeight: option == mode
-                              ? FontWeight.w600
-                              : FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                    if (option == mode)
-                      Icon(
-                        Icons.check_rounded,
-                        size: 16,
-                        color: palette.accentIcon,
-                      ),
-                  ],
-                ),
-              ),
-            ),
+          OpenChatSelectOption<ToolPermissionMode>(
+            value: option,
+            label: switch (option) {
+              ToolPermissionMode.requireApproval =>
+                l10n.toolPermissionRequireApproval,
+              ToolPermissionMode.fullAccess => l10n.toolPermissionFullAccess,
+            },
+            icon: switch (option) {
+              ToolPermissionMode.requireApproval =>
+                Icons.admin_panel_settings_outlined,
+              ToolPermissionMode.fullAccess => Icons.gpp_maybe_outlined,
+            },
+            iconColor: option == ToolPermissionMode.fullAccess
+                ? palette.accentIcon
+                : palette.secondaryText,
           ),
       ],
-      builder: (context, controller, _) => SizedBox(
+      value: mode,
+      onChanged: onSelected,
+      palette: palette,
+      width: 148,
+      menuWidth: 176,
+      height: 36,
+      compact: compact,
+      triggerStyle: composerControlStyle(
+        palette,
         width: 148,
-        height: 36,
-        child: OutlinedButton(
-          onPressed: onSelected == null
-              ? null
-              : () =>
-                    controller.isOpen ? controller.close() : controller.open(),
-          style: composerControlStyle(palette, width: 148, compact: compact),
-          child: Row(
-            children: [
-              Icon(
-                Icons.admin_panel_settings_outlined,
-                size: 16,
-                color: palette.secondaryText,
-              ),
-              const SizedBox(width: 5),
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.text,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    height: 16 / 12,
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 16,
-                height: 16,
-                child: Center(
-                  child: SvgPicture.asset(
-                    '$iconRoot/chevron.svg',
-                    width: 10.6667,
-                    height: 6.66668,
-                    colorFilter: ColorFilter.mode(
-                      palette.secondaryText,
-                      BlendMode.srcIn,
-                    ),
-                    excludeFromSemantics: true,
-                  ),
-                ),
-              ),
-            ],
-          ),
+        compact: compact,
+        leftPadding: 10,
+        rightPadding: 10,
+      ),
+      leadingIcon: Icons.admin_panel_settings_outlined,
+      leadingIconColor: palette.secondaryText,
+      leadingIconGap: 5,
+      selectedContent: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: palette.text,
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          height: 16 / 12,
         ),
       ),
+      trailingContent: _composerChevron(iconRoot, palette),
+      trailingGap: 0,
     );
   }
+}
+
+Widget _composerChevron(String iconRoot, OpenChatPalette palette) {
+  return SizedBox(
+    width: 16,
+    height: 16,
+    child: Center(
+      child: SvgPicture.asset(
+        '$iconRoot/chevron.svg',
+        width: 10.6667,
+        height: 6.66668,
+        colorFilter: ColorFilter.mode(palette.secondaryText, BlendMode.srcIn),
+        excludeFromSemantics: true,
+      ),
+    ),
+  );
 }
 
 String _reasoningLabel(BuildContext context, String value) {

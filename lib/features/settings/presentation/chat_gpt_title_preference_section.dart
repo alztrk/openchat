@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../app/openchat_select.dart';
 import '../../../../app/openchat_theme.dart';
 import '../../../../l10n/openchat_localizations.dart';
 import '../../chat/domain/chatgpt_connection.dart';
@@ -47,24 +48,21 @@ class ChatGptTitlePreferenceSection extends StatelessWidget {
         break;
       }
     }
-    final connectionItems = <DropdownMenuItem<String>>[
-      DropdownMenuItem<String>(
+    final connectionItems = <OpenChatSelectOption<String>>[
+      OpenChatSelectOption<String>(
         value: '',
-        child: Text(l10n.titleUseConversationAccount),
+        label: l10n.titleUseConversationAccount,
       ),
       for (final connection in connections)
-        DropdownMenuItem<String>(
+        OpenChatSelectOption<String>(
           value: connection.id,
-          child: Text(
-            connection.email ?? l10n.accountEmailUnavailable,
-            overflow: TextOverflow.ellipsis,
-          ),
+          label: connection.email ?? l10n.accountEmailUnavailable,
         ),
       if (connectionId != null && titleConnection == null)
-        DropdownMenuItem<String>(
+        OpenChatSelectOption<String>(
           value: connectionId,
           enabled: false,
-          child: Text(l10n.titleAccountUnavailable),
+          label: l10n.titleAccountUnavailable,
         ),
     ];
     final selectedConnectionValue =
@@ -126,21 +124,14 @@ class ChatGptTitlePreferenceSection extends StatelessWidget {
             )
           else ...[
             const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              initialValue: selectedConnectionValue,
-              isExpanded: true,
-              decoration: InputDecoration(
-                labelText: l10n.titleGenerationTarget,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              items: connectionItems,
+            OpenChatSelect<String>(
+              options: connectionItems,
+              value: selectedConnectionValue,
               onChanged: isSaving ? null : onConnectionChanged,
+              palette: palette,
+              width: double.infinity,
+              menuWidth: 360,
+              height: 40,
             ),
             if (isSaving)
               const Padding(
@@ -152,34 +143,25 @@ class ChatGptTitlePreferenceSection extends StatelessWidget {
                   (workspaces.length == 1 && !selectedWorkspaceIsAvailable))
                 Padding(
                   padding: const EdgeInsets.only(top: 8),
-                  child: DropdownButtonFormField<String>(
-                    initialValue: selectedWorkspaceIsAvailable
+                  child: OpenChatSelect<String>(
+                    options: [
+                      for (final workspace in workspaces)
+                        OpenChatSelectOption<String>(
+                          value: workspace.id,
+                          label:
+                              workspace.displayName ??
+                              l10n.workspaceWithoutName,
+                        ),
+                    ],
+                    value: selectedWorkspaceIsAvailable
                         ? selectedWorkspaceId
                         : null,
-                    isExpanded: true,
-                    decoration: InputDecoration(
-                      labelText: l10n.titleWorkspaceHint,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    items: workspaces
-                        .map(
-                          (workspace) => DropdownMenuItem<String>(
-                            value: workspace.id,
-                            child: Text(
-                              workspace.displayName ??
-                                  l10n.workspaceWithoutName,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        )
-                        .toList(growable: false),
                     onChanged: isSaving ? null : onWorkspaceChanged,
+                    palette: palette,
+                    width: double.infinity,
+                    menuWidth: 360,
+                    height: 40,
+                    hint: l10n.titleWorkspaceHint,
                   ),
                 )
               else if (workspaces.isEmpty)

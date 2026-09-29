@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../../app/openchat_select.dart';
 import '../../../../app/openchat_theme.dart';
 import '../../../../l10n/openchat_localizations.dart';
 import '../../chat/domain/chatgpt_connection.dart';
@@ -109,33 +110,27 @@ class ChatGptOAuthConnectionRow extends StatelessWidget {
           if (connection.isSelected && connection.workspaces.length > 1)
             Padding(
               padding: const EdgeInsets.only(left: 30, top: 10),
-              child: DropdownButton<String>(
+              child: OpenChatSelect<String>(
+                options: [
+                  for (final workspace in connection.workspaces)
+                    OpenChatSelectOption<String>(
+                      value: workspace.id,
+                      label: workspace.displayName ?? l10n.workspaceWithoutName,
+                    ),
+                ],
                 value:
                     connection.workspaces.any(
                       (item) => item.id == selectedWorkspaceId,
                     )
                     ? selectedWorkspaceId
                     : null,
-                isExpanded: true,
-                hint: Text(l10n.selectWorkspace),
-                items: connection.workspaces
-                    .map(
-                      (workspace) => DropdownMenuItem<String>(
-                        value: workspace.id,
-                        child: Text(
-                          workspace.displayName ?? l10n.workspaceWithoutName,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    )
-                    .toList(growable: false),
                 onChanged: isSigningIn || isRemoving
                     ? null
-                    : (workspaceId) {
-                        if (workspaceId != null) {
-                          onWorkspaceChanged?.call(workspaceId);
-                        }
-                      },
+                    : onWorkspaceChanged,
+                palette: palette,
+                menuWidth: 320,
+                height: 40,
+                hint: l10n.selectWorkspace,
               ),
             )
           else if (connection.isSelected && connection.workspaces.isEmpty)

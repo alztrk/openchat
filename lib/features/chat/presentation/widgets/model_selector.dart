@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../../../app/openchat_select.dart';
 import '../../../../app/openchat_theme.dart';
 import '../../../../l10n/openchat_localizations.dart';
 import '../../domain/chatgpt_connection.dart';
@@ -150,16 +151,10 @@ class _ModelSelectorState extends State<ModelSelector> {
       crossAxisUnconstrained: true,
       alignmentOffset: const Offset(0, 8),
       reservedPadding: const EdgeInsets.all(12),
-      style: MenuStyle(
-        backgroundColor: WidgetStatePropertyAll(widget.palette.surface),
-        elevation: const WidgetStatePropertyAll(8),
-        padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-        side: WidgetStatePropertyAll(BorderSide(color: widget.palette.border)),
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-        maximumSize: WidgetStatePropertyAll(Size(menuWidth, _menuHeight)),
-      ),
+      style: OpenChatSelect.menuStyle(widget.palette, padding: EdgeInsets.zero)
+          .copyWith(
+            maximumSize: WidgetStatePropertyAll(Size(menuWidth, _menuHeight)),
+          ),
       menuChildren: [
         SizedBox(
           width: menuWidth,

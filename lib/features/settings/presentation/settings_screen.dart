@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../../app/openchat_select.dart';
 import '../../../app/openchat_theme.dart';
 import '../../../app/openchat_toast.dart';
 import '../../../l10n/openchat_localizations.dart';
@@ -81,7 +82,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isSavingInstructions = false;
   String _savedSharedInstructions = '';
   String? _sharedInstructionsError;
-  int _languageSelectorRevision = 0;
   _SettingsSection _selectedSection = _SettingsSection.connections;
 
   @override
@@ -353,57 +353,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
           desktopControlTopInset: 0,
           controlBuilder: (width) {
             final languageCode = widget.locale?.languageCode ?? 'system';
-            return SizedBox(
+            return OpenChatSelect<String>(
+              options: [
+                OpenChatSelectOption<String>(
+                  value: 'system',
+                  label: l10n.systemLanguage,
+                ),
+                OpenChatSelectOption<String>(
+                  value: 'tr',
+                  label: l10n.turkishLanguage,
+                ),
+                OpenChatSelectOption<String>(
+                  value: 'en',
+                  label: l10n.englishLanguage,
+                ),
+              ],
+              value: languageCode,
+              onChanged: _isSavingLanguage || widget.onLocaleChanged == null
+                  ? null
+                  : (value) {
+                      switch (value) {
+                        case 'system':
+                          unawaited(_changeLocale(null));
+                        case 'tr':
+                          unawaited(_changeLocale(const Locale('tr')));
+                        case 'en':
+                          unawaited(_changeLocale(const Locale('en')));
+                        default:
+                          throw StateError(
+                            'Unsupported language preference: $value',
+                          );
+                      }
+                    },
+              palette: palette,
               width: width,
-              height: 40,
-              child: DropdownButtonFormField<String>(
-                key: ValueKey<String>(
-                  '$languageCode-$_languageSelectorRevision',
-                ),
-                initialValue: languageCode,
-                isExpanded: true,
-                decoration: InputDecoration(
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-                items: [
-                  DropdownMenuItem<String>(
-                    value: 'system',
-                    child: Text(l10n.systemLanguage),
-                  ),
-                  DropdownMenuItem<String>(
-                    value: 'tr',
-                    child: Text(l10n.turkishLanguage),
-                  ),
-                  DropdownMenuItem<String>(
-                    value: 'en',
-                    child: Text(l10n.englishLanguage),
-                  ),
-                ],
-                onChanged: _isSavingLanguage || widget.onLocaleChanged == null
-                    ? null
-                    : (value) {
-                        switch (value) {
-                          case 'system':
-                            unawaited(_changeLocale(null));
-                          case 'tr':
-                            unawaited(_changeLocale(const Locale('tr')));
-                          case 'en':
-                            unawaited(_changeLocale(const Locale('en')));
-                          case null:
-                            break;
-                          default:
-                            throw StateError(
-                              'Unsupported language preference: $value',
-                            );
-                        }
-                      },
-              ),
             );
           },
         ),
@@ -462,44 +445,24 @@ class _SettingsScreenState extends State<SettingsScreen> {
           textTheme: textTheme,
           controlWidth: 264,
           desktopControlTopInset: 0,
-          controlBuilder: (width) => SizedBox(
+          controlBuilder: (width) => OpenChatSelect<ConversationFontPreference>(
+            options: [
+              for (final font in ConversationFontPreference.values)
+                OpenChatSelectOption<ConversationFontPreference>(
+                  value: font,
+                  label: font.familyName,
+                  textStyle: TextStyle(fontFamily: font.familyName),
+                ),
+            ],
+            value: widget.conversationFont,
+            onChanged:
+                widget.onConversationFontChanged == null ||
+                    _isSavingAppearancePreference
+                ? null
+                : (value) => unawaited(_changeConversationFont(value)),
+            palette: palette,
             width: width,
             height: 40,
-            child: DropdownButtonFormField<ConversationFontPreference>(
-              key: ValueKey<ConversationFontPreference>(
-                widget.conversationFont,
-              ),
-              initialValue: widget.conversationFont,
-              isExpanded: true,
-              decoration: InputDecoration(
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              items: [
-                for (final font in ConversationFontPreference.values)
-                  DropdownMenuItem<ConversationFontPreference>(
-                    value: font,
-                    child: Text(
-                      font.familyName,
-                      style: TextStyle(fontFamily: font.familyName),
-                    ),
-                  ),
-              ],
-              onChanged:
-                  widget.onConversationFontChanged == null ||
-                      _isSavingAppearancePreference
-                  ? null
-                  : (value) {
-                      if (value != null) {
-                        unawaited(_changeConversationFont(value));
-                      }
-                    },
-            ),
           ),
         ),
       ],
@@ -742,10 +705,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       );
     } finally {
       if (mounted) {
-        setState(() {
-          _isSavingLanguage = false;
-          _languageSelectorRevision++;
-        });
+        setState(() => _isSavingLanguage = false);
       }
     }
   }
