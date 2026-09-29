@@ -37,7 +37,13 @@ class ChatScreen extends StatefulWidget {
     required this.historyStorageStatus,
     this.settingsPreferences,
     this.locale,
+    this.conversationWidth = ConversationWidthPreference.normal,
+    this.conversationTextSize = ConversationTextSizePreference.normal,
+    this.conversationFont = ConversationFontPreference.manrope,
     this.onLocaleChanged,
+    this.onConversationWidthChanged,
+    this.onConversationTextSizeChanged,
+    this.onConversationFontChanged,
     this.chatRepository,
     this.chatGptApiKeyStore,
     this.openCodeApiKeyStore,
@@ -48,8 +54,17 @@ class ChatScreen extends StatefulWidget {
 
   final ThemeMode themeMode;
   final Locale? locale;
+  final ConversationWidthPreference conversationWidth;
+  final ConversationTextSizePreference conversationTextSize;
+  final ConversationFontPreference conversationFont;
   final Future<void> Function(ThemeMode) onThemeModeChanged;
   final Future<void> Function(Locale?)? onLocaleChanged;
+  final Future<void> Function(ConversationWidthPreference)?
+  onConversationWidthChanged;
+  final Future<void> Function(ConversationTextSizePreference)?
+  onConversationTextSizeChanged;
+  final Future<void> Function(ConversationFontPreference)?
+  onConversationFontChanged;
   final Future<void> Function() onToggleTheme;
   final ChatRepository? chatRepository;
   final ChatGptApiKeyStore? chatGptApiKeyStore;
@@ -1781,9 +1796,18 @@ class _ChatScreenState extends State<ChatScreen> {
                           child: SettingsScreen(
                             themeMode: widget.themeMode,
                             locale: widget.locale,
+                            conversationWidth: widget.conversationWidth,
+                            conversationTextSize: widget.conversationTextSize,
+                            conversationFont: widget.conversationFont,
                             settingsPreferences: _settingsPreferences,
                             onThemeModeChanged: widget.onThemeModeChanged,
                             onLocaleChanged: widget.onLocaleChanged,
+                            onConversationWidthChanged:
+                                widget.onConversationWidthChanged,
+                            onConversationTextSizeChanged:
+                                widget.onConversationTextSizeChanged,
+                            onConversationFontChanged:
+                                widget.onConversationFontChanged,
                             historyStorageStatus: resolvedStorageStatus,
                             hasConversationHistory: conversations.isNotEmpty,
                             onClearConversationHistory:

@@ -246,6 +246,7 @@ class _ConversationHistory extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final conversationStyle = OpenChatConversationStyle.of(context);
     final hasStreamingAssistant =
         messages.isNotEmpty &&
         messages.last.role == ChatMessageRole.assistant &&
@@ -281,8 +282,8 @@ class _ConversationHistory extends StatelessWidget {
                   : 18.0;
               return Center(
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(
-                    maxWidth: OpenChatSpacing.conversationMaxWidth,
+                  constraints: BoxConstraints(
+                    maxWidth: conversationStyle.maxWidth,
                   ),
                   child: Padding(
                     padding: EdgeInsets.only(top: messageGap),
@@ -308,8 +309,8 @@ class _ConversationHistory extends StatelessWidget {
 
             return Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(
-                  maxWidth: OpenChatSpacing.conversationMaxWidth,
+                constraints: BoxConstraints(
+                  maxWidth: conversationStyle.maxWidth,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -399,6 +400,7 @@ class _UserMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = OpenChatPalette.of(context);
+    final conversationStyle = OpenChatConversationStyle.of(context);
     final l10n = context.openchatL10n;
     final timestamp = message.createdAt == null
         ? l10n.unavailableTime
@@ -417,7 +419,11 @@ class _UserMessage extends StatelessWidget {
               children: [
                 Flexible(
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 540),
+                    constraints: BoxConstraints(
+                      maxWidth:
+                          conversationStyle.maxWidth *
+                          (540 / OpenChatSpacing.conversationMaxWidth),
+                    ),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 16,
@@ -436,7 +442,8 @@ class _UserMessage extends StatelessWidget {
                         message.content,
                         style: TextStyle(
                           color: palette.text,
-                          fontSize: 15,
+                          fontFamily: conversationStyle.fontFamily,
+                          fontSize: 15 * conversationStyle.textScale,
                           fontWeight: FontWeight.w400,
                           height: 22 / 15,
                         ),

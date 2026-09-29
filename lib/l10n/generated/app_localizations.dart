@@ -1022,6 +1022,84 @@ abstract class AppLocalizations {
   /// **'Choose how the app looks.'**
   String get themeSettingDescription;
 
+  /// No description provided for @conversationWidth.
+  ///
+  /// In en, this message translates to:
+  /// **'Response width'**
+  String get conversationWidth;
+
+  /// No description provided for @conversationWidthDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the line width used for chat responses.'**
+  String get conversationWidthDescription;
+
+  /// No description provided for @widthNarrow.
+  ///
+  /// In en, this message translates to:
+  /// **'Narrow'**
+  String get widthNarrow;
+
+  /// No description provided for @widthNormal.
+  ///
+  /// In en, this message translates to:
+  /// **'Normal'**
+  String get widthNormal;
+
+  /// No description provided for @widthWide.
+  ///
+  /// In en, this message translates to:
+  /// **'Wide'**
+  String get widthWide;
+
+  /// No description provided for @conversationTextSize.
+  ///
+  /// In en, this message translates to:
+  /// **'Text size'**
+  String get conversationTextSize;
+
+  /// No description provided for @conversationTextSizeDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the text size used in chat messages.'**
+  String get conversationTextSizeDescription;
+
+  /// No description provided for @textSizeSmall.
+  ///
+  /// In en, this message translates to:
+  /// **'Small'**
+  String get textSizeSmall;
+
+  /// No description provided for @textSizeNormal.
+  ///
+  /// In en, this message translates to:
+  /// **'Normal'**
+  String get textSizeNormal;
+
+  /// No description provided for @textSizeLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'Large'**
+  String get textSizeLarge;
+
+  /// No description provided for @conversationFont.
+  ///
+  /// In en, this message translates to:
+  /// **'Font'**
+  String get conversationFont;
+
+  /// No description provided for @conversationFontDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the typeface used in chat messages.'**
+  String get conversationFontDescription;
+
+  /// No description provided for @appearancePreferenceSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The appearance preference could not be saved. Try again.'**
+  String get appearancePreferenceSaveFailed;
+
   /// No description provided for @language.
   ///
   /// In en, this message translates to:

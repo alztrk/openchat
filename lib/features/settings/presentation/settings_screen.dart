@@ -29,7 +29,13 @@ class SettingsScreen extends StatefulWidget {
     required this.hasConversationHistory,
     required this.settingsPreferences,
     this.locale,
+    this.conversationWidth = ConversationWidthPreference.normal,
+    this.conversationTextSize = ConversationTextSizePreference.normal,
+    this.conversationFont = ConversationFontPreference.manrope,
     this.onLocaleChanged,
+    this.onConversationWidthChanged,
+    this.onConversationTextSizeChanged,
+    this.onConversationFontChanged,
     this.onClearConversationHistory,
     this.chatGptApiKeyStore,
     this.openCodeApiKeyStore,
@@ -41,8 +47,17 @@ class SettingsScreen extends StatefulWidget {
 
   final ThemeMode themeMode;
   final Locale? locale;
+  final ConversationWidthPreference conversationWidth;
+  final ConversationTextSizePreference conversationTextSize;
+  final ConversationFontPreference conversationFont;
   final Future<void> Function(ThemeMode) onThemeModeChanged;
   final Future<void> Function(Locale?)? onLocaleChanged;
+  final Future<void> Function(ConversationWidthPreference)?
+  onConversationWidthChanged;
+  final Future<void> Function(ConversationTextSizePreference)?
+  onConversationTextSizeChanged;
+  final Future<void> Function(ConversationFontPreference)?
+  onConversationFontChanged;
   final HistoryStorageStatus historyStorageStatus;
   final bool hasConversationHistory;
   final SettingsPreferences settingsPreferences;
@@ -61,6 +76,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _sharedInstructionsController;
   bool _isClearingHistory = false;
   bool _isSavingLanguage = false;
+  bool _isSavingAppearancePreference = false;
   bool _isLoadingInstructions = true;
   bool _isSavingInstructions = false;
   String _savedSharedInstructions = '';
@@ -316,13 +332,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           textTheme: textTheme,
           controlWidth: 264,
           desktopControlTopInset: 0,
-          controlBuilder: (width) => _ThemeSelector(
+          controlBuilder: (width) => _SegmentedSelector<ThemeMode>(
             width: width,
-            mode: widget.themeMode,
+            value: widget.themeMode,
             onChanged: (mode) => unawaited(_changeThemeMode(mode)),
-            systemLabel: l10n.systemTheme,
-            lightLabel: l10n.lightTheme,
-            darkLabel: l10n.darkTheme,
+            options: [
+              (ThemeMode.system, l10n.systemTheme),
+              (ThemeMode.light, l10n.lightTheme),
+              (ThemeMode.dark, l10n.darkTheme),
+            ],
             palette: palette,
           ),
         ),
@@ -388,6 +406,101 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             );
           },
+        ),
+        const SizedBox(height: 18),
+        _SettingsRow(
+          title: l10n.conversationWidth,
+          description: l10n.conversationWidthDescription,
+          textTheme: textTheme,
+          controlWidth: 264,
+          desktopControlTopInset: 0,
+          controlBuilder: (width) =>
+              _SegmentedSelector<ConversationWidthPreference>(
+                width: width,
+                value: widget.conversationWidth,
+                options: [
+                  (ConversationWidthPreference.narrow, l10n.widthNarrow),
+                  (ConversationWidthPreference.normal, l10n.widthNormal),
+                  (ConversationWidthPreference.wide, l10n.widthWide),
+                ],
+                onChanged:
+                    widget.onConversationWidthChanged == null ||
+                        _isSavingAppearancePreference
+                    ? null
+                    : (value) => unawaited(_changeConversationWidth(value)),
+                palette: palette,
+              ),
+        ),
+        const SizedBox(height: 18),
+        _SettingsRow(
+          title: l10n.conversationTextSize,
+          description: l10n.conversationTextSizeDescription,
+          textTheme: textTheme,
+          controlWidth: 264,
+          desktopControlTopInset: 0,
+          controlBuilder: (width) =>
+              _SegmentedSelector<ConversationTextSizePreference>(
+                width: width,
+                value: widget.conversationTextSize,
+                options: [
+                  (ConversationTextSizePreference.small, l10n.textSizeSmall),
+                  (ConversationTextSizePreference.normal, l10n.textSizeNormal),
+                  (ConversationTextSizePreference.large, l10n.textSizeLarge),
+                ],
+                onChanged:
+                    widget.onConversationTextSizeChanged == null ||
+                        _isSavingAppearancePreference
+                    ? null
+                    : (value) => unawaited(_changeConversationTextSize(value)),
+                palette: palette,
+              ),
+        ),
+        const SizedBox(height: 18),
+        _SettingsRow(
+          title: l10n.conversationFont,
+          description: l10n.conversationFontDescription,
+          textTheme: textTheme,
+          controlWidth: 264,
+          desktopControlTopInset: 0,
+          controlBuilder: (width) => SizedBox(
+            width: width,
+            height: 40,
+            child: DropdownButtonFormField<ConversationFontPreference>(
+              key: ValueKey<ConversationFontPreference>(
+                widget.conversationFont,
+              ),
+              initialValue: widget.conversationFont,
+              isExpanded: true,
+              decoration: InputDecoration(
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              items: [
+                for (final font in ConversationFontPreference.values)
+                  DropdownMenuItem<ConversationFontPreference>(
+                    value: font,
+                    child: Text(
+                      font.familyName,
+                      style: TextStyle(fontFamily: font.familyName),
+                    ),
+                  ),
+              ],
+              onChanged:
+                  widget.onConversationFontChanged == null ||
+                      _isSavingAppearancePreference
+                  ? null
+                  : (value) {
+                      if (value != null) {
+                        unawaited(_changeConversationFont(value));
+                      }
+                    },
+            ),
+          ),
         ),
       ],
     );
@@ -556,6 +669,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
         context.openchatL10n.themeSaveFailed,
         type: OpenChatToastType.error,
       );
+    }
+  }
+
+  Future<void> _changeConversationWidth(
+    ConversationWidthPreference width,
+  ) async {
+    final onChanged = widget.onConversationWidthChanged;
+    if (onChanged == null) return;
+    await _saveAppearancePreference(() => onChanged(width));
+  }
+
+  Future<void> _changeConversationTextSize(
+    ConversationTextSizePreference size,
+  ) async {
+    final onChanged = widget.onConversationTextSizeChanged;
+    if (onChanged == null) return;
+    await _saveAppearancePreference(() => onChanged(size));
+  }
+
+  Future<void> _changeConversationFont(ConversationFontPreference font) async {
+    final onChanged = widget.onConversationFontChanged;
+    if (onChanged == null) return;
+    await _saveAppearancePreference(() => onChanged(font));
+  }
+
+  Future<void> _saveAppearancePreference(Future<void> Function() save) async {
+    if (_isSavingAppearancePreference) return;
+    setState(() => _isSavingAppearancePreference = true);
+    try {
+      await save();
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription('while saving conversation appearance'),
+        ),
+      );
+      if (!mounted) return;
+      showOpenChatToast(
+        context,
+        context.openchatL10n.appearancePreferenceSaveFailed,
+        type: OpenChatToastType.error,
+      );
+    } finally {
+      if (mounted) setState(() => _isSavingAppearancePreference = false);
     }
   }
 
@@ -1000,27 +1160,44 @@ class _SettingDescription extends StatelessWidget {
   }
 }
 
-class _ThemeSelector extends StatelessWidget {
-  const _ThemeSelector({
+class _SegmentedSelector<T> extends StatelessWidget {
+  const _SegmentedSelector({
     required this.width,
-    required this.mode,
+    required this.value,
+    required this.options,
     required this.onChanged,
-    required this.systemLabel,
-    required this.lightLabel,
-    required this.darkLabel,
     required this.palette,
   });
 
   final double width;
-  final ThemeMode mode;
-  final ValueChanged<ThemeMode> onChanged;
-  final String systemLabel;
-  final String lightLabel;
-  final String darkLabel;
+  final T value;
+  final List<(T, String)> options;
+  final ValueChanged<T>? onChanged;
   final OpenChatPalette palette;
 
   @override
   Widget build(BuildContext context) {
+    final changeSelection = onChanged;
+    final selectorOptions = <Widget>[];
+    for (final option in options) {
+      if (selectorOptions.isNotEmpty) {
+        selectorOptions.add(const SizedBox(width: 4));
+      }
+      selectorOptions.add(
+        Expanded(
+          child: _ThemeChoice(
+            label: option.$2,
+            selected: option.$1 == value,
+            selectedSemanticsLabel: option.$2,
+            palette: palette,
+            onPressed: changeSelection == null
+                ? null
+                : () => changeSelection(option.$1),
+          ),
+        ),
+      );
+    }
+
     return Container(
       width: width,
       height: 40,
@@ -1030,39 +1207,7 @@ class _ThemeSelector extends StatelessWidget {
         border: Border.all(color: palette.controlBorder),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _ThemeChoice(
-              label: systemLabel,
-              selected: mode == ThemeMode.system,
-              selectedSemanticsLabel: systemLabel,
-              palette: palette,
-              onPressed: () => onChanged(ThemeMode.system),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: _ThemeChoice(
-              label: lightLabel,
-              selected: mode == ThemeMode.light,
-              selectedSemanticsLabel: lightLabel,
-              palette: palette,
-              onPressed: () => onChanged(ThemeMode.light),
-            ),
-          ),
-          const SizedBox(width: 4),
-          Expanded(
-            child: _ThemeChoice(
-              label: darkLabel,
-              selected: mode == ThemeMode.dark,
-              selectedSemanticsLabel: darkLabel,
-              palette: palette,
-              onPressed: () => onChanged(ThemeMode.dark),
-            ),
-          ),
-        ],
-      ),
+      child: Row(children: selectorOptions),
     );
   }
 }
@@ -1080,12 +1225,13 @@ class _ThemeChoice extends StatelessWidget {
   final bool selected;
   final String selectedSemanticsLabel;
   final OpenChatPalette palette;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
+      enabled: onPressed != null,
       selected: selected,
       label: selectedSemanticsLabel,
       child: ExcludeSemantics(

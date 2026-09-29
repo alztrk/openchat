@@ -35,6 +35,12 @@ class _AppRuntime {
 class _OpenChatAppState extends State<OpenChatApp> {
   ThemeMode _themeMode = ThemeMode.light;
   Locale? _locale;
+  ConversationWidthPreference _conversationWidth =
+      ConversationWidthPreference.normal;
+  ConversationTextSizePreference _conversationTextSize =
+      ConversationTextSizePreference.normal;
+  ConversationFontPreference _conversationFont =
+      ConversationFontPreference.manrope;
   late final ChatGptApiKeyStore _chatGptApiKeyStore;
   late final OpenCodeApiKeyStore _openCodeApiKeyStore;
   late final SettingsPreferences _settingsPreferences;
@@ -42,6 +48,7 @@ class _OpenChatAppState extends State<OpenChatApp> {
   late final Future<_AppRuntime> _runtimeReady;
   late final Future<void> _themeModeReady;
   late final Future<void> _localeReady;
+  late final Future<void> _conversationStyleReady;
   StreamSubscription<OpenChatServiceEvent>? _serviceEventSubscription;
 
   @override
@@ -57,6 +64,7 @@ class _OpenChatAppState extends State<OpenChatApp> {
     _runtimeReady = _initializeRuntime();
     _themeModeReady = _loadThemeMode();
     _localeReady = _loadLocale();
+    _conversationStyleReady = _loadConversationStyle();
   }
 
   void _handleServiceEvent(OpenChatServiceEvent event) {
@@ -185,6 +193,52 @@ class _OpenChatAppState extends State<OpenChatApp> {
     }
   }
 
+  Future<void> _loadConversationStyle() async {
+    try {
+      final width = await _settingsPreferences.readConversationWidth();
+      final textSize = await _settingsPreferences.readConversationTextSize();
+      final font = await _settingsPreferences.readConversationFont();
+      if (!mounted) return;
+      setState(() {
+        _conversationWidth = width;
+        _conversationTextSize = textSize;
+        _conversationFont = font;
+      });
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription('while loading conversation appearance'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _setConversationWidth(ConversationWidthPreference width) async {
+    await _conversationStyleReady;
+    if (_conversationWidth == width) return;
+    await _settingsPreferences.writeConversationWidth(width);
+    if (mounted) setState(() => _conversationWidth = width);
+  }
+
+  Future<void> _setConversationTextSize(
+    ConversationTextSizePreference size,
+  ) async {
+    await _conversationStyleReady;
+    if (_conversationTextSize == size) return;
+    await _settingsPreferences.writeConversationTextSize(size);
+    if (mounted) setState(() => _conversationTextSize = size);
+  }
+
+  Future<void> _setConversationFont(ConversationFontPreference font) async {
+    await _conversationStyleReady;
+    if (_conversationFont == font) return;
+    await _settingsPreferences.writeConversationFont(font);
+    if (mounted) setState(() => _conversationFont = font);
+  }
+
   Future<void> _toggleTheme() async {
     await _themeModeReady;
     final platformBrightness =
@@ -251,12 +305,25 @@ class _OpenChatAppState extends State<OpenChatApp> {
 
   @override
   Widget build(BuildContext context) {
+    final lightTheme = OpenChatTheme.withConversationStyle(
+      OpenChatTheme.light,
+      maxWidth: _conversationWidth.maxWidth,
+      textScale: _conversationTextSize.scale,
+      fontFamily: _conversationFont.familyName,
+    );
+    final darkTheme = OpenChatTheme.withConversationStyle(
+      OpenChatTheme.dark,
+      maxWidth: _conversationWidth.maxWidth,
+      textScale: _conversationTextSize.scale,
+      fontFamily: _conversationFont.familyName,
+    );
+
     return ToastificationWrapper(
       child: MaterialApp(
         title: 'OpenChat',
         debugShowCheckedModeBanner: false,
-        theme: OpenChatTheme.light,
-        darkTheme: OpenChatTheme.dark,
+        theme: lightTheme,
+        darkTheme: darkTheme,
         themeMode: _themeMode,
         locale: _locale,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -274,8 +341,14 @@ class _OpenChatAppState extends State<OpenChatApp> {
             return ChatScreen(
               themeMode: _themeMode,
               locale: _locale,
+              conversationWidth: _conversationWidth,
+              conversationTextSize: _conversationTextSize,
+              conversationFont: _conversationFont,
               onThemeModeChanged: _setThemeMode,
               onLocaleChanged: _setLocale,
+              onConversationWidthChanged: _setConversationWidth,
+              onConversationTextSizeChanged: _setConversationTextSize,
+              onConversationFontChanged: _setConversationFont,
               onToggleTheme: _toggleTheme,
               settingsPreferences: _settingsPreferences,
               chatRepository: runtime?.chatRepository,

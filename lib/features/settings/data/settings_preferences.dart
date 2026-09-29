@@ -11,6 +11,36 @@ enum ToolPermissionMode {
   };
 }
 
+enum ConversationWidthPreference {
+  narrow(760),
+  normal(920),
+  wide(1120);
+
+  const ConversationWidthPreference(this.maxWidth);
+
+  final double maxWidth;
+}
+
+enum ConversationTextSizePreference {
+  small(0.9),
+  normal(1),
+  large(1.15);
+
+  const ConversationTextSizePreference(this.scale);
+
+  final double scale;
+}
+
+enum ConversationFontPreference {
+  manrope('Manrope'),
+  segoeUi('Segoe UI'),
+  georgia('Georgia');
+
+  const ConversationFontPreference(this.familyName);
+
+  final String familyName;
+}
+
 class SettingsPreferences {
   SettingsPreferences(this._preferences);
 
@@ -18,6 +48,9 @@ class SettingsPreferences {
   static const _localeKey = 'appearance.locale';
   static const _sharedInstructionsKey = 'chat.shared_instructions';
   static const _toolPermissionModeKey = 'tools.permission_mode';
+  static const _conversationWidthKey = 'appearance.conversation_width';
+  static const _conversationTextSizeKey = 'appearance.conversation_text_size';
+  static const _conversationFontKey = 'appearance.conversation_font';
   static const maxSharedInstructionsCharacters = 4096;
 
   final SharedPreferencesAsync _preferences;
@@ -34,6 +67,54 @@ class SettingsPreferences {
 
   Future<void> writeThemeMode(ThemeMode mode) {
     return _preferences.setString(_themeModeKey, mode.name);
+  }
+
+  Future<ConversationWidthPreference> readConversationWidth() async {
+    final value = await _preferences.getString(_conversationWidthKey);
+    return switch (value) {
+      null || 'normal' => ConversationWidthPreference.normal,
+      'narrow' => ConversationWidthPreference.narrow,
+      'wide' => ConversationWidthPreference.wide,
+      _ => throw const FormatException(
+        'The saved conversation width preference is invalid.',
+      ),
+    };
+  }
+
+  Future<void> writeConversationWidth(ConversationWidthPreference width) {
+    return _preferences.setString(_conversationWidthKey, width.name);
+  }
+
+  Future<ConversationTextSizePreference> readConversationTextSize() async {
+    final value = await _preferences.getString(_conversationTextSizeKey);
+    return switch (value) {
+      null || 'normal' => ConversationTextSizePreference.normal,
+      'small' => ConversationTextSizePreference.small,
+      'large' => ConversationTextSizePreference.large,
+      _ => throw const FormatException(
+        'The saved conversation text size preference is invalid.',
+      ),
+    };
+  }
+
+  Future<void> writeConversationTextSize(ConversationTextSizePreference size) {
+    return _preferences.setString(_conversationTextSizeKey, size.name);
+  }
+
+  Future<ConversationFontPreference> readConversationFont() async {
+    final value = await _preferences.getString(_conversationFontKey);
+    return switch (value) {
+      null || 'manrope' => ConversationFontPreference.manrope,
+      'segoeUi' => ConversationFontPreference.segoeUi,
+      'georgia' => ConversationFontPreference.georgia,
+      _ => throw const FormatException(
+        'The saved conversation font preference is invalid.',
+      ),
+    };
+  }
+
+  Future<void> writeConversationFont(ConversationFontPreference font) {
+    return _preferences.setString(_conversationFontKey, font.name);
   }
 
   Future<Locale?> readLocale() async {

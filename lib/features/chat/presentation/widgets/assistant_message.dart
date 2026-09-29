@@ -32,6 +32,7 @@ class AssistantMessage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = OpenChatPalette.of(context);
+    final conversationStyle = OpenChatConversationStyle.of(context);
     final l10n = context.openchatL10n;
     final localeName = l10n.localeName;
     final tokensPerSecond = message.tokensPerSecond == null
@@ -51,7 +52,11 @@ class AssistantMessage extends StatelessWidget {
     return Align(
       alignment: Alignment.centerLeft,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 780),
+        constraints: BoxConstraints(
+          maxWidth:
+              conversationStyle.maxWidth *
+              (780 / OpenChatSpacing.conversationMaxWidth),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -202,11 +207,16 @@ class AssistantMessageSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = OpenChatPalette.of(context);
+    final conversationStyle = OpenChatConversationStyle.of(context);
 
     return Align(
       alignment: Alignment.centerLeft,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 780),
+        constraints: BoxConstraints(
+          maxWidth:
+              conversationStyle.maxWidth *
+              (780 / OpenChatSpacing.conversationMaxWidth),
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -408,9 +418,12 @@ class _AssistantResponseContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final conversationStyle = OpenChatConversationStyle.of(context);
+    final fontSize = 14 * conversationStyle.textScale;
     final textStyle = TextStyle(
       color: palette.text,
-      fontSize: 14,
+      fontFamily: conversationStyle.fontFamily,
+      fontSize: fontSize,
       fontWeight: FontWeight.w400,
       height: 22 / 14,
     );

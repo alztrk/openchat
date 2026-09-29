@@ -541,6 +541,49 @@ class AppLocalizationsEn extends AppLocalizations {
   String get themeSettingDescription => 'Choose how the app looks.';
 
   @override
+  String get conversationWidth => 'Response width';
+
+  @override
+  String get conversationWidthDescription =>
+      'Choose the line width used for chat responses.';
+
+  @override
+  String get widthNarrow => 'Narrow';
+
+  @override
+  String get widthNormal => 'Normal';
+
+  @override
+  String get widthWide => 'Wide';
+
+  @override
+  String get conversationTextSize => 'Text size';
+
+  @override
+  String get conversationTextSizeDescription =>
+      'Choose the text size used in chat messages.';
+
+  @override
+  String get textSizeSmall => 'Small';
+
+  @override
+  String get textSizeNormal => 'Normal';
+
+  @override
+  String get textSizeLarge => 'Large';
+
+  @override
+  String get conversationFont => 'Font';
+
+  @override
+  String get conversationFontDescription =>
+      'Choose the typeface used in chat messages.';
+
+  @override
+  String get appearancePreferenceSaveFailed =>
+      'The appearance preference could not be saved. Try again.';
+
+  @override
   String get language => 'App language';
 
   @override

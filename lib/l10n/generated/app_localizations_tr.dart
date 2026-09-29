@@ -535,6 +535,49 @@ class AppLocalizationsTr extends AppLocalizations {
   String get themeSettingDescription => 'Uygulamanın görünümünü seçin.';
 
   @override
+  String get conversationWidth => 'Yanıt genişliği';
+
+  @override
+  String get conversationWidthDescription =>
+      'Sohbet yanıtlarının satır genişliğini seçin.';
+
+  @override
+  String get widthNarrow => 'Dar';
+
+  @override
+  String get widthNormal => 'Normal';
+
+  @override
+  String get widthWide => 'Geniş';
+
+  @override
+  String get conversationTextSize => 'Yazı boyutu';
+
+  @override
+  String get conversationTextSizeDescription =>
+      'Sohbet mesajlarının yazı boyutunu seçin.';
+
+  @override
+  String get textSizeSmall => 'Küçük';
+
+  @override
+  String get textSizeNormal => 'Normal';
+
+  @override
+  String get textSizeLarge => 'Büyük';
+
+  @override
+  String get conversationFont => 'Yazı tipi';
+
+  @override
+  String get conversationFontDescription =>
+      'Sohbet mesajlarında kullanılacak yazı tipini seçin.';
+
+  @override
+  String get appearancePreferenceSaveFailed =>
+      'Görünüm tercihi kaydedilemedi. Lütfen tekrar deneyin.';
+
+  @override
   String get language => 'Uygulama dili';
 
   @override

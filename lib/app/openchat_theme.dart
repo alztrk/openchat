@@ -1,3 +1,5 @@
+import 'dart:ui' show lerpDouble;
+
 import 'package:flutter/material.dart';
 
 class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
@@ -128,6 +130,55 @@ class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
   }
 }
 
+class OpenChatConversationStyle
+    extends ThemeExtension<OpenChatConversationStyle> {
+  const OpenChatConversationStyle({
+    this.maxWidth = OpenChatSpacing.conversationMaxWidth,
+    this.textScale = 1,
+    this.fontFamily = 'Manrope',
+  });
+
+  final double maxWidth;
+  final double textScale;
+  final String fontFamily;
+
+  static OpenChatConversationStyle of(BuildContext context) {
+    final style = Theme.of(context).extension<OpenChatConversationStyle>();
+    if (style == null) {
+      throw StateError(
+        'OpenChatConversationStyle is missing from the active theme.',
+      );
+    }
+    return style;
+  }
+
+  @override
+  OpenChatConversationStyle copyWith({
+    double? maxWidth,
+    double? textScale,
+    String? fontFamily,
+  }) {
+    return OpenChatConversationStyle(
+      maxWidth: maxWidth ?? this.maxWidth,
+      textScale: textScale ?? this.textScale,
+      fontFamily: fontFamily ?? this.fontFamily,
+    );
+  }
+
+  @override
+  OpenChatConversationStyle lerp(
+    ThemeExtension<OpenChatConversationStyle>? other,
+    double t,
+  ) {
+    if (other is! OpenChatConversationStyle) return this;
+    return OpenChatConversationStyle(
+      maxWidth: lerpDouble(maxWidth, other.maxWidth, t) ?? maxWidth,
+      textScale: lerpDouble(textScale, other.textScale, t) ?? textScale,
+      fontFamily: t < 0.5 ? fontFamily : other.fontFamily,
+    );
+  }
+}
+
 abstract final class OpenChatSpacing {
   static const pageHorizontal = 32.0;
   static const compactPageHorizontal = 20.0;
@@ -166,7 +217,10 @@ abstract final class OpenChatTheme {
       fontFamily: 'Manrope',
       scaffoldBackgroundColor: palette.surface,
       colorScheme: colorScheme,
-      extensions: <ThemeExtension<dynamic>>[palette],
+      extensions: <ThemeExtension<dynamic>>[
+        palette,
+        const OpenChatConversationStyle(),
+      ],
       textTheme: TextTheme(
         headlineSmall: TextStyle(
           color: palette.text,
@@ -258,6 +312,28 @@ abstract final class OpenChatTheme {
           ),
         ),
       ),
+    );
+  }
+
+  static ThemeData withConversationStyle(
+    ThemeData theme, {
+    required double maxWidth,
+    required double textScale,
+    required String fontFamily,
+  }) {
+    final palette = theme.extension<OpenChatPalette>();
+    if (palette == null) {
+      throw StateError('OpenChatPalette is missing from the active theme.');
+    }
+    return theme.copyWith(
+      extensions: <ThemeExtension<dynamic>>[
+        palette,
+        OpenChatConversationStyle(
+          maxWidth: maxWidth,
+          textScale: textScale,
+          fontFamily: fontFamily,
+        ),
+      ],
     );
   }
 }
