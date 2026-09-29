@@ -7,22 +7,18 @@ import '../../../../l10n/openchat_localizations.dart';
 class ChatNavigationRail extends StatelessWidget {
   const ChatNavigationRail({
     required this.expanded,
-    this.collapsed = false,
     required this.settingsSelected,
     required this.onOpenChat,
     required this.onOpenSettings,
     required this.onToggleTheme,
-    this.onToggleSidebars,
     super.key,
   });
 
   final bool expanded;
-  final bool collapsed;
   final bool settingsSelected;
   final VoidCallback onOpenChat;
   final VoidCallback onOpenSettings;
   final VoidCallback onToggleTheme;
-  final VoidCallback? onToggleSidebars;
 
   @override
   Widget build(BuildContext context) {
@@ -49,52 +45,10 @@ class ChatNavigationRail extends StatelessWidget {
               children: [
                 const SizedBox(height: 20),
                 if (expanded)
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _Brand(dark: dark, palette: palette),
-                      ),
-                      IconButton(
-                        tooltip: l10n.collapseSidebars,
-                        onPressed: onToggleSidebars,
-                        visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 32,
-                          height: 32,
-                        ),
-                        padding: EdgeInsets.zero,
-                        icon: Icon(
-                          Icons.chevron_left_rounded,
-                          color: palette.secondaryIcon,
-                          size: 20,
-                        ),
-                      ),
-                    ],
-                  )
+                  _Brand(dark: dark, palette: palette)
                 else ...[
                   _CompactBrand(dark: dark),
-                  const SizedBox(height: 8),
-                  Tooltip(
-                    message: collapsed
-                        ? l10n.showSidebars
-                        : l10n.collapseSidebars,
-                    child: IconButton(
-                      onPressed: onToggleSidebars,
-                      visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 44,
-                        height: 32,
-                      ),
-                      padding: EdgeInsets.zero,
-                      icon: Icon(
-                        collapsed
-                            ? Icons.chevron_right_rounded
-                            : Icons.chevron_left_rounded,
-                        color: palette.secondaryIcon,
-                        size: 20,
-                      ),
-                    ),
-                  ),
+                  const SizedBox(height: 40),
                 ],
                 const SizedBox(height: 10),
                 Align(

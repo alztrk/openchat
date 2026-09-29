@@ -1766,15 +1766,11 @@ class _ChatScreenState extends State<ChatScreen> {
                     children: [
                       ChatNavigationRail(
                         expanded: expandedRail,
-                        collapsed: _sidebarsCompact,
                         settingsSelected: _settingsOpen,
                         onOpenChat: _startNewConversation,
                         onOpenSettings: () =>
                             setState(() => _settingsOpen = true),
                         onToggleTheme: _handleThemeToggle,
-                        onToggleSidebars: () => setState(
-                          () => _sidebarsCompact = !_sidebarsCompact,
-                        ),
                       ),
                       if (_settingsOpen)
                         Expanded(
@@ -1813,6 +1809,43 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       ],
                     ],
+                  ),
+                  Positioned(
+                    left:
+                        (expandedRail
+                            ? OpenChatSpacing.expandedRailWidth
+                            : OpenChatSpacing.compactRailWidth) -
+                        18,
+                    top: expandedRail ? 38 : 72,
+                    child: Tooltip(
+                      message: _sidebarsCompact
+                          ? l10n.showSidebars
+                          : l10n.collapseSidebars,
+                      child: Material(
+                        color: palette.surface,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: BorderSide(color: palette.border),
+                        ),
+                        child: SizedBox.square(
+                          dimension: 36,
+                          child: IconButton(
+                            onPressed: () => setState(
+                              () => _sidebarsCompact = !_sidebarsCompact,
+                            ),
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                            icon: Icon(
+                              _sidebarsCompact
+                                  ? Icons.chevron_right_rounded
+                                  : Icons.chevron_left_rounded,
+                              color: palette.secondaryIcon,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                 ],
               ),
