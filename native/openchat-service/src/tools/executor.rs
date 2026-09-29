@@ -8,11 +8,11 @@ use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use tokio::sync::watch;
 
-mod paths;
 mod execution;
+mod paths;
 mod validation;
-use paths::qualify_output_paths;
 use execution::execute_model_tool;
+use paths::qualify_output_paths;
 pub(crate) use validation::{PreparedToolCall, ToolOperation};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -98,7 +98,7 @@ impl ToolExecutor {
                     snapshot,
                     events,
                 )
-                    .await?;
+                .await?;
                 return Ok(ToolResult {
                     call_id: call.id.clone(),
                     output,
@@ -227,8 +227,8 @@ impl ToolExecutor {
                         call_id: call.id.clone(),
                         output,
                     });
-                    }
                 }
+            }
         }
 
         self.emit_activity(

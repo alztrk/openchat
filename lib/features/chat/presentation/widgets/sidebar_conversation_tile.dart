@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
-import '../../../../app/openchat_theme.dart';
-import '../../../../l10n/openchat_localizations.dart';
-import '../../domain/conversation_sidebar_data.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/l10n/openchat_localizations.dart';
+import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
 
 class DraggableSidebarConversation extends StatelessWidget {
   const DraggableSidebarConversation({

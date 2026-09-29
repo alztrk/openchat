@@ -92,6 +92,11 @@ class ChatGptModel {
     this.description,
     this.contextWindow,
     this.defaultReasoningLevel,
+    this.providerId = 'chatgpt',
+    this.connectionId,
+    this.workspaceId,
+    this.sourceLabel,
+    this.groupId,
   });
 
   final String id;
@@ -101,6 +106,35 @@ class ChatGptModel {
   final String? defaultReasoningLevel;
   final List<String> reasoningLevels;
   final bool isAvailable;
+  final String providerId;
+  final String? connectionId;
+  final String? workspaceId;
+  final String? sourceLabel;
+  final String? groupId;
+
+  String get routeKey =>
+      '$providerId:${connectionId ?? ''}:${workspaceId ?? ''}:$id';
+
+  ChatGptModel withRoute({
+    required String providerId,
+    String? connectionId,
+    String? workspaceId,
+    String? sourceLabel,
+    String? groupId,
+  }) => ChatGptModel(
+    id: id,
+    displayName: displayName,
+    description: description,
+    contextWindow: contextWindow,
+    defaultReasoningLevel: defaultReasoningLevel,
+    reasoningLevels: reasoningLevels,
+    isAvailable: isAvailable,
+    providerId: providerId,
+    connectionId: connectionId,
+    workspaceId: workspaceId,
+    sourceLabel: sourceLabel,
+    groupId: groupId,
+  );
 
   factory ChatGptModel.fromJson(Map<String, Object?> json) {
     final reasoningLevels = json['reasoningLevels'];
@@ -120,6 +154,7 @@ class ChatGptModel {
       defaultReasoningLevel: _optionalString(json, 'defaultReasoningLevel'),
       reasoningLevels: reasoningLevels.cast<String>(),
       isAvailable: json['isAvailable'] == true,
+      groupId: _optionalString(json, 'groupId'),
     );
   }
 }

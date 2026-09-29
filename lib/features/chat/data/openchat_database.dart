@@ -21,6 +21,7 @@ class Conversations extends Table {
       text().withDefault(const Constant('automatic'))();
   TextColumn get connectionId => text().nullable()();
   TextColumn get workspaceId => text().nullable()();
+  TextColumn get apiKeyConnectionId => text().nullable()();
   TextColumn get providerId => text().nullable()();
   TextColumn get modelId => text().nullable()();
   TextColumn get projectId => text().nullable().references(
@@ -58,6 +59,7 @@ class Messages extends Table {
 class ModelFavorites extends Table {
   TextColumn get providerId => text()();
   TextColumn get modelId => text()();
+  TextColumn get sourceConnectionId => text().nullable()();
   TextColumn get displayName => text()();
   IntColumn get favoritedAt => integer()();
 
@@ -74,7 +76,7 @@ class OpenChatDatabase extends _$OpenChatDatabase {
     : super(_databaseAtPath(databasePath));
 
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -100,6 +102,16 @@ class OpenChatDatabase extends _$OpenChatDatabase {
       }
       if (from < 7) {
         await migrator.addColumn(messages, messages.toolActivities);
+      }
+      if (from < 8) {
+        await migrator.addColumn(
+          conversations,
+          conversations.apiKeyConnectionId,
+        );
+        await migrator.addColumn(
+          modelFavorites,
+          modelFavorites.sourceConnectionId,
+        );
       }
     },
     beforeOpen: (_) async => customStatement('PRAGMA foreign_keys = ON'),

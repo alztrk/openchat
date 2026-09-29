@@ -2,11 +2,23 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 
-import '../domain/chat_conversation.dart';
-import '../domain/chat_message.dart' as domain;
-import '../domain/model_favorite.dart';
-import '../domain/chat_project.dart';
-import 'openchat_database.dart';
+import 'package:openchat/features/chat/domain/chat_conversation.dart';
+import 'package:openchat/features/chat/domain/chat_message.dart' as domain;
+import 'package:openchat/features/chat/domain/model_favorite.dart';
+import 'package:openchat/features/chat/domain/chat_project.dart';
+
+import 'package:openchat/features/chat/data/openchat_database.dart';
+
+const _compatibleProviderIds = <String>{
+  'gemini',
+  'groq',
+  'cerebras',
+  'openrouter',
+};
+
+bool _isApiKeyRouteProvider(String? providerId) =>
+    providerId == 'chatgpt_api' ||
+    (providerId != null && _compatibleProviderIds.contains(providerId));
 
 class ChatRepository {
   const ChatRepository(this._database);
@@ -68,6 +80,7 @@ class ChatRepository {
             (row) => FavoriteModel(
               providerId: row.providerId,
               modelId: row.modelId,
+              sourceConnectionId: row.sourceConnectionId,
               displayName: row.displayName,
             ),
           )
@@ -80,12 +93,19 @@ class ChatRepository {
     required String modelId,
     required String displayName,
     required bool isFavorite,
+    String? sourceConnectionId,
   }) async {
-    if (providerId != 'chatgpt' && providerId != 'opencode') {
+    if (providerId != 'chatgpt' &&
+        providerId != 'chatgpt_api' &&
+        providerId != 'opencode' &&
+        !_compatibleProviderIds.contains(providerId)) {
       throw ArgumentError.value(providerId, 'providerId', 'Unknown provider.');
     }
     final normalizedModelId = _requireValue(modelId, 'modelId');
     final normalizedDisplayName = _requireValue(displayName, 'displayName');
+    final normalizedSourceConnectionId = _isApiKeyRouteProvider(providerId)
+        ? _requireValue(sourceConnectionId ?? '', 'sourceConnectionId')
+        : null;
     final query = _database.delete(_database.modelFavorites)
       ..where(
         (favorite) =>
@@ -104,6 +124,7 @@ class ChatRepository {
           ModelFavoritesCompanion.insert(
             providerId: providerId,
             modelId: normalizedModelId,
+            sourceConnectionId: Value(normalizedSourceConnectionId),
             displayName: normalizedDisplayName,
             favoritedAt: DateTime.now().toUtc().millisecondsSinceEpoch,
           ),
@@ -234,6 +255,7 @@ class ChatRepository {
     required DateTime createdAt,
     String? connectionId,
     String? workspaceId,
+    String? apiKeyConnectionId,
     String? providerId,
     String? modelId,
   }) async {
@@ -251,10 +273,26 @@ class ChatRepository {
     }
     final selectedProvider = providerId?.trim();
     final isOpenCode = selectedProvider == 'opencode';
-    final hasChatGptRoute = connectionId != null || workspaceId != null;
-    if ((isOpenCode && (hasChatGptRoute || modelId == null)) ||
+    final hasApiKeyRoute = _isApiKeyRouteProvider(selectedProvider);
+    if (selectedProvider != null &&
+        selectedProvider != 'chatgpt' &&
+        !isOpenCode &&
+        !hasApiKeyRoute) {
+      throw ArgumentError.value(providerId, 'providerId', 'Unknown provider.');
+    }
+    final hasOAuthRoute = connectionId != null || workspaceId != null;
+    final hasApiRoute = apiKeyConnectionId != null;
+    if ((isOpenCode && (hasOAuthRoute || hasApiRoute || modelId == null)) ||
+        (hasApiKeyRoute &&
+            (!hasApiRoute ||
+                hasOAuthRoute ||
+                modelId == null ||
+                (_compatibleProviderIds.contains(selectedProvider) &&
+                    apiKeyConnectionId != selectedProvider))) ||
         (!isOpenCode &&
-            ((connectionId == null) != (workspaceId == null) ||
+            !hasApiKeyRoute &&
+            (hasApiRoute ||
+                ((connectionId == null) != (workspaceId == null)) ||
                 (modelId != null &&
                     (connectionId == null || workspaceId == null))))) {
       throw ArgumentError('The provider route is incomplete or incompatible.');
@@ -269,6 +307,7 @@ class ChatRepository {
             title: normalizedTitle,
             connectionId: Value(connectionId?.trim()),
             workspaceId: Value(workspaceId?.trim()),
+            apiKeyConnectionId: Value(apiKeyConnectionId?.trim()),
             providerId: Value(selectedProvider),
             modelId: Value(modelId?.trim()),
             createdAt: timestamp,
@@ -309,6 +348,7 @@ class ChatRepository {
             providerId: Value(providerId?.trim()),
             connectionId: Value(normalizedConnectionId),
             workspaceId: Value(normalizedWorkspaceId),
+            apiKeyConnectionId: const Value(null),
             modelId: Value(normalizedModelId),
           ),
         );
@@ -322,6 +362,63 @@ class ChatRepository {
       }
       throw ConversationProviderAlreadyBoundException(conversationId);
     });
+  }
+
+  Future<void> setConversationRoute({
+    required String conversationId,
+    required String providerId,
+    required String modelId,
+    String? connectionId,
+    String? workspaceId,
+    String? apiKeyConnectionId,
+  }) async {
+    final normalizedProviderId = _requireValue(providerId, 'providerId');
+    final normalizedModelId = _requireValue(modelId, 'modelId');
+    final isOpenCode = normalizedProviderId == 'opencode';
+    final hasApiKeyRoute = _isApiKeyRouteProvider(normalizedProviderId);
+    if (!isOpenCode && !hasApiKeyRoute && normalizedProviderId != 'chatgpt') {
+      throw ArgumentError.value(providerId, 'providerId', 'Unknown provider.');
+    }
+    final hasOAuthRoute = connectionId != null || workspaceId != null;
+    if ((isOpenCode && (hasOAuthRoute || apiKeyConnectionId != null)) ||
+        (hasApiKeyRoute &&
+            (apiKeyConnectionId == null ||
+                hasOAuthRoute ||
+                (_compatibleProviderIds.contains(normalizedProviderId) &&
+                    apiKeyConnectionId != normalizedProviderId))) ||
+        (!isOpenCode &&
+            !hasApiKeyRoute &&
+            (apiKeyConnectionId != null ||
+                connectionId == null ||
+                workspaceId == null))) {
+      throw ArgumentError('The provider route is incomplete or incompatible.');
+    }
+    final normalizedConnectionId = isOpenCode || hasApiKeyRoute
+        ? null
+        : _requireValue(connectionId ?? '', 'connectionId');
+    final normalizedWorkspaceId = isOpenCode || hasApiKeyRoute
+        ? null
+        : _requireValue(workspaceId ?? '', 'workspaceId');
+    final normalizedApiKeyConnectionId = hasApiKeyRoute
+        ? _requireValue(apiKeyConnectionId ?? '', 'apiKeyConnectionId')
+        : null;
+
+    final updatedRows =
+        await (_database.update(
+          _database.conversations,
+        )..where((row) => row.id.equals(conversationId))).write(
+          ConversationsCompanion(
+            providerId: Value(normalizedProviderId),
+            connectionId: Value(normalizedConnectionId),
+            workspaceId: Value(normalizedWorkspaceId),
+            apiKeyConnectionId: Value(normalizedApiKeyConnectionId),
+            modelId: Value(normalizedModelId),
+            updatedAt: Value(DateTime.now().toUtc().millisecondsSinceEpoch),
+          ),
+        );
+    if (updatedRows == 0) {
+      throw ConversationNotFoundException(conversationId);
+    }
   }
 
   Future<void> renameConversation({
@@ -357,10 +454,19 @@ class ChatRepository {
         throw ConversationNotFoundException(conversationId);
       }
       final isOpenCode = conversation.providerId == 'opencode';
+      final hasApiKeyRoute = _isApiKeyRouteProvider(conversation.providerId);
       if (!isOpenCode &&
+          !hasApiKeyRoute &&
           (conversation.connectionId == null ||
               conversation.workspaceId == null)) {
         throw StateError('The conversation has no provider route.');
+      }
+      if (hasApiKeyRoute && conversation.apiKeyConnectionId == null) {
+        throw StateError('The conversation has no API key route.');
+      }
+      if (_compatibleProviderIds.contains(conversation.providerId) &&
+          conversation.apiKeyConnectionId != conversation.providerId) {
+        throw StateError('The conversation provider route is invalid.');
       }
       if (conversation.modelId == normalizedModelId) return;
 
@@ -517,6 +623,7 @@ class ChatRepository {
       titleSource: ChatConversationTitleSource.values.byName(row.titleSource),
       connectionId: row.connectionId,
       workspaceId: row.workspaceId,
+      apiKeyConnectionId: row.apiKeyConnectionId,
       providerId: row.providerId,
       modelId: row.modelId,
       projectId: row.projectId,

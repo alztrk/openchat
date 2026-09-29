@@ -2,7 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import 'openchat_theme.dart';
+import 'package:openchat/app/openchat_theme.dart';
 
 class OpenChatSelectOption<T> {
   const OpenChatSelectOption({
@@ -80,6 +80,7 @@ class OpenChatSelect<T> extends StatelessWidget {
       minimumSize: const WidgetStatePropertyAll(Size(0, 42)),
       padding: const WidgetStatePropertyAll(EdgeInsets.zero),
       overlayColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.disabled)) return Colors.transparent;
         if (states.contains(WidgetState.pressed)) return palette.selected;
         if (states.contains(WidgetState.hovered) ||
             states.contains(WidgetState.focused)) {
@@ -95,6 +96,7 @@ class OpenChatSelect<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isEnabled = onChanged != null && options.isNotEmpty;
     final selectedOption = options.where((option) => option.value == value);
     final selected = selectedOption.isEmpty ? null : selectedOption.first;
     final selectedTextStyle = selected?.textStyle;
@@ -121,7 +123,9 @@ class OpenChatSelect<T> extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: option.value == value
                       ? palette.hover
-                      : Colors.transparent,
+                      : option.enabled
+                      ? Colors.transparent
+                      : palette.disabledSurface,
                   borderRadius: BorderRadius.circular(7),
                 ),
                 child: Padding(
@@ -134,7 +138,7 @@ class OpenChatSelect<T> extends StatelessWidget {
                           size: 16,
                           color: option.enabled
                               ? option.iconColor ?? palette.secondaryIcon
-                              : palette.secondaryText,
+                              : palette.disabledIcon,
                         ),
                         const SizedBox(width: 10),
                       ],
@@ -147,7 +151,7 @@ class OpenChatSelect<T> extends StatelessWidget {
                               option.textStyle?.copyWith(
                                 color: option.enabled
                                     ? option.textStyle?.color ?? palette.text
-                                    : palette.secondaryText,
+                                    : palette.disabledForeground,
                                 fontWeight: option.value == value
                                     ? FontWeight.w600
                                     : FontWeight.w500,
@@ -155,7 +159,7 @@ class OpenChatSelect<T> extends StatelessWidget {
                               TextStyle(
                                 color: option.enabled
                                     ? palette.text
-                                    : palette.secondaryText,
+                                    : palette.disabledForeground,
                                 fontSize: 13,
                                 fontWeight: option.value == value
                                     ? FontWeight.w600
@@ -194,8 +198,11 @@ class OpenChatSelect<T> extends StatelessWidget {
                     ? MaterialTapTargetSize.padded
                     : MaterialTapTargetSize.shrinkWrap,
                 foregroundColor: palette.text,
-                disabledForegroundColor: palette.secondaryText,
-                side: BorderSide(color: palette.border),
+                disabledForegroundColor: palette.disabledForeground,
+                disabledBackgroundColor: palette.disabledSurface,
+                side: BorderSide(
+                  color: isEnabled ? palette.border : palette.disabledBorder,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(9),
                 ),
@@ -206,34 +213,43 @@ class OpenChatSelect<T> extends StatelessWidget {
                 Icon(
                   leadingIcon,
                   size: 16,
-                  color: leadingIconColor ?? palette.secondaryIcon,
+                  color: isEnabled
+                      ? leadingIconColor ?? palette.secondaryIcon
+                      : palette.disabledIcon,
                 ),
                 SizedBox(width: leadingIconGap),
               ],
               Expanded(
-                child:
-                    selectedContent ??
-                    Text(
-                      selected?.label ?? hint ?? '',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: selectedTextStyle == null
-                          ? TextStyle(
-                              color: selected == null
-                                  ? palette.secondaryText
-                                  : palette.text,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w500,
-                            )
-                          : selectedTextStyle.copyWith(
-                              color: selectedTextStyle.color ?? palette.text,
-                              fontWeight: FontWeight.w500,
-                            ),
-                    ),
+                child: selectedContent == null
+                    ? Text(
+                        selected?.label ?? hint ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: selectedTextStyle == null
+                            ? TextStyle(
+                                color: !isEnabled
+                                    ? palette.disabledForeground
+                                    : selected == null
+                                    ? palette.secondaryText
+                                    : palette.text,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                              )
+                            : selectedTextStyle.copyWith(
+                                color: !isEnabled
+                                    ? palette.disabledForeground
+                                    : selectedTextStyle.color ?? palette.text,
+                                fontWeight: FontWeight.w500,
+                              ),
+                      )
+                    : Opacity(
+                        opacity: isEnabled ? 1 : 0.55,
+                        child: selectedContent,
+                      ),
               ),
               if (trailing != null) ...[
                 SizedBox(width: trailingGap),
-                trailing,
+                Opacity(opacity: isEnabled ? 1 : 0.55, child: trailing),
               ] else ...[
                 const SizedBox(width: 8),
                 Icon(
@@ -241,7 +257,9 @@ class OpenChatSelect<T> extends StatelessWidget {
                       ? Icons.keyboard_arrow_up_rounded
                       : Icons.keyboard_arrow_down_rounded,
                   size: 18,
-                  color: palette.secondaryIcon,
+                  color: isEnabled
+                      ? palette.secondaryIcon
+                      : palette.disabledIcon,
                 ),
               ],
             ],

@@ -7,13 +7,13 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:intl/intl.dart';
 import 'package:markdown/markdown.dart' as markdown;
 
-import '../../../../app/openchat_theme.dart';
-import '../../../../app/openchat_toast.dart';
-import '../../../../l10n/generated/app_localizations.dart';
-import '../../../../l10n/openchat_localizations.dart';
-import '../../domain/chat_message.dart';
-import 'provider_icon.dart';
-import 'tool_activity.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/app/openchat_toast.dart';
+import 'package:openchat/l10n/generated/app_localizations.dart';
+import 'package:openchat/l10n/openchat_localizations.dart';
+import 'package:openchat/features/chat/domain/chat_message.dart';
+import 'package:openchat/features/chat/presentation/widgets/provider_icon.dart';
+import 'package:openchat/features/chat/presentation/widgets/tool_activity.dart';
 
 class AssistantMessage extends StatelessWidget {
   const AssistantMessage({
@@ -405,7 +405,7 @@ class _ReasoningSummaryAccordion extends StatelessWidget {
   }
 }
 
-class _AssistantResponseContent extends StatelessWidget {
+class _AssistantResponseContent extends StatefulWidget {
   const _AssistantResponseContent({
     required this.content,
     required this.isStreaming,
@@ -417,25 +417,52 @@ class _AssistantResponseContent extends StatelessWidget {
   final OpenChatPalette palette;
 
   @override
+  State<_AssistantResponseContent> createState() =>
+      _AssistantResponseContentState();
+}
+
+class _AssistantResponseContentState extends State<_AssistantResponseContent> {
+  String? _cachedContent;
+  String? _cachedSafeHtml;
+
+  @override
+  void didUpdateWidget(covariant _AssistantResponseContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.content != widget.content) {
+      _cachedContent = null;
+      _cachedSafeHtml = null;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final conversationStyle = OpenChatConversationStyle.of(context);
-    final fontSize = 14 * conversationStyle.textScale;
     final textStyle = TextStyle(
-      color: palette.text,
+      color: widget.palette.text,
       fontFamily: conversationStyle.fontFamily,
-      fontSize: fontSize,
+      fontSize: 14,
       fontWeight: FontWeight.w400,
       height: 22 / 14,
     );
-    if (isStreaming) return Text(content, style: textStyle);
+    if (widget.isStreaming) return Text(widget.content, style: textStyle);
 
+    final cachedHtml = _cachedSafeHtml;
+    if (_cachedContent == widget.content && cachedHtml != null) {
+      return _buildHtmlWidget(cachedHtml, textStyle);
+    }
     final markdownHtml = markdown.markdownToHtml(
-      content,
+      widget.content,
       extensionSet: markdown.ExtensionSet.gitHubFlavored,
       encodeHtml: false,
     );
     final safeHtml = _sanitizeAssistantHtml(markdownHtml);
+    _cachedContent = widget.content;
+    _cachedSafeHtml = safeHtml;
 
+    return _buildHtmlWidget(safeHtml, textStyle);
+  }
+
+  Widget _buildHtmlWidget(String safeHtml, TextStyle textStyle) {
     return HtmlWidget(
       safeHtml,
       enableCaching: true,
@@ -444,18 +471,18 @@ class _AssistantResponseContent extends StatelessWidget {
       onTapUrl: (_) => true,
       customStylesBuilder: (element) => switch (element.localName) {
         'pre' => {
-          'background-color': _cssColor(palette.composer),
+          'background-color': _cssColor(widget.palette.composer),
           'padding': '12px',
           'white-space': 'pre-wrap',
         },
         'code' => {
-          'background-color': _cssColor(palette.composer),
+          'background-color': _cssColor(widget.palette.composer),
           'font-family': 'monospace',
         },
         'blockquote' => {
-          'border-left': '2px solid ${_cssColor(palette.border)}',
+          'border-left': '2px solid ${_cssColor(widget.palette.border)}',
           'padding-left': '12px',
-          'color': _cssColor(palette.secondaryText),
+          'color': _cssColor(widget.palette.secondaryText),
         },
         _ => null,
       },

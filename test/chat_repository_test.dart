@@ -121,4 +121,33 @@ void main() {
       throwsA(isA<ConversationNotFoundException>()),
     );
   });
+
+  test('clearing history removes conversations and their messages', () async {
+    final database = OpenChatDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = ChatRepository(database);
+    final createdAt = DateTime.utc(2026, 9, 26, 12, 30);
+
+    await repository.createConversation(
+      id: 'conversation-to-clear',
+      title: 'Clear this history',
+      createdAt: createdAt,
+    );
+    await repository.saveMessage(
+      conversationId: 'conversation-to-clear',
+      message: const ChatMessage(
+        id: 'message-to-clear',
+        role: ChatMessageRole.user,
+        content: 'History to clear',
+      ),
+    );
+
+    await repository.deleteAllConversations();
+
+    expect(await repository.watchConversations().first, isEmpty);
+    expect(
+      await repository.watchMessages('conversation-to-clear').first,
+      isEmpty,
+    );
+  });
 }

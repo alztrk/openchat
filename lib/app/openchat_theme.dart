@@ -33,6 +33,15 @@ class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
   final Color accent;
   final Color accentIcon;
 
+  Color get disabledForeground =>
+      Color.alphaBlend(text.withValues(alpha: 0.48), surface);
+  Color get disabledIcon =>
+      Color.alphaBlend(secondaryIcon.withValues(alpha: 0.48), surface);
+  Color get disabledSurface =>
+      Color.alphaBlend(text.withValues(alpha: 0.045), surface);
+  Color get disabledBorder =>
+      Color.alphaBlend(border.withValues(alpha: 0.58), surface);
+
   static const light = OpenChatPalette(
     navigation: Color(0xFFE9E3DA),
     surface: Color(0xFFF5F3EE),
@@ -134,12 +143,10 @@ class OpenChatConversationStyle
     extends ThemeExtension<OpenChatConversationStyle> {
   const OpenChatConversationStyle({
     this.maxWidth = OpenChatSpacing.conversationMaxWidth,
-    this.textScale = 1,
     this.fontFamily = 'Manrope',
   });
 
   final double maxWidth;
-  final double textScale;
   final String fontFamily;
 
   static OpenChatConversationStyle of(BuildContext context) {
@@ -153,14 +160,9 @@ class OpenChatConversationStyle
   }
 
   @override
-  OpenChatConversationStyle copyWith({
-    double? maxWidth,
-    double? textScale,
-    String? fontFamily,
-  }) {
+  OpenChatConversationStyle copyWith({double? maxWidth, String? fontFamily}) {
     return OpenChatConversationStyle(
       maxWidth: maxWidth ?? this.maxWidth,
-      textScale: textScale ?? this.textScale,
       fontFamily: fontFamily ?? this.fontFamily,
     );
   }
@@ -173,7 +175,6 @@ class OpenChatConversationStyle
     if (other is! OpenChatConversationStyle) return this;
     return OpenChatConversationStyle(
       maxWidth: lerpDouble(maxWidth, other.maxWidth, t) ?? maxWidth,
-      textScale: lerpDouble(textScale, other.textScale, t) ?? textScale,
       fontFamily: t < 0.5 ? fontFamily : other.fontFamily,
     );
   }
@@ -200,7 +201,11 @@ abstract final class OpenChatTheme {
   );
   static final ThemeData dark = _create(OpenChatPalette.dark, Brightness.dark);
 
-  static ThemeData _create(OpenChatPalette palette, Brightness brightness) {
+  static ThemeData _create(
+    OpenChatPalette palette,
+    Brightness brightness, {
+    String fontFamily = 'Manrope',
+  }) {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: palette.accent,
       brightness: brightness,
@@ -214,7 +219,7 @@ abstract final class OpenChatTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
-      fontFamily: 'Manrope',
+      fontFamily: fontFamily,
       scaffoldBackgroundColor: palette.surface,
       colorScheme: colorScheme,
       extensions: <ThemeExtension<dynamic>>[
@@ -271,7 +276,7 @@ abstract final class OpenChatTheme {
           letterSpacing: 0,
           height: 1.4,
         ),
-      ),
+      ).apply(fontFamily: fontFamily),
       dividerColor: palette.border,
       inputDecorationTheme: InputDecorationTheme(
         hintStyle: TextStyle(color: palette.secondaryText, fontSize: 13),
@@ -286,6 +291,10 @@ abstract final class OpenChatTheme {
           borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(color: palette.controlBorder),
         ),
+        disabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: palette.disabledBorder),
+        ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
           borderSide: BorderSide(color: palette.accent),
@@ -294,22 +303,46 @@ abstract final class OpenChatTheme {
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
           foregroundColor: palette.secondaryText,
+          disabledForegroundColor: palette.disabledIcon,
           minimumSize: const Size(36, 36),
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         ),
       ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          disabledForegroundColor: palette.disabledForeground,
+        ),
+      ),
       outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          foregroundColor: palette.text,
-          side: BorderSide(color: palette.border),
-          minimumSize: const Size(36, 36),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          textStyle: TextStyle(
-            color: palette.text,
-            fontWeight: FontWeight.w500,
-            fontSize: 13,
-          ),
+        style:
+            OutlinedButton.styleFrom(
+              foregroundColor: palette.text,
+              disabledForegroundColor: palette.disabledForeground,
+              disabledBackgroundColor: palette.disabledSurface,
+              side: BorderSide(color: palette.border),
+              minimumSize: const Size(36, 36),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              textStyle: TextStyle(
+                color: palette.text,
+                fontWeight: FontWeight.w500,
+                fontSize: 13,
+              ),
+            ).copyWith(
+              side: WidgetStateProperty.resolveWith<BorderSide?>((states) {
+                final color = states.contains(WidgetState.disabled)
+                    ? palette.disabledBorder
+                    : palette.border;
+                return BorderSide(color: color);
+              }),
+            ),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          disabledForegroundColor: palette.disabledForeground,
+          disabledBackgroundColor: palette.disabledSurface,
         ),
       ),
     );
@@ -318,21 +351,16 @@ abstract final class OpenChatTheme {
   static ThemeData withConversationStyle(
     ThemeData theme, {
     required double maxWidth,
-    required double textScale,
     required String fontFamily,
   }) {
     final palette = theme.extension<OpenChatPalette>();
     if (palette == null) {
       throw StateError('OpenChatPalette is missing from the active theme.');
     }
-    return theme.copyWith(
+    return _create(palette, theme.brightness, fontFamily: fontFamily).copyWith(
       extensions: <ThemeExtension<dynamic>>[
         palette,
-        OpenChatConversationStyle(
-          maxWidth: maxWidth,
-          textScale: textScale,
-          fontFamily: fontFamily,
-        ),
+        OpenChatConversationStyle(maxWidth: maxWidth, fontFamily: fontFamily),
       ],
     );
   }

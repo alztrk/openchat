@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import '../../../../app/openchat_theme.dart';
-import '../../../../l10n/openchat_localizations.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/l10n/openchat_localizations.dart';
 
 class ChatNavigationRail extends StatelessWidget {
   const ChatNavigationRail({
@@ -35,111 +35,108 @@ class ChatNavigationRail extends StatelessWidget {
       width: expanded
           ? OpenChatSpacing.expandedRailWidth
           : OpenChatSpacing.compactRailWidth,
-      decoration: BoxDecoration(color: palette.navigation),
-      foregroundDecoration: BoxDecoration(
-        border: Border.all(color: palette.border),
+      decoration: BoxDecoration(
+        color: palette.navigation,
+        border: Border(right: BorderSide(color: palette.border)),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(1),
-        child: SafeArea(
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: expanded ? 16 : 13),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const SizedBox(height: 20),
-                if (expanded)
-                  _Brand(dark: dark, palette: palette)
-                else ...[
-                  _CompactBrand(dark: dark),
-                  const SizedBox(height: 40),
-                ],
-                const SizedBox(height: 10),
-                Align(
-                  alignment: Alignment.center,
-                  child: SizedBox(
-                    width: railContentWidth,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _RailNavigationButton(
-                          expanded: expanded,
-                          label: l10n.home,
-                          selected: !settingsSelected,
-                          icon: _RailIcon(
-                            assetPath: 'assets/icons/home.svg',
-                            color: settingsSelected
-                                ? palette.secondaryIcon
-                                : palette.accentIcon,
-                          ),
-                          palette: palette,
-                          onPressed: onOpenChat,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                Align(
-                  alignment: Alignment.center,
-                  child: SizedBox(
-                    width: railContentWidth,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        Divider(height: 1, color: palette.border),
-                        const SizedBox(height: 8),
-                        Tooltip(
-                          message: dark
-                              ? l10n.switchToLightMode
-                              : l10n.switchToDarkMode,
-                          child: _ThemeButton(
-                            expanded: expanded,
-                            label: l10n.theme,
-                            palette: palette,
-                            onPressed: onToggleTheme,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        _RailNavigationButton(
-                          expanded: expanded,
-                          label: l10n.settings,
-                          selected: settingsSelected,
-                          icon: _RailIcon(
-                            assetPath: 'assets/icons/settings.svg',
-                            color: settingsSelected
-                                ? palette.accentIcon
-                                : palette.secondaryIcon,
-                          ),
-                          palette: palette,
-                          onPressed: onOpenSettings,
-                        ),
-                        if (onToggleSidebars case final toggleSidebars?) ...[
-                          const SizedBox(height: 8),
-                          _RailNavigationButton(
-                            expanded: expanded,
-                            label: sidebarsCompact
-                                ? l10n.showSidebars
-                                : l10n.collapseSidebars,
-                            selected: false,
-                            icon: Icon(
-                              sidebarsCompact
-                                  ? Icons.chevron_right_rounded
-                                  : Icons.chevron_left_rounded,
-                              color: palette.secondaryIcon,
-                              size: 20,
-                            ),
-                            palette: palette,
-                            onPressed: toggleSidebars,
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
+      child: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: expanded ? 16 : 13),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 20),
+              if (expanded)
+                _Brand(dark: dark, palette: palette)
+              else ...[
+                _CompactBrand(dark: dark),
+                const SizedBox(height: 40),
               ],
-            ),
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.center,
+                child: SizedBox(
+                  width: railContentWidth,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _RailNavigationButton(
+                        expanded: expanded,
+                        label: l10n.home,
+                        selected: !settingsSelected,
+                        icon: _RailIcon(
+                          assetPath: 'assets/icons/home.svg',
+                          color: settingsSelected
+                              ? palette.secondaryIcon
+                              : palette.accentIcon,
+                        ),
+                        palette: palette,
+                        onPressed: onOpenChat,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Align(
+                alignment: Alignment.center,
+                child: SizedBox(
+                  width: railContentWidth,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Divider(height: 1, color: palette.border),
+                      const SizedBox(height: 8),
+                      Tooltip(
+                        message: dark
+                            ? l10n.switchToLightMode
+                            : l10n.switchToDarkMode,
+                        child: _ThemeButton(
+                          expanded: expanded,
+                          label: l10n.theme,
+                          palette: palette,
+                          onPressed: onToggleTheme,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _RailNavigationButton(
+                        expanded: expanded,
+                        label: l10n.settings,
+                        selected: settingsSelected,
+                        icon: _RailIcon(
+                          assetPath: 'assets/icons/settings.svg',
+                          color: settingsSelected
+                              ? palette.accentIcon
+                              : palette.secondaryIcon,
+                        ),
+                        palette: palette,
+                        onPressed: onOpenSettings,
+                      ),
+                      if (onToggleSidebars case final toggleSidebars?) ...[
+                        const SizedBox(height: 8),
+                        _RailNavigationButton(
+                          expanded: expanded,
+                          label: sidebarsCompact
+                              ? l10n.showSidebars
+                              : l10n.collapseSidebars,
+                          selected: false,
+                          icon: Icon(
+                            sidebarsCompact
+                                ? Icons.chevron_right_rounded
+                                : Icons.chevron_left_rounded,
+                            color: palette.secondaryIcon,
+                            size: 20,
+                          ),
+                          palette: palette,
+                          onPressed: toggleSidebars,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
           ),
         ),
       ),
@@ -348,12 +345,17 @@ class _RailNavigationButton extends StatelessWidget {
                     icon,
                     if (expanded) ...[
                       const SizedBox(width: 12),
-                      Text(
-                        label,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: foreground,
-                          fontSize: 14,
-                          height: 20 / 14,
+                      Expanded(
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(
+                                color: foreground,
+                                fontSize: 14,
+                                height: 20 / 14,
+                              ),
                         ),
                       ),
                     ],

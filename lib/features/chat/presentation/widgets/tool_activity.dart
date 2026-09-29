@@ -2,11 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 
-import '../../../../app/openchat_theme.dart';
-import '../../../../l10n/generated/app_localizations.dart';
-import '../../../../l10n/openchat_localizations.dart';
-import '../../domain/chat_message.dart';
-import 'tool_file_listing.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/l10n/generated/app_localizations.dart';
+import 'package:openchat/l10n/openchat_localizations.dart';
+import 'package:openchat/features/chat/domain/chat_message.dart';
+import 'package:openchat/features/chat/presentation/widgets/tool_file_listing.dart';
 
 class ToolActivityAccordion extends StatelessWidget {
   const ToolActivityAccordion({
@@ -188,6 +188,8 @@ class ToolActivityAccordion extends StatelessWidget {
         'search_files' => l10n.toolSearchFiles,
         'read_file' => l10n.toolReadFile,
         'get_file_info' => l10n.toolGetFileInfo,
+        'write_file' => l10n.toolWriteFile,
+        'edit_file' => l10n.toolEditFile,
         _ => name,
       };
 }

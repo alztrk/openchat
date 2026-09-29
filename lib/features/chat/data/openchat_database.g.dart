@@ -422,6 +422,17 @@ class $ConversationsTable extends Conversations
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _apiKeyConnectionIdMeta =
+      const VerificationMeta('apiKeyConnectionId');
+  @override
+  late final GeneratedColumn<String> apiKeyConnectionId =
+      GeneratedColumn<String>(
+        'api_key_connection_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _providerIdMeta = const VerificationMeta(
     'providerId',
   );
@@ -502,6 +513,7 @@ class $ConversationsTable extends Conversations
     titleSource,
     connectionId,
     workspaceId,
+    apiKeyConnectionId,
     providerId,
     modelId,
     projectId,
@@ -558,6 +570,15 @@ class $ConversationsTable extends Conversations
         workspaceId.isAcceptableOrUnknown(
           data['workspace_id']!,
           _workspaceIdMeta,
+        ),
+      );
+    }
+    if (data.containsKey('api_key_connection_id')) {
+      context.handle(
+        _apiKeyConnectionIdMeta,
+        apiKeyConnectionId.isAcceptableOrUnknown(
+          data['api_key_connection_id']!,
+          _apiKeyConnectionIdMeta,
         ),
       );
     }
@@ -630,6 +651,10 @@ class $ConversationsTable extends Conversations
         DriftSqlType.string,
         data['${effectivePrefix}workspace_id'],
       ),
+      apiKeyConnectionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}api_key_connection_id'],
+      ),
       providerId: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}provider_id'],
@@ -669,6 +694,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
   final String titleSource;
   final String? connectionId;
   final String? workspaceId;
+  final String? apiKeyConnectionId;
   final String? providerId;
   final String? modelId;
   final String? projectId;
@@ -681,6 +707,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     required this.titleSource,
     this.connectionId,
     this.workspaceId,
+    this.apiKeyConnectionId,
     this.providerId,
     this.modelId,
     this.projectId,
@@ -699,6 +726,9 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     }
     if (!nullToAbsent || workspaceId != null) {
       map['workspace_id'] = Variable<String>(workspaceId);
+    }
+    if (!nullToAbsent || apiKeyConnectionId != null) {
+      map['api_key_connection_id'] = Variable<String>(apiKeyConnectionId);
     }
     if (!nullToAbsent || providerId != null) {
       map['provider_id'] = Variable<String>(providerId);
@@ -726,6 +756,9 @@ class Conversation extends DataClass implements Insertable<Conversation> {
       workspaceId: workspaceId == null && nullToAbsent
           ? const Value.absent()
           : Value(workspaceId),
+      apiKeyConnectionId: apiKeyConnectionId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(apiKeyConnectionId),
       providerId: providerId == null && nullToAbsent
           ? const Value.absent()
           : Value(providerId),
@@ -752,6 +785,9 @@ class Conversation extends DataClass implements Insertable<Conversation> {
       titleSource: serializer.fromJson<String>(json['titleSource']),
       connectionId: serializer.fromJson<String?>(json['connectionId']),
       workspaceId: serializer.fromJson<String?>(json['workspaceId']),
+      apiKeyConnectionId: serializer.fromJson<String?>(
+        json['apiKeyConnectionId'],
+      ),
       providerId: serializer.fromJson<String?>(json['providerId']),
       modelId: serializer.fromJson<String?>(json['modelId']),
       projectId: serializer.fromJson<String?>(json['projectId']),
@@ -769,6 +805,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
       'titleSource': serializer.toJson<String>(titleSource),
       'connectionId': serializer.toJson<String?>(connectionId),
       'workspaceId': serializer.toJson<String?>(workspaceId),
+      'apiKeyConnectionId': serializer.toJson<String?>(apiKeyConnectionId),
       'providerId': serializer.toJson<String?>(providerId),
       'modelId': serializer.toJson<String?>(modelId),
       'projectId': serializer.toJson<String?>(projectId),
@@ -784,6 +821,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     String? titleSource,
     Value<String?> connectionId = const Value.absent(),
     Value<String?> workspaceId = const Value.absent(),
+    Value<String?> apiKeyConnectionId = const Value.absent(),
     Value<String?> providerId = const Value.absent(),
     Value<String?> modelId = const Value.absent(),
     Value<String?> projectId = const Value.absent(),
@@ -796,6 +834,9 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     titleSource: titleSource ?? this.titleSource,
     connectionId: connectionId.present ? connectionId.value : this.connectionId,
     workspaceId: workspaceId.present ? workspaceId.value : this.workspaceId,
+    apiKeyConnectionId: apiKeyConnectionId.present
+        ? apiKeyConnectionId.value
+        : this.apiKeyConnectionId,
     providerId: providerId.present ? providerId.value : this.providerId,
     modelId: modelId.present ? modelId.value : this.modelId,
     projectId: projectId.present ? projectId.value : this.projectId,
@@ -816,6 +857,9 @@ class Conversation extends DataClass implements Insertable<Conversation> {
       workspaceId: data.workspaceId.present
           ? data.workspaceId.value
           : this.workspaceId,
+      apiKeyConnectionId: data.apiKeyConnectionId.present
+          ? data.apiKeyConnectionId.value
+          : this.apiKeyConnectionId,
       providerId: data.providerId.present
           ? data.providerId.value
           : this.providerId,
@@ -835,6 +879,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
           ..write('titleSource: $titleSource, ')
           ..write('connectionId: $connectionId, ')
           ..write('workspaceId: $workspaceId, ')
+          ..write('apiKeyConnectionId: $apiKeyConnectionId, ')
           ..write('providerId: $providerId, ')
           ..write('modelId: $modelId, ')
           ..write('projectId: $projectId, ')
@@ -852,6 +897,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     titleSource,
     connectionId,
     workspaceId,
+    apiKeyConnectionId,
     providerId,
     modelId,
     projectId,
@@ -868,6 +914,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
           other.titleSource == this.titleSource &&
           other.connectionId == this.connectionId &&
           other.workspaceId == this.workspaceId &&
+          other.apiKeyConnectionId == this.apiKeyConnectionId &&
           other.providerId == this.providerId &&
           other.modelId == this.modelId &&
           other.projectId == this.projectId &&
@@ -882,6 +929,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
   final Value<String> titleSource;
   final Value<String?> connectionId;
   final Value<String?> workspaceId;
+  final Value<String?> apiKeyConnectionId;
   final Value<String?> providerId;
   final Value<String?> modelId;
   final Value<String?> projectId;
@@ -895,6 +943,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     this.titleSource = const Value.absent(),
     this.connectionId = const Value.absent(),
     this.workspaceId = const Value.absent(),
+    this.apiKeyConnectionId = const Value.absent(),
     this.providerId = const Value.absent(),
     this.modelId = const Value.absent(),
     this.projectId = const Value.absent(),
@@ -909,6 +958,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     this.titleSource = const Value.absent(),
     this.connectionId = const Value.absent(),
     this.workspaceId = const Value.absent(),
+    this.apiKeyConnectionId = const Value.absent(),
     this.providerId = const Value.absent(),
     this.modelId = const Value.absent(),
     this.projectId = const Value.absent(),
@@ -926,6 +976,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     Expression<String>? titleSource,
     Expression<String>? connectionId,
     Expression<String>? workspaceId,
+    Expression<String>? apiKeyConnectionId,
     Expression<String>? providerId,
     Expression<String>? modelId,
     Expression<String>? projectId,
@@ -940,6 +991,8 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
       if (titleSource != null) 'title_source': titleSource,
       if (connectionId != null) 'connection_id': connectionId,
       if (workspaceId != null) 'workspace_id': workspaceId,
+      if (apiKeyConnectionId != null)
+        'api_key_connection_id': apiKeyConnectionId,
       if (providerId != null) 'provider_id': providerId,
       if (modelId != null) 'model_id': modelId,
       if (projectId != null) 'project_id': projectId,
@@ -956,6 +1009,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     Value<String>? titleSource,
     Value<String?>? connectionId,
     Value<String?>? workspaceId,
+    Value<String?>? apiKeyConnectionId,
     Value<String?>? providerId,
     Value<String?>? modelId,
     Value<String?>? projectId,
@@ -970,6 +1024,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
       titleSource: titleSource ?? this.titleSource,
       connectionId: connectionId ?? this.connectionId,
       workspaceId: workspaceId ?? this.workspaceId,
+      apiKeyConnectionId: apiKeyConnectionId ?? this.apiKeyConnectionId,
       providerId: providerId ?? this.providerId,
       modelId: modelId ?? this.modelId,
       projectId: projectId ?? this.projectId,
@@ -997,6 +1052,9 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     }
     if (workspaceId.present) {
       map['workspace_id'] = Variable<String>(workspaceId.value);
+    }
+    if (apiKeyConnectionId.present) {
+      map['api_key_connection_id'] = Variable<String>(apiKeyConnectionId.value);
     }
     if (providerId.present) {
       map['provider_id'] = Variable<String>(providerId.value);
@@ -1030,6 +1088,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
           ..write('titleSource: $titleSource, ')
           ..write('connectionId: $connectionId, ')
           ..write('workspaceId: $workspaceId, ')
+          ..write('apiKeyConnectionId: $apiKeyConnectionId, ')
           ..write('providerId: $providerId, ')
           ..write('modelId: $modelId, ')
           ..write('projectId: $projectId, ')
@@ -1762,6 +1821,17 @@ class $ModelFavoritesTable extends ModelFavorites
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _sourceConnectionIdMeta =
+      const VerificationMeta('sourceConnectionId');
+  @override
+  late final GeneratedColumn<String> sourceConnectionId =
+      GeneratedColumn<String>(
+        'source_connection_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+      );
   static const VerificationMeta _displayNameMeta = const VerificationMeta(
     'displayName',
   );
@@ -1788,6 +1858,7 @@ class $ModelFavoritesTable extends ModelFavorites
   List<GeneratedColumn> get $columns => [
     providerId,
     modelId,
+    sourceConnectionId,
     displayName,
     favoritedAt,
   ];
@@ -1818,6 +1889,15 @@ class $ModelFavoritesTable extends ModelFavorites
       );
     } else if (isInserting) {
       context.missing(_modelIdMeta);
+    }
+    if (data.containsKey('source_connection_id')) {
+      context.handle(
+        _sourceConnectionIdMeta,
+        sourceConnectionId.isAcceptableOrUnknown(
+          data['source_connection_id']!,
+          _sourceConnectionIdMeta,
+        ),
+      );
     }
     if (data.containsKey('display_name')) {
       context.handle(
@@ -1858,6 +1938,10 @@ class $ModelFavoritesTable extends ModelFavorites
         DriftSqlType.string,
         data['${effectivePrefix}model_id'],
       )!,
+      sourceConnectionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_connection_id'],
+      ),
       displayName: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}display_name'],
@@ -1878,11 +1962,13 @@ class $ModelFavoritesTable extends ModelFavorites
 class ModelFavorite extends DataClass implements Insertable<ModelFavorite> {
   final String providerId;
   final String modelId;
+  final String? sourceConnectionId;
   final String displayName;
   final int favoritedAt;
   const ModelFavorite({
     required this.providerId,
     required this.modelId,
+    this.sourceConnectionId,
     required this.displayName,
     required this.favoritedAt,
   });
@@ -1891,6 +1977,9 @@ class ModelFavorite extends DataClass implements Insertable<ModelFavorite> {
     final map = <String, Expression>{};
     map['provider_id'] = Variable<String>(providerId);
     map['model_id'] = Variable<String>(modelId);
+    if (!nullToAbsent || sourceConnectionId != null) {
+      map['source_connection_id'] = Variable<String>(sourceConnectionId);
+    }
     map['display_name'] = Variable<String>(displayName);
     map['favorited_at'] = Variable<int>(favoritedAt);
     return map;
@@ -1900,6 +1989,9 @@ class ModelFavorite extends DataClass implements Insertable<ModelFavorite> {
     return ModelFavoritesCompanion(
       providerId: Value(providerId),
       modelId: Value(modelId),
+      sourceConnectionId: sourceConnectionId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceConnectionId),
       displayName: Value(displayName),
       favoritedAt: Value(favoritedAt),
     );
@@ -1913,6 +2005,9 @@ class ModelFavorite extends DataClass implements Insertable<ModelFavorite> {
     return ModelFavorite(
       providerId: serializer.fromJson<String>(json['providerId']),
       modelId: serializer.fromJson<String>(json['modelId']),
+      sourceConnectionId: serializer.fromJson<String?>(
+        json['sourceConnectionId'],
+      ),
       displayName: serializer.fromJson<String>(json['displayName']),
       favoritedAt: serializer.fromJson<int>(json['favoritedAt']),
     );
@@ -1923,6 +2018,7 @@ class ModelFavorite extends DataClass implements Insertable<ModelFavorite> {
     return <String, dynamic>{
       'providerId': serializer.toJson<String>(providerId),
       'modelId': serializer.toJson<String>(modelId),
+      'sourceConnectionId': serializer.toJson<String?>(sourceConnectionId),
       'displayName': serializer.toJson<String>(displayName),
       'favoritedAt': serializer.toJson<int>(favoritedAt),
     };
@@ -1931,11 +2027,15 @@ class ModelFavorite extends DataClass implements Insertable<ModelFavorite> {
   ModelFavorite copyWith({
     String? providerId,
     String? modelId,
+    Value<String?> sourceConnectionId = const Value.absent(),
     String? displayName,
     int? favoritedAt,
   }) => ModelFavorite(
     providerId: providerId ?? this.providerId,
     modelId: modelId ?? this.modelId,
+    sourceConnectionId: sourceConnectionId.present
+        ? sourceConnectionId.value
+        : this.sourceConnectionId,
     displayName: displayName ?? this.displayName,
     favoritedAt: favoritedAt ?? this.favoritedAt,
   );
@@ -1945,6 +2045,9 @@ class ModelFavorite extends DataClass implements Insertable<ModelFavorite> {
           ? data.providerId.value
           : this.providerId,
       modelId: data.modelId.present ? data.modelId.value : this.modelId,
+      sourceConnectionId: data.sourceConnectionId.present
+          ? data.sourceConnectionId.value
+          : this.sourceConnectionId,
       displayName: data.displayName.present
           ? data.displayName.value
           : this.displayName,
@@ -1959,6 +2062,7 @@ class ModelFavorite extends DataClass implements Insertable<ModelFavorite> {
     return (StringBuffer('ModelFavorite(')
           ..write('providerId: $providerId, ')
           ..write('modelId: $modelId, ')
+          ..write('sourceConnectionId: $sourceConnectionId, ')
           ..write('displayName: $displayName, ')
           ..write('favoritedAt: $favoritedAt')
           ..write(')'))
@@ -1966,14 +2070,20 @@ class ModelFavorite extends DataClass implements Insertable<ModelFavorite> {
   }
 
   @override
-  int get hashCode =>
-      Object.hash(providerId, modelId, displayName, favoritedAt);
+  int get hashCode => Object.hash(
+    providerId,
+    modelId,
+    sourceConnectionId,
+    displayName,
+    favoritedAt,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
       (other is ModelFavorite &&
           other.providerId == this.providerId &&
           other.modelId == this.modelId &&
+          other.sourceConnectionId == this.sourceConnectionId &&
           other.displayName == this.displayName &&
           other.favoritedAt == this.favoritedAt);
 }
@@ -1981,12 +2091,14 @@ class ModelFavorite extends DataClass implements Insertable<ModelFavorite> {
 class ModelFavoritesCompanion extends UpdateCompanion<ModelFavorite> {
   final Value<String> providerId;
   final Value<String> modelId;
+  final Value<String?> sourceConnectionId;
   final Value<String> displayName;
   final Value<int> favoritedAt;
   final Value<int> rowid;
   const ModelFavoritesCompanion({
     this.providerId = const Value.absent(),
     this.modelId = const Value.absent(),
+    this.sourceConnectionId = const Value.absent(),
     this.displayName = const Value.absent(),
     this.favoritedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -1994,6 +2106,7 @@ class ModelFavoritesCompanion extends UpdateCompanion<ModelFavorite> {
   ModelFavoritesCompanion.insert({
     required String providerId,
     required String modelId,
+    this.sourceConnectionId = const Value.absent(),
     required String displayName,
     required int favoritedAt,
     this.rowid = const Value.absent(),
@@ -2004,6 +2117,7 @@ class ModelFavoritesCompanion extends UpdateCompanion<ModelFavorite> {
   static Insertable<ModelFavorite> custom({
     Expression<String>? providerId,
     Expression<String>? modelId,
+    Expression<String>? sourceConnectionId,
     Expression<String>? displayName,
     Expression<int>? favoritedAt,
     Expression<int>? rowid,
@@ -2011,6 +2125,8 @@ class ModelFavoritesCompanion extends UpdateCompanion<ModelFavorite> {
     return RawValuesInsertable({
       if (providerId != null) 'provider_id': providerId,
       if (modelId != null) 'model_id': modelId,
+      if (sourceConnectionId != null)
+        'source_connection_id': sourceConnectionId,
       if (displayName != null) 'display_name': displayName,
       if (favoritedAt != null) 'favorited_at': favoritedAt,
       if (rowid != null) 'rowid': rowid,
@@ -2020,6 +2136,7 @@ class ModelFavoritesCompanion extends UpdateCompanion<ModelFavorite> {
   ModelFavoritesCompanion copyWith({
     Value<String>? providerId,
     Value<String>? modelId,
+    Value<String?>? sourceConnectionId,
     Value<String>? displayName,
     Value<int>? favoritedAt,
     Value<int>? rowid,
@@ -2027,6 +2144,7 @@ class ModelFavoritesCompanion extends UpdateCompanion<ModelFavorite> {
     return ModelFavoritesCompanion(
       providerId: providerId ?? this.providerId,
       modelId: modelId ?? this.modelId,
+      sourceConnectionId: sourceConnectionId ?? this.sourceConnectionId,
       displayName: displayName ?? this.displayName,
       favoritedAt: favoritedAt ?? this.favoritedAt,
       rowid: rowid ?? this.rowid,
@@ -2041,6 +2159,9 @@ class ModelFavoritesCompanion extends UpdateCompanion<ModelFavorite> {
     }
     if (modelId.present) {
       map['model_id'] = Variable<String>(modelId.value);
+    }
+    if (sourceConnectionId.present) {
+      map['source_connection_id'] = Variable<String>(sourceConnectionId.value);
     }
     if (displayName.present) {
       map['display_name'] = Variable<String>(displayName.value);
@@ -2059,6 +2180,7 @@ class ModelFavoritesCompanion extends UpdateCompanion<ModelFavorite> {
     return (StringBuffer('ModelFavoritesCompanion(')
           ..write('providerId: $providerId, ')
           ..write('modelId: $modelId, ')
+          ..write('sourceConnectionId: $sourceConnectionId, ')
           ..write('displayName: $displayName, ')
           ..write('favoritedAt: $favoritedAt, ')
           ..write('rowid: $rowid')
@@ -2413,6 +2535,7 @@ typedef $$ConversationsTableCreateCompanionBuilder =
       Value<String> titleSource,
       Value<String?> connectionId,
       Value<String?> workspaceId,
+      Value<String?> apiKeyConnectionId,
       Value<String?> providerId,
       Value<String?> modelId,
       Value<String?> projectId,
@@ -2428,6 +2551,7 @@ typedef $$ConversationsTableUpdateCompanionBuilder =
       Value<String> titleSource,
       Value<String?> connectionId,
       Value<String?> workspaceId,
+      Value<String?> apiKeyConnectionId,
       Value<String?> providerId,
       Value<String?> modelId,
       Value<String?> projectId,
@@ -2514,6 +2638,11 @@ class $$ConversationsTableFilterComposer
 
   ColumnFilters<String> get workspaceId => $composableBuilder(
     column: $table.workspaceId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get apiKeyConnectionId => $composableBuilder(
+    column: $table.apiKeyConnectionId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -2625,6 +2754,11 @@ class $$ConversationsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get apiKeyConnectionId => $composableBuilder(
+    column: $table.apiKeyConnectionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get providerId => $composableBuilder(
     column: $table.providerId,
     builder: (column) => ColumnOrderings(column),
@@ -2701,6 +2835,11 @@ class $$ConversationsTableAnnotationComposer
 
   GeneratedColumn<String> get workspaceId => $composableBuilder(
     column: $table.workspaceId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get apiKeyConnectionId => $composableBuilder(
+    column: $table.apiKeyConnectionId,
     builder: (column) => column,
   );
 
@@ -2805,6 +2944,7 @@ class $$ConversationsTableTableManager
                 Value<String> titleSource = const Value.absent(),
                 Value<String?> connectionId = const Value.absent(),
                 Value<String?> workspaceId = const Value.absent(),
+                Value<String?> apiKeyConnectionId = const Value.absent(),
                 Value<String?> providerId = const Value.absent(),
                 Value<String?> modelId = const Value.absent(),
                 Value<String?> projectId = const Value.absent(),
@@ -2818,6 +2958,7 @@ class $$ConversationsTableTableManager
                 titleSource: titleSource,
                 connectionId: connectionId,
                 workspaceId: workspaceId,
+                apiKeyConnectionId: apiKeyConnectionId,
                 providerId: providerId,
                 modelId: modelId,
                 projectId: projectId,
@@ -2833,6 +2974,7 @@ class $$ConversationsTableTableManager
                 Value<String> titleSource = const Value.absent(),
                 Value<String?> connectionId = const Value.absent(),
                 Value<String?> workspaceId = const Value.absent(),
+                Value<String?> apiKeyConnectionId = const Value.absent(),
                 Value<String?> providerId = const Value.absent(),
                 Value<String?> modelId = const Value.absent(),
                 Value<String?> projectId = const Value.absent(),
@@ -2846,6 +2988,7 @@ class $$ConversationsTableTableManager
                 titleSource: titleSource,
                 connectionId: connectionId,
                 workspaceId: workspaceId,
+                apiKeyConnectionId: apiKeyConnectionId,
                 providerId: providerId,
                 modelId: modelId,
                 projectId: projectId,
@@ -3383,6 +3526,7 @@ typedef $$ModelFavoritesTableCreateCompanionBuilder =
     ModelFavoritesCompanion Function({
       required String providerId,
       required String modelId,
+      Value<String?> sourceConnectionId,
       required String displayName,
       required int favoritedAt,
       Value<int> rowid,
@@ -3391,6 +3535,7 @@ typedef $$ModelFavoritesTableUpdateCompanionBuilder =
     ModelFavoritesCompanion Function({
       Value<String> providerId,
       Value<String> modelId,
+      Value<String?> sourceConnectionId,
       Value<String> displayName,
       Value<int> favoritedAt,
       Value<int> rowid,
@@ -3412,6 +3557,11 @@ class $$ModelFavoritesTableFilterComposer
 
   ColumnFilters<String> get modelId => $composableBuilder(
     column: $table.modelId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceConnectionId => $composableBuilder(
+    column: $table.sourceConnectionId,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3445,6 +3595,11 @@ class $$ModelFavoritesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get sourceConnectionId => $composableBuilder(
+    column: $table.sourceConnectionId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get displayName => $composableBuilder(
     column: $table.displayName,
     builder: (column) => ColumnOrderings(column),
@@ -3472,6 +3627,11 @@ class $$ModelFavoritesTableAnnotationComposer
 
   GeneratedColumn<String> get modelId =>
       $composableBuilder(column: $table.modelId, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceConnectionId => $composableBuilder(
+    column: $table.sourceConnectionId,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<String> get displayName => $composableBuilder(
     column: $table.displayName,
@@ -3523,12 +3683,14 @@ class $$ModelFavoritesTableTableManager
               ({
                 Value<String> providerId = const Value.absent(),
                 Value<String> modelId = const Value.absent(),
+                Value<String?> sourceConnectionId = const Value.absent(),
                 Value<String> displayName = const Value.absent(),
                 Value<int> favoritedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ModelFavoritesCompanion(
                 providerId: providerId,
                 modelId: modelId,
+                sourceConnectionId: sourceConnectionId,
                 displayName: displayName,
                 favoritedAt: favoritedAt,
                 rowid: rowid,
@@ -3537,12 +3699,14 @@ class $$ModelFavoritesTableTableManager
               ({
                 required String providerId,
                 required String modelId,
+                Value<String?> sourceConnectionId = const Value.absent(),
                 required String displayName,
                 required int favoritedAt,
                 Value<int> rowid = const Value.absent(),
               }) => ModelFavoritesCompanion.insert(
                 providerId: providerId,
                 modelId: modelId,
+                sourceConnectionId: sourceConnectionId,
                 displayName: displayName,
                 favoritedAt: favoritedAt,
                 rowid: rowid,

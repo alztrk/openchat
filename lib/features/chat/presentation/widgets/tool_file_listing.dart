@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../../../app/openchat_theme.dart';
-import '../../../../l10n/openchat_localizations.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/l10n/openchat_localizations.dart';
 
 class ToolFileListing {
   const ToolFileListing({

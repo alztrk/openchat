@@ -2,14 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import '../../../../app/openchat_select.dart';
-import '../../../../app/openchat_theme.dart';
-import 'composer_control_style.dart';
-import 'model_selector.dart';
-import '../../../../l10n/openchat_localizations.dart';
-import '../../../settings/data/settings_preferences.dart';
-import '../../domain/chatgpt_connection.dart';
-import '../../domain/model_favorite.dart';
+import 'package:openchat/app/openchat_select.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
+import 'package:openchat/features/chat/domain/model_favorite.dart';
+import 'package:openchat/features/settings/data/settings_preferences.dart';
+import 'package:openchat/l10n/openchat_localizations.dart';
+
+import 'package:openchat/features/chat/presentation/widgets/composer_control_style.dart';
+import 'package:openchat/features/chat/presentation/widgets/model_selector.dart';
 
 class ChatComposer extends StatelessWidget {
   const ChatComposer({
@@ -22,10 +23,13 @@ class ChatComposer extends StatelessWidget {
     this.isLoadingModels = false,
     this.models = const <ChatGptModel>[],
     this.favoriteModels = const <FavoriteModel>[],
-    this.providerId = 'chatgpt',
+    required this.providerId,
+    this.isChatGptConnected = false,
+    this.availableProviderIds = const <String>{},
     this.onProviderSelected,
     this.modelsEmptyLabel,
     this.selectedModelId,
+    this.selectedModelRouteKey,
     this.onModelSelected,
     this.onModelFavoriteChanged,
     this.onFavoriteModelSelected,
@@ -48,14 +52,18 @@ class ChatComposer extends StatelessWidget {
   final List<ChatGptModel> models;
   final List<FavoriteModel> favoriteModels;
   final String providerId;
+  final bool isChatGptConnected;
+  final Set<String> availableProviderIds;
   final ValueChanged<String>? onProviderSelected;
   final String? modelsEmptyLabel;
   final String? selectedModelId;
-  final ValueChanged<String>? onModelSelected;
+  final String? selectedModelRouteKey;
+  final ValueChanged<ChatGptModel>? onModelSelected;
   final void Function(
     String providerId,
     String modelId,
     String displayName,
+    String? sourceConnectionId,
     bool isFavorite,
   )?
   onModelFavoriteChanged;
@@ -155,9 +163,12 @@ class ChatComposer extends StatelessWidget {
                   models: models,
                   favoriteModels: favoriteModels,
                   providerId: providerId,
+                  isChatGptConnected: isChatGptConnected,
+                  availableProviderIds: availableProviderIds,
                   onProviderSelected: onProviderSelected,
                   modelsEmptyLabel: modelsEmptyLabel,
                   selectedModelId: selectedModelId,
+                  selectedModelRouteKey: selectedModelRouteKey,
                   onModelSelected: onModelSelected,
                   onModelFavoriteChanged: onModelFavoriteChanged,
                   onFavoriteModelSelected: onFavoriteModelSelected,
@@ -192,9 +203,12 @@ class _ComposerActions extends StatelessWidget {
     required this.models,
     required this.favoriteModels,
     required this.providerId,
+    required this.isChatGptConnected,
+    required this.availableProviderIds,
     required this.onProviderSelected,
     required this.modelsEmptyLabel,
     required this.selectedModelId,
+    required this.selectedModelRouteKey,
     required this.onModelSelected,
     required this.onModelFavoriteChanged,
     required this.onFavoriteModelSelected,
@@ -219,14 +233,18 @@ class _ComposerActions extends StatelessWidget {
   final List<ChatGptModel> models;
   final List<FavoriteModel> favoriteModels;
   final String providerId;
+  final bool isChatGptConnected;
+  final Set<String> availableProviderIds;
   final ValueChanged<String>? onProviderSelected;
   final String? modelsEmptyLabel;
   final String? selectedModelId;
-  final ValueChanged<String>? onModelSelected;
+  final String? selectedModelRouteKey;
+  final ValueChanged<ChatGptModel>? onModelSelected;
   final void Function(
     String providerId,
     String modelId,
     String displayName,
+    String? sourceConnectionId,
     bool isFavorite,
   )?
   onModelFavoriteChanged;
@@ -256,7 +274,10 @@ class _ComposerActions extends StatelessWidget {
       models: models,
       favoriteModels: favoriteModels,
       selectedModelId: selectedModelId,
+      selectedModelRouteKey: selectedModelRouteKey,
       providerId: providerId,
+      isChatGptConnected: isChatGptConnected,
+      availableProviderIds: availableProviderIds,
       onProviderSelected: onProviderSelected,
       isLoadingModels: isLoadingModels,
       emptyModelsLabel:
@@ -315,7 +336,7 @@ class _ComposerActions extends StatelessWidget {
               width: 18,
               height: 18,
               colorFilter: ColorFilter.mode(
-                palette.secondaryText,
+                palette.disabledIcon,
                 BlendMode.srcIn,
               ),
               excludeFromSemantics: true,
@@ -342,8 +363,8 @@ class _ComposerActions extends StatelessWidget {
                 style: FilledButton.styleFrom(
                   backgroundColor: palette.selected,
                   foregroundColor: palette.text,
-                  disabledBackgroundColor: palette.selected,
-                  disabledForegroundColor: palette.secondaryText,
+                  disabledBackgroundColor: palette.disabledSurface,
+                  disabledForegroundColor: palette.disabledForeground,
                   tapTargetSize: compact
                       ? MaterialTapTargetSize.padded
                       : MaterialTapTargetSize.shrinkWrap,
@@ -352,7 +373,6 @@ class _ComposerActions extends StatelessWidget {
                     borderRadius: BorderRadius.circular(9),
                   ),
                   textStyle: const TextStyle(
-                    fontFamily: 'Manrope',
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                     height: 18 / 13,

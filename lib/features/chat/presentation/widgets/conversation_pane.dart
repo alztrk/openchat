@@ -5,17 +5,20 @@ import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:intl/intl.dart';
 
-import '../../../../app/openchat_theme.dart';
-import '../../../../app/openchat_toast.dart';
-import '../../domain/chat_message.dart';
-import '../../domain/chatgpt_connection.dart';
-import '../../domain/model_favorite.dart';
-import '../../../../l10n/openchat_localizations.dart';
-import '../../../../platform/windows/window_controls.dart';
-import '../../../settings/data/settings_preferences.dart';
-import 'assistant_message.dart';
-import 'chat_composer.dart';
-import 'window_control_bar.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/app/openchat_toast.dart';
+import 'package:openchat/features/chat/domain/chat_message.dart';
+import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
+import 'package:openchat/features/chat/domain/model_favorite.dart';
+import 'package:openchat/features/chat/domain/tool_permission_request.dart';
+import 'package:openchat/features/settings/data/settings_preferences.dart';
+import 'package:openchat/l10n/openchat_localizations.dart';
+import 'package:openchat/platform/windows/window_controls.dart';
+
+import 'package:openchat/features/chat/presentation/widgets/assistant_message.dart';
+import 'package:openchat/features/chat/presentation/widgets/chat_composer.dart';
+import 'package:openchat/features/chat/presentation/widgets/tool_permission_card.dart';
+import 'package:openchat/features/chat/presentation/widgets/window_control_bar.dart';
 
 class ConversationPane extends StatelessWidget {
   const ConversationPane({
@@ -31,9 +34,12 @@ class ConversationPane extends StatelessWidget {
     this.isLoadingModels = false,
     this.models = const <ChatGptModel>[],
     this.favoriteModels = const <FavoriteModel>[],
-    this.providerId = 'chatgpt',
+    required this.providerId,
+    this.isChatGptConnected = false,
+    this.availableProviderIds = const <String>{},
     this.onProviderSelected,
     this.selectedModelId,
+    this.selectedModelRouteKey,
     this.onModelSelected,
     this.onModelFavoriteChanged,
     this.onFavoriteModelSelected,
@@ -54,6 +60,11 @@ class ConversationPane extends StatelessWidget {
     this.reasoningLevel,
     this.toolPermissionMode = ToolPermissionMode.requireApproval,
     this.onToolPermissionModeChanged,
+    this.toolPermissionRequest,
+    this.isRespondingToToolPermission = false,
+    this.toolPermissionError,
+    this.onApproveToolPermission,
+    this.onDenyToolPermission,
     this.showWindowControls,
     this.messageScrollController,
     super.key,
@@ -73,13 +84,17 @@ class ConversationPane extends StatelessWidget {
   final List<ChatGptModel> models;
   final List<FavoriteModel> favoriteModels;
   final String providerId;
+  final bool isChatGptConnected;
+  final Set<String> availableProviderIds;
   final ValueChanged<String>? onProviderSelected;
   final String? selectedModelId;
-  final ValueChanged<String>? onModelSelected;
+  final String? selectedModelRouteKey;
+  final ValueChanged<ChatGptModel>? onModelSelected;
   final void Function(
     String providerId,
     String modelId,
     String displayName,
+    String? sourceConnectionId,
     bool isFavorite,
   )?
   onModelFavoriteChanged;
@@ -102,6 +117,11 @@ class ConversationPane extends StatelessWidget {
   final String? reasoningLevel;
   final ToolPermissionMode toolPermissionMode;
   final ValueChanged<ToolPermissionMode>? onToolPermissionModeChanged;
+  final ToolPermissionRequest? toolPermissionRequest;
+  final bool isRespondingToToolPermission;
+  final String? toolPermissionError;
+  final VoidCallback? onApproveToolPermission;
+  final VoidCallback? onDenyToolPermission;
   final bool? showWindowControls;
 
   @override
@@ -169,6 +189,16 @@ class ConversationPane extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (toolPermissionRequest case final request?) ...[
+                    ToolPermissionCard(
+                      request: request,
+                      isResponding: isRespondingToToolPermission,
+                      errorMessage: toolPermissionError,
+                      onApprove: onApproveToolPermission,
+                      onDeny: onDenyToolPermission,
+                    ),
+                    const SizedBox(height: 10),
+                  ],
                   ChatComposer(
                     controller: messageController,
                     onSendMessage: onSendMessage,
@@ -180,9 +210,12 @@ class ConversationPane extends StatelessWidget {
                     models: models,
                     favoriteModels: favoriteModels,
                     providerId: providerId,
+                    isChatGptConnected: isChatGptConnected,
+                    availableProviderIds: availableProviderIds,
                     onProviderSelected: onProviderSelected,
                     modelsEmptyLabel: modelsEmptyLabel,
                     selectedModelId: selectedModelId,
+                    selectedModelRouteKey: selectedModelRouteKey,
                     onModelSelected: onModelSelected,
                     onModelFavoriteChanged: onModelFavoriteChanged,
                     onFavoriteModelSelected: onFavoriteModelSelected,
@@ -443,7 +476,7 @@ class _UserMessage extends StatelessWidget {
                         style: TextStyle(
                           color: palette.text,
                           fontFamily: conversationStyle.fontFamily,
-                          fontSize: 15 * conversationStyle.textScale,
+                          fontSize: 15,
                           fontWeight: FontWeight.w400,
                           height: 22 / 15,
                         ),

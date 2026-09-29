@@ -1,17 +1,22 @@
 import 'dart:convert';
 
-import '../../../l10n/generated/app_localizations.dart';
-import '../domain/chat_conversation.dart';
-import '../domain/chat_message.dart' as chat;
+import 'package:openchat/features/chat/domain/chat_conversation.dart';
+import 'package:openchat/features/chat/domain/chat_message.dart' as chat;
+import 'package:openchat/l10n/generated/app_localizations.dart';
 
 String buildConversationMarkdown(
   ChatConversation conversation,
   List<chat.ChatMessage> messages,
   AppLocalizations l10n,
 ) {
-  final providerLabel = conversation.providerId == 'opencode'
-      ? l10n.openCodeProvider
-      : l10n.chatGptProvider;
+  final providerLabel = switch (conversation.providerId) {
+    'opencode' => l10n.openCodeProvider,
+    'gemini' => l10n.geminiProvider,
+    'groq' => l10n.groqProvider,
+    'cerebras' => l10n.cerebrasProvider,
+    'openrouter' => l10n.openRouterProvider,
+    _ => l10n.chatGptProvider,
+  };
   final modelLabel = conversation.modelId ?? l10n.messageModelUnavailable;
   final markdown = StringBuffer()
     ..writeln('# ${conversation.title}')

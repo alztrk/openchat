@@ -7,16 +7,19 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:toastification/toastification.dart';
 
-import '../features/chat/data/chat_repository.dart';
-import '../features/chat/data/openchat_database.dart';
-import '../features/chat/domain/history_storage_status.dart';
-import '../features/chat/presentation/chat_screen.dart';
-import '../features/settings/data/chat_gpt_api_key_store.dart';
-import '../features/settings/data/open_code_api_key_store.dart';
-import '../features/settings/data/settings_preferences.dart';
-import '../l10n/generated/app_localizations.dart';
-import '../platform/windows/openchat_service_client.dart';
-import 'openchat_theme.dart';
+import 'package:openchat/features/chat/data/chat_repository.dart';
+import 'package:openchat/features/chat/data/openchat_database.dart';
+import 'package:openchat/features/chat/domain/history_storage_status.dart';
+import 'package:openchat/features/chat/presentation/chat_screen.dart';
+import 'package:openchat/features/settings/data/api_compatible_provider_key_store.dart';
+import 'package:openchat/features/settings/data/chat_gpt_api_key_store.dart';
+import 'package:openchat/features/settings/data/open_code_api_key_store.dart';
+import 'package:openchat/features/settings/data/settings_preferences.dart';
+import 'package:openchat/l10n/generated/app_localizations.dart';
+import 'package:openchat/platform/windows/openchat_service_client.dart';
+
+import 'package:openchat/app/openchat_text_scaler.dart';
+import 'package:openchat/app/openchat_theme.dart';
 
 class OpenChatApp extends StatefulWidget {
   const OpenChatApp({super.key});
@@ -39,9 +42,9 @@ class _OpenChatAppState extends State<OpenChatApp> {
       ConversationWidthPreference.normal;
   ConversationTextSizePreference _conversationTextSize =
       ConversationTextSizePreference.normal;
-  ConversationFontPreference _conversationFont =
-      ConversationFontPreference.manrope;
+  AppFontPreference _appFont = AppFontPreference.manrope;
   late final ChatGptApiKeyStore _chatGptApiKeyStore;
+  late final ApiCompatibleProviderKeyStore _apiCompatibleProviderKeyStore;
   late final OpenCodeApiKeyStore _openCodeApiKeyStore;
   late final SettingsPreferences _settingsPreferences;
   late final OpenChatServiceClient _serviceClient;
@@ -56,6 +59,9 @@ class _OpenChatAppState extends State<OpenChatApp> {
     super.initState();
     _serviceClient = OpenChatServiceClient();
     _chatGptApiKeyStore = ChatGptApiKeyStore(FlutterSecureStorage());
+    _apiCompatibleProviderKeyStore = ApiCompatibleProviderKeyStore(
+      FlutterSecureStorage(),
+    );
     _openCodeApiKeyStore = OpenCodeApiKeyStore(FlutterSecureStorage());
     _settingsPreferences = SettingsPreferences(SharedPreferencesAsync());
     _serviceEventSubscription = _serviceClient.events.listen(
@@ -195,14 +201,16 @@ class _OpenChatAppState extends State<OpenChatApp> {
 
   Future<void> _loadConversationStyle() async {
     try {
-      final width = await _settingsPreferences.readConversationWidth();
-      final textSize = await _settingsPreferences.readConversationTextSize();
-      final font = await _settingsPreferences.readConversationFont();
+      final (width, textSize, font) = await (
+        _settingsPreferences.readConversationWidth(),
+        _settingsPreferences.readConversationTextSize(),
+        _settingsPreferences.readAppFont(),
+      ).wait;
       if (!mounted) return;
       setState(() {
         _conversationWidth = width;
         _conversationTextSize = textSize;
-        _conversationFont = font;
+        _appFont = font;
       });
     } on Object catch (error, stackTrace) {
       FlutterError.reportError(
@@ -232,11 +240,11 @@ class _OpenChatAppState extends State<OpenChatApp> {
     if (mounted) setState(() => _conversationTextSize = size);
   }
 
-  Future<void> _setConversationFont(ConversationFontPreference font) async {
+  Future<void> _setAppFont(AppFontPreference font) async {
     await _conversationStyleReady;
-    if (_conversationFont == font) return;
-    await _settingsPreferences.writeConversationFont(font);
-    if (mounted) setState(() => _conversationFont = font);
+    if (_appFont == font) return;
+    await _settingsPreferences.writeAppFont(font);
+    if (mounted) setState(() => _appFont = font);
   }
 
   Future<void> _toggleTheme() async {
@@ -308,14 +316,12 @@ class _OpenChatAppState extends State<OpenChatApp> {
     final lightTheme = OpenChatTheme.withConversationStyle(
       OpenChatTheme.light,
       maxWidth: _conversationWidth.maxWidth,
-      textScale: _conversationTextSize.scale,
-      fontFamily: _conversationFont.familyName,
+      fontFamily: _appFont.familyName,
     );
     final darkTheme = OpenChatTheme.withConversationStyle(
       OpenChatTheme.dark,
       maxWidth: _conversationWidth.maxWidth,
-      textScale: _conversationTextSize.scale,
-      fontFamily: _conversationFont.familyName,
+      fontFamily: _appFont.familyName,
     );
 
     return ToastificationWrapper(
@@ -328,6 +334,18 @@ class _OpenChatAppState extends State<OpenChatApp> {
         locale: _locale,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
+        builder: (context, child) {
+          final mediaQuery = MediaQuery.of(context);
+          return MediaQuery(
+            data: mediaQuery.copyWith(
+              textScaler: OpenChatTextScaler(
+                mediaQuery.textScaler,
+                _conversationTextSize.scale,
+              ),
+            ),
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
         home: FutureBuilder<_AppRuntime>(
           future: _runtimeReady,
           builder: (context, snapshot) {
@@ -343,16 +361,17 @@ class _OpenChatAppState extends State<OpenChatApp> {
               locale: _locale,
               conversationWidth: _conversationWidth,
               conversationTextSize: _conversationTextSize,
-              conversationFont: _conversationFont,
+              appFont: _appFont,
               onThemeModeChanged: _setThemeMode,
               onLocaleChanged: _setLocale,
               onConversationWidthChanged: _setConversationWidth,
               onConversationTextSizeChanged: _setConversationTextSize,
-              onConversationFontChanged: _setConversationFont,
+              onAppFontChanged: _setAppFont,
               onToggleTheme: _toggleTheme,
               settingsPreferences: _settingsPreferences,
               chatRepository: runtime?.chatRepository,
               chatGptApiKeyStore: _chatGptApiKeyStore,
+              apiCompatibleProviderKeyStore: _apiCompatibleProviderKeyStore,
               openCodeApiKeyStore: _openCodeApiKeyStore,
               serviceClient: _serviceClient,
               historyStorageStatus: storageStatus,

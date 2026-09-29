@@ -28,63 +28,67 @@ void main() {
     );
   });
 
-  testWidgets('shows the pending request above the composer and sends choices', (
-    tester,
-  ) async {
-    const locale = Locale('tr');
-    final l10n = await AppLocalizations.delegate.load(locale);
-    final controller = TextEditingController();
-    addTearDown(controller.dispose);
-    var approved = false;
-    var denied = false;
-    tester.view.physicalSize = const Size(1200, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets(
+    'shows the pending request above the composer and sends choices',
+    (tester) async {
+      const locale = Locale('tr');
+      final l10n = await AppLocalizations.delegate.load(locale);
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      var approved = false;
+      var denied = false;
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        locale: locale,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        theme: OpenChatTheme.light,
-        home: Scaffold(
-          body: ConversationPane(
-            messageController: controller,
-            showHistoryButton: false,
-            onOpenHistory: () {},
-            onSendMessage: () {},
-            providerId: 'opencode',
-            selectedModelLabel: 'Test model',
-            toolPermissionRequest: const ToolPermissionRequest(
-              id: 'approval-1',
-              toolName: 'list_files',
-              targetPath: r'C:\project',
-              arguments: <String, Object?>{'path': r'C:\project'},
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: locale,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          theme: OpenChatTheme.light,
+          home: Scaffold(
+            body: ConversationPane(
+              messageController: controller,
+              showHistoryButton: false,
+              onOpenHistory: () {},
+              onSendMessage: () {},
+              providerId: 'opencode',
+              selectedModelLabel: 'Test model',
+              toolPermissionRequest: const ToolPermissionRequest(
+                id: 'approval-1',
+                toolName: 'list_files',
+                targetPath: r'C:\project',
+                arguments: <String, Object?>{'path': r'C:\project'},
+              ),
+              onApproveToolPermission: () => approved = true,
+              onDenyToolPermission: () => denied = true,
             ),
-            onApproveToolPermission: () => approved = true,
-            onDenyToolPermission: () => denied = true,
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    final card = find.byKey(const ValueKey<String>('tool-permission-card'));
-    final composer = find.byType(ChatComposer);
-    expect(card, findsOneWidget);
-    expect(find.text(l10n.toolListFiles), findsOneWidget);
-    expect(find.text(r'C:\project'), findsOneWidget);
-    expect(tester.getTopLeft(card).dy, lessThan(tester.getTopLeft(composer).dy));
+      final card = find.byKey(const ValueKey<String>('tool-permission-card'));
+      final composer = find.byType(ChatComposer);
+      expect(card, findsOneWidget);
+      expect(find.text(l10n.toolListFiles), findsOneWidget);
+      expect(find.text(r'C:\project'), findsOneWidget);
+      expect(
+        tester.getTopLeft(card).dy,
+        lessThan(tester.getTopLeft(composer).dy),
+      );
 
-    await tester.tap(find.text(l10n.toolPermissionAllowOnce));
-    await tester.pump();
-    expect(approved, isTrue);
+      await tester.tap(find.text(l10n.toolPermissionAllowOnce));
+      await tester.pump();
+      expect(approved, isTrue);
 
-    await tester.tap(find.text(l10n.toolPermissionDeny));
-    await tester.pump();
-    expect(denied, isTrue);
-  });
+      await tester.tap(find.text(l10n.toolPermissionDeny));
+      await tester.pump();
+      expect(denied, isTrue);
+    },
+  );
 
   testWidgets('disables both choices while a decision is being sent', (
     tester,
@@ -104,9 +108,7 @@ void main() {
               id: 'approval-1',
               toolName: 'read_file',
               targetPath: r'C:\project\notes.md',
-              arguments: <String, Object?>{
-                'path': r'C:\project\notes.md',
-              },
+              arguments: <String, Object?>{'path': r'C:\project\notes.md'},
             ),
             isResponding: true,
           ),
@@ -115,22 +117,67 @@ void main() {
     );
 
     expect(
-      tester.widget<TextButton>(
-        find.ancestor(
-          of: find.text(l10n.toolPermissionDeny),
-          matching: find.byType(TextButton),
-        ),
-      ).onPressed,
+      tester
+          .widget<TextButton>(
+            find.ancestor(
+              of: find.text(l10n.toolPermissionDeny),
+              matching: find.byType(TextButton),
+            ),
+          )
+          .onPressed,
       isNull,
     );
     expect(
-      tester.widget<FilledButton>(
-        find.ancestor(
-          of: find.byType(CircularProgressIndicator),
-          matching: find.byType(FilledButton),
-        ),
-      ).onPressed,
+      tester
+          .widget<FilledButton>(
+            find.ancestor(
+              of: find.byType(CircularProgressIndicator),
+              matching: find.byType(FilledButton),
+            ),
+          )
+          .onPressed,
       isNull,
     );
+  });
+
+  testWidgets('shows the exact file change before the user approves it', (
+    tester,
+  ) async {
+    const locale = Locale('tr');
+    final l10n = await AppLocalizations.delegate.load(locale);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: locale,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.light,
+        home: const Scaffold(
+          body: Padding(
+            padding: EdgeInsets.all(16),
+            child: ToolPermissionCard(
+              request: ToolPermissionRequest(
+                id: 'approval-edit',
+                toolName: 'edit_file',
+                targetPath: r'C:\project\notes.md',
+                arguments: <String, Object?>{
+                  'path': r'C:\project\notes.md',
+                  'oldString': 'old text',
+                  'newString': 'new text',
+                },
+              ),
+              isResponding: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(l10n.toolEditFile), findsOneWidget);
+    expect(find.text(l10n.toolPermissionOldText), findsOneWidget);
+    expect(find.text('old text'), findsOneWidget);
+    expect(find.text(l10n.toolPermissionNewText), findsOneWidget);
+    expect(find.text('new text'), findsOneWidget);
   });
 }

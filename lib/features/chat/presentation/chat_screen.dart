@@ -6,28 +6,31 @@ import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import '../../../app/openchat_theme.dart';
-import '../../../app/openchat_toast.dart';
-import '../../../l10n/openchat_localizations.dart';
-import '../../../platform/windows/openchat_service_client.dart';
-import '../../settings/data/chat_gpt_api_key_store.dart';
-import '../../settings/data/open_code_api_key_store.dart';
-import '../../settings/data/settings_preferences.dart';
-import '../../settings/presentation/settings_screen.dart';
-import '../data/chat_repository.dart';
-import '../domain/chat_conversation.dart';
-import 'conversation_markdown_export.dart';
-import '../domain/chat_message.dart' as chat;
-import '../domain/chatgpt_connection.dart';
-import '../domain/chat_project.dart';
-import '../domain/conversation_sidebar_data.dart';
-import '../domain/history_storage_status.dart';
-import '../domain/model_favorite.dart';
-import 'widgets/chat_navigation_rail.dart';
-import 'widgets/conversation_pane.dart';
-import 'widgets/conversation_sidebar.dart';
-import 'widgets/create_project_dialog.dart';
-import 'widgets/tool_permission_dialog.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/app/openchat_toast.dart';
+import 'package:openchat/features/chat/data/chat_repository.dart';
+import 'package:openchat/features/chat/domain/chat_conversation.dart';
+import 'package:openchat/features/chat/domain/chat_message.dart' as chat;
+import 'package:openchat/features/chat/domain/chat_project.dart';
+import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
+import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
+import 'package:openchat/features/chat/domain/history_storage_status.dart';
+import 'package:openchat/features/chat/domain/model_favorite.dart';
+import 'package:openchat/features/chat/domain/tool_permission_request.dart';
+import 'package:openchat/features/settings/data/api_compatible_provider_key_store.dart';
+import 'package:openchat/features/settings/data/chat_gpt_api_key_store.dart';
+import 'package:openchat/features/settings/data/open_code_api_key_store.dart';
+import 'package:openchat/features/settings/data/settings_preferences.dart';
+import 'package:openchat/features/settings/domain/chat_gpt_api_key_connection.dart';
+import 'package:openchat/features/settings/presentation/settings_screen.dart';
+import 'package:openchat/l10n/openchat_localizations.dart';
+import 'package:openchat/platform/windows/openchat_service_client.dart';
+
+import 'package:openchat/features/chat/presentation/conversation_markdown_export.dart';
+import 'package:openchat/features/chat/presentation/widgets/chat_navigation_rail.dart';
+import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
+import 'package:openchat/features/chat/presentation/widgets/conversation_sidebar.dart';
+import 'package:openchat/features/chat/presentation/widgets/create_project_dialog.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
@@ -39,12 +42,13 @@ class ChatScreen extends StatefulWidget {
     this.locale,
     this.conversationWidth = ConversationWidthPreference.normal,
     this.conversationTextSize = ConversationTextSizePreference.normal,
-    this.conversationFont = ConversationFontPreference.manrope,
+    this.appFont = AppFontPreference.manrope,
     this.onLocaleChanged,
     this.onConversationWidthChanged,
     this.onConversationTextSizeChanged,
-    this.onConversationFontChanged,
+    this.onAppFontChanged,
     this.chatRepository,
+    this.apiCompatibleProviderKeyStore,
     this.chatGptApiKeyStore,
     this.openCodeApiKeyStore,
     this.serviceClient,
@@ -56,17 +60,17 @@ class ChatScreen extends StatefulWidget {
   final Locale? locale;
   final ConversationWidthPreference conversationWidth;
   final ConversationTextSizePreference conversationTextSize;
-  final ConversationFontPreference conversationFont;
+  final AppFontPreference appFont;
   final Future<void> Function(ThemeMode) onThemeModeChanged;
   final Future<void> Function(Locale?)? onLocaleChanged;
   final Future<void> Function(ConversationWidthPreference)?
   onConversationWidthChanged;
   final Future<void> Function(ConversationTextSizePreference)?
   onConversationTextSizeChanged;
-  final Future<void> Function(ConversationFontPreference)?
-  onConversationFontChanged;
+  final Future<void> Function(AppFontPreference)? onAppFontChanged;
   final Future<void> Function() onToggleTheme;
   final ChatRepository? chatRepository;
+  final ApiCompatibleProviderKeyStore? apiCompatibleProviderKeyStore;
   final ChatGptApiKeyStore? chatGptApiKeyStore;
   final OpenCodeApiKeyStore? openCodeApiKeyStore;
   final OpenChatServiceClient? serviceClient;
@@ -93,16 +97,22 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isSavingToolPermissionMode = false;
   bool _toolPermissionModeReady = false;
   ToolPermissionMode _toolPermissionMode = ToolPermissionMode.requireApproval;
+  ToolPermissionRequest? _pendingToolPermissionRequest;
+  bool _isRespondingToToolPermission = false;
+  String? _toolPermissionError;
   String? _activeChatConversationId;
   String? _replacingAssistantMessageId;
   bool _isLoadingConnections = false;
+  bool _providerStateReloadRequested = false;
+  bool _forceProviderStateReloadRequested = false;
   bool _isLoadingModels = false;
   bool _isUpdatingConversationModel = false;
   String? _selectedConversationId;
-  String _selectedProviderId = 'chatgpt';
+  String _selectedProviderId = 'opencode';
   String? _titleEditRequestId;
   String? _selectedConnectionId;
   String? _selectedWorkspaceId;
+  String? _selectedApiKeyConnectionId;
   String? _selectedModelId;
   String? _selectedReasoningEffort;
   String? _modelLoadError;
@@ -115,6 +125,15 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _loadedConnectionId;
   String? _loadedWorkspaceId;
   String? _loadedProviderId;
+  Set<String> _loadedApiKeyConnectionIds = const <String>{};
+  Set<String> _availableCompatibleProviderIds = const <String>{};
+  Set<String> _availableChatGptApiKeyConnectionIds = const <String>{};
+  bool _isChatGptOAuthAvailable = false;
+  bool _isChatGptConnected = false;
+  List<ChatGptApiKeyConnection> _chatGptApiKeyConnections =
+      const <ChatGptApiKeyConnection>[];
+  bool _isChatGptAvailable = false;
+  bool _hasUserSelectedProvider = false;
   OpenChatServiceOperation? _activeChatOperation;
   Stream<List<ChatConversation>>? _conversationStream;
   Stream<List<ChatProject>>? _projectStream;
@@ -171,7 +190,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _resetMessageScroll();
     setState(() {
       _selectedConversationId = conversationId;
-      _selectedProviderId = 'chatgpt';
       _messageStream = widget.chatRepository?.watchMessages(conversationId);
       _selectedModelId = null;
       _selectedReasoningEffort = null;
@@ -183,57 +201,166 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _loadProviderState({bool forceRefresh = false}) async {
     final service = widget.serviceClient;
-    if (service == null || _isLoadingConnections) return;
-    setState(() => _isLoadingConnections = true);
+    if (service == null) return;
+    if (_isLoadingConnections) {
+      _providerStateReloadRequested = true;
+      _forceProviderStateReloadRequested |= forceRefresh;
+      return;
+    }
+    setState(() {
+      _isLoadingConnections = true;
+      _modelsLoaded = false;
+    });
     try {
-      final response = await service.call('chatgpt.connections.list');
-      final rawConnections = response['connections'];
-      if (rawConnections is! List<Object?>) {
-        throw const FormatException('The ChatGPT connection list was invalid.');
-      }
-      final connections = rawConnections
-          .map((value) => ChatGptConnection.fromJson(_objectMap(value)))
-          .toList(growable: false);
       ChatGptConnection? selectedConnection;
-      for (final connection in connections) {
-        if (connection.isSelected) {
-          selectedConnection = connection;
-          break;
-        }
-      }
       ChatGptWorkspace? selectedWorkspace;
-      if (selectedConnection != null) {
-        for (final workspace in selectedConnection.workspaces) {
-          if (workspace.isSelected) {
-            selectedWorkspace = workspace;
-            break;
-          }
+      try {
+        final response = await service.call('chatgpt.connections.list');
+        final rawConnections = response['connections'];
+        if (rawConnections is! List<Object?>) {
+          throw const FormatException(
+            'The ChatGPT connection list was invalid.',
+          );
         }
+        final connections = rawConnections
+            .map((value) => ChatGptConnection.fromJson(_objectMap(value)))
+            .toList(growable: false);
+        selectedConnection = _firstOrNull(
+          connections.where(
+            (connection) =>
+                connection.isSelected && connection.authStatus == 'active',
+          ),
+        );
+        selectedWorkspace = _firstOrNull(
+          selectedConnection?.workspaces.where(
+                (workspace) => workspace.isSelected,
+              ) ??
+              const <ChatGptWorkspace>[],
+        );
+      } on OpenChatServiceException catch (error) {
+        _showServiceFailure(error);
+      }
+      List<ChatGptApiKeyConnection> apiConnections =
+          const <ChatGptApiKeyConnection>[];
+      var compatibleProviderIds = const <String>{};
+      var apiKeyStorageUnavailable = false;
+      var compatibleKeyStorageUnavailable = false;
+      try {
+        apiConnections =
+            await widget.chatGptApiKeyStore?.readConnections() ??
+            const <ChatGptApiKeyConnection>[];
+      } on ChatGptApiKeyStorageException {
+        apiKeyStorageUnavailable = true;
+      }
+      try {
+        compatibleProviderIds =
+            await widget.apiCompatibleProviderKeyStore
+                ?.readConfiguredProviderIds() ??
+            const <String>{};
+      } on ApiCompatibleProviderKeyStorageException {
+        compatibleKeyStorageUnavailable = true;
       }
       if (!mounted) return;
       setState(() {
         _selectedConnectionId = selectedConnection?.id;
         _selectedWorkspaceId = selectedWorkspace?.id;
+        _chatGptApiKeyConnections = apiConnections;
+        _availableCompatibleProviderIds = compatibleProviderIds;
+        _isChatGptConnected =
+            (selectedConnection != null && selectedWorkspace != null) ||
+            apiConnections.isNotEmpty;
+        _isChatGptAvailable = false;
+        _isChatGptOAuthAvailable = false;
+        _availableChatGptApiKeyConnectionIds = const <String>{};
       });
+      if (apiKeyStorageUnavailable) {
+        _showMessage(context.openchatL10n.providerDataUnavailable);
+      }
+      if (compatibleKeyStorageUnavailable) {
+        _showMessage(context.openchatL10n.providerKeyStorageFailed);
+      }
       final currentId = _selectedConversationId;
       if (currentId != null) {
         await _loadConversationModels(currentId, forceRefresh: forceRefresh);
-      } else if (selectedConnection != null && selectedWorkspace != null) {
+      } else {
+        final hasChatGptConnection =
+            (selectedConnection != null && selectedWorkspace != null) ||
+            apiConnections.isNotEmpty;
+        if (hasChatGptConnection) {
+          final chatGptRoute =
+              selectedConnection != null && selectedWorkspace != null
+              ? 'chatgpt'
+              : 'chatgpt_api';
+          await _loadModels(
+            providerId: chatGptRoute,
+            selectedModelId: null,
+            selectedModelRouteKey: null,
+            forceRefresh: forceRefresh,
+          );
+        }
+        var providerId = _hasUserSelectedProvider
+            ? _selectedProviderId
+            : _preferredProviderId();
+        if (_providerFamily(providerId) == 'chatgpt') {
+          final selectedApiKeyIsAvailable = _availableChatGptApiKeyConnectionIds
+              .contains(_selectedApiKeyConnectionId);
+          final selectedRouteIsAvailable = providerId == 'chatgpt_api'
+              ? selectedApiKeyIsAvailable
+              : _isChatGptOAuthAvailable;
+          if (!selectedRouteIsAvailable) {
+            providerId = _preferredProviderId();
+          }
+          if (_providerFamily(providerId) == 'chatgpt' &&
+              !_isChatGptAvailable) {
+            providerId = 'opencode';
+          }
+        }
+        if (ApiCompatibleProviderKeyStore.providerIds.contains(providerId) &&
+            !compatibleProviderIds.contains(providerId)) {
+          providerId = 'opencode';
+        }
+        if (providerId == 'chatgpt_api' &&
+            !_availableChatGptApiKeyConnectionIds.contains(
+              _selectedApiKeyConnectionId,
+            )) {
+          _selectedApiKeyConnectionId = _firstOrNull(
+            _availableChatGptApiKeyConnectionIds,
+          );
+        }
+        setState(() {
+          _selectedProviderId = providerId;
+          if (!_isApiKeyRouteProvider(providerId)) {
+            _selectedApiKeyConnectionId = null;
+          } else if (ApiCompatibleProviderKeyStore.providerIds.contains(
+            providerId,
+          )) {
+            _selectedApiKeyConnectionId = providerId;
+          }
+        });
         await _loadModels(
-          selectedConnection.id,
-          selectedWorkspace.id,
+          providerId: providerId,
           selectedModelId: null,
+          selectedModelRouteKey: null,
           forceRefresh: forceRefresh,
         );
-      } else {
-        _clearModels();
       }
+    } on ChatGptApiKeyStorageException {
+      if (mounted) _showMessage(context.openchatL10n.providerDataUnavailable);
     } on OpenChatServiceException catch (error) {
       _showServiceFailure(error);
     } on FormatException {
       if (mounted) _showMessage(context.openchatL10n.providerDataUnavailable);
     } finally {
-      if (mounted) setState(() => _isLoadingConnections = false);
+      if (mounted) {
+        setState(() => _isLoadingConnections = false);
+        final shouldReload = _providerStateReloadRequested;
+        final shouldForceRefresh = _forceProviderStateReloadRequested;
+        _providerStateReloadRequested = false;
+        _forceProviderStateReloadRequested = false;
+        if (shouldReload) {
+          unawaited(_loadProviderState(forceRefresh: shouldForceRefresh));
+        }
+      }
     }
   }
 
@@ -246,51 +373,58 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final conversation = await repository.getConversation(conversationId);
       if (!mounted || _selectedConversationId != conversationId) return;
-      if (conversation?.providerId == 'opencode') {
-        setState(() => _selectedProviderId = 'opencode');
-        await _loadModels(
-          '',
-          '',
-          selectedModelId: conversation?.modelId,
-          forceRefresh: forceRefresh,
-        );
-      } else if (conversation?.connectionId case final String connectionId) {
-        setState(() => _selectedProviderId = 'chatgpt');
-        final workspaceId = conversation?.workspaceId;
-        final modelId = conversation?.modelId;
-        if (workspaceId == null || modelId == null) {
-          throw StateError(
-            'The conversation provider selection was incomplete.',
-          );
-        }
-        if (!forceRefresh &&
-            _modelsLoaded &&
-            _loadedProviderId == 'chatgpt' &&
-            _loadedConnectionId == connectionId &&
-            _loadedWorkspaceId == workspaceId) {
-          setState(() {
-            _selectedModelId = modelId;
-            _selectedReasoningEffort = null;
-          });
-        } else {
-          await _loadModels(
-            connectionId,
-            workspaceId,
-            selectedModelId: modelId,
-            forceRefresh: forceRefresh,
-          );
-        }
-      } else if (_selectedConnectionId != null &&
-          _selectedWorkspaceId != null) {
-        await _loadModels(
-          _selectedConnectionId!,
-          _selectedWorkspaceId!,
-          selectedModelId: conversation?.modelId,
-          forceRefresh: forceRefresh,
-        );
-      } else {
-        _clearModels();
+      final providerId = switch (conversation?.providerId) {
+        'opencode' => 'opencode',
+        'chatgpt_api' => 'chatgpt_api',
+        'chatgpt' => 'chatgpt',
+        'gemini' => 'gemini',
+        'groq' => 'groq',
+        'cerebras' => 'cerebras',
+        'openrouter' => 'openrouter',
+        _ =>
+          conversation?.connectionId != null
+              ? 'chatgpt'
+              : _preferredProviderId(),
+      };
+      final connectionId = conversation?.connectionId;
+      final workspaceId = conversation?.workspaceId;
+      final apiKeyConnectionId = conversation?.apiKeyConnectionId;
+      if ((providerId == 'chatgpt' &&
+              (connectionId == null || workspaceId == null)) ||
+          (providerId == 'chatgpt_api' && apiKeyConnectionId == null) ||
+          (ApiCompatibleProviderKeyStore.providerIds.contains(providerId) &&
+              apiKeyConnectionId != providerId)) {
+        throw StateError('The conversation provider route was incomplete.');
       }
+      setState(() {
+        _selectedProviderId = providerId;
+        if (providerId == 'chatgpt') {
+          _selectedConnectionId = connectionId;
+          _selectedWorkspaceId = workspaceId;
+        }
+        _selectedApiKeyConnectionId = apiKeyConnectionId;
+      });
+      if (providerId == 'chatgpt_api' && _chatGptApiKeyConnections.isEmpty) {
+        final apiConnections =
+            await widget.chatGptApiKeyStore?.readConnections() ??
+            const <ChatGptApiKeyConnection>[];
+        if (!mounted || _selectedConversationId != conversationId) return;
+        setState(() => _chatGptApiKeyConnections = apiConnections);
+      }
+      await _loadModels(
+        providerId: providerId,
+        selectedModelId: conversation?.modelId,
+        selectedModelRouteKey: conversation == null
+            ? null
+            : _routeKey(
+                providerId,
+                modelId: conversation.modelId,
+                connectionId: connectionId,
+                workspaceId: workspaceId,
+                apiKeyConnectionId: apiKeyConnectionId,
+              ),
+        forceRefresh: forceRefresh,
+      );
     } on Object catch (error, stackTrace) {
       FlutterError.reportError(
         FlutterErrorDetails(
@@ -306,23 +440,23 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _loadModels(
-    String connectionId,
-    String workspaceId, {
+  Future<void> _loadModels({
+    required String providerId,
     required String? selectedModelId,
+    required String? selectedModelRouteKey,
     bool forceRefresh = false,
   }) async {
     final service = widget.serviceClient;
     if (service == null) return;
-    final sameRoute =
-        _loadedProviderId == _selectedProviderId &&
-        (_selectedProviderId == 'opencode' ||
-            (_loadedConnectionId == connectionId &&
-                _loadedWorkspaceId == workspaceId));
+    final providerFamily = _providerFamily(providerId);
+    final sameRoute = _loadedProviderId == providerFamily && _modelsLoaded;
     if (!forceRefresh && sameRoute && _modelsLoaded) {
       ChatGptModel? selectedModel;
       for (final model in _models) {
-        if (model.id == selectedModelId && model.isAvailable) {
+        if (model.id == selectedModelId &&
+            model.isAvailable &&
+            (selectedModelRouteKey == null ||
+                model.routeKey == selectedModelRouteKey)) {
           selectedModel = model;
           break;
         }
@@ -330,6 +464,21 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() {
         _selectedModelId = selectedModel?.id;
         _selectedReasoningEffort = selectedModel?.defaultReasoningLevel;
+        if (selectedModel != null) {
+          _selectedProviderId = selectedModel.providerId;
+          if (selectedModel.providerId == 'chatgpt') {
+            _selectedConnectionId = selectedModel.connectionId;
+            _selectedWorkspaceId = selectedModel.workspaceId;
+          }
+          _selectedApiKeyConnectionId =
+              selectedModel.providerId == 'chatgpt_api'
+              ? selectedModel.connectionId
+              : ApiCompatibleProviderKeyStore.providerIds.contains(
+                  selectedModel.providerId,
+                )
+              ? selectedModel.providerId
+              : null;
+        }
       });
       return;
     }
@@ -338,69 +487,239 @@ class _ChatScreenState extends State<ChatScreen> {
       _isLoadingModels = true;
       _modelLoadError = null;
       _modelFreshness = 'unavailable';
-      if (!sameRoute) {
-        _models = const <ChatGptModel>[];
-        _modelsLoaded = false;
-      }
+      _models = const <ChatGptModel>[];
+      _modelsLoaded = false;
       _selectedModelId = selectedModelId;
       _selectedReasoningEffort = null;
-      _loadedConnectionId = _selectedProviderId == 'chatgpt'
-          ? connectionId
-          : null;
-      _loadedWorkspaceId = _selectedProviderId == 'chatgpt'
-          ? workspaceId
-          : null;
-      _loadedProviderId = _selectedProviderId;
+      _loadedConnectionId = null;
+      _loadedWorkspaceId = null;
+      _loadedApiKeyConnectionIds = const <String>{};
+      _loadedProviderId = providerFamily;
     });
     try {
-      final openCodeApiKey = _selectedProviderId == 'opencode'
-          ? await widget.openCodeApiKeyStore?.readApiKey()
-          : null;
-      final response = await service.call(
-        _selectedProviderId == 'opencode'
-            ? 'opencode.models.list'
-            : 'chatgpt.models.list',
-        params: _selectedProviderId == 'opencode'
-            ? <String, Object?>{
-                ...?switch (openCodeApiKey) {
-                  final apiKey? => <String, Object?>{'apiKey': apiKey},
-                  _ => null,
-                },
-                if (forceRefresh) 'forceRefresh': true,
-              }
-            : <String, Object?>{
-                'connectionId': connectionId,
-                'workspaceId': workspaceId,
+      final models = <ChatGptModel>[];
+      final loadedApiKeys = <String>{};
+      var isStale = false;
+      var sourceFailure = false;
+      OpenChatServiceException? sourceServiceError;
+
+      ({List<ChatGptModel> models, bool stale}) parseCatalog(
+        Map<String, Object?> response, {
+        required String routeProviderId,
+        required String groupId,
+        String? connectionId,
+        String? workspaceId,
+        String? sourceLabel,
+      }) {
+        final rawModels = response['models'];
+        final freshness = response['freshness'];
+        if (rawModels is! List<Object?> ||
+            (freshness != 'current' && freshness != 'stale')) {
+          throw const FormatException(
+            'The provider model catalog was invalid.',
+          );
+        }
+        return (
+          models: rawModels
+              .map((value) => ChatGptModel.fromJson(_objectMap(value)))
+              .map(
+                (model) => model.withRoute(
+                  providerId: routeProviderId,
+                  connectionId: connectionId,
+                  workspaceId: workspaceId,
+                  sourceLabel: sourceLabel,
+                  groupId: model.groupId ?? groupId,
+                ),
+              )
+              .toList(growable: false),
+          stale: freshness == 'stale',
+        );
+      }
+
+      if (providerFamily == 'opencode') {
+        final apiKey = await widget.openCodeApiKeyStore?.readApiKey();
+        final response = await service.call(
+          'opencode.models.list',
+          params: <String, Object?>{
+            ...?switch (apiKey) {
+              final value? => <String, Object?>{'apiKey': value},
+              _ => null,
+            },
+            if (forceRefresh) 'forceRefresh': true,
+          },
+        );
+        final catalog = parseCatalog(
+          response,
+          routeProviderId: 'opencode',
+          groupId: 'models',
+        );
+        models.addAll(catalog.models);
+        isStale = catalog.stale;
+      } else if (providerFamily == 'chatgpt') {
+        final oauthConnectionId = _selectedConnectionId;
+        final oauthWorkspaceId = _selectedWorkspaceId;
+        if (oauthConnectionId != null && oauthWorkspaceId != null) {
+          try {
+            final response = await service.call(
+              'chatgpt.models.list',
+              params: <String, Object?>{
+                'connectionId': oauthConnectionId,
+                'workspaceId': oauthWorkspaceId,
                 if (forceRefresh) 'forceRefresh': true,
               },
-      );
-      final rawModels = response['models'];
-      if (rawModels is! List<Object?>) {
-        throw const FormatException('The provider model list was invalid.');
-      }
-      final models = rawModels
-          .map((value) => ChatGptModel.fromJson(_objectMap(value)))
-          .toList(growable: false);
-      final freshness = response['freshness'];
-      if (freshness is! String ||
-          (freshness != 'current' && freshness != 'stale')) {
-        throw const FormatException('The ChatGPT model freshness was invalid.');
+            );
+            final catalog = parseCatalog(
+              response,
+              routeProviderId: 'chatgpt',
+              groupId: 'oauth',
+              connectionId: oauthConnectionId,
+              workspaceId: oauthWorkspaceId,
+            );
+            models.addAll(catalog.models);
+            isStale = isStale || catalog.stale;
+          } on OpenChatServiceException catch (error) {
+            sourceFailure = true;
+            sourceServiceError ??= error;
+          }
+        }
+
+        final apiConnections = _chatGptApiKeyConnections;
+        for (final apiConnection in apiConnections) {
+          try {
+            final apiKey = await widget.chatGptApiKeyStore?.readApiKey(
+              apiConnection.id,
+            );
+            if (apiKey == null) continue;
+            final response = await service.call(
+              'chatgpt.api.models.list',
+              params: <String, Object?>{
+                'apiKey': apiKey,
+                if (forceRefresh) 'forceRefresh': true,
+              },
+            );
+            final catalog = parseCatalog(
+              response,
+              routeProviderId: 'chatgpt_api',
+              groupId: 'api',
+              connectionId: apiConnection.id,
+              sourceLabel:
+                  apiConnections.length > 1 && apiConnection.keySuffix != null
+                  ? '••••${apiConnection.keySuffix}'
+                  : null,
+            );
+            models.addAll(catalog.models);
+            loadedApiKeys.add(apiConnection.id);
+            isStale = isStale || catalog.stale;
+          } on ChatGptApiKeyStorageException {
+            sourceFailure = true;
+          } on OpenChatServiceException catch (error) {
+            sourceFailure = true;
+            sourceServiceError ??= error;
+          }
+        }
+      } else if (ApiCompatibleProviderKeyStore.providerIds.contains(
+        providerFamily,
+      )) {
+        try {
+          final apiKey = await widget.apiCompatibleProviderKeyStore?.readApiKey(
+            providerFamily,
+          );
+          if (apiKey == null) {
+            sourceFailure = true;
+          } else {
+            final response = await service.call(
+              'compatible.models.list',
+              params: <String, Object?>{
+                'providerId': providerFamily,
+                'apiKey': apiKey,
+                if (forceRefresh) 'forceRefresh': true,
+              },
+            );
+            final catalog = parseCatalog(
+              response,
+              routeProviderId: providerFamily,
+              groupId: 'models',
+              connectionId: providerFamily,
+            );
+            models.addAll(catalog.models);
+            loadedApiKeys.add(providerFamily);
+            isStale = catalog.stale;
+          }
+        } on ApiCompatibleProviderKeyStorageException {
+          sourceFailure = true;
+        } on OpenChatServiceException catch (error) {
+          sourceFailure = true;
+          sourceServiceError ??= error;
+        }
       }
       if (!mounted || generation != _modelLoadGeneration) return;
+      final availableModels = models.where((model) => model.isAvailable);
+      final selectedModel = _firstOrNull(
+        availableModels.where(
+          (model) =>
+              model.id == selectedModelId &&
+              (selectedModelRouteKey == null ||
+                  model.routeKey == selectedModelRouteKey),
+        ),
+      );
       setState(() {
-        _models = models;
+        _models = List<ChatGptModel>.unmodifiable(models);
         _modelsLoaded = true;
-        _modelFreshness = freshness;
-        _selectedModelId =
-            models.any(
-              (model) => model.id == selectedModelId && model.isAvailable,
-            )
-            ? selectedModelId
+        _modelFreshness = isStale ? 'stale' : 'current';
+        _loadedConnectionId = providerFamily == 'chatgpt'
+            ? _selectedConnectionId
             : null;
+        _loadedWorkspaceId = providerFamily == 'chatgpt'
+            ? _selectedWorkspaceId
+            : null;
+        _loadedApiKeyConnectionIds = Set<String>.unmodifiable(loadedApiKeys);
+        if (providerFamily == 'chatgpt') {
+          _isChatGptOAuthAvailable = models.any(
+            (model) => model.providerId == 'chatgpt' && model.isAvailable,
+          );
+          _availableChatGptApiKeyConnectionIds = Set<String>.unmodifiable(
+            models
+                .where(
+                  (model) =>
+                      model.providerId == 'chatgpt_api' && model.isAvailable,
+                )
+                .map((model) => model.connectionId)
+                .whereType<String>(),
+          );
+          _isChatGptAvailable =
+              _isChatGptOAuthAvailable ||
+              _availableChatGptApiKeyConnectionIds.isNotEmpty;
+        }
+        _selectedModelId = selectedModel?.id;
+        _selectedReasoningEffort = selectedModel?.defaultReasoningLevel;
+        if (selectedModel != null) {
+          _selectedProviderId = selectedModel.providerId;
+          if (selectedModel.providerId == 'chatgpt') {
+            _selectedConnectionId = selectedModel.connectionId;
+            _selectedWorkspaceId = selectedModel.workspaceId;
+          }
+          _selectedApiKeyConnectionId =
+              selectedModel.providerId == 'chatgpt_api'
+              ? selectedModel.connectionId
+              : ApiCompatibleProviderKeyStore.providerIds.contains(
+                  selectedModel.providerId,
+                )
+              ? selectedModel.providerId
+              : null;
+        }
         _modelLoadError = models.any((model) => model.isAvailable)
             ? null
+            : sourceFailure
+            ? 'unavailable'
             : 'empty';
       });
+      if (sourceFailure && models.isNotEmpty) {
+        _showMessage(context.openchatL10n.providerDataUnavailable);
+      } else if (sourceFailure && sourceServiceError != null) {
+        _showServiceFailure(sourceServiceError);
+      } else if (sourceFailure) {
+        _showMessage(context.openchatL10n.providerDataUnavailable);
+      }
     } on OpenCodeApiKeyStorageException {
       if (!mounted || generation != _modelLoadGeneration) return;
       setState(() {
@@ -409,6 +728,23 @@ class _ChatScreenState extends State<ChatScreen> {
         _modelsLoaded = false;
       });
       _showMessage(context.openchatL10n.openCodeKeyStorageFailed);
+    } on ChatGptApiKeyStorageException {
+      if (!mounted || generation != _modelLoadGeneration) return;
+      setState(() {
+        _modelLoadError = 'key_storage';
+        _models = const <ChatGptModel>[];
+        _modelsLoaded = false;
+        _isChatGptAvailable = false;
+      });
+      _showMessage(context.openchatL10n.providerDataUnavailable);
+    } on ApiCompatibleProviderKeyStorageException {
+      if (!mounted || generation != _modelLoadGeneration) return;
+      setState(() {
+        _modelLoadError = 'key_storage';
+        _models = const <ChatGptModel>[];
+        _modelsLoaded = false;
+      });
+      _showMessage(context.openchatL10n.providerKeyStorageFailed);
     } on OpenChatServiceException catch (error) {
       if (!mounted || generation != _modelLoadGeneration) return;
       setState(() {
@@ -432,49 +768,67 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _clearModels() {
-    _modelLoadGeneration++;
-    if (!mounted) return;
-    setState(() {
-      _models = const <ChatGptModel>[];
-      _modelsLoaded = false;
-      _selectedModelId = null;
-      _selectedReasoningEffort = null;
-      _loadedConnectionId = null;
-      _loadedWorkspaceId = null;
-      _loadedProviderId = null;
-      _modelLoadError = null;
-      _modelFreshness = 'unavailable';
-      _isLoadingModels = false;
-    });
+  String _providerFamily(String providerId) =>
+      providerId == 'chatgpt_api' ? 'chatgpt' : providerId;
+
+  String _preferredProviderId() {
+    if (!_isChatGptAvailable) return 'opencode';
+    return _isChatGptOAuthAvailable ? 'chatgpt' : 'chatgpt_api';
   }
 
-  void _selectModel(String modelId) {
-    ChatGptModel? model;
-    for (final candidate in _models) {
-      if (candidate.id == modelId && candidate.isAvailable) {
-        model = candidate;
-        break;
-      }
-    }
-    final selectedModel = model;
-    if (selectedModel == null) return;
+  String _routeKey(
+    String providerId, {
+    required String? modelId,
+    String? connectionId,
+    String? workspaceId,
+    String? apiKeyConnectionId,
+  }) =>
+      '$providerId:${providerId == 'chatgpt_api'
+          ? apiKeyConnectionId ?? ''
+          : ApiCompatibleProviderKeyStore.providerIds.contains(providerId)
+          ? apiKeyConnectionId ?? providerId
+          : providerId == 'chatgpt'
+          ? connectionId ?? ''
+          : ''}:${providerId == 'chatgpt' ? workspaceId ?? '' : ''}:${modelId ?? ''}';
+
+  void _selectModel(ChatGptModel selectedModel) {
+    if (!selectedModel.isAvailable) return;
     final conversationId = _selectedConversationId;
     final generation = ++_modelSelectionGeneration;
     final previousModelId = _selectedModelId;
     final previousReasoningEffort = _selectedReasoningEffort;
+    final previousProviderId = _selectedProviderId;
+    final previousConnectionId = _selectedConnectionId;
+    final previousWorkspaceId = _selectedWorkspaceId;
+    final previousApiKeyConnectionId = _selectedApiKeyConnectionId;
     setState(() {
       _selectedModelId = selectedModel.id;
       _selectedReasoningEffort = selectedModel.defaultReasoningLevel;
+      _selectedProviderId = selectedModel.providerId;
+      if (selectedModel.providerId == 'chatgpt') {
+        _selectedConnectionId = selectedModel.connectionId;
+        _selectedWorkspaceId = selectedModel.workspaceId;
+      }
+      _selectedApiKeyConnectionId = selectedModel.providerId == 'chatgpt_api'
+          ? selectedModel.connectionId
+          : ApiCompatibleProviderKeyStore.providerIds.contains(
+              selectedModel.providerId,
+            )
+          ? selectedModel.providerId
+          : null;
       _isUpdatingConversationModel = conversationId != null;
     });
     if (conversationId != null) {
       unawaited(
         _persistConversationModel(
           conversationId: conversationId,
-          modelId: selectedModel.id,
+          model: selectedModel,
           previousModelId: previousModelId,
           previousReasoningEffort: previousReasoningEffort,
+          previousProviderId: previousProviderId,
+          previousConnectionId: previousConnectionId,
+          previousWorkspaceId: previousWorkspaceId,
+          previousApiKeyConnectionId: previousApiKeyConnectionId,
           generation: generation,
         ),
       );
@@ -485,6 +839,7 @@ class _ChatScreenState extends State<ChatScreen> {
     required String providerId,
     required String modelId,
     required String displayName,
+    String? sourceConnectionId,
     required bool isFavorite,
   }) async {
     final repository = widget.chatRepository;
@@ -495,6 +850,7 @@ class _ChatScreenState extends State<ChatScreen> {
         modelId: modelId,
         displayName: displayName,
         isFavorite: isFavorite,
+        sourceConnectionId: sourceConnectionId,
       );
     } on Object catch (error, stackTrace) {
       FlutterError.reportError(
@@ -511,91 +867,143 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _selectFavoriteModel(FavoriteModel favorite) async {
     final targetConversationId = _selectedConversationId;
-    var connectionId = _selectedConnectionId;
-    var workspaceId = _selectedWorkspaceId;
+    final favoriteFamily = _providerFamily(favorite.providerId);
 
     if (targetConversationId != null) {
       final conversation = await widget.chatRepository?.getConversation(
         targetConversationId,
       );
       if (!mounted || _selectedConversationId != targetConversationId) return;
-      final conversationProviderId =
-          conversation?.providerId ??
-          (conversation?.connectionId == null ? null : 'chatgpt');
       if (conversation == null ||
-          conversationProviderId != favorite.providerId) {
+          _providerFamily(
+                conversation.providerId ??
+                    (conversation.connectionId == null
+                        ? 'opencode'
+                        : 'chatgpt'),
+              ) !=
+              favoriteFamily) {
         return;
       }
-      connectionId = conversation.connectionId;
-      workspaceId = conversation.workspaceId;
     }
 
-    if (favorite.providerId == 'chatgpt' &&
-        (connectionId == null || workspaceId == null)) {
+    if (favorite.providerId == 'chatgpt_api' &&
+        (favorite.sourceConnectionId == null ||
+            !_chatGptApiKeyConnections.any(
+              (key) => key.id == favorite.sourceConnectionId,
+            ))) {
       _showMessage(context.openchatL10n.modelCatalogUnavailable);
       return;
     }
-    if (favorite.providerId != 'chatgpt' && favorite.providerId != 'opencode') {
+    if (favorite.providerId == 'chatgpt' &&
+        (_selectedConnectionId == null || _selectedWorkspaceId == null)) {
+      _showMessage(context.openchatL10n.modelCatalogUnavailable);
+      return;
+    }
+    if (ApiCompatibleProviderKeyStore.providerIds.contains(
+          favorite.providerId,
+        ) &&
+        !_availableCompatibleProviderIds.contains(favorite.providerId)) {
+      _showMessage(context.openchatL10n.modelCatalogUnavailable);
+      return;
+    }
+    if (favorite.providerId != 'chatgpt' &&
+        favorite.providerId != 'chatgpt_api' &&
+        favorite.providerId != 'opencode' &&
+        !ApiCompatibleProviderKeyStore.providerIds.contains(
+          favorite.providerId,
+        )) {
       return;
     }
 
     if (_selectedProviderId != favorite.providerId) {
       setState(() {
         _selectedProviderId = favorite.providerId;
+        _selectedApiKeyConnectionId = favorite.providerId == 'chatgpt_api'
+            ? favorite.sourceConnectionId
+            : ApiCompatibleProviderKeyStore.providerIds.contains(
+                favorite.providerId,
+              )
+            ? favorite.providerId
+            : null;
         _selectedModelId = null;
         _selectedReasoningEffort = null;
       });
     }
     await _loadModels(
-      connectionId ?? '',
-      workspaceId ?? '',
+      providerId: favorite.providerId,
       selectedModelId: null,
+      selectedModelRouteKey: null,
     );
     if (!mounted ||
         _selectedConversationId != targetConversationId ||
-        _selectedProviderId != favorite.providerId ||
+        _providerFamily(_selectedProviderId) != favoriteFamily ||
         _modelLoadError != null) {
       return;
     }
-    if (!_models.any(
-      (model) => model.id == favorite.modelId && model.isAvailable,
-    )) {
+    final model = _firstOrNull(
+      _models.where(
+        (candidate) =>
+            candidate.id == favorite.modelId &&
+            candidate.providerId == favorite.providerId &&
+            candidate.isAvailable &&
+            (!_isApiKeyRouteProvider(favorite.providerId) ||
+                candidate.connectionId == favorite.sourceConnectionId),
+      ),
+    );
+    if (model == null) {
       _showMessage(context.openchatL10n.modelCatalogUnavailable);
       return;
     }
-    _selectModel(favorite.modelId);
+    _selectModel(model);
   }
 
   void _selectProvider(String providerId) {
-    if (providerId == _selectedProviderId ||
-        (providerId != 'chatgpt' && providerId != 'opencode')) {
+    final isCompatibleProvider = ApiCompatibleProviderKeyStore.providerIds
+        .contains(providerId);
+    if ((providerId != 'chatgpt' &&
+            providerId != 'opencode' &&
+            !isCompatibleProvider) ||
+        (providerId == 'chatgpt' && !_isChatGptConnected) ||
+        (isCompatibleProvider &&
+            !_availableCompatibleProviderIds.contains(providerId))) {
       return;
     }
+    _hasUserSelectedProvider = true;
+    final routeProviderId = providerId == 'opencode'
+        ? 'opencode'
+        : providerId != 'chatgpt'
+        ? providerId
+        : _selectedConnectionId != null && _selectedWorkspaceId != null
+        ? 'chatgpt'
+        : 'chatgpt_api';
     setState(() {
-      _selectedProviderId = providerId;
+      _selectedProviderId = routeProviderId;
+      _selectedApiKeyConnectionId = routeProviderId == 'chatgpt_api'
+          ? _firstOrNull(_chatGptApiKeyConnections)?.id
+          : isCompatibleProvider
+          ? providerId
+          : null;
       _selectedModelId = null;
       _selectedReasoningEffort = null;
     });
-    if (providerId == 'opencode') {
-      unawaited(_loadModels('', '', selectedModelId: null));
-    } else {
-      final connectionId = _selectedConnectionId;
-      final workspaceId = _selectedWorkspaceId;
-      if (connectionId != null && workspaceId != null) {
-        unawaited(
-          _loadModels(connectionId, workspaceId, selectedModelId: null),
-        );
-      } else {
-        _clearModels();
-      }
-    }
+    unawaited(
+      _loadModels(
+        providerId: routeProviderId,
+        selectedModelId: null,
+        selectedModelRouteKey: null,
+      ),
+    );
   }
 
   Future<void> _persistConversationModel({
     required String conversationId,
-    required String modelId,
+    required ChatGptModel model,
     required String? previousModelId,
     required String? previousReasoningEffort,
+    required String previousProviderId,
+    required String? previousConnectionId,
+    required String? previousWorkspaceId,
+    required String? previousApiKeyConnectionId,
     required int generation,
   }) async {
     final repository = widget.chatRepository;
@@ -607,29 +1015,20 @@ class _ChatScreenState extends State<ChatScreen> {
       if (conversation == null) {
         throw StateError('The conversation no longer exists.');
       }
-      if (conversation.providerId == 'opencode') {
-        await repository.setConversationModel(
-          conversationId: conversationId,
-          modelId: modelId,
-        );
-      } else if (conversation.connectionId == null) {
-        final connectionId = _loadedConnectionId;
-        final workspaceId = _loadedWorkspaceId;
-        if (connectionId == null || workspaceId == null) {
-          throw StateError('The conversation model route is unavailable.');
-        }
-        await repository.bindConversationProvider(
-          conversationId: conversationId,
-          connectionId: connectionId,
-          workspaceId: workspaceId,
-          modelId: modelId,
-        );
-      } else {
-        await repository.setConversationModel(
-          conversationId: conversationId,
-          modelId: modelId,
-        );
-      }
+      await repository.setConversationRoute(
+        conversationId: conversationId,
+        providerId: model.providerId,
+        modelId: model.id,
+        connectionId: model.providerId == 'chatgpt' ? model.connectionId : null,
+        workspaceId: model.providerId == 'chatgpt' ? model.workspaceId : null,
+        apiKeyConnectionId: model.providerId == 'chatgpt_api'
+            ? model.connectionId
+            : ApiCompatibleProviderKeyStore.providerIds.contains(
+                model.providerId,
+              )
+            ? model.providerId
+            : null,
+      );
     } on Object catch (error, stackTrace) {
       FlutterError.reportError(
         FlutterErrorDetails(
@@ -645,6 +1044,10 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() {
           _selectedModelId = previousModelId;
           _selectedReasoningEffort = previousReasoningEffort;
+          _selectedProviderId = previousProviderId;
+          _selectedConnectionId = previousConnectionId;
+          _selectedWorkspaceId = previousWorkspaceId;
+          _selectedApiKeyConnectionId = previousApiKeyConnectionId;
           _isUpdatingConversationModel = false;
         });
         showOpenChatToast(
@@ -676,9 +1079,13 @@ class _ChatScreenState extends State<ChatScreen> {
   void _startNewConversation() {
     _modelSelectionGeneration++;
     _resetMessageScroll();
+    _hasUserSelectedProvider = false;
     setState(() {
       _selectedConversationId = null;
-      _selectedProviderId = 'chatgpt';
+      _selectedProviderId = _preferredProviderId();
+      _selectedApiKeyConnectionId = _selectedProviderId == 'chatgpt_api'
+          ? _firstOrNull(_chatGptApiKeyConnections)?.id
+          : null;
       _messageStream = null;
       _selectedModelId = null;
       _selectedReasoningEffort = null;
@@ -686,11 +1093,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _titleEditRequestId = null;
       _settingsOpen = false;
     });
-    final connectionId = _selectedConnectionId;
-    final workspaceId = _selectedWorkspaceId;
-    if (connectionId != null && workspaceId != null) {
-      unawaited(_loadModels(connectionId, workspaceId, selectedModelId: null));
-    }
+    unawaited(_loadProviderState());
   }
 
   void _handleThemeToggle() {
@@ -756,26 +1159,76 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    final providerId = selectedConversation?.providerId ?? _selectedProviderId;
-    final connectionId = providerId == 'opencode'
-        ? null
-        : selectedConversation?.connectionId ?? _selectedConnectionId;
-    final workspaceId = providerId == 'opencode'
-        ? null
-        : selectedConversation?.workspaceId ?? _selectedWorkspaceId;
+    final providerId =
+        selectedConversation?.providerId ??
+        (selectedConversation?.connectionId != null
+            ? 'chatgpt'
+            : _selectedProviderId);
+    final connectionId = providerId == 'chatgpt'
+        ? selectedConversation?.connectionId ?? _selectedConnectionId
+        : null;
+    final workspaceId = providerId == 'chatgpt'
+        ? selectedConversation?.workspaceId ?? _selectedWorkspaceId
+        : null;
+    final apiKeyConnectionId = _isApiKeyRouteProvider(providerId)
+        ? selectedConversation?.apiKeyConnectionId ??
+              _selectedApiKeyConnectionId ??
+              (ApiCompatibleProviderKeyStore.providerIds.contains(providerId)
+                  ? providerId
+                  : null)
+        : null;
     final modelId = _selectedModelId ?? selectedConversation?.modelId;
     if (modelId == null ||
         (providerId == 'chatgpt' &&
-            (connectionId == null || workspaceId == null))) {
+            (connectionId == null || workspaceId == null)) ||
+        (_isApiKeyRouteProvider(providerId) && apiKeyConnectionId == null)) {
       _showMessage(context.openchatL10n.modelRequired);
       return;
     }
-    if (_loadedProviderId != providerId ||
+    final modelRouteKey = _routeKey(
+      providerId,
+      modelId: modelId,
+      connectionId: connectionId,
+      workspaceId: workspaceId,
+      apiKeyConnectionId: apiKeyConnectionId,
+    );
+    if (_loadedProviderId != _providerFamily(providerId) ||
         (providerId == 'chatgpt' &&
             (_loadedConnectionId != connectionId ||
                 _loadedWorkspaceId != workspaceId)) ||
-        !_models.any((model) => model.id == modelId && model.isAvailable)) {
+        (_isApiKeyRouteProvider(providerId) &&
+            !_loadedApiKeyConnectionIds.contains(apiKeyConnectionId)) ||
+        !_models.any(
+          (model) => model.routeKey == modelRouteKey && model.isAvailable,
+        )) {
       _showMessage(l10n.modelCatalogUnavailable);
+      return;
+    }
+
+    String? apiKey;
+    try {
+      apiKey = switch (providerId) {
+        'opencode' => await widget.openCodeApiKeyStore?.readApiKey(),
+        'chatgpt_api' when apiKeyConnectionId != null =>
+          await widget.chatGptApiKeyStore?.readApiKey(apiKeyConnectionId),
+        final providerId
+            when ApiCompatibleProviderKeyStore.providerIds.contains(
+              providerId,
+            ) =>
+          await widget.apiCompatibleProviderKeyStore?.readApiKey(providerId),
+        _ => null,
+      };
+    } on OpenCodeApiKeyStorageException {
+      if (!mounted) return;
+      _showMessage(l10n.openCodeKeyStorageFailed);
+      return;
+    } on ChatGptApiKeyStorageException {
+      if (!mounted) return;
+      _showMessage(l10n.providerDataUnavailable);
+      return;
+    } on ApiCompatibleProviderKeyStorageException {
+      if (!mounted) return;
+      _showMessage(l10n.providerKeyStorageFailed);
       return;
     }
 
@@ -849,9 +1302,10 @@ class _ChatScreenState extends State<ChatScreen> {
           id: conversationId,
           title: l10n.conversationTitle,
           createdAt: DateTime.now().toUtc(),
-          providerId: providerId == 'opencode' ? providerId : null,
+          providerId: providerId,
           connectionId: connectionId,
           workspaceId: workspaceId,
+          apiKeyConnectionId: apiKeyConnectionId,
           modelId: modelId,
         );
         if (mounted) {
@@ -859,24 +1313,6 @@ class _ChatScreenState extends State<ChatScreen> {
             _selectedConversationId = conversationId;
             _messageStream = repository.watchMessages(conversationId);
           });
-        }
-      } else if (responseToReplace == null && providerId == 'chatgpt') {
-        final currentConversation = selectedConversation;
-        if (currentConversation == null) {
-          throw StateError('The conversation route is unavailable.');
-        }
-        if (currentConversation.connectionId == null) {
-          final selectedConnectionId = connectionId;
-          final selectedWorkspaceId = workspaceId;
-          if (selectedConnectionId == null || selectedWorkspaceId == null) {
-            throw StateError('The ChatGPT connection route is unavailable.');
-          }
-          await repository.bindConversationProvider(
-            conversationId: conversationId,
-            connectionId: selectedConnectionId,
-            workspaceId: selectedWorkspaceId,
-            modelId: modelId,
-          );
         }
       }
       if (responseToReplace == null) {
@@ -992,19 +1428,18 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     try {
-      final openCodeApiKey = providerId == 'opencode'
-          ? await widget.openCodeApiKeyStore?.readApiKey()
-          : null;
       final operation = await service.startOperation(
         'chat.send',
         params: <String, Object?>{
           'conversationId': conversationId,
           if (sharedInstructions.trim().isNotEmpty)
             'customInstructions': sharedInstructions,
-          ...?switch (openCodeApiKey) {
+          ...?switch (apiKey) {
             final apiKey? => <String, Object?>{'apiKey': apiKey},
             _ => null,
           },
+          if (_isApiKeyRouteProvider(providerId))
+            'apiKeyConnectionId': apiKeyConnectionId,
           ...?switch (responseToReplace) {
             final replacement? => <String, Object?>{
               'excludedAssistantMessageId': replacement.id,
@@ -1020,7 +1455,7 @@ class _ChatScreenState extends State<ChatScreen> {
       subscription = operation.events.listen(
         (event) {
           if (event.name == 'chat.tool.permission.requested') {
-            unawaited(_handleToolPermissionRequest(service, event.data));
+            _handleToolPermissionRequest(event.data);
             return;
           }
           if (event.name != 'chat.started' &&
@@ -1200,6 +1635,9 @@ class _ChatScreenState extends State<ChatScreen> {
       if (mounted) {
         setState(() {
           _isSending = false;
+          _pendingToolPermissionRequest = null;
+          _isRespondingToToolPermission = false;
+          _toolPermissionError = null;
           if (_activeChatConversationId == conversationId) {
             _activeChatConversationId = null;
             _replacingAssistantMessageId = null;
@@ -1247,17 +1685,11 @@ class _ChatScreenState extends State<ChatScreen> {
     if (operation != null) unawaited(operation.cancel());
   }
 
-  Future<void> _handleToolPermissionRequest(
-    OpenChatServiceClient service,
-    Map<String, Object?> data,
-  ) async {
-    final requestId = data['approvalRequestId'];
-    final toolName = data['toolName'];
-    final targetPath = data['targetPath'];
-    if (requestId is! String ||
-        requestId.isEmpty ||
-        toolName is! String ||
-        targetPath is! String) {
+  void _handleToolPermissionRequest(Map<String, Object?> data) {
+    final request = ToolPermissionRequest.fromEvent(data);
+    final existingRequest = _pendingToolPermissionRequest;
+    if (request == null ||
+        (existingRequest != null && existingRequest.id != request.id)) {
       FlutterError.reportError(
         FlutterErrorDetails(
           exception: const FormatException(
@@ -1269,45 +1701,45 @@ class _ChatScreenState extends State<ChatScreen> {
       unawaited(_activeChatOperation?.cancel());
       return;
     }
+    if (!mounted) return;
+    setState(() {
+      _pendingToolPermissionRequest = request;
+      _isRespondingToToolPermission = false;
+      _toolPermissionError = null;
+    });
+  }
 
-    var approved = false;
-    try {
-      if (mounted) {
-        final decision = await showToolPermissionDialog(
-          context: context,
-          toolName: toolName,
-          targetPath: targetPath,
-          arguments: data['arguments'],
-        );
-        if (decision == ToolPermissionDecision.stop) {
-          await _activeChatOperation?.cancel();
-          return;
-        }
-        approved = decision == ToolPermissionDecision.allow;
-      }
-    } on Object catch (error, stackTrace) {
-      FlutterError.reportError(
-        FlutterErrorDetails(
-          exception: error,
-          stack: stackTrace,
-          library: 'chat_tool_permissions',
-          context: ErrorDescription('while asking for tool permission'),
-        ),
-      );
+  Future<void> _respondToToolPermission({required bool approved}) async {
+    final request = _pendingToolPermissionRequest;
+    final service = widget.serviceClient;
+    if (request == null ||
+        service == null ||
+        _isRespondingToToolPermission) {
+      return;
     }
-
+    setState(() {
+      _isRespondingToToolPermission = true;
+      _toolPermissionError = null;
+    });
     try {
       await service.call(
         'chat.tool.permission.respond',
         params: <String, Object?>{
-          'approvalRequestId': requestId,
+          'approvalRequestId': request.id,
           'approved': approved,
         },
       );
     } on Object catch (error, stackTrace) {
       if (error is OpenChatServiceException &&
           error.code == 'tool_permission_request_unavailable') {
-        unawaited(_activeChatOperation?.cancel());
+        if (mounted && _pendingToolPermissionRequest?.id == request.id) {
+          setState(() {
+            _pendingToolPermissionRequest = null;
+            _isRespondingToToolPermission = false;
+            _toolPermissionError = null;
+          });
+          _showMessage(context.openchatL10n.toolPermissionRequestExpired);
+        }
         return;
       }
       FlutterError.reportError(
@@ -1315,14 +1747,27 @@ class _ChatScreenState extends State<ChatScreen> {
           exception: error,
           stack: stackTrace,
           library: 'local_service',
-          context: ErrorDescription('while responding to tool permission'),
+          context: ErrorDescription('while sending a tool permission choice'),
         ),
       );
-      unawaited(_activeChatOperation?.cancel());
-      if (mounted) _showMessage(context.openchatL10n.chatRequestFailed);
+      if (mounted && _pendingToolPermissionRequest?.id == request.id) {
+        setState(() {
+          _isRespondingToToolPermission = false;
+          _toolPermissionError =
+              context.openchatL10n.toolPermissionResponseFailed;
+        });
+      }
+      return;
+    }
+
+    if (mounted && _pendingToolPermissionRequest?.id == request.id) {
+      setState(() {
+        _pendingToolPermissionRequest = null;
+        _isRespondingToToolPermission = false;
+        _toolPermissionError = null;
+      });
     }
   }
-
   void _showServiceFailure(OpenChatServiceException error) {
     final l10n = context.openchatL10n;
     final message = switch (error.code) {
@@ -1541,9 +1986,11 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _refreshProviderState() async {
     if (_selectedProviderId == 'opencode') {
       await _loadModels(
-        '',
-        '',
+        providerId: 'opencode',
         selectedModelId: _selectedModelId,
+        selectedModelRouteKey: _selectedModelId == null
+            ? null
+            : _routeKey('opencode', modelId: _selectedModelId),
         forceRefresh: true,
       );
     } else {
@@ -1798,7 +2245,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             locale: widget.locale,
                             conversationWidth: widget.conversationWidth,
                             conversationTextSize: widget.conversationTextSize,
-                            conversationFont: widget.conversationFont,
+                            appFont: widget.appFont,
                             settingsPreferences: _settingsPreferences,
                             onThemeModeChanged: widget.onThemeModeChanged,
                             onLocaleChanged: widget.onLocaleChanged,
@@ -1806,8 +2253,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                 widget.onConversationWidthChanged,
                             onConversationTextSizeChanged:
                                 widget.onConversationTextSizeChanged,
-                            onConversationFontChanged:
-                                widget.onConversationFontChanged,
+                            onAppFontChanged: widget.onAppFontChanged,
                             historyStorageStatus: resolvedStorageStatus,
                             hasConversationHistory: conversations.isNotEmpty,
                             onClearConversationHistory:
@@ -1815,6 +2261,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                 ? null
                                 : _clearConversationHistory,
                             chatGptApiKeyStore: widget.chatGptApiKeyStore,
+                            apiCompatibleProviderKeyStore:
+                                widget.apiCompatibleProviderKeyStore,
                             openCodeApiKeyStore: widget.openCodeApiKeyStore,
                             serviceClient: widget.serviceClient,
                             onProviderStateChanged: _refreshProviderState,
@@ -1945,13 +2393,39 @@ class _ChatScreenState extends State<ChatScreen> {
     required ChatConversation? selectedConversation,
   }) {
     final selectedModelId = _selectedModelId ?? selectedConversation?.modelId;
-    ChatGptModel? selectedModel;
-    for (final model in _models) {
-      if (model.id == selectedModelId && model.isAvailable) {
-        selectedModel = model;
-        break;
-      }
-    }
+    final routeProviderId = _isUpdatingConversationModel
+        ? _selectedProviderId
+        : selectedConversation?.providerId ??
+              (selectedConversation?.connectionId != null
+                  ? 'chatgpt'
+                  : _selectedProviderId);
+    final routeConnectionId = routeProviderId == 'chatgpt'
+        ? selectedConversation?.connectionId ?? _selectedConnectionId
+        : null;
+    final routeWorkspaceId = routeProviderId == 'chatgpt'
+        ? selectedConversation?.workspaceId ?? _selectedWorkspaceId
+        : null;
+    final routeApiKeyConnectionId = _isApiKeyRouteProvider(routeProviderId)
+        ? selectedConversation?.apiKeyConnectionId ??
+              _selectedApiKeyConnectionId ??
+              (ApiCompatibleProviderKeyStore.providerIds.contains(
+                    routeProviderId,
+                  )
+                  ? routeProviderId
+                  : null)
+        : null;
+    final selectedModelRouteKey = _routeKey(
+      routeProviderId,
+      modelId: selectedModelId,
+      connectionId: routeConnectionId,
+      workspaceId: routeWorkspaceId,
+      apiKeyConnectionId: routeApiKeyConnectionId,
+    );
+    final selectedModel = _firstOrNull(
+      _models.where(
+        (model) => model.routeKey == selectedModelRouteKey && model.isAvailable,
+      ),
+    );
     final modelLabel =
         selectedModel?.displayName ??
         selectedModelId ??
@@ -1962,20 +2436,25 @@ class _ChatScreenState extends State<ChatScreen> {
         reasoningOptions.contains(_selectedReasoningEffort)
         ? _selectedReasoningEffort
         : selectedModel?.defaultReasoningLevel;
-    final routeProviderId =
-        selectedConversation?.providerId ?? _selectedProviderId;
-    final routeConnectionId =
-        selectedConversation?.connectionId ?? _selectedConnectionId;
-    final routeWorkspaceId =
-        selectedConversation?.workspaceId ?? _selectedWorkspaceId;
     final routeReady =
         routeProviderId == 'opencode' ||
-        (routeConnectionId != null && routeWorkspaceId != null);
+        (routeProviderId == 'chatgpt' &&
+            routeConnectionId != null &&
+            routeWorkspaceId != null) ||
+        (_isApiKeyRouteProvider(routeProviderId) &&
+            routeApiKeyConnectionId != null);
     final modelRouteReady =
-        _loadedProviderId == routeProviderId &&
+        _loadedProviderId == _providerFamily(routeProviderId) &&
         (routeProviderId == 'opencode' ||
-            (routeConnectionId == _loadedConnectionId &&
-                routeWorkspaceId == _loadedWorkspaceId));
+            (_isApiKeyRouteProvider(routeProviderId) &&
+                _loadedApiKeyConnectionIds.contains(routeApiKeyConnectionId)) ||
+            (ApiCompatibleProviderKeyStore.providerIds.contains(
+                  routeProviderId,
+                ) &&
+                _availableCompatibleProviderIds.contains(routeProviderId)) ||
+            (routeProviderId == 'chatgpt' &&
+                (routeConnectionId == _loadedConnectionId &&
+                    routeWorkspaceId == _loadedWorkspaceId)));
     final canSend =
         widget.historyStorageStatus == HistoryStorageStatus.available &&
         _toolPermissionModeReady &&
@@ -2042,20 +2521,34 @@ class _ChatScreenState extends State<ChatScreen> {
               isLoadingModels: _isLoadingModels,
               models: modelOptions,
               favoriteModels: favoriteSnapshot.data ?? const <FavoriteModel>[],
-              providerId: routeProviderId,
+              providerId: _providerFamily(routeProviderId),
+              isChatGptConnected: _isChatGptConnected,
+              availableProviderIds: {
+                'opencode',
+                if (_isChatGptConnected) 'chatgpt',
+                ..._availableCompatibleProviderIds,
+              },
               onProviderSelected: selectedConversation == null
                   ? _selectProvider
                   : null,
               selectedModelId: selectedModelId,
+              selectedModelRouteKey: selectedModelRouteKey,
               onModelSelected: _isUpdatingConversationModel
                   ? null
                   : _selectModel,
               onModelFavoriteChanged:
-                  (providerId, modelId, displayName, isFavorite) => unawaited(
+                  (
+                    providerId,
+                    modelId,
+                    displayName,
+                    sourceConnectionId,
+                    isFavorite,
+                  ) => unawaited(
                     _setModelFavorite(
                       providerId: providerId,
                       modelId: modelId,
                       displayName: displayName,
+                      sourceConnectionId: sourceConnectionId,
                       isFavorite: isFavorite,
                     ),
                   ),
@@ -2071,6 +2564,15 @@ class _ChatScreenState extends State<ChatScreen> {
                   _isLoadingToolPermissionMode || _isSavingToolPermissionMode
                   ? null
                   : _selectToolPermissionMode,
+              toolPermissionRequest: _pendingToolPermissionRequest,
+              isRespondingToToolPermission: _isRespondingToToolPermission,
+              toolPermissionError: _toolPermissionError,
+              onApproveToolPermission: () => unawaited(
+                _respondToToolPermission(approved: true),
+              ),
+              onDenyToolPermission: () => unawaited(
+                _respondToToolPermission(approved: false),
+              ),
               conversationTitle: selectedConversation?.title,
               conversationId: selectedConversation?.id,
               titleEditRequestId: _titleEditRequestId,
@@ -2109,4 +2611,13 @@ Map<String, Object?> _objectMap(Object? value) {
     result[entry.key as String] = entry.value;
   }
   return result;
+}
+
+bool _isApiKeyRouteProvider(String providerId) =>
+    providerId == 'chatgpt_api' ||
+    ApiCompatibleProviderKeyStore.providerIds.contains(providerId);
+
+T? _firstOrNull<T>(Iterable<T> values) {
+  final iterator = values.iterator;
+  return iterator.moveNext() ? iterator.current : null;
 }

@@ -7,6 +7,7 @@ class ChatConversation {
     this.titleSource = ChatConversationTitleSource.automatic,
     this.connectionId,
     this.workspaceId,
+    this.apiKeyConnectionId,
     this.providerId,
     this.modelId,
     this.projectId,
@@ -20,6 +21,7 @@ class ChatConversation {
   final DateTime updatedAt;
   final String? connectionId;
   final String? workspaceId;
+  final String? apiKeyConnectionId;
   final String? providerId;
   final String? modelId;
   final String? projectId;

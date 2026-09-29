@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import '../../../../app/openchat_theme.dart';
-import '../../../../l10n/openchat_localizations.dart';
-import '../../domain/conversation_sidebar_data.dart';
-import 'sidebar_conversation_tile.dart';
-import 'sidebar_section_heading.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/l10n/openchat_localizations.dart';
+import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
+import 'package:openchat/features/chat/presentation/widgets/sidebar_conversation_tile.dart';
+import 'package:openchat/features/chat/presentation/widgets/sidebar_section_heading.dart';
 
 class ProjectSidebarSection extends StatelessWidget {
   const ProjectSidebarSection({

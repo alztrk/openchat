@@ -30,6 +30,16 @@ class ProviderIcon extends StatelessWidget {
         colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
         excludeFromSemantics: true,
       ),
+      'gemini' => Icon(Icons.auto_awesome_rounded, size: size, color: color),
+      'groq' => Icon(Icons.bolt_rounded, size: size, color: color),
+      'cerebras' => Icon(Icons.memory_rounded, size: size, color: color),
+      'openrouter' => SvgPicture.asset(
+        'assets/icons/openrouter.svg',
+        width: size,
+        height: size,
+        colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
+        excludeFromSemantics: true,
+      ),
       'favorites' => Icon(Icons.star_outline_rounded, size: size, color: color),
       _ => Icon(Icons.hub_outlined, size: size, color: color),
     };

@@ -57,26 +57,31 @@ if(NOT CARGO_EXECUTABLE)
 endif()
 
 set(OPENCHAT_SERVICE_CRATE "${OPENCHAT_PROJECT_ROOT}/native/openchat-service")
-set(OPENCHAT_SERVICE_EXECUTABLE "${CMAKE_BINARY_DIR}/rust-target/release/openchat_service.exe")
+set(OPENCHAT_SERVICE_TARGET_DIR "${CMAKE_BINARY_DIR}/rust-target")
+set(OPENCHAT_SERVICE_PROFILE "$<IF:$<CONFIG:Debug>,dev,release>")
+set(OPENCHAT_SERVICE_PROFILE_DIR "$<IF:$<CONFIG:Debug>,debug,release>")
+set(OPENCHAT_SERVICE_EXECUTABLE "${CMAKE_BINARY_DIR}/openchat_service.exe")
 file(GLOB_RECURSE OPENCHAT_SERVICE_SOURCES CONFIGURE_DEPENDS
   "${OPENCHAT_SERVICE_CRATE}/src/*.rs"
 )
-add_custom_command(
-  OUTPUT "${OPENCHAT_SERVICE_EXECUTABLE}"
+add_custom_target(openchat_service_build
   COMMAND "${CARGO_EXECUTABLE}" build
     --manifest-path "${OPENCHAT_SERVICE_CRATE}/Cargo.toml"
+    --bin openchat_service
     --locked
-    --target-dir "${CMAKE_BINARY_DIR}/rust-target"
-    --release
+    --target-dir "${OPENCHAT_SERVICE_TARGET_DIR}"
+    --profile "${OPENCHAT_SERVICE_PROFILE}"
+  COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+    "${OPENCHAT_SERVICE_TARGET_DIR}/${OPENCHAT_SERVICE_PROFILE_DIR}/openchat_service.exe"
+    "${OPENCHAT_SERVICE_EXECUTABLE}"
   DEPENDS
     "${OPENCHAT_SERVICE_CRATE}/Cargo.toml"
     "${OPENCHAT_SERVICE_CRATE}/Cargo.lock"
     ${OPENCHAT_SERVICE_SOURCES}
   WORKING_DIRECTORY "${OPENCHAT_PROJECT_ROOT}"
-  COMMENT "Building the OpenChat local service"
+  COMMENT "Building the OpenChat local service for $<CONFIG>"
   VERBATIM
 )
-add_custom_target(openchat_service_build DEPENDS "${OPENCHAT_SERVICE_EXECUTABLE}")
 
 # Application build; see runner/CMakeLists.txt.
 add_subdirectory("runner")

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
-import '../../../../app/openchat_theme.dart';
-import '../../domain/conversation_sidebar_data.dart';
-import 'sidebar_conversation_tile.dart';
-import 'sidebar_section_heading.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
+import 'package:openchat/features/chat/presentation/widgets/sidebar_conversation_tile.dart';
+import 'package:openchat/features/chat/presentation/widgets/sidebar_section_heading.dart';
 
 class SidebarConversationSection extends StatelessWidget {
   const SidebarConversationSection({
