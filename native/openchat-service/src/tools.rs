@@ -409,7 +409,7 @@ pub fn opencode_wire_tool(tool: &ToolDefinition) -> Value {
                 "required": ["command"],
                 "additionalProperties": false
             }),
-            "Executes a given shell command.",
+            "Command execution is unavailable in this client.",
         ),
         _ => (tool.parameters.clone(), tool.description),
     };
@@ -432,7 +432,7 @@ pub fn opencode_wire_tools(defs: &[ToolDefinition]) -> Vec<Value> {
     {
         tools.push(opencode_wire_tool(&ToolDefinition {
             name: "execute_command",
-            description: "Executes a given shell command.",
+            description: "Command execution is unavailable in this client.",
             parameters: json!({"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}),
         }));
     }
@@ -533,7 +533,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         (
             "execute_command",
-            "Execute a command safely in the project environment.",
+            "Command execution is unavailable in this client. Do not call this tool.",
             json!({
                 "type": "object",
                 "properties": {

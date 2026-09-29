@@ -117,3 +117,36 @@ fn protocol_error() -> ServiceError {
         true,
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ToolPermissionBroker;
+    use serde_json::Value;
+    use tokio::sync::{oneshot, watch};
+
+    #[tokio::test]
+    async fn approval_decision_resolves_without_cancelling_the_chat() {
+        for approved in [true, false] {
+            let broker = ToolPermissionBroker::default();
+            let (sender, receiver) = oneshot::channel();
+            broker
+                .pending
+                .lock()
+                .await
+                .insert("request-1".to_owned(), sender);
+            let (_cancel_sender, cancellation) = watch::channel(false);
+
+            let result = broker.respond("request-1", approved).await;
+
+            assert_eq!(
+                result.expect("permission reply is accepted")["accepted"],
+                Value::Bool(true)
+            );
+            assert_eq!(
+                receiver.await.expect("decision reaches the active tool"),
+                approved
+            );
+            assert!(!*cancellation.borrow(), "the chat remains active");
+        }
+    }
+}

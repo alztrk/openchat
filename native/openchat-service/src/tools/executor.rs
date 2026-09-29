@@ -1,13 +1,10 @@
-use super::{
-    MAX_TOOL_CALLS_PER_TURN, MAX_TOOL_ROUNDS, edit_file, get_file_info, list_files, read_file,
-    search_files, write_file,
-};
+use super::{MAX_TOOL_CALLS_PER_TURN, MAX_TOOL_ROUNDS};
 use crate::{
     permissions::ToolPermissionBroker,
     protocol::{EventSink, ServiceError},
     provider_schema::{ChatStreamEvent, ChatStreamSnapshot, ToolActivity, ToolCall, ToolResult},
 };
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use tokio::sync::watch;
 
