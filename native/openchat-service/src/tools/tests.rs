@@ -5,7 +5,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use serde_json::json;
+use serde_json::{Value, json};
 
 use super::search::{ascii_shift_table, contains_ascii_case_insensitive};
 use super::{get_file_info, list_files, read_file, search_files};
@@ -584,4 +584,262 @@ fn measure_iterations(
         output_bytes: output.len(),
         output_chars: output_text.chars().count(),
     }
+}
+
+#[test]
+fn opencode_wire_tools_include_bash_and_read_with_industry_standards() {
+    let internal_defs = super::definitions();
+    assert!(internal_defs.iter().any(|tool| tool.name == "read_file"));
+    assert!(internal_defs.iter().any(|tool| tool.name == "write_file"));
+    assert!(internal_defs.iter().any(|tool| tool.name == "edit_file"));
+    assert!(internal_defs.iter().any(|tool| tool.name == "list_files"));
+    assert!(internal_defs.iter().any(|tool| tool.name == "search_files"));
+    assert!(
+        internal_defs
+            .iter()
+            .any(|tool| tool.name == "execute_command")
+    );
+
+    let wire_tools = super::opencode_wire_tools(&internal_defs);
+    assert!(
+        wire_tools
+            .iter()
+            .any(|t| t.pointer("/function/name").and_then(Value::as_str) == Some("bash"))
+    );
+    assert!(
+        wire_tools
+            .iter()
+            .any(|t| t.pointer("/function/name").and_then(Value::as_str) == Some("read"))
+    );
+    assert!(
+        wire_tools
+            .iter()
+            .any(|t| t.pointer("/function/name").and_then(Value::as_str) == Some("write"))
+    );
+    assert!(
+        wire_tools
+            .iter()
+            .any(|t| t.pointer("/function/name").and_then(Value::as_str) == Some("edit"))
+    );
+    assert!(
+        wire_tools
+            .iter()
+            .any(|t| t.pointer("/function/name").and_then(Value::as_str) == Some("glob"))
+    );
+    assert!(
+        wire_tools
+            .iter()
+            .any(|t| t.pointer("/function/name").and_then(Value::as_str) == Some("grep"))
+    );
+
+    // Bidirectional translation test
+    assert_eq!(super::opencode_wire_name("read_file"), "read");
+    assert_eq!(super::opencode_wire_name("write_file"), "write");
+    assert_eq!(super::opencode_wire_name("edit_file"), "edit");
+    assert_eq!(super::opencode_wire_name("list_files"), "glob");
+    assert_eq!(super::opencode_wire_name("search_files"), "grep");
+    assert_eq!(super::opencode_wire_name("execute_command"), "bash");
+
+    assert_eq!(super::internal_tool_name(true, "read"), "read_file");
+    assert_eq!(super::internal_tool_name(true, "write"), "write_file");
+    assert_eq!(super::internal_tool_name(true, "edit"), "edit_file");
+    assert_eq!(super::internal_tool_name(true, "glob"), "list_files");
+    assert_eq!(super::internal_tool_name(true, "grep"), "search_files");
+    assert_eq!(super::internal_tool_name(true, "bash"), "execute_command");
+    assert_eq!(super::internal_tool_name(false, "read"), "read");
+}
+
+#[test]
+fn write_file_and_edit_file_flow_and_guards() {
+    let directory = TestDirectory::new();
+    let root = directory.root();
+
+    // 1. Write new file
+    let write_res = super::write_file(root, "nested/hello.txt", "Hello OpenChat World!");
+    assert!(
+        write_res.is_ok(),
+        "write_file should succeed for new file in subfolder"
+    );
+    let val = write_res.unwrap();
+    assert_eq!(val["bytesWritten"], 21);
+    assert_eq!(val["success"], true);
+
+    // Verify content
+    let read_res = super::read_file(root, "nested/hello.txt", 1, 10).unwrap();
+    assert_eq!(read_res["lines"][0]["text"], "Hello OpenChat World!");
+
+    // 2. Edit file (single replacement)
+    let edit_res = super::edit_file(root, "nested/hello.txt", "World", "Alican");
+    assert!(
+        edit_res.is_ok(),
+        "edit_file should succeed when target matches exactly once"
+    );
+    let edit_val = edit_res.unwrap();
+    assert_eq!(edit_val["replacements"], 1);
+
+    // Verify edited content
+    let read_edited = super::read_file(root, "nested/hello.txt", 1, 10).unwrap();
+    assert_eq!(read_edited["lines"][0]["text"], "Hello OpenChat Alican!");
+
+    // 3. Ambiguity guard: when oldString matches multiple times
+    super::write_file(root, "ambiguous.txt", "test foo bar foo baz").unwrap();
+    let amb_res = super::edit_file(root, "ambiguous.txt", "foo", "qux");
+    assert!(
+        amb_res.is_err(),
+        "edit_file must reject multiple occurrences to avoid ambiguous edits"
+    );
+
+    // 4. Not found guard
+    let not_found_res = super::edit_file(root, "ambiguous.txt", "nonexistent", "qux");
+    assert!(
+        not_found_res.is_err(),
+        "edit_file must reject when target string is not found"
+    );
+
+    // 5. Empty target string guard
+    let empty_target = super::edit_file(root, "ambiguous.txt", "", "qux");
+    assert!(
+        empty_target.is_err(),
+        "edit_file must reject empty old_string"
+    );
+}
+
+#[test]
+fn benchmark_write_and_edit_performance_simulation() {
+    use std::time::Instant;
+
+    let directory = TestDirectory::new();
+    let root = directory.root();
+
+    // Test with a 100 KB payload
+    let chunk = "The quick brown fox jumps over the lazy dog. Rust memory safety and zero-cost abstractions.\n";
+    let iterations = 100_000 / chunk.len();
+    let mut large_text = String::with_capacity(100_000);
+    for _ in 0..iterations {
+        large_text.push_str(chunk);
+    }
+    large_text.push_str("UNIQUE_NEEDLE_FOR_BENCHMARK");
+
+    // Measure write latency
+    let write_start = Instant::now();
+    let write_res = super::write_file(root, "bench_100kb.txt", &large_text);
+    let write_duration = write_start.elapsed();
+    assert!(write_res.is_ok());
+    println!("[BENCHMARK] write_file 100KB: {:?}", write_duration);
+
+    // Measure edit latency (replaces unique needle in 100KB file)
+    let edit_start = Instant::now();
+    let edit_res = super::edit_file(
+        root,
+        "bench_100kb.txt",
+        "UNIQUE_NEEDLE_FOR_BENCHMARK",
+        "REPLACED_SUCCESSFULLY",
+    );
+    let edit_duration = edit_start.elapsed();
+    assert!(edit_res.is_ok());
+    println!("[BENCHMARK] edit_file in 100KB: {:?}", edit_duration);
+
+    // Verify the write duration is well under 50ms (typically < 3ms in Rust with BufWriter)
+    assert!(
+        write_duration.as_millis() < 50,
+        "write_file took too long: {:?}",
+        write_duration
+    );
+    assert!(
+        edit_duration.as_millis() < 50,
+        "edit_file took too long: {:?}",
+        edit_duration
+    );
+}
+
+#[test]
+fn executor_prepares_read_tool_with_flexible_arguments() {
+    use super::{ToolExecutor, ToolPermissionMode};
+    use crate::provider_schema::ToolCall;
+
+    let directory = TestDirectory::new();
+    directory.write("sample.txt", "line 1\nline 2\nline 3");
+
+    let executor = ToolExecutor::new(
+        Some(Path::new(directory.root())),
+        Path::new(directory.root()),
+        ToolPermissionMode::FullAccess,
+    );
+
+    let opencode_call = ToolCall {
+        id: "call_read_1".to_owned(),
+        name: "read".to_owned(),
+        arguments: json!({
+            "filePath": format!("{}/sample.txt", directory.root()),
+            "offset": 2,
+            "limit": 5
+        }),
+    };
+    let prepared = executor
+        .prepare_call(&opencode_call)
+        .expect("prepare opencode read");
+    assert!(matches!(
+        prepared.operation,
+        super::executor::ToolOperation::Read {
+            start_line: 2,
+            line_count: 5
+        }
+    ));
+
+    let openchat_call = ToolCall {
+        id: "call_read_2".to_owned(),
+        name: "read_file".to_owned(),
+        arguments: json!({
+            "path": format!("{}/sample.txt", directory.root()),
+            "startLine": 1,
+            "lineCount": 10
+        }),
+    };
+    let prepared_openchat = executor
+        .prepare_call(&openchat_call)
+        .expect("prepare openchat read_file");
+    assert!(matches!(
+        prepared_openchat.operation,
+        super::executor::ToolOperation::Read {
+            start_line: 1,
+            line_count: 10
+        }
+    ));
+}
+
+#[test]
+fn executor_prepares_and_handles_bash_tool() {
+    use super::{ToolExecutor, ToolPermissionMode};
+    use crate::provider_schema::ToolCall;
+
+    let directory = TestDirectory::new();
+    let executor = ToolExecutor::new(
+        Some(Path::new(directory.root())),
+        Path::new(directory.root()),
+        ToolPermissionMode::FullAccess,
+    );
+
+    let bash_call = ToolCall {
+        id: "call_bash_1".to_owned(),
+        name: "bash".to_owned(),
+        arguments: json!({
+            "command": "git status"
+        }),
+    };
+    let prepared = executor
+        .prepare_call(&bash_call)
+        .expect("prepare bash call");
+    assert!(matches!(
+        prepared.operation,
+        super::executor::ToolOperation::Bash { .. }
+    ));
+
+    let empty_bash_call = ToolCall {
+        id: "call_bash_2".to_owned(),
+        name: "bash".to_owned(),
+        arguments: json!({
+            "command": "   "
+        }),
+    };
+    assert!(executor.prepare_call(&empty_bash_call).is_err());
 }

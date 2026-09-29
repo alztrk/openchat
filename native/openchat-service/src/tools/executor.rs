@@ -1,7 +1,6 @@
 use super::{
-    MAX_LIST_OFFSET, MAX_READ_LINES, MAX_TOOL_ARGUMENT_BYTES, MAX_TOOL_CALLS_PER_TURN,
-    MAX_TOOL_ROUNDS, canonical_root, get_file_info, list_files, read_file, safe_relative_path,
-    search_files,
+    MAX_TOOL_CALLS_PER_TURN, MAX_TOOL_ROUNDS, edit_file, get_file_info, list_files, read_file,
+    search_files, write_file,
 };
 use crate::{
     permissions::ToolPermissionBroker,
@@ -11,6 +10,11 @@ use crate::{
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use tokio::sync::watch;
+
+mod paths;
+mod validation;
+use paths::qualify_output_paths;
+pub(crate) use validation::{PreparedToolCall, ToolOperation};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ToolPermissionMode {
@@ -30,46 +34,6 @@ impl ToolPermissionMode {
             )),
         }
     }
-}
-
-enum ToolOperation {
-    List {
-        offset: usize,
-        limit: usize,
-    },
-    Search {
-        query: String,
-        include_hidden: bool,
-        offset: usize,
-        limit: usize,
-    },
-    Read {
-        start_line: usize,
-        line_count: usize,
-    },
-    Info,
-}
-
-impl ToolOperation {
-    fn targets_directory(&self) -> bool {
-        matches!(self, Self::List { .. } | Self::Search { .. })
-    }
-}
-
-#[derive(Clone, Copy)]
-enum ToolPathScope {
-    Project,
-    OpenChat,
-    Full,
-}
-
-struct PreparedToolCall {
-    root: PathBuf,
-    relative_path: String,
-    requested_path: String,
-    target_path: PathBuf,
-    scope: ToolPathScope,
-    operation: ToolOperation,
 }
 
 pub struct ToolExecutor {
@@ -207,49 +171,52 @@ impl ToolExecutor {
                 });
             }
 
-            match self.resolve_tool_path(
-                &prepared.requested_path,
-                prepared.operation.targets_directory(),
-            ) {
-                Ok((root, relative_path, target, scope)) if target == approved_target => {
-                    prepared.root = root;
-                    prepared.relative_path = relative_path;
-                    prepared.target_path = target;
-                    prepared.scope = scope;
-                }
-                Ok(_) => {
-                    let output = tool_error(
-                        "permission_target_changed",
-                        "The requested path changed after approval. Request permission again.",
-                    );
-                    self.send_denied_activity(
-                        call,
-                        target_path,
-                        output.clone(),
-                        request_id,
-                        snapshot,
-                        events,
-                    )
-                    .await?;
-                    return Ok(ToolResult {
-                        call_id: call.id.clone(),
-                        output,
-                    });
-                }
-                Err(output) => {
-                    self.send_activity(
-                        call,
-                        Some(target_path),
-                        output.clone(),
-                        request_id,
-                        snapshot,
-                        events,
-                    )
-                    .await?;
-                    return Ok(ToolResult {
-                        call_id: call.id.clone(),
-                        output,
-                    });
+            if !matches!(prepared.operation, ToolOperation::Bash { .. }) {
+                match self.resolve_tool_path(
+                    &prepared.requested_path,
+                    prepared.operation.targets_directory(),
+                    prepared.operation.can_create_file(),
+                ) {
+                    Ok((root, relative_path, target, scope)) if target == approved_target => {
+                        prepared.root = root;
+                        prepared.relative_path = relative_path;
+                        prepared.target_path = target;
+                        prepared.scope = scope;
+                    }
+                    Ok(_) => {
+                        let output = tool_error(
+                            "permission_target_changed",
+                            "The requested path changed after approval. Request permission again.",
+                        );
+                        self.send_denied_activity(
+                            call,
+                            target_path,
+                            output.clone(),
+                            request_id,
+                            snapshot,
+                            events,
+                        )
+                        .await?;
+                        return Ok(ToolResult {
+                            call_id: call.id.clone(),
+                            output,
+                        });
+                    }
+                    Err(output) => {
+                        self.send_activity(
+                            call,
+                            Some(target_path),
+                            output.clone(),
+                            request_id,
+                            snapshot,
+                            events,
+                        )
+                        .await?;
+                        return Ok(ToolResult {
+                            call_id: call.id.clone(),
+                            output,
+                        });
+                    }
                 }
             }
         }
@@ -290,294 +257,6 @@ impl ToolExecutor {
             call_id: call.id.clone(),
             output,
         })
-    }
-
-    fn prepare_call(&self, call: &ToolCall) -> Result<PreparedToolCall, Value> {
-        let serialized_size = serde_json::to_vec(&call.arguments)
-            .map_err(|_| tool_error("invalid_tool_input", "The tool arguments are invalid."))?
-            .len();
-        if serialized_size > MAX_TOOL_ARGUMENT_BYTES {
-            return Err(tool_error(
-                "invalid_tool_input",
-                "The tool arguments exceed the supported size.",
-            ));
-        }
-        let Some(arguments) = call.arguments.as_object() else {
-            return Err(tool_error(
-                "invalid_tool_input",
-                "The tool arguments must be a JSON object.",
-            ));
-        };
-        let operation = match call.name.as_str() {
-            "list_files" if only_keys(&call.arguments, &["path", "offset", "limit"]) => {
-                let (Some(offset), Some(limit)) = (
-                    usize_argument(&call.arguments, "offset"),
-                    usize_argument(&call.arguments, "limit"),
-                ) else {
-                    return Err(tool_error(
-                        "invalid_tool_input",
-                        "The file listing arguments are invalid.",
-                    ));
-                };
-                if offset > MAX_LIST_OFFSET || limit == 0 {
-                    return Err(tool_error(
-                        "invalid_tool_input",
-                        "The file listing arguments are invalid.",
-                    ));
-                }
-                ToolOperation::List { offset, limit }
-            }
-            "search_files" => {
-                if !only_keys(
-                    &call.arguments,
-                    &["path", "query", "includeHidden", "offset", "limit"],
-                ) {
-                    return Err(tool_error(
-                        "invalid_tool_input",
-                        "The requested file tool or its arguments are invalid.",
-                    ));
-                }
-                let (Some(query), Some(include_hidden), Some(offset), Some(limit)) = (
-                    string_argument(&call.arguments, "query"),
-                    bool_argument(&call.arguments, "includeHidden"),
-                    usize_argument(&call.arguments, "offset"),
-                    usize_argument(&call.arguments, "limit"),
-                ) else {
-                    return Err(tool_error(
-                        "invalid_tool_input",
-                        "The requested file tool or its arguments are invalid.",
-                    ));
-                };
-                if query.is_empty()
-                    || query.len() > 4096
-                    || query.chars().any(char::is_control)
-                    || offset > 1_000_000
-                    || limit == 0
-                {
-                    return Err(tool_error(
-                        "invalid_tool_input",
-                        "The requested file tool or its arguments are invalid.",
-                    ));
-                }
-                ToolOperation::Search {
-                    query: query.to_owned(),
-                    include_hidden,
-                    offset,
-                    limit,
-                }
-            }
-            "read_file" => {
-                let (Some(start_line), Some(line_count)) = (
-                    usize_argument(&call.arguments, "startLine"),
-                    usize_argument(&call.arguments, "lineCount"),
-                ) else {
-                    return Err(tool_error(
-                        "invalid_tool_input",
-                        "The requested file tool or its arguments are invalid.",
-                    ));
-                };
-                if !only_keys(&call.arguments, &["path", "startLine", "lineCount"])
-                    || start_line == 0
-                    || !(1..=MAX_READ_LINES).contains(&line_count)
-                {
-                    return Err(tool_error(
-                        "invalid_tool_input",
-                        "The requested file tool or its arguments are invalid.",
-                    ));
-                }
-                ToolOperation::Read {
-                    start_line,
-                    line_count,
-                }
-            }
-            "get_file_info" if only_keys(&call.arguments, &["path"]) => ToolOperation::Info,
-            _ => {
-                return Err(tool_error(
-                    "invalid_tool_input",
-                    "The requested file tool or its arguments are invalid.",
-                ));
-            }
-        };
-        let Some(path) = arguments.get("path").and_then(Value::as_str) else {
-            return Err(tool_error(
-                "invalid_tool_input",
-                "The requested path is invalid.",
-            ));
-        };
-
-        let (root, relative, target_path, scope) =
-            self.resolve_tool_path(path, operation.targets_directory())?;
-        Ok(PreparedToolCall {
-            root,
-            relative_path: relative,
-            requested_path: path.to_owned(),
-            target_path,
-            scope,
-            operation,
-        })
-    }
-
-    fn resolve_tool_path(
-        &self,
-        path: &str,
-        directory: bool,
-    ) -> Result<(PathBuf, String, PathBuf, ToolPathScope), Value> {
-        match self.permission_mode {
-            ToolPermissionMode::RequireApproval => self.resolve_approved_scope(path, directory),
-            ToolPermissionMode::FullAccess => self.resolve_full_access(path, directory),
-        }
-    }
-
-    fn resolve_approved_scope(
-        &self,
-        path: &str,
-        directory: bool,
-    ) -> Result<(PathBuf, String, PathBuf, ToolPathScope), Value> {
-        if path.starts_with("desktop:") {
-            return Err(tool_error(
-                "permission_scope_denied",
-                "The Desktop is outside the folders allowed in Onay İste mode.",
-            ));
-        }
-        let (root, relative, scope) = if Path::new(path).is_absolute() {
-            let target = Path::new(path).canonicalize().map_err(|_| {
-                tool_error(
-                    "tool_path_unavailable",
-                    "The requested path is unavailable.",
-                )
-            })?;
-            let project_root = self
-                .project_root
-                .as_deref()
-                .and_then(|root| canonical_root(root).ok());
-            let data_root = canonical_root(&self.data_root)
-                .map_err(|error| tool_error(error.code, &error.message))?;
-            if let Some(root) = project_root.filter(|root| target.starts_with(root)) {
-                let relative = target.strip_prefix(&root).map_err(|_| {
-                    tool_error(
-                        "permission_scope_denied",
-                        "The path is outside the allowed folders.",
-                    )
-                })?;
-                (
-                    root,
-                    relative.to_string_lossy().into_owned(),
-                    ToolPathScope::Project,
-                )
-            } else if target.starts_with(&data_root) {
-                let relative = target.strip_prefix(&data_root).map_err(|_| {
-                    tool_error(
-                        "permission_scope_denied",
-                        "The path is outside the allowed folders.",
-                    )
-                })?;
-                (
-                    data_root,
-                    relative.to_string_lossy().into_owned(),
-                    ToolPathScope::OpenChat,
-                )
-            } else {
-                return Err(tool_error(
-                    "permission_scope_denied",
-                    "Onay İste mode only allows the selected project folder and OpenChat application data folder.",
-                ));
-            }
-        } else {
-            let (root, relative, scope) = if let Some(relative) = path.strip_prefix("project:") {
-                let Some(root) = self.project_root.as_deref() else {
-                    return Err(tool_error(
-                        "tool_path_unavailable",
-                        "This conversation has no project folder. Use the openchat:/ root instead.",
-                    ));
-                };
-                (root, trim_root_separator(relative), ToolPathScope::Project)
-            } else if let Some(relative) = path.strip_prefix("openchat:") {
-                (
-                    self.data_root.as_path(),
-                    trim_root_separator(relative),
-                    ToolPathScope::OpenChat,
-                )
-            } else if let Some(root) = self.project_root.as_deref() {
-                (root, path, ToolPathScope::Project)
-            } else {
-                (self.data_root.as_path(), path, ToolPathScope::OpenChat)
-            };
-            let root =
-                canonical_root(root).map_err(|error| tool_error(error.code, &error.message))?;
-            let relative = safe_relative_path(relative)
-                .map_err(|error| tool_error(error.code, &error.message))?;
-            (root, relative.to_string_lossy().into_owned(), scope)
-        };
-
-        let root = canonical_root(root).map_err(|error| tool_error(error.code, &error.message))?;
-        let relative_path = safe_relative_path(&relative)
-            .map_err(|error| tool_error(error.code, &error.message))?;
-        let target_path = root.join(&relative_path).canonicalize().map_err(|_| {
-            tool_error(
-                "tool_path_unavailable",
-                "The requested path is unavailable.",
-            )
-        })?;
-        if !target_path.starts_with(&root)
-            || (directory && !target_path.is_dir())
-            || (!directory && !target_path.is_file())
-        {
-            return Err(tool_error(
-                "permission_scope_denied",
-                "The requested path is outside the allowed folders or has the wrong type.",
-            ));
-        }
-        Ok((root, relative, target_path, scope))
-    }
-
-    fn resolve_full_access(
-        &self,
-        path: &str,
-        directory: bool,
-    ) -> Result<(PathBuf, String, PathBuf, ToolPathScope), Value> {
-        if let Some(relative) = path.strip_prefix("desktop:/") {
-            return resolve_desktop_path(relative, directory);
-        }
-        let requested = Path::new(path);
-        if !requested.is_absolute() {
-            return Err(tool_error(
-                "invalid_tool_input",
-                "Full access mode requires an absolute filesystem path.",
-            ));
-        }
-        let target_path = requested.canonicalize().map_err(|_| {
-            tool_error(
-                "tool_path_unavailable",
-                "The requested path is unavailable.",
-            )
-        })?;
-        if (directory && !target_path.is_dir()) || (!directory && !target_path.is_file()) {
-            return Err(tool_error(
-                "invalid_tool_input",
-                "The requested path has the wrong type for this tool.",
-            ));
-        }
-        let (root, relative) = if directory {
-            (target_path.clone(), String::new())
-        } else {
-            let Some(parent) = target_path.parent() else {
-                return Err(tool_error(
-                    "invalid_tool_input",
-                    "The file path is invalid.",
-                ));
-            };
-            let Some(file_name) = target_path.file_name() else {
-                return Err(tool_error(
-                    "invalid_tool_input",
-                    "The file path is invalid.",
-                ));
-            };
-            (
-                canonical_root(parent).map_err(|error| tool_error(error.code, &error.message))?,
-                file_name.to_string_lossy().into_owned(),
-            )
-        };
-        Ok((root, relative, target_path, ToolPathScope::Full))
     }
 
     async fn send_running_activity(
@@ -699,6 +378,23 @@ fn execute_model_tool(prepared: &PreparedToolCall) -> Value {
             *start_line,
             *line_count,
         ),
+        ToolOperation::Write { content } => {
+            write_file(&prepared.root, &prepared.relative_path, content)
+        }
+        ToolOperation::Edit {
+            old_string,
+            new_string,
+        } => edit_file(
+            &prepared.root,
+            &prepared.relative_path,
+            old_string,
+            new_string,
+        ),
+        ToolOperation::Bash { .. } => Ok(json!({
+            "output": "",
+            "exit": 0,
+            "truncated": false
+        })),
         ToolOperation::Info => get_file_info(&prepared.root, &prepared.relative_path),
     };
 
@@ -723,127 +419,4 @@ fn protocol_error() -> ServiceError {
         "The local service could not send the tool activity update.",
         true,
     )
-}
-
-fn qualify_output_paths(output: &mut Value, prepared: &PreparedToolCall) {
-    if output.get("error").is_some() {
-        return;
-    }
-    match &prepared.operation {
-        ToolOperation::List { .. } => qualify_path_array(
-            output.get_mut("entries").and_then(Value::as_array_mut),
-            &prepared.root,
-            prepared.scope,
-        ),
-        ToolOperation::Search { .. } => qualify_path_array(
-            output.get_mut("matches").and_then(Value::as_array_mut),
-            &prepared.root,
-            prepared.scope,
-        ),
-        ToolOperation::Read { .. } | ToolOperation::Info => {
-            if let Some(path) = output
-                .get("path")
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-            {
-                let path = qualify_path(&prepared.root, &path, prepared.scope);
-                output["path"] = json!(path);
-            }
-        }
-    }
-}
-
-fn qualify_path_array(entries: Option<&mut Vec<Value>>, root: &Path, scope: ToolPathScope) {
-    if let Some(entries) = entries {
-        for entry in entries {
-            if let Some(path) = entry.get("path").and_then(Value::as_str).map(str::to_owned) {
-                let path = qualify_path(root, &path, scope);
-                entry["path"] = json!(path);
-            }
-        }
-    }
-}
-
-fn qualify_path(root: &Path, relative_path: &str, scope: ToolPathScope) -> String {
-    match scope {
-        ToolPathScope::Full => root
-            .join(relative_path)
-            .to_string_lossy()
-            .replace('\\', "/"),
-        ToolPathScope::Project => {
-            let relative_path = relative_path.replace('\\', "/");
-            format!("project:/{}", relative_path.trim_start_matches('/'))
-        }
-        ToolPathScope::OpenChat => {
-            let relative_path = relative_path.replace('\\', "/");
-            format!("openchat:/{}", relative_path.trim_start_matches('/'))
-        }
-    }
-}
-
-fn trim_root_separator(path: &str) -> &str {
-    path.trim_start_matches(['/', '\\'])
-}
-
-fn only_keys(value: &Value, allowed: &[&str]) -> bool {
-    value
-        .as_object()
-        .is_some_and(|arguments| arguments.keys().all(|key| allowed.contains(&key.as_str())))
-}
-
-fn string_argument<'a>(value: &'a Value, name: &str) -> Option<&'a str> {
-    value.get(name).and_then(Value::as_str)
-}
-
-fn bool_argument(value: &Value, name: &str) -> Option<bool> {
-    value.get(name).and_then(Value::as_bool)
-}
-
-fn usize_argument(value: &Value, name: &str) -> Option<usize> {
-    value
-        .get(name)
-        .and_then(Value::as_u64)
-        .and_then(|number| usize::try_from(number).ok())
-}
-
-fn resolve_desktop_path(
-    relative: &str,
-    directory: bool,
-) -> Result<(PathBuf, String, PathBuf, ToolPathScope), Value> {
-    let desktop_path = dirs::desktop_dir().ok_or_else(|| {
-        tool_error(
-            "tool_path_unavailable",
-            "The current user's Desktop folder could not be located.",
-        )
-    })?;
-    let root =
-        canonical_root(desktop_path).map_err(|error| tool_error(error.code, &error.message))?;
-    let relative_path =
-        safe_relative_path(relative).map_err(|error| tool_error(error.code, &error.message))?;
-    let target_path = root.join(relative_path).canonicalize().map_err(|_| {
-        tool_error(
-            "tool_path_unavailable",
-            "The requested Desktop path is unavailable.",
-        )
-    })?;
-    if !target_path.starts_with(&root)
-        || (directory && !target_path.is_dir())
-        || (!directory && !target_path.is_file())
-    {
-        return Err(tool_error(
-            "permission_scope_denied",
-            "The requested path is outside the Desktop folder or has the wrong type.",
-        ));
-    }
-    let relative = target_path
-        .strip_prefix(&root)
-        .map_err(|_| {
-            tool_error(
-                "permission_scope_denied",
-                "The requested path is outside the Desktop folder.",
-            )
-        })?
-        .to_string_lossy()
-        .into_owned();
-    Ok((root, relative, target_path, ToolPathScope::Full))
 }

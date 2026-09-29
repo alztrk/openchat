@@ -338,3 +338,47 @@ pub(super) fn responses_tool(tool: &ToolDefinition) -> Value {
         "parameters": tool.parameters.clone(),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::parse_responses_tool_calls;
+
+    #[test]
+    fn parses_completed_responses_function_calls() {
+        let items = [
+            json!({"type": "reasoning", "id": "rs_1"}),
+            json!({
+                "type": "function_call",
+                "call_id": "call_1",
+                "name": "list_files",
+                "arguments": "{\"path\":\".\"}"
+            }),
+        ];
+
+        let calls = parse_responses_tool_calls(&items).expect("valid Responses function call");
+
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "call_1");
+        assert_eq!(calls[0].name, "list_files");
+        assert_eq!(calls[0].arguments, json!({"path": "."}));
+    }
+
+    #[test]
+    fn rejects_completed_responses_function_calls_with_invalid_arguments() {
+        let items = [json!({
+            "type": "function_call",
+            "call_id": "call_1",
+            "name": "list_files",
+            "arguments": "{\"path\":"
+        })];
+
+        assert_eq!(
+            parse_responses_tool_calls(&items)
+                .expect_err("invalid tool arguments must be rejected")
+                .code,
+            "invalid_provider_response"
+        );
+    }
+}
