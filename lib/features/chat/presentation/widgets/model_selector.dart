@@ -27,6 +27,7 @@ class ModelSelector extends StatefulWidget {
     required this.providerId,
     required this.isChatGptConnected,
     this.availableProviderIds = const <String>{},
+    this.hiddenModelKeys = const <String>{},
     required this.onProviderSelected,
     required this.isLoadingModels,
     required this.emptyModelsLabel,
@@ -45,6 +46,7 @@ class ModelSelector extends StatefulWidget {
   final String providerId;
   final bool isChatGptConnected;
   final Set<String> availableProviderIds;
+  final Set<String> hiddenModelKeys;
   final ValueChanged<String>? onProviderSelected;
   final bool isLoadingModels;
   final String emptyModelsLabel;
@@ -123,9 +125,16 @@ class _ModelSelectorState extends State<ModelSelector> {
     final isEnabled =
         widget.onSelected != null || widget.onProviderSelected != null;
     final availableModels = widget.models
-        .where((model) => model.isAvailable)
+        .where(
+          (model) =>
+              model.isAvailable &&
+              !widget.hiddenModelKeys.contains(model.routeKey) &&
+              !widget.hiddenModelKeys.contains(
+                '${model.providerId}:${model.id}',
+              ),
+        )
         .toList(growable: false);
-    final favoriteModels = widget.onProviderSelected == null
+    final scopedFavorites = widget.onProviderSelected == null
         ? widget.favoriteModels
               .where(
                 (favorite) =>
@@ -133,6 +142,20 @@ class _ModelSelectorState extends State<ModelSelector> {
               )
               .toList(growable: false)
         : widget.favoriteModels;
+    final favoriteModels = scopedFavorites
+        .where(
+          (favorite) =>
+              !widget.hiddenModelKeys.contains(
+                '${favorite.providerId}:::${favorite.modelId}',
+              ) &&
+              !widget.hiddenModelKeys.contains(
+                '${favorite.providerId}:${favorite.sourceConnectionId ?? ''}::${favorite.modelId}',
+              ) &&
+              !widget.hiddenModelKeys.contains(
+                '${favorite.providerId}:${favorite.modelId}',
+              ),
+        )
+        .toList(growable: false);
     final normalizedQuery = _searchQuery.trim().toLowerCase();
     bool matchesQuery(Iterable<String> values) =>
         normalizedQuery.isEmpty ||

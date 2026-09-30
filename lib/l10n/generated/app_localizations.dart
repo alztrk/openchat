@@ -182,6 +182,102 @@ abstract class AppLocalizations {
   /// **'Connections'**
   String get connections;
 
+  /// No description provided for @models.
+  ///
+  /// In en, this message translates to:
+  /// **'Models'**
+  String get models;
+
+  /// No description provided for @modelsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage models from connected providers, set a default model, and hide models you don\'t need.'**
+  String get modelsDescription;
+
+  /// No description provided for @defaultModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Default'**
+  String get defaultModel;
+
+  /// No description provided for @setDefaultModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Set as default'**
+  String get setDefaultModel;
+
+  /// No description provided for @clearDefaultModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove default'**
+  String get clearDefaultModel;
+
+  /// No description provided for @defaultModelUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Default model updated: {model}'**
+  String defaultModelUpdated(String model);
+
+  /// No description provided for @defaultModelCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'Default model removed.'**
+  String get defaultModelCleared;
+
+  /// No description provided for @hideModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide'**
+  String get hideModel;
+
+  /// No description provided for @showModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Show'**
+  String get showModel;
+
+  /// No description provided for @hiddenModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Hidden'**
+  String get hiddenModel;
+
+  /// No description provided for @modelHidden.
+  ///
+  /// In en, this message translates to:
+  /// **'Model hidden: {model}'**
+  String modelHidden(String model);
+
+  /// No description provided for @modelUnhidden.
+  ///
+  /// In en, this message translates to:
+  /// **'Model shown: {model}'**
+  String modelUnhidden(String model);
+
+  /// No description provided for @noModelsFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No models found.'**
+  String get noModelsFound;
+
+  /// No description provided for @refreshModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh models'**
+  String get refreshModels;
+
+  /// No description provided for @connectedProvidersModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected provider models'**
+  String get connectedProvidersModels;
+
+  /// No description provided for @noConnectedProviders.
+  ///
+  /// In en, this message translates to:
+  /// **'No providers connected yet. Connect accounts or add API keys in the Connections tab.'**
+  String get noConnectedProviders;
+
   /// No description provided for @sharedInstructions.
   ///
   /// In en, this message translates to:
@@ -1147,6 +1243,90 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Reset credit details were not returned.'**
   String get resetCreditDetailsUnavailable;
+
+  /// No description provided for @resetCreditAvailableStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Available'**
+  String get resetCreditAvailableStatus;
+
+  /// No description provided for @useResetCredit.
+  ///
+  /// In en, this message translates to:
+  /// **'Use credit'**
+  String get useResetCredit;
+
+  /// No description provided for @resetCreditRedeeming.
+  ///
+  /// In en, this message translates to:
+  /// **'Using…'**
+  String get resetCreditRedeeming;
+
+  /// No description provided for @confirmResetCreditTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Use this reset credit?'**
+  String get confirmResetCreditTitle;
+
+  /// No description provided for @confirmResetCreditMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'A reset credit will be submitted. This action cannot be undone. Continue?'**
+  String get confirmResetCreditMessage;
+
+  /// No description provided for @confirmResetCreditAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Use credit'**
+  String get confirmResetCreditAction;
+
+  /// No description provided for @resetCreditApplied.
+  ///
+  /// In en, this message translates to:
+  /// **'The usage limit was reset.'**
+  String get resetCreditApplied;
+
+  /// No description provided for @resetCreditAlreadyUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'This reset credit has already been used.'**
+  String get resetCreditAlreadyUsed;
+
+  /// No description provided for @resetCreditNothingToReset.
+  ///
+  /// In en, this message translates to:
+  /// **'There is no usage limit to reset right now.'**
+  String get resetCreditNothingToReset;
+
+  /// No description provided for @resetCreditNoLongerAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This reset credit is no longer available. Refresh usage information.'**
+  String get resetCreditNoLongerAvailable;
+
+  /// No description provided for @resetCreditOutcomeUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'The result could not be confirmed. Refresh usage information before using this credit again.'**
+  String get resetCreditOutcomeUnknown;
+
+  /// No description provided for @resetCreditRefreshRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'The previous result could not be confirmed. Refresh usage information before trying again.'**
+  String get resetCreditRefreshRequired;
+
+  /// No description provided for @resetCreditRejected.
+  ///
+  /// In en, this message translates to:
+  /// **'ChatGPT did not accept the reset request for this account.'**
+  String get resetCreditRejected;
+
+  /// No description provided for @resetCreditSignInRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in to your ChatGPT account again, then retry.'**
+  String get resetCreditSignInRequired;
 
   /// No description provided for @noChatGptConnections.
   ///

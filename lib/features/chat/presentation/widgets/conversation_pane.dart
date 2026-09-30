@@ -38,6 +38,7 @@ class ConversationPane extends StatelessWidget {
     this.isChatGptConnected = false,
     this.availableProviderIds = const <String>{},
     this.onProviderSelected,
+    this.hiddenModelKeys = const <String>{},
     this.selectedModelId,
     this.selectedModelRouteKey,
     this.onModelSelected,
@@ -87,6 +88,7 @@ class ConversationPane extends StatelessWidget {
   final bool isChatGptConnected;
   final Set<String> availableProviderIds;
   final ValueChanged<String>? onProviderSelected;
+  final Set<String> hiddenModelKeys;
   final String? selectedModelId;
   final String? selectedModelRouteKey;
   final ValueChanged<ChatGptModel>? onModelSelected;
@@ -214,6 +216,7 @@ class ConversationPane extends StatelessWidget {
                     availableProviderIds: availableProviderIds,
                     onProviderSelected: onProviderSelected,
                     modelsEmptyLabel: modelsEmptyLabel,
+                    hiddenModelKeys: hiddenModelKeys,
                     selectedModelId: selectedModelId,
                     selectedModelRouteKey: selectedModelRouteKey,
                     onModelSelected: onModelSelected,

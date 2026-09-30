@@ -41,6 +41,7 @@ const MODEL_CATALOG_CACHE_AGE: Duration = Duration::from_secs(6 * 60 * 60);
 const METADATA_REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
 const USAGE_REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
 const RESET_CREDITS_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
+const RESET_CREDIT_CONSUME_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_JSON_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_STREAM_EVENT_BYTES: usize = 1024 * 1024;
 

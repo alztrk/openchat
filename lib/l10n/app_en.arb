@@ -14,6 +14,43 @@
   "settings": "Settings",
   "settingsDescription": "Connections, appearance, and local data",
   "connections": "Connections",
+  "models": "Models",
+  "modelsDescription": "Manage models from connected providers, set a default model, and hide models you don't need.",
+  "defaultModel": "Default",
+  "setDefaultModel": "Set as default",
+  "clearDefaultModel": "Remove default",
+  "defaultModelUpdated": "Default model updated: {model}",
+  "@defaultModelUpdated": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "defaultModelCleared": "Default model removed.",
+  "hideModel": "Hide",
+  "showModel": "Show",
+  "hiddenModel": "Hidden",
+  "modelHidden": "Model hidden: {model}",
+  "@modelHidden": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "modelUnhidden": "Model shown: {model}",
+  "@modelUnhidden": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "noModelsFound": "No models found.",
+  "refreshModels": "Refresh models",
+  "connectedProvidersModels": "Connected provider models",
+  "noConnectedProviders": "No providers connected yet. Connect accounts or add API keys in the Connections tab.",
   "sharedInstructions": "Shared instructions",
   "sharedInstructionsDescription": "These instructions are sent with every connected provider. File tool access follows the Tool access setting.",
   "sharedInstructionsHint": "Describe how you want responses to be written...",
@@ -194,6 +231,20 @@
   "resetCredit": "Reset credit",
   "statusUnavailable": "Status unavailable",
   "resetCreditDetailsUnavailable": "Reset credit details were not returned.",
+  "resetCreditAvailableStatus": "Available",
+  "useResetCredit": "Use credit",
+  "resetCreditRedeeming": "Using…",
+  "confirmResetCreditTitle": "Use this reset credit?",
+  "confirmResetCreditMessage": "A reset credit will be submitted. This action cannot be undone. Continue?",
+  "confirmResetCreditAction": "Use credit",
+  "resetCreditApplied": "The usage limit was reset.",
+  "resetCreditAlreadyUsed": "This reset credit has already been used.",
+  "resetCreditNothingToReset": "There is no usage limit to reset right now.",
+  "resetCreditNoLongerAvailable": "This reset credit is no longer available. Refresh usage information.",
+  "resetCreditOutcomeUnknown": "The result could not be confirmed. Refresh usage information before using this credit again.",
+  "resetCreditRefreshRequired": "The previous result could not be confirmed. Refresh usage information before trying again.",
+  "resetCreditRejected": "ChatGPT did not accept the reset request for this account.",
+  "resetCreditSignInRequired": "Sign in to your ChatGPT account again, then retry.",
   "noChatGptConnections": "No ChatGPT connections yet.",
   "apiKeyConnectionUnavailable": "API key connection has not been added yet.",
   "oauthConnectionUnavailable": "OAuth connection has not been added yet.",

@@ -52,6 +52,62 @@ class AppLocalizationsEn extends AppLocalizations {
   String get connections => 'Connections';
 
   @override
+  String get models => 'Models';
+
+  @override
+  String get modelsDescription =>
+      'Manage models from connected providers, set a default model, and hide models you don\'t need.';
+
+  @override
+  String get defaultModel => 'Default';
+
+  @override
+  String get setDefaultModel => 'Set as default';
+
+  @override
+  String get clearDefaultModel => 'Remove default';
+
+  @override
+  String defaultModelUpdated(String model) {
+    return 'Default model updated: $model';
+  }
+
+  @override
+  String get defaultModelCleared => 'Default model removed.';
+
+  @override
+  String get hideModel => 'Hide';
+
+  @override
+  String get showModel => 'Show';
+
+  @override
+  String get hiddenModel => 'Hidden';
+
+  @override
+  String modelHidden(String model) {
+    return 'Model hidden: $model';
+  }
+
+  @override
+  String modelUnhidden(String model) {
+    return 'Model shown: $model';
+  }
+
+  @override
+  String get noModelsFound => 'No models found.';
+
+  @override
+  String get refreshModels => 'Refresh models';
+
+  @override
+  String get connectedProvidersModels => 'Connected provider models';
+
+  @override
+  String get noConnectedProviders =>
+      'No providers connected yet. Connect accounts or add API keys in the Connections tab.';
+
+  @override
   String get sharedInstructions => 'Shared instructions';
 
   @override
@@ -611,6 +667,56 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get resetCreditDetailsUnavailable =>
       'Reset credit details were not returned.';
+
+  @override
+  String get resetCreditAvailableStatus => 'Available';
+
+  @override
+  String get useResetCredit => 'Use credit';
+
+  @override
+  String get resetCreditRedeeming => 'Using…';
+
+  @override
+  String get confirmResetCreditTitle => 'Use this reset credit?';
+
+  @override
+  String get confirmResetCreditMessage =>
+      'A reset credit will be submitted. This action cannot be undone. Continue?';
+
+  @override
+  String get confirmResetCreditAction => 'Use credit';
+
+  @override
+  String get resetCreditApplied => 'The usage limit was reset.';
+
+  @override
+  String get resetCreditAlreadyUsed =>
+      'This reset credit has already been used.';
+
+  @override
+  String get resetCreditNothingToReset =>
+      'There is no usage limit to reset right now.';
+
+  @override
+  String get resetCreditNoLongerAvailable =>
+      'This reset credit is no longer available. Refresh usage information.';
+
+  @override
+  String get resetCreditOutcomeUnknown =>
+      'The result could not be confirmed. Refresh usage information before using this credit again.';
+
+  @override
+  String get resetCreditRefreshRequired =>
+      'The previous result could not be confirmed. Refresh usage information before trying again.';
+
+  @override
+  String get resetCreditRejected =>
+      'ChatGPT did not accept the reset request for this account.';
+
+  @override
+  String get resetCreditSignInRequired =>
+      'Sign in to your ChatGPT account again, then retry.';
 
   @override
   String get noChatGptConnections => 'No ChatGPT connections yet.';

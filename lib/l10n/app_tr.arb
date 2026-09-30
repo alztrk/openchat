@@ -14,6 +14,43 @@
   "settings": "Ayarlar",
   "settingsDescription": "Bağlantılar, görünüm ve yerel veriler",
   "connections": "Bağlantılar",
+  "models": "Modeller",
+  "modelsDescription": "Bağlı sağlayıcıların modellerini yönetin, varsayılan modeli belirleyin ve istemediğiniz modelleri gizleyin.",
+  "defaultModel": "Varsayılan",
+  "setDefaultModel": "Varsayılan Yap",
+  "clearDefaultModel": "Varsayılanı Kaldır",
+  "defaultModelUpdated": "Varsayılan model güncellendi: {model}",
+  "@defaultModelUpdated": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "defaultModelCleared": "Varsayılan model kaldırıldı.",
+  "hideModel": "Gizle",
+  "showModel": "Göster",
+  "hiddenModel": "Gizli",
+  "modelHidden": "Model gizlendi: {model}",
+  "@modelHidden": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "modelUnhidden": "Model görünür yapıldı: {model}",
+  "@modelUnhidden": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "noModelsFound": "Model bulunamadı.",
+  "refreshModels": "Modelleri Yenile",
+  "connectedProvidersModels": "Bağlı sağlayıcı modelleri",
+  "noConnectedProviders": "Henüz bağlı bir sağlayıcı yok. Bağlantılar sekmesinden hesap bağlayabilir veya API anahtarı ekleyebilirsiniz.",
   "sharedInstructions": "Ortak talimatlar",
   "sharedInstructionsDescription": "Bu talimatlar bağlı olan tüm sağlayıcılara her sohbette gönderilir. Dosya araçlarının erişimi Araç erişimi ayarına uyar.",
   "sharedInstructionsHint": "Yanıtların nasıl verilmesini istediğini yaz...",
@@ -194,6 +231,20 @@
   "resetCredit": "Sıfırlama hakkı",
   "statusUnavailable": "Durum bilgisi yok",
   "resetCreditDetailsUnavailable": "Sıfırlama hakkı ayrıntıları döndürülmedi.",
+  "resetCreditAvailableStatus": "Kullanılabilir",
+  "useResetCredit": "Hakkı kullan",
+  "resetCreditRedeeming": "Kullanılıyor…",
+  "confirmResetCreditTitle": "Sıfırlama hakkı kullanılsın mı?",
+  "confirmResetCreditMessage": "Bir sıfırlama hakkı gönderilecek. Bu işlem geri alınamaz. Devam etmek istiyor musun?",
+  "confirmResetCreditAction": "Hakkı kullan",
+  "resetCreditApplied": "Kullanım sınırı sıfırlandı.",
+  "resetCreditAlreadyUsed": "Bu sıfırlama hakkı zaten kullanılmış.",
+  "resetCreditNothingToReset": "Şu anda sıfırlanacak bir kullanım sınırı yok.",
+  "resetCreditNoLongerAvailable": "Bu sıfırlama hakkı artık kullanılabilir değil. Kullanım bilgilerini yenile.",
+  "resetCreditOutcomeUnknown": "İşlemin sonucu doğrulanamadı. Aynı hakkı yeniden kullanmadan önce kullanım bilgilerini yenile.",
+  "resetCreditRefreshRequired": "Son isteğin sonucu doğrulanamadı. Yeniden denemeden önce kullanım bilgilerini yenile.",
+  "resetCreditRejected": "ChatGPT bu hesapta sıfırlama isteğini kabul etmedi.",
+  "resetCreditSignInRequired": "ChatGPT hesabında yeniden oturum açıp tekrar dene.",
   "noChatGptConnections": "Henüz ChatGPT bağlantısı yok.",
   "apiKeyConnectionUnavailable": "API anahtarı bağlantısı henüz eklenmedi.",
   "oauthConnectionUnavailable": "OAuth bağlantısı henüz eklenmedi.",

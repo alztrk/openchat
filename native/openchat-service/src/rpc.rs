@@ -92,6 +92,14 @@ pub(crate) async fn dispatch(
                 .usage(connection_id, workspace_id, &mut cancellation)
                 .await
         }
+        "chatgpt.reset_credits.consume" => {
+            let connection_id = required_string(&request.params, "connectionId")?;
+            let workspace_id = required_string(&request.params, "workspaceId")?;
+            let credit_id = required_string(&request.params, "creditId")?;
+            service
+                .consume_reset_credit(connection_id, workspace_id, credit_id, &mut cancellation)
+                .await
+        }
         "chat.send" => {
             let conversation_id = required_string(&request.params, "conversationId")?;
             let api_key = optional_api_key(&request.params, "apiKey")?;

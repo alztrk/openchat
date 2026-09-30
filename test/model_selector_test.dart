@@ -192,4 +192,70 @@ void main() {
     expect(find.text('API modelleri'), findsOneWidget);
     expect(find.text('Free model'), findsOneWidget);
   });
+
+  testWidgets('hidden models are excluded from model selector list', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final openCodeModels = [
+      const ChatGptModel(
+        id: 'free-model-1',
+        displayName: 'Free Model 1',
+        isAvailable: true,
+        reasoningLevels: [],
+        providerId: 'opencode',
+        groupId: 'free',
+      ),
+      const ChatGptModel(
+        id: 'free-model-2',
+        displayName: 'Free Model 2',
+        isAvailable: true,
+        reasoningLevels: [],
+        providerId: 'opencode',
+        groupId: 'free',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('tr'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.light,
+        home: Scaffold(
+          body: Center(
+            child: ModelSelector(
+              label: 'Model seç',
+              iconRoot: 'assets/icons',
+              palette: OpenChatPalette.light,
+              compact: false,
+              models: openCodeModels,
+              favoriteModels: const [],
+              hiddenModelKeys: const {'opencode:::free-model-2'},
+              selectedModelId: null,
+              selectedModelRouteKey: null,
+              providerId: 'opencode',
+              isChatGptConnected: false,
+              onProviderSelected: (_) {},
+              isLoadingModels: false,
+              emptyModelsLabel: 'Model yok',
+              onSelected: (_) {},
+              onFavoriteChanged: (_, _, _, _, _) {},
+              onFavoriteSelected: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Model seç'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Free Model 1'), findsOneWidget);
+    expect(find.text('Free Model 2'), findsNothing);
+  });
 }

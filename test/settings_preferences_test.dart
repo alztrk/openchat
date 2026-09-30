@@ -5,6 +5,7 @@ import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_text_scaler.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
+import 'package:openchat/features/chat/domain/default_model_preference.dart';
 import 'package:openchat/features/chat/domain/history_storage_status.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
@@ -68,6 +69,40 @@ void main() {
       expect(await reopenedReader.readAppFont(), AppFontPreference.georgia);
     },
   );
+
+  test('default model preference and hidden model keys persist', () async {
+    final writer = SettingsPreferences(SharedPreferencesAsync());
+
+    expect(await writer.readDefaultModel(), isNull);
+    expect(await writer.readHiddenModelKeys(), isEmpty);
+
+    const preference = DefaultModelPreference(
+      providerId: 'opencode',
+      modelId: 'big-pickle',
+      displayName: 'Big Pickle',
+    );
+    await writer.writeDefaultModel(preference);
+    await writer.writeHiddenModelKeys({'opencode:::mimo-v2.5-free', 'opencode:::space-bunny-free'});
+
+    final reopenedReader = SettingsPreferences(SharedPreferencesAsync());
+    final savedModel = await reopenedReader.readDefaultModel();
+    expect(savedModel, isNotNull);
+    expect(savedModel?.providerId, 'opencode');
+    expect(savedModel?.modelId, 'big-pickle');
+    expect(savedModel?.displayName, 'Big Pickle');
+    expect(savedModel?.routeKey, 'opencode:::big-pickle');
+
+    final savedHidden = await reopenedReader.readHiddenModelKeys();
+    expect(savedHidden, contains('opencode:::mimo-v2.5-free'));
+    expect(savedHidden, contains('opencode:::space-bunny-free'));
+    expect(savedHidden.length, 2);
+
+    await writer.writeDefaultModel(null);
+    expect(await reopenedReader.readDefaultModel(), isNull);
+
+    await writer.writeHiddenModelKeys({});
+    expect(await reopenedReader.readHiddenModelKeys(), isEmpty);
+  });
 
   test('shared instructions and tool permission mode persist', () async {
     final writer = SettingsPreferences(SharedPreferencesAsync());

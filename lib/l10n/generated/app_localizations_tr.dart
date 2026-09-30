@@ -52,6 +52,62 @@ class AppLocalizationsTr extends AppLocalizations {
   String get connections => 'Bağlantılar';
 
   @override
+  String get models => 'Modeller';
+
+  @override
+  String get modelsDescription =>
+      'Bağlı sağlayıcıların modellerini yönetin, varsayılan modeli belirleyin ve istemediğiniz modelleri gizleyin.';
+
+  @override
+  String get defaultModel => 'Varsayılan';
+
+  @override
+  String get setDefaultModel => 'Varsayılan Yap';
+
+  @override
+  String get clearDefaultModel => 'Varsayılanı Kaldır';
+
+  @override
+  String defaultModelUpdated(String model) {
+    return 'Varsayılan model güncellendi: $model';
+  }
+
+  @override
+  String get defaultModelCleared => 'Varsayılan model kaldırıldı.';
+
+  @override
+  String get hideModel => 'Gizle';
+
+  @override
+  String get showModel => 'Göster';
+
+  @override
+  String get hiddenModel => 'Gizli';
+
+  @override
+  String modelHidden(String model) {
+    return 'Model gizlendi: $model';
+  }
+
+  @override
+  String modelUnhidden(String model) {
+    return 'Model görünür yapıldı: $model';
+  }
+
+  @override
+  String get noModelsFound => 'Model bulunamadı.';
+
+  @override
+  String get refreshModels => 'Modelleri Yenile';
+
+  @override
+  String get connectedProvidersModels => 'Bağlı sağlayıcı modelleri';
+
+  @override
+  String get noConnectedProviders =>
+      'Henüz bağlı bir sağlayıcı yok. Bağlantılar sekmesinden hesap bağlayabilir veya API anahtarı ekleyebilirsiniz.';
+
+  @override
   String get sharedInstructions => 'Ortak talimatlar';
 
   @override
@@ -608,6 +664,55 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get resetCreditDetailsUnavailable =>
       'Sıfırlama hakkı ayrıntıları döndürülmedi.';
+
+  @override
+  String get resetCreditAvailableStatus => 'Kullanılabilir';
+
+  @override
+  String get useResetCredit => 'Hakkı kullan';
+
+  @override
+  String get resetCreditRedeeming => 'Kullanılıyor…';
+
+  @override
+  String get confirmResetCreditTitle => 'Sıfırlama hakkı kullanılsın mı?';
+
+  @override
+  String get confirmResetCreditMessage =>
+      'Bir sıfırlama hakkı gönderilecek. Bu işlem geri alınamaz. Devam etmek istiyor musun?';
+
+  @override
+  String get confirmResetCreditAction => 'Hakkı kullan';
+
+  @override
+  String get resetCreditApplied => 'Kullanım sınırı sıfırlandı.';
+
+  @override
+  String get resetCreditAlreadyUsed => 'Bu sıfırlama hakkı zaten kullanılmış.';
+
+  @override
+  String get resetCreditNothingToReset =>
+      'Şu anda sıfırlanacak bir kullanım sınırı yok.';
+
+  @override
+  String get resetCreditNoLongerAvailable =>
+      'Bu sıfırlama hakkı artık kullanılabilir değil. Kullanım bilgilerini yenile.';
+
+  @override
+  String get resetCreditOutcomeUnknown =>
+      'İşlemin sonucu doğrulanamadı. Aynı hakkı yeniden kullanmadan önce kullanım bilgilerini yenile.';
+
+  @override
+  String get resetCreditRefreshRequired =>
+      'Son isteğin sonucu doğrulanamadı. Yeniden denemeden önce kullanım bilgilerini yenile.';
+
+  @override
+  String get resetCreditRejected =>
+      'ChatGPT bu hesapta sıfırlama isteğini kabul etmedi.';
+
+  @override
+  String get resetCreditSignInRequired =>
+      'ChatGPT hesabında yeniden oturum açıp tekrar dene.';
 
   @override
   String get noChatGptConnections => 'Henüz ChatGPT bağlantısı yok.';

@@ -19,11 +19,18 @@ import 'package:openchat/platform/windows/window_controls.dart';
 
 import 'package:openchat/features/settings/presentation/chat_gpt_connection_section.dart';
 import 'package:openchat/features/settings/presentation/compatible_provider_connection_section.dart';
+import 'package:openchat/features/settings/presentation/models_settings_section.dart';
 import 'package:openchat/features/settings/presentation/open_code_connection_section.dart';
 
 const _sharedInstructionsMaxLength = 4096;
 
-enum _SettingsSection { connections, sharedInstructions, appearance, localData }
+enum _SettingsSection {
+  connections,
+  models,
+  sharedInstructions,
+  appearance,
+  localData,
+}
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({
@@ -113,6 +120,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final headerInset = constraints.maxWidth < 640 ? 20.0 : 32.0;
         final sectionTitle = switch (_selectedSection) {
           _SettingsSection.connections => l10n.connections,
+          _SettingsSection.models => l10n.models,
           _SettingsSection.sharedInstructions => l10n.sharedInstructions,
           _SettingsSection.appearance => l10n.appearance,
           _SettingsSection.localData => l10n.localData,
@@ -143,6 +151,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             section: _SettingsSection.connections,
                             horizontalInset: horizontalInset,
                             child: _buildConnectionsSection(),
+                          ),
+                          _buildSectionPage(
+                            section: _SettingsSection.models,
+                            horizontalInset: horizontalInset,
+                            child: ModelsSettingsSection(
+                              serviceClient: widget.serviceClient,
+                              chatGptApiKeyStore: widget.chatGptApiKeyStore,
+                              apiCompatibleProviderKeyStore:
+                                  widget.apiCompatibleProviderKeyStore,
+                              openCodeApiKeyStore: widget.openCodeApiKeyStore,
+                              settingsPreferences: widget.settingsPreferences,
+                              onChanged: widget.onProviderStateChanged,
+                            ),
                           ),
                           _buildSectionPage(
                             section: _SettingsSection.sharedInstructions,
@@ -930,6 +951,11 @@ class _SettingsSidebar extends StatelessWidget {
         section: _SettingsSection.connections,
         label: l10n.connections,
         icon: Icons.link_rounded,
+      ),
+      (
+        section: _SettingsSection.models,
+        label: l10n.models,
+        icon: Icons.tune_rounded,
       ),
       (
         section: _SettingsSection.sharedInstructions,

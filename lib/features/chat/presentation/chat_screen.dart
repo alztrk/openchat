@@ -14,6 +14,7 @@ import 'package:openchat/features/chat/domain/chat_message.dart' as chat;
 import 'package:openchat/features/chat/domain/chat_project.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
+import 'package:openchat/features/chat/domain/default_model_preference.dart';
 import 'package:openchat/features/chat/domain/history_storage_status.dart';
 import 'package:openchat/features/chat/domain/model_favorite.dart';
 import 'package:openchat/features/chat/domain/tool_permission_request.dart';
@@ -128,6 +129,8 @@ class _ChatScreenState extends State<ChatScreen> {
   Set<String> _loadedApiKeyConnectionIds = const <String>{};
   Set<String> _availableCompatibleProviderIds = const <String>{};
   Set<String> _availableChatGptApiKeyConnectionIds = const <String>{};
+  Set<String> _hiddenModelKeys = const <String>{};
+  DefaultModelPreference? _defaultModelPreference;
   bool _isChatGptOAuthAvailable = false;
   bool _isChatGptConnected = false;
   List<ChatGptApiKeyConnection> _chatGptApiKeyConnections =
@@ -260,12 +263,16 @@ class _ChatScreenState extends State<ChatScreen> {
       } on ApiCompatibleProviderKeyStorageException {
         compatibleKeyStorageUnavailable = true;
       }
+      final hiddenKeys = await _settingsPreferences.readHiddenModelKeys();
+      final defaultModel = await _settingsPreferences.readDefaultModel();
       if (!mounted) return;
       setState(() {
         _selectedConnectionId = selectedConnection?.id;
         _selectedWorkspaceId = selectedWorkspace?.id;
         _chatGptApiKeyConnections = apiConnections;
         _availableCompatibleProviderIds = compatibleProviderIds;
+        _hiddenModelKeys = hiddenKeys;
+        _defaultModelPreference = defaultModel;
         _isChatGptConnected =
             (selectedConnection != null && selectedWorkspace != null) ||
             apiConnections.isNotEmpty;
@@ -301,6 +308,27 @@ class _ChatScreenState extends State<ChatScreen> {
         var providerId = _hasUserSelectedProvider
             ? _selectedProviderId
             : _preferredProviderId();
+        var defaultModelAvailable = false;
+        if (!_hasUserSelectedProvider && defaultModel != null) {
+          final defaultProvider = defaultModel.providerId;
+          final isDefaultFamilyChatGpt =
+              _providerFamily(defaultProvider) == 'chatgpt';
+          final isDefaultCompatible =
+              ApiCompatibleProviderKeyStore.providerIds.contains(
+                defaultProvider,
+              );
+          if (defaultProvider == 'opencode') {
+            defaultModelAvailable = true;
+          } else if (isDefaultFamilyChatGpt && _isChatGptConnected) {
+            defaultModelAvailable = true;
+          } else if (isDefaultCompatible &&
+              compatibleProviderIds.contains(defaultProvider)) {
+            defaultModelAvailable = true;
+          }
+          if (defaultModelAvailable) {
+            providerId = defaultProvider;
+          }
+        }
         if (_providerFamily(providerId) == 'chatgpt') {
           final selectedApiKeyIsAvailable = _availableChatGptApiKeyConnectionIds
               .contains(_selectedApiKeyConnectionId);
@@ -329,18 +357,25 @@ class _ChatScreenState extends State<ChatScreen> {
         }
         setState(() {
           _selectedProviderId = providerId;
-          if (!_isApiKeyRouteProvider(providerId)) {
-            _selectedApiKeyConnectionId = null;
-          } else if (ApiCompatibleProviderKeyStore.providerIds.contains(
-            providerId,
-          )) {
-            _selectedApiKeyConnectionId = providerId;
+          if (defaultModelAvailable && defaultModel != null) {
+            _selectedConnectionId = defaultModel.connectionId;
+            _selectedWorkspaceId = defaultModel.workspaceId;
+            _selectedApiKeyConnectionId = defaultModel.apiKeyConnectionId;
+          } else {
+            if (!_isApiKeyRouteProvider(providerId)) {
+              _selectedApiKeyConnectionId = null;
+            } else if (ApiCompatibleProviderKeyStore.providerIds.contains(
+              providerId,
+            )) {
+              _selectedApiKeyConnectionId = providerId;
+            }
           }
         });
         await _loadModels(
           providerId: providerId,
-          selectedModelId: null,
-          selectedModelRouteKey: null,
+          selectedModelId: defaultModelAvailable ? defaultModel?.modelId : null,
+          selectedModelRouteKey:
+              defaultModelAvailable ? defaultModel?.routeKey : null,
           forceRefresh: forceRefresh,
         );
       }
@@ -1080,14 +1115,20 @@ class _ChatScreenState extends State<ChatScreen> {
     _modelSelectionGeneration++;
     _resetMessageScroll();
     _hasUserSelectedProvider = false;
+    final defaultModel = _defaultModelPreference;
     setState(() {
       _selectedConversationId = null;
-      _selectedProviderId = _preferredProviderId();
-      _selectedApiKeyConnectionId = _selectedProviderId == 'chatgpt_api'
-          ? _firstOrNull(_chatGptApiKeyConnections)?.id
-          : null;
+      _selectedProviderId = defaultModel != null
+          ? defaultModel.providerId
+          : _preferredProviderId();
+      _selectedApiKeyConnectionId = defaultModel?.apiKeyConnectionId ??
+          (_selectedProviderId == 'chatgpt_api'
+              ? _firstOrNull(_chatGptApiKeyConnections)?.id
+              : null);
+      _selectedConnectionId = defaultModel?.connectionId;
+      _selectedWorkspaceId = defaultModel?.workspaceId;
       _messageStream = null;
-      _selectedModelId = null;
+      _selectedModelId = defaultModel?.modelId;
       _selectedReasoningEffort = null;
       _isUpdatingConversationModel = false;
       _titleEditRequestId = null;
@@ -2544,6 +2585,7 @@ class _ChatScreenState extends State<ChatScreen> {
               onProviderSelected: selectedConversation == null
                   ? _selectProvider
                   : null,
+              hiddenModelKeys: _hiddenModelKeys,
               selectedModelId: selectedModelId,
               selectedModelRouteKey: selectedModelRouteKey,
               onModelSelected: _isUpdatingConversationModel

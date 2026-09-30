@@ -1,13 +1,14 @@
-use serde_json::{Value, json};
-use std::time::Instant;
-use tokio::sync::watch;
-
 use super::{
-    CHATGPT_CLIENT_VERSION, ChatGptService, METADATA_REQUEST_TIMEOUT, MODEL_CATALOG_CACHE_AGE,
-    connection_unavailable, database_error, provider_timeout, request_cancelled,
-    serialization_error,
+    CHATGPT_CLIENT_VERSION, CHATGPT_WHAM_BASE, ChatGptService, METADATA_REQUEST_TIMEOUT,
+    MODEL_CATALOG_CACHE_AGE, RESET_CREDIT_CONSUME_TIMEOUT, connection_unavailable, database_error,
+    invalid_response_error, provider_timeout, request_cancelled, serialization_error,
 };
 use crate::{chatgpt_store, oauth::parse_reference, protocol::ServiceError};
+use reqwest::Method;
+use serde_json::{Value, json};
+use std::time::Instant;
+use tokio::{sync::watch, time::timeout};
+use uuid::Uuid;
 
 impl ChatGptService {
     pub fn list_connections(&self) -> Result<Value, ServiceError> {
@@ -349,5 +350,119 @@ impl ChatGptService {
                 Err(error)
             }
         }
+    }
+
+    pub async fn consume_reset_credit(
+        &self,
+        connection_id: &str,
+        workspace_id: &str,
+        credit_id: &str,
+        cancellation: &mut watch::Receiver<bool>,
+    ) -> Result<Value, ServiceError> {
+        if credit_id.len() > 512 || credit_id.chars().any(char::is_control) {
+            return Err(ServiceError::new(
+                "invalid_request_params",
+                "The ChatGPT reset credit identifier is invalid.",
+                false,
+            ));
+        }
+
+        let external_workspace_id = self.external_workspace_id(connection_id, workspace_id)?;
+        let snapshot = self.read_latest_usage(connection_id, workspace_id)?;
+        if snapshot.reset_credit_details_state != "available"
+            || !snapshot.reset_credits.iter().any(|credit| {
+                credit.id == credit_id && credit.status.as_deref() == Some("available")
+            })
+        {
+            return Err(ServiceError::new(
+                "reset_credit_unavailable",
+                "The selected ChatGPT reset credit is no longer available.",
+                false,
+            ));
+        }
+
+        let redeem_request_id = Uuid::new_v4().to_string();
+        let body = json!({
+            "redeem_request_id": redeem_request_id,
+            "credit_id": credit_id,
+        });
+        let started = Instant::now();
+        self.record_chatgpt_event(
+            "request_started",
+            "reset_credit_consume",
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let request = self.authorized_json_request(
+            "reset_credit_consume",
+            Method::POST,
+            format!("{CHATGPT_WHAM_BASE}/rate-limit-reset-credits/consume"),
+            connection_id,
+            &external_workspace_id,
+            Some(body),
+        );
+        let response = if *cancellation.borrow() {
+            Err(request_cancelled())
+        } else {
+            tokio::select! {
+                _ = cancellation.changed() => Err(request_cancelled()),
+                result = timeout(RESET_CREDIT_CONSUME_TIMEOUT, request) => {
+                    result.unwrap_or_else(|_| Err(provider_timeout()))
+                }
+            }
+        };
+        let (status, value) = match response {
+            Ok(response) => response,
+            Err(error) => {
+                let event = if error.code == "request_cancelled" {
+                    "request_cancelled"
+                } else {
+                    "request_failed"
+                };
+                self.record_chatgpt_event(
+                    event,
+                    "reset_credit_consume",
+                    None,
+                    Some(error.code),
+                    Some(started.elapsed().as_millis()),
+                    None,
+                );
+                return Err(error);
+            }
+        };
+
+        let outcome = value
+            .get("outcome")
+            .and_then(Value::as_str)
+            .filter(|outcome| {
+                matches!(
+                    *outcome,
+                    "reset" | "alreadyRedeemed" | "nothingToReset" | "noCredit"
+                )
+            });
+        let Some(outcome) = outcome else {
+            let error = invalid_response_error();
+            self.record_chatgpt_event(
+                "response_failed",
+                "reset_credit_consume",
+                Some(status),
+                Some(error.code),
+                Some(started.elapsed().as_millis()),
+                None,
+            );
+            return Err(error);
+        };
+        self.record_chatgpt_event(
+            "request_completed",
+            "reset_credit_consume",
+            Some(status),
+            None,
+            Some(started.elapsed().as_millis()),
+            None,
+        );
+        Ok(json!({"outcome": outcome}))
     }
 }

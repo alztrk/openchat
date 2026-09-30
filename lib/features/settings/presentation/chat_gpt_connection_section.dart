@@ -49,6 +49,10 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
   _ConnectionLoadState _titlePreferenceLoadState = _ConnectionLoadState.loading;
   _UsageLoadState _usageLoadState = _UsageLoadState.idle;
   ChatGptUsageSnapshot? _usageSnapshot;
+  String? _confirmingResetCreditId;
+  String? _redeemingResetCreditId;
+  String? _resetCreditRefreshRequiredConnectionId;
+  String? _resetCreditRefreshRequiredWorkspaceId;
   ChatGptTitlePreference _titlePreference = const ChatGptTitlePreference();
   OpenChatServiceOperation? _oauthOperation;
   String? _oauthError;
@@ -235,7 +239,7 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
 
   Future<void> _startOAuth() async {
     final service = widget.serviceClient;
-    if (service == null || _isSigningIn) {
+    if (service == null || _isSigningIn || _isResetCreditActionPending) {
       if (service == null) {
         _showMessage(context.openchatL10n.oauthConnectionUnavailable);
       }
@@ -292,7 +296,11 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
 
   Future<void> _selectOAuthConnection(ChatGptConnection connection) async {
     final service = widget.serviceClient;
-    if (service == null || connection.isSelected) return;
+    if (service == null ||
+        connection.isSelected ||
+        _isResetCreditActionPending) {
+      return;
+    }
     try {
       await service.call(
         'chatgpt.connections.select',
@@ -310,7 +318,11 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
     String workspaceId,
   ) async {
     final service = widget.serviceClient;
-    if (service == null || workspaceId == _selectedWorkspaceId) return;
+    if (service == null ||
+        workspaceId == _selectedWorkspaceId ||
+        _isResetCreditActionPending) {
+      return;
+    }
     try {
       await service.call(
         'chatgpt.workspaces.select',
@@ -326,7 +338,11 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
     }
   }
 
-  Future<void> _loadUsage(String connectionId, String workspaceId) async {
+  Future<void> _loadUsage(
+    String connectionId,
+    String workspaceId, {
+    bool userInitiated = false,
+  }) async {
     final service = widget.serviceClient;
     if (service == null) return;
     final generation = ++_usageRequestGeneration;
@@ -347,6 +363,12 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
       setState(() {
         _usageSnapshot = snapshot;
         _usageLoadState = _UsageLoadState.loaded;
+        if (userInitiated &&
+            _resetCreditRefreshRequiredConnectionId == connectionId &&
+            _resetCreditRefreshRequiredWorkspaceId == workspaceId) {
+          _resetCreditRefreshRequiredConnectionId = null;
+          _resetCreditRefreshRequiredWorkspaceId = null;
+        }
       });
     } on OpenChatServiceException {
       if (!mounted || generation != _usageRequestGeneration) return;
@@ -366,6 +388,134 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
       if (!mounted || generation != _usageRequestGeneration) return;
       setState(() => _usageLoadState = _UsageLoadState.failed);
     }
+  }
+
+  bool _needsResetCreditRefresh(String connectionId, String workspaceId) =>
+      _resetCreditRefreshRequiredConnectionId == connectionId &&
+      _resetCreditRefreshRequiredWorkspaceId == workspaceId;
+
+  bool get _isResetCreditActionPending =>
+      _confirmingResetCreditId != null || _redeemingResetCreditId != null;
+
+  Future<void> _redeemResetCredit(
+    ChatGptConnection connection,
+    ChatGptWorkspace workspace,
+    ChatGptResetCredit credit,
+  ) async {
+    final service = widget.serviceClient;
+    if (service == null ||
+        _isResetCreditActionPending ||
+        !connection.isSelected ||
+        workspace.id != _selectedWorkspaceId ||
+        credit.status != 'available' ||
+        _needsResetCreditRefresh(connection.id, workspace.id)) {
+      return;
+    }
+
+    final l10n = context.openchatL10n;
+    setState(() => _confirmingResetCreditId = credit.id);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.confirmResetCreditTitle),
+        content: Text(l10n.confirmResetCreditMessage),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            icon: const Icon(Icons.restart_alt_rounded, size: 17),
+            label: Text(l10n.confirmResetCreditAction),
+          ),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    setState(() => _confirmingResetCreditId = null);
+    if (confirmed != true) return;
+
+    setState(() => _redeemingResetCreditId = credit.id);
+    var refreshRequired = false;
+    var resultMessage = l10n.resetCreditOutcomeUnknown;
+    var resultType = OpenChatToastType.success;
+    try {
+      final response = await service.call(
+        'chatgpt.reset_credits.consume',
+        params: <String, Object?>{
+          'connectionId': connection.id,
+          'workspaceId': workspace.id,
+          'creditId': credit.id,
+        },
+      );
+      switch (response['outcome']) {
+        case 'reset':
+          resultMessage = l10n.resetCreditApplied;
+          break;
+        case 'alreadyRedeemed':
+          refreshRequired = true;
+          resultMessage = l10n.resetCreditAlreadyUsed;
+          resultType = OpenChatToastType.warning;
+          break;
+        case 'nothingToReset':
+          resultMessage = l10n.resetCreditNothingToReset;
+          resultType = OpenChatToastType.warning;
+          break;
+        case 'noCredit':
+          refreshRequired = true;
+          resultMessage = l10n.resetCreditNoLongerAvailable;
+          resultType = OpenChatToastType.warning;
+          break;
+        default:
+          refreshRequired = true;
+          resultMessage = l10n.resetCreditOutcomeUnknown;
+          resultType = OpenChatToastType.warning;
+          break;
+      }
+    } on OpenChatServiceException catch (error) {
+      switch (error.code) {
+        case 'authentication_required':
+          resultMessage = l10n.resetCreditSignInRequired;
+          break;
+        case 'permission_denied':
+          resultMessage = l10n.resetCreditRejected;
+          break;
+        case 'reset_credit_unavailable':
+        case 'workspace_not_found':
+          resultMessage = l10n.resetCreditNoLongerAvailable;
+          resultType = OpenChatToastType.warning;
+          break;
+        default:
+          refreshRequired = true;
+          resultMessage = l10n.resetCreditOutcomeUnknown;
+          resultType = OpenChatToastType.warning;
+          break;
+      }
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription('while using a ChatGPT reset credit'),
+        ),
+      );
+      refreshRequired = true;
+      resultMessage = l10n.resetCreditOutcomeUnknown;
+      resultType = OpenChatToastType.warning;
+    }
+
+    if (!mounted) return;
+    if (refreshRequired) {
+      setState(() {
+        _resetCreditRefreshRequiredConnectionId = connection.id;
+        _resetCreditRefreshRequiredWorkspaceId = workspace.id;
+      });
+    }
+    _showMessage(resultMessage, type: resultType);
+    await _loadUsage(connection.id, workspace.id);
+    if (mounted) setState(() => _redeemingResetCreditId = null);
   }
 
   void _toggleApiKeyForm() {
@@ -503,7 +653,9 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
 
   Future<void> _removeOAuthConnection(ChatGptConnection connection) async {
     final service = widget.serviceClient;
-    if (service == null || _removingConnectionIds.contains(connection.id)) {
+    if (service == null ||
+        _removingConnectionIds.contains(connection.id) ||
+        _isResetCreditActionPending) {
       return;
     }
     final connectionName =
@@ -839,7 +991,7 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
     return ChatGptOAuthConnectionRow(
       connection: connection,
       isRemoving: isRemoving,
-      isSigningIn: _isSigningIn,
+      isSigningIn: _isSigningIn || _isResetCreditActionPending,
       selectedWorkspaceId: _selectedWorkspaceId,
       onUseConnection: () => unawaited(_selectOAuthConnection(connection)),
       onRemove: () => unawaited(_removeOAuthConnection(connection)),
@@ -861,7 +1013,17 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
       isLoaded: _usageLoadState == _UsageLoadState.loaded,
       hasError: _usageLoadState == _UsageLoadState.failed,
       snapshot: _usageSnapshot,
-      onRefresh: () => unawaited(_loadUsage(connection.id, workspace.id)),
+      confirmingResetCreditId: _confirmingResetCreditId,
+      redeemingResetCreditId: _redeemingResetCreditId,
+      needsResetCreditRefresh: _needsResetCreditRefresh(
+        connection.id,
+        workspace.id,
+      ),
+      onRefresh: () => unawaited(
+        _loadUsage(connection.id, workspace.id, userInitiated: true),
+      ),
+      onRedeemResetCredit: (credit) =>
+          unawaited(_redeemResetCredit(connection, workspace, credit)),
     );
   }
 }

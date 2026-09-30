@@ -28,6 +28,7 @@ class ChatComposer extends StatelessWidget {
     this.availableProviderIds = const <String>{},
     this.onProviderSelected,
     this.modelsEmptyLabel,
+    this.hiddenModelKeys = const <String>{},
     this.selectedModelId,
     this.selectedModelRouteKey,
     this.onModelSelected,
@@ -56,6 +57,7 @@ class ChatComposer extends StatelessWidget {
   final Set<String> availableProviderIds;
   final ValueChanged<String>? onProviderSelected;
   final String? modelsEmptyLabel;
+  final Set<String> hiddenModelKeys;
   final String? selectedModelId;
   final String? selectedModelRouteKey;
   final ValueChanged<ChatGptModel>? onModelSelected;
@@ -167,6 +169,7 @@ class ChatComposer extends StatelessWidget {
                   availableProviderIds: availableProviderIds,
                   onProviderSelected: onProviderSelected,
                   modelsEmptyLabel: modelsEmptyLabel,
+                  hiddenModelKeys: hiddenModelKeys,
                   selectedModelId: selectedModelId,
                   selectedModelRouteKey: selectedModelRouteKey,
                   onModelSelected: onModelSelected,
@@ -207,6 +210,7 @@ class _ComposerActions extends StatelessWidget {
     required this.availableProviderIds,
     required this.onProviderSelected,
     required this.modelsEmptyLabel,
+    this.hiddenModelKeys = const <String>{},
     required this.selectedModelId,
     required this.selectedModelRouteKey,
     required this.onModelSelected,
@@ -237,6 +241,7 @@ class _ComposerActions extends StatelessWidget {
   final Set<String> availableProviderIds;
   final ValueChanged<String>? onProviderSelected;
   final String? modelsEmptyLabel;
+  final Set<String> hiddenModelKeys;
   final String? selectedModelId;
   final String? selectedModelRouteKey;
   final ValueChanged<ChatGptModel>? onModelSelected;
@@ -285,6 +290,7 @@ class _ComposerActions extends StatelessWidget {
       onSelected: onModelSelected,
       onFavoriteChanged: onModelFavoriteChanged,
       onFavoriteSelected: onFavoriteModelSelected,
+      hiddenModelKeys: hiddenModelKeys,
     );
     final reasoningSelector = showReasoningSelector
         ? _ReasoningSelector(

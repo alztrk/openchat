@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:openchat/features/chat/domain/default_model_preference.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum ToolPermissionMode {
@@ -51,6 +54,8 @@ class SettingsPreferences {
   static const _conversationWidthKey = 'appearance.conversation_width';
   static const _conversationTextSizeKey = 'appearance.conversation_text_size';
   static const _appFontKey = 'appearance.conversation_font';
+  static const _defaultModelKey = 'models.default_model';
+  static const _hiddenModelKeysKey = 'models.hidden_keys';
   static const maxSharedInstructionsCharacters = 4096;
 
   final SharedPreferencesAsync _preferences;
@@ -171,5 +176,58 @@ class SettingsPreferences {
 
   Future<void> writeToolPermissionMode(ToolPermissionMode mode) {
     return _preferences.setString(_toolPermissionModeKey, mode.serviceValue);
+  }
+
+  Future<DefaultModelPreference?> readDefaultModel() async {
+    final raw = await _preferences.getString(_defaultModelKey);
+    if (raw == null || raw.trim().isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, Object?>) {
+        return DefaultModelPreference.fromJson(decoded);
+      }
+      if (decoded is Map) {
+        return DefaultModelPreference.fromJson(
+          decoded.map((k, v) => MapEntry(k.toString(), v)),
+        );
+      }
+      return null;
+    } on Object {
+      return null;
+    }
+  }
+
+  Future<void> writeDefaultModel(DefaultModelPreference? preference) {
+    if (preference == null) {
+      return _preferences.remove(_defaultModelKey);
+    }
+    return _preferences.setString(
+      _defaultModelKey,
+      jsonEncode(preference.toJson()),
+    );
+  }
+
+  Future<Set<String>> readHiddenModelKeys() async {
+    final raw = await _preferences.getString(_hiddenModelKeysKey);
+    if (raw == null || raw.trim().isEmpty) return const <String>{};
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        return decoded.whereType<String>().toSet();
+      }
+      return const <String>{};
+    } on Object {
+      return const <String>{};
+    }
+  }
+
+  Future<void> writeHiddenModelKeys(Set<String> keys) {
+    if (keys.isEmpty) {
+      return _preferences.remove(_hiddenModelKeysKey);
+    }
+    return _preferences.setString(
+      _hiddenModelKeysKey,
+      jsonEncode(keys.toList(growable: false)),
+    );
   }
 }
