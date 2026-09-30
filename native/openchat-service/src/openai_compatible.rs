@@ -474,15 +474,10 @@ mod tests {
             .await
             .expect("fetch models");
 
-        assert!(
-            response.status().is_success(),
-            "Expected 200 OK, got: {}",
-            response.status()
-        );
-        let json = response
-            .json::<serde_json::Value>()
-            .await
-            .expect("parse json");
+        let status = response.status();
+        let text = response.text().await.expect("text");
+        let json: serde_json::Value = serde_json::from_str(&text).expect("parse json");
+        assert!(status.is_success());
         let data = json
             .get("data")
             .and_then(|d| d.as_array())
@@ -491,5 +486,15 @@ mod tests {
             data.iter()
                 .any(|m| m.get("id").and_then(|id| id.as_str()) == Some("big-pickle"))
         );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_opencode_models_full_test() {
+        let storage = crate::storage::AppStorage::open().unwrap();
+        let (_tx, mut rx) = tokio::sync::watch::channel(false);
+        let res = super::models::models(&storage, None, true, &mut rx).await;
+        println!("[FULL MODELS RESULT]: {:?}", res);
+        assert!(res.is_ok());
     }
 }
