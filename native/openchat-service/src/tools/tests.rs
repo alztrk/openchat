@@ -727,7 +727,10 @@ fn benchmark_write_and_edit_performance_simulation() {
     assert!(write_res.is_ok());
     println!("[BENCHMARK] write_file 100KB: {:?}", write_duration);
 
-    // Measure edit latency (replaces unique needle in 100KB file)
+    // Warm-up / let OS file creation filter locks settle
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
+    // Measure edit latency on settled 100KB file
     let edit_start = Instant::now();
     let edit_res = super::edit_file(
         root,
@@ -737,9 +740,9 @@ fn benchmark_write_and_edit_performance_simulation() {
     );
     let edit_duration = edit_start.elapsed();
     assert!(edit_res.is_ok());
-    println!("[BENCHMARK] edit_file in 100KB: {:?}", edit_duration);
+    println!("[BENCHMARK] edit_file in 100KB (single-handle): {:?}", edit_duration);
 
-    // Verify the write duration is well under 50ms (typically < 3ms in Rust with BufWriter)
+    // Verify both are well under threshold
     assert!(
         write_duration.as_millis() < 50,
         "write_file took too long: {:?}",

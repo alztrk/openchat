@@ -1,7 +1,7 @@
 use std::{
     collections::BinaryHeap,
     fs::{self, File},
-    io::{BufRead, BufReader, BufWriter, Write},
+    io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::{Component, Path, PathBuf},
 };
 
@@ -266,7 +266,14 @@ pub fn edit_file(
     if metadata.len() > 10 * 1024 * 1024 {
         return Err(invalid("The file exceeds the 10MB edit limit."));
     }
-    let content = fs::read_to_string(&file_path)
+    let mut file = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&file_path)
+        .map_err(|_| unavailable("The requested file could not be opened for editing."))?;
+
+    let mut content = String::with_capacity(metadata.len() as usize);
+    file.read_to_string(&mut content)
         .map_err(|_| unavailable("The file could not be read as valid UTF-8 text."))?;
 
     let mut matches = content.match_indices(old_string);
@@ -292,8 +299,14 @@ pub fn edit_file(
     output.push_str(new_string);
     output.push_str(&content[start_idx + old_string.len()..]);
 
-    fs::write(&file_path, output.as_bytes())
+    file.seek(SeekFrom::Start(0))
+        .map_err(|_| unavailable("Failed to rewind file for editing."))?;
+    file.write_all(output.as_bytes())
         .map_err(|_| unavailable("Failed to write edited content to the file."))?;
+    file.set_len(output.len() as u64)
+        .map_err(|_| unavailable("Failed to adjust file size after edit."))?;
+    file.flush()
+        .map_err(|_| unavailable("Failed to flush edited content to the file."))?;
 
     let relative = file_path.strip_prefix(&root).unwrap_or(&file_path);
     Ok(json!({
