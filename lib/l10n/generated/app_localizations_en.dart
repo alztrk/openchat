@@ -97,23 +97,23 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get geminiApiDescription =>
-      'Connect a Google AI account to browse and use its available Gemini API models.';
+      'Add a Google AI Studio API key to use the models available to your account. Free access depends on the model and your quota.';
 
   @override
   String get groqApiDescription =>
-      'Browse the models enabled for your Groq API account. Pricing and limits depend on your plan.';
+      'Use the models enabled for your account with a Groq API key. Pricing and usage limits vary by plan and model.';
 
   @override
   String get cerebrasApiDescription =>
-      'Browse the models enabled for your Cerebras API account. Pricing and limits depend on your plan.';
+      'Use the tool-capable models available to your account with a Cerebras API key. Access, pricing, and limits vary by model and account.';
 
   @override
   String get openRouterApiDescription =>
-      'Only text chat models currently listed at \$0 for both input and output appear here. Availability and limits can change.';
+      'Only models listed at \$0 for input and output with text and tool support appear here. Actual access and limits can change.';
 
   @override
   String get geminiUnpaidDataNotice =>
-      'Google may use content sent through unpaid Gemini API services to improve its products. Review Google\'s API terms before sending sensitive information.';
+      'On Gemini API\'s free tier, Google may use submitted content to improve its products. Review Google\'s data-use terms before sending sensitive information.';
 
   @override
   String get providerApiKey => 'API key';
@@ -160,7 +160,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get openCodeConsoleDescription =>
-      'Free models work without a key. Paid models are billed per request after adding Console credits. Add a Console service API key to use them.';
+      'Free models work without a key. Add a Console API key for paid models; each request is charged to your Console balance.';
 
   @override
   String openCodeKeySaved(Object suffix) {

@@ -263,31 +263,31 @@ abstract class AppLocalizations {
   /// No description provided for @geminiApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect a Google AI account to browse and use its available Gemini API models.'**
+  /// **'Add a Google AI Studio API key to use the models available to your account. Free access depends on the model and your quota.'**
   String get geminiApiDescription;
 
   /// No description provided for @groqApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Browse the models enabled for your Groq API account. Pricing and limits depend on your plan.'**
+  /// **'Use the models enabled for your account with a Groq API key. Pricing and usage limits vary by plan and model.'**
   String get groqApiDescription;
 
   /// No description provided for @cerebrasApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Browse the models enabled for your Cerebras API account. Pricing and limits depend on your plan.'**
+  /// **'Use the tool-capable models available to your account with a Cerebras API key. Access, pricing, and limits vary by model and account.'**
   String get cerebrasApiDescription;
 
   /// No description provided for @openRouterApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Only text chat models currently listed at \$0 for both input and output appear here. Availability and limits can change.'**
+  /// **'Only models listed at \$0 for input and output with text and tool support appear here. Actual access and limits can change.'**
   String get openRouterApiDescription;
 
   /// No description provided for @geminiUnpaidDataNotice.
   ///
   /// In en, this message translates to:
-  /// **'Google may use content sent through unpaid Gemini API services to improve its products. Review Google\'s API terms before sending sensitive information.'**
+  /// **'On Gemini API\'s free tier, Google may use submitted content to improve its products. Review Google\'s data-use terms before sending sensitive information.'**
   String get geminiUnpaidDataNotice;
 
   /// No description provided for @providerApiKey.
@@ -371,7 +371,7 @@ abstract class AppLocalizations {
   /// No description provided for @openCodeConsoleDescription.
   ///
   /// In en, this message translates to:
-  /// **'Free models work without a key. Paid models are billed per request after adding Console credits. Add a Console service API key to use them.'**
+  /// **'Free models work without a key. Add a Console API key for paid models; each request is charged to your Console balance.'**
   String get openCodeConsoleDescription;
 
   /// No description provided for @openCodeKeySaved.

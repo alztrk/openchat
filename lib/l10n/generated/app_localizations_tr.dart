@@ -96,23 +96,23 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get geminiApiDescription =>
-      'Gemini API modellerini görüntülemek ve kullanmak için Google AI hesabını bağla.';
+      'Google AI Studio API anahtarını ekleyerek erişebildiğin modelleri kullan. Ücretsiz kullanım model ve kota sınırına bağlıdır.';
 
   @override
   String get groqApiDescription =>
-      'Groq API hesabında erişilebilen modelleri görüntüle. Ücretler ve limitler hesabına bağlıdır.';
+      'Groq API anahtarıyla hesabında erişime açık modelleri kullan. Ücret ve kullanım limitleri planına ve modele göre değişir.';
 
   @override
   String get cerebrasApiDescription =>
-      'Cerebras API hesabında erişilebilen modelleri görüntüle. Ücretler ve limitler hesabına bağlıdır.';
+      'Cerebras API anahtarıyla hesabında araç destekli modelleri kullan. Erişim, ücret ve limitler modele ve hesabına göre değişir.';
 
   @override
   String get openRouterApiDescription =>
-      'Burada yalnızca girdi ve çıktı fiyatı şu anda 0 \$ olan metin sohbet modelleri görünür. Erişim ve limitler değişebilir.';
+      'Yalnızca katalogda girdi ve çıktı fiyatı 0 \$ olan, metin ve araç desteği görünen modeller listelenir. Gerçek erişim ve limitler değişebilir.';
 
   @override
   String get geminiUnpaidDataNotice =>
-      'Google, ücretsiz Gemini API hizmetlerine gönderilen içerikleri ürünlerini geliştirmek için kullanabilir. Hassas bilgi göndermeden önce Google API koşullarını incele.';
+      'Gemini API\'nin ücretsiz katmanında gönderdiğin içerikler Google ürünlerini geliştirmek için kullanılabilir. Hassas içerik göndermeden önce Google\'ın veri kullanım koşullarını incele.';
 
   @override
   String get providerApiKey => 'API anahtarı';
@@ -160,7 +160,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get openCodeConsoleDescription =>
-      'Ücretsiz modeller anahtar olmadan kullanılabilir. Console bakiyesi ekledikten sonra ücretli modeller istek başına ücretlendirilir. Bu modeller için Console servis API anahtarı ekleyin.';
+      'Ücretsiz modeller anahtarsız kullanılabilir. Ücretli modeller için Console API anahtarı ekle; kullanım istek başına Console bakiyenden düşer.';
 
   @override
   String openCodeKeySaved(Object suffix) {
