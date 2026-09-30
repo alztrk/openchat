@@ -7,6 +7,8 @@ import 'package:openchat/l10n/generated/app_localizations.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/presentation/widgets/tool_file_listing.dart';
+import 'package:openchat/features/chat/presentation/widgets/tool_operation_results.dart';
+import 'package:openchat/features/chat/presentation/widgets/tool_terminal_view.dart';
 
 class ToolActivityAccordion extends StatelessWidget {
   const ToolActivityAccordion({
@@ -29,37 +31,37 @@ class ToolActivityAccordion extends StatelessWidget {
       ChatToolActivityStatus.denied => l10n.toolDenied,
       ChatToolActivityStatus.cancelled => l10n.toolCancelled,
     };
-    final leading = switch (activity.status) {
+    final statusIndicator = switch (activity.status) {
       ChatToolActivityStatus.awaitingApproval => Icon(
         Icons.lock_outline_rounded,
-        size: 17,
+        size: 12,
         color: palette.accent,
       ),
       ChatToolActivityStatus.running => SizedBox.square(
-        dimension: 16,
+        dimension: 11,
         child: CircularProgressIndicator(
-          strokeWidth: 1.8,
+          strokeWidth: 1.5,
           color: palette.accent,
         ),
       ),
       ChatToolActivityStatus.completed => Icon(
         Icons.check_circle_outline_rounded,
-        size: 17,
+        size: 12,
         color: palette.secondaryIcon,
       ),
       ChatToolActivityStatus.failed => Icon(
         Icons.error_outline_rounded,
-        size: 17,
+        size: 12,
         color: Theme.of(context).colorScheme.error,
       ),
       ChatToolActivityStatus.denied => Icon(
         Icons.block_rounded,
-        size: 17,
+        size: 12,
         color: Theme.of(context).colorScheme.error,
       ),
       ChatToolActivityStatus.cancelled => Icon(
         Icons.cancel_outlined,
-        size: 17,
+        size: 12,
         color: palette.secondaryIcon,
       ),
     };
@@ -71,8 +73,40 @@ class ToolActivityAccordion extends StatelessWidget {
       ChatToolActivityStatus.completed ||
       ChatToolActivityStatus.cancelled => palette.secondaryIcon,
     };
-    final fileListing = activity.name == 'list_files'
+    final fileListing =
+        activity.name == 'list_files' ||
+            activity.name == 'glob' ||
+            activity.name == 'list_directory'
         ? ToolFileListing.fromOutput(activity.output)
+        : null;
+    final fileListingOutput = toolActivityObjectMap(activity.output);
+    final fileListingError = toolActivityObjectMap(
+      fileListingOutput?['error'],
+    )?['message'];
+    final fileListingMessage = switch (activity.status) {
+      ChatToolActivityStatus.awaitingApproval => l10n.toolAwaitingApproval,
+      ChatToolActivityStatus.running => l10n.toolOperationWorking,
+      ChatToolActivityStatus.completed =>
+        fileListingError is String && fileListingError.isNotEmpty
+            ? fileListingError
+            : l10n.toolListingUnavailable,
+      ChatToolActivityStatus.failed =>
+        fileListingError is String && fileListingError.isNotEmpty
+            ? fileListingError
+            : l10n.toolOperationFailed,
+      ChatToolActivityStatus.denied => l10n.toolDenied,
+      ChatToolActivityStatus.cancelled => l10n.toolCancelled,
+    };
+    final fileListingFailed =
+        activity.status == ChatToolActivityStatus.failed ||
+        fileListingOutput?['error'] != null;
+    final operationResult = toolOperationResult(activity, palette);
+    final isTerminal =
+        activity.name == 'execute_command' ||
+        activity.name == 'bash' ||
+        activity.name == 'send_terminal_input';
+    final terminalData = isTerminal
+        ? ToolTerminalData.fromActivity(activity)
         : null;
     const cardRadius = BorderRadius.all(Radius.circular(14));
 
@@ -102,9 +136,9 @@ class ToolActivityAccordion extends StatelessWidget {
               borderRadius: cardRadius,
             ),
             leading: Tooltip(
-              message: statusLabel,
+              message: _toolActivityName(activity.name, l10n),
               child: Semantics(
-                label: statusLabel,
+                label: _toolActivityName(activity.name, l10n),
                 child: Container(
                   width: 28,
                   height: 28,
@@ -113,7 +147,11 @@ class ToolActivityAccordion extends StatelessWidget {
                     borderRadius: BorderRadius.circular(9),
                   ),
                   alignment: Alignment.center,
-                  child: leading,
+                  child: Icon(
+                    toolOperationIcon(activity.name),
+                    size: 16,
+                    color: palette.accentIcon,
+                  ),
                 ),
               ),
             ),
@@ -142,28 +180,38 @@ class ToolActivityAccordion extends StatelessWidget {
                     color: palette.surface,
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: Text(
-                    statusLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: statusColor,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w500,
-                      height: 14 / 10,
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      statusIndicator,
+                      const SizedBox(width: 5),
+                      Text(
+                        statusLabel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                          height: 14 / 10,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
             children: [
-              if (activity.name == 'list_files')
+              if (activity.name == 'list_files' ||
+                  activity.name == 'glob' ||
+                  activity.name == 'list_directory')
                 if (fileListing == null)
                   ToolActivityNotice(
-                    message: activity.output == null
-                        ? statusLabel
-                        : l10n.toolListingUnavailable,
+                    message: fileListingMessage,
                     palette: palette,
+                    isError: fileListingFailed,
+                    isLoading:
+                        activity.status == ChatToolActivityStatus.running,
                   )
                 else
                   ToolFileListingResult(
@@ -171,6 +219,9 @@ class ToolActivityAccordion extends StatelessWidget {
                     locationLabel: _toolLocationLabel(activity, l10n),
                     palette: palette,
                   ),
+              if (terminalData case final data?)
+                ToolTerminalResult(data: data, palette: palette),
+              if (operationResult case final Widget result) result,
               _ToolActivityTechnicalDetails(
                 activity: activity,
                 palette: palette,
@@ -184,12 +235,16 @@ class ToolActivityAccordion extends StatelessWidget {
 
   String _toolActivityName(String name, AppLocalizations l10n) =>
       switch (name) {
-        'list_files' => l10n.toolListFiles,
-        'search_files' => l10n.toolSearchFiles,
-        'read_file' => l10n.toolReadFile,
+        'list_files' || 'glob' || 'list_directory' => l10n.toolListFiles,
+        'search_files' || 'grep' => l10n.toolSearchFiles,
+        'read_file' || 'read' => l10n.toolReadFile,
         'get_file_info' => l10n.toolGetFileInfo,
-        'write_file' => l10n.toolWriteFile,
-        'edit_file' => l10n.toolEditFile,
+        'write_file' || 'write' => l10n.toolWriteFile,
+        'edit_file' || 'edit' => l10n.toolEditFile,
+        'execute_command' || 'bash' => l10n.toolExecuteCommand,
+        'send_terminal_input' => l10n.toolSendTerminalInput,
+        'web_search' => l10n.toolWebSearch,
+        'read_url_content' || 'read_url' => l10n.toolReadUrlContent,
         _ => name,
       };
 }

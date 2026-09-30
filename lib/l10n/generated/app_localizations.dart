@@ -1190,6 +1190,18 @@ abstract class AppLocalizations {
   /// **'Weekly'**
   String get usageWeekly;
 
+  /// No description provided for @usageMonthly.
+  ///
+  /// In en, this message translates to:
+  /// **'Monthly'**
+  String get usageMonthly;
+
+  /// No description provided for @workspaceNumbered.
+  ///
+  /// In en, this message translates to:
+  /// **'Workspace {number}'**
+  String workspaceNumbered(int number);
+
   /// No description provided for @quotaResetsAt.
   ///
   /// In en, this message translates to:
@@ -2281,6 +2293,246 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Edit file'**
   String get toolEditFile;
+
+  /// No description provided for @toolExecuteCommand.
+  ///
+  /// In en, this message translates to:
+  /// **'Execute command'**
+  String get toolExecuteCommand;
+
+  /// No description provided for @toolSendTerminalInput.
+  ///
+  /// In en, this message translates to:
+  /// **'Send terminal input'**
+  String get toolSendTerminalInput;
+
+  /// No description provided for @toolWebSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Web search'**
+  String get toolWebSearch;
+
+  /// No description provided for @toolReadUrlContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Read webpage'**
+  String get toolReadUrlContent;
+
+  /// No description provided for @toolSearchQuery.
+  ///
+  /// In en, this message translates to:
+  /// **'Search query'**
+  String get toolSearchQuery;
+
+  /// No description provided for @toolWebSearchNoResults.
+  ///
+  /// In en, this message translates to:
+  /// **'No web results found.'**
+  String get toolWebSearchNoResults;
+
+  /// No description provided for @toolWebSearchResultCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{0 results} one{1 result} other{{count} results}}'**
+  String toolWebSearchResultCount(int count);
+
+  /// No description provided for @toolUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'URL'**
+  String get toolUrl;
+
+  /// No description provided for @toolReadUrlLength.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} characters'**
+  String toolReadUrlLength(int count);
+
+  /// No description provided for @toolOpenUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Open in browser'**
+  String get toolOpenUrl;
+
+  /// No description provided for @toolCopyUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy URL'**
+  String get toolCopyUrl;
+
+  /// No description provided for @toolCopyContent.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy content'**
+  String get toolCopyContent;
+
+  /// No description provided for @toolCopyFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The content could not be copied.'**
+  String get toolCopyFailed;
+
+  /// No description provided for @toolOperationWorking.
+  ///
+  /// In en, this message translates to:
+  /// **'This operation is in progress.'**
+  String get toolOperationWorking;
+
+  /// No description provided for @toolOperationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The operation could not be completed.'**
+  String get toolOperationFailed;
+
+  /// No description provided for @toolOperationUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The result could not be displayed.'**
+  String get toolOperationUnavailable;
+
+  /// No description provided for @toolOperationTruncated.
+  ///
+  /// In en, this message translates to:
+  /// **'Only part of the result is available.'**
+  String get toolOperationTruncated;
+
+  /// No description provided for @toolSearchNoMatches.
+  ///
+  /// In en, this message translates to:
+  /// **'No matches found.'**
+  String get toolSearchNoMatches;
+
+  /// No description provided for @toolSearchMoreResults.
+  ///
+  /// In en, this message translates to:
+  /// **'More matches are available.'**
+  String get toolSearchMoreResults;
+
+  /// No description provided for @toolSearchMatchCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{0 matches} one{1 match} other{{count} matches}}'**
+  String toolSearchMatchCount(int count);
+
+  /// No description provided for @toolReadNoLines.
+  ///
+  /// In en, this message translates to:
+  /// **'There are no lines in this range.'**
+  String get toolReadNoLines;
+
+  /// No description provided for @toolReadMoreLines.
+  ///
+  /// In en, this message translates to:
+  /// **'More lines are available.'**
+  String get toolReadMoreLines;
+
+  /// No description provided for @toolReadLineCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{0 lines} one{1 line} other{{count} lines}}'**
+  String toolReadLineCount(int count);
+
+  /// No description provided for @toolFileTypeFile.
+  ///
+  /// In en, this message translates to:
+  /// **'File'**
+  String get toolFileTypeFile;
+
+  /// No description provided for @toolFileTypeDirectory.
+  ///
+  /// In en, this message translates to:
+  /// **'Folder'**
+  String get toolFileTypeDirectory;
+
+  /// No description provided for @toolWriteSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'{size} written'**
+  String toolWriteSuccess(String size);
+
+  /// No description provided for @toolFilePreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Written content preview'**
+  String get toolFilePreview;
+
+  /// No description provided for @toolEditSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{# change applied} other{# changes applied}}'**
+  String toolEditSuccess(int count);
+
+  /// No description provided for @toolEditBefore.
+  ///
+  /// In en, this message translates to:
+  /// **'Before'**
+  String get toolEditBefore;
+
+  /// No description provided for @toolEditAfter.
+  ///
+  /// In en, this message translates to:
+  /// **'After'**
+  String get toolEditAfter;
+
+  /// No description provided for @toolPermissionCommand.
+  ///
+  /// In en, this message translates to:
+  /// **'Command'**
+  String get toolPermissionCommand;
+
+  /// No description provided for @toolPermissionTerminalId.
+  ///
+  /// In en, this message translates to:
+  /// **'Terminal ID'**
+  String get toolPermissionTerminalId;
+
+  /// No description provided for @toolPermissionInput.
+  ///
+  /// In en, this message translates to:
+  /// **'Terminal input'**
+  String get toolPermissionInput;
+
+  /// No description provided for @toolTerminalNoOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'No output produced.'**
+  String get toolTerminalNoOutput;
+
+  /// No description provided for @toolTerminalWaitingOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for output or input...'**
+  String get toolTerminalWaitingOutput;
+
+  /// No description provided for @toolTerminalRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Running...'**
+  String get toolTerminalRunning;
+
+  /// No description provided for @toolTerminalTerminated.
+  ///
+  /// In en, this message translates to:
+  /// **'Terminated'**
+  String get toolTerminalTerminated;
+
+  /// No description provided for @toolTerminalWaitingForInput.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for input'**
+  String get toolTerminalWaitingForInput;
+
+  /// No description provided for @toolTerminalExitCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit code: {code}'**
+  String toolTerminalExitCode(int code);
+
+  /// No description provided for @toolTerminalCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Copied to clipboard'**
+  String get toolTerminalCopied;
 
   /// No description provided for @toolTechnicalDetails.
   ///

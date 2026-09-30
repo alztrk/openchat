@@ -235,25 +235,54 @@ class ToolActivityNotice extends StatelessWidget {
     super.key,
     required this.message,
     required this.palette,
+    this.isError = false,
+    this.isLoading = false,
   });
 
   final String message;
   final OpenChatPalette palette;
+  final bool isError;
+  final bool isLoading;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-    decoration: BoxDecoration(
-      color: palette.surface,
-      borderRadius: BorderRadius.circular(10),
-    ),
-    child: Text(
-      message,
-      style: TextStyle(
-        color: palette.secondaryText,
-        fontSize: 12,
-        height: 18 / 12,
+  Widget build(BuildContext context) {
+    final errorColor = Theme.of(context).colorScheme.error;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      decoration: BoxDecoration(
+        color: isError ? errorColor.withValues(alpha: 0.08) : palette.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: isError
+            ? Border.all(color: errorColor.withValues(alpha: 0.28))
+            : null,
       ),
-    ),
-  );
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (isLoading)
+            SizedBox.square(
+              dimension: 15,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.6,
+                color: palette.accent,
+              ),
+            )
+          else if (isError) ...[
+            Icon(Icons.error_outline_rounded, size: 15, color: errorColor),
+          ],
+          if (isLoading || isError) const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                color: isError ? errorColor : palette.secondaryText,
+                fontSize: 12,
+                height: 18 / 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

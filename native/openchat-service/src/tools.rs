@@ -11,6 +11,8 @@ use crate::{protocol::ServiceError, provider_schema::ToolDefinition};
 
 mod search;
 pub use search::search_files;
+pub mod terminal;
+pub mod web_search;
 
 const MAX_LIST_RESULTS: usize = 100;
 const MAX_LIST_OFFSET: usize = 100_000;
@@ -324,6 +326,9 @@ pub fn opencode_wire_name(internal_name: &str) -> &'static str {
         "list_files" | "list_directory" | "glob" => "glob",
         "search_files" | "grep" => "grep",
         "execute_command" | "bash" => "bash",
+        "send_terminal_input" => "send_terminal_input",
+        "web_search" => "web_search",
+        "read_url_content" | "read_url" => "read_url_content",
         "get_file_info" => "get_file_info",
         _ => "custom",
     }
@@ -338,6 +343,9 @@ pub fn internal_tool_name(is_opencode: bool, wire_name: &str) -> String {
             "glob" => "list_files".to_owned(),
             "grep" => "search_files".to_owned(),
             "bash" => "execute_command".to_owned(),
+            "send_terminal_input" => "send_terminal_input".to_owned(),
+            "web_search" => "web_search".to_owned(),
+            "read_url_content" | "read_url" => "read_url_content".to_owned(),
             _ => wire_name.to_owned(),
         }
     } else {
@@ -416,13 +424,54 @@ pub fn opencode_wire_tool(tool: &ToolDefinition) -> Value {
             json!({
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "The shell command to execute."},
-                    "workdir": {"type": "string", "description": "Optional working directory."}
+                    "command": {"type": "string", "description": "The shell command to execute. Optional if interacting with an existing terminal_id."},
+                    "terminal_id": {"type": "string", "description": "Optional terminal ID to send input to or read from an active session."},
+                    "input": {"type": "string", "description": "Optional input string to send to the terminal's stdin when it waits for text."},
+                    "action": {"type": "string", "enum": ["execute", "input", "read", "kill"], "description": "Action to perform on the session."},
+                    "timeout_seconds": {"type": "integer", "minimum": 5, "maximum": 600, "description": "Maximum session duration in seconds."},
+                    "wait_ms": {"type": "integer", "minimum": 100, "maximum": 30000, "description": "Milliseconds to wait for initial output before returning (early exit on quiet output)."}
                 },
-                "required": ["command"],
                 "additionalProperties": false
             }),
-            "Command execution is unavailable in this client.",
+            "Execute a shell command or interact with an active terminal session. Supports sending input when waiting for user response.",
+        ),
+        "send_terminal_input" => (
+            json!({
+                "type": "object",
+                "properties": {
+                    "terminal_id": {"type": "string", "description": "The active terminal session ID."},
+                    "input": {"type": "string", "description": "Text to write to terminal stdin (e.g. 'y\\n')."},
+                    "action": {"type": "string", "enum": ["input", "read", "kill"], "description": "Action to perform (default: input)."},
+                    "wait_ms": {"type": "integer", "minimum": 50, "maximum": 30000, "description": "Milliseconds to wait for output."}
+                },
+                "required": ["terminal_id"],
+                "additionalProperties": false
+            }),
+            "Send input text to an active terminal session waiting for input, read remaining output, or terminate the session.",
+        ),
+        "web_search" => (
+            json!({
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "The search query."},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Maximum number of search results (default 5)."}
+                },
+                "required": ["query"],
+                "additionalProperties": false
+            }),
+            "Search the web across Google, Bing, and DuckDuckGo in parallel with anti-bot resistance and clean snippet output.",
+        ),
+        "read_url_content" => (
+            json!({
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "HTTP or HTTPS web URL to fetch and convert to clean Markdown."},
+                    "max_chars": {"type": "integer", "minimum": 500, "maximum": 30000, "description": "Maximum characters of Markdown content to return (default 6000)."}
+                },
+                "required": ["url"],
+                "additionalProperties": false
+            }),
+            "Fetch a web page and convert its readable content to clean, token-friendly Markdown.",
         ),
         _ => (tool.parameters.clone(), tool.description),
     };
@@ -559,14 +608,32 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ),
         (
             "execute_command",
-            "Command execution is unavailable in this client. Do not call this tool.",
+            "Execute a shell command or interact with an active terminal session. Runs in the project folder by default. In approval mode, requires user approval.",
             json!({
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "The command string to execute."},
-                    "workdir": {"type": "string", "description": "Optional working directory."}
+                    "command": {"type": "string", "description": "The command string to execute. Optional if terminal_id is provided."},
+                    "terminal_id": {"type": "string", "description": "Optional active terminal session ID to interact with."},
+                    "input": {"type": "string", "description": "Optional input text to write to terminal stdin."},
+                    "action": {"type": "string", "enum": ["execute", "input", "read", "kill"], "description": "Optional action on the session."},
+                    "timeout_seconds": {"type": "integer", "minimum": 5, "maximum": 600, "description": "Maximum duration for the session in seconds."},
+                    "wait_ms": {"type": "integer", "minimum": 100, "maximum": 30000, "description": "Milliseconds to wait for output before returning."}
                 },
-                "required": ["command"],
+                "additionalProperties": false
+            }),
+        ),
+        (
+            "send_terminal_input",
+            "Send input text to an active terminal session waiting for input, read remaining output, or terminate the session.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "terminal_id": {"type": "string", "description": "The active terminal session ID."},
+                    "input": {"type": "string", "description": "Text to write to terminal stdin."},
+                    "action": {"type": "string", "enum": ["input", "read", "kill"], "description": "Action to perform (default: input)."},
+                    "wait_ms": {"type": "integer", "minimum": 50, "maximum": 30000, "description": "Milliseconds to wait for output."}
+                },
+                "required": ["terminal_id"],
                 "additionalProperties": false
             }),
         ),
@@ -579,6 +646,32 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "path": {"type": "string", "description": "Approval mode: relative to the project root, or prefix with project:/ or openchat:/. Full-access mode: desktop:/ for the user's Desktop, otherwise an absolute file path."}
                 },
                 "required": ["path"],
+                "additionalProperties": false
+            }),
+        ),
+        (
+            "web_search",
+            "Search the web across Google, Bing, and DuckDuckGo in parallel. Returns top results with titles, URLs, and snippets.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query."},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 10, "description": "Maximum number of search results (default 5)."}
+                },
+                "required": ["query"],
+                "additionalProperties": false
+            }),
+        ),
+        (
+            "read_url_content",
+            "Fetch a webpage and convert its readable content to clean, token-friendly Markdown.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "HTTP or HTTPS URL to fetch."},
+                    "max_chars": {"type": "integer", "minimum": 500, "maximum": 30000, "description": "Maximum number of characters to return (default 6000)."}
+                },
+                "required": ["url"],
                 "additionalProperties": false
             }),
         ),

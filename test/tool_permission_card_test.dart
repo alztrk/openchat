@@ -180,4 +180,48 @@ void main() {
     expect(find.text(l10n.toolPermissionNewText), findsOneWidget);
     expect(find.text('new text'), findsOneWidget);
   });
+
+  testWidgets(
+    'shows command and input details for execute_command and send_terminal_input',
+    (tester) async {
+      const locale = Locale('tr');
+      final l10n = await AppLocalizations.delegate.load(locale);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: locale,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          theme: OpenChatTheme.light,
+          home: const Scaffold(
+            body: Padding(
+              padding: EdgeInsets.all(16),
+              child: ToolPermissionCard(
+                request: ToolPermissionRequest(
+                  id: 'approval-cmd',
+                  toolName: 'execute_command',
+                  targetPath: r'C:\project',
+                  arguments: <String, Object?>{
+                    'command': 'cargo test',
+                    'terminal_id': 'term_1',
+                    'input': 'y',
+                  },
+                ),
+                isResponding: false,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.toolExecuteCommand), findsOneWidget);
+      expect(find.text(l10n.toolPermissionCommand), findsOneWidget);
+      expect(find.text('cargo test'), findsOneWidget);
+      expect(find.text(l10n.toolPermissionTerminalId), findsOneWidget);
+      expect(find.text('term_1'), findsOneWidget);
+      expect(find.text(l10n.toolPermissionInput), findsOneWidget);
+      expect(find.text('y'), findsOneWidget);
+    },
+  );
 }

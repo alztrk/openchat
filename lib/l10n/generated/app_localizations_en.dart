@@ -631,6 +631,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get usageWeekly => 'Weekly';
 
   @override
+  String get usageMonthly => 'Monthly';
+
+  @override
+  String workspaceNumbered(int number) {
+    return 'Workspace $number';
+  }
+
+  @override
   String quotaResetsAt(String time) {
     return 'Resets $time';
   }
@@ -1237,6 +1245,167 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolEditFile => 'Edit file';
+
+  @override
+  String get toolExecuteCommand => 'Execute command';
+
+  @override
+  String get toolSendTerminalInput => 'Send terminal input';
+
+  @override
+  String get toolWebSearch => 'Web search';
+
+  @override
+  String get toolReadUrlContent => 'Read webpage';
+
+  @override
+  String get toolSearchQuery => 'Search query';
+
+  @override
+  String get toolWebSearchNoResults => 'No web results found.';
+
+  @override
+  String toolWebSearchResultCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count results',
+      one: '1 result',
+      zero: '0 results',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get toolUrl => 'URL';
+
+  @override
+  String toolReadUrlLength(int count) {
+    return '$count characters';
+  }
+
+  @override
+  String get toolOpenUrl => 'Open in browser';
+
+  @override
+  String get toolCopyUrl => 'Copy URL';
+
+  @override
+  String get toolCopyContent => 'Copy content';
+
+  @override
+  String get toolCopyFailed => 'The content could not be copied.';
+
+  @override
+  String get toolOperationWorking => 'This operation is in progress.';
+
+  @override
+  String get toolOperationFailed => 'The operation could not be completed.';
+
+  @override
+  String get toolOperationUnavailable => 'The result could not be displayed.';
+
+  @override
+  String get toolOperationTruncated => 'Only part of the result is available.';
+
+  @override
+  String get toolSearchNoMatches => 'No matches found.';
+
+  @override
+  String get toolSearchMoreResults => 'More matches are available.';
+
+  @override
+  String toolSearchMatchCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count matches',
+      one: '1 match',
+      zero: '0 matches',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get toolReadNoLines => 'There are no lines in this range.';
+
+  @override
+  String get toolReadMoreLines => 'More lines are available.';
+
+  @override
+  String toolReadLineCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count lines',
+      one: '1 line',
+      zero: '0 lines',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get toolFileTypeFile => 'File';
+
+  @override
+  String get toolFileTypeDirectory => 'Folder';
+
+  @override
+  String toolWriteSuccess(String size) {
+    return '$size written';
+  }
+
+  @override
+  String get toolFilePreview => 'Written content preview';
+
+  @override
+  String toolEditSuccess(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# changes applied',
+      one: '# change applied',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get toolEditBefore => 'Before';
+
+  @override
+  String get toolEditAfter => 'After';
+
+  @override
+  String get toolPermissionCommand => 'Command';
+
+  @override
+  String get toolPermissionTerminalId => 'Terminal ID';
+
+  @override
+  String get toolPermissionInput => 'Terminal input';
+
+  @override
+  String get toolTerminalNoOutput => 'No output produced.';
+
+  @override
+  String get toolTerminalWaitingOutput => 'Waiting for output or input...';
+
+  @override
+  String get toolTerminalRunning => 'Running...';
+
+  @override
+  String get toolTerminalTerminated => 'Terminated';
+
+  @override
+  String get toolTerminalWaitingForInput => 'Waiting for input';
+
+  @override
+  String toolTerminalExitCode(int code) {
+    return 'Exit code: $code';
+  }
+
+  @override
+  String get toolTerminalCopied => 'Copied to clipboard';
 
   @override
   String get toolTechnicalDetails => 'Details';

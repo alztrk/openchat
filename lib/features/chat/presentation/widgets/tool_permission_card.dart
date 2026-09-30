@@ -145,7 +145,15 @@ class _RequestDetails extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(top: 2),
             child: Icon(
-              Icons.folder_open_outlined,
+              request.toolName == 'web_search' ||
+                      request.toolName == 'read_url_content' ||
+                      request.toolName == 'read_url'
+                  ? Icons.language_rounded
+                  : (request.toolName == 'execute_command' ||
+                          request.toolName == 'bash' ||
+                          request.toolName == 'send_terminal_input'
+                      ? Icons.terminal_rounded
+                      : Icons.folder_open_outlined),
               size: 15,
               color: palette.secondaryIcon,
             ),
@@ -229,6 +237,10 @@ String _toolName(String name, AppLocalizations l10n) => switch (name) {
   'get_file_info' => l10n.toolGetFileInfo,
   'write_file' || 'write' => l10n.toolWriteFile,
   'edit_file' || 'edit' => l10n.toolEditFile,
+  'execute_command' || 'bash' => l10n.toolExecuteCommand,
+  'send_terminal_input' => l10n.toolSendTerminalInput,
+  'web_search' => l10n.toolWebSearch,
+  'read_url_content' || 'read_url' => l10n.toolReadUrlContent,
   _ => name,
 };
 
@@ -348,6 +360,39 @@ List<({String label, String value})> _requestDetails(
       detail(
         l10n.toolPermissionNewText,
         argument('newString') ?? argument('new_string'),
+      ),
+    ],
+    'execute_command' || 'bash' => [
+      detail(l10n.toolPermissionCommand, argument('command')),
+      detail(
+        l10n.toolPermissionTerminalId,
+        argument('terminal_id') ?? argument('terminalId'),
+      ),
+      detail(l10n.toolPermissionInput, argument('input')),
+    ],
+    'send_terminal_input' => [
+      detail(
+        l10n.toolPermissionTerminalId,
+        argument('terminal_id') ?? argument('terminalId'),
+      ),
+      detail(l10n.toolPermissionInput, argument('input')),
+    ],
+    'web_search' => [
+      detail(l10n.toolSearchQuery, argument('query')),
+      detail(
+        l10n.toolPermissionLimit,
+        scalar(request.arguments['limit'] ?? 5),
+      ),
+    ],
+    'read_url_content' || 'read_url' => [
+      detail(l10n.toolUrl, argument('url')),
+      detail(
+        l10n.toolPermissionLimit,
+        scalar(
+          request.arguments['max_chars'] ??
+              request.arguments['maxChars'] ??
+              6000,
+        ),
       ),
     ],
     _ => const <({String label, String value})?>[],

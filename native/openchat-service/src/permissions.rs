@@ -10,7 +10,7 @@ const MAX_PENDING_APPROVALS: usize = 32;
 
 #[derive(Clone, Default)]
 pub struct ToolPermissionBroker {
-    pending: Arc<Mutex<HashMap<String, oneshot::Sender<bool>>>>,
+    pub(crate) pending: Arc<Mutex<HashMap<String, oneshot::Sender<bool>>>>,
 }
 
 impl ToolPermissionBroker {

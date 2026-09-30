@@ -756,7 +756,10 @@ fn benchmark_write_and_edit_performance_simulation() {
     );
     let edit_duration = edit_start.elapsed();
     assert!(edit_res.is_ok());
-    println!("[BENCHMARK] edit_file in 100KB (single-handle): {:?}", edit_duration);
+    println!(
+        "[BENCHMARK] edit_file in 100KB (single-handle): {:?}",
+        edit_duration
+    );
 
     // Verify both are well under threshold
     assert!(
@@ -861,4 +864,728 @@ fn executor_prepares_and_handles_bash_tool() {
         }),
     };
     assert!(executor.prepare_call(&empty_bash_call).is_err());
+
+    let send_input_call = ToolCall {
+        id: "call_input_1".to_owned(),
+        name: "send_terminal_input".to_owned(),
+        arguments: json!({
+            "terminal_id": "term_test",
+            "input": "yes\n"
+        }),
+    };
+    let prepared_input = executor
+        .prepare_call(&send_input_call)
+        .expect("prepare send_terminal_input call");
+    assert!(matches!(
+        prepared_input.operation,
+        super::executor::ToolOperation::SendTerminalInput { .. }
+    ));
+}
+
+#[tokio::test]
+async fn terminal_manager_runs_command_and_handles_input_and_kill() {
+    use super::terminal::TerminalSessionManager;
+    let directory = TestDirectory::new();
+    let manager = TerminalSessionManager::global();
+
+    // 1. Fast command execution test
+    let exec_res = manager
+        .execute(
+            "echo openchat_terminal_ok",
+            Path::new(directory.root()),
+            Some(10),
+            Some(3000),
+        )
+        .await
+        .expect("execute command");
+    assert_eq!(exec_res["is_running"], false);
+    assert_eq!(exec_res["exit_code"], 0);
+    assert!(
+        exec_res["output"]
+            .as_str()
+            .unwrap_or("")
+            .contains("openchat_terminal_ok")
+    );
+
+    // 2. Interactive session creation test
+    #[cfg(windows)]
+    let interactive_cmd = "$line = [Console]::ReadLine(); Write-Host ('INPUT_RECV:' + $line)";
+    #[cfg(not(windows))]
+    let interactive_cmd = "read line; echo \"INPUT_RECV:$line\"";
+
+    let session = manager
+        .create_session(interactive_cmd, Path::new(directory.root()), Some(30))
+        .await
+        .expect("create interactive session");
+
+    let term_id = session.id.clone();
+    assert!(session.is_running().await);
+
+    // Send input to the waiting process
+    let input_res = manager
+        .send_input_to(&term_id, "interactive_message\n", Some(3000))
+        .await
+        .expect("send input to terminal");
+
+    assert!(
+        input_res["output"]
+            .as_str()
+            .unwrap_or("")
+            .contains("INPUT_RECV:interactive_message")
+    );
+
+    // 3. Kill session test
+    let kill_res = manager.kill_session(&term_id).await;
+    // Session may have already finished after readLine or is killed
+    let _ = kill_res;
+    assert!(manager.get_session(&term_id).await.is_none());
+}
+
+#[tokio::test]
+async fn simulate_real_world_agent_terminal_and_file_flow() {
+    use super::executor::{ToolExecutor, ToolPermissionMode, execute_model_tool};
+    use crate::provider_schema::ToolCall;
+
+    let directory = TestDirectory::new();
+    let executor = ToolExecutor::new(
+        Some(Path::new(directory.root())),
+        Path::new(directory.root()),
+        ToolPermissionMode::FullAccess,
+    );
+
+    // Step 1: Write a workflow script file
+    #[cfg(windows)]
+    let script_name = "workflow.bat";
+    #[cfg(windows)]
+    let script_content = "@echo off\r\necho STEP1_INIT_DONE\r\nset /p CODE=ENTER_CODE:\r\necho STEP2_CODE_IS:%CODE%\r\n";
+
+    #[cfg(not(windows))]
+    let script_name = "workflow.sh";
+    #[cfg(not(windows))]
+    let script_content = "#!/bin/sh\necho \"STEP1_INIT_DONE\"\nprintf \"ENTER_CODE:\"\nread CODE\necho \"STEP2_CODE_IS:$CODE\"\n";
+
+    let script_path = Path::new(directory.root())
+        .join(script_name)
+        .display()
+        .to_string();
+
+    let write_call = ToolCall {
+        id: "call_write_1".to_owned(),
+        name: "write_file".to_owned(),
+        arguments: json!({
+            "path": script_path,
+            "content": script_content,
+        }),
+    };
+    let prepared_write = executor
+        .prepare_call(&write_call)
+        .expect("prepare write_file");
+    let write_result = execute_model_tool(&prepared_write).await;
+    assert!(
+        write_result.get("error").is_none(),
+        "write_file failed: {write_result:?}"
+    );
+
+    // Step 2: Read file back to verify integrity
+    let read_call = ToolCall {
+        id: "call_read_1".to_owned(),
+        name: "read_file".to_owned(),
+        arguments: json!({
+            "path": script_path,
+        }),
+    };
+    let prepared_read = executor
+        .prepare_call(&read_call)
+        .expect("prepare read_file");
+    let read_result = execute_model_tool(&prepared_read).await;
+    assert!(read_result.get("error").is_none());
+    assert!(read_result.to_string().contains("STEP1_INIT_DONE"));
+
+    // Step 3: Execute the script interactively via execute_command / bash
+    #[cfg(windows)]
+    let run_cmd = format!(
+        "cmd.exe /c \"{}\"",
+        Path::new(directory.root()).join(script_name).display()
+    );
+    #[cfg(not(windows))]
+    let run_cmd = format!(
+        "sh \"{}\"",
+        Path::new(directory.root()).join(script_name).display()
+    );
+
+    let exec_call = ToolCall {
+        id: "call_exec_1".to_owned(),
+        name: "execute_command".to_owned(),
+        arguments: json!({
+            "command": run_cmd,
+            "wait_ms": 1500,
+        }),
+    };
+    let prepared_exec = executor
+        .prepare_call(&exec_call)
+        .expect("prepare execute_command");
+    let exec_result = execute_model_tool(&prepared_exec).await;
+    assert!(
+        exec_result.get("error").is_none(),
+        "exec failed: {exec_result:?}"
+    );
+
+    let term_id = exec_result["terminal_id"]
+        .as_str()
+        .expect("terminal_id should be returned for interactive process")
+        .to_owned();
+    let initial_output = exec_result["output"].as_str().unwrap_or("");
+    assert!(
+        initial_output.contains("STEP1_INIT_DONE"),
+        "initial output was: {initial_output}"
+    );
+    assert_eq!(
+        exec_result["is_running"], true,
+        "process should still be running waiting for input"
+    );
+
+    // Step 4: Send the expected input via send_terminal_input
+    let input_call = ToolCall {
+        id: "call_input_1".to_owned(),
+        name: "send_terminal_input".to_owned(),
+        arguments: json!({
+            "terminal_id": term_id,
+            "input": "AGENT_VERIFIED_777\n",
+            "wait_ms": 2500,
+        }),
+    };
+    let prepared_input = executor
+        .prepare_call(&input_call)
+        .expect("prepare send_terminal_input");
+    let input_result = execute_model_tool(&prepared_input).await;
+    assert!(
+        input_result.get("error").is_none(),
+        "send_terminal_input failed: {input_result:?}"
+    );
+
+    let after_input_output = input_result["output"].as_str().unwrap_or("");
+    assert!(
+        after_input_output.contains("STEP2_CODE_IS:AGENT_VERIFIED_777"),
+        "expected code in output, got: {after_input_output}"
+    );
+    assert_eq!(
+        input_result["is_running"], false,
+        "process should have completed after receiving input"
+    );
+    assert_eq!(input_result["exit_code"], 0);
+
+    // Step 5: Test edit_file on the script
+    let edit_call = ToolCall {
+        id: "call_edit_1".to_owned(),
+        name: "edit_file".to_owned(),
+        arguments: json!({
+            "path": script_path,
+            "old_string": "STEP1_INIT_DONE",
+            "new_string": "STEP1_INITIALIZED_REVISED",
+        }),
+    };
+    let prepared_edit = executor
+        .prepare_call(&edit_call)
+        .expect("prepare edit_file");
+    let edit_result = execute_model_tool(&prepared_edit).await;
+    assert!(
+        edit_result.get("error").is_none(),
+        "edit_file failed: {edit_result:?}"
+    );
+
+    // Verify revision by reading
+    let read_revised = execute_model_tool(&prepared_read).await;
+    assert!(
+        read_revised
+            .to_string()
+            .contains("STEP1_INITIALIZED_REVISED")
+    );
+
+    // Step 6: Test long-running process and kill action via send_terminal_input
+    #[cfg(windows)]
+    let long_running_cmd = "Start-Sleep -Seconds 120";
+    #[cfg(not(windows))]
+    let long_running_cmd = "sleep 120";
+
+    let long_exec_call = ToolCall {
+        id: "call_long_exec".to_owned(),
+        name: "bash".to_owned(),
+        arguments: json!({
+            "command": long_running_cmd,
+            "wait_ms": 500,
+        }),
+    };
+    let prepared_long_exec = executor
+        .prepare_call(&long_exec_call)
+        .expect("prepare long bash call");
+    let long_result = execute_model_tool(&prepared_long_exec).await;
+    assert_eq!(long_result["is_running"], true);
+    let long_term_id = long_result["terminal_id"]
+        .as_str()
+        .expect("long term id")
+        .to_owned();
+
+    // Kill the long-running session
+    let kill_call = ToolCall {
+        id: "call_kill".to_owned(),
+        name: "send_terminal_input".to_owned(),
+        arguments: json!({
+            "terminal_id": long_term_id,
+            "action": "kill",
+        }),
+    };
+    let prepared_kill = executor
+        .prepare_call(&kill_call)
+        .expect("prepare kill call");
+    let kill_result = execute_model_tool(&prepared_kill).await;
+    assert_eq!(kill_result["status"], "terminated");
+}
+
+#[tokio::test]
+async fn simulate_terminal_edge_cases_and_exit_codes() {
+    use super::executor::{ToolExecutor, ToolPermissionMode, execute_model_tool};
+    use crate::provider_schema::ToolCall;
+
+    let directory = TestDirectory::new();
+    let executor = ToolExecutor::new(
+        Some(Path::new(directory.root())),
+        Path::new(directory.root()),
+        ToolPermissionMode::FullAccess,
+    );
+
+    // 1. Non-zero exit code simulation
+    let non_zero_cmd = "exit 77";
+
+    let exit_call = ToolCall {
+        id: "call_exit_code".to_owned(),
+        name: "execute_command".to_owned(),
+        arguments: json!({
+            "command": non_zero_cmd,
+        }),
+    };
+    let prepared_exit = executor
+        .prepare_call(&exit_call)
+        .expect("prepare exit call");
+    let exit_result = execute_model_tool(&prepared_exit).await;
+    assert_eq!(exit_result["exit_code"], 77);
+    assert_eq!(exit_result["is_running"], false);
+
+    // 2. Reading output from an existing active terminal session
+    #[cfg(windows)]
+    let pause_cmd = "cmd.exe /c \"echo READY_FOR_READ & pause > nul\"";
+    #[cfg(not(windows))]
+    let pause_cmd = "sh -c \"echo READY_FOR_READ; read -r dummy\"";
+
+    let start_call = ToolCall {
+        id: "call_start_read".to_owned(),
+        name: "execute_command".to_owned(),
+        arguments: json!({
+            "command": pause_cmd,
+            "wait_ms": 1000,
+        }),
+    };
+    let prepared_start = executor
+        .prepare_call(&start_call)
+        .expect("prepare pause call");
+    let start_result = execute_model_tool(&prepared_start).await;
+    let tid = start_result["terminal_id"]
+        .as_str()
+        .expect("tid")
+        .to_owned();
+    assert_eq!(start_result["is_running"], true);
+    assert!(
+        start_result["output"]
+            .as_str()
+            .unwrap_or("")
+            .contains("READY_FOR_READ")
+    );
+
+    // Call execute_command with terminal_id and action: "read"
+    let read_call = ToolCall {
+        id: "call_read_term".to_owned(),
+        name: "execute_command".to_owned(),
+        arguments: json!({
+            "terminal_id": tid,
+            "action": "read",
+            "wait_ms": 200,
+        }),
+    };
+    let prepared_read = executor
+        .prepare_call(&read_call)
+        .expect("prepare read call");
+    let read_result = execute_model_tool(&prepared_read).await;
+    assert_eq!(read_result["terminal_id"], tid);
+    assert_eq!(read_result["is_running"], true);
+
+    // 3. Send enter key to finish pause via execute_command with terminal_id and input
+    let send_finish = ToolCall {
+        id: "call_finish".to_owned(),
+        name: "execute_command".to_owned(),
+        arguments: json!({
+            "terminal_id": tid,
+            "input": "\n",
+            "wait_ms": 2000,
+        }),
+    };
+    let prepared_finish = executor.prepare_call(&send_finish).expect("prepare finish");
+    let finish_result = execute_model_tool(&prepared_finish).await;
+    assert_eq!(finish_result["is_running"], false);
+    assert_eq!(finish_result["exit_code"], 0);
+
+    // 4. Invalid terminal session id error handling
+    let stale_call = ToolCall {
+        id: "call_stale".to_owned(),
+        name: "send_terminal_input".to_owned(),
+        arguments: json!({
+            "terminal_id": "non_existent_terminal_9999",
+            "input": "test\n",
+        }),
+    };
+    let prepared_stale = executor
+        .prepare_call(&stale_call)
+        .expect("prepare stale call");
+    let stale_result = execute_model_tool(&prepared_stale).await;
+    assert!(stale_result.get("error").is_some());
+    assert_eq!(stale_result["error"]["code"], "terminal_error");
+}
+
+#[tokio::test]
+async fn simulate_execute_command_with_user_permission_approval_flow() {
+    use super::executor::{ToolExecutor, ToolPermissionMode};
+    use crate::{
+        permissions::ToolPermissionBroker,
+        protocol::EventSink,
+        provider_schema::{ChatStreamSnapshot, ToolCall},
+    };
+    use tokio::sync::watch;
+
+    let directory = TestDirectory::new();
+    let broker = ToolPermissionBroker::default();
+    let events = EventSink::new();
+    let request_id = json!("test_req_1");
+    let snapshot = ChatStreamSnapshot::new("conv_1", "msg_1", "", 0);
+
+    // 1. Approval Granted Case
+    let call_allow = ToolCall {
+        id: "call_allow_1".to_owned(),
+        name: "execute_command".to_owned(),
+        arguments: json!({
+            "command": "echo USER_APPROVED_EXECUTION",
+        }),
+    };
+
+    let (_cancellation_tx, mut cancellation_rx) = watch::channel(false);
+    let broker_clone = broker.clone();
+
+    let exec_task = tokio::spawn({
+        let executor = ToolExecutor::new(
+            Some(Path::new(directory.root())),
+            Path::new(directory.root()),
+            ToolPermissionMode::RequireApproval,
+        );
+        let request_id = request_id.clone();
+        let snapshot = snapshot.clone();
+        let events = events.clone();
+        async move {
+            executor
+                .execute_call(
+                    &call_allow,
+                    &broker_clone,
+                    &request_id,
+                    &snapshot,
+                    &events,
+                    &mut cancellation_rx,
+                )
+                .await
+        }
+    });
+
+    // Wait until permission is requested
+    let mut pending_id = None;
+    for _ in 0..50 {
+        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+        let pending = broker.pending.lock().await;
+        if let Some(first_id) = pending.keys().next() {
+            pending_id = Some(first_id.clone());
+            break;
+        }
+    }
+    let approval_id = pending_id.expect("approval should be requested");
+
+    // Simulate user approving the command execution in UI
+    let respond_res = broker.respond(&approval_id, true).await;
+    assert!(respond_res.is_ok());
+
+    let result = exec_task.await.expect("join task").expect("execute_call");
+    assert!(
+        result.output["output"]
+            .as_str()
+            .unwrap_or("")
+            .contains("USER_APPROVED_EXECUTION")
+    );
+    assert_eq!(result.output["exit_code"], 0);
+
+    // 2. Approval Denied Case
+    let call_deny = ToolCall {
+        id: "call_deny_1".to_owned(),
+        name: "execute_command".to_owned(),
+        arguments: json!({
+            "command": "echo USER_DENIED_EXECUTION",
+        }),
+    };
+
+    let (_cancellation_tx2, mut cancellation_rx2) = watch::channel(false);
+    let broker_clone2 = broker.clone();
+
+    let deny_task = tokio::spawn({
+        let executor = ToolExecutor::new(
+            Some(Path::new(directory.root())),
+            Path::new(directory.root()),
+            ToolPermissionMode::RequireApproval,
+        );
+        let request_id = request_id.clone();
+        let snapshot = snapshot.clone();
+        let events = events.clone();
+        async move {
+            executor
+                .execute_call(
+                    &call_deny,
+                    &broker_clone2,
+                    &request_id,
+                    &snapshot,
+                    &events,
+                    &mut cancellation_rx2,
+                )
+                .await
+        }
+    });
+
+    let mut deny_pending_id = None;
+    for _ in 0..50 {
+        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+        let pending = broker.pending.lock().await;
+        if let Some(first_id) = pending.keys().next() {
+            deny_pending_id = Some(first_id.clone());
+            break;
+        }
+    }
+    let deny_approval_id = deny_pending_id.expect("deny approval should be requested");
+
+    // Simulate user clicking "Deny" in UI
+    let deny_res = broker.respond(&deny_approval_id, false).await;
+    assert!(deny_res.is_ok());
+
+    let deny_result = deny_task.await.expect("join task").expect("execute_call");
+    assert_eq!(deny_result.output["error"]["code"], "permission_denied");
+}
+
+#[test]
+fn web_search_clean_html_tags_and_ddg_html_parsing() {
+    use super::web_search::{clean_html_tags, parse_duckduckgo_html};
+
+    let messy_text = "<b>Hello &amp; Welcome</b> to the &quot;OpenChat&quot; test! &#39;Fast&#39; &lt;&gt;";
+    assert_eq!(
+        clean_html_tags(messy_text),
+        "Hello & Welcome to the \"OpenChat\" test! 'Fast' <>"
+    );
+
+    let sample_ddg_html = r#"
+        <div class="result results_links">
+            <h2 class="result__title">
+                <a class="result__a" href="/l/?kh=-1&uddg=https%3A%2F%2Fexample.com%2Ftarget">Example <b>Title</b></a>
+            </h2>
+            <a class="result__snippet" href="/l/?kh=-1&uddg=https%3A%2F%2Fexample.com%2Ftarget">This is the <b>snippet</b> description.</a>
+        </div>
+    "#;
+
+    let parsed = parse_duckduckgo_html(sample_ddg_html, 5);
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(parsed[0].title, "Example Title");
+    assert_eq!(parsed[0].url, "https://example.com/target");
+    assert_eq!(parsed[0].snippet, "This is the snippet description.");
+    assert_eq!(parsed[0].engine, "duckduckgo");
+}
+
+#[test]
+fn web_search_tool_wire_and_internal_names() {
+    use super::{internal_tool_name, opencode_wire_name};
+
+    assert_eq!(opencode_wire_name("web_search"), "web_search");
+    assert_eq!(opencode_wire_name("read_url_content"), "read_url_content");
+    assert_eq!(opencode_wire_name("read_url"), "read_url_content");
+
+    assert_eq!(internal_tool_name(true, "web_search"), "web_search");
+    assert_eq!(internal_tool_name(true, "read_url_content"), "read_url_content");
+    assert_eq!(internal_tool_name(true, "read_url"), "read_url_content");
+}
+
+#[test]
+fn tool_executor_prepares_web_search_and_read_url() {
+    use super::executor::{ToolExecutor, ToolOperation, ToolPermissionMode};
+    use crate::provider_schema::ToolCall;
+
+    let temp_dir = std::env::temp_dir();
+    let executor = ToolExecutor::new(
+        Some(&temp_dir),
+        &temp_dir,
+        ToolPermissionMode::RequireApproval,
+    );
+
+    // 1. Valid web_search
+    let call = ToolCall {
+        id: "call-ws-1".to_owned(),
+        name: "web_search".to_owned(),
+        arguments: json!({"query": "rust async tokio", "limit": 3}),
+    };
+    let prepared = executor.prepare_call(&call).expect("prepare web_search");
+    assert_eq!(prepared.requested_path, "rust async tokio");
+    if let ToolOperation::WebSearch { query, limit } = prepared.operation {
+        assert_eq!(query, "rust async tokio");
+        assert_eq!(limit, Some(3));
+    } else {
+        panic!("expected WebSearch operation");
+    }
+
+    // 2. Empty query error
+    let invalid_call = ToolCall {
+        id: "call-ws-2".to_owned(),
+        name: "web_search".to_owned(),
+        arguments: json!({"query": "   "}),
+    };
+    assert!(executor.prepare_call(&invalid_call).is_err());
+
+    // 3. Valid read_url_content
+    let read_call = ToolCall {
+        id: "call-ru-1".to_owned(),
+        name: "read_url_content".to_owned(),
+        arguments: json!({"url": "https://example.com/article", "max_chars": 2000}),
+    };
+    let prepared_read = executor.prepare_call(&read_call).expect("prepare read_url_content");
+    assert_eq!(prepared_read.requested_path, "https://example.com/article");
+    if let ToolOperation::ReadUrlContent { url, max_chars } = prepared_read.operation {
+        assert_eq!(url, "https://example.com/article");
+        assert_eq!(max_chars, Some(2000));
+    } else {
+        panic!("expected ReadUrlContent operation");
+    }
+}
+
+#[tokio::test]
+async fn live_manual_benchmark_web_search_and_read_url() {
+    use super::web_search::{execute_read_url, execute_web_search};
+    use std::time::Instant;
+
+    println!("\n========== [CANLI TEST BASLANGICI] ==========");
+
+    // 1. Web Search Testi (Limit: 10)
+    let query = "Rust tokio tutorial";
+    let start_search = Instant::now();
+    let search_res = execute_web_search(query, Some(10)).await;
+    let search_elapsed = start_search.elapsed();
+
+    println!("1. WEB SEARCH SONUCU (Limit: 10):");
+    println!("Sorgu: \"{}\"", query);
+    println!("Gecikme: {} ms", search_elapsed.as_millis());
+
+    let mut first_url = None;
+    match search_res {
+        Ok(val) => {
+            println!("Durum: Basarili");
+            let total = val["total_results"].as_i64().unwrap_or(0);
+            println!("Toplam sonuc sayisi: {}", total);
+            if let Some(results) = val["results"].as_array() {
+                for (i, item) in results.iter().enumerate() {
+                    let title = item["title"].as_str().unwrap_or("");
+                    let url = item["url"].as_str().unwrap_or("");
+                    let engine = item["engine"].as_str().unwrap_or("");
+                    let snippet = item["snippet"].as_str().unwrap_or("");
+                    println!("  [{}] Motor: {} | Baslik: {}", i + 1, engine, title);
+                    println!("      URL: {}", url);
+                    println!("      Ozet: {}", snippet);
+                    if first_url.is_none() && !url.is_empty() {
+                        first_url = Some(url.to_owned());
+                    }
+                }
+            }
+        }
+        Err(err) => {
+            println!("Hata: {}", err);
+        }
+    }
+
+    println!("\n--------------------------------------------");
+
+    // 2. Read URL Content Testi
+    let target_url = first_url.unwrap_or_else(|| "https://example.com".to_owned());
+    let start_read = Instant::now();
+    let read_res = execute_read_url(&target_url, Some(3000)).await;
+    let read_elapsed = start_read.elapsed();
+
+    println!("2. READ URL CONTENT SONUCU:");
+    println!("Hedef URL: {}", target_url);
+    println!("Gecikme: {} ms", read_elapsed.as_millis());
+
+    match read_res {
+        Ok(val) => {
+            println!("Durum: Basarili");
+            println!("Baslik: {}", val["title"].as_str().unwrap_or(""));
+            println!("Karakter Uzunlugu: {}", val["length"]);
+            println!("Kesildi mi (truncated): {}", val["truncated"]);
+            let content = val["content"].as_str().unwrap_or("");
+            let preview: String = content.chars().take(500).collect();
+            println!("\nIcerik Onizleme (Ilk 500 karakter):\n---\n{}\n---", preview);
+        }
+        Err(err) => {
+            println!("Hata: {}", err);
+        }
+    }
+
+    // 3. Turkce Arama ve Sayfa Okuma Testi (Limit: 10)
+    println!("\n--------------------------------------------");
+    let tr_query = "Turkiye yapay zeka ekosistemi";
+    let start_tr = Instant::now();
+    let tr_res = execute_web_search(tr_query, Some(10)).await;
+    let tr_elapsed = start_tr.elapsed();
+
+    println!("3. TURKCE ARAMA SONUCU (Limit: 10):");
+    println!("Sorgu: \"{}\"", tr_query);
+    println!("Gecikme: {} ms", tr_elapsed.as_millis());
+    let mut tr_url = None;
+    if let Ok(val) = tr_res {
+        if let Some(results) = val["results"].as_array() {
+            for (i, item) in results.iter().enumerate() {
+                let title = item["title"].as_str().unwrap_or("");
+                let url = item["url"].as_str().unwrap_or("");
+                let engine = item["engine"].as_str().unwrap_or("");
+                println!("  [{}] Motor: {} | Baslik: {}", i + 1, engine, title);
+                println!("      URL: {}", url);
+                if tr_url.is_none() && !url.is_empty() {
+                    tr_url = Some(url.to_owned());
+                }
+            }
+        }
+    }
+
+    if let Some(url) = tr_url {
+        let start_tr_read = Instant::now();
+        let tr_read_res = execute_read_url(&url, Some(1500)).await;
+        let tr_read_elapsed = start_tr_read.elapsed();
+        println!("\nTURKCE SAYFA OKUMA Gecikmesi: {} ms", tr_read_elapsed.as_millis());
+        if let Ok(val) = tr_read_res {
+            println!("Sayfa Basligi: {}", val["title"].as_str().unwrap_or(""));
+            println!("Okunan Karakter: {}", val["length"]);
+        }
+    }
+
+    // 4. Cache Testi
+    println!("\n--------------------------------------------");
+    let start_cache = Instant::now();
+    let cache_res = execute_web_search(query, Some(5)).await;
+    let cache_elapsed = start_cache.elapsed();
+    println!("4. ONBELLEK (CACHE) HIZ TESTI:");
+    println!("Ayni sorgu tekrar calistirildi.");
+    println!("Onbellek Gecikmesi: {} mikro-saniye ({} ms)", cache_elapsed.as_micros(), cache_elapsed.as_millis());
+    assert!(cache_res.is_ok());
+
+    println!("========== [CANLI TEST BITTI] ==========\n");
 }

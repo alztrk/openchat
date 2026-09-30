@@ -265,7 +265,10 @@ pub(super) fn qualify_output_paths(output: &mut Value, prepared: &PreparedToolCa
                 output["path"] = json!(path);
             }
         }
-        ToolOperation::Bash { .. } => {}
+        ToolOperation::Bash { .. }
+        | ToolOperation::SendTerminalInput { .. }
+        | ToolOperation::WebSearch { .. }
+        | ToolOperation::ReadUrlContent { .. } => {}
     }
 }
 

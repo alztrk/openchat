@@ -31,8 +31,26 @@ pub(crate) enum ToolOperation {
         new_string: String,
     },
     Bash {
-        #[allow(dead_code)]
-        command: String,
+        command: Option<String>,
+        terminal_id: Option<String>,
+        input: Option<String>,
+        action: Option<String>,
+        timeout_seconds: Option<u64>,
+        wait_ms: Option<u64>,
+    },
+    SendTerminalInput {
+        terminal_id: String,
+        input: Option<String>,
+        action: Option<String>,
+        wait_ms: Option<u64>,
+    },
+    WebSearch {
+        query: String,
+        limit: Option<usize>,
+    },
+    ReadUrlContent {
+        url: String,
+        max_chars: Option<usize>,
     },
     Info,
 }
@@ -75,18 +93,68 @@ impl ToolExecutor {
         };
         let operation = match call.name.as_str() {
             "bash" | "execute_command" => {
-                let Some(command) = string_argument(&call.arguments, "command") else {
+                let command = string_argument(&call.arguments, "command").map(str::to_owned);
+                let terminal_id = string_argument(&call.arguments, "terminal_id")
+                    .or_else(|| string_argument(&call.arguments, "terminalId"))
+                    .map(str::to_owned);
+                let input = string_argument(&call.arguments, "input").map(str::to_owned);
+                let action = string_argument(&call.arguments, "action").map(str::to_owned);
+                let timeout_seconds = u64_argument(&call.arguments, "timeout_seconds")
+                    .or_else(|| u64_argument(&call.arguments, "timeoutSeconds"));
+                let wait_ms = u64_argument(&call.arguments, "wait_ms")
+                    .or_else(|| u64_argument(&call.arguments, "waitMs"));
+
+                if command.is_none() && terminal_id.is_none() {
                     return Err(tool_error(
                         "invalid_tool_input",
-                        "The shell command is invalid.",
+                        "Either command or terminal_id is required.",
                     ));
-                };
-                if command.trim().is_empty() {
+                }
+
+                if let Some(cmd) = &command
+                    && cmd.trim().is_empty()
+                {
                     return Err(tool_error(
                         "invalid_tool_input",
                         "The shell command cannot be empty.",
                     ));
                 }
+
+                let root = self
+                    .project_root
+                    .clone()
+                    .unwrap_or_else(|| self.data_root.clone());
+                let requested = command.as_deref().or(terminal_id.as_deref()).unwrap_or("");
+                return Ok(PreparedToolCall {
+                    root,
+                    relative_path: String::new(),
+                    requested_path: requested.to_owned(),
+                    target_path: PathBuf::from(requested),
+                    scope: ToolPathScope::Project,
+                    operation: ToolOperation::Bash {
+                        command,
+                        terminal_id,
+                        input,
+                        action,
+                        timeout_seconds,
+                        wait_ms,
+                    },
+                });
+            }
+            "send_terminal_input" => {
+                let terminal_id = string_argument(&call.arguments, "terminal_id")
+                    .or_else(|| string_argument(&call.arguments, "terminalId"));
+                let Some(terminal_id) = terminal_id else {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The terminal_id is required.",
+                    ));
+                };
+                let input = string_argument(&call.arguments, "input").map(str::to_owned);
+                let action = string_argument(&call.arguments, "action").map(str::to_owned);
+                let wait_ms = u64_argument(&call.arguments, "wait_ms")
+                    .or_else(|| u64_argument(&call.arguments, "waitMs"));
+
                 let root = self
                     .project_root
                     .clone()
@@ -94,11 +162,76 @@ impl ToolExecutor {
                 return Ok(PreparedToolCall {
                     root,
                     relative_path: String::new(),
-                    requested_path: command.to_owned(),
-                    target_path: PathBuf::from(command),
+                    requested_path: terminal_id.to_owned(),
+                    target_path: PathBuf::from(terminal_id),
                     scope: ToolPathScope::Project,
-                    operation: ToolOperation::Bash {
-                        command: command.to_owned(),
+                    operation: ToolOperation::SendTerminalInput {
+                        terminal_id: terminal_id.to_owned(),
+                        input,
+                        action,
+                        wait_ms,
+                    },
+                });
+            }
+            "web_search" => {
+                let Some(query) = string_argument(&call.arguments, "query") else {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The search query is required.",
+                    ));
+                };
+                if query.trim().is_empty() {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The search query cannot be empty.",
+                    ));
+                }
+                let limit = usize_argument(&call.arguments, "limit");
+                let root = self
+                    .project_root
+                    .clone()
+                    .unwrap_or_else(|| self.data_root.clone());
+                return Ok(PreparedToolCall {
+                    root,
+                    relative_path: String::new(),
+                    requested_path: query.to_owned(),
+                    target_path: PathBuf::from(query),
+                    scope: ToolPathScope::Project,
+                    operation: ToolOperation::WebSearch {
+                        query: query.to_owned(),
+                        limit,
+                    },
+                });
+            }
+            "read_url_content" | "read_url" => {
+                let Some(url) = string_argument(&call.arguments, "url") else {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The URL is required.",
+                    ));
+                };
+                if url.trim().is_empty() {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The URL cannot be empty.",
+                    ));
+                }
+                let max_chars = usize_argument(&call.arguments, "max_chars")
+                    .or_else(|| usize_argument(&call.arguments, "maxChars"))
+                    .or_else(|| usize_argument(&call.arguments, "max_length"));
+                let root = self
+                    .project_root
+                    .clone()
+                    .unwrap_or_else(|| self.data_root.clone());
+                return Ok(PreparedToolCall {
+                    root,
+                    relative_path: String::new(),
+                    requested_path: url.to_owned(),
+                    target_path: PathBuf::from(url),
+                    scope: ToolPathScope::Project,
+                    operation: ToolOperation::ReadUrlContent {
+                        url: url.to_owned(),
+                        max_chars,
                     },
                 });
             }
@@ -245,4 +378,8 @@ fn usize_argument(value: &Value, name: &str) -> Option<usize> {
         .get(name)
         .and_then(Value::as_u64)
         .and_then(|number| usize::try_from(number).ok())
+}
+
+fn u64_argument(value: &Value, name: &str) -> Option<u64> {
+    value.get(name).and_then(Value::as_u64)
 }

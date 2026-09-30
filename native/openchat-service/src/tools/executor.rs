@@ -11,7 +11,7 @@ use tokio::sync::watch;
 mod execution;
 mod paths;
 mod validation;
-use execution::execute_model_tool;
+pub(crate) use execution::execute_model_tool;
 use paths::qualify_output_paths;
 pub(crate) use validation::{PreparedToolCall, ToolOperation};
 
@@ -106,21 +106,6 @@ impl ToolExecutor {
             }
         };
 
-        if matches!(prepared.operation, ToolOperation::Bash { .. }) {
-            let output = execute_model_tool(&prepared);
-            self.emit_activity(
-                ToolActivity::finished(call, None, output.clone()),
-                request_id,
-                snapshot,
-                events,
-            )
-            .await?;
-            return Ok(ToolResult {
-                call_id: call.id.clone(),
-                output,
-            });
-        }
-
         if self.permission_mode == ToolPermissionMode::RequireApproval {
             let approved_target = prepared.target_path.clone();
             let target_path = prepared.target_path.to_string_lossy().into_owned();
@@ -187,46 +172,55 @@ impl ToolExecutor {
                 });
             }
 
-            match self.resolve_tool_path(
-                &prepared.requested_path,
-                prepared.operation.targets_directory(),
-                prepared.operation.can_create_file(),
-            ) {
-                Ok((root, relative_path, target, scope)) if target == approved_target => {
-                    prepared.root = root;
-                    prepared.relative_path = relative_path;
-                    prepared.target_path = target;
-                    prepared.scope = scope;
-                }
-                Ok(_) => {
-                    let output = tool_error(
-                        "permission_target_changed",
-                        "The requested path changed after approval. Request permission again.",
-                    );
-                    self.emit_activity(
-                        ToolActivity::denied(call, target_path, output.clone()),
-                        request_id,
-                        snapshot,
-                        events,
-                    )
-                    .await?;
-                    return Ok(ToolResult {
-                        call_id: call.id.clone(),
-                        output,
-                    });
-                }
-                Err(output) => {
-                    self.emit_activity(
-                        ToolActivity::finished(call, Some(target_path), output.clone()),
-                        request_id,
-                        snapshot,
-                        events,
-                    )
-                    .await?;
-                    return Ok(ToolResult {
-                        call_id: call.id.clone(),
-                        output,
-                    });
+            let is_non_fs = matches!(
+                prepared.operation,
+                ToolOperation::Bash { .. }
+                    | ToolOperation::SendTerminalInput { .. }
+                    | ToolOperation::WebSearch { .. }
+                    | ToolOperation::ReadUrlContent { .. }
+            );
+            if !is_non_fs {
+                match self.resolve_tool_path(
+                    &prepared.requested_path,
+                    prepared.operation.targets_directory(),
+                    prepared.operation.can_create_file(),
+                ) {
+                    Ok((root, relative_path, target, scope)) if target == approved_target => {
+                        prepared.root = root;
+                        prepared.relative_path = relative_path;
+                        prepared.target_path = target;
+                        prepared.scope = scope;
+                    }
+                    Ok(_) => {
+                        let output = tool_error(
+                            "permission_target_changed",
+                            "The requested path changed after approval. Request permission again.",
+                        );
+                        self.emit_activity(
+                            ToolActivity::denied(call, target_path, output.clone()),
+                            request_id,
+                            snapshot,
+                            events,
+                        )
+                        .await?;
+                        return Ok(ToolResult {
+                            call_id: call.id.clone(),
+                            output,
+                        });
+                    }
+                    Err(output) => {
+                        self.emit_activity(
+                            ToolActivity::finished(call, Some(target_path), output.clone()),
+                            request_id,
+                            snapshot,
+                            events,
+                        )
+                        .await?;
+                        return Ok(ToolResult {
+                            call_id: call.id.clone(),
+                            output,
+                        });
+                    }
                 }
             }
         }
@@ -256,7 +250,7 @@ impl ToolExecutor {
             .await?;
             return Err(crate::permissions::operation_cancelled_error());
         }
-        let mut output = execute_model_tool(&prepared);
+        let mut output = execute_model_tool(&prepared).await;
         qualify_output_paths(&mut output, &prepared);
         self.emit_activity(
             ToolActivity::finished(

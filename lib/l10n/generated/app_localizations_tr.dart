@@ -629,6 +629,14 @@ class AppLocalizationsTr extends AppLocalizations {
   String get usageWeekly => 'Haftalık';
 
   @override
+  String get usageMonthly => 'Aylık';
+
+  @override
+  String workspaceNumbered(int number) {
+    return 'Çalışma alanı $number';
+  }
+
+  @override
   String quotaResetsAt(String time) {
     return 'Sıfırlanma: $time';
   }
@@ -1227,6 +1235,168 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get toolEditFile => 'Dosyayı düzenle';
+
+  @override
+  String get toolExecuteCommand => 'Komut çalıştır';
+
+  @override
+  String get toolSendTerminalInput => 'Terminale girdi gönder';
+
+  @override
+  String get toolWebSearch => 'Web\'de ara';
+
+  @override
+  String get toolReadUrlContent => 'Web sayfasını oku';
+
+  @override
+  String get toolSearchQuery => 'Arama sorgusu';
+
+  @override
+  String get toolWebSearchNoResults => 'Web sonucu bulunamadı.';
+
+  @override
+  String toolWebSearchResultCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count sonuç',
+      one: '1 sonuç',
+      zero: '0 sonuç',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get toolUrl => 'URL';
+
+  @override
+  String toolReadUrlLength(int count) {
+    return '$count karakter';
+  }
+
+  @override
+  String get toolOpenUrl => 'Tarayıcıda aç';
+
+  @override
+  String get toolCopyUrl => 'URL\'yi kopyala';
+
+  @override
+  String get toolCopyContent => 'İçeriği kopyala';
+
+  @override
+  String get toolCopyFailed => 'İçerik kopyalanamadı.';
+
+  @override
+  String get toolOperationWorking => 'İşlem sürüyor.';
+
+  @override
+  String get toolOperationFailed => 'İşlem tamamlanamadı.';
+
+  @override
+  String get toolOperationUnavailable => 'Sonuç görüntülenemiyor.';
+
+  @override
+  String get toolOperationTruncated =>
+      'Sonucun yalnızca bir bölümü gösterilebiliyor.';
+
+  @override
+  String get toolSearchNoMatches => 'Eşleşme bulunamadı.';
+
+  @override
+  String get toolSearchMoreResults => 'Daha fazla eşleşme var.';
+
+  @override
+  String toolSearchMatchCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count eşleşme',
+      one: '1 eşleşme',
+      zero: '0 eşleşme',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get toolReadNoLines => 'Bu aralıkta satır yok.';
+
+  @override
+  String get toolReadMoreLines => 'Daha fazla satır var.';
+
+  @override
+  String toolReadLineCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count satır',
+      one: '1 satır',
+      zero: '0 satır',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get toolFileTypeFile => 'Dosya';
+
+  @override
+  String get toolFileTypeDirectory => 'Klasör';
+
+  @override
+  String toolWriteSuccess(String size) {
+    return '$size yazıldı';
+  }
+
+  @override
+  String get toolFilePreview => 'Yazılan içerik önizlemesi';
+
+  @override
+  String toolEditSuccess(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# değişiklik uygulandı',
+      one: '# değişiklik uygulandı',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get toolEditBefore => 'Önce';
+
+  @override
+  String get toolEditAfter => 'Sonra';
+
+  @override
+  String get toolPermissionCommand => 'Komut';
+
+  @override
+  String get toolPermissionTerminalId => 'Terminal kimliği';
+
+  @override
+  String get toolPermissionInput => 'Terminal girdisi';
+
+  @override
+  String get toolTerminalNoOutput => 'Çıktı üretilmedi.';
+
+  @override
+  String get toolTerminalWaitingOutput => 'Çıktı veya girdi bekleniyor...';
+
+  @override
+  String get toolTerminalRunning => 'Çalışıyor...';
+
+  @override
+  String get toolTerminalTerminated => 'Sonlandırıldı';
+
+  @override
+  String get toolTerminalWaitingForInput => 'Girdi bekleniyor';
+
+  @override
+  String toolTerminalExitCode(int code) {
+    return 'Çıkış kodu: $code';
+  }
+
+  @override
+  String get toolTerminalCopied => 'Panoya kopyalandı';
 
   @override
   String get toolTechnicalDetails => 'Ayrıntılar';
