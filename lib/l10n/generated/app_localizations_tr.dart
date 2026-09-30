@@ -187,7 +187,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get providerKeyInvalid =>
-      'Boş olmayan, tek satırlı ve en fazla 4096 karakterlik bir API anahtarı gir.';
+      'Bu sağlayıcı için geçerli bir API anahtarı gir. Boşluk kullanma; anahtar en fazla 4096 karakter olabilir.';
 
   @override
   String get providerKeyStorageFailed =>
@@ -232,7 +232,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get openCodeKeyInvalid =>
-      'Boş olmayan, tek satırlı ve en fazla 4096 karakterlik bir API anahtarı girin.';
+      'Boşluk veya satır sonu içermeyen, boş olmayan bir API anahtarı girin (en fazla 4096 karakter).';
 
   @override
   String get openCodeKeyStorageFailed =>
@@ -853,7 +853,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get historyStorageUnavailableDescription =>
-      'Yerel sohbet geçmişi açılamadı. Uygulamayı yeniden başlatıp tekrar dene.';
+      'Yerel sohbet geçmişi açılamadı.';
 
   @override
   String get historyStorageUnavailableStatus => 'Kullanılamıyor';
@@ -1273,5 +1273,33 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String secondsShort(int count) {
     return '$count sn';
+  }
+
+  @override
+  String get usageQuotas => 'Kullanım Kotaları';
+
+  @override
+  String get usageQuotasDescription =>
+      'Tüm bağlı ChatGPT hesaplarınızın kalan kotalarını, kullanım limitlerini ve sıfırlanma zamanlarını görüntüleyin.';
+
+  @override
+  String get refreshAll => 'Tümünü yenile';
+
+  @override
+  String get noChatGptAccountsForQuota => 'Bağlı ChatGPT hesabı bulunmuyor.';
+
+  @override
+  String get noChatGptAccountsForQuotaDescription =>
+      'Kullanım limitlerinizi ve kotalarınızı görüntülemek için Bağlantılar sekmesinden ChatGPT hesabınızı ekleyin.';
+
+  @override
+  String get goToConnections => 'Bağlantılara Git';
+
+  @override
+  String get activeAccountBadge => 'Aktif';
+
+  @override
+  String workspaceQuotaLabel(String name) {
+    return 'Çalışma alanı: $name';
   }
 }

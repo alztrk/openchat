@@ -187,7 +187,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get providerKeyInvalid =>
-      'Enter a non-empty, single-line API key up to 4096 characters.';
+      'Enter a valid API key for this provider. Do not include spaces; the key can be up to 4096 characters.';
 
   @override
   String get providerKeyStorageFailed =>
@@ -231,7 +231,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get openCodeKeyInvalid =>
-      'Enter a non-empty, single-line API key (up to 4096 characters).';
+      'Enter a non-empty API key without spaces or line breaks (up to 4096 characters).';
 
   @override
   String get openCodeKeyStorageFailed =>
@@ -860,7 +860,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get historyStorageUnavailableDescription =>
-      'Local chat history could not be opened. Restart the app and try again.';
+      'Local chat history could not be opened.';
 
   @override
   String get historyStorageUnavailableStatus => 'Unavailable';
@@ -1283,5 +1283,34 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String secondsShort(int count) {
     return '$count sec';
+  }
+
+  @override
+  String get usageQuotas => 'Usage Quotas';
+
+  @override
+  String get usageQuotasDescription =>
+      'View remaining quotas, usage limits, and reset times for all your connected ChatGPT accounts.';
+
+  @override
+  String get refreshAll => 'Refresh all';
+
+  @override
+  String get noChatGptAccountsForQuota =>
+      'No connected ChatGPT accounts found.';
+
+  @override
+  String get noChatGptAccountsForQuotaDescription =>
+      'Connect your ChatGPT account in the Connections tab to view your usage limits and quotas.';
+
+  @override
+  String get goToConnections => 'Go to Connections';
+
+  @override
+  String get activeAccountBadge => 'Active';
+
+  @override
+  String workspaceQuotaLabel(String name) {
+    return 'Workspace: $name';
   }
 }

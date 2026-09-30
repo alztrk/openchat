@@ -74,7 +74,7 @@
   "providerKeySavedSuffix": "API key ending in ••••{suffix} is saved securely on this device.",
   "@providerKeySavedSuffix": { "placeholders": { "suffix": {} } },
   "providerNoKey": "No API key is connected.",
-  "providerKeyInvalid": "Enter a non-empty, single-line API key up to 4096 characters.",
+  "providerKeyInvalid": "Enter a valid API key for this provider. Do not include spaces; the key can be up to 4096 characters.",
   "providerKeyStorageFailed": "The API key could not be read or saved securely.",
   "favoriteModels": "Favorites",
   "favoriteModelsEmpty": "No favorite models yet.",
@@ -88,7 +88,7 @@
   "@openCodeKeySaved": { "placeholders": { "suffix": {} } },
   "openCodeNoKey": "No Console API key. Free models are available.",
   "openCodeApiKey": "OpenCode Console API key",
-  "openCodeKeyInvalid": "Enter a non-empty, single-line API key (up to 4096 characters).",
+  "openCodeKeyInvalid": "Enter a non-empty API key without spaces or line breaks (up to 4096 characters).",
   "openCodeKeyStorageFailed": "The Console API key could not be read or saved securely.",
   "openCodePaidModel": "Paid",
   "openCodeFreeModel": "Free",
@@ -287,7 +287,7 @@
   "historyDeviceStatus": "On this device",
   "historyCheckingDescription": "Preparing local chat history.",
   "historyCheckingStatus": "Preparing",
-  "historyStorageUnavailableDescription": "Local chat history could not be opened. Restart the app and try again.",
+  "historyStorageUnavailableDescription": "Local chat history could not be opened.",
   "historyStorageUnavailableStatus": "Unavailable",
   "historyLoading": "Loading conversations...",
   "historyLoadFailed": "Chat history could not be loaded. Restart the app.",
@@ -442,6 +442,19 @@
   "@secondsShort": {
     "placeholders": {
       "count": { "type": "int" }
+    }
+  },
+  "usageQuotas": "Usage Quotas",
+  "usageQuotasDescription": "View remaining quotas, usage limits, and reset times for all your connected ChatGPT accounts.",
+  "refreshAll": "Refresh all",
+  "noChatGptAccountsForQuota": "No connected ChatGPT accounts found.",
+  "noChatGptAccountsForQuotaDescription": "Connect your ChatGPT account in the Connections tab to view your usage limits and quotas.",
+  "goToConnections": "Go to Connections",
+  "activeAccountBadge": "Active",
+  "workspaceQuotaLabel": "Workspace: {name}",
+  "@workspaceQuotaLabel": {
+    "placeholders": {
+      "name": { "type": "String" }
     }
   }
 }

@@ -413,7 +413,7 @@ abstract class AppLocalizations {
   /// No description provided for @providerKeyInvalid.
   ///
   /// In en, this message translates to:
-  /// **'Enter a non-empty, single-line API key up to 4096 characters.'**
+  /// **'Enter a valid API key for this provider. Do not include spaces; the key can be up to 4096 characters.'**
   String get providerKeyInvalid;
 
   /// No description provided for @providerKeyStorageFailed.
@@ -491,7 +491,7 @@ abstract class AppLocalizations {
   /// No description provided for @openCodeKeyInvalid.
   ///
   /// In en, this message translates to:
-  /// **'Enter a non-empty, single-line API key (up to 4096 characters).'**
+  /// **'Enter a non-empty API key without spaces or line breaks (up to 4096 characters).'**
   String get openCodeKeyInvalid;
 
   /// No description provided for @openCodeKeyStorageFailed.
@@ -1583,7 +1583,7 @@ abstract class AppLocalizations {
   /// No description provided for @historyStorageUnavailableDescription.
   ///
   /// In en, this message translates to:
-  /// **'Local chat history could not be opened. Restart the app and try again.'**
+  /// **'Local chat history could not be opened.'**
   String get historyStorageUnavailableDescription;
 
   /// No description provided for @historyStorageUnavailableStatus.
@@ -2353,6 +2353,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{count} sec'**
   String secondsShort(int count);
+
+  /// No description provided for @usageQuotas.
+  ///
+  /// In en, this message translates to:
+  /// **'Usage Quotas'**
+  String get usageQuotas;
+
+  /// No description provided for @usageQuotasDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'View remaining quotas, usage limits, and reset times for all your connected ChatGPT accounts.'**
+  String get usageQuotasDescription;
+
+  /// No description provided for @refreshAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh all'**
+  String get refreshAll;
+
+  /// No description provided for @noChatGptAccountsForQuota.
+  ///
+  /// In en, this message translates to:
+  /// **'No connected ChatGPT accounts found.'**
+  String get noChatGptAccountsForQuota;
+
+  /// No description provided for @noChatGptAccountsForQuotaDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect your ChatGPT account in the Connections tab to view your usage limits and quotas.'**
+  String get noChatGptAccountsForQuotaDescription;
+
+  /// No description provided for @goToConnections.
+  ///
+  /// In en, this message translates to:
+  /// **'Go to Connections'**
+  String get goToConnections;
+
+  /// No description provided for @activeAccountBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Active'**
+  String get activeAccountBadge;
+
+  /// No description provided for @workspaceQuotaLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Workspace: {name}'**
+  String workspaceQuotaLabel(String name);
 }
 
 class _AppLocalizationsDelegate
