@@ -26,6 +26,7 @@ pub async fn send_message(
     api_key: Option<&str>,
     requested_api_key_connection_id: Option<&str>,
     stored_api_key_connection_id: Option<String>,
+    reasoning_effort: Option<&str>,
 ) -> Result<Value, ServiceError> {
     let ChatSendContext {
         request_id,
@@ -56,6 +57,7 @@ pub async fn send_message(
             custom_instructions,
             permission_mode,
             has_project: project_root.is_some(),
+            reasoning_effort,
         },
     )?;
     let started = Instant::now();
@@ -201,7 +203,11 @@ async fn stream_conversation(
         .then(|| opencode_session_id_for_conversation(context.conversation_id, context.created_at));
 
     loop {
-        let body = request::chat_completion_body(provider_request, messages, route.is_opencode);
+        let body = if route.uses_responses_api {
+            request::responses_api_body(provider_request, messages)
+        } else {
+            request::chat_completion_body(provider_request, messages, route.is_opencode)
+        };
         let turn = response_stream::receive(ResponseStreamRequest {
             route,
             api_key,

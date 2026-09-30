@@ -16,9 +16,7 @@ const MODEL_CATALOG_CACHE_AGE_MS: i64 = 6 * 60 * 60 * 1000;
 const MODEL_METADATA_TIMEOUT: Duration = Duration::from_secs(5);
 const SUPPORTED_FREE_CHAT_MODELS: &[&str] = &[
     "big-pickle",
-    "deepseek-v4-flash-free",
     "jev-1.13-free",
-    "ling-3.0-flash-fin-free",
     "longcat-2.5-preview-free",
     "mimo-v2.5-free",
     "mimo-v2.6-flash-free",
@@ -106,6 +104,69 @@ fn metadata_models(value: &Value) -> Option<&serde_json::Map<String, Value>> {
     value.get("opencode")?.get("models")?.as_object()
 }
 
+fn supports_reasoning(details: Option<&Value>) -> bool {
+    details
+        .and_then(|model| model.get("reasoning"))
+        .and_then(Value::as_bool)
+        == Some(true)
+}
+
+fn is_deprecated(details: Option<&Value>) -> bool {
+    metadata_status(details) == Some("deprecated")
+}
+
+fn metadata_status(details: Option<&Value>) -> Option<&str> {
+    details
+        .and_then(|model| model.get("status"))
+        .and_then(Value::as_str)
+}
+
+fn uses_responses_api_metadata(details: Option<&Value>) -> bool {
+    details
+        .and_then(|model| model.pointer("/provider/npm"))
+        .and_then(Value::as_str)
+        == Some("@ai-sdk/openai")
+}
+
+fn reasoning_levels(details: Option<&Value>) -> Vec<String> {
+    if !supports_reasoning(details) {
+        return Vec::new();
+    }
+
+    let Some(options) = details
+        .and_then(|model| model.get("reasoning_options"))
+        .and_then(Value::as_array)
+    else {
+        return Vec::new();
+    };
+
+    if let Some(effort) = options
+        .iter()
+        .find(|option| option.get("type").and_then(Value::as_str) == Some("effort"))
+    {
+        return effort
+            .get("values")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect();
+    }
+
+    if options
+        .iter()
+        .any(|option| option.get("type").and_then(Value::as_str) == Some("toggle"))
+    {
+        return ["low", "medium", "high"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+    }
+
+    Vec::new()
+}
+
 async fn fetch_model_metadata(client: &Client) -> Result<Value, ServiceError> {
     let response = client
         .get(MODELS_DEV_URL)
@@ -140,6 +201,9 @@ fn supported_models(value: &Value, metadata: Option<&Value>) -> Result<Vec<Value
                     let id = model.get("id")?.as_str()?;
                     let group_id = model_group(id)?;
                     let details = metadata_models.and_then(|models| models.get(id));
+                    if is_deprecated(details) {
+                        return None;
+                    }
                     let display_name = details
                         .and_then(|details| details.get("name"))
                         .and_then(Value::as_str)
@@ -154,14 +218,21 @@ fn supported_models(value: &Value, metadata: Option<&Value>) -> Result<Vec<Value
                         .and_then(|limits| limits.get("context"))
                         .and_then(Value::as_i64)
                         .filter(|context_window| *context_window > 0);
+                    let reasoning_supported = supports_reasoning(details);
+                    let reasoning_levels = reasoning_levels(details);
+                    let catalog_status = metadata_status(details);
+                    let uses_responses_api = uses_responses_api_metadata(details);
                     Some(json!({
                         "id": id,
                         "displayName": display_name,
                         "description": description,
                         "contextWindow": context_window,
+                        "catalogStatus": catalog_status,
                         "groupId": group_id,
                         "defaultReasoningLevel": null,
-                        "reasoningLevels": [],
+                        "reasoningLevels": reasoning_levels,
+                        "supportsReasoning": reasoning_supported,
+                        "usesResponsesApi": uses_responses_api,
                         "isAvailable": true,
                     }))
                 })
@@ -174,6 +245,9 @@ fn canonicalize_cached_models(models: &[Value]) -> Vec<Value> {
         .iter()
         .filter_map(|model| {
             let id = model.get("id")?.as_str()?;
+            if model.get("catalogStatus").and_then(Value::as_str) == Some("deprecated") {
+                return None;
+            }
             let group_id = model_group(id)?;
             let mut model = model.clone();
             let fields = model.as_object_mut()?;
@@ -192,12 +266,55 @@ fn canonicalize_cached_models(models: &[Value]) -> Vec<Value> {
 fn has_model_groups(models: &[Value]) -> bool {
     !models.is_empty()
         && models.iter().all(|model| {
-            model
-                .get("id")
-                .and_then(Value::as_str)
-                .and_then(model_group)
-                == model.get("groupId").and_then(Value::as_str)
+            let has_current_reasoning_metadata = model
+                .get("supportsReasoning")
+                .and_then(Value::as_bool)
+                .is_some();
+            let has_current_catalog_metadata = model.get("catalogStatus").is_some();
+            has_current_reasoning_metadata
+                && has_current_catalog_metadata
+                && model
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .and_then(model_group)
+                    == model.get("groupId").and_then(Value::as_str)
         })
+}
+
+pub(super) fn supports_reasoning_level(
+    storage: &AppStorage,
+    model_id: &str,
+    level: &str,
+) -> Result<bool, ServiceError> {
+    let Some((models, _)) = load_model_catalog(storage)? else {
+        return Ok(false);
+    };
+    Ok(models.iter().any(|model| {
+        model.get("id").and_then(Value::as_str) == Some(model_id)
+            && model
+                .get("reasoningLevels")
+                .and_then(Value::as_array)
+                .is_some_and(|levels| levels.iter().any(|value| value.as_str() == Some(level)))
+    }))
+}
+
+pub(super) fn is_responses_api_model(
+    storage: &AppStorage,
+    model_id: &str,
+) -> Result<bool, ServiceError> {
+    if let Some((models, _)) = load_model_catalog(storage)? {
+        if let Some(model) = models
+            .iter()
+            .find(|m| m.get("id").and_then(Value::as_str) == Some(model_id))
+        {
+            if let Some(uses) = model.get("usesResponsesApi").and_then(Value::as_bool) {
+                return Ok(uses);
+            }
+        }
+    }
+    Ok(model_id.starts_with("muse-")
+        || model_id.starts_with("gpt-")
+        || model_id.starts_with("grok-"))
 }
 
 fn visible_models(models: &[Value], api_key: Option<&str>) -> Vec<Value> {

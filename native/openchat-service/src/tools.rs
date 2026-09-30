@@ -462,6 +462,19 @@ pub fn opencode_wire_tools(defs: &[ToolDefinition]) -> Vec<Value> {
     tools
 }
 
+pub fn opencode_responses_wire_tools(defs: &[ToolDefinition]) -> Vec<Value> {
+    let wire_tools = opencode_wire_tools(defs);
+    wire_tools
+        .into_iter()
+        .filter_map(|mut tool| {
+            let func = tool.get_mut("function")?.take();
+            let mut obj = func.as_object()?.clone();
+            obj.insert("type".to_owned(), json!("function"));
+            Some(Value::Object(obj))
+        })
+        .collect()
+}
+
 #[allow(dead_code)]
 pub fn opencode_required_tools() -> Vec<ToolDefinition> {
     definitions_for_provider("opencode")

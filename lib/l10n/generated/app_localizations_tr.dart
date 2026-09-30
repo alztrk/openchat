@@ -455,6 +455,10 @@ class AppLocalizationsTr extends AppLocalizations {
       'Sağlayıcı yanıtı tamamlayamadı. Kayıtlı mesajların kullanılabilir durumda.';
 
   @override
+  String get openCodeFreeTierRestricted =>
+      'OpenCode ücretsiz modelleri yalnızca OpenCode uygulamasında kullanılabilir.';
+
+  @override
   String get apiKey => 'API anahtarı';
 
   @override
@@ -1060,6 +1064,9 @@ class AppLocalizationsTr extends AppLocalizations {
   String get reasoningUltra => 'En üst';
 
   @override
+  String get reasoningDefault => 'Model varsayılanı';
+
+  @override
   String get stop => 'Durdur';
 
   @override
@@ -1101,7 +1108,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get reasoningUnavailable =>
-      'Model bağlanana kadar akıl yürütme kullanılamaz.';
+      'Bu model ayarlanabilir akıl yürütme düzeyi sunmuyor.';
 
   @override
   String get attachFile => 'Dosya ekle';
@@ -1134,6 +1141,10 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get modelRequired => 'Mesaj göndermek için önce bir model bağla.';
+
+  @override
+  String get selectedModelUnavailable =>
+      'Bu model artık kullanılamıyor. Başka bir model seç.';
 
   @override
   String get messageModelUnavailable => 'Model bilgisi yok';

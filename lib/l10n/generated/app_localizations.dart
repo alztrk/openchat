@@ -884,6 +884,12 @@ abstract class AppLocalizations {
   /// **'The provider could not complete the response. Your saved messages are still available.'**
   String get providerRequestFailed;
 
+  /// No description provided for @openCodeFreeTierRestricted.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenCode free models are only available within the OpenCode app.'**
+  String get openCodeFreeTierRestricted;
+
   /// No description provided for @apiKey.
   ///
   /// In en, this message translates to:
@@ -1982,6 +1988,12 @@ abstract class AppLocalizations {
   /// **'Ultra'**
   String get reasoningUltra;
 
+  /// No description provided for @reasoningDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Model default'**
+  String get reasoningDefault;
+
   /// No description provided for @stop.
   ///
   /// In en, this message translates to:
@@ -2051,7 +2063,7 @@ abstract class AppLocalizations {
   /// No description provided for @reasoningUnavailable.
   ///
   /// In en, this message translates to:
-  /// **'Reasoning is unavailable until a model is connected.'**
+  /// **'This model does not expose adjustable reasoning levels.'**
   String get reasoningUnavailable;
 
   /// No description provided for @attachFile.
@@ -2113,6 +2125,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Connect a model before sending a message.'**
   String get modelRequired;
+
+  /// No description provided for @selectedModelUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This model is no longer available. Choose another model.'**
+  String get selectedModelUnavailable;
 
   /// No description provided for @messageModelUnavailable.
   ///

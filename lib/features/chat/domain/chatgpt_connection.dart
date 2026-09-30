@@ -89,6 +89,7 @@ class ChatGptModel {
     required this.displayName,
     required this.isAvailable,
     required this.reasoningLevels,
+    this.supportsReasoning = false,
     this.description,
     this.contextWindow,
     this.defaultReasoningLevel,
@@ -105,6 +106,7 @@ class ChatGptModel {
   final int? contextWindow;
   final String? defaultReasoningLevel;
   final List<String> reasoningLevels;
+  final bool supportsReasoning;
   final bool isAvailable;
   final String providerId;
   final String? connectionId;
@@ -128,6 +130,7 @@ class ChatGptModel {
     contextWindow: contextWindow,
     defaultReasoningLevel: defaultReasoningLevel,
     reasoningLevels: reasoningLevels,
+    supportsReasoning: supportsReasoning,
     isAvailable: isAvailable,
     providerId: providerId,
     connectionId: connectionId,
@@ -142,6 +145,12 @@ class ChatGptModel {
         reasoningLevels.any((level) => level is! String)) {
       throw const FormatException('The model reasoning levels were invalid.');
     }
+    final supportsReasoning = json['supportsReasoning'];
+    if (supportsReasoning != null && supportsReasoning is! bool) {
+      throw const FormatException(
+        'The model reasoning capability was invalid.',
+      );
+    }
     final contextWindow = json['contextWindow'];
     if (contextWindow != null && contextWindow is! int) {
       throw const FormatException('The model context window was invalid.');
@@ -153,6 +162,8 @@ class ChatGptModel {
       contextWindow: contextWindow as int?,
       defaultReasoningLevel: _optionalString(json, 'defaultReasoningLevel'),
       reasoningLevels: reasoningLevels.cast<String>(),
+      supportsReasoning:
+          supportsReasoning == true || reasoningLevels.isNotEmpty,
       isAvailable: json['isAvailable'] == true,
       groupId: _optionalString(json, 'groupId'),
     );

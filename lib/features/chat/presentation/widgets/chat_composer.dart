@@ -295,7 +295,7 @@ class _ComposerActions extends StatelessWidget {
     final reasoningSelector = showReasoningSelector
         ? _ReasoningSelector(
             label: l10n.reasoning,
-            level: reasoningLevel ?? l10n.reasoningMedium,
+            level: reasoningLevel ?? l10n.reasoningDefault,
             iconRoot: iconRoot,
             palette: palette,
             unavailableHint: l10n.reasoningUnavailable,

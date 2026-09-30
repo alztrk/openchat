@@ -51,6 +51,7 @@ class Messages extends Table {
       text().withDefault(const Constant('[]'))();
   TextColumn get toolActivities => text().withDefault(const Constant('[]'))();
   TextColumn get status => text()();
+  TextColumn get failureCode => text().nullable()();
 
   @override
   Set<Column<Object>> get primaryKey => {conversationId, id};
@@ -76,7 +77,7 @@ class OpenChatDatabase extends _$OpenChatDatabase {
     : super(_databaseAtPath(databasePath));
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 10;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -112,6 +113,18 @@ class OpenChatDatabase extends _$OpenChatDatabase {
           modelFavorites,
           modelFavorites.sourceConnectionId,
         );
+      }
+      if (from < 9) {
+        // Normalize persisted enum names before strict domain parsing.
+        await customStatement(
+          "UPDATE conversations SET title_source = 'manual' WHERE title_source = 'user'",
+        );
+        await customStatement(
+          "UPDATE messages SET status = 'completed' WHERE status = 'complete'",
+        );
+      }
+      if (from < 10) {
+        await migrator.addColumn(messages, messages.failureCode);
       }
     },
     beforeOpen: (_) async => customStatement('PRAGMA foreign_keys = ON'),

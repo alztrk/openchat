@@ -170,6 +170,7 @@ pub(crate) async fn dispatch(
                         api_key,
                         api_key_connection_id,
                         stored_api_key_connection_id,
+                        reasoning_effort,
                     )
                     .await
                 }

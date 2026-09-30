@@ -158,6 +158,7 @@ class ChatMessage {
     this.reasoningSummaries = const <ChatReasoningSummary>[],
     this.toolActivities = const <ChatToolActivity>[],
     this.status = ChatMessageStatus.completed,
+    this.failureCode,
   });
 
   final String id;
@@ -170,4 +171,5 @@ class ChatMessage {
   final List<ChatReasoningSummary> reasoningSummaries;
   final List<ChatToolActivity> toolActivities;
   final ChatMessageStatus status;
+  final String? failureCode;
 }

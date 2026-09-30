@@ -1225,6 +1225,17 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
+  static const VerificationMeta _failureCodeMeta = const VerificationMeta(
+    'failureCode',
+  );
+  @override
+  late final GeneratedColumn<String> failureCode = GeneratedColumn<String>(
+    'failure_code',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -1238,6 +1249,7 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     reasoningSummaries,
     toolActivities,
     status,
+    failureCode,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -1342,6 +1354,15 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     } else if (isInserting) {
       context.missing(_statusMeta);
     }
+    if (data.containsKey('failure_code')) {
+      context.handle(
+        _failureCodeMeta,
+        failureCode.isAcceptableOrUnknown(
+          data['failure_code']!,
+          _failureCodeMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -1395,6 +1416,10 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.string,
         data['${effectivePrefix}status'],
       )!,
+      failureCode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}failure_code'],
+      ),
     );
   }
 
@@ -1416,6 +1441,7 @@ class Message extends DataClass implements Insertable<Message> {
   final String reasoningSummaries;
   final String toolActivities;
   final String status;
+  final String? failureCode;
   const Message({
     required this.id,
     required this.conversationId,
@@ -1428,6 +1454,7 @@ class Message extends DataClass implements Insertable<Message> {
     required this.reasoningSummaries,
     required this.toolActivities,
     required this.status,
+    this.failureCode,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -1451,6 +1478,9 @@ class Message extends DataClass implements Insertable<Message> {
     map['reasoning_summaries'] = Variable<String>(reasoningSummaries);
     map['tool_activities'] = Variable<String>(toolActivities);
     map['status'] = Variable<String>(status);
+    if (!nullToAbsent || failureCode != null) {
+      map['failure_code'] = Variable<String>(failureCode);
+    }
     return map;
   }
 
@@ -1475,6 +1505,9 @@ class Message extends DataClass implements Insertable<Message> {
       reasoningSummaries: Value(reasoningSummaries),
       toolActivities: Value(toolActivities),
       status: Value(status),
+      failureCode: failureCode == null && nullToAbsent
+          ? const Value.absent()
+          : Value(failureCode),
     );
   }
 
@@ -1499,6 +1532,7 @@ class Message extends DataClass implements Insertable<Message> {
       ),
       toolActivities: serializer.fromJson<String>(json['toolActivities']),
       status: serializer.fromJson<String>(json['status']),
+      failureCode: serializer.fromJson<String?>(json['failureCode']),
     );
   }
   @override
@@ -1516,6 +1550,7 @@ class Message extends DataClass implements Insertable<Message> {
       'reasoningSummaries': serializer.toJson<String>(reasoningSummaries),
       'toolActivities': serializer.toJson<String>(toolActivities),
       'status': serializer.toJson<String>(status),
+      'failureCode': serializer.toJson<String?>(failureCode),
     };
   }
 
@@ -1531,6 +1566,7 @@ class Message extends DataClass implements Insertable<Message> {
     String? reasoningSummaries,
     String? toolActivities,
     String? status,
+    Value<String?> failureCode = const Value.absent(),
   }) => Message(
     id: id ?? this.id,
     conversationId: conversationId ?? this.conversationId,
@@ -1547,6 +1583,7 @@ class Message extends DataClass implements Insertable<Message> {
     reasoningSummaries: reasoningSummaries ?? this.reasoningSummaries,
     toolActivities: toolActivities ?? this.toolActivities,
     status: status ?? this.status,
+    failureCode: failureCode.present ? failureCode.value : this.failureCode,
   );
   Message copyWithCompanion(MessagesCompanion data) {
     return Message(
@@ -1573,6 +1610,9 @@ class Message extends DataClass implements Insertable<Message> {
           ? data.toolActivities.value
           : this.toolActivities,
       status: data.status.present ? data.status.value : this.status,
+      failureCode: data.failureCode.present
+          ? data.failureCode.value
+          : this.failureCode,
     );
   }
 
@@ -1589,7 +1629,8 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('elapsedMicroseconds: $elapsedMicroseconds, ')
           ..write('reasoningSummaries: $reasoningSummaries, ')
           ..write('toolActivities: $toolActivities, ')
-          ..write('status: $status')
+          ..write('status: $status, ')
+          ..write('failureCode: $failureCode')
           ..write(')'))
         .toString();
   }
@@ -1607,6 +1648,7 @@ class Message extends DataClass implements Insertable<Message> {
     reasoningSummaries,
     toolActivities,
     status,
+    failureCode,
   );
   @override
   bool operator ==(Object other) =>
@@ -1622,7 +1664,8 @@ class Message extends DataClass implements Insertable<Message> {
           other.elapsedMicroseconds == this.elapsedMicroseconds &&
           other.reasoningSummaries == this.reasoningSummaries &&
           other.toolActivities == this.toolActivities &&
-          other.status == this.status);
+          other.status == this.status &&
+          other.failureCode == this.failureCode);
 }
 
 class MessagesCompanion extends UpdateCompanion<Message> {
@@ -1637,6 +1680,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<String> reasoningSummaries;
   final Value<String> toolActivities;
   final Value<String> status;
+  final Value<String?> failureCode;
   final Value<int> rowid;
   const MessagesCompanion({
     this.id = const Value.absent(),
@@ -1650,6 +1694,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.reasoningSummaries = const Value.absent(),
     this.toolActivities = const Value.absent(),
     this.status = const Value.absent(),
+    this.failureCode = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   MessagesCompanion.insert({
@@ -1664,6 +1709,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.reasoningSummaries = const Value.absent(),
     this.toolActivities = const Value.absent(),
     required String status,
+    this.failureCode = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        conversationId = Value(conversationId),
@@ -1682,6 +1728,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<String>? reasoningSummaries,
     Expression<String>? toolActivities,
     Expression<String>? status,
+    Expression<String>? failureCode,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1697,6 +1744,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (reasoningSummaries != null) 'reasoning_summaries': reasoningSummaries,
       if (toolActivities != null) 'tool_activities': toolActivities,
       if (status != null) 'status': status,
+      if (failureCode != null) 'failure_code': failureCode,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1713,6 +1761,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<String>? reasoningSummaries,
     Value<String>? toolActivities,
     Value<String>? status,
+    Value<String?>? failureCode,
     Value<int>? rowid,
   }) {
     return MessagesCompanion(
@@ -1727,6 +1776,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       reasoningSummaries: reasoningSummaries ?? this.reasoningSummaries,
       toolActivities: toolActivities ?? this.toolActivities,
       status: status ?? this.status,
+      failureCode: failureCode ?? this.failureCode,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1767,6 +1817,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (status.present) {
       map['status'] = Variable<String>(status.value);
     }
+    if (failureCode.present) {
+      map['failure_code'] = Variable<String>(failureCode.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1787,6 +1840,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('reasoningSummaries: $reasoningSummaries, ')
           ..write('toolActivities: $toolActivities, ')
           ..write('status: $status, ')
+          ..write('failureCode: $failureCode, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3096,6 +3150,7 @@ typedef $$MessagesTableCreateCompanionBuilder = MessagesCompanion Function({
   Value<String> reasoningSummaries,
   Value<String> toolActivities,
   required String status,
+  Value<String?> failureCode,
   Value<int> rowid,
 });
 typedef $$MessagesTableUpdateCompanionBuilder = MessagesCompanion Function({
@@ -3110,6 +3165,7 @@ typedef $$MessagesTableUpdateCompanionBuilder = MessagesCompanion Function({
   Value<String> reasoningSummaries,
   Value<String> toolActivities,
   Value<String> status,
+  Value<String?> failureCode,
   Value<int> rowid,
 });
 
@@ -3192,6 +3248,11 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<String> get status => $composableBuilder(
     column: $table.status,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get failureCode => $composableBuilder(
+    column: $table.failureCode,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3278,6 +3339,11 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get failureCode => $composableBuilder(
+    column: $table.failureCode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$ConversationsTableOrderingComposer get conversationId {
     final $$ConversationsTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -3351,6 +3417,11 @@ class $$MessagesTableAnnotationComposer
   GeneratedColumn<String> get status =>
       $composableBuilder(column: $table.status, builder: (column) => column);
 
+  GeneratedColumn<String> get failureCode => $composableBuilder(
+    column: $table.failureCode,
+    builder: (column) => column,
+  );
+
   $$ConversationsTableAnnotationComposer get conversationId {
     final $$ConversationsTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -3414,6 +3485,7 @@ class $$MessagesTableTableManager
                 Value<String> reasoningSummaries = const Value.absent(),
                 Value<String> toolActivities = const Value.absent(),
                 Value<String> status = const Value.absent(),
+                Value<String?> failureCode = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MessagesCompanion(
                 id: id,
@@ -3427,6 +3499,7 @@ class $$MessagesTableTableManager
                 reasoningSummaries: reasoningSummaries,
                 toolActivities: toolActivities,
                 status: status,
+                failureCode: failureCode,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -3442,6 +3515,7 @@ class $$MessagesTableTableManager
                 Value<String> reasoningSummaries = const Value.absent(),
                 Value<String> toolActivities = const Value.absent(),
                 required String status,
+                Value<String?> failureCode = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => MessagesCompanion.insert(
                 id: id,
@@ -3455,6 +3529,7 @@ class $$MessagesTableTableManager
                 reasoningSummaries: reasoningSummaries,
                 toolActivities: toolActivities,
                 status: status,
+                failureCode: failureCode,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

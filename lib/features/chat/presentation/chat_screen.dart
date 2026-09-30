@@ -313,10 +313,8 @@ class _ChatScreenState extends State<ChatScreen> {
           final defaultProvider = defaultModel.providerId;
           final isDefaultFamilyChatGpt =
               _providerFamily(defaultProvider) == 'chatgpt';
-          final isDefaultCompatible =
-              ApiCompatibleProviderKeyStore.providerIds.contains(
-                defaultProvider,
-              );
+          final isDefaultCompatible = ApiCompatibleProviderKeyStore.providerIds
+              .contains(defaultProvider);
           if (defaultProvider == 'opencode') {
             defaultModelAvailable = true;
           } else if (isDefaultFamilyChatGpt && _isChatGptConnected) {
@@ -374,8 +372,9 @@ class _ChatScreenState extends State<ChatScreen> {
         await _loadModels(
           providerId: providerId,
           selectedModelId: defaultModelAvailable ? defaultModel?.modelId : null,
-          selectedModelRouteKey:
-              defaultModelAvailable ? defaultModel?.routeKey : null,
+          selectedModelRouteKey: defaultModelAvailable
+              ? defaultModel?.routeKey
+              : null,
           forceRefresh: forceRefresh,
         );
       }
@@ -1121,7 +1120,8 @@ class _ChatScreenState extends State<ChatScreen> {
       _selectedProviderId = defaultModel != null
           ? defaultModel.providerId
           : _preferredProviderId();
-      _selectedApiKeyConnectionId = defaultModel?.apiKeyConnectionId ??
+      _selectedApiKeyConnectionId =
+          defaultModel?.apiKeyConnectionId ??
           (_selectedProviderId == 'chatgpt_api'
               ? _firstOrNull(_chatGptApiKeyConnections)?.id
               : null);
@@ -1395,27 +1395,36 @@ class _ChatScreenState extends State<ChatScreen> {
     var persistence = Future<void>.value();
     StreamSubscription<OpenChatServiceEvent>? subscription;
 
-    Future<bool> preserveFailedResponse() async {
-      final failedMessageId = assistantMessageId;
-      if (failedMessageId == null) return true;
+    Future<bool> preserveFailedResponse({
+      String failureCode = 'chat_request_failed',
+    }) async {
       if (responseToReplace != null) {
-        return _discardReplacementAttempt(
-          repository,
-          conversationId,
-          failedMessageId,
-        );
+        final replacementId = assistantMessageId;
+        return replacementId == null
+            ? true
+            : _discardReplacementAttempt(
+                repository,
+                conversationId,
+                replacementId,
+              );
       }
 
+      final failedMessageId = assistantMessageId ?? _newLocalId();
+      final failedMessageCreatedAt =
+          assistantCreatedAt ?? DateTime.now().toUtc();
+      assistantMessageId = failedMessageId;
+      assistantCreatedAt = failedMessageCreatedAt;
       await repository.saveMessage(
         conversationId: conversationId,
         message: chat.ChatMessage(
           id: failedMessageId,
           role: chat.ChatMessageRole.assistant,
           content: assistantContent,
-          createdAt: assistantCreatedAt,
+          createdAt: failedMessageCreatedAt,
           reasoningSummaries: assistantReasoningSummaries,
           toolActivities: assistantToolActivities,
           status: chat.ChatMessageStatus.failed,
+          failureCode: failureCode,
         ),
       );
       return true;
@@ -1644,11 +1653,13 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     } on OpenChatServiceException catch (error) {
       await persistence;
-      final retryCleanupSucceeded = await preserveFailedResponse();
+      final retryCleanupSucceeded = await preserveFailedResponse(
+        failureCode: error.code,
+      );
       if (mounted) {
-        if (retryCleanupSucceeded) {
+        if (retryCleanupSucceeded && responseToReplace != null) {
           _showServiceFailure(error);
-        } else {
+        } else if (!retryCleanupSucceeded) {
           _showMessage(context.openchatL10n.responseRetryCleanupFailed);
         }
       }
@@ -1664,11 +1675,11 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
       if (mounted) {
-        _showMessage(
-          retryCleanupSucceeded
-              ? context.openchatL10n.chatRequestFailed
-              : context.openchatL10n.responseRetryCleanupFailed,
-        );
+        if (!retryCleanupSucceeded) {
+          _showMessage(context.openchatL10n.responseRetryCleanupFailed);
+        } else if (responseToReplace != null) {
+          _showMessage(context.openchatL10n.chatRequestFailed);
+        }
       }
     } finally {
       await subscription?.cancel();
@@ -1826,11 +1837,13 @@ class _ChatScreenState extends State<ChatScreen> {
     final l10n = context.openchatL10n;
     final message = switch (error.code) {
       'rate_limited' => l10n.providerRateLimited,
+      'opencode_free_tier_restricted' => l10n.openCodeFreeTierRestricted,
       'authentication_required' ||
       'refresh_rejected' => l10n.providerAuthenticationRequired,
       'provider_endpoint_unavailable' ||
       'invalid_provider_response' => l10n.providerRequestFailed,
-      'model_unavailable' || 'conversation_not_routed' => l10n.modelRequired,
+      'model_unavailable' => l10n.selectedModelUnavailable,
+      'conversation_not_routed' => l10n.modelRequired,
       'invalid_retry_target' => l10n.responseRetryUnavailable,
       _ => l10n.providerRequestFailed,
     };

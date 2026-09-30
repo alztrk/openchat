@@ -455,6 +455,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'The provider could not complete the response. Your saved messages are still available.';
 
   @override
+  String get openCodeFreeTierRestricted =>
+      'OpenCode free models are only available within the OpenCode app.';
+
+  @override
   String get apiKey => 'API key';
 
   @override
@@ -1069,6 +1073,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get reasoningUltra => 'Ultra';
 
   @override
+  String get reasoningDefault => 'Model default';
+
+  @override
   String get stop => 'Stop';
 
   @override
@@ -1110,7 +1117,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get reasoningUnavailable =>
-      'Reasoning is unavailable until a model is connected.';
+      'This model does not expose adjustable reasoning levels.';
 
   @override
   String get attachFile => 'Attach file';
@@ -1144,6 +1151,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get modelRequired => 'Connect a model before sending a message.';
+
+  @override
+  String get selectedModelUnavailable =>
+      'This model is no longer available. Choose another model.';
 
   @override
   String get messageModelUnavailable => 'Model unavailable';

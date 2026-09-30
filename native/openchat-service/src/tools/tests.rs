@@ -632,6 +632,22 @@ fn opencode_wire_tools_include_bash_and_read_with_industry_standards() {
             .any(|t| t.pointer("/function/name").and_then(Value::as_str) == Some("grep"))
     );
 
+    let responses_wire_tools = super::opencode_responses_wire_tools(&internal_defs);
+    assert!(
+        responses_wire_tools
+            .iter()
+            .any(|t| t.get("name").and_then(Value::as_str) == Some("bash")
+                && t.get("type").and_then(Value::as_str) == Some("function")
+                && t.get("parameters").is_some())
+    );
+    assert!(
+        responses_wire_tools
+            .iter()
+            .any(|t| t.get("name").and_then(Value::as_str) == Some("read")
+                && t.get("type").and_then(Value::as_str) == Some("function")
+                && t.get("parameters").is_some())
+    );
+
     // Bidirectional translation test
     assert_eq!(super::opencode_wire_name("read_file"), "read");
     assert_eq!(super::opencode_wire_name("write_file"), "write");

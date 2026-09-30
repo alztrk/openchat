@@ -49,7 +49,29 @@ These bullets describe code present in the repository. They do not mean that eve
 
 **Exit criteria:** every provider completes those real workflows without changing the shared chat UI or leaking keys and provider payloads into logs.
 
-## 4. Expand desktop platforms
+## 4. Add Gemini API OAuth
+
+**Status: planned.** Let users authenticate to the Gemini Developer API with their Google account, without entering a Gemini API key. This is the Gemini API's documented OAuth flow and uses OpenChat's own OAuth client; it is separate from Gemini CLI and Code Assist authentication.
+
+- Confirm the required Google Cloud project setup, Generative Language API enablement, OAuth consent configuration, scopes, and any app verification requirements for a distributable desktop client.
+- Store and refresh OAuth credentials through the existing platform secure-storage boundary. Associate each connection with the Google Cloud project that owns its Gemini API quota and billing.
+- Keep OAuth and API-key connections distinguishable in Settings and the model selector, while routing both through the shared provider contract.
+- Verify account cancellation, consent denial, expired/revoked credentials, project configuration errors, quota exhaustion, and real model requests.
+- Document that OAuth alone does not guarantee free use. Gemini API quota and billing follow the selected Cloud project and are not the Gemini CLI or Code Assist free quota.
+
+**Exit criteria:** a user can connect a Google account through OpenChat's OAuth client and send Gemini API requests without an API key; setup, quota, billing, and authentication failures are clear, and no Gemini CLI or Code Assist OAuth credentials are reused.
+
+## 5. Evaluate a compliant Antigravity integration
+
+**Status: research required.** Do not use consumer Antigravity OAuth from OpenChat. Evaluate only a Google-documented Enterprise or Cloud integration, such as a supported Vertex AI or ADC route, if its product terms authorize a third-party desktop client.
+
+- Confirm the permitted authentication flow, organization/admin requirements, project and license prerequisites, and whether an external client may send inference requests under the applicable Enterprise terms.
+- Keep any approved Enterprise integration separate from personal Antigravity accounts and consumer quotas.
+- If Google does not document and permit a suitable external-client flow, record Antigravity as unsupported instead of attempting to reuse its consumer OAuth session.
+
+**Exit criteria:** either a documented, terms-compliant Enterprise integration path has concrete implementation requirements, or the roadmap records that Antigravity cannot be integrated as an external provider.
+
+## 6. Expand desktop platforms
 
 **Status: later.** Windows remains the supported first target. Bring the local Rust service and credential storage to Linux and macOS before mobile.
 
@@ -59,7 +81,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 **Exit criteria:** each desktop build packages its service, stores secrets in the platform's secure store, and keeps durable application data in that platform's user data directory.
 
-## 5. Evaluate mobile support
+## 7. Evaluate mobile support
 
 **Status: later.** Android and iOS require a service lifecycle and secure-storage design that fits mobile process and permission limits. Start this work after desktop provider behavior is stable.
 
@@ -73,3 +95,13 @@ These bullets describe code present in the repository. They do not mean that eve
 - No file editing or shell execution by project tools.
 - No automatic use of ChatGPT reset credits.
 - No additional OpenCode wire protocols until the shared provider contract stage is complete.
+- Do not reuse Gemini CLI/Code Assist or consumer Antigravity OAuth credentials or quotas in OpenChat; use only provider-documented flows permitted for external clients.
+
+## Research references
+
+- [Gemini API OAuth guide](https://ai.google.dev/gemini-api/docs/oauth)
+- [Gemini API terms of service](https://ai.google.dev/gemini-api/terms)
+- [Google OAuth production readiness and verification](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification)
+- [Antigravity terms of service](https://antigravity.google/terms)
+- [Antigravity Enterprise documentation](https://antigravity.google/docs/enterprise)
+- [Antigravity SDK authentication overview](https://antigravity.google/docs/sdk/overview)

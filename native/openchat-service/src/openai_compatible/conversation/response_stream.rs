@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use futures_util::StreamExt;
-use reqwest::header::ACCEPT;
+use reqwest::{StatusCode, header::ACCEPT};
 use serde_json::Value;
 
 use crate::{
@@ -13,11 +13,14 @@ use super::super::{
     MAX_EVENT_BYTES, cancelled_error, client, http_error, invalid_response_error, network_error,
     protocol_error,
     stream::{
-        SseLine, StreamedToolCall, append_tool_call_deltas, finish_reason, parse_sse_line,
-        parse_streamed_tool_calls, pop_sse_line, stream_is_complete,
+        ResponsesStreamEffect, SseLine, StreamedToolCall, append_tool_call_deltas, finish_reason,
+        handle_responses_api_event, parse_sse_line, parse_streamed_tool_calls, pop_sse_line,
+        stream_is_complete,
     },
 };
 use super::ResponseStreamRequest;
+
+const MAX_PROVIDER_ERROR_BYTES: usize = 16 * 1024;
 
 pub(super) struct StreamedTurn {
     pub(super) round_content: String,
@@ -57,10 +60,19 @@ pub(super) async fn receive(
             .send() => response.map_err(|_| network_error())?,
     };
     if !response.status().is_success() {
-        return Err(http_error(
-            response.status(),
-            request.route.provider_id.as_deref(),
-        ));
+        let status = response.status();
+        if request.route.is_opencode
+            && request.route.is_free
+            && status == StatusCode::FORBIDDEN
+            && opencode_free_tier_restricted(response).await
+        {
+            return Err(ServiceError::new(
+                "opencode_free_tier_restricted",
+                "OpenCode free models can only be used within OpenCode.",
+                false,
+            ));
+        }
+        return Err(http_error(status, request.route.provider_id.as_deref()));
     }
 
     let mut stream = response.bytes_stream();
@@ -98,6 +110,66 @@ pub(super) async fn receive(
                 }
                 SseLine::Data(value) => value,
             };
+
+            if request.route.uses_responses_api {
+                match handle_responses_api_event(&value, &mut tool_calls)? {
+                    ResponsesStreamEffect::TextDelta(text) => {
+                        request.content.push_str(&text);
+                        round_content.push_str(&text);
+                        request
+                            .events
+                            .send(
+                                &ChatStreamEvent::TextUpdated(ChatStreamSnapshot::new(
+                                    request.conversation_id,
+                                    request.message_id,
+                                    request.content,
+                                    request.created_at,
+                                ))
+                                .into_rpc(request.request_id.clone()),
+                            )
+                            .await
+                            .map_err(|_| protocol_error())?;
+                    }
+                    ResponsesStreamEffect::ReasoningDelta(reasoning) => {
+                        request.reasoning_content.push_str(&reasoning);
+                        let summary = ReasoningSummary {
+                            id: format!("reasoning_{}", request.message_id),
+                            content: request.reasoning_content.clone(),
+                            elapsed_microseconds: request.started.elapsed().as_micros() as i64,
+                            is_complete: false,
+                        };
+                        let _ = request
+                            .events
+                            .send(
+                                &ChatStreamEvent::ReasoningSummariesUpdated {
+                                    snapshot: ChatStreamSnapshot::new(
+                                        request.conversation_id,
+                                        request.message_id,
+                                        request.content,
+                                        request.created_at,
+                                    ),
+                                    summaries: vec![summary],
+                                }
+                                .into_rpc(request.request_id.clone()),
+                            )
+                            .await;
+                    }
+                    ResponsesStreamEffect::UsageTokens(tokens) => {
+                        *request.output_tokens =
+                            Some(request.output_tokens.unwrap_or(0).saturating_add(tokens));
+                        saw_done = true;
+                    }
+                    ResponsesStreamEffect::Completed => {
+                        saw_done = true;
+                    }
+                    ResponsesStreamEffect::Failed(msg) => {
+                        return Err(ServiceError::new("model_response_failed", msg, false));
+                    }
+                    ResponsesStreamEffect::None => {}
+                }
+                continue;
+            }
+
             saw_finish_reason |= finish_reason(&value).is_some();
             if let Some(text) = value
                 .pointer("/choices/0/delta/content")
@@ -194,4 +266,34 @@ pub(super) async fn receive(
         round_content,
         tool_calls: parse_streamed_tool_calls(tool_calls, request.route.is_opencode)?,
     })
+}
+
+async fn opencode_free_tier_restricted(response: reqwest::Response) -> bool {
+    let mut body = Vec::new();
+    let mut chunks = response.bytes_stream();
+    while body.len() < MAX_PROVIDER_ERROR_BYTES {
+        let Some(Ok(chunk)) = chunks.next().await else {
+            break;
+        };
+        let remaining = MAX_PROVIDER_ERROR_BYTES - body.len();
+        body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+    }
+    let Ok(value) = serde_json::from_slice::<Value>(&body) else {
+        return false;
+    };
+    contains_free_tier_error(&value)
+}
+
+fn contains_free_tier_error(value: &Value) -> bool {
+    match value {
+        Value::String(message) => {
+            message.contains("OpenCode's free tier can only be used from within OpenCode")
+        }
+        Value::Array(values) => values.iter().any(contains_free_tier_error),
+        Value::Object(fields) => {
+            fields.get("type").and_then(Value::as_str) == Some("FreeTierError")
+                || fields.values().any(contains_free_tier_error)
+        }
+        _ => false,
+    }
 }

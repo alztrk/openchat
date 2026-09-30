@@ -545,6 +545,7 @@ class ChatRepository {
                 ),
               ),
               status: message.status.name,
+              failureCode: Value(message.failureCode),
             ),
           );
 
@@ -671,6 +672,7 @@ class ChatRepository {
         jsonDecode(row.toolActivities),
       ),
       status: domain.ChatMessageStatus.values.byName(row.status),
+      failureCode: row.failureCode,
     );
   }
 }

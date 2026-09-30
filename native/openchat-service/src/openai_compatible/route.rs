@@ -3,7 +3,7 @@ use rusqlite::OptionalExtension;
 use crate::{protocol::ServiceError, storage::AppStorage};
 
 use super::{
-    CHAT_URL, OPENAI_CHAT_URL, api_compatible_provider, authentication_required_error, model_error,
+    CHAT_URL, OPENAI_CHAT_URL, RESPONSES_URL, api_compatible_provider, authentication_required_error, model_error,
     models::{is_supported_free_chat_model, is_supported_paid_chat_model},
     openai_authentication_required_error, provider_authentication_required_error, route_error,
     storage_error,
@@ -15,6 +15,7 @@ pub(super) struct ChatRoute {
     pub(super) chat_url: String,
     pub(super) is_free: bool,
     pub(super) is_opencode: bool,
+    pub(super) uses_responses_api: bool,
 }
 
 pub(super) fn resolve_chat_route(
@@ -44,7 +45,7 @@ pub(super) fn resolve_chat_route(
         .filter(|id| !id.trim().is_empty())
         .ok_or_else(model_error)?;
 
-    let (chat_url, is_free) = match provider_id.as_deref() {
+    let (chat_url, is_free, uses_responses_api) = match provider_id.as_deref() {
         Some("opencode") => {
             if requested_api_key_connection_id.is_some() {
                 return Err(route_error());
@@ -53,7 +54,14 @@ pub(super) fn resolve_chat_route(
             {
                 return Err(model_error());
             }
-            (CHAT_URL.to_owned(), is_supported_free_chat_model(&model_id))
+            let is_free = is_supported_free_chat_model(&model_id);
+            let uses_responses_api = super::models::is_responses_api_model(storage, &model_id)?;
+            let chat_url = if uses_responses_api {
+                RESPONSES_URL.to_owned()
+            } else {
+                CHAT_URL.to_owned()
+            };
+            (chat_url, is_free, uses_responses_api)
         }
         Some("chatgpt_api") => {
             if requested_api_key_connection_id != stored_api_key_connection_id {
@@ -62,7 +70,7 @@ pub(super) fn resolve_chat_route(
             if api_key.is_none() {
                 return Err(openai_authentication_required_error());
             }
-            (OPENAI_CHAT_URL.to_owned(), false)
+            (OPENAI_CHAT_URL.to_owned(), false, false)
         }
         Some(id) => {
             let Some(provider) = api_compatible_provider(id) else {
@@ -76,7 +84,7 @@ pub(super) fn resolve_chat_route(
             if api_key.is_none() {
                 return Err(provider_authentication_required_error(id));
             }
-            (format!("{}/chat/completions", provider.base_url), false)
+            (format!("{}/chat/completions", provider.base_url), false, false)
         }
         None => return Err(route_error()),
     };
@@ -91,5 +99,6 @@ pub(super) fn resolve_chat_route(
         provider_id,
         chat_url,
         is_free,
+        uses_responses_api,
     })
 }

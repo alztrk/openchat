@@ -16,6 +16,7 @@ mod stream;
 pub use models::models;
 pub use provider_models::models as models_for_provider;
 const CHAT_URL: &str = "https://opencode.ai/zen/v1/chat/completions";
+const RESPONSES_URL: &str = "https://opencode.ai/zen/v1/responses";
 const OPENAI_CHAT_URL: &str = "https://api.openai.com/v1/chat/completions";
 const MAX_EVENT_BYTES: usize = 1024 * 1024;
 
@@ -496,5 +497,151 @@ mod tests {
         let res = super::models::models(&storage, None, true, &mut rx).await;
         println!("[FULL MODELS RESULT]: {:?}", res);
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn responses_input_items_maps_system_user_assistant_and_tool_messages() {
+        let messages = vec![
+            json!({
+                "role": "system",
+                "content": "You are a helpful assistant."
+            }),
+            json!({
+                "role": "user",
+                "content": "Hello!"
+            }),
+            json!({
+                "role": "assistant",
+                "content": "Running tool.",
+                "tool_calls": [
+                    {
+                        "id": "call_123",
+                        "type": "function",
+                        "function": {
+                            "name": "read",
+                            "arguments": "{\"filePath\":\"README.md\"}"
+                        }
+                    }
+                ]
+            }),
+            json!({
+                "role": "tool",
+                "tool_call_id": "call_123",
+                "content": "file contents"
+            }),
+        ];
+
+        let items = super::request::responses_input_items(&messages);
+        assert_eq!(items.len(), 5);
+        assert_eq!(items[0]["role"], "developer");
+        assert_eq!(items[0]["content"][0]["text"], "You are a helpful assistant.");
+        assert_eq!(items[1]["role"], "user");
+        assert_eq!(items[1]["content"][0]["text"], "Hello!");
+        assert_eq!(items[2]["role"], "assistant");
+        assert_eq!(items[2]["content"][0]["text"], "Running tool.");
+        assert_eq!(items[3]["type"], "function_call");
+        assert_eq!(items[3]["call_id"], "call_123");
+        assert_eq!(items[3]["name"], "read");
+        assert_eq!(items[4]["type"], "function_call_output");
+        assert_eq!(items[4]["call_id"], "call_123");
+        assert_eq!(items[4]["output"], "file contents");
+    }
+
+    #[test]
+    fn handle_responses_api_event_extracts_deltas_reasoning_and_tool_calls() {
+        let mut calls = std::collections::BTreeMap::new();
+
+        let event = json!({
+            "type": "response.output_text.delta",
+            "delta": "Hello"
+        });
+        match super::stream::handle_responses_api_event(&event, &mut calls).unwrap() {
+            super::stream::ResponsesStreamEffect::TextDelta(t) => assert_eq!(t, "Hello"),
+            _ => panic!("expected text delta"),
+        }
+
+        let event = json!({
+            "type": "response.reasoning_text.delta",
+            "delta": "Thinking..."
+        });
+        match super::stream::handle_responses_api_event(&event, &mut calls).unwrap() {
+            super::stream::ResponsesStreamEffect::ReasoningDelta(r) => assert_eq!(r, "Thinking..."),
+            _ => panic!("expected reasoning delta"),
+        }
+
+        let event = json!({
+            "type": "response.output_item.added",
+            "output_index": 0,
+            "item": {
+                "type": "function_call",
+                "call_id": "call_abc",
+                "name": "read"
+            }
+        });
+        assert!(matches!(
+            super::stream::handle_responses_api_event(&event, &mut calls).unwrap(),
+            super::stream::ResponsesStreamEffect::None
+        ));
+
+        let event = json!({
+            "type": "response.function_call_arguments.delta",
+            "output_index": 0,
+            "delta": "{\"filePath\":\"a.txt\"}"
+        });
+        assert!(matches!(
+            super::stream::handle_responses_api_event(&event, &mut calls).unwrap(),
+            super::stream::ResponsesStreamEffect::None
+        ));
+
+        let parsed = super::stream::parse_streamed_tool_calls(calls, true).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].id, "call_abc");
+        assert_eq!(parsed[0].name, "read_file");
+        assert_eq!(parsed[0].arguments["filePath"], "a.txt");
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn live_opencode_responses_api_muse_spark_smoke_test() {
+        use reqwest::header::ACCEPT;
+
+        let client = super::client().expect("client");
+        let session_id = super::opencode_session_id();
+        let defs = crate::tools::definitions();
+        let req = crate::provider_schema::ProviderChatRequest {
+            model: "muse-spark-1.3-contributor-free".to_owned(),
+            instructions: "You are a concise assistant.".to_owned(),
+            messages: vec![crate::provider_schema::ProviderMessage {
+                role: crate::provider_schema::MessageRole::User,
+                content: "Reply with 'pong' only.".to_owned(),
+            }],
+            tools: defs,
+            reasoning_effort: None,
+        };
+        let messages = super::request::completion_messages(&req);
+        let body = super::request::responses_api_body(&req, &messages);
+
+        let response = client
+            .post(super::RESPONSES_URL)
+            .header("User-Agent", "opencode/1.18.30")
+            .header("x-opencode-client", "cli")
+            .header("x-opencode-session", session_id)
+            .header("x-opencode-project", "global")
+            .bearer_auth("public")
+            .header(ACCEPT, "text/event-stream")
+            .json(&body)
+            .send()
+            .await
+            .expect("send live responses request");
+
+        let status = response.status();
+        let body_text = response.text().await.unwrap_or_default();
+        assert!(
+            status.is_success(),
+            "Expected HTTP 200 OK from OpenCode Responses API, got: {} - body: {}",
+            status,
+            body_text
+        );
+        assert!(body_text.contains("response.created"));
     }
 }

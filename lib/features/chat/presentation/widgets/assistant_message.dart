@@ -78,17 +78,32 @@ class AssistantMessage extends StatelessWidget {
               const SizedBox(height: 8),
               _AssistantResponseSkeleton(palette: palette),
             ] else ...[
-              const SizedBox(height: 6),
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  minHeight: message.content.contains('\n\n') ? 96 : 40,
+              if (message.status == ChatMessageStatus.failed) ...[
+                if (message.content.trim().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  _AssistantResponseContent(
+                    content: message.content,
+                    isStreaming: false,
+                    palette: palette,
+                  ),
+                ],
+                const SizedBox(height: 6),
+                _AssistantFailureCard(
+                  description: _failureDescription(l10n, message.failureCode),
                 ),
-                child: _AssistantResponseContent(
-                  content: message.content,
-                  isStreaming: message.status == ChatMessageStatus.streaming,
-                  palette: palette,
+              ] else ...[
+                const SizedBox(height: 6),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: message.content.contains('\n\n') ? 96 : 40,
+                  ),
+                  child: _AssistantResponseContent(
+                    content: message.content,
+                    isStreaming: message.status == ChatMessageStatus.streaming,
+                    palette: palette,
+                  ),
                 ),
-              ),
+              ],
               const SizedBox(height: 6),
               Wrap(
                 spacing: 8,
@@ -126,7 +141,8 @@ class AssistantMessage extends StatelessWidget {
                       icon: const Icon(Icons.refresh_rounded, size: 17),
                       color: palette.secondaryIcon,
                     ),
-                  CopyMessageButton(content: message.content),
+                  if (message.content.trim().isNotEmpty)
+                    CopyMessageButton(content: message.content),
                 ],
               ),
             ],
@@ -142,9 +158,83 @@ class AssistantMessage extends StatelessWidget {
     return switch (message.status) {
       ChatMessageStatus.streaming => null,
       ChatMessageStatus.completed => null,
-      ChatMessageStatus.failed => l10n.responseFailed,
+      ChatMessageStatus.failed => null,
       ChatMessageStatus.stopped => l10n.responseStopped,
     };
+  }
+
+  String _failureDescription(AppLocalizations l10n, String? code) =>
+      switch (code) {
+        'opencode_free_tier_restricted' => l10n.openCodeFreeTierRestricted,
+        'authentication_required' => l10n.providerAuthenticationRequired,
+        'rate_limited' => l10n.providerRateLimited,
+        'model_unavailable' => l10n.selectedModelUnavailable,
+        'provider_request_failed' ||
+        'invalid_provider_response' => l10n.providerRequestFailed,
+        _ => l10n.chatRequestFailed,
+      };
+}
+
+class _AssistantFailureCard extends StatelessWidget {
+  const _AssistantFailureCard({required this.description});
+
+  final String description;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final palette = OpenChatPalette.of(context);
+    final errorColor = theme.colorScheme.error;
+
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: Color.alphaBlend(
+            errorColor.withValues(alpha: 0.07),
+            palette.surface,
+          ),
+          border: Border.all(color: errorColor.withValues(alpha: 0.42)),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 1),
+              child: Icon(
+                Icons.error_outline_rounded,
+                size: 18,
+                color: errorColor,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    context.openchatL10n.responseFailed,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: errorColor,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    description,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: palette.text,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
