@@ -446,40 +446,58 @@ class _ReasoningSummaryAccordion extends StatelessWidget {
         ? l10n.reasoningSummary
         : l10n.reasoningSummaryWithDuration(_formatDuration(duration, l10n));
 
+    const cardRadius = BorderRadius.all(Radius.circular(14));
+
     return Tooltip(
       message: l10n.reasoningSummaryTooltip,
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          tilePadding: const EdgeInsets.symmetric(horizontal: 10),
-          childrenPadding: const EdgeInsets.fromLTRB(36, 0, 10, 8),
-          visualDensity: VisualDensity.compact,
-          iconColor: palette.secondaryIcon,
-          collapsedIconColor: palette.secondaryIcon,
-          leading: Icon(
-            Icons.psychology_alt_outlined,
-            color: palette.secondaryIcon,
-            size: 17,
-          ),
-          title: Text(
-            title,
-            style: TextStyle(
-              color: palette.secondaryText,
-              fontSize: 12,
-              fontWeight: FontWeight.w500,
-              height: 18 / 12,
-            ),
-          ),
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: _AssistantResponseContent(
-                content: summary.content,
-                isStreaming: !summary.isComplete,
-                palette: palette,
+      child: Container(
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: palette.selected,
+          borderRadius: cardRadius,
+          border: Border.all(color: palette.border),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.symmetric(horizontal: 10),
+              childrenPadding: const EdgeInsets.fromLTRB(36, 0, 10, 8),
+              visualDensity: VisualDensity.compact,
+              iconColor: palette.secondaryIcon,
+              collapsedIconColor: palette.secondaryIcon,
+              shape: const RoundedRectangleBorder(borderRadius: cardRadius),
+              collapsedShape: const RoundedRectangleBorder(
+                borderRadius: cardRadius,
               ),
+              leading: Icon(
+                Icons.psychology_alt_outlined,
+                color: palette.secondaryIcon,
+                size: 17,
+              ),
+              title: Text(
+                title,
+                style: TextStyle(
+                  color: palette.secondaryText,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  height: 18 / 12,
+                ),
+              ),
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: _AssistantResponseContent(
+                    content: summary.content,
+                    isStreaming: !summary.isComplete,
+                    palette: palette,
+                    textColor: palette.secondaryText,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -500,11 +518,13 @@ class _AssistantResponseContent extends StatefulWidget {
     required this.content,
     required this.isStreaming,
     required this.palette,
+    this.textColor,
   });
 
   final String content;
   final bool isStreaming;
   final OpenChatPalette palette;
+  final Color? textColor;
 
   @override
   State<_AssistantResponseContent> createState() =>
@@ -528,7 +548,7 @@ class _AssistantResponseContentState extends State<_AssistantResponseContent> {
   Widget build(BuildContext context) {
     final conversationStyle = OpenChatConversationStyle.of(context);
     final textStyle = TextStyle(
-      color: widget.palette.text,
+      color: widget.textColor ?? widget.palette.text,
       fontFamily: conversationStyle.fontFamily,
       fontSize: 14,
       fontWeight: FontWeight.w400,

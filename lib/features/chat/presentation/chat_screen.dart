@@ -53,6 +53,7 @@ class ChatScreen extends StatefulWidget {
     this.chatGptApiKeyStore,
     this.openCodeApiKeyStore,
     this.serviceClient,
+    this.onRetryStorage,
     this.selectedModelLabel,
     super.key,
   });
@@ -75,6 +76,7 @@ class ChatScreen extends StatefulWidget {
   final ChatGptApiKeyStore? chatGptApiKeyStore;
   final OpenCodeApiKeyStore? openCodeApiKeyStore;
   final OpenChatServiceClient? serviceClient;
+  final VoidCallback? onRetryStorage;
   final HistoryStorageStatus historyStorageStatus;
   final SettingsPreferences? settingsPreferences;
   final String? selectedModelLabel;
@@ -2285,6 +2287,11 @@ class _ChatScreenState extends State<ChatScreen> {
                           selectedConversationId: _selectedConversationId,
                           isLoading: isLoading,
                           errorMessage: historyError,
+                          onRetryStorage:
+                              resolvedStorageStatus ==
+                                  HistoryStorageStatus.unavailable
+                              ? widget.onRetryStorage
+                              : null,
                         ),
                       ),
                     ),
@@ -2344,6 +2351,11 @@ class _ChatScreenState extends State<ChatScreen> {
                             selectedConversationId: _selectedConversationId,
                             isLoading: isLoading,
                             errorMessage: historyError,
+                            onRetryStorage:
+                                resolvedStorageStatus ==
+                                    HistoryStorageStatus.unavailable
+                                ? widget.onRetryStorage
+                                : null,
                           ),
                         Expanded(
                           child: _buildConversationPane(
@@ -2368,6 +2380,7 @@ class _ChatScreenState extends State<ChatScreen> {
     required String? selectedConversationId,
     required bool isLoading,
     required String? errorMessage,
+    required VoidCallback? onRetryStorage,
     bool showDivider = true,
   }) {
     return StreamBuilder<List<ChatProject>>(
@@ -2441,6 +2454,7 @@ class _ChatScreenState extends State<ChatScreen> {
               : () => unawaited(_createProject()),
           isLoading: isLoading,
           errorMessage: errorMessage,
+          onRetryStorage: onRetryStorage,
         );
       },
     );
@@ -2623,6 +2637,7 @@ class _ChatScreenState extends State<ChatScreen> {
               onFavoriteModelSelected: (favorite) =>
                   unawaited(_selectFavoriteModel(favorite)),
               reasoningOptions: reasoningOptions,
+              showReasoningSelector: selectedModel?.supportsReasoning ?? false,
               onReasoningSelected: _selectReasoning,
               selectedModelLabel: resolvedModelLabel,
               modelsEmptyLabel: modelsEmptyLabel,

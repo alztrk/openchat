@@ -1,5 +1,7 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'package:openchat/features/settings/data/api_key_format.dart';
+
 class ApiCompatibleProviderKeyStatus {
   const ApiCompatibleProviderKeyStatus({
     required this.isConfigured,
@@ -20,7 +22,6 @@ class ApiCompatibleProviderKeyStore {
     'openrouter',
   };
   static const _storageKeyPrefix = 'openchat.compatible_provider.api_key.';
-  static const _maximumKeyLength = 4096;
 
   final FlutterSecureStorage _secureStorage;
 
@@ -60,12 +61,10 @@ class ApiCompatibleProviderKeyStore {
 
   Future<void> saveApiKey(String providerId, String input) async {
     final key = input.trim();
-    if (key.isEmpty ||
-        key.length > _maximumKeyLength ||
-        key.contains(RegExp(r'[\x00-\x1F\x7F]'))) {
+    final storageKey = _storageKey(providerId);
+    if (!ApiKeyFormat.isValid(providerId, key)) {
       throw const InvalidApiCompatibleProviderKeyException();
     }
-    final storageKey = _storageKey(providerId);
     try {
       await _secureStorage.write(key: storageKey, value: key);
     } on Exception {

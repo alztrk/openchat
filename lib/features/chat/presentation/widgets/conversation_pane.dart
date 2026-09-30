@@ -45,6 +45,7 @@ class ConversationPane extends StatelessWidget {
     this.onModelFavoriteChanged,
     this.onFavoriteModelSelected,
     this.reasoningOptions = const <String>[],
+    this.showReasoningSelector = false,
     this.onReasoningSelected,
     this.messages = const <ChatMessage>[],
     this.messagesLoading = false,
@@ -102,6 +103,7 @@ class ConversationPane extends StatelessWidget {
   onModelFavoriteChanged;
   final ValueChanged<FavoriteModel>? onFavoriteModelSelected;
   final List<String> reasoningOptions;
+  final bool showReasoningSelector;
   final ValueChanged<String>? onReasoningSelected;
   final List<ChatMessage> messages;
   final bool messagesLoading;
@@ -129,7 +131,6 @@ class ConversationPane extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.openchatL10n;
-    final hasSelectedModel = selectedModelLabel?.trim().isNotEmpty ?? false;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -225,7 +226,7 @@ class ConversationPane extends StatelessWidget {
                     reasoningLevel: reasoningLevel,
                     reasoningOptions: reasoningOptions,
                     onReasoningSelected: onReasoningSelected,
-                    showReasoningSelector: hasSelectedModel,
+                    showReasoningSelector: showReasoningSelector,
                     toolPermissionMode: toolPermissionMode,
                     onToolPermissionModeChanged: onToolPermissionModeChanged,
                   ),

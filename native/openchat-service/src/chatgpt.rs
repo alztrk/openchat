@@ -15,7 +15,7 @@ use zeroize::Zeroizing;
 use crate::{
     chat_operation::ChatSendContext,
     chatgpt_store::{self, ChatGptModel},
-    credentials::OAuthCredentialReference,
+    credentials::{OAuthCredentialReference, OAuthTokenPair},
     instructions,
     oauth::OAuthClient,
     protocol::ServiceError,
@@ -42,6 +42,7 @@ const METADATA_REQUEST_TIMEOUT: Duration = Duration::from_secs(12);
 const USAGE_REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
 const RESET_CREDITS_REQUEST_TIMEOUT: Duration = Duration::from_secs(3);
 const RESET_CREDIT_CONSUME_TIMEOUT: Duration = Duration::from_secs(10);
+const ACCESS_TOKEN_REFRESH_WINDOW: Duration = Duration::from_secs(5 * 60);
 const MAX_JSON_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MAX_STREAM_EVENT_BYTES: usize = 1024 * 1024;
 
@@ -356,7 +357,7 @@ impl ChatGptService {
         body: Option<Value>,
         response_context_id: Option<&str>,
     ) -> Result<Response, ServiceError> {
-        let tokens = self.oauth.load_tokens(&self.storage, connection_id)?;
+        let tokens = self.load_request_tokens(connection_id).await?;
         let observed_access_token = Zeroizing::new(tokens.access_token().to_owned());
         let response = self
             .request_once(
@@ -405,9 +406,10 @@ impl ChatGptService {
         if *cancellation.borrow() {
             return Ok(None);
         }
-        let tokens = self
-            .oauth
-            .load_tokens(&self.storage, request.connection_id)?;
+        let tokens = self.load_request_tokens(request.connection_id).await?;
+        if *cancellation.borrow() {
+            return Ok(None);
+        }
         let observed_access_token = Zeroizing::new(tokens.access_token().to_owned());
         let first_result = tokio::select! {
             changed = cancellation.changed() => {
@@ -490,6 +492,21 @@ impl ChatGptService {
             request = request.json(body);
         }
         request.send().await.map_err(|_| network_error())
+    }
+
+    async fn load_request_tokens(
+        &self,
+        connection_id: &str,
+    ) -> Result<OAuthTokenPair, ServiceError> {
+        let tokens = self.oauth.load_tokens(&self.storage, connection_id)?;
+        if !tokens.expires_within(SystemTime::now(), ACCESS_TOKEN_REFRESH_WINDOW) {
+            return Ok(tokens);
+        }
+
+        let observed_access_token = Zeroizing::new(tokens.access_token().to_owned());
+        self.refresh_if_unchanged(connection_id, &observed_access_token)
+            .await?;
+        self.oauth.load_tokens(&self.storage, connection_id)
     }
 
     async fn refresh_if_unchanged(

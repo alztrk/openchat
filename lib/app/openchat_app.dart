@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:drift/isolate.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -48,7 +49,7 @@ class _OpenChatAppState extends State<OpenChatApp> {
   late final OpenCodeApiKeyStore _openCodeApiKeyStore;
   late final SettingsPreferences _settingsPreferences;
   late final OpenChatServiceClient _serviceClient;
-  late final Future<_AppRuntime> _runtimeReady;
+  late Future<_AppRuntime> _runtimeReady;
   late final Future<void> _themeModeReady;
   late final Future<void> _localeReady;
   late final Future<void> _conversationStyleReady;
@@ -103,64 +104,194 @@ class _OpenChatAppState extends State<OpenChatApp> {
   }
 
   Future<_AppRuntime> _initializeRuntime() async {
-    OpenChatDatabase? database;
-    try {
-      String? databasePath;
-      if (Platform.isWindows) {
-        await _serviceClient.start();
-        final health = await _serviceClient.call('system.health');
-        final resolvedPath = health['database_path'];
-        if (resolvedPath is! String || resolvedPath.isEmpty) {
-          throw const OpenChatServiceException(
-            code: 'invalid_storage_path',
-            message: 'The local service did not provide a database path.',
-          );
-        }
-        databasePath = resolvedPath;
-      }
+    const maximumAttempts = 3;
+    var attempt = 0;
+    String? previousFailureCode;
 
-      database = databasePath == null
-          ? OpenChatDatabase()
-          : OpenChatDatabase.atPath(databasePath);
-      await database.customSelect('SELECT 1').getSingle();
-      if (Platform.isWindows) {
-        final initialization = await _serviceClient.call('system.initialize');
-        if (initialization['status'] != 'ready') {
-          throw const OpenChatServiceException(
-            code: 'storage_initialization_failed',
-            message: 'Local conversation storage could not be initialized.',
-          );
+    while (true) {
+      attempt++;
+      OpenChatDatabase? database;
+      var phase = 'service_start';
+
+      try {
+        String? databasePath;
+        if (Platform.isWindows) {
+          await _serviceClient.start();
+          phase = 'service_health';
+          final health = await _serviceClient.call('system.health');
+          final resolvedPath = health['database_path'];
+          if (resolvedPath is! String || resolvedPath.isEmpty) {
+            throw const OpenChatServiceException(
+              code: 'invalid_storage_path',
+              message: 'The local service did not provide a database path.',
+            );
+          }
+          databasePath = resolvedPath;
         }
-      }
-      _serviceClient.completeDatabaseInitialization();
-      return _AppRuntime(database, ChatRepository(database));
-    } on Object catch (error, stackTrace) {
-      _serviceClient.completeDatabaseInitialization(
-        error: error is OpenChatServiceException
+
+        phase = 'database_open';
+        final initializedDatabase = databasePath == null
+            ? OpenChatDatabase()
+            : OpenChatDatabase.atPath(databasePath);
+        database = initializedDatabase;
+        await initializedDatabase.customSelect('SELECT 1').getSingle();
+        if (Platform.isWindows) {
+          phase = 'service_initialize';
+          final initialization = await _serviceClient.call('system.initialize');
+          if (initialization['status'] != 'ready') {
+            throw const OpenChatServiceException(
+              code: 'storage_initialization_failed',
+              message: 'Local conversation storage could not be initialized.',
+            );
+          }
+        }
+
+        _serviceClient.completeDatabaseInitialization();
+        await _writeRuntimeDiagnostic(
+          event: attempt > 1
+              ? 'runtime_initialization_recovered'
+              : 'runtime_initialization_succeeded',
+          phase: phase,
+          attempt: attempt,
+          code: previousFailureCode ?? 'none',
+        );
+        return _AppRuntime(
+          initializedDatabase,
+          ChatRepository(initializedDatabase),
+        );
+      } on Object catch (error, stackTrace) {
+        final failure = error is OpenChatServiceException
             ? error
             : const OpenChatServiceException(
                 code: 'storage_initialization_failed',
                 message: 'Local conversation storage could not be initialized.',
+              );
+        previousFailureCode = _startupFailureCode(error);
+        await _writeRuntimeDiagnostic(
+          event: 'runtime_initialization_failed',
+          phase: phase,
+          attempt: attempt,
+          code: previousFailureCode,
+        );
+        if (database != null) {
+          try {
+            await database.close();
+          } on Object catch (closeError, closeStackTrace) {
+            FlutterError.reportError(
+              FlutterErrorDetails(
+                exception: closeError,
+                stack: closeStackTrace,
+                library: 'storage',
+                context: ErrorDescription(
+                  'while closing the database after initialization failed',
+                ),
               ),
-      );
-      if (database != null) {
-        try {
-          await database.close();
-        } on Object catch (closeError, closeStackTrace) {
-          FlutterError.reportError(
-            FlutterErrorDetails(
-              exception: closeError,
-              stack: closeStackTrace,
-              library: 'storage',
-              context: ErrorDescription(
-                'while closing the database after initialization failed',
-              ),
-            ),
-          );
+            );
+          }
         }
+
+        if (attempt < maximumAttempts && _isRetryableRuntimeFailure(error)) {
+          try {
+            await _serviceClient.restartAfterInitializationFailure();
+          } on Object catch (restartError, restartStackTrace) {
+            final restartFailure = restartError is OpenChatServiceException
+                ? restartError
+                : const OpenChatServiceException(
+                    code: 'service_restart_failed',
+                    message: 'The local service could not be restarted.',
+                    retryable: true,
+                  );
+            await _writeRuntimeDiagnostic(
+              event: 'runtime_recovery_failed',
+              phase: 'service_restart',
+              attempt: attempt,
+              code: restartFailure.code,
+            );
+            _serviceClient.completeDatabaseInitialization(
+              error: restartFailure,
+            );
+            Error.throwWithStackTrace(restartError, restartStackTrace);
+          }
+          await Future<void>.delayed(Duration(milliseconds: 300 * attempt));
+          continue;
+        }
+
+        _serviceClient.completeDatabaseInitialization(error: failure);
+        Error.throwWithStackTrace(error, stackTrace);
       }
-      Error.throwWithStackTrace(error, stackTrace);
     }
+  }
+
+  String _startupFailureCode(Object error) {
+    if (error is OpenChatServiceException) return error.code;
+    if (error is! DriftRemoteException) return error.runtimeType.toString();
+
+    final cause = error.remoteCause.toString();
+    final sqliteCode = RegExp(r'\bSqliteException\((\d+)\)')
+        .firstMatch(cause)
+        ?.group(1);
+    return sqliteCode == null
+        ? 'drift_remote_error'
+        : 'drift_sqlite_$sqliteCode';
+  }
+
+  bool _isRetryableRuntimeFailure(Object error) {
+    if (error is OpenChatServiceException) {
+      return error.code != 'invalid_storage_path' &&
+          error.code != 'service_executable_missing';
+    }
+    return true;
+  }
+
+  Future<void> _writeRuntimeDiagnostic({
+    required String event,
+    required String phase,
+    required int attempt,
+    required String code,
+  }) async {
+    if (!Platform.isWindows) return;
+
+    final localAppData = Platform.environment['LOCALAPPDATA'];
+    if (localAppData == null || localAppData.isEmpty) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: StateError('The local app data directory is unavailable.'),
+          library: 'runtime_startup',
+        ),
+      );
+      return;
+    }
+
+    try {
+      final logDirectory = Directory(
+        '$localAppData${Platform.pathSeparator}OpenChat${Platform.pathSeparator}logs',
+      );
+      await logDirectory.create(recursive: true);
+      final logFile = File(
+        '${logDirectory.path}${Platform.pathSeparator}openchat-app.log',
+      );
+      final safeCode = code.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      await logFile.writeAsString(
+        'timestamp_unix_ms=$timestamp component=app event=$event phase=$phase attempt=$attempt code=$safeCode\n',
+        mode: FileMode.append,
+        flush: true,
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'runtime_startup',
+          context: ErrorDescription('while recording startup diagnostics'),
+        ),
+      );
+    }
+  }
+
+  void _retryRuntimeInitialization() {
+    _serviceClient.resetDatabaseInitialization();
+    setState(() => _runtimeReady = _initializeRuntime());
   }
 
   Future<void> _loadThemeMode() async {
@@ -374,6 +505,9 @@ class _OpenChatAppState extends State<OpenChatApp> {
               apiCompatibleProviderKeyStore: _apiCompatibleProviderKeyStore,
               openCodeApiKeyStore: _openCodeApiKeyStore,
               serviceClient: _serviceClient,
+              onRetryStorage: snapshot.hasError
+                  ? _retryRuntimeInitialization
+                  : null,
               historyStorageStatus: storageStatus,
             );
           },

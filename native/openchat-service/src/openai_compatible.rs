@@ -133,12 +133,16 @@ fn terminal_result(
     elapsed: Duration,
     output_tokens: Option<i64>,
 ) -> Value {
+    let tokens_per_second = output_tokens.and_then(|tokens| {
+        let seconds = elapsed.as_secs_f64();
+        (seconds > 0.0).then_some(tokens as f64 / seconds)
+    });
     json!({
         "conversationId": conversation_id,
         "messageId": message_id,
         "status": status,
         "outputTokens": output_tokens,
-        "tokensPerSecond": Value::Null,
+        "tokensPerSecond": tokens_per_second,
         "elapsedMicroseconds": elapsed.as_micros(),
     })
 }
@@ -534,7 +538,10 @@ mod tests {
         let items = super::request::responses_input_items(&messages);
         assert_eq!(items.len(), 5);
         assert_eq!(items[0]["role"], "developer");
-        assert_eq!(items[0]["content"][0]["text"], "You are a helpful assistant.");
+        assert_eq!(
+            items[0]["content"][0]["text"],
+            "You are a helpful assistant."
+        );
         assert_eq!(items[1]["role"], "user");
         assert_eq!(items[1]["content"][0]["text"], "Hello!");
         assert_eq!(items[2]["role"], "assistant");

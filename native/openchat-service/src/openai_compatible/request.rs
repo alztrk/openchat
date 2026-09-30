@@ -106,6 +106,7 @@ pub(super) fn chat_completion_body(
         "stream": true,
     });
     if is_opencode {
+        body["stream_options"] = json!({"include_usage": true});
         body["tools"] = json!(tools::opencode_wire_tools(&request.tools));
         body["tool_choice"] = json!("auto");
         body["parallel_tool_calls"] = json!(false);
@@ -186,7 +187,10 @@ pub(super) fn responses_input_items(messages: &[Value]) -> Vec<Value> {
                 }
             }
             "tool" => {
-                let call_id = msg.get("tool_call_id").and_then(Value::as_str).unwrap_or("");
+                let call_id = msg
+                    .get("tool_call_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
                 let content = msg.get("content").and_then(Value::as_str).unwrap_or("");
                 items.push(json!({
                     "type": "function_call_output",
@@ -200,10 +204,7 @@ pub(super) fn responses_input_items(messages: &[Value]) -> Vec<Value> {
     items
 }
 
-pub(super) fn responses_api_body(
-    request: &ProviderChatRequest,
-    messages: &[Value],
-) -> Value {
+pub(super) fn responses_api_body(request: &ProviderChatRequest, messages: &[Value]) -> Value {
     let mut body = json!({
         "model": request.model,
         "input": responses_input_items(messages),

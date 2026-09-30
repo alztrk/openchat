@@ -14,6 +14,7 @@ class ConversationSidebar extends StatelessWidget {
     this.showDivider = true,
     this.isLoading = false,
     this.errorMessage,
+    this.onRetryStorage,
     this.projects = const <ConversationSidebarProject>[],
     this.pinnedConversations = const <ConversationSidebarConversation>[],
     this.conversations = const <ConversationSidebarConversation>[],
@@ -43,6 +44,7 @@ class ConversationSidebar extends StatelessWidget {
   final bool showDivider;
   final bool isLoading;
   final String? errorMessage;
+  final VoidCallback? onRetryStorage;
   final List<ConversationSidebarProject> projects;
   final List<ConversationSidebarConversation> pinnedConversations;
   final List<ConversationSidebarConversation> conversations;
@@ -180,6 +182,7 @@ class ConversationSidebar extends StatelessWidget {
                           _SidebarSection(
                             title: l10n.chats,
                             emptyMessage: errorMessage ?? l10n.historyLoading,
+                            onRetry: onRetryStorage,
                           ),
                         ],
                       );
@@ -357,17 +360,22 @@ class ConversationSidebar extends StatelessWidget {
 }
 
 class _SidebarSection extends StatelessWidget {
-  const _SidebarSection({required this.title, required this.emptyMessage});
+  const _SidebarSection({
+    required this.title,
+    required this.emptyMessage,
+    this.onRetry,
+  });
 
   final String title;
   final String emptyMessage;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
-    return SizedBox(
-      height: 56,
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: onRetry == null ? 56 : 104),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -385,11 +393,11 @@ class _SidebarSection extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          SizedBox(
-            height: 18,
+          Padding(
+            padding: EdgeInsets.only(bottom: onRetry == null ? 0 : 2),
             child: Text(
               emptyMessage,
-              maxLines: 1,
+              maxLines: onRetry == null ? 1 : 2,
               overflow: TextOverflow.ellipsis,
               style: textTheme.bodyMedium?.copyWith(
                 fontSize: 13,
@@ -398,6 +406,16 @@ class _SidebarSection extends StatelessWidget {
               ),
             ),
           ),
+          if (onRetry case final retry?)
+            TextButton.icon(
+              onPressed: retry,
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: Text(context.openchatL10n.retry),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+            ),
         ],
       ),
     );

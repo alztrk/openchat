@@ -9,7 +9,7 @@ class OpenChatServiceClient {
   static const _maximumMessageBytes = 1024 * 1024;
 
   final Map<int, _PendingServiceCall> _pendingRequests = {};
-  final Completer<OpenChatServiceException?> _databaseInitialization =
+  Completer<OpenChatServiceException?> _databaseInitialization =
       Completer<OpenChatServiceException?>();
   final StreamController<OpenChatServiceEvent> _events =
       StreamController<OpenChatServiceEvent>.broadcast();
@@ -25,6 +25,60 @@ class OpenChatServiceClient {
   void completeDatabaseInitialization({OpenChatServiceException? error}) {
     if (_databaseInitialization.isCompleted) return;
     _databaseInitialization.complete(error);
+  }
+
+  void resetDatabaseInitialization() {
+    if (!_databaseInitialization.isCompleted) {
+      throw StateError('Database initialization is still in progress.');
+    }
+    _databaseInitialization = Completer<OpenChatServiceException?>();
+  }
+
+  Future<void> restartAfterInitializationFailure() async {
+    final process = _process;
+    if (process == null) return;
+
+    _isClosing = true;
+    var exited = false;
+    Future<void>? cancelStdout;
+    Future<void>? cancelStderr;
+    try {
+      process.kill();
+      try {
+        await process.exitCode.timeout(const Duration(seconds: 2));
+        exited = true;
+      } on TimeoutException {
+        process.kill();
+        try {
+          await process.exitCode.timeout(const Duration(seconds: 2));
+          exited = true;
+        } on TimeoutException {
+          throw const OpenChatServiceException(
+            code: 'service_restart_timeout',
+            message:
+                'The local service did not stop after initialization failed.',
+            retryable: true,
+          );
+        }
+      }
+    } finally {
+      _isClosing = false;
+      if (exited && identical(_process, process)) {
+        _process = null;
+        cancelStdout = _stdoutSubscription?.cancel();
+        cancelStderr = _stderrSubscription?.cancel();
+        _stdoutSubscription = null;
+        _stderrSubscription = null;
+        _failPending(
+          const OpenChatServiceException(
+            code: 'service_restarted',
+            message: 'The local service restarted after initialization failed.',
+          ),
+        );
+      }
+    }
+    await cancelStdout;
+    await cancelStderr;
   }
 
   Future<void> start() async {

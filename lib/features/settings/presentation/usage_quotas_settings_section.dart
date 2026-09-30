@@ -7,6 +7,7 @@ import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/openchat_toast.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/settings/domain/chat_gpt_usage_snapshot.dart';
+import 'package:openchat/features/settings/presentation/chat_gpt_usage_bucket_label.dart';
 import 'package:openchat/features/settings/presentation/settings_widgets.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
@@ -563,14 +564,12 @@ class _UsageQuotasSettingsSectionState
             const SizedBox(height: 12),
             SettingsDivider(color: palette.border),
             const SizedBox(height: 10),
-            for (final workspace in connection.workspaces) ...[
+            for (final (index, workspace) in connection.workspaces.indexed) ...[
               if (connection.workspaces.length > 1)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
-                    l10n.workspaceQuotaLabel(
-                      workspace.displayName ?? workspace.id,
-                    ),
+                    _workspaceQuotaHeading(workspace, index, l10n),
                     style: TextStyle(
                       color: palette.secondaryText,
                       fontSize: 12,
@@ -584,6 +583,17 @@ class _UsageQuotasSettingsSectionState
         ),
       ),
     );
+  }
+
+  String _workspaceQuotaHeading(
+    ChatGptWorkspace workspace,
+    int index,
+    AppLocalizations l10n,
+  ) {
+    final name = workspace.displayName?.trim();
+    return name == null || name.isEmpty
+        ? l10n.workspaceNumbered(index + 1)
+        : l10n.workspaceQuotaLabel(name);
   }
 
   Widget _buildWorkspaceUsage(
@@ -694,11 +704,7 @@ class _UsageQuotasSettingsSectionState
               children: [
                 Expanded(
                   child: Text(
-                    switch (bucket.limitId) {
-                      'codex:primary' => l10n.usageFiveHour,
-                      'codex:secondary' => l10n.usageWeekly,
-                      _ => bucket.limitId,
-                    },
+                    chatGptUsageBucketLabel(bucket, l10n),
                     style: TextStyle(
                       color: palette.text,
                       fontSize: 12,
@@ -712,10 +718,7 @@ class _UsageQuotasSettingsSectionState
                       : l10n.usageUsedPercent(
                           bucket.usedPercent!.toStringAsFixed(0),
                         ),
-                  style: TextStyle(
-                    color: palette.secondaryText,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: palette.secondaryText, fontSize: 12),
                 ),
               ],
             ),
@@ -757,7 +760,9 @@ class _UsageQuotasSettingsSectionState
 
     return Container(
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+        color: theme.colorScheme.surfaceContainerHighest.withValues(
+          alpha: 0.35,
+        ),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: palette.border),
       ),
@@ -788,7 +793,11 @@ class _UsageQuotasSettingsSectionState
             ],
           ),
           if (snapshot.resetCredits.isNotEmpty)
-            for (var index = 0; index < snapshot.resetCredits.length; index++) ...[
+            for (
+              var index = 0;
+              index < snapshot.resetCredits.length;
+              index++
+            ) ...[
               if (index > 0)
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
@@ -808,10 +817,7 @@ class _UsageQuotasSettingsSectionState
               padding: const EdgeInsets.only(top: 8),
               child: Text(
                 l10n.resetCreditRefreshRequired,
-                style: TextStyle(
-                  color: theme.colorScheme.error,
-                  fontSize: 11,
-                ),
+                style: TextStyle(color: theme.colorScheme.error, fontSize: 11),
               ),
             ),
         ],
@@ -873,8 +879,8 @@ class _UsageQuotasSettingsSectionState
             onPressed: isConfirming || isRedeeming || needsRefresh
                 ? null
                 : () => unawaited(
-                      _redeemResetCredit(connection, workspace, credit),
-                    ),
+                    _redeemResetCredit(connection, workspace, credit),
+                  ),
             icon: isRedeeming
                 ? const SizedBox.square(
                     dimension: 14,

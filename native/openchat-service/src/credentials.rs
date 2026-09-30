@@ -1,6 +1,11 @@
-use std::sync::Mutex;
+use std::{
+    sync::Mutex,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use keyring::{Entry, Error as KeyringError};
+use serde::Deserialize;
 use zeroize::Zeroizing;
 
 const CREDENTIAL_SERVICE: &str = "OpenChat.ChatGPT.OAuth";
@@ -47,6 +52,7 @@ impl OAuthCredentialReference {
 pub struct OAuthTokenPair {
     access_token: Zeroizing<String>,
     refresh_token: Zeroizing<String>,
+    expires_at_unix_seconds: Option<u64>,
 }
 
 impl OAuthTokenPair {
@@ -55,10 +61,12 @@ impl OAuthTokenPair {
         let refresh_token = Zeroizing::new(refresh_token);
         validate_token(&access_token)?;
         validate_token(&refresh_token)?;
+        let expires_at_unix_seconds = access_token_expiration(&access_token);
 
         Ok(Self {
             access_token,
             refresh_token,
+            expires_at_unix_seconds,
         })
     }
 
@@ -69,6 +77,38 @@ impl OAuthTokenPair {
     pub fn refresh_token(&self) -> &str {
         self.refresh_token.as_str()
     }
+
+    pub fn expires_within(&self, now: SystemTime, window: Duration) -> bool {
+        let Some(expires_at) = self.expires_at_unix_seconds else {
+            return false;
+        };
+        let Ok(now) = now.duration_since(UNIX_EPOCH) else {
+            return true;
+        };
+        expires_at <= now.as_secs().saturating_add(window.as_secs())
+    }
+}
+
+#[derive(Deserialize)]
+struct AccessTokenClaims {
+    exp: Option<u64>,
+}
+
+fn access_token_expiration(access_token: &str) -> Option<u64> {
+    let mut parts = access_token.split('.');
+    let (Some(header), Some(payload), Some(signature), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return None;
+    };
+    if header.is_empty() || payload.is_empty() || signature.is_empty() {
+        return None;
+    }
+
+    let payload = Zeroizing::new(URL_SAFE_NO_PAD.decode(payload).ok()?);
+    serde_json::from_slice::<AccessTokenClaims>(&payload)
+        .ok()?
+        .exp
 }
 
 #[derive(Default)]
@@ -225,9 +265,11 @@ fn token_pair(
         (Some(access_token), Some(refresh_token)) => {
             validate_token(&access_token)?;
             validate_token(&refresh_token)?;
+            let expires_at_unix_seconds = access_token_expiration(&access_token);
             Ok(Some(OAuthTokenPair {
                 access_token,
                 refresh_token,
+                expires_at_unix_seconds,
             }))
         }
         (None, None) => Ok(None),

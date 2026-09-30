@@ -1,10 +1,11 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'package:openchat/features/settings/data/api_key_format.dart';
+
 class OpenCodeApiKeyStore {
   OpenCodeApiKeyStore(this._secureStorage);
 
   static const _storageKey = 'openchat.opencode.console_api_key';
-  static const _maximumKeyLength = 4096;
 
   final FlutterSecureStorage _secureStorage;
 
@@ -24,10 +25,7 @@ class OpenCodeApiKeyStore {
 
   Future<void> saveApiKey(String input) async {
     final key = input.trim();
-    if (key.isEmpty ||
-        key.length > _maximumKeyLength ||
-        key.contains('\n') ||
-        key.contains('\r')) {
+    if (!ApiKeyFormat.isValid('opencode', key)) {
       throw const InvalidOpenCodeApiKeyException();
     }
     try {

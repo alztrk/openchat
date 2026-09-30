@@ -3,7 +3,8 @@ use rusqlite::OptionalExtension;
 use crate::{protocol::ServiceError, storage::AppStorage};
 
 use super::{
-    CHAT_URL, OPENAI_CHAT_URL, RESPONSES_URL, api_compatible_provider, authentication_required_error, model_error,
+    CHAT_URL, OPENAI_CHAT_URL, RESPONSES_URL, api_compatible_provider,
+    authentication_required_error, model_error,
     models::{is_supported_free_chat_model, is_supported_paid_chat_model},
     openai_authentication_required_error, provider_authentication_required_error, route_error,
     storage_error,
@@ -84,7 +85,11 @@ pub(super) fn resolve_chat_route(
             if api_key.is_none() {
                 return Err(provider_authentication_required_error(id));
             }
-            (format!("{}/chat/completions", provider.base_url), false, false)
+            (
+                format!("{}/chat/completions", provider.base_url),
+                false,
+                false,
+            )
         }
         None => return Err(route_error()),
     };

@@ -5,6 +5,7 @@ import 'package:openchat/l10n/openchat_localizations.dart';
 
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/settings/domain/chat_gpt_usage_snapshot.dart';
+import 'package:openchat/features/settings/presentation/chat_gpt_usage_bucket_label.dart';
 
 class ChatGptUsageDetails extends StatelessWidget {
   const ChatGptUsageDetails({
@@ -136,11 +137,7 @@ class ChatGptUsageDetails extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            switch (bucket.limitId) {
-                              'codex:primary' => l10n.usageFiveHour,
-                              'codex:secondary' => l10n.usageWeekly,
-                              _ => bucket.limitId,
-                            },
+                            chatGptUsageBucketLabel(bucket, l10n),
                             style: TextStyle(
                               color: palette.secondaryText,
                               fontSize: 12,

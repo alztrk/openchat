@@ -152,7 +152,8 @@ pub(super) fn handle_responses_api_event(
                         .and_then(Value::as_u64)
                         .and_then(|v| usize::try_from(v).ok())
                         .unwrap_or(calls.len());
-                    if !calls.contains_key(&index) && calls.len() >= tools::MAX_TOOL_CALLS_PER_TURN {
+                    if !calls.contains_key(&index) && calls.len() >= tools::MAX_TOOL_CALLS_PER_TURN
+                    {
                         return Err(tools::tool_call_limit_error());
                     }
                     let call = calls.entry(index).or_default();
@@ -178,7 +179,8 @@ pub(super) fn handle_responses_api_event(
                 .unwrap_or(0);
             if let Some(delta) = value.get("delta").and_then(Value::as_str) {
                 let call = calls.entry(index).or_default();
-                if call.arguments.len().saturating_add(delta.len()) > tools::MAX_TOOL_ARGUMENT_BYTES {
+                if call.arguments.len().saturating_add(delta.len()) > tools::MAX_TOOL_ARGUMENT_BYTES
+                {
                     return Err(invalid_response_error());
                 }
                 call.arguments.push_str(delta);
