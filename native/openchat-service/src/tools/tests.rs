@@ -1383,7 +1383,8 @@ async fn simulate_execute_command_with_user_permission_approval_flow() {
 fn web_search_clean_html_tags_and_ddg_html_parsing() {
     use super::web_search::{clean_html_tags, parse_duckduckgo_html};
 
-    let messy_text = "<b>Hello &amp; Welcome</b> to the &quot;OpenChat&quot; test! &#39;Fast&#39; &lt;&gt;";
+    let messy_text =
+        "<b>Hello &amp; Welcome</b> to the &quot;OpenChat&quot; test! &#39;Fast&#39; &lt;&gt;";
     assert_eq!(
         clean_html_tags(messy_text),
         "Hello & Welcome to the \"OpenChat\" test! 'Fast' <>"
@@ -1415,7 +1416,10 @@ fn web_search_tool_wire_and_internal_names() {
     assert_eq!(opencode_wire_name("read_url"), "read_url_content");
 
     assert_eq!(internal_tool_name(true, "web_search"), "web_search");
-    assert_eq!(internal_tool_name(true, "read_url_content"), "read_url_content");
+    assert_eq!(
+        internal_tool_name(true, "read_url_content"),
+        "read_url_content"
+    );
     assert_eq!(internal_tool_name(true, "read_url"), "read_url_content");
 }
 
@@ -1460,7 +1464,9 @@ fn tool_executor_prepares_web_search_and_read_url() {
         name: "read_url_content".to_owned(),
         arguments: json!({"url": "https://example.com/article", "max_chars": 2000}),
     };
-    let prepared_read = executor.prepare_call(&read_call).expect("prepare read_url_content");
+    let prepared_read = executor
+        .prepare_call(&read_call)
+        .expect("prepare read_url_content");
     assert_eq!(prepared_read.requested_path, "https://example.com/article");
     if let ToolOperation::ReadUrlContent { url, max_chars } = prepared_read.operation {
         assert_eq!(url, "https://example.com/article");
@@ -1533,7 +1539,10 @@ async fn live_manual_benchmark_web_search_and_read_url() {
             println!("Kesildi mi (truncated): {}", val["truncated"]);
             let content = val["content"].as_str().unwrap_or("");
             let preview: String = content.chars().take(500).collect();
-            println!("\nIcerik Onizleme (Ilk 500 karakter):\n---\n{}\n---", preview);
+            println!(
+                "\nIcerik Onizleme (Ilk 500 karakter):\n---\n{}\n---",
+                preview
+            );
         }
         Err(err) => {
             println!("Hata: {}", err);
@@ -1551,17 +1560,17 @@ async fn live_manual_benchmark_web_search_and_read_url() {
     println!("Sorgu: \"{}\"", tr_query);
     println!("Gecikme: {} ms", tr_elapsed.as_millis());
     let mut tr_url = None;
-    if let Ok(val) = tr_res {
-        if let Some(results) = val["results"].as_array() {
-            for (i, item) in results.iter().enumerate() {
-                let title = item["title"].as_str().unwrap_or("");
-                let url = item["url"].as_str().unwrap_or("");
-                let engine = item["engine"].as_str().unwrap_or("");
-                println!("  [{}] Motor: {} | Baslik: {}", i + 1, engine, title);
-                println!("      URL: {}", url);
-                if tr_url.is_none() && !url.is_empty() {
-                    tr_url = Some(url.to_owned());
-                }
+    if let Ok(val) = tr_res
+        && let Some(results) = val["results"].as_array()
+    {
+        for (i, item) in results.iter().enumerate() {
+            let title = item["title"].as_str().unwrap_or("");
+            let url = item["url"].as_str().unwrap_or("");
+            let engine = item["engine"].as_str().unwrap_or("");
+            println!("  [{}] Motor: {} | Baslik: {}", i + 1, engine, title);
+            println!("      URL: {}", url);
+            if tr_url.is_none() && !url.is_empty() {
+                tr_url = Some(url.to_owned());
             }
         }
     }
@@ -1570,7 +1579,10 @@ async fn live_manual_benchmark_web_search_and_read_url() {
         let start_tr_read = Instant::now();
         let tr_read_res = execute_read_url(&url, Some(1500)).await;
         let tr_read_elapsed = start_tr_read.elapsed();
-        println!("\nTURKCE SAYFA OKUMA Gecikmesi: {} ms", tr_read_elapsed.as_millis());
+        println!(
+            "\nTURKCE SAYFA OKUMA Gecikmesi: {} ms",
+            tr_read_elapsed.as_millis()
+        );
         if let Ok(val) = tr_read_res {
             println!("Sayfa Basligi: {}", val["title"].as_str().unwrap_or(""));
             println!("Okunan Karakter: {}", val["length"]);
@@ -1584,7 +1596,11 @@ async fn live_manual_benchmark_web_search_and_read_url() {
     let cache_elapsed = start_cache.elapsed();
     println!("4. ONBELLEK (CACHE) HIZ TESTI:");
     println!("Ayni sorgu tekrar calistirildi.");
-    println!("Onbellek Gecikmesi: {} mikro-saniye ({} ms)", cache_elapsed.as_micros(), cache_elapsed.as_millis());
+    println!(
+        "Onbellek Gecikmesi: {} mikro-saniye ({} ms)",
+        cache_elapsed.as_micros(),
+        cache_elapsed.as_millis()
+    );
     assert!(cache_res.is_ok());
 
     println!("========== [CANLI TEST BITTI] ==========\n");

@@ -144,13 +144,15 @@ pub fn parse_bing_html(html: &str, limit: usize) -> Vec<SearchResultItem> {
                     String::new()
                 };
 
-                let target_url = decode_bing_url(href).or_else(|| {
-                    if href.starts_with("http") && !href.contains("bing.com/ck/") {
-                        Some(href.to_owned())
-                    } else {
-                        extract_cite_url(block)
-                    }
-                }).unwrap_or_default();
+                let target_url = decode_bing_url(href)
+                    .or_else(|| {
+                        if href.starts_with("http") && !href.contains("bing.com/ck/") {
+                            Some(href.to_owned())
+                        } else {
+                            extract_cite_url(block)
+                        }
+                    })
+                    .unwrap_or_default();
 
                 let snippet = if let Some(cap_idx) = block.find("b_caption") {
                     let cap_part = &block[cap_idx..];
@@ -213,12 +215,11 @@ fn decode_bing_url(raw_href: &str) -> Option<String> {
         .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(b64_str))
         .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(b64_str));
 
-    if let Ok(bytes) = decoded {
-        if let Ok(url) = String::from_utf8(bytes) {
-            if url.starts_with("http") {
-                return Some(url);
-            }
-        }
+    if let Ok(bytes) = decoded
+        && let Ok(url) = String::from_utf8(bytes)
+        && url.starts_with("http")
+    {
+        return Some(url);
     }
     None
 }
@@ -263,10 +264,22 @@ async fn search_searxng_instance(
     let mut items = Vec::new();
     if let Some(results) = json_val.get("results").and_then(Value::as_array) {
         for res in results.iter().take(limit * 2) {
-            let title = res.get("title").and_then(Value::as_str).unwrap_or("").trim();
+            let title = res
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim();
             let link = res.get("url").and_then(Value::as_str).unwrap_or("").trim();
-            let snippet = res.get("content").and_then(Value::as_str).unwrap_or("").trim();
-            let engine = res.get("engine").and_then(Value::as_str).unwrap_or("google").to_lowercase();
+            let snippet = res
+                .get("content")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .trim();
+            let engine = res
+                .get("engine")
+                .and_then(Value::as_str)
+                .unwrap_or("google")
+                .to_lowercase();
 
             if !title.is_empty() && !link.is_empty() && link.starts_with("http") {
                 items.push(SearchResultItem {
@@ -287,7 +300,10 @@ async fn search_searxng_instance(
 }
 
 /// Fallback: Fetches results from DuckDuckGo HTML endpoint (zero-JS)
-async fn search_duckduckgo_html(query: &str, limit: usize) -> Result<Vec<SearchResultItem>, String> {
+async fn search_duckduckgo_html(
+    query: &str,
+    limit: usize,
+) -> Result<Vec<SearchResultItem>, String> {
     let resp = HTTP_CLIENT
         .post("https://html.duckduckgo.com/html/")
         .form(&[("q", query), ("b", "")])
@@ -342,7 +358,9 @@ pub fn parse_duckduckgo_html(html: &str, limit: usize) -> Vec<SearchResultItem> 
         cursor = a_end + 4;
 
         let snippet_search_window = 1500.min(html.len().saturating_sub(cursor));
-        let snippet = if let Some(snip_idx) = html[cursor..cursor + snippet_search_window].find("result__snippet") {
+        let snippet = if let Some(snip_idx) =
+            html[cursor..cursor + snippet_search_window].find("result__snippet")
+        {
             let snip_abs = cursor + snip_idx;
             if let Some(snip_close) = html[snip_abs..].find('>') {
                 let text_start = snip_abs + snip_close + 1;
@@ -372,16 +390,25 @@ pub fn parse_duckduckgo_html(html: &str, limit: usize) -> Vec<SearchResultItem> 
 }
 
 fn extract_ddg_target_url(raw_href: &str) -> String {
-    if let Ok(parsed) = Url::parse(raw_href) {
-        if let Some((_, target)) = parsed.query_pairs().find(|(k, _)| k == "uddg") {
-            return target.into_owned();
-        }
-    } else if let Ok(parsed) = Url::parse(&format!("https://duckduckgo.com{raw_href}")) {
-        if let Some((_, target)) = parsed.query_pairs().find(|(k, _)| k == "uddg") {
-            return target.into_owned();
+    match Url::parse(raw_href) {
+        Ok(parsed) => parsed
+            .query_pairs()
+            .find(|(key, _)| key == "uddg")
+            .map(|(_, target)| target.into_owned())
+            .unwrap_or_else(|| raw_href.to_owned()),
+        Err(_) => {
+            let absolute_url = format!("https://duckduckgo.com{raw_href}");
+            Url::parse(&absolute_url)
+                .ok()
+                .and_then(|parsed| {
+                    parsed
+                        .query_pairs()
+                        .find(|(key, _)| key == "uddg")
+                        .map(|(_, target)| target.into_owned())
+                })
+                .unwrap_or_else(|| raw_href.to_owned())
         }
     }
-    raw_href.to_owned()
 }
 
 pub fn clean_html_tags(text: &str) -> String {
@@ -409,47 +436,46 @@ pub fn clean_html_tags(text: &str) -> String {
         }
 
         // Entity check
-        if b == b'&' {
-            if let Some(semi_rel) = bytes[cursor..].iter().position(|&x| x == b';') {
-                if semi_rel <= 10 {
-                    let entity = &text[cursor..cursor + semi_rel + 1];
-                    let ch = if entity.starts_with("&#x") || entity.starts_with("&#X") {
-                        u32::from_str_radix(&entity[3..entity.len() - 1], 16)
-                            .ok()
-                            .and_then(char::from_u32)
-                    } else if entity.starts_with("&#") {
-                        entity[2..entity.len() - 1]
-                            .parse::<u32>()
-                            .ok()
-                            .and_then(char::from_u32)
-                    } else {
-                        match entity {
-                            "&amp;" => Some('&'),
-                            "&lt;" => Some('<'),
-                            "&gt;" => Some('>'),
-                            "&quot;" => Some('"'),
-                            "&#39;" | "&apos;" | "&#x27;" => Some('\''),
-                            "&nbsp;" => Some(' '),
-                            "&mdash;" | "&ndash;" => Some('-'),
-                            "&hellip;" => Some('…'),
-                            _ => None,
-                        }
-                    };
-
-                    if let Some(c) = ch {
-                        cursor += semi_rel + 1;
-                        if c.is_whitespace() {
-                            if !last_was_space {
-                                out.push(' ');
-                                last_was_space = true;
-                            }
-                        } else {
-                            out.push(c);
-                            last_was_space = false;
-                        }
-                        continue;
-                    }
+        if b == b'&'
+            && let Some(semi_rel) = bytes[cursor..].iter().position(|&x| x == b';')
+            && semi_rel <= 10
+        {
+            let entity = &text[cursor..cursor + semi_rel + 1];
+            let ch = if entity.starts_with("&#x") || entity.starts_with("&#X") {
+                u32::from_str_radix(&entity[3..entity.len() - 1], 16)
+                    .ok()
+                    .and_then(char::from_u32)
+            } else if entity.starts_with("&#") {
+                entity[2..entity.len() - 1]
+                    .parse::<u32>()
+                    .ok()
+                    .and_then(char::from_u32)
+            } else {
+                match entity {
+                    "&amp;" => Some('&'),
+                    "&lt;" => Some('<'),
+                    "&gt;" => Some('>'),
+                    "&quot;" => Some('"'),
+                    "&#39;" | "&apos;" | "&#x27;" => Some('\''),
+                    "&nbsp;" => Some(' '),
+                    "&mdash;" | "&ndash;" => Some('-'),
+                    "&hellip;" => Some('…'),
+                    _ => None,
                 }
+            };
+
+            if let Some(c) = ch {
+                cursor += semi_rel + 1;
+                if c.is_whitespace() {
+                    if !last_was_space {
+                        out.push(' ');
+                        last_was_space = true;
+                    }
+                } else {
+                    out.push(c);
+                    last_was_space = false;
+                }
+                continue;
             }
         }
 
@@ -479,27 +505,29 @@ pub fn clean_html_tags(text: &str) -> String {
 /// Fetches encyclopedic / factual entries directly from Wikipedia OpenSearch API concurrently
 async fn search_wikipedia(query: &str, limit: usize) -> Result<Vec<SearchResultItem>, String> {
     let encoded: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
-    let tr_url = format!("https://tr.wikipedia.org/w/api.php?action=opensearch&search={encoded}&limit={limit}&namespace=0&format=json");
-    let en_url = format!("https://en.wikipedia.org/w/api.php?action=opensearch&search={encoded}&limit={limit}&namespace=0&format=json");
+    let tr_url = format!(
+        "https://tr.wikipedia.org/w/api.php?action=opensearch&search={encoded}&limit={limit}&namespace=0&format=json"
+    );
+    let en_url = format!(
+        "https://en.wikipedia.org/w/api.php?action=opensearch&search={encoded}&limit={limit}&namespace=0&format=json"
+    );
 
     let tr_fut = async {
-        if let Ok(resp) = HTTP_CLIENT.get(&tr_url).send().await {
-            if resp.status().is_success() {
-                if let Ok(json_val) = resp.json::<Value>().await {
-                    return parse_wikipedia_opensearch(&json_val);
-                }
-            }
+        if let Ok(resp) = HTTP_CLIENT.get(&tr_url).send().await
+            && resp.status().is_success()
+            && let Ok(json_val) = resp.json::<Value>().await
+        {
+            return parse_wikipedia_opensearch(&json_val);
         }
         Err("tr failed".to_string())
     };
 
     let en_fut = async {
-        if let Ok(resp) = HTTP_CLIENT.get(&en_url).send().await {
-            if resp.status().is_success() {
-                if let Ok(json_val) = resp.json::<Value>().await {
-                    return parse_wikipedia_opensearch(&json_val);
-                }
-            }
+        if let Ok(resp) = HTTP_CLIENT.get(&en_url).send().await
+            && resp.status().is_success()
+            && let Ok(json_val) = resp.json::<Value>().await
+        {
+            return parse_wikipedia_opensearch(&json_val);
         }
         Err("en failed".to_string())
     };
@@ -513,30 +541,36 @@ fn parse_wikipedia_opensearch(val: &Value) -> Result<Vec<SearchResultItem>, Stri
     let descs = val.get(2).and_then(Value::as_array);
     let urls = val.get(3).and_then(Value::as_array);
 
-    if let (Some(titles), Some(urls)) = (titles, urls) {
-        let mut items = Vec::new();
-        for (i, title_val) in titles.iter().enumerate() {
-            let title = title_val.as_str().unwrap_or("").trim();
-            let url = urls.get(i).and_then(Value::as_str).unwrap_or("").trim();
-            let snippet = descs.and_then(|d| d.get(i)).and_then(Value::as_str).unwrap_or("").trim();
-            if !title.is_empty() && !url.is_empty() {
-                items.push(SearchResultItem {
-                    title: title.to_owned(),
-                    url: url.to_owned(),
-                    snippet: if snippet.is_empty() {
-                        format!("Vikipedi makalesi: {title}")
-                    } else {
-                        snippet.to_owned()
-                    },
-                    engine: "wikipedia".to_owned(),
-                });
-            }
-        }
-        if !items.is_empty() {
-            return Ok(items);
+    let (Some(titles), Some(urls)) = (titles, urls) else {
+        return Err("No wikipedia results".to_string());
+    };
+    let mut items = Vec::new();
+    for (i, title_val) in titles.iter().enumerate() {
+        let title = title_val.as_str().unwrap_or("").trim();
+        let url = urls.get(i).and_then(Value::as_str).unwrap_or("").trim();
+        let snippet = descs
+            .and_then(|d| d.get(i))
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim();
+        if !title.is_empty() && !url.is_empty() {
+            items.push(SearchResultItem {
+                title: title.to_owned(),
+                url: url.to_owned(),
+                snippet: if snippet.is_empty() {
+                    format!("Vikipedi makalesi: {title}")
+                } else {
+                    snippet.to_owned()
+                },
+                engine: "wikipedia".to_owned(),
+            });
         }
     }
-    Err("No wikipedia results".to_string())
+    if items.is_empty() {
+        Err("No wikipedia results".to_string())
+    } else {
+        Ok(items)
+    }
 }
 
 /// Executes a fast parallel multi-engine web search (Bing + Wikipedia + DuckDuckGo + SearXNG)
@@ -545,24 +579,29 @@ pub async fn execute_web_search(query: &str, limit_opt: Option<usize>) -> Result
     if query_trimmed.is_empty() {
         return Err("Search query cannot be empty.".to_owned());
     }
-    let limit = limit_opt.unwrap_or(DEFAULT_SEARCH_LIMIT).clamp(1, MAX_SEARCH_LIMIT);
+    let limit = limit_opt
+        .unwrap_or(DEFAULT_SEARCH_LIMIT)
+        .clamp(1, MAX_SEARCH_LIMIT);
 
     // 1. Check cache
     {
         let cache = CACHE.lock().await;
-        if let Some((_, entry)) = cache.searches.iter().find(|(q, _)| q == query_trimmed) {
-            if entry.timestamp.elapsed() < Duration::from_secs(CACHE_TTL_SECS) {
-                return Ok(format_search_response(query_trimmed, &entry.data));
-            }
+        if let Some((_, entry)) = cache.searches.iter().find(|(q, _)| q == query_trimmed)
+            && entry.timestamp.elapsed() < Duration::from_secs(CACHE_TTL_SECS)
+        {
+            return Ok(format_search_response(query_trimmed, &entry.data));
         }
     }
 
     // 2. Primary Fast Race: Bing + Wikipedia (both sub-200ms)
     let bing_future = search_bing_html(query_trimmed, limit);
     let wiki_future = async {
-        tokio::time::timeout(Duration::from_millis(300), search_wikipedia(query_trimmed, 2))
-            .await
-            .unwrap_or(Err("Wikipedia timeout".to_string()))
+        tokio::time::timeout(
+            Duration::from_millis(300),
+            search_wikipedia(query_trimmed, 2),
+        )
+        .await
+        .unwrap_or(Err("Wikipedia timeout".to_string()))
     };
 
     let (bing_res, wiki_res) = tokio::join!(bing_future, wiki_future);
@@ -657,7 +696,10 @@ fn format_search_response(query: &str, results: &[SearchResultItem]) -> Value {
 }
 
 /// Reads a web page and converts its readable content to clean Markdown
-pub async fn execute_read_url(url_str: &str, max_chars_opt: Option<usize>) -> Result<Value, String> {
+pub async fn execute_read_url(
+    url_str: &str,
+    max_chars_opt: Option<usize>,
+) -> Result<Value, String> {
     let url_trimmed = url_str.trim();
     if url_trimmed.is_empty() {
         return Err("URL cannot be empty.".to_owned());
@@ -668,15 +710,17 @@ pub async fn execute_read_url(url_str: &str, max_chars_opt: Option<usize>) -> Re
         return Err("Only http and https protocols are supported.".to_owned());
     }
 
-    let max_chars = max_chars_opt.unwrap_or(DEFAULT_MAX_CHARS).clamp(500, 30_000);
+    let max_chars = max_chars_opt
+        .unwrap_or(DEFAULT_MAX_CHARS)
+        .clamp(500, 30_000);
 
     // 1. Check cache
     {
         let cache = CACHE.lock().await;
-        if let Some((_, entry)) = cache.pages.iter().find(|(u, _)| u == url_trimmed) {
-            if entry.timestamp.elapsed() < Duration::from_secs(CACHE_TTL_SECS) {
-                return Ok(entry.data.clone());
-            }
+        if let Some((_, entry)) = cache.pages.iter().find(|(u, _)| u == url_trimmed)
+            && entry.timestamp.elapsed() < Duration::from_secs(CACHE_TTL_SECS)
+        {
+            return Ok(entry.data.clone());
         }
     }
 
@@ -714,7 +758,8 @@ pub async fn execute_read_url(url_str: &str, max_chars_opt: Option<usize>) -> Re
 
     let raw_text = String::from_utf8_lossy(&bytes).to_string();
 
-    let result = if content_type.contains("text/plain") || content_type.contains("application/json") {
+    let result = if content_type.contains("text/plain") || content_type.contains("application/json")
+    {
         let truncated = raw_text.len() > max_chars;
         let content: String = raw_text.chars().take(max_chars).collect();
         json!({
@@ -725,12 +770,12 @@ pub async fn execute_read_url(url_str: &str, max_chars_opt: Option<usize>) -> Re
             "truncated": truncated
         })
     } else {
-        let title = extract_title(&raw_text).unwrap_or_else(|| {
-            parsed_url.domain().unwrap_or("").to_owned()
-        });
+        let title = extract_title(&raw_text)
+            .unwrap_or_else(|| parsed_url.domain().unwrap_or("").to_owned());
 
         let cleaned_html = strip_boilerplate_tags(&raw_text);
-        let markdown = htmd::convert(&cleaned_html).unwrap_or_else(|_| clean_html_tags(&cleaned_html));
+        let markdown =
+            htmd::convert(&cleaned_html).unwrap_or_else(|_| clean_html_tags(&cleaned_html));
         let normalized = normalize_markdown_newlines(&markdown);
 
         let truncated = normalized.len() > max_chars;
@@ -769,30 +814,27 @@ fn extract_title(html: &str) -> Option<String> {
     while search_idx + 7 < bytes.len() {
         if bytes[search_idx] == b'<'
             && bytes[search_idx + 1..search_idx + 6].eq_ignore_ascii_case(b"title")
+            && matches!(bytes[search_idx + 6], b'>' | b' ' | b'\n' | b'\t' | b'\r')
+            && let Some(tag_close) = bytes[search_idx + 6..].iter().position(|&b| b == b'>')
         {
-            let next = bytes[search_idx + 6];
-            if next == b'>' || next == b' ' || next == b'\n' || next == b'\t' || next == b'\r' {
-                if let Some(tag_close) = bytes[search_idx + 6..].iter().position(|&b| b == b'>') {
-                    let content_start = search_idx + 6 + tag_close + 1;
-                    let mut close_idx = content_start;
-                    while close_idx + 8 <= bytes.len() {
-                        if bytes[close_idx] == b'<'
-                            && bytes[close_idx + 1] == b'/'
-                            && bytes[close_idx + 2..close_idx + 7].eq_ignore_ascii_case(b"title")
-                            && bytes[close_idx + 7] == b'>'
-                        {
-                            let raw_title = &bytes[content_start..close_idx];
-                            let title_str = String::from_utf8_lossy(raw_title);
-                            let cleaned = clean_html_tags(&title_str);
-                            if cleaned.is_empty() {
-                                return None;
-                            } else {
-                                return Some(cleaned);
-                            }
-                        }
-                        close_idx += 1;
+            let content_start = search_idx + 6 + tag_close + 1;
+            let mut close_idx = content_start;
+            while close_idx + 8 <= bytes.len() {
+                if bytes[close_idx] == b'<'
+                    && bytes[close_idx + 1] == b'/'
+                    && bytes[close_idx + 2..close_idx + 7].eq_ignore_ascii_case(b"title")
+                    && bytes[close_idx + 7] == b'>'
+                {
+                    let raw_title = &bytes[content_start..close_idx];
+                    let title_str = String::from_utf8_lossy(raw_title);
+                    let cleaned = clean_html_tags(&title_str);
+                    if cleaned.is_empty() {
+                        return None;
+                    } else {
+                        return Some(cleaned);
                     }
                 }
+                close_idx += 1;
             }
         }
         search_idx += 1;
@@ -804,7 +846,14 @@ fn strip_boilerplate_tags(html: &str) -> String {
     let bytes = html.as_bytes();
     let mut output = Vec::with_capacity(bytes.len());
     let tags_to_strip: &[&[u8]] = &[
-        b"script", b"style", b"svg", b"noscript", b"nav", b"footer", b"header", b"iframe",
+        b"script",
+        b"style",
+        b"svg",
+        b"noscript",
+        b"nav",
+        b"footer",
+        b"header",
+        b"iframe",
     ];
     let mut cursor = 0;
 
@@ -839,14 +888,12 @@ fn strip_boilerplate_tags(html: &str) -> String {
                         let after_slash = &bytes[search_idx + 2..];
                         if after_slash.len() >= tag.len()
                             && after_slash[..tag.len()].eq_ignore_ascii_case(tag)
-                        {
-                            if let Some(close_bracket) =
+                            && let Some(close_bracket) =
                                 after_slash[tag.len()..].iter().position(|&b| b == b'>')
-                            {
-                                cursor = search_idx + 2 + tag.len() + close_bracket + 1;
-                                found_close = true;
-                                break;
-                            }
+                        {
+                            cursor = search_idx + 2 + tag.len() + close_bracket + 1;
+                            found_close = true;
+                            break;
                         }
                     }
                     search_idx += 1;
@@ -882,4 +929,36 @@ fn normalize_markdown_newlines(text: &str) -> String {
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_ddg_target_url;
+
+    #[test]
+    fn keeps_direct_urls_without_redirect_parameters() {
+        let url = "https://example.org/articles?q=rust";
+
+        assert_eq!(extract_ddg_target_url(url), url);
+    }
+
+    #[test]
+    fn extracts_absolute_duckduckgo_redirect_targets() {
+        let url = "https://duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.org%2Farticles%3Fq%3Drust&rut=test";
+
+        assert_eq!(
+            extract_ddg_target_url(url),
+            "https://example.org/articles?q=rust"
+        );
+    }
+
+    #[test]
+    fn resolves_relative_duckduckgo_redirect_targets() {
+        let url = "/l/?uddg=https%3A%2F%2Fexample.org%2Farticles%3Fq%3Drust";
+
+        assert_eq!(
+            extract_ddg_target_url(url),
+            "https://example.org/articles?q=rust"
+        );
+    }
 }
