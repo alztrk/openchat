@@ -80,55 +80,127 @@ class OpenChatDatabase extends _$OpenChatDatabase {
   int get schemaVersion => 10;
 
   @override
+  // Keep schema changes and their published version in one write transaction.
   MigrationStrategy get migration => MigrationStrategy(
-    onCreate: (migrator) => migrator.createAll(),
-    onUpgrade: (migrator, from, to) async {
-      if (from < 2) {
-        await migrator.addColumn(conversations, conversations.titleSource);
-        await migrator.addColumn(conversations, conversations.connectionId);
-        await migrator.addColumn(conversations, conversations.workspaceId);
-      }
-      if (from < 3) {
-        await migrator.createTable(projects);
-        await migrator.addColumn(conversations, conversations.projectId);
-      }
-      if (from < 4) {
-        await migrator.addColumn(messages, messages.reasoningSummaries);
-      }
-      if (from < 5) {
-        await migrator.addColumn(conversations, conversations.providerId);
-      }
-      if (from < 6) {
-        await migrator.createTable(modelFavorites);
-      }
-      if (from < 7) {
-        await migrator.addColumn(messages, messages.toolActivities);
-      }
-      if (from < 8) {
-        await migrator.addColumn(
-          conversations,
-          conversations.apiKeyConnectionId,
-        );
-        await migrator.addColumn(
-          modelFavorites,
-          modelFavorites.sourceConnectionId,
+    onCreate: (migrator) => transaction(() async {
+      final currentVersion = await _readSchemaVersion();
+      if (currentVersion > schemaVersion) {
+        throw StateError(
+          'Database schema $currentVersion is newer than supported schema $schemaVersion.',
         );
       }
-      if (from < 9) {
-        // Normalize persisted enum names before strict domain parsing.
-        await customStatement(
-          "UPDATE conversations SET title_source = 'manual' WHERE title_source = 'user'",
-        );
-        await customStatement(
-          "UPDATE messages SET status = 'completed' WHERE status = 'complete'",
+      if (currentVersion == 0) {
+        await migrator.createAll();
+      } else if (currentVersion < schemaVersion) {
+        await _upgradeSchema(migrator, currentVersion, schemaVersion);
+      }
+      await _writeSchemaVersion(schemaVersion);
+    }),
+    onUpgrade: (migrator, _, to) => transaction(() async {
+      final currentVersion = await _readSchemaVersion();
+      if (currentVersion > to) {
+        throw StateError(
+          'Database schema $currentVersion is newer than supported schema $to.',
         );
       }
-      if (from < 10) {
-        await migrator.addColumn(messages, messages.failureCode);
+      if (currentVersion < to) {
+        await _upgradeSchema(migrator, currentVersion, to);
+        await _writeSchemaVersion(to);
       }
-    },
+    }),
     beforeOpen: (_) async => customStatement('PRAGMA foreign_keys = ON'),
   );
+
+  Future<int> _readSchemaVersion() async {
+    final row = await customSelect('PRAGMA user_version').getSingle();
+    return row.read<int>('user_version');
+  }
+
+  Future<void> _writeSchemaVersion(int version) =>
+      customStatement('PRAGMA user_version = $version');
+
+  Future<void> _upgradeSchema(Migrator migrator, int from, int to) async {
+    if (from < 2) {
+      await _addColumnIfMissing(
+        migrator,
+        conversations,
+        conversations.titleSource,
+      );
+      await _addColumnIfMissing(
+        migrator,
+        conversations,
+        conversations.connectionId,
+      );
+      await _addColumnIfMissing(
+        migrator,
+        conversations,
+        conversations.workspaceId,
+      );
+    }
+    if (from < 3) {
+      await migrator.createTable(projects);
+      await _addColumnIfMissing(
+        migrator,
+        conversations,
+        conversations.projectId,
+      );
+    }
+    if (from < 4) {
+      await _addColumnIfMissing(
+        migrator,
+        messages,
+        messages.reasoningSummaries,
+      );
+    }
+    if (from < 5) {
+      await _addColumnIfMissing(
+        migrator,
+        conversations,
+        conversations.providerId,
+      );
+    }
+    if (from < 6) {
+      await migrator.createTable(modelFavorites);
+    }
+    if (from < 7) {
+      await _addColumnIfMissing(migrator, messages, messages.toolActivities);
+    }
+    if (from < 8) {
+      await _addColumnIfMissing(
+        migrator,
+        conversations,
+        conversations.apiKeyConnectionId,
+      );
+      await _addColumnIfMissing(
+        migrator,
+        modelFavorites,
+        modelFavorites.sourceConnectionId,
+      );
+    }
+    if (from < 9) {
+      // Normalize persisted enum names before strict domain parsing.
+      await customStatement(
+        "UPDATE conversations SET title_source = 'manual' WHERE title_source = 'user'",
+      );
+      await customStatement(
+        "UPDATE messages SET status = 'completed' WHERE status = 'complete'",
+      );
+    }
+    if (from < 10 && to >= 10) {
+      await _addColumnIfMissing(migrator, messages, messages.failureCode);
+    }
+  }
+
+  Future<void> _addColumnIfMissing(
+    Migrator migrator,
+    TableInfo table,
+    GeneratedColumn<Object> column,
+  ) async {
+    final tableName = table.actualTableName.replaceAll('"', '""');
+    final columns = await customSelect('PRAGMA table_info("$tableName")').get();
+    if (columns.any((row) => row.read<String>('name') == column.name)) return;
+    await migrator.addColumn(table, column);
+  }
 }
 
 QueryExecutor _databaseAtPath(String path) {
