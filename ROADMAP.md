@@ -12,6 +12,7 @@ This roadmap reflects the repository's current implementation. It has no calenda
 - Local projects with read-only file listing, search, reading, and file metadata tools. Tool calls, arguments, progress, and results are stored with assistant messages and shown in the conversation UI.
 - Global `Onay İste` and `Tam erişim` settings for local file tools. Approval is per call and the Rust service enforces the selected path scope.
 - Conversation history, project grouping, model favorites, rename/delete/pin actions, retry, and Markdown export. Tool activity is included in Markdown exports.
+- Per-conversation memory inspection, bounded hybrid FTS5 and optional local semantic archive search with dated source excerpts, and a confirmed reset for compacted context that preserves full history.
 - A Windows portable executable build script and local data directories for the database, logs, and cache.
 
 These bullets describe code present in the repository. They do not mean that every provider endpoint or account flow has been verified against a live service.
