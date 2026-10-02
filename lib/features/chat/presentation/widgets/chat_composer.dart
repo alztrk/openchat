@@ -4,12 +4,17 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
+import 'package:openchat/features/chat/domain/chat_message.dart';
+import 'package:openchat/features/chat/domain/chat_attachment.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/chat/domain/model_favorite.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 
 import 'package:openchat/features/chat/presentation/widgets/composer_control_style.dart';
+import 'package:openchat/features/chat/presentation/widgets/chat_attachment_gallery.dart';
+import 'package:openchat/features/chat/presentation/widgets/context_usage_indicator.dart';
 import 'package:openchat/features/chat/presentation/widgets/model_selector.dart';
 
 class ChatComposer extends StatelessWidget {
@@ -40,6 +45,19 @@ class ChatComposer extends StatelessWidget {
     this.onStopMessage,
     this.modelLabel,
     this.reasoningLevel,
+    this.messages = const <ChatMessage>[],
+    this.conversationId,
+    this.contextProviderId,
+    this.contextModelId,
+    this.contextWindow,
+    this.contextConnectionId,
+    this.contextWorkspaceId,
+    this.conversationMemoryRepository,
+    this.settingsPreferences,
+    this.pendingAttachments = const <ChatAttachment>[],
+    this.onAddAttachments,
+    this.onRemoveAttachment,
+    this.attachmentsEnabled = false,
     super.key,
   });
 
@@ -71,11 +89,24 @@ class ChatComposer extends StatelessWidget {
   onModelFavoriteChanged;
   final ValueChanged<FavoriteModel>? onFavoriteModelSelected;
   final List<String> reasoningOptions;
-  final ValueChanged<String>? onReasoningSelected;
+  final ValueChanged<String?>? onReasoningSelected;
   final bool isSending;
   final VoidCallback? onStopMessage;
   final String? modelLabel;
   final String? reasoningLevel;
+  final List<ChatMessage> messages;
+  final String? conversationId;
+  final String? contextProviderId;
+  final String? contextModelId;
+  final int? contextWindow;
+  final String? contextConnectionId;
+  final String? contextWorkspaceId;
+  final ConversationMemoryRepository? conversationMemoryRepository;
+  final SettingsPreferences? settingsPreferences;
+  final List<ChatAttachment> pendingAttachments;
+  final VoidCallback? onAddAttachments;
+  final ValueChanged<String>? onRemoveAttachment;
+  final bool attachmentsEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -115,7 +146,9 @@ class ChatComposer extends StatelessWidget {
                             event.logicalKey ==
                                 LogicalKeyboardKey.numpadEnter) &&
                         !HardwareKeyboard.instance.isShiftPressed) {
-                      if (canSendMessage && controller.text.trim().isNotEmpty) {
+                      if (canSendMessage &&
+                          (controller.text.trim().isNotEmpty ||
+                              pendingAttachments.isNotEmpty)) {
                         onSendMessage();
                       }
                       return KeyEventResult.handled;
@@ -152,6 +185,16 @@ class ChatComposer extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (pendingAttachments.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  ChatAttachmentGallery(
+                    attachments: pendingAttachments,
+                    palette: palette,
+                    preferredImageWidth: 160,
+                    imageHeight: 104,
+                    onRemoveAttachment: onRemoveAttachment,
+                  ),
+                ],
                 SizedBox(height: compact ? 16 : 12),
                 _ComposerActions(
                   availableWidth: constraints.maxWidth,
@@ -181,6 +224,18 @@ class ChatComposer extends StatelessWidget {
                   onStopMessage: onStopMessage,
                   modelLabel: modelLabel,
                   reasoningLevel: reasoningLevel,
+                  messages: messages,
+                  conversationId: conversationId,
+                  contextProviderId: contextProviderId,
+                  contextModelId: contextModelId,
+                  contextWindow: contextWindow,
+                  contextConnectionId: contextConnectionId,
+                  contextWorkspaceId: contextWorkspaceId,
+                  conversationMemoryRepository: conversationMemoryRepository,
+                  settingsPreferences: settingsPreferences,
+                  pendingAttachments: pendingAttachments,
+                  onAddAttachments: onAddAttachments,
+                  attachmentsEnabled: attachmentsEnabled,
                   compact: compact,
                   palette: palette,
                 ),
@@ -222,6 +277,18 @@ class _ComposerActions extends StatelessWidget {
     required this.onStopMessage,
     required this.modelLabel,
     required this.reasoningLevel,
+    required this.messages,
+    required this.conversationId,
+    required this.contextProviderId,
+    required this.contextModelId,
+    required this.contextWindow,
+    required this.contextConnectionId,
+    required this.contextWorkspaceId,
+    required this.conversationMemoryRepository,
+    required this.settingsPreferences,
+    required this.pendingAttachments,
+    required this.onAddAttachments,
+    required this.attachmentsEnabled,
     required this.compact,
     required this.palette,
   });
@@ -255,11 +322,23 @@ class _ComposerActions extends StatelessWidget {
   onModelFavoriteChanged;
   final ValueChanged<FavoriteModel>? onFavoriteModelSelected;
   final List<String> reasoningOptions;
-  final ValueChanged<String>? onReasoningSelected;
+  final ValueChanged<String?>? onReasoningSelected;
   final bool isSending;
   final VoidCallback? onStopMessage;
   final String? modelLabel;
   final String? reasoningLevel;
+  final List<ChatMessage> messages;
+  final String? conversationId;
+  final String? contextProviderId;
+  final String? contextModelId;
+  final int? contextWindow;
+  final String? contextConnectionId;
+  final String? contextWorkspaceId;
+  final ConversationMemoryRepository? conversationMemoryRepository;
+  final SettingsPreferences? settingsPreferences;
+  final List<ChatAttachment> pendingAttachments;
+  final VoidCallback? onAddAttachments;
+  final bool attachmentsEnabled;
   final bool compact;
   final OpenChatPalette palette;
 
@@ -295,10 +374,10 @@ class _ComposerActions extends StatelessWidget {
     final reasoningSelector = showReasoningSelector
         ? _ReasoningSelector(
             label: l10n.reasoning,
-            level: reasoningLevel ?? l10n.reasoningDefault,
+            level: reasoningLevel,
             iconRoot: iconRoot,
             palette: palette,
-            unavailableHint: l10n.reasoningUnavailable,
+            defaultHint: l10n.reasoningDefaultHint,
             compact: compact,
             options: reasoningOptions,
             onSelected: onReasoningSelected,
@@ -327,10 +406,28 @@ class _ComposerActions extends StatelessWidget {
     final trailingControls = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        ContextUsageIndicator(
+          controller: controller,
+          messages: messages,
+          providerId: contextProviderId,
+          modelId: contextModelId,
+          contextWindow: contextWindow,
+          repository: conversationMemoryRepository,
+          conversationId: conversationId,
+          isSending: isSending,
+          connectionId: contextConnectionId,
+          workspaceId: contextWorkspaceId,
+          settingsPreferences: settingsPreferences,
+          toolPermissionMode: toolPermissionMode,
+          pendingAttachments: pendingAttachments,
+        ),
+        const SizedBox(width: 8),
         Tooltip(
-          message: l10n.attachmentsUnavailable,
+          message: attachmentsEnabled
+              ? l10n.attachFile
+              : l10n.attachmentsUnavailable,
           child: OutlinedButton(
-            onPressed: null,
+            onPressed: attachmentsEnabled ? onAddAttachments : null,
             style: composerControlStyle(
               palette,
               width: 36,
@@ -342,7 +439,9 @@ class _ComposerActions extends StatelessWidget {
               width: 18,
               height: 18,
               colorFilter: ColorFilter.mode(
-                palette.disabledIcon,
+                attachmentsEnabled
+                    ? palette.secondaryIcon
+                    : palette.disabledIcon,
                 BlendMode.srcIn,
               ),
               excludeFromSemantics: true,
@@ -354,7 +453,8 @@ class _ComposerActions extends StatelessWidget {
           valueListenable: controller,
           builder: (context, value, _) {
             final canAttemptSend =
-                canSendMessage && value.text.trim().isNotEmpty;
+                canSendMessage &&
+                (value.text.trim().isNotEmpty || pendingAttachments.isNotEmpty);
             final width = showReasoningSelector ? 96.0 : 84.0;
 
             return SizedBox(
@@ -478,34 +578,40 @@ class _ReasoningSelector extends StatelessWidget {
     required this.level,
     required this.iconRoot,
     required this.palette,
-    required this.unavailableHint,
+    required this.defaultHint,
     required this.compact,
     required this.options,
     required this.onSelected,
   });
 
   final String label;
-  final String level;
+  final String? level;
   final String iconRoot;
   final OpenChatPalette palette;
-  final String unavailableHint;
+  final String defaultHint;
   final bool compact;
   final List<String> options;
-  final ValueChanged<String>? onSelected;
+  final ValueChanged<String?>? onSelected;
 
   @override
   Widget build(BuildContext context) {
+    final currentLevel = level;
+    final l10n = context.openchatL10n;
     return Tooltip(
-      message: options.isEmpty ? unavailableHint : label,
-      child: OpenChatSelect<String>(
+      message: currentLevel == null ? defaultHint : label,
+      child: OpenChatSelect<String?>(
         options: [
+          OpenChatSelectOption<String?>(
+            value: null,
+            label: l10n.reasoningDefault,
+          ),
           for (final option in options)
-            OpenChatSelectOption<String>(
+            OpenChatSelectOption<String?>(
               value: option,
               label: _reasoningLabel(context, option),
             ),
         ],
-        value: level,
+        value: currentLevel,
         onChanged: onSelected,
         palette: palette,
         width: 176,
@@ -547,7 +653,9 @@ class _ReasoningSelector extends StatelessWidget {
             ),
             const SizedBox(width: 4),
             Text(
-              _reasoningLabel(context, level),
+              currentLevel == null
+                  ? l10n.reasoningDefault
+                  : _reasoningLabel(context, currentLevel),
               style: TextStyle(
                 color: palette.text,
                 fontSize: 12,

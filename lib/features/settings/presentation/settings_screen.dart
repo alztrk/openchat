@@ -8,6 +8,8 @@ import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/openchat_toast.dart';
 import 'package:openchat/features/chat/domain/history_storage_status.dart';
+import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
+import 'package:openchat/features/chat/presentation/widgets/conversation_memory_dialog.dart';
 import 'package:openchat/features/chat/presentation/widgets/window_control_bar.dart';
 import 'package:openchat/features/settings/data/api_compatible_provider_key_store.dart';
 import 'package:openchat/features/settings/data/chat_gpt_api_key_store.dart';
@@ -29,6 +31,7 @@ enum _SettingsSection {
   connections,
   usageQuotas,
   models,
+  conversationMemory,
   sharedInstructions,
   appearance,
   localData,
@@ -40,6 +43,9 @@ class SettingsScreen extends StatefulWidget {
     required this.onThemeModeChanged,
     required this.historyStorageStatus,
     required this.hasConversationHistory,
+    this.activeConversationId,
+    this.activeConversationTitle,
+    this.isActiveConversationSending = false,
     required this.settingsPreferences,
     this.locale,
     this.conversationWidth = ConversationWidthPreference.normal,
@@ -73,6 +79,9 @@ class SettingsScreen extends StatefulWidget {
   final Future<void> Function(AppFontPreference)? onAppFontChanged;
   final HistoryStorageStatus historyStorageStatus;
   final bool hasConversationHistory;
+  final String? activeConversationId;
+  final String? activeConversationTitle;
+  final bool isActiveConversationSending;
   final SettingsPreferences settingsPreferences;
   final Future<void> Function()? onClearConversationHistory;
   final ChatGptApiKeyStore? chatGptApiKeyStore;
@@ -96,12 +105,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _savedSharedInstructions = '';
   String? _sharedInstructionsError;
   _SettingsSection _selectedSection = _SettingsSection.connections;
+  ConversationMemoryRepository? _conversationMemoryRepository;
 
   @override
   void initState() {
     super.initState();
     _sharedInstructionsController = TextEditingController();
+    final serviceClient = widget.serviceClient;
+    _conversationMemoryRepository = serviceClient == null
+        ? null
+        : ConversationMemoryRepository(serviceClient);
     unawaited(_loadSharedInstructions());
+  }
+
+  @override
+  void didUpdateWidget(covariant SettingsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.serviceClient != widget.serviceClient) {
+      final serviceClient = widget.serviceClient;
+      _conversationMemoryRepository = serviceClient == null
+          ? null
+          : ConversationMemoryRepository(serviceClient);
+    }
   }
 
   @override
@@ -124,6 +149,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _SettingsSection.connections => l10n.connections,
           _SettingsSection.usageQuotas => l10n.usageQuotas,
           _SettingsSection.models => l10n.models,
+          _SettingsSection.conversationMemory => l10n.conversationMemory,
           _SettingsSection.sharedInstructions => l10n.sharedInstructions,
           _SettingsSection.appearance => l10n.appearance,
           _SettingsSection.localData => l10n.localData,
@@ -161,9 +187,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             child: UsageQuotasSettingsSection(
                               serviceClient: widget.serviceClient,
                               onNavigateToConnections: () => setState(
-                                () =>
-                                    _selectedSection =
-                                        _SettingsSection.connections,
+                                () => _selectedSection =
+                                    _SettingsSection.connections,
                               ),
                             ),
                           ),
@@ -178,6 +203,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               openCodeApiKeyStore: widget.openCodeApiKeyStore,
                               settingsPreferences: widget.settingsPreferences,
                               onChanged: widget.onProviderStateChanged,
+                            ),
+                          ),
+                          _buildSectionPage(
+                            section: _SettingsSection.conversationMemory,
+                            horizontalInset: horizontalInset,
+                            child: ConversationMemorySection(
+                              repository: _conversationMemoryRepository,
+                              conversationId: widget.activeConversationId,
+                              conversationTitle: widget.activeConversationTitle,
+                              isSending: widget.isActiveConversationSending,
+                              embedded: true,
                             ),
                           ),
                           _buildSectionPage(
@@ -976,6 +1012,11 @@ class _SettingsSidebar extends StatelessWidget {
         section: _SettingsSection.models,
         label: l10n.models,
         icon: Icons.tune_rounded,
+      ),
+      (
+        section: _SettingsSection.conversationMemory,
+        label: l10n.conversationMemory,
+        icon: Icons.memory_outlined,
       ),
       (
         section: _SettingsSection.sharedInstructions,

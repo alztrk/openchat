@@ -884,6 +884,12 @@ abstract class AppLocalizations {
   /// **'The provider could not complete the response. Your saved messages are still available.'**
   String get providerRequestFailed;
 
+  /// No description provided for @contextWindowExceeded.
+  ///
+  /// In en, this message translates to:
+  /// **'The conversation is too large for this model\'s context window. Shorten the latest message or choose a model with a larger context window. Your chat history is saved.'**
+  String get contextWindowExceeded;
+
   /// No description provided for @openCodeFreeTierRestricted.
   ///
   /// In en, this message translates to:
@@ -1832,6 +1838,382 @@ abstract class AppLocalizations {
   /// **'New chat'**
   String get conversationTitle;
 
+  /// No description provided for @conversationMemory.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation memory'**
+  String get conversationMemory;
+
+  /// No description provided for @conversationMemoryDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Review this conversation\'s compacted context and search its older messages.'**
+  String get conversationMemoryDescription;
+
+  /// No description provided for @conversationMemoryCurrentConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected conversation: {title}'**
+  String conversationMemoryCurrentConversation(String title);
+
+  /// No description provided for @conversationMemoryNoConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Open a conversation to inspect its memory.'**
+  String get conversationMemoryNoConversation;
+
+  /// No description provided for @contextUsageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Context usage'**
+  String get contextUsageTitle;
+
+  /// No description provided for @contextUsageUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Usage: about {count} tokens'**
+  String contextUsageUsed(String count);
+
+  /// No description provided for @contextUsageSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'~{used} / {limit} tokens ({percent})'**
+  String contextUsageSummary(String used, String limit, String percent);
+
+  /// No description provided for @contextUsageModelLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} tokens'**
+  String contextUsageModelLimit(String count);
+
+  /// No description provided for @contextUsageNoModelLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'Model limit unknown.'**
+  String get contextUsageNoModelLimit;
+
+  /// No description provided for @contextUsageProviderMeasurement.
+  ///
+  /// In en, this message translates to:
+  /// **'Last provider measurement: {count} tokens'**
+  String contextUsageProviderMeasurement(String count);
+
+  /// No description provided for @contextUsageInstructionsEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Instructions: {count} tokens · {percent}'**
+  String contextUsageInstructionsEstimate(String count, String percent);
+
+  /// No description provided for @contextUsageToolDefinitionsEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool definitions: {count} tokens · {percent}'**
+  String contextUsageToolDefinitionsEstimate(String count, String percent);
+
+  /// No description provided for @contextUsageMessagesEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages: {count} tokens · {percent}'**
+  String contextUsageMessagesEstimate(String count, String percent);
+
+  /// No description provided for @contextUsageAttachmentsEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Attachments: {count} tokens · {percent}'**
+  String contextUsageAttachmentsEstimate(String count, String percent);
+
+  /// No description provided for @contextUsageAttachmentEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'{name}: {count} tokens · {percent}'**
+  String contextUsageAttachmentEstimate(
+    String name,
+    String count,
+    String percent,
+  );
+
+  /// No description provided for @contextUsageDraftAttachment.
+  ///
+  /// In en, this message translates to:
+  /// **'Draft · {name}'**
+  String contextUsageDraftAttachment(String name);
+
+  /// No description provided for @contextUsageUserMessagesEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'User: {count} tokens · {percent}'**
+  String contextUsageUserMessagesEstimate(String count, String percent);
+
+  /// No description provided for @contextUsageAssistantMessagesEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Assistant: {count} tokens · {percent}'**
+  String contextUsageAssistantMessagesEstimate(String count, String percent);
+
+  /// No description provided for @contextUsageToolsEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool use: {count} tokens · {percent}'**
+  String contextUsageToolsEstimate(String count, String percent);
+
+  /// No description provided for @contextUsageToolUsageEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'{name}: {count} tokens · {percent}'**
+  String contextUsageToolUsageEstimate(
+    String name,
+    String count,
+    String percent,
+  );
+
+  /// No description provided for @contextUsageMemoryEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Compacted memory: {count} tokens · {percent}'**
+  String contextUsageMemoryEstimate(String count, String percent);
+
+  /// No description provided for @contextUsageDraftEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Draft: {count} tokens · {percent}'**
+  String contextUsageDraftEstimate(String count, String percent);
+
+  /// No description provided for @contextUsageFreeSpaceEstimate.
+  ///
+  /// In en, this message translates to:
+  /// **'Free space: {count} tokens · {percent}'**
+  String contextUsageFreeSpaceEstimate(String count, String percent);
+
+  /// No description provided for @contextUsageOverLimit.
+  ///
+  /// In en, this message translates to:
+  /// **'Model limit exceeded.'**
+  String get contextUsageOverLimit;
+
+  /// No description provided for @contextUsageMeasurementUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Memory details could not be loaded.'**
+  String get contextUsageMeasurementUnavailable;
+
+  /// No description provided for @contextUsageInstructionUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Instruction details could not be loaded.'**
+  String get contextUsageInstructionUnavailable;
+
+  /// No description provided for @contextUsageConfigurationUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Instruction and tool definition estimates could not be loaded.'**
+  String get contextUsageConfigurationUnavailable;
+
+  /// No description provided for @contextUsageConfigurationLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing instruction and tool definition estimates…'**
+  String get contextUsageConfigurationLoading;
+
+  /// No description provided for @conversationMemorySemanticTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Semantic search'**
+  String get conversationMemorySemanticTitle;
+
+  /// No description provided for @conversationMemorySemanticDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Download a multilingual model of about 136 MB to find older messages phrased differently.'**
+  String get conversationMemorySemanticDescription;
+
+  /// No description provided for @conversationMemorySemanticPrepare.
+  ///
+  /// In en, this message translates to:
+  /// **'Prepare'**
+  String get conversationMemorySemanticPrepare;
+
+  /// No description provided for @conversationMemorySemanticChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking local semantic search…'**
+  String get conversationMemorySemanticChecking;
+
+  /// No description provided for @conversationMemorySemanticPreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading and verifying the model…'**
+  String get conversationMemorySemanticPreparing;
+
+  /// No description provided for @conversationMemorySemanticDownloadProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'{percent}% downloaded · {downloaded} / {total} MB'**
+  String conversationMemorySemanticDownloadProgress(
+    String percent,
+    String downloaded,
+    String total,
+  );
+
+  /// No description provided for @conversationMemorySemanticIndexing.
+  ///
+  /// In en, this message translates to:
+  /// **'Building the local archive index…'**
+  String get conversationMemorySemanticIndexing;
+
+  /// No description provided for @conversationMemorySemanticCancelling.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelling the download…'**
+  String get conversationMemorySemanticCancelling;
+
+  /// No description provided for @conversationMemorySemanticDownloadCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Download cancelled. Keyword search remains available.'**
+  String get conversationMemorySemanticDownloadCancelled;
+
+  /// No description provided for @conversationMemorySemanticPrepareFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not prepare the model. Try again; valid downloaded parts will be reused.'**
+  String get conversationMemorySemanticPrepareFailed;
+
+  /// No description provided for @conversationMemorySemanticKeywordSearchFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Keyword search remains available before preparation.'**
+  String get conversationMemorySemanticKeywordSearchFallback;
+
+  /// No description provided for @conversationMemorySemanticReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Local semantic search is ready'**
+  String get conversationMemorySemanticReady;
+
+  /// No description provided for @conversationMemorySemanticIndexNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'The model runs on this device. The first search may index older messages and saved tool details locally and take longer.'**
+  String get conversationMemorySemanticIndexNotice;
+
+  /// No description provided for @conversationMemorySummaryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Compacted context'**
+  String get conversationMemorySummaryTitle;
+
+  /// No description provided for @conversationMemoryNoSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'There is no compacted summary yet.'**
+  String get conversationMemoryNoSummary;
+
+  /// No description provided for @conversationMemoryCheckpointDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'The provider stores context as a reusable checkpoint instead of readable summary text. The full message history remains in the archive.'**
+  String get conversationMemoryCheckpointDescription;
+
+  /// No description provided for @conversationMemoryLastPromptTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'Last request · {provider} · {model} · {count} input tokens'**
+  String conversationMemoryLastPromptTokens(
+    String provider,
+    String model,
+    String count,
+  );
+
+  /// No description provided for @conversationMemorySearchTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Search the archive'**
+  String get conversationMemorySearchTitle;
+
+  /// No description provided for @conversationMemorySearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an older topic or phrase...'**
+  String get conversationMemorySearchHint;
+
+  /// No description provided for @conversationMemorySearchAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Search'**
+  String get conversationMemorySearchAction;
+
+  /// No description provided for @conversationMemorySearchQueryTooShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter at least two characters to search.'**
+  String get conversationMemorySearchQueryTooShort;
+
+  /// No description provided for @conversationMemorySearchInstruction.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed messages and tool results are searched in this conversation only.'**
+  String get conversationMemorySearchInstruction;
+
+  /// No description provided for @conversationMemorySearchNoResults.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching archive entries.'**
+  String get conversationMemorySearchNoResults;
+
+  /// No description provided for @conversationMemorySearchFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The conversation archive could not be searched. Try again.'**
+  String get conversationMemorySearchFailed;
+
+  /// No description provided for @conversationMemoryLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Compacted context could not be loaded. Try again.'**
+  String get conversationMemoryLoadFailed;
+
+  /// No description provided for @conversationMemoryResetAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset context'**
+  String get conversationMemoryResetAction;
+
+  /// No description provided for @conversationMemoryResetTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset compacted context?'**
+  String get conversationMemoryResetTitle;
+
+  /// No description provided for @conversationMemoryResetConfirmation.
+  ///
+  /// In en, this message translates to:
+  /// **'The saved compacted context and last request measurement will be removed. The full message history and archive will remain; compacted context can be created again during a later request if needed.'**
+  String get conversationMemoryResetConfirmation;
+
+  /// No description provided for @conversationMemoryResetConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset'**
+  String get conversationMemoryResetConfirm;
+
+  /// No description provided for @conversationMemoryResetFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The compacted context could not be reset.'**
+  String get conversationMemoryResetFailed;
+
+  /// No description provided for @conversationMemoryUserMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'User message'**
+  String get conversationMemoryUserMessage;
+
+  /// No description provided for @conversationMemoryAssistantMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Assistant response'**
+  String get conversationMemoryAssistantMessage;
+
   /// No description provided for @renameConversation.
   ///
   /// In en, this message translates to:
@@ -2003,8 +2385,14 @@ abstract class AppLocalizations {
   /// No description provided for @reasoningDefault.
   ///
   /// In en, this message translates to:
-  /// **'Model default'**
+  /// **'Default'**
   String get reasoningDefault;
+
+  /// No description provided for @reasoningDefaultHint.
+  ///
+  /// In en, this message translates to:
+  /// **'No custom reasoning level is sent. The provider\'s default behavior is used; the level is not adjusted to task difficulty.'**
+  String get reasoningDefaultHint;
 
   /// No description provided for @stop.
   ///
@@ -2072,12 +2460,6 @@ abstract class AppLocalizations {
   /// **'cached models'**
   String get cachedCatalog;
 
-  /// No description provided for @reasoningUnavailable.
-  ///
-  /// In en, this message translates to:
-  /// **'This model does not expose adjustable reasoning levels.'**
-  String get reasoningUnavailable;
-
   /// No description provided for @attachFile.
   ///
   /// In en, this message translates to:
@@ -2089,6 +2471,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'File attachments are not available yet.'**
   String get attachmentsUnavailable;
+
+  /// No description provided for @removeAttachment.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove attachment'**
+  String get removeAttachment;
+
+  /// No description provided for @previewImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Zoom image'**
+  String get previewImage;
+
+  /// No description provided for @attachmentUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This attachment is unavailable.'**
+  String get attachmentUnavailable;
+
+  /// No description provided for @attachmentCountExceeded.
+  ///
+  /// In en, this message translates to:
+  /// **'You can attach up to 10 files and 3 images.'**
+  String get attachmentCountExceeded;
+
+  /// No description provided for @attachmentFileTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'The file exceeds the allowed size limit.'**
+  String get attachmentFileTooLarge;
+
+  /// No description provided for @attachmentTotalTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'Attachments cannot exceed 14 MB in total.'**
+  String get attachmentTotalTooLarge;
+
+  /// No description provided for @unsupportedAttachmentFile.
+  ///
+  /// In en, this message translates to:
+  /// **'This file type is not supported.'**
+  String get unsupportedAttachmentFile;
+
+  /// No description provided for @attachmentReadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The file could not be read. Select it again and retry.'**
+  String get attachmentReadFailed;
+
+  /// No description provided for @attachmentSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The attachment could not be saved. Select it again and retry.'**
+  String get attachmentSaveFailed;
+
+  /// No description provided for @attachmentMustBeUtf8.
+  ///
+  /// In en, this message translates to:
+  /// **'Text attachments must use UTF-8 encoding.'**
+  String get attachmentMustBeUtf8;
+
+  /// No description provided for @attachmentInvalidImage.
+  ///
+  /// In en, this message translates to:
+  /// **'The image file format could not be verified.'**
+  String get attachmentInvalidImage;
+
+  /// No description provided for @modelDoesNotSupportImages.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected model does not support image attachments.'**
+  String get modelDoesNotSupportImages;
 
   /// No description provided for @messageHint.
   ///

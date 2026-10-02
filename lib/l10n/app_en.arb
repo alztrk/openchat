@@ -157,6 +157,7 @@
   "providerRateLimited": "The provider reported a usage limit. Try again later.",
   "providerAuthenticationRequired": "The provider rejected the request. Check the connection and model access.",
   "providerRequestFailed": "The provider could not complete the response. Your saved messages are still available.",
+  "contextWindowExceeded": "The conversation is too large for this model's context window. Shorten the latest message or choose a model with a larger context window. Your chat history is saved.",
   "openCodeFreeTierRestricted": "OpenCode free models are only available within the OpenCode app.",
   "apiKey": "API key",
   "apiKeyInputLabel": "API key",
@@ -330,6 +331,186 @@
   "newProjectConversation": "Start a new project chat",
   "newConversation": "Start a new conversation",
   "conversationTitle": "New chat",
+  "conversationMemory": "Conversation memory",
+  "conversationMemoryDescription": "Review this conversation's compacted context and search its older messages.",
+  "conversationMemoryCurrentConversation": "Selected conversation: {title}",
+  "@conversationMemoryCurrentConversation": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "conversationMemoryNoConversation": "Open a conversation to inspect its memory.",
+  "contextUsageTitle": "Context usage",
+  "contextUsageUsed": "Usage: about {count} tokens",
+  "@contextUsageUsed": {
+    "placeholders": {
+      "count": { "type": "String" }
+    }
+  },
+  "contextUsageSummary": "~{used} / {limit} tokens ({percent})",
+  "@contextUsageSummary": {
+    "placeholders": {
+      "used": { "type": "String" },
+      "limit": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageModelLimit": "{count} tokens",
+  "@contextUsageModelLimit": {
+    "placeholders": {
+      "count": { "type": "String" }
+    }
+  },
+  "contextUsageNoModelLimit": "Model limit unknown.",
+  "contextUsageProviderMeasurement": "Last provider measurement: {count} tokens",
+  "@contextUsageProviderMeasurement": {
+    "placeholders": {
+      "count": { "type": "String" }
+    }
+  },
+  "contextUsageInstructionsEstimate": "Instructions: {count} tokens · {percent}",
+  "@contextUsageInstructionsEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageToolDefinitionsEstimate": "Tool definitions: {count} tokens · {percent}",
+  "@contextUsageToolDefinitionsEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageMessagesEstimate": "Messages: {count} tokens · {percent}",
+  "@contextUsageMessagesEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageAttachmentsEstimate": "Attachments: {count} tokens · {percent}",
+  "@contextUsageAttachmentsEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageAttachmentEstimate": "{name}: {count} tokens · {percent}",
+  "@contextUsageAttachmentEstimate": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageDraftAttachment": "Draft · {name}",
+  "@contextUsageDraftAttachment": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "contextUsageUserMessagesEstimate": "User: {count} tokens · {percent}",
+  "@contextUsageUserMessagesEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageAssistantMessagesEstimate": "Assistant: {count} tokens · {percent}",
+  "@contextUsageAssistantMessagesEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageToolsEstimate": "Tool use: {count} tokens · {percent}",
+  "@contextUsageToolsEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageToolUsageEstimate": "{name}: {count} tokens · {percent}",
+  "@contextUsageToolUsageEstimate": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageMemoryEstimate": "Compacted memory: {count} tokens · {percent}",
+  "@contextUsageMemoryEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageDraftEstimate": "Draft: {count} tokens · {percent}",
+  "@contextUsageDraftEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageFreeSpaceEstimate": "Free space: {count} tokens · {percent}",
+  "@contextUsageFreeSpaceEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageOverLimit": "Model limit exceeded.",
+  "contextUsageMeasurementUnavailable": "Memory details could not be loaded.",
+  "contextUsageInstructionUnavailable": "Instruction details could not be loaded.",
+  "contextUsageConfigurationUnavailable": "Instruction and tool definition estimates could not be loaded.",
+  "contextUsageConfigurationLoading": "Preparing instruction and tool definition estimates…",
+  "conversationMemorySemanticTitle": "Semantic search",
+  "conversationMemorySemanticDescription": "Download a multilingual model of about 136 MB to find older messages phrased differently.",
+  "conversationMemorySemanticPrepare": "Prepare",
+  "conversationMemorySemanticChecking": "Checking local semantic search…",
+  "conversationMemorySemanticPreparing": "Downloading and verifying the model…",
+  "conversationMemorySemanticDownloadProgress": "{percent}% downloaded · {downloaded} / {total} MB",
+  "@conversationMemorySemanticDownloadProgress": {
+    "placeholders": {
+      "percent": { "type": "String" },
+      "downloaded": { "type": "String" },
+      "total": { "type": "String" }
+    }
+  },
+  "conversationMemorySemanticIndexing": "Building the local archive index…",
+  "conversationMemorySemanticCancelling": "Cancelling the download…",
+  "conversationMemorySemanticDownloadCancelled": "Download cancelled. Keyword search remains available.",
+  "conversationMemorySemanticPrepareFailed": "Could not prepare the model. Try again; valid downloaded parts will be reused.",
+  "conversationMemorySemanticKeywordSearchFallback": "Keyword search remains available before preparation.",
+  "conversationMemorySemanticReady": "Local semantic search is ready",
+  "conversationMemorySemanticIndexNotice": "The model runs on this device. The first search may index older messages and saved tool details locally and take longer.",
+  "conversationMemorySummaryTitle": "Compacted context",
+  "conversationMemoryNoSummary": "There is no compacted summary yet.",
+  "conversationMemoryCheckpointDescription": "The provider stores context as a reusable checkpoint instead of readable summary text. The full message history remains in the archive.",
+  "conversationMemoryLastPromptTokens": "Last request · {provider} · {model} · {count} input tokens",
+  "@conversationMemoryLastPromptTokens": {
+    "placeholders": {
+      "provider": { "type": "String" },
+      "model": { "type": "String" },
+      "count": { "type": "String" }
+    }
+  },
+  "conversationMemorySearchTitle": "Search the archive",
+  "conversationMemorySearchHint": "Enter an older topic or phrase...",
+  "conversationMemorySearchAction": "Search",
+  "conversationMemorySearchQueryTooShort": "Enter at least two characters to search.",
+  "conversationMemorySearchInstruction": "Completed messages and tool results are searched in this conversation only.",
+  "conversationMemorySearchNoResults": "No matching archive entries.",
+  "conversationMemorySearchFailed": "The conversation archive could not be searched. Try again.",
+  "conversationMemoryLoadFailed": "Compacted context could not be loaded. Try again.",
+  "conversationMemoryResetAction": "Reset context",
+  "conversationMemoryResetTitle": "Reset compacted context?",
+  "conversationMemoryResetConfirmation": "The saved compacted context and last request measurement will be removed. The full message history and archive will remain; compacted context can be created again during a later request if needed.",
+  "conversationMemoryResetConfirm": "Reset",
+  "conversationMemoryResetFailed": "The compacted context could not be reset.",
+  "conversationMemoryUserMessage": "User message",
+  "conversationMemoryAssistantMessage": "Assistant response",
   "renameConversation": "Edit chat title",
   "pinConversation": "Pin chat",
   "unpinConversation": "Unpin chat",
@@ -359,7 +540,8 @@
   "reasoningExtraHigh": "Extra high",
   "reasoningMax": "Maximum",
   "reasoningUltra": "Ultra",
-  "reasoningDefault": "Model default",
+  "reasoningDefault": "Default",
+  "reasoningDefaultHint": "No custom reasoning level is sent. The provider's default behavior is used; the level is not adjusted to task difficulty.",
   "stop": "Stop",
   "modelsLoading": "Loading models...",
   "modelsUnavailable": "Models unavailable",
@@ -371,9 +553,20 @@
   "chatHistoryUnavailable": "Chat history could not be updated. Try again.",
   "chatRequestFailed": "The response could not be completed. Your saved messages are still available.",
   "cachedCatalog": "cached models",
-  "reasoningUnavailable": "This model does not expose adjustable reasoning levels.",
   "attachFile": "Attach file",
   "attachmentsUnavailable": "File attachments are not available yet.",
+  "removeAttachment": "Remove attachment",
+  "previewImage": "Zoom image",
+  "attachmentUnavailable": "This attachment is unavailable.",
+  "attachmentCountExceeded": "You can attach up to 10 files and 3 images.",
+  "attachmentFileTooLarge": "The file exceeds the allowed size limit.",
+  "attachmentTotalTooLarge": "Attachments cannot exceed 14 MB in total.",
+  "unsupportedAttachmentFile": "This file type is not supported.",
+  "attachmentReadFailed": "The file could not be read. Select it again and retry.",
+  "attachmentSaveFailed": "The attachment could not be saved. Select it again and retry.",
+  "attachmentMustBeUtf8": "Text attachments must use UTF-8 encoding.",
+  "attachmentInvalidImage": "The image file format could not be verified.",
+  "modelDoesNotSupportImages": "The selected model does not support image attachments.",
   "messageHint": "Write a message...",
   "sendMessage": "Send message",
   "send": "Send",

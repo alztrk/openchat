@@ -157,6 +157,7 @@
   "providerRateLimited": "Sağlayıcı bir kullanım sınırı bildirdi. Daha sonra tekrar dene.",
   "providerAuthenticationRequired": "Sağlayıcı isteği reddetti. Bağlantıyı ve model erişimini kontrol et.",
   "providerRequestFailed": "Sağlayıcı yanıtı tamamlayamadı. Kayıtlı mesajların kullanılabilir durumda.",
+  "contextWindowExceeded": "Sohbet bu modelin bağlam sınırı için fazla büyük. Son mesajı kısalt veya daha geniş bağlamlı bir model seç. Sohbet geçmişin kayıtlı.",
   "openCodeFreeTierRestricted": "OpenCode ücretsiz modelleri yalnızca OpenCode uygulamasında kullanılabilir.",
   "apiKey": "API anahtarı",
   "apiKeyInputLabel": "API anahtarı",
@@ -330,6 +331,186 @@
   "newProjectConversation": "Projede yeni sohbet başlat",
   "newConversation": "Yeni bir sohbet başlat",
   "conversationTitle": "Yeni sohbet",
+  "conversationMemory": "Sohbet belleği",
+  "conversationMemoryDescription": "Bu sohbetin sıkıştırılmış bağlamını incele ve arşivdeki eski mesajlarda ara.",
+  "conversationMemoryCurrentConversation": "Seçili sohbet: {title}",
+  "@conversationMemoryCurrentConversation": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "conversationMemoryNoConversation": "Belleği incelemek için önce bir sohbet aç.",
+  "contextUsageTitle": "Bağlam kullanımı",
+  "contextUsageUsed": "Kullanım: yaklaşık {count} token",
+  "@contextUsageUsed": {
+    "placeholders": {
+      "count": { "type": "String" }
+    }
+  },
+  "contextUsageSummary": "Yaklaşık {used} / {limit} token ({percent})",
+  "@contextUsageSummary": {
+    "placeholders": {
+      "used": { "type": "String" },
+      "limit": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageModelLimit": "{count} token",
+  "@contextUsageModelLimit": {
+    "placeholders": {
+      "count": { "type": "String" }
+    }
+  },
+  "contextUsageNoModelLimit": "Model sınırı bilinmiyor.",
+  "contextUsageProviderMeasurement": "Son sağlayıcı ölçümü: {count} token",
+  "@contextUsageProviderMeasurement": {
+    "placeholders": {
+      "count": { "type": "String" }
+    }
+  },
+  "contextUsageInstructionsEstimate": "Talimatlar: {count} token · {percent}",
+  "@contextUsageInstructionsEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageToolDefinitionsEstimate": "Araç tanımları: {count} token · {percent}",
+  "@contextUsageToolDefinitionsEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageMessagesEstimate": "Mesajlar: {count} token · {percent}",
+  "@contextUsageMessagesEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageAttachmentsEstimate": "Ek dosyalar: {count} token · {percent}",
+  "@contextUsageAttachmentsEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageAttachmentEstimate": "{name}: {count} token · {percent}",
+  "@contextUsageAttachmentEstimate": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageDraftAttachment": "Taslak · {name}",
+  "@contextUsageDraftAttachment": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "contextUsageUserMessagesEstimate": "Kullanıcı: {count} token · {percent}",
+  "@contextUsageUserMessagesEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageAssistantMessagesEstimate": "Yapay zekâ: {count} token · {percent}",
+  "@contextUsageAssistantMessagesEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageToolsEstimate": "Araç kullanımı: {count} token · {percent}",
+  "@contextUsageToolsEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageToolUsageEstimate": "{name}: {count} token · {percent}",
+  "@contextUsageToolUsageEstimate": {
+    "placeholders": {
+      "name": { "type": "String" },
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageMemoryEstimate": "Sıkıştırılmış bellek: {count} token · {percent}",
+  "@contextUsageMemoryEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageDraftEstimate": "Taslak: {count} token · {percent}",
+  "@contextUsageDraftEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageFreeSpaceEstimate": "Boş alan: {count} token · {percent}",
+  "@contextUsageFreeSpaceEstimate": {
+    "placeholders": {
+      "count": { "type": "String" },
+      "percent": { "type": "String" }
+    }
+  },
+  "contextUsageOverLimit": "Model sınırı aşılıyor.",
+  "contextUsageMeasurementUnavailable": "Bellek ayrıntıları alınamadı.",
+  "contextUsageInstructionUnavailable": "Talimat bilgisi alınamadı.",
+  "contextUsageConfigurationUnavailable": "Talimat ve araç tanımı ölçümleri alınamadı.",
+  "contextUsageConfigurationLoading": "Talimat ve araç tanımı ölçümleri hazırlanıyor…",
+  "conversationMemorySemanticTitle": "Anlamsal arama",
+  "conversationMemorySemanticDescription": "Farklı ifadelerle yazılmış eski mesajları da bulmak için yaklaşık 136 MB çok dilli model indir.",
+  "conversationMemorySemanticPrepare": "Hazırla",
+  "conversationMemorySemanticChecking": "Yerel anlamsal arama durumu denetleniyor…",
+  "conversationMemorySemanticPreparing": "Model indiriliyor ve doğrulanıyor…",
+  "conversationMemorySemanticDownloadProgress": "%{percent} indirildi · {downloaded} / {total} MB",
+  "@conversationMemorySemanticDownloadProgress": {
+    "placeholders": {
+      "percent": { "type": "String" },
+      "downloaded": { "type": "String" },
+      "total": { "type": "String" }
+    }
+  },
+  "conversationMemorySemanticIndexing": "Yerel arşiv indeksi hazırlanıyor…",
+  "conversationMemorySemanticCancelling": "İndirme iptal ediliyor…",
+  "conversationMemorySemanticDownloadCancelled": "İndirme iptal edildi. Anahtar kelime araması kullanılabilir.",
+  "conversationMemorySemanticPrepareFailed": "Model hazırlanamadı. Yeniden dene; doğrulanan indirme parçaları yeniden kullanılır.",
+  "conversationMemorySemanticKeywordSearchFallback": "Hazırlamadan önce anahtar kelime araması kullanılabilir.",
+  "conversationMemorySemanticReady": "Yerel anlamsal arama hazır",
+  "conversationMemorySemanticIndexNotice": "Model bu cihazda çalışır. İlk arama eski mesajları ve kayıtlı araç ayrıntılarını yerel olarak indeksleyebilir ve biraz sürebilir.",
+  "conversationMemorySummaryTitle": "Sıkıştırılmış bağlam",
+  "conversationMemoryNoSummary": "Henüz sıkıştırılmış bir özet yok.",
+  "conversationMemoryCheckpointDescription": "Sağlayıcı bağlamı okunabilir bir özet yerine yeniden kullanılabilir bir paket olarak saklıyor. Tam mesaj geçmişi arşivde korunuyor.",
+  "conversationMemoryLastPromptTokens": "Son istek · {provider} · {model} · {count} girdi tokeni",
+  "@conversationMemoryLastPromptTokens": {
+    "placeholders": {
+      "provider": { "type": "String" },
+      "model": { "type": "String" },
+      "count": { "type": "String" }
+    }
+  },
+  "conversationMemorySearchTitle": "Arşivde ara",
+  "conversationMemorySearchHint": "Eski bir konu veya ifade yaz...",
+  "conversationMemorySearchAction": "Ara",
+  "conversationMemorySearchQueryTooShort": "Arama için en az iki karakter yaz.",
+  "conversationMemorySearchInstruction": "Tamamlanmış mesajlar ve araç sonuçları yalnızca bu sohbet içinde aranır.",
+  "conversationMemorySearchNoResults": "Eşleşen arşiv kaydı yok.",
+  "conversationMemorySearchFailed": "Sohbet arşivi aranamadı. Yeniden deneyin.",
+  "conversationMemoryLoadFailed": "Sıkıştırılmış bağlam yüklenemedi. Yeniden deneyin.",
+  "conversationMemoryResetAction": "Bağlamı sıfırla",
+  "conversationMemoryResetTitle": "Sıkıştırılmış bağlam sıfırlansın mı?",
+  "conversationMemoryResetConfirmation": "Kaydedilmiş sıkıştırılmış bağlam ve son istek ölçümü kaldırılır. Tam mesaj geçmişi ve arşiv korunur; gerektiğinde bağlam sonraki istek sırasında yeniden oluşturulur.",
+  "conversationMemoryResetConfirm": "Sıfırla",
+  "conversationMemoryResetFailed": "Sıkıştırılmış bağlam sıfırlanamadı.",
+  "conversationMemoryUserMessage": "Kullanıcı mesajı",
+  "conversationMemoryAssistantMessage": "Asistan yanıtı",
   "renameConversation": "Sohbet başlığını düzenle",
   "pinConversation": "Sohbeti sabitle",
   "unpinConversation": "Sabitlemeyi kaldır",
@@ -359,7 +540,8 @@
   "reasoningExtraHigh": "Çok yüksek",
   "reasoningMax": "En yüksek",
   "reasoningUltra": "En üst",
-  "reasoningDefault": "Model varsayılanı",
+  "reasoningDefault": "Varsayılan",
+  "reasoningDefaultHint": "Özel bir düzey gönderilmez; sağlayıcının varsayılan akıl yürütme davranışı kullanılır. Görev zorluğuna göre seviye seçmez.",
   "stop": "Durdur",
   "modelsLoading": "Modeller yükleniyor...",
   "modelsUnavailable": "Modeller kullanılamıyor",
@@ -371,9 +553,20 @@
   "chatHistoryUnavailable": "Sohbet geçmişi güncellenemedi. Lütfen tekrar dene.",
   "chatRequestFailed": "Yanıt tamamlanamadı. Kayıtlı mesajların kullanılabilir durumda.",
   "cachedCatalog": "önbellekteki modeller",
-  "reasoningUnavailable": "Bu model ayarlanabilir akıl yürütme düzeyi sunmuyor.",
   "attachFile": "Dosya ekle",
   "attachmentsUnavailable": "Dosya ekleme henüz kullanılamıyor.",
+  "removeAttachment": "Ek dosyayı kaldır",
+  "previewImage": "Görseli büyüt",
+  "attachmentUnavailable": "Ek dosyaya erişilemiyor.",
+  "attachmentCountExceeded": "En fazla 10 dosya ve 3 görsel ekleyebilirsin.",
+  "attachmentFileTooLarge": "Dosya izin verilen boyut sınırını aşıyor.",
+  "attachmentTotalTooLarge": "Ek dosyaların toplam boyutu 14 MB'ı aşamaz.",
+  "unsupportedAttachmentFile": "Bu dosya türü desteklenmiyor.",
+  "attachmentReadFailed": "Dosya okunamadı. Dosyayı yeniden seçip tekrar dene.",
+  "attachmentSaveFailed": "Ek dosya yerel sohbete kaydedilemedi. Tekrar seçip dene.",
+  "attachmentMustBeUtf8": "Metin dosyası UTF-8 biçiminde olmalıdır.",
+  "attachmentInvalidImage": "Görsel dosyasının biçimi doğrulanamadı.",
+  "modelDoesNotSupportImages": "Seçili model görsel eklerini desteklemiyor.",
   "messageHint": "Mesajını yaz...",
   "sendMessage": "Mesajı gönder",
   "send": "Gönder",

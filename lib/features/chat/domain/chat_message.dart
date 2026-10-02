@@ -1,3 +1,5 @@
+import 'package:openchat/features/chat/domain/chat_attachment.dart';
+
 enum ChatMessageRole { user, assistant }
 
 enum ChatMessageStatus { streaming, completed, failed, stopped }
@@ -17,6 +19,8 @@ class ChatToolActivity {
     required this.name,
     required this.arguments,
     required this.status,
+    this.roundId,
+    this.assistantTextBeforeByteOffset,
     this.output,
     this.targetPath,
   });
@@ -24,6 +28,8 @@ class ChatToolActivity {
   final String callId;
   final String name;
   final Object? arguments;
+  final String? roundId;
+  final int? assistantTextBeforeByteOffset;
   final Object? output;
   final String? targetPath;
   final ChatToolActivityStatus status;
@@ -32,6 +38,9 @@ class ChatToolActivity {
     'callId': callId,
     'name': name,
     'arguments': arguments,
+    if (roundId != null) 'roundId': roundId,
+    if (assistantTextBeforeByteOffset != null)
+      'assistantTextBeforeByteOffset': assistantTextBeforeByteOffset,
     if (output != null) 'output': output,
     if (targetPath != null) 'targetPath': targetPath,
     'status': status.name,
@@ -44,6 +53,9 @@ class ChatToolActivity {
     final callId = value['callId'];
     final name = value['name'];
     final statusValue = value['status'];
+    final roundId = value['roundId'];
+    final assistantTextBeforeByteOffset =
+        value['assistantTextBeforeByteOffset'];
     final targetPath = value['targetPath'];
     if (callId is! String ||
         callId.isEmpty ||
@@ -51,6 +63,10 @@ class ChatToolActivity {
         name.isEmpty ||
         !value.containsKey('arguments') ||
         statusValue is! String ||
+        (roundId != null && (roundId is! String || roundId.isEmpty)) ||
+        (assistantTextBeforeByteOffset != null &&
+            (assistantTextBeforeByteOffset is! int ||
+                assistantTextBeforeByteOffset < 0)) ||
         (targetPath != null && targetPath is! String)) {
       throw const FormatException('A tool activity was invalid.');
     }
@@ -76,6 +92,10 @@ class ChatToolActivity {
       callId: callId,
       name: name,
       arguments: value['arguments'],
+      roundId: roundId is String ? roundId : null,
+      assistantTextBeforeByteOffset: assistantTextBeforeByteOffset is int
+          ? assistantTextBeforeByteOffset
+          : null,
       output: value['output'],
       targetPath: targetPath is String ? targetPath : null,
       status: status,
@@ -151,6 +171,7 @@ class ChatMessage {
     required this.id,
     required this.role,
     required this.content,
+    this.attachments = const <ChatAttachment>[],
     this.createdAt,
     this.outputTokens,
     this.tokensPerSecond,
@@ -164,6 +185,7 @@ class ChatMessage {
   final String id;
   final ChatMessageRole role;
   final String content;
+  final List<ChatAttachment> attachments;
   final DateTime? createdAt;
   final int? outputTokens;
   final double? tokensPerSecond;

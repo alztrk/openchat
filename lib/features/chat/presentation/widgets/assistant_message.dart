@@ -169,6 +169,10 @@ class AssistantMessage extends StatelessWidget {
         'authentication_required' => l10n.providerAuthenticationRequired,
         'rate_limited' => l10n.providerRateLimited,
         'model_unavailable' => l10n.selectedModelUnavailable,
+        'context_window_exceeded' ||
+        'context_compaction_input_too_large' => l10n.contextWindowExceeded,
+        'attachment_unavailable' => l10n.attachmentUnavailable,
+        'model_does_not_support_images' => l10n.modelDoesNotSupportImages,
         'provider_request_failed' ||
         'invalid_provider_response' => l10n.providerRequestFailed,
         _ => l10n.chatRequestFailed,
@@ -554,7 +558,9 @@ class _AssistantResponseContentState extends State<_AssistantResponseContent> {
       fontWeight: FontWeight.w400,
       height: 22 / 14,
     );
-    if (widget.isStreaming) return Text(widget.content, style: textStyle);
+    if (widget.isStreaming && !_containsMarkdownSyntax(widget.content)) {
+      return Text(widget.content, style: textStyle);
+    }
 
     final cachedHtml = _cachedSafeHtml;
     if (_cachedContent == widget.content && cachedHtml != null) {
@@ -575,7 +581,7 @@ class _AssistantResponseContentState extends State<_AssistantResponseContent> {
   Widget _buildHtmlWidget(String safeHtml, TextStyle textStyle) {
     return HtmlWidget(
       safeHtml,
-      enableCaching: true,
+      enableCaching: !widget.isStreaming,
       renderMode: RenderMode.column,
       textStyle: textStyle,
       onTapUrl: (_) => true,
@@ -599,6 +605,16 @@ class _AssistantResponseContentState extends State<_AssistantResponseContent> {
     );
   }
 }
+
+final _streamingMarkdownSyntax = RegExp(
+  r'(^|\n)\s{0,3}(?:#{1,6}\s|>|[-+*]\s|\d+[.)]\s|```|~~~)|'
+  r'\*\*|__|~~|`|\[[^\]]+\]\(|(?:^|[^\\])\*[^*\n]+\*|'
+  r'(?:^|[^\\])_[^_\n]+_|\|.+\||https?://|www\.',
+  multiLine: true,
+);
+
+bool _containsMarkdownSyntax(String content) =>
+    _streamingMarkdownSyntax.hasMatch(content);
 
 String _sanitizeAssistantHtml(String source) {
   final fragment = html_parser.parseFragment(source);

@@ -7,6 +7,19 @@ import 'package:openchat/features/chat/data/openchat_database.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 
 void main() {
+  test('reads legacy tool activities without ordering metadata', () {
+    final activity = ChatToolActivity.fromJson(<String, Object?>{
+      'callId': 'legacy-call',
+      'name': 'read',
+      'arguments': <String, Object?>{'path': 'settings.json'},
+      'output': <String, Object?>{'content': 'stored'},
+      'status': 'completed',
+    });
+
+    expect(activity.roundId, isNull);
+    expect(activity.assistantTextBeforeByteOffset, isNull);
+  });
+
   test(
     'conversation and messages survive closing and reopening the database',
     () async {
@@ -121,6 +134,47 @@ void main() {
       throwsA(isA<ConversationNotFoundException>()),
     );
   });
+
+  test(
+    'persists tool round ordering metadata with the assistant message',
+    () async {
+      final database = OpenChatDatabase(NativeDatabase.memory());
+      addTearDown(database.close);
+      final repository = ChatRepository(database);
+      await repository.createConversation(
+        id: 'conversation-with-tool-rounds',
+        title: 'Tool history',
+        createdAt: DateTime.utc(2026, 9, 26, 12, 30),
+      );
+
+      await repository.saveMessage(
+        conversationId: 'conversation-with-tool-rounds',
+        message: const ChatMessage(
+          id: 'assistant-tool-message',
+          role: ChatMessageRole.assistant,
+          content: 'Checking. Done.',
+          toolActivities: <ChatToolActivity>[
+            ChatToolActivity(
+              callId: 'call-1',
+              name: 'read',
+              arguments: <String, Object?>{'path': 'settings.json'},
+              output: <String, Object?>{'content': 'stored'},
+              roundId: 'round-1',
+              assistantTextBeforeByteOffset: 8,
+              status: ChatToolActivityStatus.completed,
+            ),
+          ],
+        ),
+      );
+
+      final messages = await repository
+          .watchMessages('conversation-with-tool-rounds')
+          .first;
+      final activity = messages.single.toolActivities.single;
+      expect(activity.roundId, 'round-1');
+      expect(activity.assistantTextBeforeByteOffset, 8);
+    },
+  );
 
   test('clearing history removes conversations and their messages', () async {
     final database = OpenChatDatabase(NativeDatabase.memory());

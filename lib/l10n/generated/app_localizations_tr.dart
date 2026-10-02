@@ -455,6 +455,10 @@ class AppLocalizationsTr extends AppLocalizations {
       'Sağlayıcı yanıtı tamamlayamadı. Kayıtlı mesajların kullanılabilir durumda.';
 
   @override
+  String get contextWindowExceeded =>
+      'Sohbet bu modelin bağlam sınırı için fazla büyük. Son mesajı kısalt veya daha geniş bağlamlı bir model seç. Sohbet geçmişin kayıtlı.';
+
+  @override
   String get openCodeFreeTierRestricted =>
       'OpenCode ücretsiz modelleri yalnızca OpenCode uygulamasında kullanılabilir.';
 
@@ -986,6 +990,263 @@ class AppLocalizationsTr extends AppLocalizations {
   String get conversationTitle => 'Yeni sohbet';
 
   @override
+  String get conversationMemory => 'Sohbet belleği';
+
+  @override
+  String get conversationMemoryDescription =>
+      'Bu sohbetin sıkıştırılmış bağlamını incele ve arşivdeki eski mesajlarda ara.';
+
+  @override
+  String conversationMemoryCurrentConversation(String title) {
+    return 'Seçili sohbet: $title';
+  }
+
+  @override
+  String get conversationMemoryNoConversation =>
+      'Belleği incelemek için önce bir sohbet aç.';
+
+  @override
+  String get contextUsageTitle => 'Bağlam kullanımı';
+
+  @override
+  String contextUsageUsed(String count) {
+    return 'Kullanım: yaklaşık $count token';
+  }
+
+  @override
+  String contextUsageSummary(String used, String limit, String percent) {
+    return 'Yaklaşık $used / $limit token ($percent)';
+  }
+
+  @override
+  String contextUsageModelLimit(String count) {
+    return '$count token';
+  }
+
+  @override
+  String get contextUsageNoModelLimit => 'Model sınırı bilinmiyor.';
+
+  @override
+  String contextUsageProviderMeasurement(String count) {
+    return 'Son sağlayıcı ölçümü: $count token';
+  }
+
+  @override
+  String contextUsageInstructionsEstimate(String count, String percent) {
+    return 'Talimatlar: $count token · $percent';
+  }
+
+  @override
+  String contextUsageToolDefinitionsEstimate(String count, String percent) {
+    return 'Araç tanımları: $count token · $percent';
+  }
+
+  @override
+  String contextUsageMessagesEstimate(String count, String percent) {
+    return 'Mesajlar: $count token · $percent';
+  }
+
+  @override
+  String contextUsageAttachmentsEstimate(String count, String percent) {
+    return 'Ek dosyalar: $count token · $percent';
+  }
+
+  @override
+  String contextUsageAttachmentEstimate(
+    String name,
+    String count,
+    String percent,
+  ) {
+    return '$name: $count token · $percent';
+  }
+
+  @override
+  String contextUsageDraftAttachment(String name) {
+    return 'Taslak · $name';
+  }
+
+  @override
+  String contextUsageUserMessagesEstimate(String count, String percent) {
+    return 'Kullanıcı: $count token · $percent';
+  }
+
+  @override
+  String contextUsageAssistantMessagesEstimate(String count, String percent) {
+    return 'Yapay zekâ: $count token · $percent';
+  }
+
+  @override
+  String contextUsageToolsEstimate(String count, String percent) {
+    return 'Araç kullanımı: $count token · $percent';
+  }
+
+  @override
+  String contextUsageToolUsageEstimate(
+    String name,
+    String count,
+    String percent,
+  ) {
+    return '$name: $count token · $percent';
+  }
+
+  @override
+  String contextUsageMemoryEstimate(String count, String percent) {
+    return 'Sıkıştırılmış bellek: $count token · $percent';
+  }
+
+  @override
+  String contextUsageDraftEstimate(String count, String percent) {
+    return 'Taslak: $count token · $percent';
+  }
+
+  @override
+  String contextUsageFreeSpaceEstimate(String count, String percent) {
+    return 'Boş alan: $count token · $percent';
+  }
+
+  @override
+  String get contextUsageOverLimit => 'Model sınırı aşılıyor.';
+
+  @override
+  String get contextUsageMeasurementUnavailable =>
+      'Bellek ayrıntıları alınamadı.';
+
+  @override
+  String get contextUsageInstructionUnavailable => 'Talimat bilgisi alınamadı.';
+
+  @override
+  String get contextUsageConfigurationUnavailable =>
+      'Talimat ve araç tanımı ölçümleri alınamadı.';
+
+  @override
+  String get contextUsageConfigurationLoading =>
+      'Talimat ve araç tanımı ölçümleri hazırlanıyor…';
+
+  @override
+  String get conversationMemorySemanticTitle => 'Anlamsal arama';
+
+  @override
+  String get conversationMemorySemanticDescription =>
+      'Farklı ifadelerle yazılmış eski mesajları da bulmak için yaklaşık 136 MB çok dilli model indir.';
+
+  @override
+  String get conversationMemorySemanticPrepare => 'Hazırla';
+
+  @override
+  String get conversationMemorySemanticChecking =>
+      'Yerel anlamsal arama durumu denetleniyor…';
+
+  @override
+  String get conversationMemorySemanticPreparing =>
+      'Model indiriliyor ve doğrulanıyor…';
+
+  @override
+  String conversationMemorySemanticDownloadProgress(
+    String percent,
+    String downloaded,
+    String total,
+  ) {
+    return '%$percent indirildi · $downloaded / $total MB';
+  }
+
+  @override
+  String get conversationMemorySemanticIndexing =>
+      'Yerel arşiv indeksi hazırlanıyor…';
+
+  @override
+  String get conversationMemorySemanticCancelling => 'İndirme iptal ediliyor…';
+
+  @override
+  String get conversationMemorySemanticDownloadCancelled =>
+      'İndirme iptal edildi. Anahtar kelime araması kullanılabilir.';
+
+  @override
+  String get conversationMemorySemanticPrepareFailed =>
+      'Model hazırlanamadı. Yeniden dene; doğrulanan indirme parçaları yeniden kullanılır.';
+
+  @override
+  String get conversationMemorySemanticKeywordSearchFallback =>
+      'Hazırlamadan önce anahtar kelime araması kullanılabilir.';
+
+  @override
+  String get conversationMemorySemanticReady => 'Yerel anlamsal arama hazır';
+
+  @override
+  String get conversationMemorySemanticIndexNotice =>
+      'Model bu cihazda çalışır. İlk arama eski mesajları ve kayıtlı araç ayrıntılarını yerel olarak indeksleyebilir ve biraz sürebilir.';
+
+  @override
+  String get conversationMemorySummaryTitle => 'Sıkıştırılmış bağlam';
+
+  @override
+  String get conversationMemoryNoSummary => 'Henüz sıkıştırılmış bir özet yok.';
+
+  @override
+  String get conversationMemoryCheckpointDescription =>
+      'Sağlayıcı bağlamı okunabilir bir özet yerine yeniden kullanılabilir bir paket olarak saklıyor. Tam mesaj geçmişi arşivde korunuyor.';
+
+  @override
+  String conversationMemoryLastPromptTokens(
+    String provider,
+    String model,
+    String count,
+  ) {
+    return 'Son istek · $provider · $model · $count girdi tokeni';
+  }
+
+  @override
+  String get conversationMemorySearchTitle => 'Arşivde ara';
+
+  @override
+  String get conversationMemorySearchHint => 'Eski bir konu veya ifade yaz...';
+
+  @override
+  String get conversationMemorySearchAction => 'Ara';
+
+  @override
+  String get conversationMemorySearchQueryTooShort =>
+      'Arama için en az iki karakter yaz.';
+
+  @override
+  String get conversationMemorySearchInstruction =>
+      'Tamamlanmış mesajlar ve araç sonuçları yalnızca bu sohbet içinde aranır.';
+
+  @override
+  String get conversationMemorySearchNoResults => 'Eşleşen arşiv kaydı yok.';
+
+  @override
+  String get conversationMemorySearchFailed =>
+      'Sohbet arşivi aranamadı. Yeniden deneyin.';
+
+  @override
+  String get conversationMemoryLoadFailed =>
+      'Sıkıştırılmış bağlam yüklenemedi. Yeniden deneyin.';
+
+  @override
+  String get conversationMemoryResetAction => 'Bağlamı sıfırla';
+
+  @override
+  String get conversationMemoryResetTitle =>
+      'Sıkıştırılmış bağlam sıfırlansın mı?';
+
+  @override
+  String get conversationMemoryResetConfirmation =>
+      'Kaydedilmiş sıkıştırılmış bağlam ve son istek ölçümü kaldırılır. Tam mesaj geçmişi ve arşiv korunur; gerektiğinde bağlam sonraki istek sırasında yeniden oluşturulur.';
+
+  @override
+  String get conversationMemoryResetConfirm => 'Sıfırla';
+
+  @override
+  String get conversationMemoryResetFailed =>
+      'Sıkıştırılmış bağlam sıfırlanamadı.';
+
+  @override
+  String get conversationMemoryUserMessage => 'Kullanıcı mesajı';
+
+  @override
+  String get conversationMemoryAssistantMessage => 'Asistan yanıtı';
+
+  @override
   String get renameConversation => 'Sohbet başlığını düzenle';
 
   @override
@@ -1072,7 +1333,11 @@ class AppLocalizationsTr extends AppLocalizations {
   String get reasoningUltra => 'En üst';
 
   @override
-  String get reasoningDefault => 'Model varsayılanı';
+  String get reasoningDefault => 'Varsayılan';
+
+  @override
+  String get reasoningDefaultHint =>
+      'Özel bir düzey gönderilmez; sağlayıcının varsayılan akıl yürütme davranışı kullanılır. Görev zorluğuna göre seviye seçmez.';
 
   @override
   String get stop => 'Durdur';
@@ -1115,14 +1380,53 @@ class AppLocalizationsTr extends AppLocalizations {
   String get cachedCatalog => 'önbellekteki modeller';
 
   @override
-  String get reasoningUnavailable =>
-      'Bu model ayarlanabilir akıl yürütme düzeyi sunmuyor.';
-
-  @override
   String get attachFile => 'Dosya ekle';
 
   @override
   String get attachmentsUnavailable => 'Dosya ekleme henüz kullanılamıyor.';
+
+  @override
+  String get removeAttachment => 'Ek dosyayı kaldır';
+
+  @override
+  String get previewImage => 'Görseli büyüt';
+
+  @override
+  String get attachmentUnavailable => 'Ek dosyaya erişilemiyor.';
+
+  @override
+  String get attachmentCountExceeded =>
+      'En fazla 10 dosya ve 3 görsel ekleyebilirsin.';
+
+  @override
+  String get attachmentFileTooLarge =>
+      'Dosya izin verilen boyut sınırını aşıyor.';
+
+  @override
+  String get attachmentTotalTooLarge =>
+      'Ek dosyaların toplam boyutu 14 MB\'ı aşamaz.';
+
+  @override
+  String get unsupportedAttachmentFile => 'Bu dosya türü desteklenmiyor.';
+
+  @override
+  String get attachmentReadFailed =>
+      'Dosya okunamadı. Dosyayı yeniden seçip tekrar dene.';
+
+  @override
+  String get attachmentSaveFailed =>
+      'Ek dosya yerel sohbete kaydedilemedi. Tekrar seçip dene.';
+
+  @override
+  String get attachmentMustBeUtf8 => 'Metin dosyası UTF-8 biçiminde olmalıdır.';
+
+  @override
+  String get attachmentInvalidImage =>
+      'Görsel dosyasının biçimi doğrulanamadı.';
+
+  @override
+  String get modelDoesNotSupportImages =>
+      'Seçili model görsel eklerini desteklemiyor.';
 
   @override
   String get messageHint => 'Mesajını yaz...';

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,8 +10,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/openchat_toast.dart';
 import 'package:openchat/features/chat/data/chat_repository.dart';
+import 'package:openchat/features/chat/data/chat_attachment_store.dart';
+import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
 import 'package:openchat/features/chat/domain/chat_conversation.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart' as chat;
+import 'package:openchat/features/chat/domain/chat_attachment.dart';
 import 'package:openchat/features/chat/domain/chat_project.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
@@ -93,6 +97,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _searchController = TextEditingController();
   final _messageController = TextEditingController();
   final _messageScrollController = ScrollController();
+  final List<ChatAttachment> _pendingAttachments = <ChatAttachment>[];
   bool _settingsOpen = false;
   bool _sidebarsCompact = false;
   bool _isSending = false;
@@ -144,10 +149,15 @@ class _ChatScreenState extends State<ChatScreen> {
   Stream<List<ChatProject>>? _projectStream;
   Stream<List<chat.ChatMessage>>? _messageStream;
   Stream<List<FavoriteModel>>? _favoriteModelsStream;
+  ConversationMemoryRepository? _conversationMemoryRepository;
 
   @override
   void initState() {
     super.initState();
+    final serviceClient = widget.serviceClient;
+    _conversationMemoryRepository = serviceClient == null
+        ? null
+        : ConversationMemoryRepository(serviceClient);
     _bindRepositoryStreams();
     unawaited(_loadToolPermissionMode());
     if (widget.historyStorageStatus == HistoryStorageStatus.available) {
@@ -158,6 +168,12 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void didUpdateWidget(covariant ChatScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.serviceClient != widget.serviceClient) {
+      final serviceClient = widget.serviceClient;
+      _conversationMemoryRepository = serviceClient == null
+          ? null
+          : ConversationMemoryRepository(serviceClient);
+    }
     if (oldWidget.chatRepository != widget.chatRepository ||
         oldWidget.historyStorageStatus != widget.historyStorageStatus) {
       _bindRepositoryStreams();
@@ -358,8 +374,10 @@ class _ChatScreenState extends State<ChatScreen> {
         setState(() {
           _selectedProviderId = providerId;
           if (defaultModelAvailable && defaultModel != null) {
-            _selectedConnectionId = defaultModel.connectionId;
-            _selectedWorkspaceId = defaultModel.workspaceId;
+            if (defaultModel.providerId == 'chatgpt') {
+              _selectedConnectionId = defaultModel.connectionId;
+              _selectedWorkspaceId = defaultModel.workspaceId;
+            }
             _selectedApiKeyConnectionId = defaultModel.apiKeyConnectionId;
           } else {
             if (!_isApiKeyRouteProvider(providerId)) {
@@ -1102,7 +1120,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _selectReasoning(String effort) {
+  void _selectReasoning(String? effort) {
     setState(() => _selectedReasoningEffort = effort);
   }
 
@@ -1196,9 +1214,12 @@ class _ChatScreenState extends State<ChatScreen> {
     final text = responseToReplace == null
         ? _messageController.text.trim()
         : '';
+    final attachments = responseToReplace == null
+        ? List<ChatAttachment>.unmodifiable(_pendingAttachments)
+        : const <ChatAttachment>[];
     if (repository == null ||
         service == null ||
-        (responseToReplace == null && text.isEmpty)) {
+        (responseToReplace == null && text.isEmpty && attachments.isEmpty)) {
       return;
     }
 
@@ -1247,6 +1268,13 @@ class _ChatScreenState extends State<ChatScreen> {
       _showMessage(l10n.modelCatalogUnavailable);
       return;
     }
+    if (attachments.any((attachment) => attachment.isImage) &&
+        !_models.any(
+          (model) => model.routeKey == modelRouteKey && model.supportsImages,
+        )) {
+      _showMessage(l10n.modelDoesNotSupportImages);
+      return;
+    }
 
     String? apiKey;
     try {
@@ -1276,6 +1304,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     final conversationId = selectedConversation?.id ?? _newLocalId();
+    final userMessageId = _newLocalId();
     if (mounted) {
       setState(() {
         _isSending = true;
@@ -1362,9 +1391,10 @@ class _ChatScreenState extends State<ChatScreen> {
         await repository.saveMessage(
           conversationId: conversationId,
           message: chat.ChatMessage(
-            id: _newLocalId(),
+            id: userMessageId,
             role: chat.ChatMessageRole.user,
             content: text,
+            attachments: attachments,
             createdAt: DateTime.now().toUtc(),
           ),
         );
@@ -1378,12 +1408,21 @@ class _ChatScreenState extends State<ChatScreen> {
           context: ErrorDescription('while saving a new chat message'),
         ),
       );
-      if (mounted) _showMessage(l10n.messageSaveFailed);
+      if (mounted) {
+        _showMessage(
+          error is ChatAttachmentStorageException
+              ? l10n.attachmentSaveFailed
+              : l10n.messageSaveFailed,
+        );
+      }
       _clearActiveSendState();
       return;
     }
 
-    if (responseToReplace == null) _messageController.clear();
+    if (responseToReplace == null) {
+      _messageController.clear();
+      if (mounted) setState(_pendingAttachments.clear);
+    }
     if (mounted) {
       setState(() {
         _activeChatConversationId = conversationId;
@@ -1394,6 +1433,10 @@ class _ChatScreenState extends State<ChatScreen> {
     DateTime? assistantCreatedAt;
     var assistantReasoningSummaries = const <chat.ChatReasoningSummary>[];
     var assistantToolActivities = const <chat.ChatToolActivity>[];
+    Stopwatch? streamStopwatch;
+    var streamChunkCount = 0;
+    int? liveOutputTokens;
+    double? liveTokensPerSecond;
     var persistence = Future<void>.value();
     StreamSubscription<OpenChatServiceEvent>? subscription;
 
@@ -1534,11 +1577,54 @@ class _ChatScreenState extends State<ChatScreen> {
           if (event.name == 'chat.tool.updated') {
             updateToolActivity(event.data['toolActivity']);
           }
+          if (event.name == 'chat.delta' ||
+              event.name == 'chat.reasoning.delta') {
+            streamChunkCount++;
+          }
+
+          final hasStartedGenerating =
+              content.isNotEmpty || assistantReasoningSummaries.isNotEmpty;
+          if (hasStartedGenerating && streamStopwatch == null) {
+            streamStopwatch = Stopwatch()..start();
+          }
+
+          final serverTokens = (event.data['outputTokens'] as num?)?.toInt();
+          final serverTps = (event.data['tokensPerSecond'] as num?)?.toDouble();
+
+          if (serverTokens != null) {
+            liveOutputTokens = serverTokens;
+          } else if (hasStartedGenerating) {
+            var totalChars = content.length;
+            for (final summary in assistantReasoningSummaries) {
+              totalChars += summary.content.length;
+            }
+            if (totalChars > 0) {
+              liveOutputTokens = math.max(
+                streamChunkCount,
+                (totalChars / 3.7).ceil(),
+              );
+            }
+          }
+
+          if (serverTps != null) {
+            liveTokensPerSecond = serverTps;
+          } else if (streamStopwatch != null &&
+              liveOutputTokens != null &&
+              liveOutputTokens! > 0) {
+            final elapsedSeconds =
+                streamStopwatch!.elapsedMicroseconds / 1000000.0;
+            if (elapsedSeconds >= 0.05) {
+              liveTokensPerSecond = liveOutputTokens! / elapsedSeconds;
+            }
+          }
+
           final snapshot = chat.ChatMessage(
             id: messageId,
             role: chat.ChatMessageRole.assistant,
             content: content,
             createdAt: assistantCreatedAt,
+            outputTokens: liveOutputTokens,
+            tokensPerSecond: liveTokensPerSecond,
             reasoningSummaries: assistantReasoningSummaries,
             toolActivities: assistantToolActivities,
             status: chat.ChatMessageStatus.streaming,
@@ -1574,22 +1660,27 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       };
       final outputTokens = switch (result['outputTokens']) {
-        null => null,
+        null => liveOutputTokens,
+        int value => value,
+        _ => throw const FormatException(
+          'The ChatGPT response metrics were invalid.',
+        ),
+      };
+      final elapsedMicroseconds = switch (result['elapsedMicroseconds']) {
+        null => streamStopwatch?.elapsedMicroseconds,
         int value => value,
         _ => throw const FormatException(
           'The ChatGPT response metrics were invalid.',
         ),
       };
       final tokensPerSecond = switch (result['tokensPerSecond']) {
-        null => null,
+        null =>
+          (outputTokens != null &&
+                  elapsedMicroseconds != null &&
+                  elapsedMicroseconds > 0)
+              ? (outputTokens / (elapsedMicroseconds / 1000000.0))
+              : liveTokensPerSecond,
         num value => value.toDouble(),
-        _ => throw const FormatException(
-          'The ChatGPT response metrics were invalid.',
-        ),
-      };
-      final elapsedMicroseconds = switch (result['elapsedMicroseconds']) {
-        null => null,
-        int value => value,
         _ => throw const FormatException(
           'The ChatGPT response metrics were invalid.',
         ),
@@ -1845,6 +1936,8 @@ class _ChatScreenState extends State<ChatScreen> {
       'provider_endpoint_unavailable' ||
       'invalid_provider_response' => l10n.providerRequestFailed,
       'model_unavailable' => l10n.selectedModelUnavailable,
+      'context_window_exceeded' ||
+      'context_compaction_input_too_large' => l10n.contextWindowExceeded,
       'conversation_not_routed' => l10n.modelRequired,
       'invalid_retry_target' => l10n.responseRetryUnavailable,
       _ => l10n.providerRequestFailed,
@@ -2212,8 +2305,130 @@ class _ChatScreenState extends State<ChatScreen> {
     return '${DateTime.now().toUtc().microsecondsSinceEpoch}-$_nextLocalId';
   }
 
+  Future<void> _pickAttachments({required bool supportsImages}) async {
+    final repository = widget.chatRepository;
+    if (repository?.supportsAttachments != true || _isSending) return;
+    final l10n = context.openchatL10n;
+    final allowedExtensions = ChatAttachmentTypes.allowedExtensions
+        .where(
+          (extension) =>
+              supportsImages ||
+              !ChatAttachmentTypes.imageExtensions.contains(extension),
+        )
+        .toList(growable: false);
+
+    try {
+      final selectedFiles = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: allowedExtensions,
+      );
+      if (!mounted || selectedFiles.isEmpty) return;
+      final existing = List<ChatAttachment>.of(_pendingAttachments);
+      if (existing.length + selectedFiles.length >
+              ChatAttachmentStore.maximumFileCount ||
+          existing.where((attachment) => attachment.isImage).length +
+                  selectedFiles.where((file) {
+                    final kind = ChatAttachmentTypes.kindForExtension(
+                      file.extension ?? '',
+                    );
+                    return kind == ChatAttachmentKind.image;
+                  }).length >
+              ChatAttachmentStore.maximumImageCount) {
+        _showMessage(l10n.attachmentCountExceeded);
+        return;
+      }
+
+      var totalBytes = existing.fold<int>(
+        0,
+        (total, attachment) => total + attachment.sizeBytes,
+      );
+      final added = <ChatAttachment>[];
+      for (final file in selectedFiles) {
+        final extension = file.extension?.toLowerCase();
+        final kind = extension == null
+            ? null
+            : ChatAttachmentTypes.kindForExtension(extension);
+        final mimeType = extension == null
+            ? null
+            : ChatAttachmentTypes.mimeTypeForExtension(extension);
+        if (kind == null || mimeType == null) {
+          _showMessage(l10n.unsupportedAttachmentFile);
+          return;
+        }
+        if (kind == ChatAttachmentKind.image && !supportsImages) {
+          _showMessage(l10n.modelDoesNotSupportImages);
+          return;
+        }
+        final length = await file.length();
+        final maximumBytes = kind == ChatAttachmentKind.image
+            ? ChatAttachmentStore.maximumImageBytes
+            : ChatAttachmentStore.maximumTextBytes;
+        if (length == null || length <= 0 || length > maximumBytes) {
+          _showMessage(l10n.attachmentFileTooLarge);
+          return;
+        }
+        final fileSizeBytes = length.toInt();
+        totalBytes += fileSizeBytes;
+        if (totalBytes > ChatAttachmentStore.maximumTotalBytes) {
+          _showMessage(l10n.attachmentTotalTooLarge);
+          return;
+        }
+        final bytes = await file.readAsBytes();
+        if (bytes.length != fileSizeBytes) {
+          _showMessage(l10n.attachmentReadFailed);
+          return;
+        }
+        if (kind == ChatAttachmentKind.image &&
+            !ChatAttachmentTypes.hasValidImageSignature(mimeType, bytes)) {
+          _showMessage(l10n.attachmentInvalidImage);
+          return;
+        }
+        if (kind == ChatAttachmentKind.text) {
+          try {
+            const Utf8Decoder(allowMalformed: false).convert(bytes);
+          } on FormatException {
+            _showMessage(l10n.attachmentMustBeUtf8);
+            return;
+          }
+        }
+        added.add(
+          ChatAttachment(
+            id: _newLocalId(),
+            name: file.name,
+            mimeType: mimeType,
+            sizeBytes: fileSizeBytes,
+            kind: kind,
+            bytes: bytes,
+          ),
+        );
+      }
+      if (added.isNotEmpty) {
+        setState(() => _pendingAttachments.addAll(added));
+      }
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: StateError('Attachment selection or reading failed.'),
+          stack: stackTrace,
+          library: 'attachments',
+          context: ErrorDescription('while selecting chat attachments'),
+        ),
+      );
+      if (mounted) _showMessage(l10n.attachmentReadFailed);
+    }
+  }
+
+  void _removePendingAttachment(String attachmentId) {
+    setState(() {
+      _pendingAttachments.removeWhere(
+        (attachment) => attachment.id == attachmentId,
+      );
+    });
+  }
+
   @override
   void dispose() {
+    _pendingAttachments.clear();
     _searchController.dispose();
     _messageController.dispose();
     _messageScrollController.dispose();
@@ -2330,6 +2545,13 @@ class _ChatScreenState extends State<ChatScreen> {
                             onAppFontChanged: widget.onAppFontChanged,
                             historyStorageStatus: resolvedStorageStatus,
                             hasConversationHistory: conversations.isNotEmpty,
+                            activeConversationId: selectedConversation?.id,
+                            activeConversationTitle:
+                                selectedConversation?.title,
+                            isActiveConversationSending:
+                                _isSending &&
+                                _activeChatConversationId ==
+                                    selectedConversation?.id,
                             onClearConversationHistory:
                                 widget.chatRepository == null
                                 ? null
@@ -2516,7 +2738,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final selectedReasoning =
         reasoningOptions.contains(_selectedReasoningEffort)
         ? _selectedReasoningEffort
-        : selectedModel?.defaultReasoningLevel;
+        : null;
     final routeReady =
         routeProviderId == 'opencode' ||
         (routeProviderId == 'chatgpt' &&
@@ -2598,6 +2820,14 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
               onStopMessage: _stopMessage,
               canSendMessage: canSend,
+              pendingAttachments: _pendingAttachments,
+              onAddAttachments: () => _pickAttachments(
+                supportsImages: selectedModel?.supportsImages ?? false,
+              ),
+              onRemoveAttachment: _removePendingAttachment,
+              attachmentsEnabled:
+                  widget.chatRepository?.supportsAttachments == true &&
+                  !_isSending,
               isSending: _isSending,
               isLoadingModels: _isLoadingModels,
               models: modelOptions,
@@ -2656,6 +2886,13 @@ class _ChatScreenState extends State<ChatScreen> {
                   unawaited(_respondToToolPermission(approved: false)),
               conversationTitle: selectedConversation?.title,
               conversationId: selectedConversation?.id,
+              contextProviderId: routeProviderId,
+              contextModelId: selectedModelId,
+              contextWindow: selectedModel?.contextWindow,
+              contextConnectionId: routeConnectionId ?? routeApiKeyConnectionId,
+              contextWorkspaceId: routeWorkspaceId,
+              conversationMemoryRepository: _conversationMemoryRepository,
+              settingsPreferences: _settingsPreferences,
               titleEditRequestId: _titleEditRequestId,
               onRenameConversation: _renameConversation,
               onConversationTitleEditFinished: _finishConversationTitleEdit,

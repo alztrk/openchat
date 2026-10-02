@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -7,7 +8,9 @@ import 'package:intl/intl.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/openchat_toast.dart';
+import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
+import 'package:openchat/features/chat/domain/chat_attachment.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/chat/domain/model_favorite.dart';
 import 'package:openchat/features/chat/domain/tool_permission_request.dart';
@@ -16,6 +19,7 @@ import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/platform/windows/window_controls.dart';
 
 import 'package:openchat/features/chat/presentation/widgets/assistant_message.dart';
+import 'package:openchat/features/chat/presentation/widgets/chat_attachment_gallery.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_composer.dart';
 import 'package:openchat/features/chat/presentation/widgets/tool_permission_card.dart';
 import 'package:openchat/features/chat/presentation/widgets/window_control_bar.dart';
@@ -53,6 +57,17 @@ class ConversationPane extends StatelessWidget {
     this.messagesErrorDescription,
     this.conversationTitle,
     this.conversationId,
+    this.contextProviderId,
+    this.contextModelId,
+    this.contextWindow,
+    this.contextConnectionId,
+    this.contextWorkspaceId,
+    this.conversationMemoryRepository,
+    this.settingsPreferences,
+    this.pendingAttachments = const <ChatAttachment>[],
+    this.onAddAttachments,
+    this.onRemoveAttachment,
+    this.attachmentsEnabled = false,
     this.titleEditRequestId,
     this.onRenameConversation,
     this.onConversationTitleEditFinished,
@@ -104,13 +119,24 @@ class ConversationPane extends StatelessWidget {
   final ValueChanged<FavoriteModel>? onFavoriteModelSelected;
   final List<String> reasoningOptions;
   final bool showReasoningSelector;
-  final ValueChanged<String>? onReasoningSelected;
+  final ValueChanged<String?>? onReasoningSelected;
   final List<ChatMessage> messages;
   final bool messagesLoading;
   final bool showAssistantLoading;
   final String? messagesErrorDescription;
   final String? conversationTitle;
   final String? conversationId;
+  final String? contextProviderId;
+  final String? contextModelId;
+  final int? contextWindow;
+  final String? contextConnectionId;
+  final String? contextWorkspaceId;
+  final ConversationMemoryRepository? conversationMemoryRepository;
+  final SettingsPreferences? settingsPreferences;
+  final List<ChatAttachment> pendingAttachments;
+  final VoidCallback? onAddAttachments;
+  final ValueChanged<String>? onRemoveAttachment;
+  final bool attachmentsEnabled;
   final String? titleEditRequestId;
   final Future<void> Function(String conversationId, String title)?
   onRenameConversation;
@@ -229,6 +255,19 @@ class ConversationPane extends StatelessWidget {
                     showReasoningSelector: showReasoningSelector,
                     toolPermissionMode: toolPermissionMode,
                     onToolPermissionModeChanged: onToolPermissionModeChanged,
+                    messages: messages,
+                    conversationId: conversationId,
+                    contextProviderId: contextProviderId,
+                    contextModelId: contextModelId,
+                    contextWindow: contextWindow,
+                    contextConnectionId: contextConnectionId,
+                    contextWorkspaceId: contextWorkspaceId,
+                    conversationMemoryRepository: conversationMemoryRepository,
+                    settingsPreferences: settingsPreferences,
+                    pendingAttachments: pendingAttachments,
+                    onAddAttachments: onAddAttachments,
+                    onRemoveAttachment: onRemoveAttachment,
+                    attachmentsEnabled: attachmentsEnabled,
                   ),
                 ],
               ),
@@ -264,7 +303,7 @@ class _ConversationMessageError extends StatelessWidget {
   }
 }
 
-class _ConversationHistory extends StatelessWidget {
+class _ConversationHistory extends StatefulWidget {
   const _ConversationHistory({
     required this.messages,
     required this.showAssistantLoading,
@@ -282,7 +321,197 @@ class _ConversationHistory extends StatelessWidget {
   final String providerId;
 
   @override
+  State<_ConversationHistory> createState() => _ConversationHistoryState();
+}
+
+class _ConversationHistoryState extends State<_ConversationHistory> {
+  static const double _latestMessageThreshold = 96;
+  static const double _autoScrollDeadZone = 10;
+  static const double _autoScrollSpeedFactor = 5;
+  static const double _maximumAutoScrollSpeed = 1400;
+
+  ScrollController? _historyController;
+  Timer? _middleScrollTimer;
+  Stopwatch? _middleScrollClock;
+  int? _middleScrollPointer;
+  double? _middleScrollAnchorY;
+  double? _middleScrollPointerY;
+  bool _followLatestMessage = true;
+  bool _isMiddleScrolling = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _attachScrollController(widget.controller);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (widget.controller == null) {
+      _attachScrollController(PrimaryScrollController.maybeOf(context));
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _ConversationHistory oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      _attachScrollController(widget.controller);
+    }
+    if (_historyAdvanced(oldWidget)) _scrollToLatestAfterLayout();
+  }
+
+  @override
+  void dispose() {
+    _stopMiddleScrolling(updateUi: false);
+    _attachScrollController(null);
+    super.dispose();
+  }
+
+  void _attachScrollController(ScrollController? controller) {
+    if (identical(_historyController, controller)) return;
+    if (_isMiddleScrolling) _stopMiddleScrolling(updateUi: false);
+    _historyController?.removeListener(_updateFollowState);
+    _historyController = controller;
+    _historyController?.addListener(_updateFollowState);
+  }
+
+  bool _historyAdvanced(_ConversationHistory oldWidget) {
+    if (oldWidget.showAssistantLoading != widget.showAssistantLoading ||
+        oldWidget.messages.length != widget.messages.length) {
+      return true;
+    }
+    return oldWidget.messages.isNotEmpty &&
+        !identical(oldWidget.messages.last, widget.messages.last);
+  }
+
+  void _updateFollowState() {
+    final controller = _historyController;
+    if (controller == null || !controller.hasClients) return;
+    final position = controller.position;
+    if (!position.hasContentDimensions) return;
+    _followLatestMessage = position.extentAfter <= _latestMessageThreshold;
+  }
+
+  void _scrollToLatestAfterLayout() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final controller = _historyController;
+      if (!mounted ||
+          !_followLatestMessage ||
+          controller == null ||
+          !controller.hasClients) {
+        return;
+      }
+      final position = controller.position;
+      if (position.hasContentDimensions) {
+        position.jumpTo(position.maxScrollExtent);
+      }
+    });
+  }
+
+  void _handlePointerDown(PointerDownEvent event) {
+    if (event.kind != PointerDeviceKind.mouse ||
+        (event.buttons & kMiddleMouseButton) == 0) {
+      return;
+    }
+    if (_isMiddleScrolling) {
+      _stopMiddleScrolling();
+      return;
+    }
+
+    final controller = _historyController;
+    if (controller == null || !controller.hasClients) return;
+    _middleScrollPointer = event.pointer;
+    _middleScrollAnchorY = event.position.dy;
+    _middleScrollPointerY = event.position.dy;
+    _middleScrollClock = Stopwatch()..start();
+    GestureBinding.instance.pointerRouter.addGlobalRoute(
+      _handleGlobalPointerEvent,
+    );
+    setState(() => _isMiddleScrolling = true);
+    _middleScrollTimer = Timer.periodic(
+      const Duration(milliseconds: 16),
+      _advanceMiddleScroll,
+    );
+  }
+
+  void _handleGlobalPointerEvent(PointerEvent event) {
+    if (!_isMiddleScrolling || event.pointer != _middleScrollPointer) return;
+    if (event is PointerMoveEvent || event is PointerHoverEvent) {
+      _middleScrollPointerY = event.position.dy;
+    } else if (event is PointerCancelEvent) {
+      _stopMiddleScrolling();
+    }
+  }
+
+  void _handlePointerSignal(PointerSignalEvent event) {
+    if (event is PointerScrollEvent && _isMiddleScrolling) {
+      _stopMiddleScrolling();
+    }
+  }
+
+  void _advanceMiddleScroll(Timer _) {
+    final controller = _historyController;
+    final clock = _middleScrollClock;
+    final anchorY = _middleScrollAnchorY;
+    final pointerY = _middleScrollPointerY;
+    if (controller == null ||
+        !controller.hasClients ||
+        clock == null ||
+        anchorY == null ||
+        pointerY == null) {
+      return;
+    }
+
+    final position = controller.position;
+    if (!position.hasContentDimensions) return;
+    final elapsedMicroseconds = clock.elapsedMicroseconds;
+    clock.reset();
+    if (elapsedMicroseconds == 0) return;
+
+    final distance = pointerY - anchorY;
+    final activeDistance = distance.abs() - _autoScrollDeadZone;
+    if (activeDistance <= 0) return;
+    final speed = (distance.sign * activeDistance * _autoScrollSpeedFactor)
+        .clamp(-_maximumAutoScrollSpeed, _maximumAutoScrollSpeed)
+        .toDouble();
+    final offset =
+        (position.pixels +
+                speed * elapsedMicroseconds / Duration.microsecondsPerSecond)
+            .clamp(position.minScrollExtent, position.maxScrollExtent)
+            .toDouble();
+    if (offset != position.pixels) controller.jumpTo(offset);
+  }
+
+  void _stopMiddleScrolling({bool updateUi = true}) {
+    if (!_isMiddleScrolling) return;
+    _middleScrollTimer?.cancel();
+    _middleScrollTimer = null;
+    _middleScrollClock?.stop();
+    _middleScrollClock = null;
+    _middleScrollPointer = null;
+    _middleScrollAnchorY = null;
+    _middleScrollPointerY = null;
+    GestureBinding.instance.pointerRouter.removeGlobalRoute(
+      _handleGlobalPointerEvent,
+    );
+    if (updateUi && mounted) {
+      setState(() => _isMiddleScrolling = false);
+    } else {
+      _isMiddleScrolling = false;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final messages = widget.messages;
+    final showAssistantLoading = widget.showAssistantLoading;
+    final assistantModelLabel = widget.assistantModelLabel;
+    final onRetryResponse = widget.onRetryResponse;
+    final providerId = widget.providerId;
+    final controller =
+        widget.controller ?? PrimaryScrollController.maybeOf(context);
     final conversationStyle = OpenChatConversationStyle.of(context);
     final hasStreamingAssistant =
         messages.isNotEmpty &&
@@ -290,93 +519,109 @@ class _ConversationHistory extends StatelessWidget {
         messages.last.status == ChatMessageStatus.streaming;
     final appendLoadingMessage = showAssistantLoading && !hasStreamingAssistant;
 
-    return Scrollbar(
-      controller: controller,
-      thumbVisibility: true,
-      trackVisibility: true,
-      interactive: true,
-      thickness: 6,
-      radius: const Radius.circular(8),
-      scrollbarOrientation: ScrollbarOrientation.right,
-      child: SelectionArea(
-        child: ListView.builder(
-          primary: controller == null,
+    return MouseRegion(
+      cursor: _isMiddleScrolling
+          ? SystemMouseCursors.allScroll
+          : MouseCursor.defer,
+      child: Listener(
+        onPointerDown: _handlePointerDown,
+        onPointerSignal: _handlePointerSignal,
+        child: Scrollbar(
           controller: controller,
-          padding: const EdgeInsets.fromLTRB(
-            OpenChatSpacing.pageHorizontal,
-            18,
-            OpenChatSpacing.pageHorizontal,
-            24,
-          ),
-          itemCount: messages.length + (appendLoadingMessage ? 1 : 0),
-          itemBuilder: (context, index) {
-            if (index == messages.length) {
-              final previousMessage = messages.isEmpty ? null : messages.last;
-              final messageGap = previousMessage == null
-                  ? 0.0
-                  : previousMessage.role == ChatMessageRole.user
-                  ? 2.0
-                  : 18.0;
-              return Center(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: conversationStyle.maxWidth,
-                  ),
-                  child: Padding(
-                    padding: EdgeInsets.only(top: messageGap),
-                    child: AssistantMessageSkeleton(
-                      modelLabel: assistantModelLabel,
-                      providerId: providerId,
-                    ),
-                  ),
-                ),
-              );
-            }
-            final message = messages[index];
-            final startsNewDay =
-                index == 0 ||
-                !_isSameDay(messages[index - 1].createdAt, message.createdAt);
-            final previousMessage = index == 0 ? null : messages[index - 1];
-            final messageGap = previousMessage == null || startsNewDay
-                ? 0.0
-                : previousMessage.role == ChatMessageRole.user &&
-                      message.role == ChatMessageRole.assistant
-                ? 2.0
-                : 18.0;
-
-            return Center(
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: conversationStyle.maxWidth,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (index > 0)
-                      SizedBox(height: startsNewDay ? 18 : messageGap),
-                    if (startsNewDay) ...[
-                      _ConversationDateLabel(createdAt: message.createdAt),
-                      const SizedBox(height: 12),
-                    ],
-                    KeyedSubtree(
-                      key: ValueKey<String>(message.id),
-                      child: switch (message.role) {
-                        ChatMessageRole.user => _UserMessage(message: message),
-                        ChatMessageRole.assistant => AssistantMessage(
-                          message: message,
+          thumbVisibility: true,
+          trackVisibility: true,
+          interactive: true,
+          thickness: 6,
+          radius: const Radius.circular(8),
+          scrollbarOrientation: ScrollbarOrientation.right,
+          child: SelectionArea(
+            child: ListView.builder(
+              primary: controller == null,
+              controller: controller,
+              padding: const EdgeInsets.fromLTRB(
+                OpenChatSpacing.pageHorizontal,
+                18,
+                OpenChatSpacing.pageHorizontal,
+                24,
+              ),
+              itemCount: messages.length + (appendLoadingMessage ? 1 : 0),
+              itemBuilder: (context, index) {
+                if (index == messages.length) {
+                  final previousMessage = messages.isEmpty
+                      ? null
+                      : messages.last;
+                  final messageGap = previousMessage == null
+                      ? 0.0
+                      : previousMessage.role == ChatMessageRole.user
+                      ? 2.0
+                      : 18.0;
+                  return Center(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: conversationStyle.maxWidth,
+                      ),
+                      child: Padding(
+                        padding: EdgeInsets.only(top: messageGap),
+                        child: AssistantMessageSkeleton(
                           modelLabel: assistantModelLabel,
                           providerId: providerId,
-                          onRetry: _canRetryMessage(index)
-                              ? () => onRetryResponse?.call(message)
-                              : null,
                         ),
-                      },
+                      ),
                     ),
-                  ],
-                ),
-              ),
-            );
-          },
+                  );
+                }
+                final message = messages[index];
+                final startsNewDay =
+                    index == 0 ||
+                    !_isSameDay(
+                      messages[index - 1].createdAt,
+                      message.createdAt,
+                    );
+                final previousMessage = index == 0 ? null : messages[index - 1];
+                final messageGap = previousMessage == null || startsNewDay
+                    ? 0.0
+                    : previousMessage.role == ChatMessageRole.user &&
+                          message.role == ChatMessageRole.assistant
+                    ? 2.0
+                    : 18.0;
+
+                return Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: conversationStyle.maxWidth,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (index > 0)
+                          SizedBox(height: startsNewDay ? 18 : messageGap),
+                        if (startsNewDay) ...[
+                          _ConversationDateLabel(createdAt: message.createdAt),
+                          const SizedBox(height: 12),
+                        ],
+                        KeyedSubtree(
+                          key: ValueKey<String>(message.id),
+                          child: switch (message.role) {
+                            ChatMessageRole.user => _UserMessage(
+                              message: message,
+                            ),
+                            ChatMessageRole.assistant => AssistantMessage(
+                              message: message,
+                              modelLabel: assistantModelLabel,
+                              providerId: providerId,
+                              onRetry: _canRetryMessage(index)
+                                  ? () => onRetryResponse?.call(message)
+                                  : null,
+                            ),
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
@@ -388,7 +633,10 @@ class _ConversationHistory extends StatelessWidget {
   }
 
   bool _canRetryMessage(int index) {
-    if (onRetryResponse == null || index == 0 || index != messages.length - 1) {
+    final messages = widget.messages;
+    if (widget.onRetryResponse == null ||
+        index == 0 ||
+        index != messages.length - 1) {
       return false;
     }
     final message = messages[index];
@@ -475,15 +723,32 @@ class _UserMessage extends StatelessWidget {
                           bottomRight: Radius.circular(4),
                         ),
                       ),
-                      child: Text(
-                        message.content,
-                        style: TextStyle(
-                          color: palette.text,
-                          fontFamily: conversationStyle.fontFamily,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w400,
-                          height: 22 / 15,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (message.content.isNotEmpty)
+                            Text(
+                              message.content,
+                              style: TextStyle(
+                                color: palette.text,
+                                fontFamily: conversationStyle.fontFamily,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w400,
+                                height: 22 / 15,
+                              ),
+                            ),
+                          if (message.attachments.isNotEmpty) ...[
+                            if (message.content.isNotEmpty)
+                              const SizedBox(height: 10),
+                            ChatAttachmentGallery(
+                              attachments: message.attachments,
+                              palette: palette,
+                              preferredImageWidth: 280,
+                              imageHeight: 200,
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                   ),

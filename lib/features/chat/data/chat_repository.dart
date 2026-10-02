@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart';
 
+import 'package:openchat/features/chat/data/chat_attachment_store.dart';
+import 'package:openchat/features/chat/domain/chat_attachment.dart';
 import 'package:openchat/features/chat/domain/chat_conversation.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart' as domain;
 import 'package:openchat/features/chat/domain/model_favorite.dart';
@@ -21,9 +23,12 @@ bool _isApiKeyRouteProvider(String? providerId) =>
     (providerId != null && _compatibleProviderIds.contains(providerId));
 
 class ChatRepository {
-  const ChatRepository(this._database);
+  const ChatRepository(this._database, {this.attachmentStore});
 
   final OpenChatDatabase _database;
+  final ChatAttachmentStore? attachmentStore;
+
+  bool get supportsAttachments => attachmentStore != null;
 
   Stream<List<ChatConversation>> watchConversations() {
     final query = _database.select(_database.conversations)
@@ -233,9 +238,9 @@ class ChatRepository {
         (message) => OrderingTerm.asc(message.id),
       ]);
 
-    return query.watch().map(
-      (rows) => rows.map(_messageFromRow).toList(growable: false),
-    );
+    return query.watch().asyncMap((rows) async {
+      return Future.wait(rows.map(_messageFromRowWithAttachments));
+    });
   }
 
   Future<List<domain.ChatMessage>> getMessages(String conversationId) async {
@@ -246,7 +251,7 @@ class ChatRepository {
         (message) => OrderingTerm.asc(message.id),
       ]);
     final rows = await query.get();
-    return rows.map(_messageFromRow).toList(growable: false);
+    return Future.wait(rows.map(_messageFromRowWithAttachments));
   }
 
   Future<void> createConversation({
@@ -326,7 +331,6 @@ class ChatRepository {
     final normalizedConnectionId = _requireValue(connectionId, 'connectionId');
     final normalizedWorkspaceId = _requireValue(workspaceId, 'workspaceId');
     final normalizedModelId = _requireValue(modelId, 'modelId');
-
     await _database.transaction(() async {
       final conversation = await (_database.select(
         _database.conversations,
@@ -508,59 +512,97 @@ class ChatRepository {
       );
     }
 
-    await _database.transaction(() async {
-      final conversation = await (_database.select(
-        _database.conversations,
-      )..where((row) => row.id.equals(conversationId))).getSingleOrNull();
-      if (conversation == null) {
-        throw ConversationNotFoundException(conversationId);
+    final attachmentStore = this.attachmentStore;
+    var attachmentsSaved = false;
+    if (message.attachments.isNotEmpty) {
+      if (attachmentStore == null) {
+        throw const ChatAttachmentStorageException(
+          'File attachments are unavailable in this storage location.',
+        );
       }
-
-      final createdAt = message.createdAt ?? DateTime.now().toUtc();
-      final createdAtMilliseconds = createdAt.toUtc().millisecondsSinceEpoch;
-      await _database
-          .into(_database.messages)
-          .insertOnConflictUpdate(
-            MessagesCompanion.insert(
-              id: message.id,
-              conversationId: conversationId,
-              role: message.role.name,
-              content: message.content,
-              createdAt: Value(createdAtMilliseconds),
-              outputTokens: Value(message.outputTokens),
-              tokensPerSecond: Value(message.tokensPerSecond),
-              elapsedMicroseconds: Value(message.elapsed?.inMicroseconds),
-              reasoningSummaries: Value(
-                jsonEncode(
-                  message.reasoningSummaries
-                      .map((summary) => summary.toJson())
-                      .toList(growable: false),
-                ),
-              ),
-              toolActivities: Value(
-                jsonEncode(
-                  message.toolActivities
-                      .map((activity) => activity.toJson())
-                      .toList(growable: false),
-                ),
-              ),
-              status: message.status.name,
-              failureCode: Value(message.failureCode),
-            ),
-          );
-
-      await (_database.update(
-        _database.conversations,
-      )..where((row) => row.id.equals(conversationId))).write(
-        ConversationsCompanion(
-          updatedAt: Value(
-            createdAtMilliseconds > conversation.updatedAt
-                ? createdAtMilliseconds
-                : conversation.updatedAt,
-          ),
-        ),
+      await attachmentStore.saveMessageAttachments(
+        conversationId: conversationId,
+        messageId: message.id,
+        attachments: message.attachments,
       );
-    });
+      attachmentsSaved = true;
+    }
+
+    try {
+      await _database.transaction(() async {
+        final conversation = await (_database.select(
+          _database.conversations,
+        )..where((row) => row.id.equals(conversationId))).getSingleOrNull();
+        if (conversation == null) {
+          throw ConversationNotFoundException(conversationId);
+        }
+
+        final createdAt = message.createdAt ?? DateTime.now().toUtc();
+        final createdAtMilliseconds = createdAt.toUtc().millisecondsSinceEpoch;
+        await _database
+            .into(_database.messages)
+            .insertOnConflictUpdate(
+              MessagesCompanion.insert(
+                id: message.id,
+                conversationId: conversationId,
+                role: message.role.name,
+                content: ChatMessageContentCodec.encode(
+                  message.content,
+                  message.attachments,
+                ),
+                createdAt: Value(createdAtMilliseconds),
+                outputTokens: Value(message.outputTokens),
+                tokensPerSecond: Value(message.tokensPerSecond),
+                elapsedMicroseconds: Value(message.elapsed?.inMicroseconds),
+                reasoningSummaries: Value(
+                  jsonEncode(
+                    message.reasoningSummaries
+                        .map((summary) => summary.toJson())
+                        .toList(growable: false),
+                  ),
+                ),
+                toolActivities: Value(
+                  jsonEncode(
+                    message.toolActivities
+                        .map((activity) => activity.toJson())
+                        .toList(growable: false),
+                  ),
+                ),
+                status: message.status.name,
+                failureCode: Value(message.failureCode),
+              ),
+            );
+
+        await (_database.update(
+          _database.conversations,
+        )..where((row) => row.id.equals(conversationId))).write(
+          ConversationsCompanion(
+            updatedAt: Value(
+              createdAtMilliseconds > conversation.updatedAt
+                  ? createdAtMilliseconds
+                  : conversation.updatedAt,
+            ),
+          ),
+        );
+      });
+    } on Object catch (error, stackTrace) {
+      if (attachmentsSaved && attachmentStore != null) {
+        try {
+          await attachmentStore.deleteMessageAttachments(
+            conversationId: conversationId,
+            messageId: message.id,
+          );
+        } on Object catch (cleanupError, cleanupStackTrace) {
+          Error.throwWithStackTrace(
+            ChatAttachmentStorageException(
+              'The message could not be saved and its attachments could not be cleaned up: $cleanupError',
+            ),
+            cleanupStackTrace,
+          );
+        }
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
   }
 
   Future<void> setConversationPinned({
@@ -585,6 +627,7 @@ class ChatRepository {
     if (deletedRows == 0) {
       throw ConversationNotFoundException(conversationId);
     }
+    await attachmentStore?.deleteConversationAttachments(conversationId);
   }
 
   Future<void> deleteMessage({
@@ -609,12 +652,17 @@ class ChatRepository {
     if (deletedRows == 0) {
       throw MessageNotFoundException(conversationId, normalizedMessageId);
     }
+    await attachmentStore?.deleteMessageAttachments(
+      conversationId: conversationId,
+      messageId: normalizedMessageId,
+    );
   }
 
   Future<void> deleteAllConversations() async {
     await _database.transaction(() async {
       await _database.delete(_database.conversations).go();
     });
+    await attachmentStore?.deleteAllAttachments();
   }
 
   ChatConversation _conversationFromRow(Conversation row) {
@@ -652,11 +700,62 @@ class ChatRepository {
     return normalizedValue;
   }
 
+  Future<domain.ChatMessage> _messageFromRowWithAttachments(Message row) async {
+    final message = _messageFromRow(row);
+    final attachmentStore = this.attachmentStore;
+    if (message.attachments.isEmpty) return message;
+    if (attachmentStore == null) {
+      return _copyMessageWithAttachments(
+        message,
+        message.attachments
+            .map(
+              (attachment) => ChatAttachment(
+                id: attachment.id,
+                name: attachment.name,
+                mimeType: attachment.mimeType,
+                sizeBytes: attachment.sizeBytes,
+                kind: attachment.kind,
+                isAvailable: false,
+              ),
+            )
+            .toList(growable: false),
+      );
+    }
+    final attachments = await attachmentStore.readMessageAttachments(
+      conversationId: row.conversationId,
+      messageId: row.id,
+      expectedAttachments: message.attachments,
+    );
+    return _copyMessageWithAttachments(message, attachments);
+  }
+
+  domain.ChatMessage _copyMessageWithAttachments(
+    domain.ChatMessage message,
+    List<ChatAttachment> attachments,
+  ) {
+    return domain.ChatMessage(
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      attachments: attachments,
+      createdAt: message.createdAt,
+      outputTokens: message.outputTokens,
+      tokensPerSecond: message.tokensPerSecond,
+      elapsed: message.elapsed,
+      reasoningSummaries: message.reasoningSummaries,
+      toolActivities: message.toolActivities,
+      status: message.status,
+      failureCode: message.failureCode,
+    );
+  }
+
   domain.ChatMessage _messageFromRow(Message row) {
+    final decodedContent = ChatMessageContentCodec.decode(row.content);
     return domain.ChatMessage(
       id: row.id,
       role: domain.ChatMessageRole.values.byName(row.role),
-      content: row.content,
+      content: decodedContent.content,
+      attachments: decodedContent.attachments,
       createdAt: row.createdAt == null
           ? null
           : DateTime.fromMillisecondsSinceEpoch(row.createdAt!, isUtc: true),

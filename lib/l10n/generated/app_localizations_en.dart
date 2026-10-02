@@ -455,6 +455,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'The provider could not complete the response. Your saved messages are still available.';
 
   @override
+  String get contextWindowExceeded =>
+      'The conversation is too large for this model\'s context window. Shorten the latest message or choose a model with a larger context window. Your chat history is saved.';
+
+  @override
   String get openCodeFreeTierRestricted =>
       'OpenCode free models are only available within the OpenCode app.';
 
@@ -995,6 +999,267 @@ class AppLocalizationsEn extends AppLocalizations {
   String get conversationTitle => 'New chat';
 
   @override
+  String get conversationMemory => 'Conversation memory';
+
+  @override
+  String get conversationMemoryDescription =>
+      'Review this conversation\'s compacted context and search its older messages.';
+
+  @override
+  String conversationMemoryCurrentConversation(String title) {
+    return 'Selected conversation: $title';
+  }
+
+  @override
+  String get conversationMemoryNoConversation =>
+      'Open a conversation to inspect its memory.';
+
+  @override
+  String get contextUsageTitle => 'Context usage';
+
+  @override
+  String contextUsageUsed(String count) {
+    return 'Usage: about $count tokens';
+  }
+
+  @override
+  String contextUsageSummary(String used, String limit, String percent) {
+    return '~$used / $limit tokens ($percent)';
+  }
+
+  @override
+  String contextUsageModelLimit(String count) {
+    return '$count tokens';
+  }
+
+  @override
+  String get contextUsageNoModelLimit => 'Model limit unknown.';
+
+  @override
+  String contextUsageProviderMeasurement(String count) {
+    return 'Last provider measurement: $count tokens';
+  }
+
+  @override
+  String contextUsageInstructionsEstimate(String count, String percent) {
+    return 'Instructions: $count tokens · $percent';
+  }
+
+  @override
+  String contextUsageToolDefinitionsEstimate(String count, String percent) {
+    return 'Tool definitions: $count tokens · $percent';
+  }
+
+  @override
+  String contextUsageMessagesEstimate(String count, String percent) {
+    return 'Messages: $count tokens · $percent';
+  }
+
+  @override
+  String contextUsageAttachmentsEstimate(String count, String percent) {
+    return 'Attachments: $count tokens · $percent';
+  }
+
+  @override
+  String contextUsageAttachmentEstimate(
+    String name,
+    String count,
+    String percent,
+  ) {
+    return '$name: $count tokens · $percent';
+  }
+
+  @override
+  String contextUsageDraftAttachment(String name) {
+    return 'Draft · $name';
+  }
+
+  @override
+  String contextUsageUserMessagesEstimate(String count, String percent) {
+    return 'User: $count tokens · $percent';
+  }
+
+  @override
+  String contextUsageAssistantMessagesEstimate(String count, String percent) {
+    return 'Assistant: $count tokens · $percent';
+  }
+
+  @override
+  String contextUsageToolsEstimate(String count, String percent) {
+    return 'Tool use: $count tokens · $percent';
+  }
+
+  @override
+  String contextUsageToolUsageEstimate(
+    String name,
+    String count,
+    String percent,
+  ) {
+    return '$name: $count tokens · $percent';
+  }
+
+  @override
+  String contextUsageMemoryEstimate(String count, String percent) {
+    return 'Compacted memory: $count tokens · $percent';
+  }
+
+  @override
+  String contextUsageDraftEstimate(String count, String percent) {
+    return 'Draft: $count tokens · $percent';
+  }
+
+  @override
+  String contextUsageFreeSpaceEstimate(String count, String percent) {
+    return 'Free space: $count tokens · $percent';
+  }
+
+  @override
+  String get contextUsageOverLimit => 'Model limit exceeded.';
+
+  @override
+  String get contextUsageMeasurementUnavailable =>
+      'Memory details could not be loaded.';
+
+  @override
+  String get contextUsageInstructionUnavailable =>
+      'Instruction details could not be loaded.';
+
+  @override
+  String get contextUsageConfigurationUnavailable =>
+      'Instruction and tool definition estimates could not be loaded.';
+
+  @override
+  String get contextUsageConfigurationLoading =>
+      'Preparing instruction and tool definition estimates…';
+
+  @override
+  String get conversationMemorySemanticTitle => 'Semantic search';
+
+  @override
+  String get conversationMemorySemanticDescription =>
+      'Download a multilingual model of about 136 MB to find older messages phrased differently.';
+
+  @override
+  String get conversationMemorySemanticPrepare => 'Prepare';
+
+  @override
+  String get conversationMemorySemanticChecking =>
+      'Checking local semantic search…';
+
+  @override
+  String get conversationMemorySemanticPreparing =>
+      'Downloading and verifying the model…';
+
+  @override
+  String conversationMemorySemanticDownloadProgress(
+    String percent,
+    String downloaded,
+    String total,
+  ) {
+    return '$percent% downloaded · $downloaded / $total MB';
+  }
+
+  @override
+  String get conversationMemorySemanticIndexing =>
+      'Building the local archive index…';
+
+  @override
+  String get conversationMemorySemanticCancelling => 'Cancelling the download…';
+
+  @override
+  String get conversationMemorySemanticDownloadCancelled =>
+      'Download cancelled. Keyword search remains available.';
+
+  @override
+  String get conversationMemorySemanticPrepareFailed =>
+      'Could not prepare the model. Try again; valid downloaded parts will be reused.';
+
+  @override
+  String get conversationMemorySemanticKeywordSearchFallback =>
+      'Keyword search remains available before preparation.';
+
+  @override
+  String get conversationMemorySemanticReady =>
+      'Local semantic search is ready';
+
+  @override
+  String get conversationMemorySemanticIndexNotice =>
+      'The model runs on this device. The first search may index older messages and saved tool details locally and take longer.';
+
+  @override
+  String get conversationMemorySummaryTitle => 'Compacted context';
+
+  @override
+  String get conversationMemoryNoSummary =>
+      'There is no compacted summary yet.';
+
+  @override
+  String get conversationMemoryCheckpointDescription =>
+      'The provider stores context as a reusable checkpoint instead of readable summary text. The full message history remains in the archive.';
+
+  @override
+  String conversationMemoryLastPromptTokens(
+    String provider,
+    String model,
+    String count,
+  ) {
+    return 'Last request · $provider · $model · $count input tokens';
+  }
+
+  @override
+  String get conversationMemorySearchTitle => 'Search the archive';
+
+  @override
+  String get conversationMemorySearchHint =>
+      'Enter an older topic or phrase...';
+
+  @override
+  String get conversationMemorySearchAction => 'Search';
+
+  @override
+  String get conversationMemorySearchQueryTooShort =>
+      'Enter at least two characters to search.';
+
+  @override
+  String get conversationMemorySearchInstruction =>
+      'Completed messages and tool results are searched in this conversation only.';
+
+  @override
+  String get conversationMemorySearchNoResults =>
+      'No matching archive entries.';
+
+  @override
+  String get conversationMemorySearchFailed =>
+      'The conversation archive could not be searched. Try again.';
+
+  @override
+  String get conversationMemoryLoadFailed =>
+      'Compacted context could not be loaded. Try again.';
+
+  @override
+  String get conversationMemoryResetAction => 'Reset context';
+
+  @override
+  String get conversationMemoryResetTitle => 'Reset compacted context?';
+
+  @override
+  String get conversationMemoryResetConfirmation =>
+      'The saved compacted context and last request measurement will be removed. The full message history and archive will remain; compacted context can be created again during a later request if needed.';
+
+  @override
+  String get conversationMemoryResetConfirm => 'Reset';
+
+  @override
+  String get conversationMemoryResetFailed =>
+      'The compacted context could not be reset.';
+
+  @override
+  String get conversationMemoryUserMessage => 'User message';
+
+  @override
+  String get conversationMemoryAssistantMessage => 'Assistant response';
+
+  @override
   String get renameConversation => 'Edit chat title';
 
   @override
@@ -1081,7 +1346,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get reasoningUltra => 'Ultra';
 
   @override
-  String get reasoningDefault => 'Model default';
+  String get reasoningDefault => 'Default';
+
+  @override
+  String get reasoningDefaultHint =>
+      'No custom reasoning level is sent. The provider\'s default behavior is used; the level is not adjusted to task difficulty.';
 
   @override
   String get stop => 'Stop';
@@ -1124,15 +1393,55 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cachedCatalog => 'cached models';
 
   @override
-  String get reasoningUnavailable =>
-      'This model does not expose adjustable reasoning levels.';
-
-  @override
   String get attachFile => 'Attach file';
 
   @override
   String get attachmentsUnavailable =>
       'File attachments are not available yet.';
+
+  @override
+  String get removeAttachment => 'Remove attachment';
+
+  @override
+  String get previewImage => 'Zoom image';
+
+  @override
+  String get attachmentUnavailable => 'This attachment is unavailable.';
+
+  @override
+  String get attachmentCountExceeded =>
+      'You can attach up to 10 files and 3 images.';
+
+  @override
+  String get attachmentFileTooLarge =>
+      'The file exceeds the allowed size limit.';
+
+  @override
+  String get attachmentTotalTooLarge =>
+      'Attachments cannot exceed 14 MB in total.';
+
+  @override
+  String get unsupportedAttachmentFile => 'This file type is not supported.';
+
+  @override
+  String get attachmentReadFailed =>
+      'The file could not be read. Select it again and retry.';
+
+  @override
+  String get attachmentSaveFailed =>
+      'The attachment could not be saved. Select it again and retry.';
+
+  @override
+  String get attachmentMustBeUtf8 =>
+      'Text attachments must use UTF-8 encoding.';
+
+  @override
+  String get attachmentInvalidImage =>
+      'The image file format could not be verified.';
+
+  @override
+  String get modelDoesNotSupportImages =>
+      'The selected model does not support image attachments.';
 
   @override
   String get messageHint => 'Write a message...';

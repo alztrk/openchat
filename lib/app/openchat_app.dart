@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:toastification/toastification.dart';
 
 import 'package:openchat/features/chat/data/chat_repository.dart';
+import 'package:openchat/features/chat/data/chat_attachment_store.dart';
 import 'package:openchat/features/chat/data/openchat_database.dart';
 import 'package:openchat/features/chat/domain/history_storage_status.dart';
 import 'package:openchat/features/chat/presentation/chat_screen.dart';
@@ -115,6 +116,7 @@ class _OpenChatAppState extends State<OpenChatApp> {
 
       try {
         String? databasePath;
+        String? storageRoot;
         if (Platform.isWindows) {
           await _serviceClient.start();
           phase = 'service_health';
@@ -127,6 +129,14 @@ class _OpenChatAppState extends State<OpenChatApp> {
             );
           }
           databasePath = resolvedPath;
+          final resolvedStorageRoot = health['storage_root'];
+          if (resolvedStorageRoot is! String || resolvedStorageRoot.isEmpty) {
+            throw const OpenChatServiceException(
+              code: 'invalid_storage_path',
+              message: 'The local service did not provide a storage root.',
+            );
+          }
+          storageRoot = resolvedStorageRoot;
         }
 
         phase = 'database_open';
@@ -157,7 +167,12 @@ class _OpenChatAppState extends State<OpenChatApp> {
         );
         return _AppRuntime(
           initializedDatabase,
-          ChatRepository(initializedDatabase),
+          ChatRepository(
+            initializedDatabase,
+            attachmentStore: storageRoot == null
+                ? null
+                : ChatAttachmentStore(storageRoot),
+          ),
         );
       } on Object catch (error, stackTrace) {
         final failure = error is OpenChatServiceException
@@ -226,13 +241,40 @@ class _OpenChatAppState extends State<OpenChatApp> {
     if (error is OpenChatServiceException) return error.code;
     if (error is! DriftRemoteException) return error.runtimeType.toString();
 
-    final cause = error.remoteCause.toString();
-    final sqliteCode = RegExp(r'\bSqliteException\((\d+)\)')
-        .firstMatch(cause)
-        ?.group(1);
-    return sqliteCode == null
-        ? 'drift_remote_error'
-        : 'drift_sqlite_$sqliteCode';
+    final cause = error.remoteCause;
+    final description = cause.toString();
+    final sqliteError = RegExp(r'\bSqliteException\((\d+)(?:,\s*(\d+))?\)')
+        .firstMatch(description);
+    final category = _startupFailureCategory(description);
+    if (sqliteError != null) {
+      return 'drift_sqlite_${sqliteError.group(1)}_${sqliteError.group(2) ?? 'unknown'}_$category';
+    }
+
+    final causeType = cause.runtimeType.toString().replaceAll(
+      RegExp(r'[^a-zA-Z0-9_-]'),
+      '_',
+    );
+    return 'drift_remote_${causeType}_$category';
+  }
+
+  String _startupFailureCategory(String description) {
+    final message = description.toLowerCase();
+    return switch (true) {
+      _ when message.contains('failed to load dynamic library') =>
+        'native_library_load',
+      _ when message.contains('database is locked') => 'database_locked',
+      _ when message.contains('unable to open database') =>
+        'database_open_denied',
+      _ when message.contains('disk i/o error') => 'disk_io_error',
+      _ when message.contains('no such table') => 'missing_table',
+      _ when message.contains('no such column') => 'missing_column',
+      _ when message.contains('already exists') => 'object_already_exists',
+      _ when message.contains('not a database') => 'not_a_database',
+      _ when message.contains('malformed') => 'malformed_database',
+      _ when message.contains('readonly') || message.contains('read-only') =>
+        'read_only',
+      _ => 'other',
+    };
   }
 
   bool _isRetryableRuntimeFailure(Object error) {
