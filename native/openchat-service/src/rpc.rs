@@ -7,9 +7,9 @@ use tokio::sync::watch as tokio_watch;
 use crate::{
     chat_operation::ChatSendContext,
     chatgpt::ChatGptService,
-    instructions, openai_api, openai_compatible,
+    chatgpt_store, instructions, openai_api, openai_compatible,
     permissions::ToolPermissionBroker,
-    protocol::{EventSink, Request, ServiceError},
+    protocol::{EventSink, Request, Response, ServiceError},
     storage::AppStorage,
     tools::{self, ToolPermissionMode},
 };
@@ -99,6 +99,216 @@ pub(crate) async fn dispatch(
             service
                 .consume_reset_credit(connection_id, workspace_id, credit_id, &mut cancellation)
                 .await
+        }
+        "chat.memory.inspect" => {
+            let conversation_id = required_memory_conversation_id(&request.params)?;
+            let state = chatgpt_store::load_conversation_context_state(storage, conversation_id)
+                .map_err(|_| {
+                    ServiceError::new(
+                        "conversation_memory_unavailable",
+                        "Conversation memory could not be loaded.",
+                        true,
+                    )
+                })?;
+            let compaction_kind = state
+                .as_ref()
+                .and_then(|context| context.compaction_kind.as_deref());
+            let compaction_provider_id = state
+                .as_ref()
+                .and_then(|context| context.compaction_provider_id.as_deref());
+            let compaction_model_id = state
+                .as_ref()
+                .and_then(|context| context.compaction_model_id.as_deref());
+            let compaction_connection_id = state
+                .as_ref()
+                .and_then(|context| context.compaction_connection_id.as_deref());
+            let compaction_workspace_id = state
+                .as_ref()
+                .and_then(|context| context.compaction_workspace_id.as_deref());
+            let compacted_through_message_id = state
+                .as_ref()
+                .and_then(|context| context.compacted_through_message_id.as_deref());
+            let summary = state.as_ref().and_then(|context| {
+                if context.compaction_kind.as_deref() == Some("summary") {
+                    context.compaction_payload.as_deref()
+                } else {
+                    None
+                }
+            });
+            let last_prompt = state.as_ref().and_then(|context| {
+                Some(json!({
+                    "inputTokens": context.last_prompt_tokens?,
+                    "messageId": context.last_prompt_message_id.as_deref()?,
+                    "providerId": context.last_prompt_provider_id.as_deref()?,
+                    "modelId": context.last_prompt_model_id.as_deref()?,
+                    "connectionId": context.last_prompt_connection_id.as_deref(),
+                    "workspaceId": context.last_prompt_workspace_id.as_deref(),
+                }))
+            });
+            Ok(json!({
+                "compactionKind": compaction_kind,
+                "compactionProviderId": compaction_provider_id,
+                "compactionModelId": compaction_model_id,
+                "compactionConnectionId": compaction_connection_id,
+                "compactionWorkspaceId": compaction_workspace_id,
+                "compactedThroughMessageId": compacted_through_message_id,
+                "summary": summary,
+                "lastPrompt": last_prompt,
+            }))
+        }
+        "chat.context.usage.estimate" => {
+            let provider_id = required_string(&request.params, "providerId")?;
+            if !matches!(
+                provider_id,
+                "chatgpt"
+                    | "chatgpt_api"
+                    | "opencode"
+                    | "gemini"
+                    | "groq"
+                    | "cerebras"
+                    | "openrouter"
+            ) {
+                return Err(invalid_context_usage_params());
+            }
+            let model_id = optional_string(&request.params, "modelId")?;
+            let permission_mode = ToolPermissionMode::from_rpc(Some(required_string(
+                &request.params,
+                "toolPermissionMode",
+            )?))?;
+            let custom_instructions = optional_string(&request.params, "customInstructions")?;
+            instructions::validate_custom_instructions(custom_instructions)
+                .map_err(|_| invalid_context_usage_params())?;
+            let conversation_id = optional_string(&request.params, "conversationId")?;
+            let has_project = match conversation_id {
+                Some(conversation_id) => storage
+                    .connect()
+                    .and_then(|connection| {
+                        connection.query_row(
+                            "SELECT EXISTS(
+                                SELECT 1 FROM conversations
+                                INNER JOIN projects ON projects.id = conversations.project_id
+                                WHERE conversations.id = ?1
+                                  AND projects.folder_path IS NOT NULL
+                                  AND projects.folder_path <> ''
+                            )",
+                            [conversation_id],
+                            |row| row.get::<_, bool>(0),
+                        )
+                    })
+                    .map_err(|_| {
+                        ServiceError::new(
+                            "storage_unavailable",
+                            "Chat context usage could not be measured.",
+                            true,
+                        )
+                    })?,
+                None => false,
+            };
+            let instructions = instructions::shared_instructions(
+                custom_instructions,
+                permission_mode,
+                has_project,
+            );
+            let tool_definitions = openai_compatible::context_usage_tool_definitions(
+                storage,
+                provider_id,
+                model_id,
+            )?
+                .into_iter()
+                .map(|(name, definition)| {
+                    json!({
+                        "name": name,
+                        "tokens": crate::context_compaction::request_context_token_estimate(&definition),
+                    })
+                })
+                .collect::<Vec<_>>();
+            Ok(json!({
+                "instructionsTokens": crate::context_compaction::text_token_estimate(&instructions),
+                "toolDefinitions": tool_definitions,
+            }))
+        }
+        "chat.memory.search" => {
+            let conversation_id = required_memory_conversation_id(&request.params)?;
+            let query = required_memory_search_query(&request.params)?;
+            let results =
+                chatgpt_store::search_conversation_archive(storage, conversation_id, query)
+                    .await
+                    .map_err(|_| {
+                        ServiceError::new(
+                            "conversation_memory_unavailable",
+                            "Conversation memory could not be searched.",
+                            true,
+                        )
+                    })?;
+            Ok(json!({
+                "results": results.into_iter().map(|excerpt| json!({
+                    "messageId": excerpt.message_id,
+                    "role": excerpt.role,
+                    "content": excerpt.content,
+                    "createdAtUnixMs": excerpt.created_at_unix_ms,
+                })).collect::<Vec<_>>(),
+            }))
+        }
+        "chat.memory.semantic.status" => Ok(json!({
+            "ready": chatgpt_store::semantic_search_is_ready(storage).await,
+        })),
+        "chat.memory.semantic.prepare" => {
+            let (progress_sender, mut progress_receiver) =
+                tokio::sync::mpsc::unbounded_channel::<Value>();
+            let progress_events = events.clone();
+            let request_id = request.id.clone();
+            let progress_forwarder = tokio::spawn(async move {
+                while let Some(data) = progress_receiver.recv().await {
+                    progress_events
+                        .send(&Response::event(
+                            request_id.clone(),
+                            "chat.memory.semantic.progress",
+                            data,
+                        ))
+                        .await
+                        .map_err(|_| ())?;
+                }
+                Ok::<(), ()>(())
+            });
+            let preparation =
+                chatgpt_store::prepare_semantic_search(storage, &mut cancellation, progress_sender)
+                    .await;
+            let progress_result = progress_forwarder.await;
+            if !matches!(progress_result, Ok(Ok(()))) {
+                return Err(ServiceError::new(
+                    "semantic_memory_progress_failed",
+                    "Semantic search progress could not be delivered.",
+                    true,
+                ));
+            }
+            preparation.map_err(|_| {
+                if *cancellation.borrow() {
+                    ServiceError::new(
+                        "operation_cancelled",
+                        "Semantic search preparation was cancelled.",
+                        false,
+                    )
+                } else {
+                    ServiceError::new(
+                        "semantic_memory_prepare_failed",
+                        "Local semantic search could not be prepared. Try again.",
+                        true,
+                    )
+                }
+            })?;
+            Ok(json!({"ready": true}))
+        }
+        "chat.memory.reset_compaction" => {
+            let conversation_id = required_memory_conversation_id(&request.params)?;
+            let reset = chatgpt_store::reset_conversation_context(storage, conversation_id)
+                .map_err(|_| {
+                    ServiceError::new(
+                        "conversation_memory_unavailable",
+                        "The compacted conversation context could not be reset.",
+                        true,
+                    )
+                })?;
+            Ok(json!({"reset": reset}))
         }
         "chat.send" => {
             let conversation_id = required_string(&request.params, "conversationId")?;
@@ -294,6 +504,41 @@ fn required_string<'a>(params: &'a Value, name: &str) -> Result<&'a str, Service
         })
 }
 
+fn required_memory_conversation_id(params: &Value) -> Result<&str, ServiceError> {
+    let conversation_id = required_string(params, "conversationId")?;
+    if conversation_id != conversation_id.trim()
+        || conversation_id.chars().count() > 256
+        || conversation_id.chars().any(char::is_control)
+    {
+        return Err(ServiceError::new(
+            "invalid_request_params",
+            "The conversation memory target is invalid.",
+            false,
+        ));
+    }
+    Ok(conversation_id)
+}
+
+fn required_memory_search_query(params: &Value) -> Result<&str, ServiceError> {
+    let query = required_string(params, "query")?.trim();
+    if !(2..=512).contains(&query.chars().count()) {
+        return Err(ServiceError::new(
+            "invalid_request_params",
+            "The conversation memory search query is invalid.",
+            false,
+        ));
+    }
+    Ok(query)
+}
+
+fn invalid_context_usage_params() -> ServiceError {
+    ServiceError::new(
+        "invalid_request_params",
+        "The context usage request is invalid.",
+        false,
+    )
+}
+
 fn optional_string<'a>(params: &'a Value, name: &str) -> Result<Option<&'a str>, ServiceError> {
     match params.get(name) {
         None | Some(Value::Null) => Ok(None),
@@ -319,4 +564,35 @@ fn optional_api_key<'a>(
         ));
     }
     Ok(api_key)
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{required_memory_conversation_id, required_memory_search_query};
+
+    #[test]
+    fn memory_rpc_rejects_unbounded_or_ambiguous_values() {
+        assert!(required_memory_conversation_id(&json!({"conversationId": " "})).is_err());
+        assert!(required_memory_conversation_id(&json!({"conversationId": " id "})).is_err());
+        assert!(
+            required_memory_conversation_id(&json!({
+                "conversationId": "x".repeat(257)
+            }))
+            .is_err()
+        );
+        assert!(required_memory_search_query(&json!({"query": "a"})).is_err());
+        assert!(
+            required_memory_search_query(&json!({
+                "query": "x".repeat(513)
+            }))
+            .is_err()
+        );
+        assert_eq!(
+            required_memory_search_query(&json!({"query": "  archive clue  "}))
+                .expect("valid archive query"),
+            "archive clue"
+        );
+    }
 }

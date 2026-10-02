@@ -88,10 +88,12 @@ fn parse_models(value: &Value) -> Result<Vec<Value>, ServiceError> {
                 .filter_map(|model| {
                     let id = model.get("id")?.as_str()?.trim();
                     (!id.is_empty()).then(|| {
+                        // The OpenAI Models API does not return per-model context limits.
                         json!({
                             "id": id,
                             "displayName": id,
                             "contextWindow": null,
+                            "supportsImages": crate::chatgpt_store::model_supports_images(id),
                             "defaultReasoningLevel": null,
                             "reasoningLevels": [],
                             "isAvailable": true,
@@ -102,6 +104,10 @@ fn parse_models(value: &Value) -> Result<Vec<Value>, ServiceError> {
                 .collect()
         })
         .ok_or_else(invalid_response_error)
+}
+
+pub(crate) fn supports_image_input(model_id: &str) -> bool {
+    crate::chatgpt_store::model_supports_images(model_id)
 }
 
 fn load_catalog(
@@ -200,4 +206,22 @@ fn storage_error() -> ServiceError {
         "The local model catalog could not be read or saved.",
         false,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::parse_models;
+
+    #[test]
+    fn openai_model_list_does_not_invent_context_limits() {
+        let models = parse_models(&json!({
+            "data": [{"id": "gpt-example", "owned_by": "openai"}]
+        }))
+        .expect("valid OpenAI model list");
+
+        assert_eq!(models.len(), 1);
+        assert!(models[0]["contextWindow"].is_null());
+    }
 }

@@ -2,11 +2,19 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
+use crate::provider_schema::ToolActivity;
+
+mod compaction;
 mod connections;
 mod conversations;
+mod memory;
 mod models;
 mod usage;
 
+pub use compaction::{
+    ConversationContextState, PromptUsage, load_conversation_context_state,
+    reset_conversation_context, save_compaction_state, save_prompt_usage,
+};
 pub use connections::{
     connection_id_for_external_user, connection_workspace, create_connection, credential_reference,
     delete_connection, list_connections, reconnect_connection, replace_credential_reference,
@@ -15,8 +23,13 @@ pub use connections::{
     workspace_external_id,
 };
 pub use conversations::{
-    apply_generated_title, conversation_messages, conversation_route, create_title_job,
-    finish_title_job, is_retryable_latest_assistant_message, save_assistant_message,
+    apply_generated_title, conversation_messages, conversation_messages_from_boundary,
+    conversation_route, create_title_job, finish_title_job, is_retryable_latest_assistant_message,
+    save_assistant_message,
+};
+pub use memory::{
+    ArchivedMemoryExcerpt, prepare_semantic_search, retrieve_archived_memories,
+    search_conversation_archive, semantic_search_is_ready,
 };
 pub use models::{list_fresh_models, list_models, save_models, selected_model};
 pub use usage::{latest_usage_snapshot, save_usage_snapshot};
@@ -53,7 +66,21 @@ pub struct ChatGptModel {
     pub default_reasoning_level: Option<String>,
     pub reasoning_levels: Vec<String>,
     pub supports_reasoning_summary_parameter: bool,
+    pub supports_images: bool,
     pub is_available: bool,
+}
+
+pub(crate) fn model_supports_images(model_id: &str) -> bool {
+    let normalized = model_id.to_ascii_lowercase();
+    normalized.starts_with("gpt-4o")
+        || normalized.starts_with("gpt-4.1")
+        || normalized.starts_with("gpt-4.5")
+        || normalized.starts_with("gpt-4-turbo")
+        || normalized.starts_with("gpt-4-vision")
+        || normalized.starts_with("gpt-5")
+        || normalized.starts_with("o1")
+        || normalized.starts_with("o3")
+        || normalized.starts_with("o4")
 }
 
 #[derive(Clone, Debug)]
@@ -107,6 +134,29 @@ pub struct StoredMessage {
     pub role: String,
     pub content: String,
     pub status: String,
+    pub output_tokens: Option<i64>,
+    pub tool_activities: Vec<ToolActivity>,
+    pub attachments: Vec<StoredAttachment>,
+}
+
+#[derive(Clone, Debug)]
+pub struct StoredAttachment {
+    pub mime_type: String,
+    pub kind: String,
+    pub content: Option<Vec<u8>>,
+}
+
+impl ToolActivity {
+    pub fn has_completed_result(&self) -> bool {
+        self.output.is_some()
+            && matches!(
+                self.status,
+                crate::provider_schema::ToolActivityStatus::Completed
+                    | crate::provider_schema::ToolActivityStatus::Failed
+                    | crate::provider_schema::ToolActivityStatus::Denied
+                    | crate::provider_schema::ToolActivityStatus::Cancelled
+            )
+    }
 }
 
 pub struct AssistantMessageWrite<'a> {

@@ -17,6 +17,16 @@ pub(super) struct ChatRoute {
     pub(super) is_free: bool,
     pub(super) is_opencode: bool,
     pub(super) uses_responses_api: bool,
+    pub(super) context_window: Option<i64>,
+    pub(super) input_token_limit: Option<i64>,
+    pub(super) supports_images: bool,
+    pub(super) connection_id: Option<String>,
+}
+
+impl ChatRoute {
+    pub(super) fn request_context_limit(&self) -> Option<i64> {
+        self.input_token_limit.or(self.context_window)
+    }
 }
 
 pub(super) fn resolve_chat_route(
@@ -46,7 +56,15 @@ pub(super) fn resolve_chat_route(
         .filter(|id| !id.trim().is_empty())
         .ok_or_else(model_error)?;
 
-    let (chat_url, is_free, uses_responses_api) = match provider_id.as_deref() {
+    let (
+        chat_url,
+        is_free,
+        uses_responses_api,
+        context_window,
+        input_token_limit,
+        supports_images,
+        connection_id,
+    ) = match provider_id.as_deref() {
         Some("opencode") => {
             if requested_api_key_connection_id.is_some() {
                 return Err(route_error());
@@ -57,12 +75,23 @@ pub(super) fn resolve_chat_route(
             }
             let is_free = is_supported_free_chat_model(&model_id);
             let uses_responses_api = super::models::is_responses_api_model(storage, &model_id)?;
+            let (context_window, input_token_limit) =
+                super::models::context_limits(storage, &model_id)?;
+            let supports_images = super::models::supports_image_input(storage, &model_id)?;
             let chat_url = if uses_responses_api {
                 RESPONSES_URL.to_owned()
             } else {
                 CHAT_URL.to_owned()
             };
-            (chat_url, is_free, uses_responses_api)
+            (
+                chat_url,
+                is_free,
+                uses_responses_api,
+                context_window,
+                input_token_limit,
+                supports_images,
+                None,
+            )
         }
         Some("chatgpt_api") => {
             if requested_api_key_connection_id != stored_api_key_connection_id {
@@ -71,7 +100,15 @@ pub(super) fn resolve_chat_route(
             if api_key.is_none() {
                 return Err(openai_authentication_required_error());
             }
-            (OPENAI_CHAT_URL.to_owned(), false, false)
+            (
+                OPENAI_CHAT_URL.to_owned(),
+                false,
+                false,
+                None,
+                None,
+                crate::openai_api::supports_image_input(&model_id),
+                stored_api_key_connection_id.map(str::to_owned),
+            )
         }
         Some(id) => {
             let Some(provider) = api_compatible_provider(id) else {
@@ -82,13 +119,19 @@ pub(super) fn resolve_chat_route(
             {
                 return Err(route_error());
             }
-            if api_key.is_none() {
-                return Err(provider_authentication_required_error(id));
-            }
+            let api_key = api_key.ok_or_else(|| provider_authentication_required_error(id))?;
+            let (context_window, input_token_limit) =
+                super::provider_models::context_limits(storage, id, api_key, &model_id)?;
+            let supports_images =
+                super::provider_models::supports_image_input(storage, id, api_key, &model_id)?;
             (
                 format!("{}/chat/completions", provider.base_url),
                 false,
                 false,
+                context_window,
+                input_token_limit,
+                supports_images,
+                Some(id.to_owned()),
             )
         }
         None => return Err(route_error()),
@@ -105,5 +148,46 @@ pub(super) fn resolve_chat_route(
         chat_url,
         is_free,
         uses_responses_api,
+        context_window,
+        input_token_limit,
+        supports_images,
+        connection_id,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ChatRoute;
+
+    fn route(context_window: Option<i64>, input_token_limit: Option<i64>) -> ChatRoute {
+        ChatRoute {
+            model_id: "model".to_owned(),
+            provider_id: None,
+            chat_url: String::new(),
+            is_free: false,
+            is_opencode: false,
+            uses_responses_api: false,
+            context_window,
+            input_token_limit,
+            supports_images: false,
+            connection_id: None,
+        }
+    }
+
+    #[test]
+    fn request_budget_prefers_explicit_input_limit_and_falls_back_to_context() {
+        assert_eq!(
+            route(Some(262_144), Some(131_072)).request_context_limit(),
+            Some(131_072)
+        );
+        assert_eq!(
+            route(Some(262_144), None).request_context_limit(),
+            Some(262_144)
+        );
+        assert_eq!(
+            route(None, Some(131_072)).request_context_limit(),
+            Some(131_072)
+        );
+        assert_eq!(route(None, None).request_context_limit(), None);
+    }
 }

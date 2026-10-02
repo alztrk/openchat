@@ -102,8 +102,9 @@ pub fn list_models(
     let rows = statement.query_map(params![connection_id, workspace_id], |row| {
         let levels = row.get::<_, String>(4)?;
         let reasoning_levels = parse_reasoning_levels(&levels, 4)?;
+        let id: String = row.get(0)?;
         Ok(ChatGptModel {
-            id: row.get(0)?,
+            id: id.clone(),
             display_name: row.get(1)?,
             description: row.get(2)?,
             context_window: row.get(3)?,
@@ -111,6 +112,7 @@ pub fn list_models(
             is_available: row.get(5)?,
             default_reasoning_level: row.get(6)?,
             supports_reasoning_summary_parameter: row.get(7)?,
+            supports_images: super::model_supports_images(&id),
         })
     })?;
     rows.collect()
@@ -133,8 +135,9 @@ pub fn selected_model(
             params![connection_id, workspace_id, model_id],
             |row| {
                 let levels = row.get::<_, String>(4)?;
+                let id: String = row.get(0)?;
                 Ok(ChatGptModel {
-                    id: row.get(0)?,
+                    id: id.clone(),
                     display_name: row.get(1)?,
                     description: row.get(2)?,
                     context_window: row.get(3)?,
@@ -142,6 +145,7 @@ pub fn selected_model(
                     is_available: row.get(5)?,
                     default_reasoning_level: row.get(6)?,
                     supports_reasoning_summary_parameter: row.get(7)?,
+                    supports_images: super::model_supports_images(&id),
                 })
             },
         )

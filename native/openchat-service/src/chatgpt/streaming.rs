@@ -27,6 +27,7 @@ impl ChatGptService {
         route: &chatgpt_store::ConversationRoute,
         external_workspace_id: &str,
         model: &ChatGptModel,
+        last_prompt_message_id: Option<&str>,
         mut payload: Value,
     ) -> Result<Value, ServiceError> {
         let ChatSendContext {
@@ -103,9 +104,34 @@ impl ChatGptService {
         }
 
         let mut output_tokens = None;
+        let mut input_tokens;
         let mut tool_executor = ToolExecutor::new(project_root, data_root, permission_mode);
         'model_turn: loop {
+            if let Err(error) =
+                crate::context_compaction::validate_request_context(&payload, model.context_window)
+            {
+                let elapsed = started.elapsed();
+                self.record_chatgpt_event(
+                    "request_failed",
+                    "responses",
+                    None,
+                    Some(error.code),
+                    Some(elapsed.as_millis()),
+                    None,
+                );
+                self.persist_terminal_message(AssistantMessageWrite {
+                    conversation_id,
+                    message_id: &message_id,
+                    content: &content,
+                    status: "failed",
+                    created_at_unix_ms: created_at,
+                    output_tokens,
+                    elapsed: Some(elapsed),
+                })?;
+                return Err(error);
+            }
             let mut round_output_tokens = None;
+            let mut round_input_tokens = None;
             let mut response_output_items = Vec::new();
             let response = match self
                 .authorized_stream_request(
@@ -316,6 +342,7 @@ impl ChatGptService {
                                 ResponseEventContext {
                                     content: &mut content,
                                     output_tokens: &mut round_output_tokens,
+                                    input_tokens: &mut round_input_tokens,
                                     reasoning_summaries: &mut reasoning_summaries,
                                     response_output_items: &mut response_output_items,
                                     conversation_id,
@@ -423,6 +450,7 @@ impl ChatGptService {
             if let Some(round_tokens) = round_output_tokens {
                 output_tokens = Some(output_tokens.unwrap_or(0i64).saturating_add(round_tokens));
             }
+            input_tokens = round_input_tokens;
             let final_text = response_output_text(&response_output_items);
             if !final_text.is_empty() && final_text != content.as_str() {
                 content = final_text;
@@ -626,6 +654,22 @@ impl ChatGptService {
             output_tokens,
             elapsed: Some(elapsed),
         })?;
+        if let (Some(input_tokens), Some(last_message_id)) = (input_tokens, last_prompt_message_id)
+        {
+            chatgpt_store::save_prompt_usage(
+                &self.storage,
+                conversation_id,
+                chatgpt_store::PromptUsage {
+                    input_tokens,
+                    last_message_id,
+                    provider_id: "chatgpt",
+                    model_id: &model.id,
+                    connection_id: Some(&route.connection_id),
+                    workspace_id: Some(&route.workspace_id),
+                },
+            )
+            .map_err(database_error)?;
+        }
         self.record_chatgpt_event(
             "request_completed",
             "responses",

@@ -64,6 +64,27 @@ pub(super) fn stream_is_complete(saw_done: bool, saw_finish_reason: bool) -> boo
     saw_done || saw_finish_reason
 }
 
+pub(super) fn update_chat_completion_usage(
+    value: &Value,
+    input_tokens: &mut Option<i64>,
+    output_tokens: &mut Option<i64>,
+) {
+    if let Some(tokens) = value
+        .pointer("/usage/prompt_tokens")
+        .and_then(Value::as_i64)
+        .filter(|tokens| *tokens >= 0)
+    {
+        *input_tokens = Some(tokens);
+    }
+    if let Some(tokens) = value
+        .pointer("/usage/completion_tokens")
+        .and_then(Value::as_i64)
+        .filter(|tokens| *tokens >= 0)
+    {
+        *output_tokens = Some(output_tokens.unwrap_or(0).saturating_add(tokens));
+    }
+}
+
 pub(super) fn append_tool_call_deltas(
     calls: &mut BTreeMap<usize, StreamedToolCall>,
     deltas: &[Value],
@@ -145,29 +166,28 @@ pub(super) fn handle_responses_api_event(
             }
         }
         "response.output_item.added" => {
-            if let Some(item) = value.get("item") {
-                if item.get("type").and_then(Value::as_str) == Some("function_call") {
-                    let index = value
-                        .get("output_index")
-                        .and_then(Value::as_u64)
-                        .and_then(|v| usize::try_from(v).ok())
-                        .unwrap_or(calls.len());
-                    if !calls.contains_key(&index) && calls.len() >= tools::MAX_TOOL_CALLS_PER_TURN
-                    {
-                        return Err(tools::tool_call_limit_error());
-                    }
-                    let call = calls.entry(index).or_default();
-                    if let Some(id) = item.get("call_id").and_then(Value::as_str) {
-                        call.id = id.to_owned();
-                    }
-                    if let Some(name) = item.get("name").and_then(Value::as_str) {
-                        call.name = name.to_owned();
-                    }
-                    if let Some(arguments) = item.get("arguments").and_then(Value::as_str) {
-                        if !arguments.is_empty() {
-                            call.arguments = arguments.to_owned();
-                        }
-                    }
+            if let Some(item) = value.get("item")
+                && item.get("type").and_then(Value::as_str) == Some("function_call")
+            {
+                let index = value
+                    .get("output_index")
+                    .and_then(Value::as_u64)
+                    .and_then(|v| usize::try_from(v).ok())
+                    .unwrap_or(calls.len());
+                if !calls.contains_key(&index) && calls.len() >= tools::MAX_TOOL_CALLS_PER_TURN {
+                    return Err(tools::tool_call_limit_error());
+                }
+                let call = calls.entry(index).or_default();
+                if let Some(id) = item.get("call_id").and_then(Value::as_str) {
+                    call.id = id.to_owned();
+                }
+                if let Some(name) = item.get("name").and_then(Value::as_str) {
+                    call.name = name.to_owned();
+                }
+                if let Some(arguments) = item.get("arguments").and_then(Value::as_str)
+                    && !arguments.is_empty()
+                {
+                    call.arguments = arguments.to_owned();
                 }
             }
         }
@@ -193,39 +213,39 @@ pub(super) fn handle_responses_api_event(
                 .and_then(|v| usize::try_from(v).ok())
                 .unwrap_or(0);
             let call = calls.entry(index).or_default();
-            if let Some(name) = value.get("name").and_then(Value::as_str) {
-                if call.name.is_empty() {
-                    call.name = name.to_owned();
-                }
+            if let Some(name) = value.get("name").and_then(Value::as_str)
+                && call.name.is_empty()
+            {
+                call.name = name.to_owned();
             }
             if let Some(arguments) = value.get("arguments").and_then(Value::as_str) {
                 call.arguments = arguments.to_owned();
             }
         }
         "response.output_item.done" => {
-            if let Some(item) = value.get("item") {
-                if item.get("type").and_then(Value::as_str) == Some("function_call") {
-                    let index = value
-                        .get("output_index")
-                        .and_then(Value::as_u64)
-                        .and_then(|v| usize::try_from(v).ok())
-                        .unwrap_or(0);
-                    let call = calls.entry(index).or_default();
-                    if let Some(id) = item.get("call_id").and_then(Value::as_str) {
-                        if call.id.is_empty() {
-                            call.id = id.to_owned();
-                        }
-                    }
-                    if let Some(name) = item.get("name").and_then(Value::as_str) {
-                        if call.name.is_empty() {
-                            call.name = name.to_owned();
-                        }
-                    }
-                    if let Some(arguments) = item.get("arguments").and_then(Value::as_str) {
-                        if call.arguments.is_empty() {
-                            call.arguments = arguments.to_owned();
-                        }
-                    }
+            if let Some(item) = value.get("item")
+                && item.get("type").and_then(Value::as_str) == Some("function_call")
+            {
+                let index = value
+                    .get("output_index")
+                    .and_then(Value::as_u64)
+                    .and_then(|v| usize::try_from(v).ok())
+                    .unwrap_or(0);
+                let call = calls.entry(index).or_default();
+                if let Some(id) = item.get("call_id").and_then(Value::as_str)
+                    && call.id.is_empty()
+                {
+                    call.id = id.to_owned();
+                }
+                if let Some(name) = item.get("name").and_then(Value::as_str)
+                    && call.name.is_empty()
+                {
+                    call.name = name.to_owned();
+                }
+                if let Some(arguments) = item.get("arguments").and_then(Value::as_str)
+                    && call.arguments.is_empty()
+                {
+                    call.arguments = arguments.to_owned();
                 }
             }
         }
@@ -237,20 +257,20 @@ pub(super) fn handle_responses_api_event(
                 for (idx, item) in output.iter().enumerate() {
                     if item.get("type").and_then(Value::as_str) == Some("function_call") {
                         let call = calls.entry(idx).or_default();
-                        if let Some(id) = item.get("call_id").and_then(Value::as_str) {
-                            if call.id.is_empty() {
-                                call.id = id.to_owned();
-                            }
+                        if let Some(id) = item.get("call_id").and_then(Value::as_str)
+                            && call.id.is_empty()
+                        {
+                            call.id = id.to_owned();
                         }
-                        if let Some(name) = item.get("name").and_then(Value::as_str) {
-                            if call.name.is_empty() {
-                                call.name = name.to_owned();
-                            }
+                        if let Some(name) = item.get("name").and_then(Value::as_str)
+                            && call.name.is_empty()
+                        {
+                            call.name = name.to_owned();
                         }
-                        if let Some(arguments) = item.get("arguments").and_then(Value::as_str) {
-                            if call.arguments.is_empty() {
-                                call.arguments = arguments.to_owned();
-                            }
+                        if let Some(arguments) = item.get("arguments").and_then(Value::as_str)
+                            && call.arguments.is_empty()
+                        {
+                            call.arguments = arguments.to_owned();
                         }
                     }
                 }
@@ -270,4 +290,50 @@ pub(super) fn handle_responses_api_event(
         _ => {}
     }
     Ok(ResponsesStreamEffect::None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn reads_usage_only_stream_chunks_without_choices() {
+        let event = json!({
+            "choices": [],
+            "usage": {
+                "prompt_tokens": 1200,
+                "completion_tokens": 85
+            }
+        });
+        let mut input_tokens = None;
+        let mut output_tokens = None;
+
+        update_chat_completion_usage(&event, &mut input_tokens, &mut output_tokens);
+
+        assert_eq!(input_tokens, Some(1200));
+        assert_eq!(output_tokens, Some(85));
+    }
+
+    #[test]
+    fn ignores_invalid_usage_values_and_accumulates_output_tokens() {
+        let event = json!({
+            "usage": {
+                "prompt_tokens": -1,
+                "completion_tokens": -1
+            }
+        });
+        let mut input_tokens = Some(42);
+        let mut output_tokens = Some(7);
+
+        update_chat_completion_usage(&event, &mut input_tokens, &mut output_tokens);
+
+        assert_eq!(input_tokens, Some(42));
+        assert_eq!(output_tokens, Some(7));
+
+        let next_event = json!({"usage": {"completion_tokens": 5}});
+        update_chat_completion_usage(&next_event, &mut input_tokens, &mut output_tokens);
+
+        assert_eq!(output_tokens, Some(12));
+    }
 }

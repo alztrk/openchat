@@ -1,11 +1,12 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use futures_util::StreamExt;
 use reqwest::{Client, StatusCode};
 use serde_json::{Value, json};
 
 use crate::{
     chatgpt_store::AssistantMessageWrite, protocol::ServiceError, provider_schema::ToolDefinition,
-    storage::AppStorage,
+    storage::AppStorage, tools,
 };
 
 mod models;
@@ -15,10 +16,30 @@ mod route;
 mod stream;
 pub use models::models;
 pub use provider_models::models as models_for_provider;
+
+pub(crate) fn context_usage_tool_definitions(
+    storage: &AppStorage,
+    provider_id: &str,
+    model_id: Option<&str>,
+) -> Result<Vec<(String, Value)>, ServiceError> {
+    let uses_responses_api = if provider_id == "opencode" {
+        match model_id {
+            Some(model_id) => models::is_responses_api_model(storage, model_id)?,
+            None => false,
+        }
+    } else {
+        false
+    };
+    Ok(tools::context_usage_definitions(
+        provider_id,
+        uses_responses_api,
+    ))
+}
 const CHAT_URL: &str = "https://opencode.ai/zen/v1/chat/completions";
 const RESPONSES_URL: &str = "https://opencode.ai/zen/v1/responses";
 const OPENAI_CHAT_URL: &str = "https://api.openai.com/v1/chat/completions";
 const MAX_EVENT_BYTES: usize = 1024 * 1024;
+const MAX_PROVIDER_ERROR_BYTES: usize = 16 * 1024;
 
 #[derive(Clone, Copy)]
 pub(super) struct ApiCompatibleProvider {
@@ -53,6 +74,7 @@ pub(super) fn api_compatible_provider(provider_id: &str) -> Option<ApiCompatible
     }
 }
 
+mod context_compaction;
 mod conversation;
 pub use conversation::send_message;
 
@@ -117,6 +139,36 @@ fn client() -> Result<Client, ServiceError> {
         .timeout(Duration::from_secs(300))
         .build()
         .map_err(|_| network_error())
+}
+
+pub(super) async fn opencode_free_tier_restricted(response: reqwest::Response) -> bool {
+    let mut body = Vec::new();
+    let mut chunks = response.bytes_stream();
+    while body.len() < MAX_PROVIDER_ERROR_BYTES {
+        let Some(Ok(chunk)) = chunks.next().await else {
+            break;
+        };
+        let remaining = MAX_PROVIDER_ERROR_BYTES - body.len();
+        body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
+    }
+    let Ok(value) = serde_json::from_slice::<Value>(&body) else {
+        return false;
+    };
+    contains_free_tier_error(&value)
+}
+
+fn contains_free_tier_error(value: &Value) -> bool {
+    match value {
+        Value::String(message) => {
+            message.contains("OpenCode's free tier can only be used from within OpenCode")
+        }
+        Value::Array(values) => values.iter().any(contains_free_tier_error),
+        Value::Object(fields) => {
+            fields.get("type").and_then(Value::as_str) == Some("FreeTierError")
+                || fields.values().any(contains_free_tier_error)
+        }
+        _ => false,
+    }
 }
 
 fn save_message(
@@ -280,6 +332,22 @@ mod tests {
 
         assert_eq!(value["word"], "şeker");
         assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn recognizes_opencode_free_tier_restriction_as_a_provider_policy_error() {
+        let error = json!({
+            "type": "error",
+            "error": {
+                "type": "FreeTierError",
+                "message": "Error from provider (Console): OpenCode's free tier can only be used from within OpenCode"
+            }
+        });
+
+        assert!(super::contains_free_tier_error(&error));
+        assert!(!super::contains_free_tier_error(&json!({
+            "error": {"type": "Unauthorized", "message": "Invalid API key"}
+        })));
     }
 
     #[test]
@@ -621,11 +689,15 @@ mod tests {
             messages: vec![crate::provider_schema::ProviderMessage {
                 role: crate::provider_schema::MessageRole::User,
                 content: "Reply with 'pong' only.".to_owned(),
+                images: Vec::new(),
+                tool_calls: Vec::new(),
+                tool_call_id: None,
             }],
+            last_message_id: None,
             tools: defs,
             reasoning_effort: None,
         };
-        let messages = super::request::completion_messages(&req);
+        let messages = super::request::completion_messages(&req, "opencode");
         let body = super::request::responses_api_body(&req, &messages);
 
         let response = client

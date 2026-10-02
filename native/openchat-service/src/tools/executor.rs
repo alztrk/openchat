@@ -41,6 +41,7 @@ pub struct ToolExecutor {
     permission_mode: ToolPermissionMode,
     rounds: usize,
     calls: usize,
+    current_round_id: Option<String>,
 }
 
 pub(crate) fn tool_call_limit_error() -> ServiceError {
@@ -63,6 +64,7 @@ impl ToolExecutor {
             permission_mode,
             rounds: 0,
             calls: 0,
+            current_round_id: None,
         }
     }
 
@@ -77,6 +79,7 @@ impl ToolExecutor {
         }
         self.rounds += 1;
         self.calls += calls.len();
+        self.current_round_id = Some(format!("round-{}", self.rounds));
         Ok(())
     }
 
@@ -271,11 +274,13 @@ impl ToolExecutor {
 
     async fn emit_activity(
         &self,
-        activity: ToolActivity,
+        mut activity: ToolActivity,
         request_id: &Value,
         snapshot: &ChatStreamSnapshot,
         events: &EventSink,
     ) -> Result<(), ServiceError> {
+        activity.round_id.clone_from(&self.current_round_id);
+        activity.assistant_text_before_byte_offset = Some(snapshot.content.len());
         let event = ChatStreamEvent::ToolActivityUpdated {
             snapshot: snapshot.clone(),
             activity,

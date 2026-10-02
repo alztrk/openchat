@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
-pub(super) const SCHEMA_VERSION: i64 = 10;
+pub(super) const SCHEMA_VERSION: i64 = 15;
 pub(super) const INITIAL_SCHEMA_VERSION: i64 = 2;
 pub(super) fn initialize_schema(
     connection: &Connection,
@@ -349,6 +349,357 @@ pub(super) fn initialize_schema(
         transaction.commit()?;
     }
 
+    if current_version < 11 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE conversation_context_state (
+                conversation_id TEXT PRIMARY KEY NOT NULL
+                    REFERENCES conversations(id) ON DELETE CASCADE,
+                compaction_kind TEXT CHECK (
+                    compaction_kind IS NULL
+                    OR compaction_kind IN ('responses_checkpoint', 'summary')
+                ),
+                compaction_payload TEXT,
+                compaction_provider_id TEXT,
+                compaction_connection_id TEXT,
+                compaction_workspace_id TEXT,
+                compaction_model_id TEXT,
+                compacted_through_message_id TEXT,
+                last_prompt_tokens INTEGER CHECK (
+                    last_prompt_tokens IS NULL OR last_prompt_tokens >= 0
+                ),
+                last_prompt_message_id TEXT,
+                last_prompt_provider_id TEXT,
+                last_prompt_model_id TEXT,
+                updated_at_unix_ms INTEGER NOT NULL,
+                CHECK (
+                    (compaction_kind IS NULL AND compaction_payload IS NULL
+                        AND compacted_through_message_id IS NULL)
+                    OR (compaction_kind IS NOT NULL AND compaction_payload IS NOT NULL
+                        AND compacted_through_message_id IS NOT NULL)
+                )
+            );",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (11, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+    }
+
+    if current_version < 12 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE conversation_context_state
+                 ADD COLUMN last_prompt_connection_id TEXT;
+             ALTER TABLE conversation_context_state
+                 ADD COLUMN last_prompt_workspace_id TEXT;",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (12, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+    }
+
+    if current_version < 13 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE conversation_memory_index_state (
+                conversation_id TEXT PRIMARY KEY NOT NULL
+                    REFERENCES conversations(id) ON DELETE CASCADE,
+                backfilled_at_unix_ms INTEGER NOT NULL
+            );
+
+            CREATE VIRTUAL TABLE conversation_memory_fts USING fts5(
+                conversation_id UNINDEXED,
+                message_id UNINDEXED,
+                role UNINDEXED,
+                scope_token,
+                content,
+                tokenize = 'unicode61 remove_diacritics 2'
+            );
+
+            CREATE TRIGGER conversation_memory_message_insert
+            AFTER INSERT ON messages
+            WHEN NEW.role IN ('user', 'assistant') AND NEW.status = 'completed'
+            BEGIN
+                INSERT INTO conversation_memory_fts (
+                    rowid, conversation_id, message_id, role, scope_token, content
+                ) VALUES (
+                    NEW.rowid, NEW.conversation_id, NEW.id, NEW.role,
+                    'scope' || lower(hex(CAST(NEW.conversation_id AS BLOB))), NEW.content
+                );
+            END;
+
+            CREATE TRIGGER conversation_memory_message_update
+            AFTER UPDATE OF conversation_id, id, role, content, status ON messages
+            WHEN OLD.status = 'completed' OR NEW.status = 'completed'
+            BEGIN
+                DELETE FROM conversation_memory_fts WHERE rowid = OLD.rowid;
+                INSERT INTO conversation_memory_fts (
+                    rowid, conversation_id, message_id, role, scope_token, content
+                ) SELECT
+                    NEW.rowid, NEW.conversation_id, NEW.id, NEW.role,
+                    'scope' || lower(hex(CAST(NEW.conversation_id AS BLOB))), NEW.content
+                WHERE NEW.role IN ('user', 'assistant') AND NEW.status = 'completed';
+            END;
+
+            CREATE TRIGGER conversation_memory_message_delete
+            AFTER DELETE ON messages
+            BEGIN
+                DELETE FROM conversation_memory_fts WHERE rowid = OLD.rowid;
+            END;",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (13, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+    }
+
+    if current_version < 14 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE conversation_memory_tool_index_state (
+                conversation_id TEXT PRIMARY KEY NOT NULL
+                    REFERENCES conversations(id) ON DELETE CASCADE,
+                backfilled_at_unix_ms INTEGER NOT NULL
+            );
+
+            CREATE VIRTUAL TABLE conversation_memory_tools_fts USING fts5(
+                conversation_id UNINDEXED,
+                message_id UNINDEXED,
+                role UNINDEXED,
+                scope_token,
+                content,
+                tokenize = 'unicode61 remove_diacritics 2'
+            );
+
+            CREATE TRIGGER conversation_memory_tool_insert
+            AFTER INSERT ON messages
+            WHEN NEW.role = 'assistant'
+                AND NEW.status = 'completed'
+                AND json_type(
+                    CASE WHEN json_valid(NEW.tool_activities)
+                         THEN NEW.tool_activities ELSE '[]' END
+                ) = 'array'
+                AND EXISTS (
+                    SELECT 1 FROM json_each(
+                        CASE WHEN json_valid(NEW.tool_activities)
+                             THEN NEW.tool_activities ELSE '[]' END
+                    ) AS activity
+                    WHERE json_type(activity.value, '$.output') IS NOT NULL
+                      AND json_extract(activity.value, '$.status')
+                          IN ('completed', 'failed', 'denied', 'cancelled')
+                )
+            BEGIN
+                INSERT INTO conversation_memory_tools_fts (
+                    rowid, conversation_id, message_id, role, scope_token, content
+                ) VALUES (
+                    NEW.rowid, NEW.conversation_id, NEW.id, NEW.role,
+                    'scope' || lower(hex(CAST(NEW.conversation_id AS BLOB))),
+                    (
+                        SELECT group_concat(
+                            COALESCE(json_extract(activity.value, '$.name'), '') || ' ' ||
+                            COALESCE(json_extract(activity.value, '$.arguments'), '') || ' ' ||
+                            COALESCE(json_extract(activity.value, '$.output'), ''),
+                            char(10)
+                        )
+                        FROM json_each(
+                            CASE WHEN json_valid(NEW.tool_activities)
+                                 THEN NEW.tool_activities ELSE '[]' END
+                        ) AS activity
+                        WHERE json_type(activity.value, '$.output') IS NOT NULL
+                          AND json_extract(activity.value, '$.status')
+                              IN ('completed', 'failed', 'denied', 'cancelled')
+                    )
+                );
+            END;
+
+            CREATE TRIGGER conversation_memory_tool_update
+            AFTER UPDATE OF conversation_id, id, role, status, tool_activities ON messages
+            BEGIN
+                DELETE FROM conversation_memory_tools_fts WHERE rowid = OLD.rowid;
+                INSERT INTO conversation_memory_tools_fts (
+                    rowid, conversation_id, message_id, role, scope_token, content
+                )
+                SELECT
+                    NEW.rowid, NEW.conversation_id, NEW.id, NEW.role,
+                    'scope' || lower(hex(CAST(NEW.conversation_id AS BLOB))),
+                    (
+                        SELECT group_concat(
+                            COALESCE(json_extract(activity.value, '$.name'), '') || ' ' ||
+                            COALESCE(json_extract(activity.value, '$.arguments'), '') || ' ' ||
+                            COALESCE(json_extract(activity.value, '$.output'), ''),
+                            char(10)
+                        )
+                        FROM json_each(
+                            CASE WHEN json_valid(NEW.tool_activities)
+                                 THEN NEW.tool_activities ELSE '[]' END
+                        ) AS activity
+                        WHERE json_type(activity.value, '$.output') IS NOT NULL
+                          AND json_extract(activity.value, '$.status')
+                              IN ('completed', 'failed', 'denied', 'cancelled')
+                    )
+                WHERE NEW.role = 'assistant'
+                  AND NEW.status = 'completed'
+                  AND json_type(
+                      CASE WHEN json_valid(NEW.tool_activities)
+                           THEN NEW.tool_activities ELSE '[]' END
+                  ) = 'array'
+                  AND EXISTS (
+                      SELECT 1 FROM json_each(
+                          CASE WHEN json_valid(NEW.tool_activities)
+                               THEN NEW.tool_activities ELSE '[]' END
+                      ) AS activity
+                      WHERE json_type(activity.value, '$.output') IS NOT NULL
+                        AND json_extract(activity.value, '$.status')
+                            IN ('completed', 'failed', 'denied', 'cancelled')
+                  );
+            END;
+
+            CREATE TRIGGER conversation_memory_tool_delete
+            AFTER DELETE ON messages
+            BEGIN
+                DELETE FROM conversation_memory_tools_fts WHERE rowid = OLD.rowid;
+            END;",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (14, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+    }
+
+    if current_version < 15 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE conversation_memory_embedding_namespaces (
+                namespace INTEGER PRIMARY KEY AUTOINCREMENT
+                    CHECK (namespace BETWEEN 1 AND 16777215),
+                conversation_id TEXT NOT NULL UNIQUE
+                    REFERENCES conversations(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE conversation_memory_embeddings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT
+                    CHECK (id BETWEEN 1 AND 1099511627775),
+                conversation_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                chunk_index INTEGER NOT NULL CHECK (chunk_index >= 0),
+                start_byte INTEGER NOT NULL CHECK (start_byte >= 0),
+                end_byte INTEGER NOT NULL CHECK (end_byte >= start_byte),
+                model_id TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                vector BLOB NOT NULL CHECK (length(vector) = 384),
+                UNIQUE (conversation_id, message_id, chunk_index),
+                FOREIGN KEY (conversation_id, message_id)
+                    REFERENCES messages(conversation_id, id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX conversation_memory_embeddings_conversation_idx
+                ON conversation_memory_embeddings(conversation_id, id);
+
+            CREATE TABLE conversation_memory_embedding_state (
+                conversation_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                model_id TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                chunk_count INTEGER NOT NULL CHECK (chunk_count >= 0),
+                PRIMARY KEY (conversation_id, message_id),
+                FOREIGN KEY (conversation_id, message_id)
+                    REFERENCES messages(conversation_id, id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE conversation_memory_embedding_pending (
+                conversation_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                PRIMARY KEY (conversation_id, message_id),
+                FOREIGN KEY (conversation_id, message_id)
+                    REFERENCES messages(conversation_id, id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE conversation_memory_embedding_backfill (
+                conversation_id TEXT PRIMARY KEY NOT NULL
+                    REFERENCES conversations(id) ON DELETE CASCADE,
+                cursor_created_at INTEGER,
+                cursor_message_id TEXT
+            );
+
+            CREATE TABLE conversation_memory_semantic_index_state (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                generation INTEGER NOT NULL DEFAULT 0 CHECK (generation >= 0),
+                indexed_generation INTEGER CHECK (
+                    indexed_generation IS NULL OR indexed_generation >= 0
+                )
+            );
+            INSERT INTO conversation_memory_semantic_index_state (id, generation)
+                VALUES (1, 0);
+
+            CREATE TRIGGER conversation_memory_embedding_insert
+            AFTER INSERT ON conversation_memory_embeddings
+            BEGIN
+                UPDATE conversation_memory_semantic_index_state
+                SET generation = generation + 1 WHERE id = 1;
+            END;
+
+            CREATE TRIGGER conversation_memory_embedding_update
+            AFTER UPDATE ON conversation_memory_embeddings
+            BEGIN
+                UPDATE conversation_memory_semantic_index_state
+                SET generation = generation + 1 WHERE id = 1;
+            END;
+
+            CREATE TRIGGER conversation_memory_embedding_delete
+            AFTER DELETE ON conversation_memory_embeddings
+            BEGIN
+                UPDATE conversation_memory_semantic_index_state
+                SET generation = generation + 1 WHERE id = 1;
+            END;
+
+            CREATE TRIGGER conversation_memory_embedding_message_insert
+            AFTER INSERT ON messages
+            WHEN NEW.role IN ('user', 'assistant') AND NEW.status = 'completed'
+            BEGIN
+                INSERT OR IGNORE INTO conversation_memory_embedding_pending (
+                    conversation_id, message_id
+                ) VALUES (NEW.conversation_id, NEW.id);
+            END;
+
+            CREATE TRIGGER conversation_memory_embedding_message_update
+            AFTER UPDATE OF conversation_id, id, role, content, status, tool_activities ON messages
+            BEGIN
+                DELETE FROM conversation_memory_embedding_pending
+                    WHERE conversation_id = OLD.conversation_id AND message_id = OLD.id;
+                DELETE FROM conversation_memory_embedding_state
+                    WHERE conversation_id = OLD.conversation_id AND message_id = OLD.id;
+                DELETE FROM conversation_memory_embeddings
+                    WHERE conversation_id = OLD.conversation_id AND message_id = OLD.id;
+                INSERT OR IGNORE INTO conversation_memory_embedding_pending (
+                    conversation_id, message_id
+                ) SELECT NEW.conversation_id, NEW.id
+                    WHERE NEW.role IN ('user', 'assistant') AND NEW.status = 'completed';
+            END;
+
+            CREATE TRIGGER conversation_memory_embedding_message_delete
+            AFTER DELETE ON messages
+            BEGIN
+                DELETE FROM conversation_memory_embedding_pending
+                    WHERE conversation_id = OLD.conversation_id AND message_id = OLD.id;
+                DELETE FROM conversation_memory_embedding_state
+                    WHERE conversation_id = OLD.conversation_id AND message_id = OLD.id;
+                DELETE FROM conversation_memory_embeddings
+                    WHERE conversation_id = OLD.conversation_id AND message_id = OLD.id;
+            END;",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (15, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+    }
+
     Ok(SCHEMA_VERSION)
 }
 
@@ -358,4 +709,427 @@ fn unix_time_millis() -> rusqlite::Result<i64> {
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
     i64::try_from(elapsed.as_millis())
         .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
+}
+
+#[cfg(test)]
+mod tests {
+    use rusqlite::Connection;
+
+    use super::{SCHEMA_VERSION, initialize_schema};
+
+    #[test]
+    fn compaction_and_archive_migrations_upgrade_version_ten_without_losing_messages() {
+        let connection = Connection::open_in_memory().expect("open in-memory database");
+        connection
+            .execute_batch(
+                "CREATE TABLE openchat_backend_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at_unix_ms INTEGER NOT NULL
+                );
+                CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                CREATE TABLE messages (
+                    id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at INTEGER,
+                    tool_activities TEXT NOT NULL DEFAULT '[]',
+                    PRIMARY KEY (conversation_id, id)
+                );
+                INSERT INTO conversations (id) VALUES ('conversation');
+                INSERT INTO messages
+                    (id, conversation_id, role, content, status, created_at)
+                VALUES
+                    ('old-user', 'conversation', 'user', 'Keep this original question.', 'completed', 1),
+                    ('old-assistant', 'conversation', 'assistant', 'Keep this original answer.', 'completed', 2);",
+            )
+            .expect("create version ten schema and historical messages");
+        for version in 1..=10 {
+            connection
+                .execute(
+                    "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms)
+                     VALUES (?1, 0)",
+                    [version],
+                )
+                .expect("record version ten migration history");
+        }
+
+        assert_eq!(
+            initialize_schema(&connection, SCHEMA_VERSION).expect("upgrade version ten schema"),
+            SCHEMA_VERSION
+        );
+
+        let saved_messages = connection
+            .query_row("SELECT COUNT(*) FROM messages", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("count preserved messages");
+        assert_eq!(saved_messages, 2);
+        let migration_version = connection
+            .query_row(
+                "SELECT MAX(version) FROM openchat_backend_migrations",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("read backend migration version");
+        assert_eq!(migration_version, SCHEMA_VERSION);
+
+        let context_rows = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_context_state
+                 WHERE conversation_id = 'conversation'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count old conversation context state");
+        assert_eq!(context_rows, 0);
+
+        connection
+            .execute(
+                "INSERT INTO messages
+                    (id, conversation_id, role, content, status, created_at)
+                 VALUES ('new-message', 'conversation', 'assistant', 'new indexed response', 'completed', 3)",
+                [],
+            )
+            .expect("insert message after migration");
+        let indexed_rows = connection
+            .query_row("SELECT COUNT(*) FROM conversation_memory_fts", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("count post-migration index rows");
+        assert_eq!(indexed_rows, 1);
+    }
+
+    #[test]
+    fn failed_tool_archive_migration_rolls_back_partial_schema_changes() {
+        let connection = Connection::open_in_memory().expect("open in-memory database");
+        connection
+            .execute_batch(
+                "CREATE TABLE openchat_backend_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at_unix_ms INTEGER NOT NULL
+                );
+                CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                CREATE TABLE messages (
+                    rowid INTEGER PRIMARY KEY,
+                    id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at INTEGER,
+                    tool_activities TEXT NOT NULL DEFAULT '[]'
+                );
+                CREATE TRIGGER conversation_memory_tool_insert
+                AFTER INSERT ON messages
+                BEGIN
+                    SELECT 1;
+                END;",
+            )
+            .expect("create version thirteen schema with a conflicting trigger");
+        for version in 1..(SCHEMA_VERSION - 1) {
+            connection
+                .execute(
+                    "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms)
+                     VALUES (?1, 0)",
+                    [version],
+                )
+                .expect("record version thirteen migration history");
+        }
+
+        initialize_schema(&connection, SCHEMA_VERSION)
+            .expect_err("conflicting trigger must abort the tool archive migration");
+        for table in [
+            "conversation_memory_tool_index_state",
+            "conversation_memory_tools_fts",
+        ] {
+            let exists = connection
+                .query_row(
+                    "SELECT EXISTS (
+                        SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1
+                    )",
+                    [table],
+                    |row| row.get::<_, bool>(0),
+                )
+                .expect("check rolled-back migration table");
+            assert!(!exists, "partial table {table} survived the rollback");
+        }
+        let migration_version = connection
+            .query_row(
+                "SELECT MAX(version) FROM openchat_backend_migrations",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("read migration version after failure");
+        assert_eq!(migration_version, SCHEMA_VERSION - 2);
+    }
+
+    #[test]
+    fn memory_fts_migration_indexes_new_completed_messages_and_tracks_updates() {
+        let connection = Connection::open_in_memory().expect("open in-memory database");
+        connection
+            .execute_batch(
+                "CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                CREATE TABLE messages (
+                    id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL REFERENCES conversations(id),
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at INTEGER,
+                    output_tokens INTEGER,
+                    tool_activities TEXT NOT NULL DEFAULT '[]',
+                    PRIMARY KEY (conversation_id, id)
+                );
+                CREATE TABLE openchat_backend_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at_unix_ms INTEGER NOT NULL
+                );
+                INSERT INTO conversations (id) VALUES ('conversation');
+                INSERT INTO messages
+                    (id, conversation_id, role, content, status, created_at)
+                VALUES
+                    ('before-migration', 'conversation', 'user', 'historical term', 'completed', 1);",
+            )
+            .expect("create pre-migration schema");
+        for version in 1..(SCHEMA_VERSION - 2) {
+            connection
+                .execute(
+                    "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms)
+                     VALUES (?1, 0)",
+                    [version],
+                )
+                .expect("record prior migration");
+        }
+
+        assert_eq!(
+            initialize_schema(&connection, SCHEMA_VERSION).expect("apply FTS migration"),
+            SCHEMA_VERSION
+        );
+        connection
+            .execute(
+                "INSERT INTO messages
+                    (id, conversation_id, role, content, status, created_at)
+                 VALUES ('new-message', 'conversation', 'assistant', 'live term', 'completed', 2)",
+                [],
+            )
+            .expect("insert completed message");
+
+        let indexed_rows = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_memory_fts
+                 WHERE conversation_memory_fts.conversation_id = 'conversation'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count newly indexed messages");
+        assert_eq!(indexed_rows, 1);
+
+        connection
+            .execute(
+                "UPDATE messages SET tool_activities = ?2 WHERE id = ?1",
+                [
+                    "new-message",
+                    r#"[{"callId":"call-1","name":"read","arguments":{"path":"config"},"output":{"content":"toolquartz detail"},"status":"completed"}]"#,
+                ],
+            )
+            .expect("index completed tool activity");
+        let tool_matches = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_memory_tools_fts
+                 WHERE conversation_memory_tools_fts MATCH 'content : \"toolquartz\"'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("search indexed tool result");
+        assert_eq!(tool_matches, 1);
+
+        connection
+            .execute(
+                "UPDATE messages SET tool_activities = ?2 WHERE id = ?1",
+                [
+                    "new-message",
+                    r#"[{"callId":"call-1","name":"read","arguments":{"path":"config"},"output":{"content":"toolzircon detail"},"status":"completed"}]"#,
+                ],
+            )
+            .expect("update indexed tool activity");
+        let revised_tool_matches = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_memory_tools_fts
+                 WHERE conversation_memory_tools_fts MATCH 'content : \"toolzircon\"'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("search revised tool result");
+        assert_eq!(revised_tool_matches, 1);
+
+        connection
+            .execute(
+                "UPDATE messages SET content = 'revised term' WHERE id = 'new-message'",
+                [],
+            )
+            .expect("update indexed message");
+        let revised_matches = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_memory_fts
+                 WHERE conversation_memory_fts MATCH 'content : \"revised\"'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("search revised content");
+        assert_eq!(revised_matches, 1);
+
+        connection
+            .execute(
+                "UPDATE messages SET status = 'failed' WHERE id = 'new-message'",
+                [],
+            )
+            .expect("mark message incomplete");
+        let remaining_rows = connection
+            .query_row("SELECT COUNT(*) FROM conversation_memory_fts", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("count remaining index rows");
+        assert_eq!(remaining_rows, 0);
+    }
+
+    #[test]
+    fn semantic_memory_migration_tracks_vectors_and_invalidates_edited_sources() {
+        let connection = Connection::open_in_memory().expect("open in-memory database");
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys = ON;
+                CREATE TABLE openchat_backend_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at_unix_ms INTEGER NOT NULL
+                );
+                CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                CREATE TABLE messages (
+                    conversation_id TEXT NOT NULL,
+                    id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at INTEGER,
+                    tool_activities TEXT NOT NULL DEFAULT '[]',
+                    PRIMARY KEY (conversation_id, id)
+                );
+                INSERT INTO conversations (id) VALUES ('conversation-a');",
+            )
+            .expect("create schema fourteen fixture");
+        for version in 1..=14 {
+            connection
+                .execute(
+                    "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms)
+                     VALUES (?1, 0)",
+                    [version],
+                )
+                .expect("record prior schema version");
+        }
+
+        assert_eq!(
+            initialize_schema(&connection, SCHEMA_VERSION).expect("apply semantic memory schema"),
+            SCHEMA_VERSION
+        );
+        connection
+            .execute(
+                "INSERT INTO messages (conversation_id, id, role, content, status, created_at)
+                 VALUES ('conversation-a', 'message-a', 'user', 'Original message.', 'completed', 1)",
+                [],
+            )
+            .expect("insert completed historical message");
+        let pending_count = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_memory_embedding_pending",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count queued embeddings");
+        assert_eq!(pending_count, 1);
+
+        connection
+            .execute(
+                "INSERT INTO conversation_memory_embedding_namespaces (conversation_id)
+                 VALUES ('conversation-a')",
+                [],
+            )
+            .expect("create conversation namespace");
+        connection
+            .execute(
+                "INSERT INTO conversation_memory_embeddings (
+                    conversation_id, message_id, chunk_index, start_byte, end_byte,
+                    model_id, content_hash, vector
+                 ) VALUES ('conversation-a', 'message-a', 0, 0, 16, 'model', 'hash', zeroblob(384))",
+                [],
+            )
+            .expect("insert derived embedding");
+        connection
+            .execute(
+                "INSERT INTO conversation_memory_embedding_state (
+                    conversation_id, message_id, model_id, content_hash, chunk_count
+                 ) VALUES ('conversation-a', 'message-a', 'model', 'hash', 1)",
+                [],
+            )
+            .expect("record derived embedding state");
+        connection
+            .execute("DELETE FROM conversation_memory_embedding_pending", [])
+            .expect("clear queued embedding after recording derived state");
+        let generation = connection
+            .query_row(
+                "SELECT generation FROM conversation_memory_semantic_index_state WHERE id = 1",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("read derived index generation");
+        assert_eq!(generation, 1);
+
+        connection
+            .execute(
+                "UPDATE messages SET tool_activities = '[]'
+                 WHERE conversation_id = 'conversation-a' AND id = 'message-a'",
+                [],
+            )
+            .expect("invalidate embeddings when tool activities change");
+        let remaining_tool_change_embeddings = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_memory_embeddings",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count embeddings after tool update");
+        assert_eq!(remaining_tool_change_embeddings, 0);
+        let pending_after_tool_update = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_memory_embedding_pending",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count queued embeddings after tool update");
+        assert_eq!(pending_after_tool_update, 1);
+
+        connection
+            .execute(
+                "UPDATE messages SET content = 'Edited source message.'
+                 WHERE conversation_id = 'conversation-a' AND id = 'message-a'",
+                [],
+            )
+            .expect("invalidate embeddings when source changes");
+        let remaining_embeddings = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_memory_embeddings",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("count invalidated embeddings");
+        assert_eq!(remaining_embeddings, 0);
+        let source_content = connection
+            .query_row(
+                "SELECT content FROM messages WHERE conversation_id = 'conversation-a' AND id = 'message-a'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("read source message after indexing");
+        assert_eq!(source_content, "Edited source message.");
+    }
 }

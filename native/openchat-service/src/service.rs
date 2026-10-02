@@ -1,4 +1,9 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    ffi::{OsStr, OsString},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use crate::{
     chatgpt::ChatGptService,
@@ -18,6 +23,7 @@ const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug)]
 pub enum RunError {
+    InvalidArguments,
     StorageInitialization,
     ServiceInitialization(&'static str),
     Protocol,
@@ -26,6 +32,9 @@ pub enum RunError {
 impl std::fmt::Display for RunError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::InvalidArguments => {
+                formatter.write_str("usage: openchat_service [--data-root <absolute-path>]")
+            }
             Self::StorageInitialization => {
                 formatter.write_str("local_storage_initialization_failed")
             }
@@ -38,7 +47,14 @@ impl std::fmt::Display for RunError {
 }
 
 pub async fn run() -> Result<(), RunError> {
-    let storage = Arc::new(AppStorage::open().map_err(|_| RunError::StorageInitialization)?);
+    let data_root = parse_data_root(std::env::args_os().skip(1))?;
+    let storage = Arc::new(
+        match data_root {
+            Some(root) => AppStorage::open_at(root),
+            None => AppStorage::open(),
+        }
+        .map_err(|_| RunError::StorageInitialization)?,
+    );
     let service = Arc::new(
         ChatGptService::new(Arc::clone(&storage))
             .map_err(|error| RunError::ServiceInitialization(error.code))?,
@@ -46,6 +62,25 @@ pub async fn run() -> Result<(), RunError> {
     run_protocol(storage, service)
         .await
         .map_err(|_| RunError::Protocol)
+}
+
+fn parse_data_root(
+    arguments: impl IntoIterator<Item = OsString>,
+) -> Result<Option<PathBuf>, RunError> {
+    let mut arguments = arguments.into_iter();
+    let Some(argument) = arguments.next() else {
+        return Ok(None);
+    };
+    if argument != OsStr::new("--data-root") {
+        return Err(RunError::InvalidArguments);
+    }
+    let Some(root) = arguments.next().map(PathBuf::from) else {
+        return Err(RunError::InvalidArguments);
+    };
+    if !root.is_absolute() || arguments.next().is_some() {
+        return Err(RunError::InvalidArguments);
+    }
+    Ok(Some(root))
 }
 async fn run_protocol(
     storage: Arc<AppStorage>,
@@ -221,5 +256,45 @@ async fn cancel_all(operations: &Mutex<HashMap<String, tokio_watch::Sender<bool>
     let operations = operations.lock().await;
     for cancellation in operations.values() {
         let _ = cancellation.send(true);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, ffi::OsString};
+
+    use super::parse_data_root;
+
+    #[test]
+    fn data_root_option_requires_one_absolute_path() {
+        let root = env::temp_dir().join("openchat-isolated-profile");
+        let arguments = [OsString::from("--data-root"), root.clone().into_os_string()];
+
+        assert_eq!(
+            parse_data_root(arguments).expect("valid data-root option"),
+            Some(root)
+        );
+        assert!(parse_data_root([]).expect("default data root").is_none());
+    }
+
+    #[test]
+    fn invalid_data_root_arguments_fail_before_storage_opens() {
+        assert!(parse_data_root([OsString::from("--data-root")]).is_err());
+        assert!(
+            parse_data_root([
+                OsString::from("--data-root"),
+                OsString::from("relative-profile"),
+            ])
+            .is_err()
+        );
+        assert!(
+            parse_data_root([
+                OsString::from("--data-root"),
+                env::temp_dir().into_os_string(),
+                OsString::from("unexpected"),
+            ])
+            .is_err()
+        );
+        assert!(parse_data_root([OsString::from("--unexpected")]).is_err());
     }
 }

@@ -1,14 +1,14 @@
 use serde_json::{Value, json};
 
 use crate::{
-    chatgpt_store, instructions,
+    chatgpt_store, history, instructions,
     protocol::ServiceError,
-    provider_schema::{ProviderChatRequest, ProviderMessage},
+    provider_schema::ProviderChatRequest,
     storage::AppStorage,
     tools::{self, ToolPermissionMode},
 };
 
-use super::{chat_completion_tool, invalid_retry_target_error, storage_error};
+use super::{chat_completion_tool, invalid_retry_target_error};
 
 pub(super) struct ProviderRequestOptions<'a> {
     pub(super) model_id: String,
@@ -22,7 +22,7 @@ pub(super) struct ProviderRequestOptions<'a> {
 
 pub(super) fn build_provider_request(
     storage: &AppStorage,
-    conversation_id: &str,
+    stored_messages: &[chatgpt_store::StoredMessage],
     options: ProviderRequestOptions<'_>,
 ) -> Result<ProviderChatRequest, ServiceError> {
     let ProviderRequestOptions {
@@ -34,6 +34,7 @@ pub(super) fn build_provider_request(
         has_project,
         reasoning_effort,
     } = options;
+    history::validate_attachments(stored_messages)?;
     let reasoning_effort = match (provider_id, reasoning_effort) {
         ("opencode", Some(level)) => {
             if !super::models::supports_reasoning_level(storage, &model_id, level)? {
@@ -47,18 +48,23 @@ pub(super) fn build_provider_request(
         }
         _ => None,
     };
-    let stored_messages = chatgpt_store::conversation_messages(storage, conversation_id)
-        .map_err(|_| storage_error())?;
     if excluded_assistant_message_id.is_some_and(|id| {
-        !chatgpt_store::is_retryable_latest_assistant_message(&stored_messages, id)
+        !chatgpt_store::is_retryable_latest_assistant_message(stored_messages, id)
     }) {
         return Err(invalid_retry_target_error());
     }
-    let messages = stored_messages
-        .into_iter()
+    let included_messages = stored_messages
+        .iter()
         .filter(|message| Some(message.id.as_str()) != excluded_assistant_message_id)
-        .map(|message| ProviderMessage::from_history(&message.role, &message.content))
-        .collect::<Result<Vec<_>, _>>()?;
+        .collect::<Vec<_>>();
+    let last_message_id = included_messages.last().map(|message| message.id.clone());
+    let messages = included_messages
+        .iter()
+        .map(|message| history::provider_messages(message))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
     if messages.is_empty() {
         return Err(ServiceError::new(
             "conversation_empty",
@@ -75,38 +81,82 @@ pub(super) fn build_provider_request(
             has_project,
         ),
         messages,
+        last_message_id,
         tools: tools::definitions_for_provider(provider_id),
         reasoning_effort,
     })
 }
 
-pub(super) fn completion_messages(request: &ProviderChatRequest) -> Vec<Value> {
+pub(super) fn completion_messages(request: &ProviderChatRequest, provider_id: &str) -> Vec<Value> {
     let mut messages = Vec::with_capacity(request.messages.len() + 1);
     messages.push(json!({
         "role": "system",
         "content": request.instructions,
     }));
-    messages.extend(
-        request
-            .messages
-            .iter()
-            .map(|message| json!({"role": message.role.as_str(), "content": message.content})),
-    );
+    messages.extend(request.messages.iter().map(|message| {
+        let mut serialized = json!({
+            "role": message.role.as_str(),
+            "content": if message.images.is_empty() {
+                json!(message.content)
+            } else {
+                let mut parts = Vec::with_capacity(message.images.len().saturating_add(1));
+                if !message.content.is_empty() {
+                    parts.push(json!({"type": "text", "text": message.content}));
+                }
+                parts.extend(message.images.iter().map(|url| json!({
+                    "type": "image_url",
+                    "image_url": {"url": url, "detail": "auto"},
+                })));
+                json!(parts)
+            },
+        });
+        if !message.tool_calls.is_empty() {
+            serialized["content"] = if message.content.is_empty() {
+                Value::Null
+            } else {
+                json!(message.content)
+            };
+            serialized["tool_calls"] = json!(
+                message
+                    .tool_calls
+                    .iter()
+                    .map(|call| json!({
+                        "id": call.id,
+                        "type": "function",
+                        "function": {
+                                "name": if provider_id == "opencode" {
+                                    tools::opencode_wire_name(&call.name)
+                                } else {
+                                    call.name.as_str()
+                                },
+                            "arguments": call.arguments.to_string(),
+                        },
+                    }))
+                    .collect::<Vec<_>>()
+            );
+        }
+        if let Some(tool_call_id) = message.tool_call_id.as_deref() {
+            serialized["tool_call_id"] = json!(tool_call_id);
+        }
+        serialized
+    }));
     messages
 }
 
 pub(super) fn chat_completion_body(
     request: &ProviderChatRequest,
     messages: &[Value],
-    is_opencode: bool,
+    provider_id: &str,
 ) -> Value {
     let mut body = json!({
         "model": request.model,
         "messages": messages,
         "stream": true,
     });
-    if is_opencode {
+    if matches!(provider_id, "chatgpt_api" | "opencode" | "gemini" | "groq") {
         body["stream_options"] = json!({"include_usage": true});
+    }
+    if provider_id == "opencode" {
         body["tools"] = json!(tools::opencode_wire_tools(&request.tools));
         body["tool_choice"] = json!("auto");
         body["parallel_tool_calls"] = json!(false);
@@ -133,38 +183,32 @@ pub(super) fn responses_input_items(messages: &[Value]) -> Vec<Value> {
         let role = msg.get("role").and_then(Value::as_str).unwrap_or("");
         match role {
             "system" => {
-                if let Some(content) = msg.get("content").and_then(Value::as_str) {
+                if let Some(content) = response_content(msg.get("content")) {
                     items.push(json!({
                         "role": "developer",
-                        "content": [{
-                            "type": "input_text",
-                            "text": content,
-                        }]
+                        "content": content
                     }));
                 }
             }
             "user" => {
-                if let Some(content) = msg.get("content").and_then(Value::as_str) {
+                if let Some(content) = response_content(msg.get("content")) {
                     items.push(json!({
                         "role": "user",
-                        "content": [{
-                            "type": "input_text",
-                            "text": content,
-                        }]
+                        "content": content
                     }));
                 }
             }
             "assistant" => {
-                if let Some(content) = msg.get("content").and_then(Value::as_str) {
-                    if !content.is_empty() {
-                        items.push(json!({
-                            "role": "assistant",
-                            "content": [{
-                                "type": "output_text",
-                                "text": content,
-                            }]
-                        }));
-                    }
+                if let Some(content) = msg.get("content").and_then(Value::as_str)
+                    && !content.is_empty()
+                {
+                    items.push(json!({
+                        "role": "assistant",
+                        "content": [{
+                            "type": "output_text",
+                            "text": content,
+                        }]
+                    }));
                 }
                 if let Some(tool_calls) = msg.get("tool_calls").and_then(Value::as_array) {
                     for call in tool_calls {
@@ -204,6 +248,38 @@ pub(super) fn responses_input_items(messages: &[Value]) -> Vec<Value> {
     items
 }
 
+fn response_content(content: Option<&Value>) -> Option<Vec<Value>> {
+    match content? {
+        Value::String(text) => Some(vec![json!({
+            "type": "input_text",
+            "text": text,
+        })]),
+        Value::Array(parts) => Some(
+            parts
+                .iter()
+                .filter_map(|part| match part.get("type").and_then(Value::as_str) {
+                    Some("text") => part
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .map(|text| json!({"type": "input_text", "text": text})),
+                    Some("image_url") => part
+                        .pointer("/image_url/url")
+                        .and_then(Value::as_str)
+                        .map(|image_url| {
+                            json!({
+                                "type": "input_image",
+                                "image_url": image_url,
+                                "detail": "auto",
+                            })
+                        }),
+                    _ => None,
+                })
+                .collect(),
+        ),
+        _ => None,
+    }
+}
+
 pub(super) fn responses_api_body(request: &ProviderChatRequest, messages: &[Value]) -> Value {
     let mut body = json!({
         "model": request.model,
@@ -219,4 +295,100 @@ pub(super) fn responses_api_body(request: &ProviderChatRequest, messages: &[Valu
         });
     }
     body
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn request() -> ProviderChatRequest {
+        ProviderChatRequest {
+            model: "test-model".to_owned(),
+            instructions: String::new(),
+            messages: Vec::new(),
+            last_message_id: None,
+            tools: Vec::new(),
+            reasoning_effort: None,
+        }
+    }
+
+    #[test]
+    fn requests_usage_for_streaming_providers_that_need_the_flag() {
+        for provider_id in ["chatgpt_api", "opencode", "gemini", "groq"] {
+            let body = chat_completion_body(&request(), &[], provider_id);
+
+            assert_eq!(
+                body["stream_options"]["include_usage"], true,
+                "{provider_id}"
+            );
+        }
+    }
+
+    #[test]
+    fn leaves_usage_flags_out_when_the_provider_reports_usage_automatically() {
+        for provider_id in ["cerebras", "openrouter"] {
+            let body = chat_completion_body(&request(), &[], provider_id);
+
+            assert!(body.get("stream_options").is_none(), "{provider_id}");
+            assert!(body.get("usage").is_none(), "{provider_id}");
+        }
+    }
+
+    #[test]
+    fn keeps_opencode_tool_request_shape() {
+        let body = chat_completion_body(&request(), &[], "opencode");
+
+        assert_eq!(body["tools"][0]["function"]["name"], "bash");
+        assert_eq!(body["tools"][1]["function"]["name"], "read");
+        assert_eq!(body["tool_choice"], "auto");
+        assert_eq!(body["parallel_tool_calls"], false);
+    }
+
+    #[test]
+    fn restores_completed_tool_history_for_chat_completion_and_responses_routes() {
+        let stored_message = crate::chatgpt_store::StoredMessage {
+            id: "assistant-message".to_owned(),
+            role: "assistant".to_owned(),
+            content: "The setting is enabled.".to_owned(),
+            status: "completed".to_owned(),
+            output_tokens: None,
+            tool_activities: vec![crate::provider_schema::ToolActivity {
+                call_id: "call-42".to_owned(),
+                name: "read_file".to_owned(),
+                arguments: serde_json::json!({"path": "settings.json"}),
+                round_id: None,
+                assistant_text_before_byte_offset: None,
+                target_path: None,
+                output: Some(serde_json::json!({"content": "enabled"})),
+                status: crate::provider_schema::ToolActivityStatus::Completed,
+            }],
+            attachments: Vec::new(),
+        };
+        let mut request = request();
+        request.messages = crate::history::provider_messages(&stored_message)
+            .expect("valid tool activity history");
+
+        let messages = completion_messages(&request, "opencode");
+        assert_eq!(messages[1]["role"], "assistant");
+        assert_eq!(messages[1]["tool_calls"][0]["id"], "call-42");
+        assert_eq!(messages[1]["tool_calls"][0]["function"]["name"], "read");
+        assert_eq!(
+            messages[1]["tool_calls"][0]["function"]["arguments"],
+            r#"{"path":"settings.json"}"#
+        );
+        assert_eq!(messages[2]["role"], "tool");
+        assert_eq!(messages[2]["tool_call_id"], "call-42");
+        assert!(messages[2]["content"].as_str().unwrap().contains("enabled"));
+
+        let responses_input = responses_input_items(&messages);
+        assert_eq!(responses_input[1]["type"], "function_call");
+        assert_eq!(responses_input[1]["call_id"], "call-42");
+        assert_eq!(responses_input[2]["type"], "function_call_output");
+        assert_eq!(responses_input[2]["call_id"], "call-42");
+        assert_eq!(responses_input[3]["role"], "assistant");
+        assert_eq!(
+            responses_input[3]["content"][0]["text"],
+            "The setting is enabled."
+        );
+    }
 }

@@ -40,7 +40,10 @@ pub(super) fn parse_models(value: &Value) -> Result<Vec<ChatGptModel>, ServiceEr
                     .collect()
             })
             .unwrap_or_default();
-        let context_window = model.get("context_window").and_then(Value::as_i64);
+        let context_window = model
+            .get("context_window")
+            .and_then(Value::as_i64)
+            .filter(|context_window| *context_window > 0);
         let default_reasoning_level = model
             .get("default_reasoning_level")
             .and_then(Value::as_str)
@@ -51,6 +54,7 @@ pub(super) fn parse_models(value: &Value) -> Result<Vec<ChatGptModel>, ServiceEr
             .map(|supported| supported.as_bool().ok_or_else(invalid_response_error))
             .transpose()?
             .unwrap_or(true);
+        let supports_images = crate::chatgpt_store::model_supports_images(&id);
         parsed.push(ChatGptModel {
             id,
             display_name,
@@ -62,6 +66,7 @@ pub(super) fn parse_models(value: &Value) -> Result<Vec<ChatGptModel>, ServiceEr
             default_reasoning_level,
             reasoning_levels,
             supports_reasoning_summary_parameter,
+            supports_images,
             is_available: model.get("visibility").and_then(Value::as_str) == Some("list")
                 && model.get("supported_in_api").and_then(Value::as_bool) == Some(true),
         });
@@ -343,7 +348,27 @@ pub(super) fn responses_tool(tool: &ToolDefinition) -> Value {
 mod tests {
     use serde_json::json;
 
-    use super::parse_responses_tool_calls;
+    use super::{parse_models, parse_responses_tool_calls};
+
+    #[test]
+    fn model_catalog_keeps_only_positive_context_windows() {
+        let models = parse_models(&json!({
+            "models": [
+                {"slug": "known", "context_window": 128_000},
+                {"slug": "zero", "context_window": 0},
+                {"slug": "negative", "context_window": -1},
+                {"slug": "missing"},
+                {"slug": "null", "context_window": null}
+            ]
+        }))
+        .expect("valid ChatGPT model catalog");
+
+        assert_eq!(models[0].context_window, Some(128_000));
+        assert_eq!(models[1].context_window, None);
+        assert_eq!(models[2].context_window, None);
+        assert_eq!(models[3].context_window, None);
+        assert_eq!(models[4].context_window, None);
+    }
 
     #[test]
     fn parses_completed_responses_function_calls() {

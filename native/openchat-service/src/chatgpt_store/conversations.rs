@@ -1,4 +1,4 @@
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{OptionalExtension, Row, params, types::Type};
 
 use crate::storage::AppStorage;
 
@@ -47,19 +47,89 @@ pub fn conversation_messages(
 ) -> rusqlite::Result<Vec<StoredMessage>> {
     let database = storage.connect()?;
     let mut statement = database.prepare(
-        "SELECT id, role, content, status FROM messages
+        "SELECT id, role, content, status, output_tokens, tool_activities FROM messages
          WHERE conversation_id = ?1 AND role IN ('user', 'assistant')
          ORDER BY created_at ASC, id ASC",
     )?;
+    let storage_root = storage.root().to_path_buf();
     let rows = statement.query_map([conversation_id], |row| {
-        Ok(StoredMessage {
-            id: row.get(0)?,
-            role: row.get(1)?,
-            content: row.get(2)?,
-            status: row.get(3)?,
-        })
+        stored_message_from_row(row, &storage_root, conversation_id)
     })?;
     rows.collect()
+}
+
+pub fn conversation_messages_from_boundary(
+    storage: &AppStorage,
+    conversation_id: &str,
+    boundary_message_id: &str,
+) -> rusqlite::Result<Option<Vec<StoredMessage>>> {
+    let database = storage.connect()?;
+    let Some(boundary_created_at) = database
+        .query_row(
+            "SELECT COALESCE(created_at, 0) FROM messages
+             WHERE conversation_id = ?1 AND id = ?2",
+            params![conversation_id, boundary_message_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?
+    else {
+        return Ok(None);
+    };
+    let previous_message = database
+        .query_row(
+            "SELECT COALESCE(created_at, 0), id FROM messages
+             WHERE conversation_id = ?1 AND role IN ('user', 'assistant')
+               AND (COALESCE(created_at, 0) < ?2
+                    OR (COALESCE(created_at, 0) = ?2 AND id < ?3))
+             ORDER BY COALESCE(created_at, 0) DESC, id DESC
+             LIMIT 1",
+            params![conversation_id, boundary_created_at, boundary_message_id],
+            |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?;
+    let (start_created_at, start_message_id) =
+        previous_message.unwrap_or_else(|| (boundary_created_at, boundary_message_id.to_owned()));
+
+    let mut statement = database.prepare(
+        "SELECT id, role, content, status, output_tokens, tool_activities FROM messages
+         WHERE conversation_id = ?1 AND role IN ('user', 'assistant')
+           AND (COALESCE(created_at, 0) > ?2
+                OR (COALESCE(created_at, 0) = ?2 AND id >= ?3))
+         ORDER BY COALESCE(created_at, 0) ASC, id ASC",
+    )?;
+    let storage_root = storage.root().to_path_buf();
+    let rows = statement.query_map(
+        params![conversation_id, start_created_at, start_message_id],
+        |row| stored_message_from_row(row, &storage_root, conversation_id),
+    )?;
+    rows.collect::<rusqlite::Result<Vec<_>>>().map(Some)
+}
+
+fn stored_message_from_row(
+    row: &Row<'_>,
+    storage_root: &std::path::Path,
+    conversation_id: &str,
+) -> rusqlite::Result<StoredMessage> {
+    let tool_activities_json: String = row.get(5)?;
+    let tool_activities = serde_json::from_str(&tool_activities_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(5, Type::Text, Box::new(error))
+    })?;
+    let id: String = row.get(0)?;
+    let (content, attachments) = crate::attachments::decode_message_content(
+        row.get(2)?,
+        storage_root,
+        conversation_id,
+        &id,
+    )?;
+    Ok(StoredMessage {
+        id,
+        role: row.get(1)?,
+        content,
+        status: row.get(3)?,
+        output_tokens: row.get(4)?,
+        tool_activities,
+        attachments,
+    })
 }
 
 pub fn is_retryable_latest_assistant_message(messages: &[StoredMessage], id: &str) -> bool {

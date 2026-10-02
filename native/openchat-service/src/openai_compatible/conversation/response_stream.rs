@@ -11,16 +11,14 @@ use crate::{
 
 use super::super::{
     MAX_EVENT_BYTES, cancelled_error, client, http_error, invalid_response_error, network_error,
-    protocol_error,
+    opencode_free_tier_restricted, protocol_error,
     stream::{
         ResponsesStreamEffect, SseLine, StreamedToolCall, append_tool_call_deltas, finish_reason,
         handle_responses_api_event, parse_sse_line, parse_streamed_tool_calls, pop_sse_line,
-        stream_is_complete,
+        stream_is_complete, update_chat_completion_usage,
     },
 };
 use super::ResponseStreamRequest;
-
-const MAX_PROVIDER_ERROR_BYTES: usize = 16 * 1024;
 
 pub(super) struct StreamedTurn {
     pub(super) round_content: String,
@@ -112,6 +110,13 @@ pub(super) async fn receive(
             };
 
             if request.route.uses_responses_api {
+                if let Some(tokens) = value
+                    .pointer("/response/usage/input_tokens")
+                    .and_then(Value::as_i64)
+                    .filter(|tokens| *tokens >= 0)
+                {
+                    *request.input_tokens = Some(tokens);
+                }
                 match handle_responses_api_event(&value, &mut tool_calls)? {
                     ResponsesStreamEffect::TextDelta(text) => {
                         request.content.push_str(&text);
@@ -219,13 +224,7 @@ pub(super) async fn receive(
                     )
                     .await;
             }
-            if let Some(tokens) = value
-                .pointer("/usage/completion_tokens")
-                .and_then(Value::as_i64)
-            {
-                *request.output_tokens =
-                    Some(request.output_tokens.unwrap_or(0).saturating_add(tokens));
-            }
+            update_chat_completion_usage(&value, request.input_tokens, request.output_tokens);
             if let Some(deltas) = value
                 .pointer("/choices/0/delta/tool_calls")
                 .and_then(Value::as_array)
@@ -266,34 +265,4 @@ pub(super) async fn receive(
         round_content,
         tool_calls: parse_streamed_tool_calls(tool_calls, request.route.is_opencode)?,
     })
-}
-
-async fn opencode_free_tier_restricted(response: reqwest::Response) -> bool {
-    let mut body = Vec::new();
-    let mut chunks = response.bytes_stream();
-    while body.len() < MAX_PROVIDER_ERROR_BYTES {
-        let Some(Ok(chunk)) = chunks.next().await else {
-            break;
-        };
-        let remaining = MAX_PROVIDER_ERROR_BYTES - body.len();
-        body.extend_from_slice(&chunk[..chunk.len().min(remaining)]);
-    }
-    let Ok(value) = serde_json::from_slice::<Value>(&body) else {
-        return false;
-    };
-    contains_free_tier_error(&value)
-}
-
-fn contains_free_tier_error(value: &Value) -> bool {
-    match value {
-        Value::String(message) => {
-            message.contains("OpenCode's free tier can only be used from within OpenCode")
-        }
-        Value::Array(values) => values.iter().any(contains_free_tier_error),
-        Value::Object(fields) => {
-            fields.get("type").and_then(Value::as_str) == Some("FreeTierError")
-                || fields.values().any(contains_free_tier_error)
-        }
-        _ => false,
-    }
 }

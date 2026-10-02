@@ -19,12 +19,13 @@ use crate::{
     instructions,
     oauth::OAuthClient,
     protocol::ServiceError,
-    provider_schema::{ProviderChatRequest, ProviderMessage},
+    provider_schema::ProviderChatRequest,
     storage::AppStorage,
     tools,
 };
 
 mod account;
+mod compaction;
 mod response_events;
 mod response_parser;
 mod streaming;
@@ -127,8 +128,38 @@ impl ChatGptService {
                 false,
             )
         })?;
-        let messages = chatgpt_store::conversation_messages(&self.storage, conversation_id)
-            .map_err(database_error)?;
+        let context_state =
+            chatgpt_store::load_conversation_context_state(&self.storage, conversation_id)
+                .map_err(database_error)?;
+        let active_compaction_route_matches = context_state.as_ref().is_some_and(|state| {
+            crate::context_compaction::compaction_payload_matches_route(
+                state,
+                "chatgpt",
+                Some(&route.connection_id),
+                Some(&route.workspace_id),
+                &model.id,
+            )
+        });
+        let messages = if active_compaction_route_matches
+            && let Some(boundary_id) = context_state
+                .as_ref()
+                .and_then(|state| state.compacted_through_message_id.as_deref())
+        {
+            match chatgpt_store::conversation_messages_from_boundary(
+                &self.storage,
+                conversation_id,
+                boundary_id,
+            )
+            .map_err(database_error)?
+            {
+                Some(messages) => messages,
+                None => chatgpt_store::conversation_messages(&self.storage, conversation_id)
+                    .map_err(database_error)?,
+            }
+        } else {
+            chatgpt_store::conversation_messages(&self.storage, conversation_id)
+                .map_err(database_error)?
+        };
         if excluded_assistant_message_id
             .is_some_and(|id| !chatgpt_store::is_retryable_latest_assistant_message(&messages, id))
         {
@@ -141,11 +172,12 @@ impl ChatGptService {
                 false,
             ));
         }
-        let history = messages
+        let included_messages = messages
             .iter()
             .filter(|message| Some(message.id.as_str()) != excluded_assistant_message_id)
-            .map(|message| ProviderMessage::from_history(&message.role, &message.content))
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Vec<_>>();
+        crate::history::validate_model_attachments(&messages, model.supports_images)?;
+        let last_message_id = included_messages.last().map(|message| message.id.clone());
         let provider_request = ProviderChatRequest {
             model: model.id.clone(),
             instructions: instructions::shared_instructions(
@@ -153,19 +185,33 @@ impl ChatGptService {
                 context.permission_mode,
                 project_root.is_some(),
             ),
-            messages: history,
+            messages: Vec::new(),
+            last_message_id,
             tools: tools::definitions(),
             reasoning_effort: reasoning_effort
                 .filter(|effort| model.reasoning_levels.iter().any(|level| level == *effort))
                 .map(str::to_owned),
         };
-        let input = provider_request
-            .messages
+        let compaction_messages = included_messages
             .iter()
-            .map(|message| {
-                json!({"role": message.role.as_str(), "content": message.content.as_str()})
-            })
+            .map(|message| (*message).clone())
             .collect::<Vec<_>>();
+        let input = compaction::prepare_input(
+            compaction::PrepareInputRequest {
+                service: self.as_ref(),
+                storage: &self.storage,
+                conversation_id,
+                route: &route,
+                external_workspace_id: &workspace.external_id,
+                model: &model,
+                instructions: &provider_request.instructions,
+                tools: &provider_request.tools,
+                reasoning_effort: provider_request.reasoning_effort.as_deref(),
+                messages: &compaction_messages,
+            },
+            &mut *context.cancellation,
+        )
+        .await?;
         let mut payload = json!({
             "model": provider_request.model.as_str(),
             "input": input,
@@ -195,8 +241,15 @@ impl ChatGptService {
             payload["reasoning"] = json!({"effort": effort});
         }
 
-        self.stream_response(context, &route, &workspace.external_id, &model, payload)
-            .await
+        self.stream_response(
+            context,
+            &route,
+            &workspace.external_id,
+            &model,
+            provider_request.last_message_id.as_deref(),
+            payload,
+        )
+        .await
     }
 
     async fn fetch_models(
@@ -481,6 +534,12 @@ impl ChatGptService {
             .bearer_auth(access_token)
             .header("chatgpt-account-id", external_workspace_id)
             .header("originator", "Codex");
+        if let Some(turn_metadata) = body
+            .and_then(|body| body.pointer("/client_metadata/x-codex-turn-metadata"))
+            .and_then(Value::as_str)
+        {
+            request = request.header("x-codex-turn-metadata", turn_metadata);
+        }
         if let Some(context_id) = response_context_id {
             request = request
                 .header(ACCEPT, "text/event-stream")

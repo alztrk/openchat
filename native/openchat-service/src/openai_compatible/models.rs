@@ -73,6 +73,19 @@ fn load_model_catalog(storage: &AppStorage) -> Result<Option<(Vec<Value>, i64)>,
         .transpose()
 }
 
+pub(super) fn supports_image_input(
+    storage: &AppStorage,
+    model_id: &str,
+) -> Result<bool, ServiceError> {
+    let Some((models, _)) = load_model_catalog(storage)? else {
+        return Ok(false);
+    };
+    Ok(models.iter().any(|model| {
+        model.get("id").and_then(Value::as_str) == Some(model_id)
+            && model.get("supportsImages").and_then(Value::as_bool) == Some(true)
+    }))
+}
+
 fn save_model_catalog(storage: &AppStorage, models: &[Value]) -> Result<(), ServiceError> {
     let models_json = serde_json::to_string(models).map_err(|_| invalid_response_error())?;
     storage
@@ -126,6 +139,17 @@ fn uses_responses_api_metadata(details: Option<&Value>) -> bool {
         .and_then(|model| model.pointer("/provider/npm"))
         .and_then(Value::as_str)
         == Some("@ai-sdk/openai")
+}
+
+fn supports_image_input_metadata(details: Option<&Value>) -> bool {
+    ["/modalities/input", "/capabilities/input"]
+        .iter()
+        .filter_map(|pointer| details.and_then(|model| model.pointer(pointer)))
+        .any(|input| {
+            input.as_array().is_some_and(|modalities| {
+                modalities.iter().any(|mode| mode.as_str() == Some("image"))
+            })
+        })
 }
 
 fn reasoning_levels(details: Option<&Value>) -> Vec<String> {
@@ -218,20 +242,31 @@ fn supported_models(value: &Value, metadata: Option<&Value>) -> Result<Vec<Value
                         .and_then(|limits| limits.get("context"))
                         .and_then(Value::as_i64)
                         .filter(|context_window| *context_window > 0);
+                    let input_token_limit = details
+                        .and_then(|details| details.get("limit"))
+                        .and_then(|limits| limits.get("input"))
+                        .and_then(Value::as_i64)
+                        .filter(|input_limit| *input_limit > 0)
+                        .map(|input_limit| {
+                            context_window.map_or(input_limit, |context| input_limit.min(context))
+                        });
                     let reasoning_supported = supports_reasoning(details);
                     let reasoning_levels = reasoning_levels(details);
                     let catalog_status = metadata_status(details);
                     let uses_responses_api = uses_responses_api_metadata(details);
+                    let supports_images = supports_image_input_metadata(details);
                     Some(json!({
                         "id": id,
                         "displayName": display_name,
                         "description": description,
                         "contextWindow": context_window,
+                        "inputTokenLimit": input_token_limit,
                         "catalogStatus": catalog_status,
                         "groupId": group_id,
                         "defaultReasoningLevel": null,
                         "reasoningLevels": reasoning_levels,
                         "supportsReasoning": reasoning_supported,
+                        "supportsImages": supports_images,
                         "usesResponsesApi": uses_responses_api,
                         "isAvailable": true,
                     }))
@@ -271,8 +306,15 @@ fn has_model_groups(models: &[Value]) -> bool {
                 .and_then(Value::as_bool)
                 .is_some();
             let has_current_catalog_metadata = model.get("catalogStatus").is_some();
+            let has_current_limit_metadata = model.get("inputTokenLimit").is_some();
+            let has_current_image_metadata = model
+                .get("supportsImages")
+                .and_then(Value::as_bool)
+                .is_some();
             has_current_reasoning_metadata
                 && has_current_catalog_metadata
+                && has_current_limit_metadata
+                && has_current_image_metadata
                 && model
                     .get("id")
                     .and_then(Value::as_str)
@@ -302,19 +344,54 @@ pub(super) fn is_responses_api_model(
     storage: &AppStorage,
     model_id: &str,
 ) -> Result<bool, ServiceError> {
-    if let Some((models, _)) = load_model_catalog(storage)? {
-        if let Some(model) = models
+    if let Some((models, _)) = load_model_catalog(storage)?
+        && let Some(model) = models
             .iter()
             .find(|m| m.get("id").and_then(Value::as_str) == Some(model_id))
-        {
-            if let Some(uses) = model.get("usesResponsesApi").and_then(Value::as_bool) {
-                return Ok(uses);
-            }
-        }
+        && let Some(uses) = model.get("usesResponsesApi").and_then(Value::as_bool)
+    {
+        return Ok(uses);
     }
     Ok(model_id.starts_with("muse-")
         || model_id.starts_with("gpt-")
         || model_id.starts_with("grok-"))
+}
+
+pub(super) fn context_limits(
+    storage: &AppStorage,
+    model_id: &str,
+) -> Result<(Option<i64>, Option<i64>), ServiceError> {
+    let models_json = storage
+        .connect()
+        .map_err(|_| storage_error())?
+        .query_row(
+            "SELECT models_json FROM opencode_model_catalog WHERE catalog_id = 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|_| storage_error())?;
+    let Some(models_json) = models_json else {
+        return Ok((None, None));
+    };
+    let models =
+        serde_json::from_str::<Vec<Value>>(&models_json).map_err(|_| invalid_response_error())?;
+    let Some(model) = models
+        .iter()
+        .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id))
+    else {
+        return Ok((None, None));
+    };
+    let context_window = model
+        .get("contextWindow")
+        .and_then(Value::as_i64)
+        .filter(|window| *window > 0);
+    let input_token_limit = model
+        .get("inputTokenLimit")
+        .and_then(Value::as_i64)
+        .filter(|limit| *limit > 0)
+        .map(|limit| context_window.map_or(limit, |context| limit.min(context)));
+    Ok((context_window, input_token_limit))
 }
 
 fn visible_models(models: &[Value], api_key: Option<&str>) -> Vec<Value> {
@@ -414,4 +491,45 @@ pub(super) fn is_supported_free_chat_model(id: &str) -> bool {
 
 pub(super) fn is_supported_paid_chat_model(id: &str) -> bool {
     SUPPORTED_PAID_CHAT_MODELS.contains(&id)
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{has_model_groups, supported_models};
+
+    #[test]
+    fn open_code_catalog_preserves_context_and_prompt_limits_separately() {
+        let provider_models = json!({"data": [{"id": "big-pickle"}]});
+        let metadata = json!({
+            "opencode": {
+                "models": {
+                    "big-pickle": {
+                        "name": "Big Pickle",
+                        "limit": {"context": 262_144, "input": 131_072, "output": 16_384}
+                    }
+                }
+            }
+        });
+
+        let models =
+            supported_models(&provider_models, Some(&metadata)).expect("parse OpenCode models");
+
+        assert_eq!(models[0]["contextWindow"], 262_144);
+        assert_eq!(models[0]["inputTokenLimit"], 131_072);
+    }
+
+    #[test]
+    fn cached_catalog_requires_the_current_prompt_limit_field() {
+        let mut model = json!({
+            "id": "big-pickle",
+            "groupId": "free",
+            "supportsReasoning": false,
+            "catalogStatus": null,
+        });
+        assert!(!has_model_groups(std::slice::from_ref(&model)));
+        model["inputTokenLimit"] = json!(null);
+        assert!(has_model_groups(&[model]));
+    }
 }

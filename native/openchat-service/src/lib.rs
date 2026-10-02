@@ -1,6 +1,9 @@
+mod attachments;
 mod chat_operation;
 mod chatgpt;
 mod chatgpt_store;
+mod context_compaction;
+mod history;
 mod instructions;
 mod oauth;
 mod openai_api;

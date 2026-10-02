@@ -20,6 +20,7 @@ pub(super) struct ReasoningSummaryGroup {
 pub(super) struct ResponseEventContext<'a> {
     pub(super) content: &'a mut String,
     pub(super) output_tokens: &'a mut Option<i64>,
+    pub(super) input_tokens: &'a mut Option<i64>,
     pub(super) reasoning_summaries: &'a mut Vec<ReasoningSummaryGroup>,
     pub(super) response_output_items: &'a mut Vec<Value>,
     pub(super) conversation_id: &'a str,
@@ -131,6 +132,7 @@ impl ChatGptService {
         let ResponseEventContext {
             content,
             output_tokens,
+            input_tokens,
             reasoning_summaries,
             response_output_items,
             conversation_id,
@@ -293,6 +295,11 @@ impl ChatGptService {
                         .get("usage")
                         .and_then(|usage| usage.get("output_tokens"))
                         .and_then(Value::as_i64);
+                    *input_tokens = response
+                        .get("usage")
+                        .and_then(|usage| usage.get("input_tokens"))
+                        .and_then(Value::as_i64)
+                        .filter(|tokens| *tokens >= 0);
                     if let Some(items) = response
                         .get("output")
                         .and_then(Value::as_array)

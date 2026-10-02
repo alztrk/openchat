@@ -533,6 +533,55 @@ pub fn definitions_for_provider(_provider_id: &str) -> Vec<ToolDefinition> {
     definitions()
 }
 
+pub fn context_usage_definitions(
+    provider_id: &str,
+    uses_responses_api: bool,
+) -> Vec<(String, Value)> {
+    let definitions = definitions_for_provider(provider_id);
+    if provider_id == "opencode" {
+        let wire_tools = if uses_responses_api {
+            opencode_responses_wire_tools(&definitions)
+        } else {
+            opencode_wire_tools(&definitions)
+        };
+        return wire_tools
+            .into_iter()
+            .filter_map(|tool| {
+                let wire_name = tool
+                    .get("name")
+                    .or_else(|| tool.pointer("/function/name"))?
+                    .as_str()?;
+                Some((internal_tool_name(true, wire_name), tool))
+            })
+            .collect();
+    }
+
+    definitions
+        .into_iter()
+        .map(|tool| {
+            let definition = if provider_id == "chatgpt" {
+                json!({
+                    "type": "function",
+                    "name": tool.name,
+                    "description": tool.description,
+                    "strict": false,
+                    "parameters": tool.parameters,
+                })
+            } else {
+                json!({
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": tool.parameters,
+                    }
+                })
+            };
+            (tool.name.to_owned(), definition)
+        })
+        .collect()
+}
+
 pub fn definitions() -> Vec<ToolDefinition> {
     [
         (

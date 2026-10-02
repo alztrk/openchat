@@ -1,7 +1,7 @@
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reqwest::Client;
-use rusqlite::OptionalExtension;
+use rusqlite::{Connection, OptionalExtension};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::sync::watch;
@@ -13,6 +13,8 @@ use super::{api_compatible_provider, cancelled_error, http_error, invalid_respon
 const CACHE_AGE_MS: i64 = 6 * 60 * 60 * 1000;
 const MAX_MODELS: usize = 1000;
 const CEREBRAS_PUBLIC_MODELS_URL: &str = "https://api.cerebras.ai/public/v1/models";
+const GEMINI_MODELS_URL: &str =
+    "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000";
 
 pub async fn models(
     storage: &AppStorage,
@@ -26,10 +28,11 @@ pub async fn models(
         return Err(invalid_request_error());
     }
 
-    let key_hash = format!("{:x}", Sha256::digest(api_key.as_bytes()));
+    let key_hash = api_key_hash(api_key);
     let cached = load_catalog(storage, provider.id, &key_hash)?;
     if !force_refresh
         && let Some((models, fetched_at)) = &cached
+        && has_current_limit_metadata(models)
         && current_time_millis()?.saturating_sub(*fetched_at) < CACHE_AGE_MS
     {
         return Ok(response(models, "current"));
@@ -58,6 +61,22 @@ pub async fn models(
         let metadata = if provider.id == "cerebras" {
             let response = client
                 .get(CEREBRAS_PUBLIC_MODELS_URL)
+                .send()
+                .await
+                .map_err(|_| network_error(provider.name))?;
+            if !response.status().is_success() {
+                return Err(http_error(response.status(), Some(provider.id)));
+            }
+            Some(
+                response
+                    .json::<Value>()
+                    .await
+                    .map_err(|_| invalid_response_error())?,
+            )
+        } else if provider.id == "gemini" {
+            let response = client
+                .get(GEMINI_MODELS_URL)
+                .header("x-goog-api-key", api_key)
                 .send()
                 .await
                 .map_err(|_| network_error(provider.name))?;
@@ -109,11 +128,17 @@ fn parse_models(
                 .filter_map(|item| {
                     let id = item.get("id")?.as_str()?.trim();
                     let details = metadata
-                        .and_then(|catalog| catalog.get("data"))
+                        .and_then(|catalog| {
+                            if provider_id == "gemini" {
+                                catalog.get("models")
+                            } else {
+                                catalog.get("data")
+                            }
+                        })
                         .and_then(Value::as_array)
                         .and_then(|models| {
                             models.iter().find(|model| {
-                                model.get("id").and_then(Value::as_str) == Some(id)
+                                model_matches_id(provider_id, model, id)
                             })
                         });
                     if id.is_empty()
@@ -123,6 +148,14 @@ fn parse_models(
                     {
                         return None;
                     }
+                    let input_token_limit = (provider_id == "gemini")
+                        .then(|| {
+                            details
+                                .and_then(|model| model.get("inputTokenLimit"))
+                                .and_then(Value::as_i64)
+                        })
+                        .flatten()
+                        .filter(|limit| *limit > 0);
                     let context_window = ["context_length", "context_window"]
                         .iter()
                         .find_map(|key| item.get(key).and_then(Value::as_i64))
@@ -131,12 +164,16 @@ fn parse_models(
                                 .and_then(|model| model.pointer("/limits/max_context_length"))
                                 .and_then(Value::as_i64)
                         })
+                        .or(input_token_limit)
                         .filter(|value| *value > 0);
+                    let supports_images = supports_images(provider_id, id, item, details);
                     Some(json!({
                         "id": id,
-                        "displayName": item.get("name").or_else(|| details.and_then(|model| model.get("name"))).and_then(Value::as_str).filter(|name| !name.trim().is_empty()).unwrap_or(id),
+                        "displayName": item.get("name").or_else(|| details.and_then(|model| model.get("name").or_else(|| model.get("displayName")))).and_then(Value::as_str).filter(|name| !name.trim().is_empty()).unwrap_or(id),
                         "description": item.get("description").or_else(|| details.and_then(|model| model.get("description"))).and_then(Value::as_str).filter(|description| !description.trim().is_empty()),
                         "contextWindow": context_window,
+                        "supportsImages": supports_images,
+                        "inputTokenLimit": input_token_limit,
                         "groupId": if provider_id == "openrouter" { "free" } else { "models" },
                         "defaultReasoningLevel": null,
                         "reasoningLevels": [],
@@ -147,6 +184,84 @@ fn parse_models(
                 .collect()
         })
         .ok_or_else(invalid_response_error)
+}
+
+fn model_matches_id(provider_id: &str, model: &Value, model_id: &str) -> bool {
+    model.get("id").and_then(Value::as_str) == Some(model_id)
+        || (provider_id == "gemini"
+            && (model.get("baseModelId").and_then(Value::as_str) == Some(model_id)
+                || model
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .and_then(|name| name.strip_prefix("models/"))
+                    == Some(model_id)))
+}
+
+fn has_current_limit_metadata(models: &[Value]) -> bool {
+    models.iter().all(|model| {
+        model.get("inputTokenLimit").is_some()
+            && model
+                .get("supportsImages")
+                .and_then(Value::as_bool)
+                .is_some()
+    })
+}
+
+fn supports_images(
+    provider_id: &str,
+    model_id: &str,
+    model: &Value,
+    details: Option<&Value>,
+) -> bool {
+    let advertised_vision = model
+        .pointer("/capabilities/vision")
+        .or_else(|| details.and_then(|details| details.pointer("/capabilities/vision")))
+        .and_then(Value::as_bool)
+        == Some(true);
+    let modalities_include_image = [
+        model.pointer("/architecture/input_modalities"),
+        details.and_then(|details| details.pointer("/inputModalities")),
+        details.and_then(|details| details.pointer("/modalities/input")),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|modalities| {
+        modalities
+            .as_array()
+            .is_some_and(|values| values.iter().any(|value| value.as_str() == Some("image")))
+    });
+    match provider_id {
+        "gemini" => {
+            modalities_include_image
+                || details
+                    .and_then(|details| details.get("supportedGenerationMethods"))
+                    .and_then(Value::as_array)
+                    .is_some_and(|methods| {
+                        methods
+                            .iter()
+                            .any(|method| method.as_str() == Some("generateContent"))
+                            && !model_id.contains("embedding")
+                            && !model_id.contains("aqa")
+                    })
+        }
+        "groq" => {
+            advertised_vision
+                || modalities_include_image
+                || model_id.to_ascii_lowercase().contains("vision")
+                || model_id == "qwen/qwen3.8-27b"
+        }
+        "cerebras" => advertised_vision || modalities_include_image,
+        "openrouter" => {
+            advertised_vision
+                || modalities_include_image
+                || model
+                    .pointer("/architecture/modality")
+                    .and_then(Value::as_str)
+                    .and_then(|modality| modality.split_once("->"))
+                    .is_some_and(|(input, _)| input.split('+').any(|kind| kind == "image"))
+        }
+        _ => false,
+    }
 }
 
 fn supports_cerebras_tools(model: Option<&Value>) -> bool {
@@ -202,9 +317,16 @@ fn load_catalog(
     provider_id: &str,
     key_hash: &str,
 ) -> Result<Option<(Vec<Value>, i64)>, ServiceError> {
-    storage
-        .connect()
-        .map_err(|_| storage_error())?
+    let connection = storage.connect().map_err(|_| storage_error())?;
+    load_catalog_from_connection(&connection, provider_id, key_hash)
+}
+
+fn load_catalog_from_connection(
+    connection: &Connection,
+    provider_id: &str,
+    key_hash: &str,
+) -> Result<Option<(Vec<Value>, i64)>, ServiceError> {
+    connection
         .query_row(
             "SELECT models_json, fetched_at_unix_ms
              FROM compatible_provider_model_catalog
@@ -220,6 +342,61 @@ fn load_catalog(
                 .map_err(|_| invalid_response_error())
         })
         .transpose()
+}
+
+pub(super) fn context_limits(
+    storage: &AppStorage,
+    provider_id: &str,
+    api_key: &str,
+    model_id: &str,
+) -> Result<(Option<i64>, Option<i64>), ServiceError> {
+    let key_hash = api_key_hash(api_key);
+    let Some((models, _)) = load_catalog(storage, provider_id, &key_hash)? else {
+        return Ok((None, None));
+    };
+    let model = models
+        .iter()
+        .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id));
+    let context_window = model
+        .and_then(|model| model.get("contextWindow"))
+        .and_then(Value::as_i64)
+        .filter(|window| *window > 0);
+    let input_token_limit = model
+        .and_then(|model| model.get("inputTokenLimit"))
+        .and_then(Value::as_i64)
+        .filter(|limit| *limit > 0)
+        .map(|limit| context_window.map_or(limit, |context| limit.min(context)));
+    Ok((context_window, input_token_limit))
+}
+
+pub(super) fn supports_image_input(
+    storage: &AppStorage,
+    provider_id: &str,
+    api_key: &str,
+    model_id: &str,
+) -> Result<bool, ServiceError> {
+    let key_hash = api_key_hash(api_key);
+    let Some((models, _)) = load_catalog(storage, provider_id, &key_hash)? else {
+        return Ok(false);
+    };
+    Ok(models.iter().any(|model| {
+        model.get("id").and_then(Value::as_str) == Some(model_id)
+            && model.get("supportsImages").and_then(Value::as_bool) == Some(true)
+    }))
+}
+
+#[cfg(test)]
+fn model_context_window(models: &[Value], model_id: &str) -> Option<i64> {
+    models
+        .iter()
+        .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id))
+        .and_then(|model| model.get("contextWindow"))
+        .and_then(Value::as_i64)
+        .filter(|window| *window > 0)
+}
+
+fn api_key_hash(api_key: &str) -> String {
+    format!("{:x}", Sha256::digest(api_key.as_bytes()))
 }
 
 fn save_catalog(
@@ -278,4 +455,156 @@ fn storage_error() -> ServiceError {
         "The local model catalog could not be read or saved.",
         false,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use rusqlite::Connection;
+    use serde_json::json;
+
+    use super::{
+        api_key_hash, has_current_limit_metadata, load_catalog_from_connection,
+        model_context_window, parse_models,
+    };
+
+    #[test]
+    fn context_window_uses_only_the_selected_model_and_positive_metadata() {
+        let models = vec![
+            json!({"id": "known", "contextWindow": 131072}),
+            json!({"id": "unknown", "contextWindow": null}),
+            json!({"id": "invalid", "contextWindow": -1}),
+        ];
+
+        assert_eq!(model_context_window(&models, "known"), Some(131072));
+        assert_eq!(model_context_window(&models, "unknown"), None);
+        assert_eq!(model_context_window(&models, "invalid"), None);
+        assert_eq!(model_context_window(&models, "missing"), None);
+    }
+
+    #[test]
+    fn model_catalog_keys_are_derived_without_retaining_the_api_key() {
+        assert_ne!(api_key_hash("key-one"), api_key_hash("key-two"));
+        assert_eq!(api_key_hash("key-one"), api_key_hash("key-one"));
+    }
+
+    #[test]
+    fn cached_catalog_requires_current_prompt_limit_metadata() {
+        assert!(!has_current_limit_metadata(&[json!({"id": "model"})]));
+        assert!(has_current_limit_metadata(&[json!({
+            "id": "model",
+            "inputTokenLimit": null
+        })]));
+    }
+
+    #[test]
+    fn provider_catalogs_keep_verified_context_window_fields() {
+        let gemini = parse_models(
+            "gemini",
+            &json!({"data": [{"id": "gemini-3-flash"}]}),
+            Some(&json!({
+                "models": [{
+                    "name": "models/gemini-3-flash",
+                    "baseModelId": "gemini-3-flash",
+                    "displayName": "Gemini Flash",
+                    "inputTokenLimit": 1_000_000
+                }]
+            })),
+        )
+        .expect("parse Gemini models");
+        assert_eq!(
+            model_context_window(&gemini, "gemini-3-flash"),
+            Some(1_000_000)
+        );
+        assert_eq!(gemini[0]["inputTokenLimit"], 1_000_000);
+
+        let groq = parse_models(
+            "groq",
+            &json!({"data": [{"id": "llama", "context_window": 131072}]}),
+            None,
+        )
+        .expect("parse Groq models");
+        assert_eq!(model_context_window(&groq, "llama"), Some(131072));
+
+        let cerebras = parse_models(
+            "cerebras",
+            &json!({"data": [{"id": "llama"}]}),
+            Some(&json!({
+                "data": [{
+                    "id": "llama",
+                    "limits": {"max_context_length": 131072},
+                    "capabilities": {"function_calling": true, "tools": true}
+                }]
+            })),
+        )
+        .expect("parse Cerebras models");
+        assert_eq!(model_context_window(&cerebras, "llama"), Some(131072));
+
+        let openrouter = parse_models(
+            "openrouter",
+            &json!({"data": [{
+                "id": "free-model",
+                "context_length": 65536,
+                "pricing": {"prompt": "0", "completion": "0"},
+                "supported_parameters": ["tools"],
+                "architecture": {"modality": "text->text"}
+            }]}),
+            None,
+        )
+        .expect("parse OpenRouter models");
+        assert_eq!(model_context_window(&openrouter, "free-model"), Some(65536));
+    }
+
+    #[test]
+    fn context_window_catalog_lookup_is_scoped_to_provider_and_api_key_hash() {
+        let connection = Connection::open_in_memory().expect("open in-memory database");
+        connection
+            .execute_batch(
+                "CREATE TABLE compatible_provider_model_catalog (
+                    provider_id TEXT NOT NULL,
+                    api_key_hash TEXT NOT NULL,
+                    fetched_at_unix_ms INTEGER NOT NULL,
+                    models_json TEXT NOT NULL,
+                    PRIMARY KEY (provider_id, api_key_hash)
+                );",
+            )
+            .expect("create provider catalog table");
+        for (provider, key, window) in [
+            ("gemini", api_key_hash("account-one"), 131072),
+            ("gemini", api_key_hash("account-two"), 1_000_000),
+            ("groq", api_key_hash("account-one"), 65536),
+        ] {
+            let models = json!([{"id": "model", "contextWindow": window}]).to_string();
+            connection
+                .execute(
+                    "INSERT INTO compatible_provider_model_catalog
+                        (provider_id, api_key_hash, fetched_at_unix_ms, models_json)
+                     VALUES (?1, ?2, 1, ?3)",
+                    rusqlite::params![provider, key, models],
+                )
+                .expect("insert model catalog");
+        }
+
+        let (first_account, _) =
+            load_catalog_from_connection(&connection, "gemini", &api_key_hash("account-one"))
+                .expect("read account one catalog")
+                .expect("account one catalog exists");
+        let (second_account, _) =
+            load_catalog_from_connection(&connection, "gemini", &api_key_hash("account-two"))
+                .expect("read account two catalog")
+                .expect("account two catalog exists");
+        let (different_provider, _) =
+            load_catalog_from_connection(&connection, "groq", &api_key_hash("account-one"))
+                .expect("read Groq catalog")
+                .expect("Groq catalog exists");
+
+        assert_eq!(model_context_window(&first_account, "model"), Some(131072));
+        assert_eq!(
+            model_context_window(&second_account, "model"),
+            Some(1_000_000)
+        );
+        assert_eq!(
+            model_context_window(&different_provider, "model"),
+            Some(65536)
+        );
+    }
 }

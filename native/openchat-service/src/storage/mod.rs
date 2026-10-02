@@ -25,6 +25,10 @@ pub struct AppStorage {
 impl AppStorage {
     pub fn open() -> rusqlite::Result<Self> {
         let root = local_app_data_root()?;
+        Self::open_at(root)
+    }
+
+    pub fn open_at(root: PathBuf) -> rusqlite::Result<Self> {
         let database_directory = root.join("db");
         let logs_directory = root.join("logs");
         let cache_directory = root.join("cache");
@@ -60,6 +64,10 @@ impl AppStorage {
 
     pub fn database_path(&self) -> &Path {
         &self.database_path
+    }
+
+    pub fn semantic_memory_cache_directory(&self) -> PathBuf {
+        self.root.join("cache").join("semantic-memory")
     }
 
     pub fn schema_version(&self) -> i64 {

@@ -44,5 +44,8 @@ add_custom_command(TARGET ${BINARY_NAME} POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${OPENCHAT_SERVICE_EXECUTABLE}"
     "$<TARGET_FILE_DIR:${BINARY_NAME}>/openchat_service.exe"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_BINARY_DIR}/DirectML.dll"
+    "$<TARGET_FILE_DIR:${BINARY_NAME}>/DirectML.dll"
   VERBATIM
 )

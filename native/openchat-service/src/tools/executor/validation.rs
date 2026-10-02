@@ -205,16 +205,10 @@ impl ToolExecutor {
             }
             "read_url_content" | "read_url" => {
                 let Some(url) = string_argument(&call.arguments, "url") else {
-                    return Err(tool_error(
-                        "invalid_tool_input",
-                        "The URL is required.",
-                    ));
+                    return Err(tool_error("invalid_tool_input", "The URL is required."));
                 };
                 if url.trim().is_empty() {
-                    return Err(tool_error(
-                        "invalid_tool_input",
-                        "The URL cannot be empty.",
-                    ));
+                    return Err(tool_error("invalid_tool_input", "The URL cannot be empty."));
                 }
                 let max_chars = usize_argument(&call.arguments, "max_chars")
                     .or_else(|| usize_argument(&call.arguments, "maxChars"))

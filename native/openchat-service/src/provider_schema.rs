@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::protocol::ServiceError;
@@ -9,6 +9,7 @@ mod rpc;
 pub enum MessageRole {
     User,
     Assistant,
+    Tool,
 }
 
 impl MessageRole {
@@ -16,6 +17,7 @@ impl MessageRole {
         match value {
             "user" => Ok(Self::User),
             "assistant" => Ok(Self::Assistant),
+            "tool" => Ok(Self::Tool),
             _ => Err(ServiceError::new(
                 "conversation_history_invalid",
                 "The conversation contains an unsupported message role.",
@@ -28,6 +30,7 @@ impl MessageRole {
         match self {
             Self::User => "user",
             Self::Assistant => "assistant",
+            Self::Tool => "tool",
         }
     }
 }
@@ -36,6 +39,9 @@ impl MessageRole {
 pub struct ProviderMessage {
     pub role: MessageRole,
     pub content: String,
+    pub images: Vec<String>,
+    pub tool_calls: Vec<ToolCall>,
+    pub tool_call_id: Option<String>,
 }
 
 impl ProviderMessage {
@@ -43,6 +49,9 @@ impl ProviderMessage {
         Ok(Self {
             role: MessageRole::from_history(role)?,
             content: content.to_owned(),
+            images: Vec::new(),
+            tool_calls: Vec::new(),
+            tool_call_id: None,
         })
     }
 }
@@ -59,6 +68,7 @@ pub struct ProviderChatRequest {
     pub model: String,
     pub instructions: String,
     pub messages: Vec<ProviderMessage>,
+    pub last_message_id: Option<String>,
     pub tools: Vec<ToolDefinition>,
     pub reasoning_effort: Option<String>,
 }
@@ -76,7 +86,7 @@ pub struct ToolResult {
     pub output: Value,
 }
 
-#[derive(Clone, Copy, Debug, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ToolActivityStatus {
     AwaitingApproval,
@@ -87,12 +97,16 @@ pub enum ToolActivityStatus {
     Cancelled,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolActivity {
     pub call_id: String,
     pub name: String,
     pub arguments: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub round_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub assistant_text_before_byte_offset: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub target_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -106,6 +120,8 @@ impl ToolActivity {
             call_id: call.id.clone(),
             name: call.name.clone(),
             arguments: call.arguments.clone(),
+            round_id: None,
+            assistant_text_before_byte_offset: None,
             target_path: Some(target_path),
             output: None,
             status: ToolActivityStatus::AwaitingApproval,
@@ -117,6 +133,8 @@ impl ToolActivity {
             call_id: call.id.clone(),
             name: call.name.clone(),
             arguments: call.arguments.clone(),
+            round_id: None,
+            assistant_text_before_byte_offset: None,
             target_path,
             output: None,
             status: ToolActivityStatus::Running,
@@ -133,6 +151,8 @@ impl ToolActivity {
             call_id: call.id.clone(),
             name: call.name.clone(),
             arguments: call.arguments.clone(),
+            round_id: None,
+            assistant_text_before_byte_offset: None,
             target_path,
             output: Some(output),
             status,
@@ -144,6 +164,8 @@ impl ToolActivity {
             call_id: call.id.clone(),
             name: call.name.clone(),
             arguments: call.arguments.clone(),
+            round_id: None,
+            assistant_text_before_byte_offset: None,
             target_path: Some(target_path),
             output: Some(output),
             status: ToolActivityStatus::Denied,
@@ -155,6 +177,8 @@ impl ToolActivity {
             call_id: call.id.clone(),
             name: call.name.clone(),
             arguments: call.arguments.clone(),
+            round_id: None,
+            assistant_text_before_byte_offset: None,
             target_path: Some(target_path),
             output: Some(output),
             status: ToolActivityStatus::Cancelled,
