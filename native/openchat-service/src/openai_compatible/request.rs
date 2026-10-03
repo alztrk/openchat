@@ -86,6 +86,17 @@ pub(super) fn build_provider_request(
         ));
     }
 
+    let tools = if provider_id == "opencode" {
+        tools::definitions_for_model(
+            provider_id,
+            super::models::supports_tool_calls(storage, &model_id)?,
+        )
+    } else if provider_id == "chatgpt_api" {
+        tools::definitions_for_chatgpt_api()
+    } else {
+        tools::definitions_for_provider(provider_id)
+    };
+
     Ok(ProviderChatRequest {
         model: model_id,
         instructions: instructions::shared_instructions(
@@ -95,11 +106,7 @@ pub(super) fn build_provider_request(
         ),
         messages,
         last_message_id,
-        tools: if provider_id == "chatgpt_api" {
-            tools::definitions_for_chatgpt_api()
-        } else {
-            tools::definitions_for_provider(provider_id)
-        },
+        tools,
         reasoning_effort,
     })
 }
@@ -174,9 +181,11 @@ pub(super) fn chat_completion_body(
         body["stream_options"] = json!({"include_usage": true});
     }
     if provider_id == "opencode" {
-        body["tools"] = json!(tools::opencode_wire_tools(&request.tools));
-        body["tool_choice"] = json!("auto");
-        body["parallel_tool_calls"] = json!(false);
+        if !request.tools.is_empty() {
+            body["tools"] = json!(tools::opencode_wire_tools(&request.tools));
+            body["tool_choice"] = json!("auto");
+            body["parallel_tool_calls"] = json!(false);
+        }
         if let Some(reasoning_effort) = request.reasoning_effort.as_deref() {
             body["reasoning_effort"] = json!(reasoning_effort);
         }
@@ -310,10 +319,12 @@ pub(super) fn responses_api_body(request: &ProviderChatRequest, messages: &[Valu
         "model": request.model,
         "input": responses_input_items(messages),
         "stream": true,
-        "tools": tools::opencode_responses_wire_tools(&request.tools),
-        "tool_choice": "auto",
-        "parallel_tool_calls": true,
     });
+    if !request.tools.is_empty() {
+        body["tools"] = json!(tools::opencode_responses_wire_tools(&request.tools));
+        body["tool_choice"] = json!("auto");
+        body["parallel_tool_calls"] = json!(true);
+    }
     if let Some(reasoning_effort) = request.reasoning_effort.as_deref() {
         body["reasoning"] = json!({
             "effort": reasoning_effort,
@@ -361,12 +372,33 @@ mod tests {
 
     #[test]
     fn keeps_opencode_tool_request_shape() {
-        let body = chat_completion_body(&request(), &[], "opencode");
+        let mut request = request();
+        request.tools = tools::definitions_for_provider("opencode");
+        let body = chat_completion_body(&request, &[], "opencode");
+        let tool_names = body["tools"]
+            .as_array()
+            .expect("OpenCode tools array")
+            .iter()
+            .filter_map(|tool| tool.pointer("/function/name").and_then(Value::as_str))
+            .collect::<Vec<_>>();
 
-        assert_eq!(body["tools"][0]["function"]["name"], "bash");
-        assert_eq!(body["tools"][1]["function"]["name"], "read");
+        assert!(tool_names.contains(&"bash"));
+        assert!(tool_names.contains(&"read"));
         assert_eq!(body["tool_choice"], "auto");
         assert_eq!(body["parallel_tool_calls"], false);
+    }
+
+    #[test]
+    fn omits_tool_fields_when_opencode_model_does_not_support_tools() {
+        let body = chat_completion_body(&request(), &[], "opencode");
+
+        assert!(body.get("tools").is_none());
+        assert!(body.get("tool_choice").is_none());
+        assert!(body.get("parallel_tool_calls").is_none());
+        let body = responses_api_body(&request(), &[]);
+        assert!(body.get("tools").is_none());
+        assert!(body.get("tool_choice").is_none());
+        assert!(body.get("parallel_tool_calls").is_none());
     }
 
     #[test]

@@ -30,9 +30,18 @@ pub(crate) fn context_usage_tool_definitions(
     } else {
         false
     };
+    let supports_tool_calls = if provider_id == "opencode" {
+        match model_id {
+            Some(model_id) => models::supports_tool_calls(storage, model_id)?,
+            None => None,
+        }
+    } else {
+        None
+    };
     Ok(tools::context_usage_definitions(
         provider_id,
         uses_responses_api,
+        supports_tool_calls,
     ))
 }
 const CHAT_URL: &str = "https://opencode.ai/zen/v1/chat/completions";

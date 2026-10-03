@@ -255,6 +255,9 @@ fn supported_models(value: &Value, metadata: Option<&Value>) -> Result<Vec<Value
                     let catalog_status = metadata_status(details);
                     let uses_responses_api = uses_responses_api_metadata(details);
                     let supports_images = supports_image_input_metadata(details);
+                    let supports_tools = details
+                        .and_then(|details| details.get("tool_call"))
+                        .and_then(Value::as_bool);
                     Some(json!({
                         "id": id,
                         "displayName": display_name,
@@ -267,6 +270,7 @@ fn supported_models(value: &Value, metadata: Option<&Value>) -> Result<Vec<Value
                         "reasoningLevels": reasoning_levels,
                         "supportsReasoning": reasoning_supported,
                         "supportsImages": supports_images,
+                        "supportsTools": supports_tools,
                         "usesResponsesApi": uses_responses_api,
                         "isAvailable": true,
                     }))
@@ -315,6 +319,7 @@ fn has_model_groups(models: &[Value]) -> bool {
                 && has_current_catalog_metadata
                 && has_current_limit_metadata
                 && has_current_image_metadata
+                && model.get("supportsTools").is_some()
                 && model
                     .get("id")
                     .and_then(Value::as_str)
@@ -338,6 +343,20 @@ pub(super) fn supports_reasoning_level(
                 .and_then(Value::as_array)
                 .is_some_and(|levels| levels.iter().any(|value| value.as_str() == Some(level)))
     }))
+}
+
+pub(super) fn supports_tool_calls(
+    storage: &AppStorage,
+    model_id: &str,
+) -> Result<Option<bool>, ServiceError> {
+    let Some((models, _)) = load_model_catalog(storage)? else {
+        return Ok(None);
+    };
+    Ok(models
+        .iter()
+        .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id))
+        .and_then(|model| model.get("supportsTools"))
+        .and_then(Value::as_bool))
 }
 
 pub(super) fn is_responses_api_model(
@@ -507,7 +526,8 @@ mod tests {
                 "models": {
                     "big-pickle": {
                         "name": "Big Pickle",
-                        "limit": {"context": 262_144, "input": 131_072, "output": 16_384}
+                        "limit": {"context": 262_144, "input": 131_072, "output": 16_384},
+                        "tool_call": true
                     }
                 }
             }
@@ -518,6 +538,26 @@ mod tests {
 
         assert_eq!(models[0]["contextWindow"], 262_144);
         assert_eq!(models[0]["inputTokenLimit"], 131_072);
+        assert_eq!(models[0]["supportsTools"], true);
+    }
+
+    #[test]
+    fn open_code_catalog_preserves_false_and_unknown_tool_support() {
+        let provider_models = json!({"data": [{"id": "big-pickle"}]});
+        let metadata = json!({
+            "opencode": {
+                "models": {
+                    "big-pickle": {"tool_call": false}
+                }
+            }
+        });
+
+        let models =
+            supported_models(&provider_models, Some(&metadata)).expect("parse OpenCode models");
+        assert_eq!(models[0]["supportsTools"], false);
+
+        let models = supported_models(&provider_models, None).expect("parse without metadata");
+        assert!(models[0]["supportsTools"].is_null());
     }
 
     #[test]
@@ -528,6 +568,7 @@ mod tests {
             "supportsReasoning": false,
             "catalogStatus": null,
             "supportsImages": false,
+            "supportsTools": null,
         });
         assert!(!has_model_groups(std::slice::from_ref(&model)));
         model["inputTokenLimit"] = json!(null);

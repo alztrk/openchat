@@ -538,6 +538,19 @@ pub fn definitions_for_provider(provider_id: &str) -> Vec<ToolDefinition> {
         .collect()
 }
 
+pub fn definitions_for_model(
+    provider_id: &str,
+    supports_tool_calls: Option<bool>,
+) -> Vec<ToolDefinition> {
+    let mut definitions = definitions_for_provider(provider_id);
+    match supports_tool_calls {
+        Some(false) => definitions.clear(),
+        Some(true) => {}
+        None => definitions.retain(|tool| tool.name != "ask_user"),
+    }
+    definitions
+}
+
 pub fn definitions_for_chatgpt_model() -> Vec<ToolDefinition> {
     definitions_for_provider("chatgpt")
         .into_iter()
@@ -589,13 +602,21 @@ pub fn definitions_for_chatgpt_api() -> Vec<ToolDefinition> {
 pub fn context_usage_definitions(
     provider_id: &str,
     uses_responses_api: bool,
+    supports_tool_calls: Option<bool>,
 ) -> Vec<(String, Value)> {
-    let definitions = match provider_id {
-        "chatgpt" => definitions_for_chatgpt_model(),
-        "chatgpt_api" => definitions_for_chatgpt_api(),
-        _ => definitions_for_provider(provider_id),
+    let definitions = if provider_id == "opencode" {
+        definitions_for_model(provider_id, supports_tool_calls)
+    } else {
+        match provider_id {
+            "chatgpt" => definitions_for_chatgpt_model(),
+            "chatgpt_api" => definitions_for_chatgpt_api(),
+            _ => definitions_for_provider(provider_id),
+        }
     };
     if provider_id == "opencode" {
+        if definitions.is_empty() {
+            return Vec::new();
+        }
         let wire_tools = if uses_responses_api {
             opencode_responses_wire_tools(&definitions)
         } else {
@@ -901,8 +922,8 @@ pub use executor::{ToolExecutor, ToolPermissionMode};
 #[cfg(test)]
 mod image_tool_tests {
     use super::{
-        definitions, definitions_for_chatgpt_api, definitions_for_chatgpt_model,
-        definitions_for_provider,
+        context_usage_definitions, definitions, definitions_for_chatgpt_api,
+        definitions_for_chatgpt_model, definitions_for_model, definitions_for_provider,
     };
 
     #[test]
@@ -959,6 +980,22 @@ mod image_tool_tests {
             .find(|tool| tool.name == "generate_image")
             .expect("OAuth image tool");
         assert!(image_tool.parameters["properties"].get("count").is_none());
+    }
+
+    #[test]
+    fn model_capability_controls_provider_tools_and_ask_user_availability() {
+        let supported = definitions_for_model("opencode", Some(true));
+        assert!(supported.iter().any(|tool| tool.name == "ask_user"));
+
+        let unsupported = definitions_for_model("opencode", Some(false));
+        assert!(unsupported.is_empty());
+        assert!(context_usage_definitions("opencode", false, Some(false)).is_empty());
+
+        let unknown = definitions_for_model("opencode", None);
+        assert!(!unknown.iter().any(|tool| tool.name == "ask_user"));
+        assert!(unknown.iter().any(|tool| tool.name == "read_file"));
+        let unknown_context = context_usage_definitions("opencode", false, None);
+        assert!(!unknown_context.iter().any(|(name, _)| name == "ask_user"));
     }
 }
 
