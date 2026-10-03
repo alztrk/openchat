@@ -342,53 +342,64 @@ fn fit_compaction_request_body(
         reasoning_effort,
         supports_reasoning_summary_parameter,
     );
-    let mut estimated_request_bytes = serde_json::to_vec(&body)
-        .map_err(|_| serialization_failed())?
-        .len();
-    let request_budget = usize::try_from(
-        context_window.saturating_mul(MAX_COMPACTION_REQUEST_CONTEXT_PERCENT) / 100,
-    )
-    .unwrap_or(usize::MAX);
-    if estimated_request_bytes <= request_budget {
+    let mut estimated_request_tokens = context_compaction::request_context_token_estimate(&body);
+    let request_budget =
+        context_window.saturating_mul(MAX_COMPACTION_REQUEST_CONTEXT_PERCENT) / 100;
+    if estimated_request_tokens <= request_budget {
         return Ok(body);
     }
 
-    if let Some(input_items) = body.get_mut("input").and_then(Value::as_array_mut) {
-        for item in input_items {
-            if estimated_request_bytes <= request_budget {
-                break;
-            }
-            if item.get("type").and_then(Value::as_str) != Some("function_call_output") {
-                continue;
-            }
-            let Some(output) = item.get("output").and_then(Value::as_str) else {
-                continue;
-            };
-            if output.len() <= TOOL_OUTPUT_OMITTED_MARKER.len() {
-                continue;
-            }
-
-            let excess_bytes = estimated_request_bytes - request_budget;
-            let target_output_bytes = output
-                .len()
-                .saturating_sub(excess_bytes.saturating_add(64))
-                .max(TOOL_OUTPUT_OMITTED_MARKER.len());
-            let shortened_output = truncate_tool_output(output, target_output_bytes);
-            let previous_output_bytes = output.len();
-            let next_output_bytes = shortened_output.len();
-            let Some(output_value) = item.get_mut("output") else {
-                continue;
-            };
-            *output_value = Value::String(shortened_output);
-
-            // The estimate stays above the serialized size; the marker's newline needs JSON escaping.
-            estimated_request_bytes = estimated_request_bytes
-                .saturating_sub(previous_output_bytes.saturating_sub(next_output_bytes))
-                .saturating_add(2);
+    let input_item_count = body
+        .get("input")
+        .and_then(Value::as_array)
+        .map_or(0, Vec::len);
+    for index in 0..input_item_count {
+        if estimated_request_tokens <= request_budget {
+            break;
         }
+        let Some(item) = body
+            .get("input")
+            .and_then(Value::as_array)
+            .and_then(|items| items.get(index))
+        else {
+            continue;
+        };
+        if item.get("type").and_then(Value::as_str) != Some("function_call_output") {
+            continue;
+        }
+        let Some(output) = item
+            .get("output")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        if output.len() <= TOOL_OUTPUT_OMITTED_MARKER.len() {
+            continue;
+        }
+
+        let excess_tokens = estimated_request_tokens.saturating_sub(request_budget);
+        let excess_bytes = usize::try_from(excess_tokens.saturating_mul(3))
+            .unwrap_or(usize::MAX)
+            .saturating_add(64);
+        let target_output_bytes = output
+            .len()
+            .saturating_sub(excess_bytes)
+            .max(TOOL_OUTPUT_OMITTED_MARKER.len());
+        let shortened_output = truncate_tool_output(&output, target_output_bytes);
+        let Some(output_value) = body
+            .get_mut("input")
+            .and_then(Value::as_array_mut)
+            .and_then(|items| items.get_mut(index))
+            .and_then(|item| item.get_mut("output"))
+        else {
+            continue;
+        };
+        *output_value = Value::String(shortened_output);
+        estimated_request_tokens = context_compaction::request_context_token_estimate(&body);
     }
 
-    if estimated_request_bytes > request_budget {
+    if estimated_request_tokens > request_budget {
         return Err(ServiceError::new(
             "context_compaction_input_too_large",
             "ChatGPT could not compact this conversation within the model's context window. The full chat is still saved; switch to a model with a larger context window.",
@@ -426,14 +437,6 @@ fn truncate_tool_output(output: &str, max_bytes: usize) -> String {
     shortened.push_str(marker);
     shortened.push_str(&output[suffix_start..]);
     shortened
-}
-
-fn serialization_failed() -> ServiceError {
-    ServiceError::new(
-        "serialization_failed",
-        "ChatGPT could not prepare the conversation context.",
-        false,
-    )
 }
 
 async fn parse_remote_compaction_stream(
@@ -625,7 +628,10 @@ mod tests {
         sync::watch,
     };
 
-    use crate::chatgpt_store::{ConversationContextState, StoredMessage};
+    use crate::{
+        chatgpt_store::{ConversationContextState, StoredMessage},
+        context_compaction,
+    };
 
     use super::{
         TOOL_OUTPUT_OMITTED_MARKER, TOOL_OUTPUT_TRUNCATION_MARKER, apply_compaction_event,
@@ -813,12 +819,7 @@ mod tests {
         )
         .expect("fit compaction request within model context");
 
-        assert!(
-            serde_json::to_vec(&request)
-                .expect("serialize compact request")
-                .len()
-                <= 1536
-        );
+        assert!(context_compaction::request_context_token_estimate(&request) <= 1536);
         assert_eq!(request["input"][0]["type"], "function_call");
         assert_eq!(request["input"][0]["call_id"], "call-large-result");
         assert_eq!(request["input"][2]["role"], "assistant");
@@ -843,6 +844,38 @@ mod tests {
                     })
                 })
         );
+    }
+
+    #[test]
+    fn remote_compaction_budgets_image_payloads_by_tokens_not_base64_bytes() {
+        let input = vec![json!({
+            "role": "user",
+            "content": [{
+                "type": "input_image",
+                "image_url": format!("data:image/png;base64,{}", "A".repeat(16_000)),
+                "detail": "auto",
+            }],
+        })];
+
+        let request = fit_compaction_request_body(
+            "gpt-test-model",
+            4096,
+            "Keep the conversation context.",
+            input,
+            &[],
+            None,
+            false,
+        )
+        .expect("large encoded image should fit its conservative image-token budget");
+
+        assert!(
+            serde_json::to_vec(&request)
+                .expect("serialize compaction request")
+                .len()
+                > 3072
+        );
+        assert!(context_compaction::request_context_token_estimate(&request) <= 3072);
+        assert_eq!(request["input"][0]["content"][0]["type"], "input_image");
     }
 
     #[test]
