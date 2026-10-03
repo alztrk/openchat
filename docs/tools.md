@@ -4,6 +4,8 @@ The local Rust service exposes bounded `list_files`, `search_files`, `read_file`
 
 For OpenCode, the model catalog's `tool_call` capability controls function definitions per model. A confirmed unsupported model receives no tools. When metadata does not say whether a model supports tools, OpenChat omits `ask_user` but keeps the existing local tools available; the context-usage estimate uses the same filtered list.
 
+Before dispatch, the service also checks that every returned tool call was present in that request's function-tool allowlist. A provider response naming an unadvertised tool is rejected before any tool action runs.
+
 Both adapters translate provider tool definitions, calls, and results through OpenChat's shared Rust schema. ChatGPT Responses and OpenCode Chat Completions JSON stay inside their respective adapters; Flutter receives the same chat stream events from either provider. Adding another provider still requires an adapter for that provider's native protocol.
 
 Tool calls are processed locally and their results are returned to the same provider before its final response. A single response is limited to six tool-call rounds, sixteen calls, and 16 KiB of serialized arguments per call. Unsupported, invalid, or out-of-scope requests return an explicit tool error. In `Onay İste`, a denial returns a permission error to the model without running the requested operation; approval applies only to that call. Stopping a response also clears its pending approval. Treat text read from the active tool root as untrusted content.

@@ -20,6 +20,18 @@ use crate::{
     tools::{ImageGenerationContext, ToolExecutor},
 };
 
+fn response_tool_names(payload: &Value) -> Vec<String> {
+    payload
+        .get("tools")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|tool| tool.get("type").and_then(Value::as_str) == Some("function"))
+        .filter_map(|tool| tool.get("name").and_then(Value::as_str))
+        .map(str::to_owned)
+        .collect()
+}
+
 impl ChatGptService {
     pub(super) async fn stream_response(
         self: &Arc<Self>,
@@ -108,7 +120,12 @@ impl ChatGptService {
 
         let mut output_tokens = None;
         let mut input_tokens;
-        let mut tool_executor = ToolExecutor::new(project_root, data_root, permission_mode);
+        let mut tool_executor = ToolExecutor::with_allowed_tool_names(
+            project_root,
+            data_root,
+            permission_mode,
+            response_tool_names(&payload),
+        );
         let image_generation = Some(ImageGenerationContext::ChatGptOAuth {
             service: self,
             connection_id: &route.connection_id,
@@ -744,5 +761,30 @@ impl ChatGptService {
             "elapsedMicroseconds": elapsed.as_micros(),
             "reasoningGroups": reasoning_summary_groups_value(&reasoning_summaries),
         }))
+    }
+}
+
+#[cfg(test)]
+mod tool_policy_tests {
+    use serde_json::json;
+
+    use super::response_tool_names;
+
+    #[test]
+    fn executor_allowlist_matches_function_tools_in_the_responses_request() {
+        let payload = json!({
+            "tools": [
+                {"type": "function", "name": "read_file"},
+                {"type": "function", "name": "ask_user"},
+                {"type": "web_search", "name": "web_search"},
+                {"type": "function"}
+            ]
+        });
+
+        assert_eq!(
+            response_tool_names(&payload),
+            ["read_file".to_owned(), "ask_user".to_owned()]
+        );
+        assert!(response_tool_names(&json!({"tools": []})).is_empty());
     }
 }

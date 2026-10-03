@@ -9,7 +9,10 @@ use crate::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 use tokio::sync::{Mutex, watch};
 
 mod execution;
@@ -60,6 +63,7 @@ pub struct ToolExecutor {
     calls: usize,
     current_round_id: Option<String>,
     tool_activities: Mutex<Vec<ToolActivity>>,
+    allowed_tool_names: HashSet<String>,
 }
 
 pub(crate) fn tool_call_limit_error() -> ServiceError {
@@ -71,10 +75,27 @@ pub(crate) fn tool_call_limit_error() -> ServiceError {
 }
 
 impl ToolExecutor {
+    #[cfg(test)]
     pub fn new(
         project_root: Option<&Path>,
         data_root: &Path,
         permission_mode: ToolPermissionMode,
+    ) -> Self {
+        Self::with_allowed_tool_names(
+            project_root,
+            data_root,
+            permission_mode,
+            crate::tools::definitions()
+                .into_iter()
+                .map(|tool| tool.name.to_owned()),
+        )
+    }
+
+    pub(crate) fn with_allowed_tool_names(
+        project_root: Option<&Path>,
+        data_root: &Path,
+        permission_mode: ToolPermissionMode,
+        allowed_tool_names: impl IntoIterator<Item = String>,
     ) -> Self {
         Self {
             project_root: project_root.map(Path::to_path_buf),
@@ -84,6 +105,19 @@ impl ToolExecutor {
             calls: 0,
             current_round_id: None,
             tool_activities: Mutex::new(Vec::new()),
+            allowed_tool_names: allowed_tool_names.into_iter().collect(),
+        }
+    }
+
+    fn validate_tool_name(&self, tool_name: &str) -> Result<(), ServiceError> {
+        if self.allowed_tool_names.contains(tool_name) {
+            Ok(())
+        } else {
+            Err(ServiceError::new(
+                "invalid_provider_response",
+                "The provider requested a tool that was not included in the request.",
+                false,
+            ))
         }
     }
 
@@ -146,6 +180,7 @@ impl ToolExecutor {
         user_questions: &UserQuestionBroker,
         image_generation: Option<&ImageGenerationContext<'_>>,
     ) -> Result<ToolResult, ServiceError> {
+        self.validate_tool_name(&call.name)?;
         if call.name == "generate_image" {
             return self
                 .execute_image_call(
@@ -736,6 +771,32 @@ impl ToolExecutor {
         }
         .into_rpc(request_id.clone());
         events.send(&event).await.map_err(|_| protocol_error())
+    }
+}
+
+#[cfg(test)]
+mod policy_tests {
+    use std::path::Path;
+
+    use super::{ToolExecutor, ToolPermissionMode};
+
+    #[test]
+    fn rejects_calls_that_were_not_advertised_to_the_model() {
+        let executor = ToolExecutor::with_allowed_tool_names(
+            None,
+            Path::new("."),
+            ToolPermissionMode::FullAccess,
+            ["read_file".to_owned()],
+        );
+
+        assert!(executor.validate_tool_name("read_file").is_ok());
+        assert_eq!(
+            executor
+                .validate_tool_name("ask_user")
+                .expect_err("unadvertised question tool must be rejected")
+                .code,
+            "invalid_provider_response"
+        );
     }
 }
 

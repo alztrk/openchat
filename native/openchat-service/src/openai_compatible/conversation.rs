@@ -292,7 +292,15 @@ pub async fn send_message(
     }
 
     let mut messages = request::completion_messages(&provider_request, provider_id);
-    let mut tool_executor = ToolExecutor::new(project_root, data_root, permission_mode);
+    let mut tool_executor = ToolExecutor::with_allowed_tool_names(
+        project_root,
+        data_root,
+        permission_mode,
+        provider_request
+            .tools
+            .iter()
+            .map(|tool| tool.name.to_owned()),
+    );
     let result = stream_conversation(
         &route,
         provider_id,
