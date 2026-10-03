@@ -49,6 +49,7 @@ class ChatComposer extends StatelessWidget {
     this.conversationId,
     this.contextProviderId,
     this.contextModelId,
+    this.contextSupportsTools,
     this.contextWindow,
     this.contextConnectionId,
     this.contextWorkspaceId,
@@ -98,6 +99,7 @@ class ChatComposer extends StatelessWidget {
   final String? conversationId;
   final String? contextProviderId;
   final String? contextModelId;
+  final bool? contextSupportsTools;
   final int? contextWindow;
   final String? contextConnectionId;
   final String? contextWorkspaceId;
@@ -228,6 +230,7 @@ class ChatComposer extends StatelessWidget {
                   conversationId: conversationId,
                   contextProviderId: contextProviderId,
                   contextModelId: contextModelId,
+                  contextSupportsTools: contextSupportsTools,
                   contextWindow: contextWindow,
                   contextConnectionId: contextConnectionId,
                   contextWorkspaceId: contextWorkspaceId,
@@ -281,6 +284,7 @@ class _ComposerActions extends StatelessWidget {
     required this.conversationId,
     required this.contextProviderId,
     required this.contextModelId,
+    required this.contextSupportsTools,
     required this.contextWindow,
     required this.contextConnectionId,
     required this.contextWorkspaceId,
@@ -331,6 +335,7 @@ class _ComposerActions extends StatelessWidget {
   final String? conversationId;
   final String? contextProviderId;
   final String? contextModelId;
+  final bool? contextSupportsTools;
   final int? contextWindow;
   final String? contextConnectionId;
   final String? contextWorkspaceId;
@@ -411,6 +416,7 @@ class _ComposerActions extends StatelessWidget {
           messages: messages,
           providerId: contextProviderId,
           modelId: contextModelId,
+          supportsTools: contextSupportsTools,
           contextWindow: contextWindow,
           repository: conversationMemoryRepository,
           conversationId: conversationId,

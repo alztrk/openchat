@@ -18,6 +18,7 @@ class ContextUsageIndicator extends StatefulWidget {
     required this.messages,
     required this.providerId,
     required this.modelId,
+    required this.supportsTools,
     required this.contextWindow,
     required this.repository,
     required this.conversationId,
@@ -34,6 +35,7 @@ class ContextUsageIndicator extends StatefulWidget {
   final List<ChatMessage> messages;
   final String? providerId;
   final String? modelId;
+  final bool? supportsTools;
   final int? contextWindow;
   final ConversationMemoryRepository? repository;
   final String? conversationId;
@@ -83,6 +85,7 @@ class _ContextUsageIndicatorState extends State<ContextUsageIndicator> {
         oldWidget.conversationId != widget.conversationId ||
         oldWidget.providerId != widget.providerId ||
         oldWidget.modelId != widget.modelId ||
+        oldWidget.supportsTools != widget.supportsTools ||
         oldWidget.toolPermissionMode != widget.toolPermissionMode;
     if (oldWidget.settingsPreferences != widget.settingsPreferences) {
       _sharedInstructions = '';
@@ -156,6 +159,7 @@ class _ContextUsageIndicatorState extends State<ContextUsageIndicator> {
       final configuration = await repository.estimateContextUsage(
         providerId: providerId,
         modelId: widget.modelId,
+        supportsTools: widget.supportsTools,
         toolPermissionMode: widget.toolPermissionMode.serviceValue,
         customInstructions: customInstructions,
         conversationId: widget.conversationId,

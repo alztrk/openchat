@@ -542,7 +542,13 @@ pub fn definitions_for_model(
     provider_id: &str,
     supports_tool_calls: Option<bool>,
 ) -> Vec<ToolDefinition> {
-    let mut definitions = definitions_for_provider(provider_id);
+    apply_tool_call_capability(definitions_for_provider(provider_id), supports_tool_calls)
+}
+
+fn apply_tool_call_capability(
+    mut definitions: Vec<ToolDefinition>,
+    supports_tool_calls: Option<bool>,
+) -> Vec<ToolDefinition> {
     match supports_tool_calls {
         Some(false) => definitions.clear(),
         Some(true) => {}
@@ -552,6 +558,10 @@ pub fn definitions_for_model(
 }
 
 pub fn definitions_for_chatgpt_model() -> Vec<ToolDefinition> {
+    chatgpt_model_tool_definitions()
+}
+
+fn chatgpt_model_tool_definitions() -> Vec<ToolDefinition> {
     definitions_for_provider("chatgpt")
         .into_iter()
         .map(|mut tool| {
@@ -569,6 +579,10 @@ pub fn definitions_for_chatgpt_model() -> Vec<ToolDefinition> {
 }
 
 pub fn definitions_for_chatgpt_api() -> Vec<ToolDefinition> {
+    chatgpt_api_tool_definitions()
+}
+
+fn chatgpt_api_tool_definitions() -> Vec<ToolDefinition> {
     let mut definitions = definitions_for_provider("chatgpt_api");
     if let Some(image_tool) = definitions
         .iter_mut()
@@ -599,20 +613,27 @@ pub fn definitions_for_chatgpt_api() -> Vec<ToolDefinition> {
     definitions
 }
 
+pub fn definitions_for_request(
+    provider_id: &str,
+    supports_tool_calls: Option<bool>,
+) -> Vec<ToolDefinition> {
+    match provider_id {
+        "chatgpt" => {
+            apply_tool_call_capability(definitions_for_chatgpt_model(), supports_tool_calls)
+        }
+        "chatgpt_api" => {
+            apply_tool_call_capability(definitions_for_chatgpt_api(), supports_tool_calls)
+        }
+        _ => definitions_for_model(provider_id, supports_tool_calls),
+    }
+}
+
 pub fn context_usage_definitions(
     provider_id: &str,
     uses_responses_api: bool,
     supports_tool_calls: Option<bool>,
 ) -> Vec<(String, Value)> {
-    let definitions = if provider_id == "opencode" {
-        definitions_for_model(provider_id, supports_tool_calls)
-    } else {
-        match provider_id {
-            "chatgpt" => definitions_for_chatgpt_model(),
-            "chatgpt_api" => definitions_for_chatgpt_api(),
-            _ => definitions_for_provider(provider_id),
-        }
-    };
+    let definitions = definitions_for_request(provider_id, supports_tool_calls);
     if provider_id == "opencode" {
         if definitions.is_empty() {
             return Vec::new();
@@ -924,6 +945,7 @@ mod image_tool_tests {
     use super::{
         context_usage_definitions, definitions, definitions_for_chatgpt_api,
         definitions_for_chatgpt_model, definitions_for_model, definitions_for_provider,
+        definitions_for_request,
     };
 
     #[test]
@@ -995,6 +1017,18 @@ mod image_tool_tests {
         assert!(!unknown.iter().any(|tool| tool.name == "ask_user"));
         assert!(unknown.iter().any(|tool| tool.name == "read_file"));
         let unknown_context = context_usage_definitions("opencode", false, None);
+        assert!(!unknown_context.iter().any(|(name, _)| name == "ask_user"));
+
+        assert!(definitions_for_request("gemini", Some(false)).is_empty());
+        assert!(
+            definitions_for_request("gemini", Some(true))
+                .iter()
+                .any(|tool| tool.name == "ask_user")
+        );
+        let unknown_mistral = definitions_for_request("mistral", None);
+        assert!(!unknown_mistral.iter().any(|tool| tool.name == "ask_user"));
+        assert!(unknown_mistral.iter().any(|tool| tool.name == "read_file"));
+        let unknown_context = context_usage_definitions("mistral", false, None);
         assert!(!unknown_context.iter().any(|(name, _)| name == "ask_user"));
     }
 }

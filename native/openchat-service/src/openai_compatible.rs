@@ -21,6 +21,7 @@ pub(crate) fn context_usage_tool_definitions(
     storage: &AppStorage,
     provider_id: &str,
     model_id: Option<&str>,
+    reported_supports_tool_calls: Option<bool>,
 ) -> Result<Vec<(String, Value)>, ServiceError> {
     let uses_responses_api = if provider_id == "opencode" {
         match model_id {
@@ -30,13 +31,13 @@ pub(crate) fn context_usage_tool_definitions(
     } else {
         false
     };
-    let supports_tool_calls = if provider_id == "opencode" {
-        match model_id {
+    let supports_tool_calls = match provider_id {
+        "opencode" => match model_id {
             Some(model_id) => models::supports_tool_calls(storage, model_id)?,
             None => None,
-        }
-    } else {
-        None
+        },
+        "chatgpt" => Some(true),
+        _ => reported_supports_tool_calls,
     };
     Ok(tools::context_usage_definitions(
         provider_id,

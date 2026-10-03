@@ -105,6 +105,7 @@ pub async fn send_message(
             permission_mode,
             has_project: project_root.is_some(),
             reasoning_effort,
+            supports_tool_calls: route.supports_tool_calls,
         },
     )?;
     let active_compaction_matches = context_state.as_ref().is_some_and(|state| {

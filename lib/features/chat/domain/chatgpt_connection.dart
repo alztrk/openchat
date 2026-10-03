@@ -91,6 +91,7 @@ class ChatGptModel {
     required this.reasoningLevels,
     this.supportsReasoning = false,
     this.supportsImages = false,
+    this.supportsTools,
     this.description,
     this.contextWindow,
     this.defaultReasoningLevel,
@@ -110,6 +111,7 @@ class ChatGptModel {
   final List<String> reasoningLevels;
   final bool supportsReasoning;
   final bool supportsImages;
+  final bool? supportsTools;
   final bool isAvailable;
   final String providerId;
   final String? connectionId;
@@ -143,6 +145,7 @@ class ChatGptModel {
     sourceLabel: sourceLabel,
     groupId: groupId,
     unavailabilityReason: unavailabilityReason,
+    supportsTools: providerId == 'chatgpt' ? true : supportsTools,
   );
 
   factory ChatGptModel.fromJson(Map<String, Object?> json) {
@@ -161,6 +164,10 @@ class ChatGptModel {
     if (supportsImages != null && supportsImages is! bool) {
       throw const FormatException('The model image capability was invalid.');
     }
+    final supportsTools = json['supportsTools'];
+    if (supportsTools != null && supportsTools is! bool) {
+      throw const FormatException('The model tool capability was invalid.');
+    }
     final contextWindow = json['contextWindow'];
     if (contextWindow != null && contextWindow is! int) {
       throw const FormatException('The model context window was invalid.');
@@ -175,6 +182,7 @@ class ChatGptModel {
       supportsReasoning:
           supportsReasoning == true || reasoningLevels.isNotEmpty,
       supportsImages: supportsImages == true,
+      supportsTools: supportsTools as bool?,
       isAvailable: json['isAvailable'] == true,
       groupId: _optionalString(json, 'groupId'),
       unavailabilityReason: _optionalString(json, 'reason'),

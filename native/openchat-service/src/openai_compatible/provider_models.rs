@@ -179,6 +179,7 @@ fn parse_models(
                         .or(input_token_limit)
                         .filter(|value| *value > 0);
                     let supports_images = supports_images(provider_id, id, item, details);
+                    let supports_tools = provider_tool_support(provider_id, id, item);
                     let reasoning_levels = if provider_id == "mistral" {
                         mistral_reasoning_levels(id)
                     } else {
@@ -191,6 +192,7 @@ fn parse_models(
                         "description": item.get("description").or_else(|| details.and_then(|model| model.get("description"))).and_then(Value::as_str).filter(|description| !description.trim().is_empty()),
                         "contextWindow": context_window,
                         "supportsImages": supports_images,
+                        "supportsTools": supports_tools,
                         "inputTokenLimit": input_token_limit,
                         "groupId": if provider_id == "openrouter" { "free" } else { "models" },
                         "defaultReasoningLevel": null,
@@ -226,7 +228,74 @@ fn has_current_limit_metadata(models: &[Value]) -> bool {
                 .get("supportsImages")
                 .and_then(Value::as_bool)
                 .is_some()
+            && model.get("supportsTools").is_some()
     })
+}
+
+fn provider_tool_support(provider_id: &str, model_id: &str, model: &Value) -> Option<bool> {
+    match provider_id {
+        "gemini" => gemini_supports_tool_calls(model_id),
+        "groq" => groq_supports_tool_calls(model_id),
+        "cerebras" | "openrouter" => Some(true),
+        "mistral" => model
+            .pointer("/capabilities/function_calling")
+            .and_then(Value::as_bool),
+        _ => None,
+    }
+}
+
+fn gemini_supports_tool_calls(model_id: &str) -> Option<bool> {
+    let model_id = model_id.strip_prefix("models/").unwrap_or(model_id);
+    match model_id {
+        "gemini-3.8-flash"
+        | "gemini-3.7-flash"
+        | "gemini-3.6-flash"
+        | "gemini-3.5-flash-lite"
+        | "gemini-3.1-pro-preview"
+        | "gemini-3.1-flash-lite"
+        | "gemini-3.5-flash"
+        | "gemini-2.5-pro"
+        | "gemini-2.5-flash"
+        | "gemini-2.5-flash-lite" => Some(true),
+        _ => None,
+    }
+}
+
+fn groq_supports_tool_calls(model_id: &str) -> Option<bool> {
+    match model_id {
+        "openai/gpt-oss-20b"
+        | "openai/gpt-oss-120b"
+        | "openai/gpt-oss-safeguard-20b"
+        | "qwen/qwen3.8-27b"
+        | "minimaxai/minimax-m2.7"
+        | "llama-3.3-70b-versatile"
+        | "llama-3.1-8b-instant" => Some(true),
+        "whisper-large-v3"
+        | "whisper-large-v3-turbo"
+        | "distil-whisper-large-v3-en"
+        | "canopylabs/orpheus-arabic-saudi"
+        | "canopylabs/orpheus-v1-english"
+        | "playai-tts"
+        | "playai-tts-arabic" => Some(false),
+        _ => None,
+    }
+}
+
+pub(super) fn supports_tool_calls(
+    storage: &AppStorage,
+    provider_id: &str,
+    api_key: &str,
+    model_id: &str,
+) -> Result<Option<bool>, ServiceError> {
+    let key_hash = api_key_hash(api_key);
+    let Some((models, _)) = load_catalog(storage, provider_id, &key_hash)? else {
+        return Ok(None);
+    };
+    Ok(models
+        .iter()
+        .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id))
+        .and_then(|model| model.get("supportsTools"))
+        .and_then(Value::as_bool))
 }
 
 fn supports_images(
@@ -489,13 +558,36 @@ fn storage_error() -> ServiceError {
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, path::PathBuf};
+
     use rusqlite::Connection;
     use serde_json::json;
 
+    use crate::storage::AppStorage;
+
     use super::{
         api_key_hash, has_current_limit_metadata, load_catalog_from_connection,
-        model_context_window, parse_models,
+        model_context_window, parse_models, provider_tool_support, supports_tool_calls,
     };
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "openchat-provider-models-test-{}",
+                uuid::Uuid::new_v4()
+            ));
+            fs::create_dir(&path).expect("create isolated test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).expect("remove isolated test directory");
+        }
+    }
 
     #[test]
     fn context_window_uses_only_the_selected_model_and_positive_metadata() {
@@ -523,8 +615,46 @@ mod tests {
         assert!(has_current_limit_metadata(&[json!({
             "id": "model",
             "inputTokenLimit": null,
-            "supportsImages": false
+            "supportsImages": false,
+            "supportsTools": null
         })]));
+    }
+
+    #[test]
+    fn provider_tool_capabilities_are_known_only_from_verified_sources() {
+        assert_eq!(
+            provider_tool_support("gemini", "gemini-3.8-flash", &json!({})),
+            Some(true)
+        );
+        assert_eq!(
+            provider_tool_support("gemini", "models/gemini-2.5-pro", &json!({})),
+            Some(true)
+        );
+        assert_eq!(
+            provider_tool_support("gemini", "gemini-experimental-unknown", &json!({})),
+            None
+        );
+        assert_eq!(
+            provider_tool_support("groq", "llama-3.3-70b-versatile", &json!({})),
+            Some(true)
+        );
+        assert_eq!(
+            provider_tool_support("groq", "whisper-large-v3", &json!({})),
+            Some(false)
+        );
+        assert_eq!(provider_tool_support("groq", "new-model", &json!({})), None);
+        assert_eq!(
+            provider_tool_support(
+                "mistral",
+                "custom-model",
+                &json!({"capabilities": {"function_calling": false}})
+            ),
+            Some(false)
+        );
+        assert_eq!(
+            provider_tool_support("mistral", "custom-model", &json!({})),
+            None
+        );
     }
 
     #[test]
@@ -620,6 +750,45 @@ mod tests {
         );
         assert_eq!(mistral[0]["supportsReasoning"], true);
         assert_eq!(mistral[0]["reasoningLevels"], json!(["none", "high"]));
+        assert_eq!(mistral[0]["supportsTools"], true);
+
+        let groq = parse_models(
+            "groq",
+            &json!({
+                "data": [
+                    {"id": "openai/gpt-oss-120b", "context_window": 131072},
+                    {"id": "whisper-large-v3", "context_window": 448}
+                ]
+            }),
+            None,
+        )
+        .expect("parse Groq models");
+        assert_eq!(groq[0]["supportsTools"], true);
+        assert_eq!(groq[1]["supportsTools"], false);
+
+        let openrouter = parse_models(
+            "openrouter",
+            &json!({"data": [{
+                "id": "free-model",
+                "pricing": {"prompt": "0", "completion": "0"},
+                "supported_parameters": ["tools"],
+                "architecture": {"modality": "text->text"}
+            }]}),
+            None,
+        )
+        .expect("parse OpenRouter tool models");
+        assert_eq!(openrouter[0]["supportsTools"], true);
+
+        let cerebras = parse_models(
+            "cerebras",
+            &json!({"data": [{"id": "tool-model"}]}),
+            Some(&json!({"data": [{
+                "id": "tool-model",
+                "capabilities": {"function_calling": true, "tools": true}
+            }]})),
+        )
+        .expect("parse Cerebras tool models");
+        assert_eq!(cerebras[0]["supportsTools"], true);
     }
 
     #[test]
@@ -673,6 +842,58 @@ mod tests {
         assert_eq!(
             model_context_window(&different_provider, "model"),
             Some(65536)
+        );
+    }
+
+    #[test]
+    fn tool_capability_catalog_lookup_is_scoped_to_provider_and_api_key_hash() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open storage");
+        storage
+            .connect()
+            .expect("connect storage")
+            .execute_batch(
+                "CREATE TABLE compatible_provider_model_catalog (
+                    provider_id TEXT NOT NULL,
+                    api_key_hash TEXT NOT NULL,
+                    fetched_at_unix_ms INTEGER NOT NULL,
+                    models_json TEXT NOT NULL,
+                    PRIMARY KEY (provider_id, api_key_hash)
+                );",
+            )
+            .expect("create provider catalog table");
+        for (provider, key, supports_tools) in [
+            ("mistral", "account-one", true),
+            ("mistral", "account-two", false),
+            ("groq", "account-one", true),
+        ] {
+            let models = json!([{"id": "model", "supportsTools": supports_tools}]).to_string();
+            storage
+                .connect()
+                .expect("connect storage")
+                .execute(
+                    "INSERT INTO compatible_provider_model_catalog
+                        (provider_id, api_key_hash, fetched_at_unix_ms, models_json)
+                     VALUES (?1, ?2, 1, ?3)",
+                    rusqlite::params![provider, api_key_hash(key), models],
+                )
+                .expect("insert model catalog");
+        }
+
+        assert_eq!(
+            supports_tool_calls(&storage, "mistral", "account-one", "model")
+                .expect("read first account capability"),
+            Some(true)
+        );
+        assert_eq!(
+            supports_tool_calls(&storage, "mistral", "account-two", "model")
+                .expect("read second account capability"),
+            Some(false)
+        );
+        assert_eq!(
+            supports_tool_calls(&storage, "groq", "account-one", "model")
+                .expect("read other provider capability"),
+            Some(true)
         );
     }
 }

@@ -62,6 +62,7 @@ class ConversationPane extends StatelessWidget {
     this.conversationId,
     this.contextProviderId,
     this.contextModelId,
+    this.contextSupportsTools,
     this.contextWindow,
     this.contextConnectionId,
     this.contextWorkspaceId,
@@ -137,6 +138,7 @@ class ConversationPane extends StatelessWidget {
   final String? conversationId;
   final String? contextProviderId;
   final String? contextModelId;
+  final bool? contextSupportsTools;
   final int? contextWindow;
   final String? contextConnectionId;
   final String? contextWorkspaceId;
@@ -321,6 +323,7 @@ class ConversationPane extends StatelessWidget {
                     conversationId: conversationId,
                     contextProviderId: contextProviderId,
                     contextModelId: contextModelId,
+                    contextSupportsTools: contextSupportsTools,
                     contextWindow: contextWindow,
                     contextConnectionId: contextConnectionId,
                     contextWorkspaceId: contextWorkspaceId,

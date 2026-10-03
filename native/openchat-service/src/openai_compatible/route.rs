@@ -20,6 +20,7 @@ pub(super) struct ChatRoute {
     pub(super) context_window: Option<i64>,
     pub(super) input_token_limit: Option<i64>,
     pub(super) supports_images: bool,
+    pub(super) supports_tool_calls: Option<bool>,
     pub(super) connection_id: Option<String>,
 }
 
@@ -64,6 +65,7 @@ pub(super) async fn resolve_chat_route(
         context_window,
         input_token_limit,
         supports_images,
+        supports_tool_calls,
         connection_id,
     ) = match provider_id.as_deref() {
         Some("opencode") => {
@@ -76,6 +78,7 @@ pub(super) async fn resolve_chat_route(
             }
             let is_free = is_supported_free_chat_model(&model_id);
             let uses_responses_api = super::models::is_responses_api_model(storage, &model_id)?;
+            let supports_tool_calls = super::models::supports_tool_calls(storage, &model_id)?;
             let (context_window, input_token_limit) =
                 super::models::context_limits(storage, &model_id)?;
             let supports_images = super::models::supports_image_input(storage, &model_id)?;
@@ -91,6 +94,7 @@ pub(super) async fn resolve_chat_route(
                 context_window,
                 input_token_limit,
                 supports_images,
+                supports_tool_calls,
                 None,
             )
         }
@@ -102,7 +106,7 @@ pub(super) async fn resolve_chat_route(
                 return Err(route_error());
             }
             let chat_url = crate::local_engines::chat_url(storage, &model_id, cancellation).await?;
-            (chat_url, true, false, None, None, false, None)
+            (chat_url, true, false, None, None, false, None, None)
         }
         Some("vllm" | "exllama") => return Err(local_engine_unavailable_error()),
         Some("chatgpt_api") => {
@@ -119,6 +123,7 @@ pub(super) async fn resolve_chat_route(
                 None,
                 None,
                 crate::openai_api::supports_image_input(&model_id),
+                None,
                 stored_api_key_connection_id.map(str::to_owned),
             )
         }
@@ -136,6 +141,8 @@ pub(super) async fn resolve_chat_route(
                 super::provider_models::context_limits(storage, id, api_key, &model_id)?;
             let supports_images =
                 super::provider_models::supports_image_input(storage, id, api_key, &model_id)?;
+            let supports_tool_calls =
+                super::provider_models::supports_tool_calls(storage, id, api_key, &model_id)?;
             (
                 format!("{}/chat/completions", provider.base_url),
                 false,
@@ -143,6 +150,7 @@ pub(super) async fn resolve_chat_route(
                 context_window,
                 input_token_limit,
                 supports_images,
+                supports_tool_calls,
                 Some(id.to_owned()),
             )
         }
@@ -163,6 +171,7 @@ pub(super) async fn resolve_chat_route(
         context_window,
         input_token_limit,
         supports_images,
+        supports_tool_calls,
         connection_id,
     })
 }
@@ -190,6 +199,7 @@ mod tests {
             context_window,
             input_token_limit,
             supports_images: false,
+            supports_tool_calls: None,
             connection_id: None,
         }
     }

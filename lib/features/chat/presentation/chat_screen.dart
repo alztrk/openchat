@@ -3525,6 +3525,7 @@ class _ChatScreenState extends State<ChatScreen> {
               conversationId: selectedConversation?.id,
               contextProviderId: routeProviderId,
               contextModelId: selectedModelId,
+              contextSupportsTools: selectedModel?.supportsTools,
               contextWindow: selectedModel?.contextWindow,
               contextConnectionId: routeConnectionId ?? routeApiKeyConnectionId,
               contextWorkspaceId: routeWorkspaceId,

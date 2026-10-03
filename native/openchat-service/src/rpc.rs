@@ -231,6 +231,11 @@ pub(crate) async fn dispatch(
                 return Err(invalid_context_usage_params());
             }
             let model_id = optional_string(&request.params, "modelId")?;
+            let reported_supports_tool_calls = match request.params.get("supportsTools") {
+                None | Some(Value::Null) => None,
+                Some(Value::Bool(supported)) => Some(*supported),
+                _ => return Err(invalid_context_usage_params()),
+            };
             let permission_mode = ToolPermissionMode::from_rpc(Some(required_string(
                 &request.params,
                 "toolPermissionMode",
@@ -273,6 +278,7 @@ pub(crate) async fn dispatch(
                 storage,
                 provider_id,
                 model_id,
+                reported_supports_tool_calls,
             )?
                 .into_iter()
                 .map(|(name, definition)| {

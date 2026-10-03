@@ -21,6 +21,7 @@ class ConversationMemoryRepository {
   Future<ContextUsageConfiguration> estimateContextUsage({
     required String providerId,
     String? modelId,
+    bool? supportsTools,
     required String toolPermissionMode,
     required String customInstructions,
     String? conversationId,
@@ -30,6 +31,7 @@ class ConversationMemoryRepository {
       'toolPermissionMode': toolPermissionMode,
     };
     if (modelId != null) params['modelId'] = modelId;
+    if (supportsTools != null) params['supportsTools'] = supportsTools;
     if (customInstructions.trim().isNotEmpty) {
       params['customInstructions'] = customInstructions;
     }

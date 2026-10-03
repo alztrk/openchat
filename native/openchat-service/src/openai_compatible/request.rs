@@ -18,6 +18,7 @@ pub(super) struct ProviderRequestOptions<'a> {
     pub(super) permission_mode: ToolPermissionMode,
     pub(super) has_project: bool,
     pub(super) reasoning_effort: Option<&'a str>,
+    pub(super) supports_tool_calls: Option<bool>,
 }
 
 pub(super) fn build_provider_request(
@@ -33,6 +34,7 @@ pub(super) fn build_provider_request(
         permission_mode,
         has_project,
         reasoning_effort,
+        supports_tool_calls,
     } = options;
     history::validate_attachments(stored_messages)?;
     let reasoning_effort = match (provider_id, reasoning_effort) {
@@ -86,16 +88,7 @@ pub(super) fn build_provider_request(
         ));
     }
 
-    let tools = if provider_id == "opencode" {
-        tools::definitions_for_model(
-            provider_id,
-            super::models::supports_tool_calls(storage, &model_id)?,
-        )
-    } else if provider_id == "chatgpt_api" {
-        tools::definitions_for_chatgpt_api()
-    } else {
-        tools::definitions_for_provider(provider_id)
-    };
+    let tools = tools::definitions_for_request(provider_id, supports_tool_calls);
 
     Ok(ProviderChatRequest {
         model: model_id,

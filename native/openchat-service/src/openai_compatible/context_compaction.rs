@@ -491,6 +491,7 @@ mod tests {
             context_window: Some(2048),
             input_token_limit: None,
             supports_images: false,
+            supports_tool_calls: None,
             connection_id: Some("gemini".to_owned()),
         };
         let (_cancel_sender, mut cancellation) = watch::channel(false);
@@ -600,6 +601,7 @@ mod tests {
             context_window: Some(context_window),
             input_token_limit: None,
             supports_images: false,
+            supports_tool_calls: None,
             connection_id: None,
         };
         let (_cancel_sender, mut cancellation) = watch::channel(false);
@@ -650,6 +652,7 @@ mod tests {
             context_window: Some(2048),
             input_token_limit: None,
             supports_images: false,
+            supports_tool_calls: None,
             connection_id: None,
         };
         let mut latest = message("latest", &format!("{} LATEST-END", "ö界🙂".repeat(100)));
@@ -686,6 +689,7 @@ mod tests {
             context_window: Some(2048),
             input_token_limit: None,
             supports_images: false,
+            supports_tool_calls: None,
             connection_id: None,
         };
         let messages = [message("history", "historical detail")];
@@ -729,6 +733,7 @@ mod tests {
             context_window: Some(2048),
             input_token_limit: None,
             supports_images: false,
+            supports_tool_calls: None,
             connection_id: None,
         };
         let (_cancel_sender, mut cancellation) = watch::channel(false);
