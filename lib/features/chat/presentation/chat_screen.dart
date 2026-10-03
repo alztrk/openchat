@@ -3160,6 +3160,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           child: ModelsPage(
                             serviceClient: widget.serviceClient,
                             downloadController: _modelDownloadController,
+                            settingsPreferences: _settingsPreferences,
                           ),
                         )
                       else if (_localModelsPageOpen)

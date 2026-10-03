@@ -206,18 +206,83 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String localModelStorageChoiceTarget(String folder) {
-    return 'OpenChat model folder: %LOCALAPPDATA%\\OpenChat\\models\\$folder';
+    return 'Selected model folder: $folder';
   }
 
   @override
-  String localModelMoveToFolder(String folder) {
-    return 'Move model to the $folder folder';
+  String get localModelDirectoryTitle => 'Model folder';
+
+  @override
+  String get localModelDirectoryDescription =>
+      'Choose where models for this engine are stored. Changing this folder does not move models already registered.';
+
+  @override
+  String get localModelChooseDirectory => 'Choose folder';
+
+  @override
+  String get localModelUseDefaultDirectory => 'Use default';
+
+  @override
+  String get localModelScanDirectory => 'Scan folder';
+
+  @override
+  String get localModelScanningDirectory => 'Scanning folder...';
+
+  @override
+  String get localModelDiscoveryTitle => 'Unregistered models found';
+
+  @override
+  String localModelDiscoveryPrompt(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'OpenChat found $count supported models in this folder that are not registered. Register them?',
+      one: 'OpenChat found 1 supported model in this folder that is not registered. Register it?',
+    );
+    return '$_temp0';
   }
 
   @override
-  String localModelCopyToFolder(String folder) {
-    return 'Copy model to the $folder folder';
+  String get localModelDiscoveryTruncated =>
+      'The scan reached its safe limit. Choose a smaller folder to find more models.';
+
+  @override
+  String get localModelDiscoveryEmpty =>
+      'No new supported models were found in this folder.';
+
+  @override
+  String get localModelDiscoveryRegisterAll => 'Register found models';
+
+  @override
+  String localModelDiscoveryRegistered(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Registered $count models.',
+      one: 'Registered 1 model.',
+    );
+    return '$_temp0';
   }
+
+  @override
+  String localModelDiscoveryPartial(int registered, int total) {
+    return 'Registered $registered of $total models. Some models could not be registered.';
+  }
+
+  @override
+  String get localModelDirectoryUnavailable =>
+      'This model folder is unavailable. Choose a folder that exists and that OpenChat can access.';
+
+  @override
+  String get localModelDiscoveryFailed =>
+      'The model folder could not be scanned. Check access permissions and try again.';
+
+  @override
+  String get localModelMoveToFolder => 'Move model to this folder';
+
+  @override
+  String get localModelCopyToFolder => 'Copy model to this folder';
 
   @override
   String get localModelKeepInPlace => 'Keep the model where it is';
@@ -2243,9 +2308,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get modelPrivateBadge => 'Private';
 
   @override
-  String modelSavedToFolder(String folder) {
-    return 'Saved in OpenChat/models/$folder';
-  }
+  String get modelSavedToFolder =>
+      'Downloads use the folder selected for this engine in Settings.';
 
   @override
   String get userQuestionTitle => 'The assistant needs your input';

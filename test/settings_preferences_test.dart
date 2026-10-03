@@ -136,6 +136,31 @@ void main() {
     expect(await reopenedReader.readHiddenModelKeys(), isEmpty);
   });
 
+  test(
+    'local engine model directories persist and reset to defaults',
+    () async {
+      final writer = SettingsPreferences(SharedPreferencesAsync());
+      final reader = SettingsPreferences(SharedPreferencesAsync());
+
+      expect(await reader.readLocalModelDirectory('llama_cpp'), isNull);
+      await writer.writeLocalModelDirectory(
+        'llama_cpp',
+        r'E:\LocalModels\Llama',
+      );
+      expect(
+        await reader.readLocalModelDirectory('llama_cpp'),
+        r'E:\LocalModels\Llama',
+      );
+
+      await writer.writeLocalModelDirectory('llama_cpp', null);
+      expect(await reader.readLocalModelDirectory('llama_cpp'), isNull);
+      await expectLater(
+        reader.readLocalModelDirectory('unknown'),
+        throwsArgumentError,
+      );
+    },
+  );
+
   test('shared instructions and tool permission mode persist', () async {
     final writer = SettingsPreferences(SharedPreferencesAsync());
     expect(await writer.readSharedInstructions(), isEmpty);

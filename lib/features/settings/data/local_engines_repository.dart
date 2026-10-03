@@ -27,9 +27,24 @@ class LocalEnginesRepository {
     return LocalModelCatalog.fromJson(response);
   }
 
+  Future<LocalModelDiscovery> discoverModels({
+    required String engineId,
+    required String modelDirectory,
+  }) async {
+    final response = await _serviceClient.call(
+      'local.models.discover',
+      params: <String, Object?>{
+        'engineId': engineId,
+        'modelDirectory': modelDirectory,
+      },
+    );
+    return LocalModelDiscovery.fromJson(response);
+  }
+
   Future<LocalRegisteredModel> registerModel({
     required String engineId,
     required String modelPath,
+    required String modelDirectory,
     required LocalModelStorageAction storageAction,
   }) async {
     final operation = await _serviceClient.startOperation(
@@ -37,6 +52,7 @@ class LocalEnginesRepository {
       params: <String, Object?>{
         'engineId': engineId,
         'modelPath': modelPath,
+        'modelDirectory': modelDirectory,
         'storageAction': storageAction.wireValue,
       },
     );

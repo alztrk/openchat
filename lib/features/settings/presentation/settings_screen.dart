@@ -217,6 +217,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             horizontalInset: horizontalInset,
                             child: LocalEnginesSettingsSection(
                               serviceClient: widget.serviceClient,
+                              settingsPreferences: widget.settingsPreferences,
                             ),
                           ),
                           _buildSectionPage(

@@ -205,18 +205,83 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String localModelStorageChoiceTarget(String folder) {
-    return 'OpenChat model klasörü: %LOCALAPPDATA%\\OpenChat\\models\\$folder';
+    return 'Seçilen model klasörü: $folder';
   }
 
   @override
-  String localModelMoveToFolder(String folder) {
-    return 'Modeli $folder klasörüne taşı';
+  String get localModelDirectoryTitle => 'Model klasörü';
+
+  @override
+  String get localModelDirectoryDescription =>
+      'Bu motorun modellerinin kaydedileceği klasörü seçin. Bu ayar mevcut model kayıtlarını taşımaz.';
+
+  @override
+  String get localModelChooseDirectory => 'Klasör seç';
+
+  @override
+  String get localModelUseDefaultDirectory => 'Varsayılanı kullan';
+
+  @override
+  String get localModelScanDirectory => 'Klasörü tara';
+
+  @override
+  String get localModelScanningDirectory => 'Klasör taranıyor...';
+
+  @override
+  String get localModelDiscoveryTitle => 'Kayıtsız modeller bulundu';
+
+  @override
+  String localModelDiscoveryPrompt(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'OpenChat bu klasörde kayıtlı olmayan $count desteklenen model buldu. Kaydedilsin mi?',
+      one: 'OpenChat bu klasörde kayıtlı olmayan 1 desteklenen model buldu. Kaydedilsin mi?',
+    );
+    return '$_temp0';
   }
 
   @override
-  String localModelCopyToFolder(String folder) {
-    return 'Modeli $folder klasörüne kopyala';
+  String get localModelDiscoveryTruncated =>
+      'Tarama güvenli sınırına ulaştı. Daha fazla model bulmak için daha küçük bir klasör seçin.';
+
+  @override
+  String get localModelDiscoveryEmpty =>
+      'Bu klasörde yeni ve desteklenen bir model bulunamadı.';
+
+  @override
+  String get localModelDiscoveryRegisterAll => 'Bulunan modelleri kaydet';
+
+  @override
+  String localModelDiscoveryRegistered(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count model kaydedildi.',
+      one: '1 model kaydedildi.',
+    );
+    return '$_temp0';
   }
+
+  @override
+  String localModelDiscoveryPartial(int registered, int total) {
+    return '$total modelden $registered tanesi kaydedildi. Bazı modeller kaydedilemedi.';
+  }
+
+  @override
+  String get localModelDirectoryUnavailable =>
+      'Bu model klasörüne erişilemiyor. Var olan ve OpenChat\'in erişebildiği bir klasör seçin.';
+
+  @override
+  String get localModelDiscoveryFailed =>
+      'Model klasörü taranamadı. Erişim izinlerini kontrol edip yeniden deneyin.';
+
+  @override
+  String get localModelMoveToFolder => 'Modeli bu klasöre taşı';
+
+  @override
+  String get localModelCopyToFolder => 'Modeli bu klasöre kopyala';
 
   @override
   String get localModelKeepInPlace => 'Model olduğu yerde kalsın';
@@ -2226,9 +2291,8 @@ class AppLocalizationsTr extends AppLocalizations {
   String get modelPrivateBadge => 'Özel';
 
   @override
-  String modelSavedToFolder(String folder) {
-    return 'OpenChat/models/$folder konumuna kaydedildi';
-  }
+  String get modelSavedToFolder =>
+      'İndirmeler, Ayarlar\'da bu motor için seçilen klasöre kaydedilir.';
 
   @override
   String get userQuestionTitle => 'Asistan yanıtını bekliyor';

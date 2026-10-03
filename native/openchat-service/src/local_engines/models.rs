@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fs, io,
     path::{Path, PathBuf},
     time::{SystemTime, UNIX_EPOCH},
@@ -9,6 +10,10 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::{protocol::ServiceError, storage::AppStorage};
+
+const MAX_MODEL_SCAN_DEPTH: usize = 5;
+const MAX_MODEL_SCAN_ENTRIES: usize = 20_000;
+const MAX_DISCOVERED_MODELS: usize = 100;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RegisteredModel {
@@ -44,6 +49,140 @@ pub(crate) fn list(storage: &AppStorage) -> Result<Vec<RegisteredModel>, Service
         .map_err(|_| database_error())
 }
 
+pub(crate) fn discover(
+    engine_id: &str,
+    model_directory: &str,
+    registered_paths: &[PathBuf],
+) -> Result<Value, ServiceError> {
+    if model_folder_name(engine_id).is_none() {
+        return Err(invalid_model_error());
+    }
+    let directory = Path::new(model_directory);
+    if !directory.is_absolute() {
+        return Err(model_discovery_path_error());
+    }
+    let directory = directory
+        .canonicalize()
+        .map_err(|_| model_discovery_path_error())?;
+    if !directory.is_dir() {
+        return Err(model_discovery_path_error());
+    }
+
+    let registered_paths = registered_paths
+        .iter()
+        .filter_map(|path| path.canonicalize().ok())
+        .collect::<HashSet<_>>();
+    let (candidates, truncated) = scan_model_directory(engine_id, &directory, &registered_paths)?;
+    let models = candidates
+        .into_iter()
+        .map(|model| {
+            let path = model.path.to_str().ok_or_else(model_discovery_path_error)?;
+            Ok(json!({
+                "engineId": engine_id,
+                "displayName": model.display_name,
+                "path": path,
+                "pathKind": model.path_kind,
+            }))
+        })
+        .collect::<Result<Vec<_>, ServiceError>>()?;
+    Ok(json!({"models": models, "truncated": truncated}))
+}
+
+struct DiscoveredModel {
+    display_name: String,
+    path: PathBuf,
+    path_kind: &'static str,
+}
+
+fn scan_model_directory(
+    engine_id: &str,
+    model_directory: &Path,
+    registered_paths: &HashSet<PathBuf>,
+) -> Result<(Vec<DiscoveredModel>, bool), ServiceError> {
+    let mut directories = vec![(model_directory.to_path_buf(), 0usize)];
+    let mut candidates = Vec::new();
+    let mut entries_scanned = 0usize;
+    let mut truncated = false;
+
+    while let Some((directory, depth)) = directories.pop() {
+        for entry in fs::read_dir(&directory).map_err(|_| model_discovery_error())? {
+            if entries_scanned >= MAX_MODEL_SCAN_ENTRIES {
+                truncated = true;
+                break;
+            }
+            entries_scanned += 1;
+            let entry = entry.map_err(|_| model_discovery_error())?;
+            let entry_type = entry.file_type().map_err(|_| model_discovery_error())?;
+            if entry_type.is_symlink() {
+                continue;
+            }
+
+            let path = entry.path();
+            if entry_type.is_file() {
+                if engine_id == "llama_cpp"
+                    && path
+                        .extension()
+                        .and_then(|extension| extension.to_str())
+                        .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
+                    && !registered_paths.contains(&path)
+                {
+                    let display_name = path
+                        .file_stem()
+                        .and_then(|name| name.to_str())
+                        .filter(|name| !name.trim().is_empty())
+                        .ok_or_else(model_discovery_error)?
+                        .to_owned();
+                    candidates.push(DiscoveredModel {
+                        display_name,
+                        path,
+                        path_kind: "file",
+                    });
+                }
+                continue;
+            }
+            if !entry_type.is_dir() {
+                continue;
+            }
+
+            if engine_id != "llama_cpp"
+                && !registered_paths.contains(&path)
+                && has_transformers_model_files(&path)?
+            {
+                let display_name = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .filter(|name| !name.trim().is_empty())
+                    .ok_or_else(model_discovery_error)?
+                    .to_owned();
+                candidates.push(DiscoveredModel {
+                    display_name,
+                    path,
+                    path_kind: "directory",
+                });
+                continue;
+            }
+            if depth < MAX_MODEL_SCAN_DEPTH {
+                directories.push((path, depth + 1));
+            }
+        }
+        if truncated {
+            break;
+        }
+    }
+
+    candidates.sort_by(|left, right| {
+        left.display_name
+            .to_lowercase()
+            .cmp(&right.display_name.to_lowercase())
+            .then_with(|| left.path.cmp(&right.path))
+    });
+    if candidates.len() > MAX_DISCOVERED_MODELS {
+        candidates.truncate(MAX_DISCOVERED_MODELS);
+        truncated = true;
+    }
+    Ok((candidates, truncated))
+}
+
 pub(crate) fn find(
     storage: &AppStorage,
     model_id: &str,
@@ -77,10 +216,45 @@ pub(crate) fn ensure_storage_directories(root: &Path) -> Result<(), ServiceError
     Ok(())
 }
 
-pub(crate) fn register_with_storage_action(
+pub(crate) fn default_model_directory(
     storage_root: &Path,
     engine_id: &str,
+) -> Result<PathBuf, ServiceError> {
+    let engine_folder = model_folder_name(engine_id).ok_or_else(invalid_model_error)?;
+    Ok(storage_root.join("models").join(engine_folder))
+}
+
+pub(crate) fn resolve_model_directory(
+    storage_root: &Path,
+    engine_id: &str,
+    model_directory: Option<&str>,
+) -> Result<PathBuf, ServiceError> {
+    if model_folder_name(engine_id).is_none() {
+        return Err(invalid_model_error());
+    }
+    let Some(model_directory) = model_directory else {
+        ensure_storage_directories(storage_root)?;
+        return default_model_directory(storage_root, engine_id);
+    };
+
+    let selected_directory = Path::new(model_directory);
+    if !selected_directory.is_absolute() {
+        return Err(model_discovery_path_error());
+    }
+    let selected_directory = selected_directory
+        .canonicalize()
+        .map_err(|_| model_discovery_path_error())?;
+    if !selected_directory.is_dir() {
+        return Err(model_discovery_path_error());
+    }
+    Ok(selected_directory)
+}
+
+pub(crate) fn register_with_storage_action(
+    database_root: &Path,
+    engine_id: &str,
     model_path: &str,
+    model_directory: Option<&str>,
     storage_action: &str,
 ) -> Result<RegisteredModel, ServiceError> {
     let action = match storage_action {
@@ -92,18 +266,13 @@ pub(crate) fn register_with_storage_action(
 
     let (source_path, path_kind) = validate_model_path(engine_id, model_path)?;
     if action == StorageAction::Keep {
-        return register_validated(storage_root, engine_id, source_path, path_kind);
+        return register_validated(database_root, engine_id, source_path, path_kind);
     }
 
-    let engine_folder = model_folder_name(engine_id).ok_or_else(invalid_model_error)?;
-    let target_directory = storage_root.join("models").join(engine_folder);
-    ensure_storage_directories(storage_root)?;
-    let target_directory = target_directory
-        .canonicalize()
-        .map_err(|_| model_storage_path_error())?;
+    let target_directory = resolve_model_directory(database_root, engine_id, model_directory)?;
 
     if action == StorageAction::Move && source_path.parent() == Some(&target_directory) {
-        return register_validated(storage_root, engine_id, source_path, path_kind);
+        return register_validated(database_root, engine_id, source_path, path_kind);
     }
 
     let destination = unique_destination(&target_directory, &source_path, path_kind)?;
@@ -117,7 +286,7 @@ pub(crate) fn register_with_storage_action(
             return Err(model_storage_path_error());
         }
     };
-    match register_validated(storage_root, engine_id, destination, path_kind) {
+    match register_validated(database_root, engine_id, destination, path_kind) {
         Ok(model) => Ok(model),
         Err(error) => {
             if rollback_transfer(&transfer, path_kind).is_err() {
@@ -538,7 +707,7 @@ fn has_transformers_model_files(path: &Path) -> Result<bool, ServiceError> {
     for entry in entries {
         let entry = entry.map_err(|_| invalid_model_path_error())?;
         if !entry
-            .metadata()
+            .file_type()
             .map_err(|_| invalid_model_path_error())?
             .is_file()
         {
@@ -606,6 +775,22 @@ fn model_storage_path_error() -> ServiceError {
     )
 }
 
+fn model_discovery_path_error() -> ServiceError {
+    ServiceError::new(
+        "local_model_directory_unavailable",
+        "The selected model directory could not be accessed.",
+        false,
+    )
+}
+
+fn model_discovery_error() -> ServiceError {
+    ServiceError::new(
+        "local_model_discovery_failed",
+        "The selected model directory could not be scanned.",
+        false,
+    )
+}
+
 fn transfer_error() -> ServiceError {
     ServiceError::new(
         "local_model_transfer_failed",
@@ -620,4 +805,176 @@ fn transfer_recovery_error() -> ServiceError {
         "The model transfer finished, but the model could not be registered or restored. It remains in the OpenChat model folder.",
         false,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashSet, fs, path::PathBuf};
+
+    use uuid::Uuid;
+
+    use crate::storage::AppStorage;
+
+    use super::{
+        MAX_DISCOVERED_MODELS, discover, register_with_storage_action, scan_model_directory,
+    };
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path =
+                std::env::temp_dir().join(format!("openchat-local-model-test-{}", Uuid::new_v4()));
+            fs::create_dir_all(&path).expect("test directory should be created");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn discovers_nested_gguf_files_without_matching_other_extensions() {
+        let temporary = TestDirectory::new();
+        let model_directory = temporary.0.join("models");
+        let nested = model_directory.join("Qwen").join("quantized");
+        fs::create_dir_all(&nested).expect("model directory should be created");
+        let model = nested.join("qwen-7b.gguf");
+        fs::write(&model, b"model").expect("model fixture should be written");
+        fs::write(nested.join("readme.md"), b"not a model")
+            .expect("non-model fixture should be written");
+
+        let (found, truncated) =
+            scan_model_directory("llama_cpp", &model_directory, &HashSet::new())
+                .expect("scan should succeed");
+
+        assert!(!truncated);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].path, model);
+        assert_eq!(found[0].path_kind, "file");
+    }
+
+    #[test]
+    fn discovers_transformers_models_for_the_selected_engine() {
+        let temporary = TestDirectory::new();
+        let model_directory = temporary.0.join("models");
+        let model = model_directory.join("Qwen-7B");
+        fs::create_dir_all(&model).expect("model directory should be created");
+        fs::write(model.join("config.json"), b"{}")
+            .expect("model config fixture should be written");
+        fs::write(model.join("model.safetensors"), b"weights")
+            .expect("model weights fixture should be written");
+
+        for engine_id in ["vllm", "exllama"] {
+            let (found, truncated) =
+                scan_model_directory(engine_id, &model_directory, &HashSet::new())
+                    .expect("scan should succeed");
+
+            assert!(!truncated);
+            assert_eq!(found.len(), 1);
+            assert_eq!(found[0].path, model);
+            assert_eq!(found[0].path_kind, "directory");
+        }
+    }
+
+    #[test]
+    fn discovery_stops_after_the_candidate_limit() {
+        let temporary = TestDirectory::new();
+        for index in 0..=MAX_DISCOVERED_MODELS {
+            fs::write(temporary.0.join(format!("model-{index}.gguf")), b"model")
+                .expect("model fixture should be written");
+        }
+
+        let (found, truncated) = scan_model_directory("llama_cpp", &temporary.0, &HashSet::new())
+            .expect("scan should succeed");
+
+        assert_eq!(found.len(), MAX_DISCOVERED_MODELS);
+        assert!(truncated);
+    }
+
+    #[test]
+    fn registered_models_do_not_consume_the_discovery_result_limit() {
+        let temporary = TestDirectory::new();
+        let mut registered_paths = HashSet::new();
+        for index in 0..=MAX_DISCOVERED_MODELS {
+            let model_path = temporary.0.join(format!("model-{index}.gguf"));
+            fs::write(&model_path, b"model").expect("model fixture should be written");
+            if index == 0 {
+                registered_paths.insert(model_path);
+            }
+        }
+
+        let (found, truncated) = scan_model_directory("llama_cpp", &temporary.0, &registered_paths)
+            .expect("scan should succeed");
+
+        assert_eq!(found.len(), MAX_DISCOVERED_MODELS);
+        assert!(!truncated);
+    }
+
+    #[test]
+    fn discovery_omits_models_that_are_already_registered() {
+        let temporary = TestDirectory::new();
+        let database_root = temporary.0.join("app");
+        let storage = AppStorage::open_at(database_root).expect("test storage should open");
+        let model_directory = temporary.0.join("models");
+        fs::create_dir_all(&model_directory).expect("model directory should be created");
+        let model_path = model_directory.join("qwen-7b.gguf");
+        fs::write(&model_path, b"model").expect("model fixture should be written");
+        let model_path_string = model_path.to_str().expect("fixture path should be UTF-8");
+        let model_directory_string = model_directory
+            .to_str()
+            .expect("fixture path should be UTF-8");
+        let registered = register_with_storage_action(
+            storage.root(),
+            "llama_cpp",
+            model_path_string,
+            None,
+            "keep",
+        )
+        .expect("model should be registered");
+
+        let discovery = discover("llama_cpp", model_directory_string, &[registered.path])
+            .expect("discovery should succeed");
+
+        assert_eq!(discovery["models"].as_array().map(Vec::len), Some(0));
+    }
+
+    #[test]
+    fn copies_registered_models_into_the_selected_engine_directory() {
+        let temporary = TestDirectory::new();
+        let database_root = temporary.0.join("app");
+        let storage = AppStorage::open_at(database_root).expect("test storage should open");
+        let source_directory = temporary.0.join("source");
+        let model_directory = temporary.0.join("chosen-models");
+        fs::create_dir_all(&source_directory).expect("source directory should be created");
+        fs::create_dir_all(&model_directory).expect("model directory should be created");
+        let source_path = source_directory.join("qwen-7b.gguf");
+        fs::write(&source_path, b"model").expect("model fixture should be written");
+
+        let model = register_with_storage_action(
+            storage.root(),
+            "llama_cpp",
+            source_path.to_str().expect("fixture path should be UTF-8"),
+            Some(
+                model_directory
+                    .to_str()
+                    .expect("fixture path should be UTF-8"),
+            ),
+            "copy",
+        )
+        .expect("model should be copied and registered");
+
+        assert!(
+            model.path.starts_with(
+                model_directory
+                    .canonicalize()
+                    .expect("folder should resolve")
+            )
+        );
+        assert!(model.path.is_file());
+        assert!(source_path.is_file());
+    }
 }

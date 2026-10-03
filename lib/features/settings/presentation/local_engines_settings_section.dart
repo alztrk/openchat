@@ -6,8 +6,11 @@ import 'package:flutter/services.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/local_engine_icon.dart';
+import 'package:openchat/app/openchat_toast.dart';
 import 'package:openchat/features/settings/data/local_engines_models.dart';
 import 'package:openchat/features/settings/data/local_engines_repository.dart';
+import 'package:openchat/features/settings/data/settings_preferences.dart';
+import 'package:openchat/features/settings/presentation/local_model_directory_controls.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/platform/windows/openchat_service_client.dart';
@@ -15,9 +18,14 @@ import 'package:openchat/platform/windows/openchat_service_client.dart';
 enum _LocalEnginesLoadState { loading, loaded, unavailable, failed }
 
 class LocalEnginesSettingsSection extends StatefulWidget {
-  const LocalEnginesSettingsSection({required this.serviceClient, super.key});
+  const LocalEnginesSettingsSection({
+    required this.serviceClient,
+    required this.settingsPreferences,
+    super.key,
+  });
 
   final OpenChatServiceClient? serviceClient;
+  final SettingsPreferences settingsPreferences;
 
   @override
   State<LocalEnginesSettingsSection> createState() =>
@@ -40,6 +48,9 @@ class _LocalEnginesSettingsSectionState
   bool _cancelRequested = false;
   String? _modelActionError;
   String? _registeringEngineId;
+  String? _scanningEngineId;
+  final Map<String, String> _modelDirectories = {};
+  final Set<String> _customModelDirectoryIds = {};
   String? _startingModelId;
   String? _removingModelId;
   LocalEngineRuntimeOperation? _runtimeOperation;
@@ -55,7 +66,8 @@ class _LocalEnginesSettingsSectionState
   @override
   void didUpdateWidget(covariant LocalEnginesSettingsSection oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.serviceClient != widget.serviceClient) {
+    if (oldWidget.serviceClient != widget.serviceClient ||
+        oldWidget.settingsPreferences != widget.settingsPreferences) {
       unawaited(_loadCatalog());
     }
   }
@@ -86,9 +98,27 @@ class _LocalEnginesSettingsSectionState
 
     try {
       final catalog = await LocalEnginesRepository(service).loadCatalog();
+      final modelDirectories = <String, String>{};
+      final customDirectoryIds = <String>{};
+      for (final engine in catalog.engines) {
+        final customDirectory = await widget.settingsPreferences
+            .readLocalModelDirectory(engine.engineId);
+        if (customDirectory == null) {
+          modelDirectories[engine.engineId] = engine.modelDirectory;
+        } else {
+          modelDirectories[engine.engineId] = customDirectory;
+          customDirectoryIds.add(engine.engineId);
+        }
+      }
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _catalog = catalog;
+        _modelDirectories
+          ..clear()
+          ..addAll(modelDirectories);
+        _customModelDirectoryIds
+          ..clear()
+          ..addAll(customDirectoryIds);
         _loadState = _LocalEnginesLoadState.loaded;
       });
     } on OpenChatServiceException {
@@ -98,6 +128,12 @@ class _LocalEnginesSettingsSectionState
         _loadState = _LocalEnginesLoadState.failed;
       });
     } on FormatException {
+      if (!mounted || generation != _loadGeneration) return;
+      setState(() {
+        _catalog = null;
+        _loadState = _LocalEnginesLoadState.failed;
+      });
+    } on PlatformException {
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
         _catalog = null;
@@ -192,9 +228,174 @@ class _LocalEnginesSettingsSectionState
     }
   }
 
+  String _modelDirectoryFor(LocalEngine engine) =>
+      _modelDirectories[engine.engineId] ?? engine.modelDirectory;
+
+  Future<void> _chooseModelDirectory(LocalEngine engine) async {
+    if (_registeringEngineId != null || _scanningEngineId != null) return;
+    String? path;
+    try {
+      path = await FilePicker.getDirectoryPath(
+        dialogTitle: context.openchatL10n.localModelChooseDirectory,
+      );
+    } on PlatformException {
+      if (mounted) setState(() => _modelActionError = 'picker');
+      return;
+    }
+    final selectedPath = path;
+    if (selectedPath == null || selectedPath.trim().isEmpty || !mounted) return;
+
+    try {
+      await widget.settingsPreferences.writeLocalModelDirectory(
+        engine.engineId,
+        selectedPath,
+      );
+    } on PlatformException {
+      if (mounted) setState(() => _modelActionError = 'preferences');
+      return;
+    } on ArgumentError {
+      if (mounted) setState(() => _modelActionError = 'preferences');
+      return;
+    }
+
+    setState(() {
+      _modelActionError = null;
+      _modelDirectories[engine.engineId] = selectedPath;
+      _customModelDirectoryIds.add(engine.engineId);
+    });
+    await _scanModelDirectory(engine, selectedPath);
+  }
+
+  Future<void> _useDefaultModelDirectory(LocalEngine engine) async {
+    if (_registeringEngineId != null || _scanningEngineId != null) return;
+    try {
+      await widget.settingsPreferences.writeLocalModelDirectory(
+        engine.engineId,
+        null,
+      );
+    } on PlatformException {
+      if (mounted) setState(() => _modelActionError = 'preferences');
+      return;
+    }
+
+    setState(() {
+      _modelActionError = null;
+      _modelDirectories[engine.engineId] = engine.modelDirectory;
+      _customModelDirectoryIds.remove(engine.engineId);
+    });
+    await _scanModelDirectory(engine, engine.modelDirectory);
+  }
+
+  Future<void> _scanModelDirectory(
+    LocalEngine engine,
+    String modelDirectory,
+  ) async {
+    final service = widget.serviceClient;
+    if (service == null ||
+        _registeringEngineId != null ||
+        _scanningEngineId != null) {
+      return;
+    }
+
+    setState(() {
+      _modelActionError = null;
+      _scanningEngineId = engine.engineId;
+    });
+    late final LocalModelDiscovery discovery;
+    try {
+      discovery = await LocalEnginesRepository(service).discoverModels(
+        engineId: engine.engineId,
+        modelDirectory: modelDirectory,
+      );
+    } on OpenChatServiceException catch (error) {
+      if (mounted) setState(() => _modelActionError = error.code);
+      return;
+    } on FormatException {
+      if (mounted) setState(() => _modelActionError = 'invalid_response');
+      return;
+    } on PlatformException {
+      if (mounted) setState(() => _modelActionError = 'discovery_failed');
+      return;
+    } finally {
+      if (mounted) setState(() => _scanningEngineId = null);
+    }
+
+    if (!mounted) return;
+    if (discovery.models.isEmpty) {
+      showOpenChatToast(
+        context,
+        discovery.truncated
+            ? context.openchatL10n.localModelDiscoveryTruncated
+            : context.openchatL10n.localModelDiscoveryEmpty,
+        type: discovery.truncated
+            ? OpenChatToastType.warning
+            : OpenChatToastType.info,
+      );
+      return;
+    }
+
+    final shouldRegister = await LocalModelDiscoveryDialog.show(
+      context,
+      discovery,
+    );
+    if (shouldRegister != true || !mounted) return;
+    setState(() => _registeringEngineId = engine.engineId);
+
+    var registeredCount = 0;
+    String? failureCode;
+    try {
+      for (final model in discovery.models) {
+        try {
+          await LocalEnginesRepository(service).registerModel(
+            engineId: model.engineId,
+            modelPath: model.path,
+            modelDirectory: modelDirectory,
+            storageAction: LocalModelStorageAction.keep,
+          );
+          registeredCount++;
+        } on OpenChatServiceException catch (error) {
+          failureCode = error.code;
+          break;
+        } on FormatException {
+          failureCode = 'invalid_response';
+          break;
+        } on PlatformException {
+          failureCode = 'path';
+          break;
+        }
+      }
+    } finally {
+      if (mounted) setState(() => _registeringEngineId = null);
+      await _loadCatalog();
+    }
+
+    if (!mounted) return;
+    if (failureCode == null) {
+      showOpenChatToast(
+        context,
+        context.openchatL10n.localModelDiscoveryRegistered(registeredCount),
+        type: OpenChatToastType.success,
+      );
+    } else {
+      setState(() => _modelActionError = failureCode);
+      showOpenChatToast(
+        context,
+        context.openchatL10n.localModelDiscoveryPartial(
+          registeredCount,
+          discovery.models.length,
+        ),
+        type: OpenChatToastType.warning,
+      );
+    }
+  }
+
   Future<void> _registerModel(LocalEngine engine) async {
     final service = widget.serviceClient;
-    if (service == null || _registeringEngineId != null) return;
+    if (service == null ||
+        _registeringEngineId != null ||
+        _scanningEngineId != null) {
+      return;
+    }
 
     String? path;
     try {
@@ -217,13 +418,8 @@ class _LocalEnginesSettingsSectionState
     if (path == null || path.trim().isEmpty) return;
     if (!mounted) return;
 
-    final folderName = switch (engine.engineId) {
-      'llama_cpp' => 'llama',
-      'exllama' => 'exllama',
-      'vllm' => 'vllm',
-      _ => engine.engineId,
-    };
-    final storageAction = await _chooseModelStorageAction(folderName);
+    final modelDirectory = _modelDirectoryFor(engine);
+    final storageAction = await _chooseModelStorageAction(modelDirectory);
     if (!mounted || storageAction == null) return;
 
     setState(() {
@@ -234,6 +430,7 @@ class _LocalEnginesSettingsSectionState
       await LocalEnginesRepository(service).registerModel(
         engineId: engine.engineId,
         modelPath: path,
+        modelDirectory: modelDirectory,
         storageAction: storageAction,
       );
     } on OpenChatServiceException catch (error) {
@@ -249,7 +446,7 @@ class _LocalEnginesSettingsSectionState
   }
 
   Future<LocalModelStorageAction?> _chooseModelStorageAction(
-    String folderName,
+    String modelDirectory,
   ) {
     return showDialog<LocalModelStorageAction>(
       context: context,
@@ -263,20 +460,20 @@ class _LocalEnginesSettingsSectionState
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text(l10n.localModelStorageChoiceTarget(folderName)),
+                Text(l10n.localModelStorageChoiceTarget(modelDirectory)),
                 const SizedBox(height: 16),
                 _buildStorageActionButton(
                   dialogContext,
                   action: LocalModelStorageAction.move,
                   icon: Icons.drive_file_move_rounded,
-                  label: l10n.localModelMoveToFolder(folderName),
+                  label: l10n.localModelMoveToFolder,
                 ),
                 const SizedBox(height: 8),
                 _buildStorageActionButton(
                   dialogContext,
                   action: LocalModelStorageAction.copy,
                   icon: Icons.copy_all_outlined,
-                  label: l10n.localModelCopyToFolder(folderName),
+                  label: l10n.localModelCopyToFolder,
                 ),
                 const SizedBox(height: 8),
                 _buildStorageActionButton(
@@ -653,6 +850,18 @@ class _LocalEnginesSettingsSectionState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        LocalModelDirectoryControls(
+          directory: _modelDirectoryFor(engine),
+          isCustom: _customModelDirectoryIds.contains(engine.engineId),
+          isBusy: _registeringEngineId != null || _scanningEngineId != null,
+          isScanning: _scanningEngineId == engine.engineId,
+          onChoose: () => unawaited(_chooseModelDirectory(engine)),
+          onUseDefault: () => unawaited(_useDefaultModelDirectory(engine)),
+          onScan: () => unawaited(
+            _scanModelDirectory(engine, _modelDirectoryFor(engine)),
+          ),
+        ),
+        const SizedBox(height: 16),
         Wrap(
           alignment: WrapAlignment.spaceBetween,
           crossAxisAlignment: WrapCrossAlignment.center,
@@ -668,7 +877,10 @@ class _LocalEnginesSettingsSectionState
               ),
             ),
             OutlinedButton.icon(
-              onPressed: isRegistering || _registeringEngineId != null
+              onPressed:
+                  isRegistering ||
+                      _registeringEngineId != null ||
+                      _scanningEngineId != null
                   ? null
                   : () => unawaited(_registerModel(engine)),
               icon: isRegistering
@@ -815,8 +1027,11 @@ class _LocalEnginesSettingsSectionState
         'local_model_path_unavailable' ||
         'picker' ||
         'path' => l10n.localModelPathError,
+        'local_model_directory_unavailable' ||
         'local_model_storage_path_unavailable' =>
-          l10n.localModelStoragePathError,
+          l10n.localModelDirectoryUnavailable,
+        'local_model_discovery_failed' ||
+        'discovery_failed' => l10n.localModelDiscoveryFailed,
         'local_model_storage_unavailable' => l10n.localModelStorageError,
         'local_model_transfer_failed' => l10n.localModelTransferError,
         'local_model_transfer_recovery_needed' =>

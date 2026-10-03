@@ -14,6 +14,7 @@ void main() {
             'catalogStatus': 'installable',
             'statusReason': null,
             'runtimeStatus': 'stopped',
+            'modelDirectory': r'C:\OpenChat\models\llama',
             'variants': <Object?>[
               <String, Object?>{
                 'variantId': 'win-x86_64-cpu',
@@ -59,6 +60,36 @@ void main() {
       expect(
         () => LocalEngineInstallProgress.fromJson(<String, Object?>{
           'phase': 'downloading',
+        }),
+        throwsFormatException,
+      );
+    });
+
+    test('parses discovered local models and bounded-scan status', () {
+      final discovery = LocalModelDiscovery.fromJson(<String, Object?>{
+        'truncated': true,
+        'models': <Object?>[
+          <String, Object?>{
+            'engineId': 'llama_cpp',
+            'displayName': 'Qwen 7B',
+            'path': r'C:\models\qwen-7b.gguf',
+            'pathKind': 'file',
+          },
+        ],
+      });
+
+      expect(discovery.models, hasLength(1));
+      expect(discovery.models.single.key, r'llama_cpp:C:\models\qwen-7b.gguf');
+      expect(discovery.truncated, isTrue);
+    });
+
+    test('rejects discovered models with an unknown engine', () {
+      expect(
+        () => LocalDiscoveredModel.fromJson(<String, Object?>{
+          'engineId': 'unknown',
+          'displayName': 'Model',
+          'path': r'C:\models\model.gguf',
+          'pathKind': 'file',
         }),
         throwsFormatException,
       );

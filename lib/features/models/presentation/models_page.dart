@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:intl/intl.dart';
 
@@ -10,6 +11,7 @@ import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/safe_markdown.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_surface_card.dart';
 import 'package:openchat/features/models/data/hugging_face_models_repository.dart';
+import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/platform/windows/openchat_service_client.dart';
 
@@ -17,11 +19,13 @@ class ModelsPage extends StatefulWidget {
   const ModelsPage({
     required this.serviceClient,
     required this.downloadController,
+    required this.settingsPreferences,
     super.key,
   });
 
   final OpenChatServiceClient? serviceClient;
   final HuggingFaceDownloadController? downloadController;
+  final SettingsPreferences settingsPreferences;
 
   @override
   State<ModelsPage> createState() => _ModelsPageState();
@@ -263,7 +267,7 @@ class _ModelsPageState extends State<ModelsPage> {
         details.private) {
       return;
     }
-    await controller.start(
+    await _startDownload(
       repoId: model.repoId,
       revision: details.revision,
       format: _format,
@@ -294,13 +298,14 @@ class _ModelsPageState extends State<ModelsPage> {
       return;
     }
 
-    await controller.start(
+    final started = await _startDownload(
       repoId: model.repoId,
       revision: details.revision,
       format: _format,
       groupId: groupId,
       componentPath: file.path,
     );
+    if (!started) return;
     final downloadedModel = controller.downloadedModel;
     if (!mounted ||
         controller.status != HuggingFaceDownloadStatus.completed ||
@@ -312,6 +317,40 @@ class _ModelsPageState extends State<ModelsPage> {
     setState(
       () => _downloadedComponentKeys.add(_componentKey(model, details, file)),
     );
+  }
+
+  Future<bool> _startDownload({
+    required String repoId,
+    required String revision,
+    required HuggingFaceModelFormat format,
+    required String groupId,
+    String? componentPath,
+  }) async {
+    final controller = widget.downloadController;
+    if (controller == null || controller.isActive) return false;
+
+    String? modelDirectory;
+    try {
+      modelDirectory = await widget.settingsPreferences.readLocalModelDirectory(
+        format.engineId,
+      );
+    } on PlatformException {
+      if (mounted) {
+        setState(() => _pageError = context.openchatL10n.modelDownloadFailed);
+      }
+      return false;
+    }
+
+    if (controller.isActive) return false;
+    await controller.start(
+      repoId: repoId,
+      revision: revision,
+      format: format,
+      groupId: groupId,
+      componentPath: componentPath,
+      modelDirectory: modelDirectory,
+    );
+    return true;
   }
 
   String _componentKey(
@@ -716,11 +755,6 @@ class _ModelsPageState extends State<ModelsPage> {
         !downloadBlocked &&
         controller != null &&
         !controller.isActive;
-    final formatFolder = switch (_format) {
-      HuggingFaceModelFormat.gguf => 'llama',
-      HuggingFaceModelFormat.transformers => 'vllm',
-      HuggingFaceModelFormat.exllama => 'exllama',
-    };
     final componentGroups =
         <(String, HuggingFaceModelFileKind, List<HuggingFaceModelFile>)>[
           (
@@ -876,7 +910,7 @@ class _ModelsPageState extends State<ModelsPage> {
               sizeLabel: l10n.modelDownloadSizeLabel,
             ),
           const SizedBox(height: 12),
-          Text(l10n.modelSavedToFolder(formatFolder)),
+          Text(l10n.modelSavedToFolder),
           if (downloadBlocked) ...[
             const SizedBox(height: 8),
             _InlineNotice(
@@ -941,6 +975,8 @@ class _ModelsPageState extends State<ModelsPage> {
               text: switch (controller?.error?.code) {
                 'hugging_face_access_denied' => l10n.modelDownloadAccessNeeded,
                 'hugging_face_revision_changed' => l10n.modelRevisionChanged,
+                'local_model_directory_unavailable' =>
+                  l10n.localModelDirectoryUnavailable,
                 _ => l10n.modelDownloadFailed,
               },
               icon: Icons.error_outline_rounded,
@@ -1108,6 +1144,8 @@ class _ModelsPageState extends State<ModelsPage> {
   String _messageForHubError(OpenChatServiceException error) {
     final l10n = context.openchatL10n;
     return switch (error.code) {
+      'local_model_directory_unavailable' =>
+        l10n.localModelDirectoryUnavailable,
       'hugging_face_rate_limited' => l10n.modelSearchRateLimited,
       'hugging_face_unavailable' => l10n.modelSearchUnavailable,
       'hugging_face_response_invalid' => l10n.modelSearchInvalidResponse,

@@ -365,6 +365,7 @@ class HuggingFaceModelsRepository {
     required HuggingFaceModelFormat format,
     required String groupId,
     String? componentPath,
+    String? modelDirectory,
   }) {
     return _serviceClient.startOperation(
       'models.hub.download',
@@ -374,6 +375,7 @@ class HuggingFaceModelsRepository {
         'format': format.wireValue,
         'groupId': groupId,
         'componentPath': componentPath,
+        'modelDirectory': modelDirectory,
       },
     );
   }
@@ -417,6 +419,7 @@ class HuggingFaceDownloadController extends ChangeNotifier {
     required HuggingFaceModelFormat format,
     required String groupId,
     String? componentPath,
+    String? modelDirectory,
   }) async {
     if (isActive) return;
     await _eventSubscription?.cancel();
@@ -437,6 +440,7 @@ class HuggingFaceDownloadController extends ChangeNotifier {
         format: format,
         groupId: groupId,
         componentPath: componentPath,
+        modelDirectory: modelDirectory,
       );
       _operation = operation;
       _eventSubscription = operation.events.listen(

@@ -366,6 +366,14 @@ pub(crate) async fn dispatch(
         }
         "local.engines.list" => local_engines::list(storage).await,
         "local.models.list" => local_engines::model_catalog(storage),
+        "local.models.discover" => {
+            local_engines::discover_models(
+                storage,
+                required_string(&request.params, "engineId")?,
+                required_string(&request.params, "modelDirectory")?,
+            )
+            .await
+        }
         "models.hub.search" => {
             let query = match request.params.get("query") {
                 None | Some(Value::Null) => "",
@@ -404,6 +412,7 @@ pub(crate) async fn dispatch(
             let format = required_string(&request.params, "format")?;
             let group_id = required_string(&request.params, "groupId")?;
             let component_path = optional_string(&request.params, "componentPath")?;
+            let model_directory = optional_string(&request.params, "modelDirectory")?;
             hugging_face::download(
                 storage,
                 repo_id,
@@ -411,6 +420,7 @@ pub(crate) async fn dispatch(
                 format,
                 group_id,
                 component_path,
+                model_directory,
                 &request.id,
                 &events,
                 &mut cancellation,
@@ -422,6 +432,7 @@ pub(crate) async fn dispatch(
                 storage,
                 required_string(&request.params, "engineId")?,
                 required_string(&request.params, "modelPath")?,
+                optional_string(&request.params, "modelDirectory")?,
                 required_string(&request.params, "storageAction")?,
             )
             .await

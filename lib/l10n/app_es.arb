@@ -75,7 +75,7 @@
   "localModelAddFile": "Añadir archivo de modelo",
   "localModelAddFolder": "Añadir carpeta de modelo",
   "localModelStorageChoiceTitle": "Elige dónde guardar el modelo",
-  "localModelStorageChoiceTarget": "Carpeta de modelos de OpenChat: %LOCALAPPDATA%\\OpenChat\\models\\{folder}",
+  "localModelStorageChoiceTarget": "Carpeta de modelos seleccionada: {folder}",
   "@localModelStorageChoiceTarget": {
     "placeholders": {
       "folder": {
@@ -83,22 +83,26 @@
       }
     }
   },
-  "localModelMoveToFolder": "Mover el modelo a la carpeta {folder}",
-  "@localModelMoveToFolder": {
-    "placeholders": {
-      "folder": {
-        "type": "String"
-      }
-    }
-  },
-  "localModelCopyToFolder": "Copiar el modelo a la carpeta {folder}",
-  "@localModelCopyToFolder": {
-    "placeholders": {
-      "folder": {
-        "type": "String"
-      }
-    }
-  },
+  "localModelDirectoryTitle": "Carpeta de modelos",
+  "localModelDirectoryDescription": "Elige dónde se guardan los modelos de este motor. Cambiar la carpeta no mueve los modelos ya registrados.",
+  "localModelChooseDirectory": "Elegir carpeta",
+  "localModelUseDefaultDirectory": "Usar predeterminada",
+  "localModelScanDirectory": "Buscar en la carpeta",
+  "localModelScanningDirectory": "Buscando en la carpeta...",
+  "localModelDiscoveryTitle": "Se encontraron modelos sin registrar",
+  "localModelDiscoveryPrompt": "{count, plural, =1{OpenChat encontró 1 modelo compatible sin registrar en esta carpeta. ¿Quieres registrarlo?} other{OpenChat encontró {count} modelos compatibles sin registrar en esta carpeta. ¿Quieres registrarlos?}}",
+  "@localModelDiscoveryPrompt": { "placeholders": { "count": { "type": "int" } } },
+  "localModelDiscoveryTruncated": "La búsqueda alcanzó su límite seguro. Elige una carpeta más pequeña para encontrar más modelos.",
+  "localModelDiscoveryEmpty": "No se encontraron modelos compatibles nuevos en esta carpeta.",
+  "localModelDiscoveryRegisterAll": "Registrar modelos encontrados",
+  "localModelDiscoveryRegistered": "{count, plural, =1{Se registró 1 modelo.} other{Se registraron {count} modelos.}}",
+  "@localModelDiscoveryRegistered": { "placeholders": { "count": { "type": "int" } } },
+  "localModelDiscoveryPartial": "Se registraron {registered} de {total} modelos. No se pudieron registrar algunos modelos.",
+  "@localModelDiscoveryPartial": { "placeholders": { "registered": { "type": "int" }, "total": { "type": "int" } } },
+  "localModelDirectoryUnavailable": "Esta carpeta de modelos no está disponible. Elige una carpeta existente a la que OpenChat pueda acceder.",
+  "localModelDiscoveryFailed": "No se pudo analizar la carpeta de modelos. Comprueba los permisos de acceso e inténtalo de nuevo.",
+  "localModelMoveToFolder": "Mover el modelo a esta carpeta",
+  "localModelCopyToFolder": "Copiar el modelo a esta carpeta",
   "localModelKeepInPlace": "Dejar el modelo donde está",
   "localModelSaving": "Guardando modelo...",
   "localModelTransferError": "No se pudo copiar ni mover el modelo. El modelo original se dejó en su ubicación.",
@@ -1113,14 +1117,7 @@
   "modelNoFiles": "No hay archivos compatibles disponibles para este formato.",
   "modelGatedBadge": "Acceso necesario",
   "modelPrivateBadge": "Privado",
-  "modelSavedToFolder": "Guardado en OpenChat/models/{folder}",
-  "@modelSavedToFolder": {
-    "placeholders": {
-      "folder": {
-        "type": "String"
-      }
-    }
-  },
+  "modelSavedToFolder": "Las descargas se guardan en la carpeta seleccionada para este motor en Ajustes.",
   "userQuestionTitle": "El asistente espera tu respuesta",
   "userQuestionRequiredHint": "Las preguntas obligatorias están marcadas",
   "userQuestionSubmit": "Enviar respuesta",

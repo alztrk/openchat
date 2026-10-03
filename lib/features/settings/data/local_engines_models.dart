@@ -46,6 +46,7 @@ class LocalEngine {
     required this.catalogStatus,
     required this.statusReason,
     required this.runtimeStatus,
+    required this.modelDirectory,
     required this.variants,
   });
 
@@ -56,6 +57,7 @@ class LocalEngine {
   final String catalogStatus;
   final String? statusReason;
   final String runtimeStatus;
+  final String modelDirectory;
   final List<LocalEngineVariant> variants;
 
   factory LocalEngine.fromJson(Map<String, Object?> json) {
@@ -74,6 +76,7 @@ class LocalEngine {
       catalogStatus: _requiredString(json, 'catalogStatus'),
       statusReason: _optionalString(json, 'statusReason'),
       runtimeStatus: _requiredString(json, 'runtimeStatus'),
+      modelDirectory: _requiredString(json, 'modelDirectory'),
       variants: rawVariants
           .map((value) => LocalEngineVariant.fromJson(_objectMap(value)))
           .toList(growable: false),
@@ -136,6 +139,65 @@ class LocalModelCatalog {
           .map((value) => LocalRegisteredModel.fromJson(_objectMap(value)))
           .toList(growable: false),
     );
+  }
+}
+
+class LocalModelDiscovery {
+  const LocalModelDiscovery({required this.models, required this.truncated});
+
+  final List<LocalDiscoveredModel> models;
+  final bool truncated;
+
+  factory LocalModelDiscovery.fromJson(Map<String, Object?> json) {
+    final rawModels = json['models'];
+    final truncated = json['truncated'];
+    if (rawModels is! List<Object?> || truncated is! bool) {
+      throw const FormatException(
+        'Local model discovery response was invalid.',
+      );
+    }
+    return LocalModelDiscovery(
+      models: rawModels
+          .map((value) => LocalDiscoveredModel.fromJson(_objectMap(value)))
+          .toList(growable: false),
+      truncated: truncated,
+    );
+  }
+}
+
+class LocalDiscoveredModel {
+  const LocalDiscoveredModel({
+    required this.engineId,
+    required this.displayName,
+    required this.path,
+    required this.pathKind,
+  });
+
+  final String engineId;
+  final String displayName;
+  final String path;
+  final String pathKind;
+
+  String get key => '$engineId:$path';
+
+  factory LocalDiscoveredModel.fromJson(Map<String, Object?> json) {
+    final model = LocalDiscoveredModel(
+      engineId: _requiredString(json, 'engineId'),
+      displayName: _requiredString(json, 'displayName'),
+      path: _requiredString(json, 'path'),
+      pathKind: _requiredString(json, 'pathKind'),
+    );
+    if (!const <String>{
+          'llama_cpp',
+          'exllama',
+          'vllm',
+        }.contains(model.engineId) ||
+        !const <String>{'file', 'directory'}.contains(model.pathKind)) {
+      throw const FormatException(
+        'Discovered local model metadata was invalid.',
+      );
+    }
+    return model;
   }
 }
 

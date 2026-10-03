@@ -212,18 +212,84 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String localModelStorageChoiceTarget(String folder) {
-    return 'Dossier modèle OpenChat : %LOCALAPPDATA%\\OpenChat\\models\\$folder';
+    return 'Dossier modèle sélectionné : $folder';
   }
 
   @override
-  String localModelMoveToFolder(String folder) {
-    return 'Déplacer le modèle vers le dossier $folder';
+  String get localModelDirectoryTitle => 'Dossier des modèles';
+
+  @override
+  String get localModelDirectoryDescription =>
+      'Choisissez où enregistrer les modèles de ce moteur. Changer de dossier ne déplace pas les modèles déjà enregistrés.';
+
+  @override
+  String get localModelChooseDirectory => 'Choisir un dossier';
+
+  @override
+  String get localModelUseDefaultDirectory => 'Utiliser le dossier par défaut';
+
+  @override
+  String get localModelScanDirectory => 'Analyser le dossier';
+
+  @override
+  String get localModelScanningDirectory => 'Analyse du dossier…';
+
+  @override
+  String get localModelDiscoveryTitle => 'Modèles non enregistrés trouvés';
+
+  @override
+  String localModelDiscoveryPrompt(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other:
+          'OpenChat a trouvé $count modèles compatibles non enregistrés dans ce dossier. Voulez-vous les enregistrer ?',
+      one: 'OpenChat a trouvé 1 modèle compatible non enregistré dans ce dossier. Voulez-vous l’enregistrer ?',
+    );
+    return '$_temp0';
   }
 
   @override
-  String localModelCopyToFolder(String folder) {
-    return 'Copier le modèle dans le dossier $folder';
+  String get localModelDiscoveryTruncated =>
+      'La limite de sécurité de l’analyse est atteinte. Choisissez un dossier plus petit pour trouver d’autres modèles.';
+
+  @override
+  String get localModelDiscoveryEmpty =>
+      'Aucun nouveau modèle compatible n’a été trouvé dans ce dossier.';
+
+  @override
+  String get localModelDiscoveryRegisterAll =>
+      'Enregistrer les modèles trouvés';
+
+  @override
+  String localModelDiscoveryRegistered(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count modèles enregistrés.',
+      one: '1 modèle enregistré.',
+    );
+    return '$_temp0';
   }
+
+  @override
+  String localModelDiscoveryPartial(int registered, int total) {
+    return '$registered modèles sur $total ont été enregistrés. Certains modèles n’ont pas pu l’être.';
+  }
+
+  @override
+  String get localModelDirectoryUnavailable =>
+      'Ce dossier de modèles n’est pas disponible. Choisissez un dossier existant auquel OpenChat peut accéder.';
+
+  @override
+  String get localModelDiscoveryFailed =>
+      'Le dossier de modèles n’a pas pu être analysé. Vérifiez les droits d’accès puis réessayez.';
+
+  @override
+  String get localModelMoveToFolder => 'Déplacer le modèle vers ce dossier';
+
+  @override
+  String get localModelCopyToFolder => 'Copier le modèle dans ce dossier';
 
   @override
   String get localModelKeepInPlace => 'Conserver le modèle à son emplacement';
@@ -2291,9 +2357,8 @@ class AppLocalizationsFr extends AppLocalizations {
   String get modelPrivateBadge => 'Privé';
 
   @override
-  String modelSavedToFolder(String folder) {
-    return 'Enregistré dans OpenChat/models/$folder';
-  }
+  String get modelSavedToFolder =>
+      'Les téléchargements sont enregistrés dans le dossier choisi pour ce moteur dans les paramètres.';
 
   @override
   String get userQuestionTitle => 'L’assistant attend votre réponse';

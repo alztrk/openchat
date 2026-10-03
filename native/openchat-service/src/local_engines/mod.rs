@@ -45,12 +45,24 @@ pub(crate) fn manifests() -> Result<Vec<EngineManifest>, ServiceError> {
 }
 
 pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
+    models::ensure_storage_directories(storage.root())?;
     let cuda_available = nvidia_gpu_available().await;
     let runtime = runtime::status().await?;
     let registered_models = models::list(storage)?;
     let engines = manifests()?
         .into_iter()
         .map(|manifest| {
+            let model_directory =
+                models::default_model_directory(storage.root(), &manifest.engine_id)?
+                    .to_str()
+                    .ok_or_else(|| {
+                        ServiceError::new(
+                            "local_model_directory_unavailable",
+                            "The default model directory could not be represented.",
+                            false,
+                        )
+                    })?
+                    .to_owned();
             let variants = manifest
                 .variants
                 .iter()
@@ -63,6 +75,7 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
                 "channel": manifest.channel,
                 "catalogStatus": manifest.catalog_status,
                 "statusReason": manifest.status_reason,
+                "modelDirectory": model_directory,
                 "runtimeStatus": if manifest.engine_id == "llama_cpp" {
                     runtime.get("status").cloned().unwrap_or(Value::Null)
                 } else {
@@ -135,17 +148,20 @@ pub(crate) async fn register_model(
     storage: &AppStorage,
     engine_id: &str,
     model_path: &str,
+    model_directory: Option<&str>,
     storage_action: &str,
 ) -> Result<Value, ServiceError> {
-    let storage_root = storage.root().to_path_buf();
+    let database_root = storage.root().to_path_buf();
     let engine_id = engine_id.to_owned();
     let model_path = model_path.to_owned();
+    let model_directory = model_directory.map(str::to_owned);
     let storage_action = storage_action.to_owned();
     let model = tokio::task::spawn_blocking(move || {
         models::register_with_storage_action(
-            &storage_root,
+            &database_root,
             &engine_id,
             &model_path,
+            model_directory.as_deref(),
             &storage_action,
         )
     })
@@ -159,6 +175,31 @@ pub(crate) async fn register_model(
     })??;
     let available = runtime::is_model_available(storage, &model)?;
     Ok(models::to_json(&model, available))
+}
+
+pub(crate) async fn discover_models(
+    storage: &AppStorage,
+    engine_id: &str,
+    model_directory: &str,
+) -> Result<Value, ServiceError> {
+    let registered_paths = models::list(storage)?
+        .into_iter()
+        .filter(|model| model.engine_id == engine_id)
+        .map(|model| model.path)
+        .collect::<Vec<_>>();
+    let engine_id = engine_id.to_owned();
+    let model_directory = model_directory.to_owned();
+    tokio::task::spawn_blocking(move || {
+        models::discover(&engine_id, &model_directory, &registered_paths)
+    })
+    .await
+    .map_err(|_| {
+        ServiceError::new(
+            "local_model_discovery_failed",
+            "The selected model directory could not be scanned.",
+            false,
+        )
+    })?
 }
 
 pub(crate) async fn remove_model(

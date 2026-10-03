@@ -75,7 +75,7 @@
   "localModelAddFile": "Ajouter un fichier modèle",
   "localModelAddFolder": "Ajouter un dossier modèle",
   "localModelStorageChoiceTitle": "Choisir l’emplacement du modèle",
-  "localModelStorageChoiceTarget": "Dossier modèle OpenChat : %LOCALAPPDATA%\\OpenChat\\models\\{folder}",
+  "localModelStorageChoiceTarget": "Dossier modèle sélectionné : {folder}",
   "@localModelStorageChoiceTarget": {
     "placeholders": {
       "folder": {
@@ -83,22 +83,26 @@
       }
     }
   },
-  "localModelMoveToFolder": "Déplacer le modèle vers le dossier {folder}",
-  "@localModelMoveToFolder": {
-    "placeholders": {
-      "folder": {
-        "type": "String"
-      }
-    }
-  },
-  "localModelCopyToFolder": "Copier le modèle dans le dossier {folder}",
-  "@localModelCopyToFolder": {
-    "placeholders": {
-      "folder": {
-        "type": "String"
-      }
-    }
-  },
+  "localModelDirectoryTitle": "Dossier des modèles",
+  "localModelDirectoryDescription": "Choisissez où enregistrer les modèles de ce moteur. Changer de dossier ne déplace pas les modèles déjà enregistrés.",
+  "localModelChooseDirectory": "Choisir un dossier",
+  "localModelUseDefaultDirectory": "Utiliser le dossier par défaut",
+  "localModelScanDirectory": "Analyser le dossier",
+  "localModelScanningDirectory": "Analyse du dossier…",
+  "localModelDiscoveryTitle": "Modèles non enregistrés trouvés",
+  "localModelDiscoveryPrompt": "{count, plural, =1{OpenChat a trouvé 1 modèle compatible non enregistré dans ce dossier. Voulez-vous l’enregistrer ?} other{OpenChat a trouvé {count} modèles compatibles non enregistrés dans ce dossier. Voulez-vous les enregistrer ?}}",
+  "@localModelDiscoveryPrompt": { "placeholders": { "count": { "type": "int" } } },
+  "localModelDiscoveryTruncated": "La limite de sécurité de l’analyse est atteinte. Choisissez un dossier plus petit pour trouver d’autres modèles.",
+  "localModelDiscoveryEmpty": "Aucun nouveau modèle compatible n’a été trouvé dans ce dossier.",
+  "localModelDiscoveryRegisterAll": "Enregistrer les modèles trouvés",
+  "localModelDiscoveryRegistered": "{count, plural, =1{1 modèle enregistré.} other{{count} modèles enregistrés.}}",
+  "@localModelDiscoveryRegistered": { "placeholders": { "count": { "type": "int" } } },
+  "localModelDiscoveryPartial": "{registered} modèles sur {total} ont été enregistrés. Certains modèles n’ont pas pu l’être.",
+  "@localModelDiscoveryPartial": { "placeholders": { "registered": { "type": "int" }, "total": { "type": "int" } } },
+  "localModelDirectoryUnavailable": "Ce dossier de modèles n’est pas disponible. Choisissez un dossier existant auquel OpenChat peut accéder.",
+  "localModelDiscoveryFailed": "Le dossier de modèles n’a pas pu être analysé. Vérifiez les droits d’accès puis réessayez.",
+  "localModelMoveToFolder": "Déplacer le modèle vers ce dossier",
+  "localModelCopyToFolder": "Copier le modèle dans ce dossier",
   "localModelKeepInPlace": "Conserver le modèle à son emplacement",
   "localModelSaving": "Enregistrement du modèle…",
   "localModelTransferError": "Le modèle n'a pas pu être copié ou déplacé. Le modèle original a été laissé en place.",
@@ -1113,14 +1117,7 @@
   "modelNoFiles": "Aucun fichier compatible n'est disponible pour ce format.",
   "modelGatedBadge": "Accès requis",
   "modelPrivateBadge": "Privé",
-  "modelSavedToFolder": "Enregistré dans OpenChat/models/{folder}",
-  "@modelSavedToFolder": {
-    "placeholders": {
-      "folder": {
-        "type": "String"
-      }
-    }
-  },
+  "modelSavedToFolder": "Les téléchargements sont enregistrés dans le dossier choisi pour ce moteur dans les paramètres.",
   "userQuestionTitle": "L’assistant attend votre réponse",
   "userQuestionRequiredHint": "Les questions obligatoires sont signalées",
   "userQuestionSubmit": "Envoyer la réponse",

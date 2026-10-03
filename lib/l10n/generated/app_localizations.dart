@@ -473,20 +473,110 @@ abstract class AppLocalizations {
   /// No description provided for @localModelStorageChoiceTarget.
   ///
   /// In en, this message translates to:
-  /// **'OpenChat model folder: %LOCALAPPDATA%\\OpenChat\\models\\{folder}'**
+  /// **'Selected model folder: {folder}'**
   String localModelStorageChoiceTarget(String folder);
+
+  /// No description provided for @localModelDirectoryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Model folder'**
+  String get localModelDirectoryTitle;
+
+  /// No description provided for @localModelDirectoryDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose where models for this engine are stored. Changing this folder does not move models already registered.'**
+  String get localModelDirectoryDescription;
+
+  /// No description provided for @localModelChooseDirectory.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose folder'**
+  String get localModelChooseDirectory;
+
+  /// No description provided for @localModelUseDefaultDirectory.
+  ///
+  /// In en, this message translates to:
+  /// **'Use default'**
+  String get localModelUseDefaultDirectory;
+
+  /// No description provided for @localModelScanDirectory.
+  ///
+  /// In en, this message translates to:
+  /// **'Scan folder'**
+  String get localModelScanDirectory;
+
+  /// No description provided for @localModelScanningDirectory.
+  ///
+  /// In en, this message translates to:
+  /// **'Scanning folder...'**
+  String get localModelScanningDirectory;
+
+  /// No description provided for @localModelDiscoveryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Unregistered models found'**
+  String get localModelDiscoveryTitle;
+
+  /// No description provided for @localModelDiscoveryPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{OpenChat found 1 supported model in this folder that is not registered. Register it?} other{OpenChat found {count} supported models in this folder that are not registered. Register them?}}'**
+  String localModelDiscoveryPrompt(int count);
+
+  /// No description provided for @localModelDiscoveryTruncated.
+  ///
+  /// In en, this message translates to:
+  /// **'The scan reached its safe limit. Choose a smaller folder to find more models.'**
+  String get localModelDiscoveryTruncated;
+
+  /// No description provided for @localModelDiscoveryEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No new supported models were found in this folder.'**
+  String get localModelDiscoveryEmpty;
+
+  /// No description provided for @localModelDiscoveryRegisterAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Register found models'**
+  String get localModelDiscoveryRegisterAll;
+
+  /// No description provided for @localModelDiscoveryRegistered.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =1{Registered 1 model.} other{Registered {count} models.}}'**
+  String localModelDiscoveryRegistered(int count);
+
+  /// No description provided for @localModelDiscoveryPartial.
+  ///
+  /// In en, this message translates to:
+  /// **'Registered {registered} of {total} models. Some models could not be registered.'**
+  String localModelDiscoveryPartial(int registered, int total);
+
+  /// No description provided for @localModelDirectoryUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This model folder is unavailable. Choose a folder that exists and that OpenChat can access.'**
+  String get localModelDirectoryUnavailable;
+
+  /// No description provided for @localModelDiscoveryFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The model folder could not be scanned. Check access permissions and try again.'**
+  String get localModelDiscoveryFailed;
 
   /// No description provided for @localModelMoveToFolder.
   ///
   /// In en, this message translates to:
-  /// **'Move model to the {folder} folder'**
-  String localModelMoveToFolder(String folder);
+  /// **'Move model to this folder'**
+  String get localModelMoveToFolder;
 
   /// No description provided for @localModelCopyToFolder.
   ///
   /// In en, this message translates to:
-  /// **'Copy model to the {folder} folder'**
-  String localModelCopyToFolder(String folder);
+  /// **'Copy model to this folder'**
+  String get localModelCopyToFolder;
 
   /// No description provided for @localModelKeepInPlace.
   ///
@@ -3915,8 +4005,8 @@ abstract class AppLocalizations {
   /// No description provided for @modelSavedToFolder.
   ///
   /// In en, this message translates to:
-  /// **'Saved in OpenChat/models/{folder}'**
-  String modelSavedToFolder(String folder);
+  /// **'Downloads use the folder selected for this engine in Settings.'**
+  String get modelSavedToFolder;
 
   /// No description provided for @userQuestionTitle.
   ///

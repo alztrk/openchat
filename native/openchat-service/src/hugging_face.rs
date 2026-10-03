@@ -91,14 +91,6 @@ impl ModelFormat {
             Self::Exllama => "exllama",
         }
     }
-
-    fn model_folder(self) -> &'static str {
-        match self {
-            Self::Gguf => "llama",
-            Self::Transformers => "vllm",
-            Self::Exllama => "exllama",
-        }
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -230,6 +222,7 @@ pub(crate) async fn download(
     format: &str,
     group_id: &str,
     component_path: Option<&str>,
+    model_directory: Option<&str>,
     request_id: &Value,
     events: &EventSink,
     cancellation: &mut watch::Receiver<bool>,
@@ -282,8 +275,11 @@ pub(crate) async fn download(
 
     check_cancelled(cancellation)?;
     let storage_root = storage.root();
-    local_engines::models::ensure_storage_directories(storage_root)?;
-    let engine_root = storage_root.join("models").join(format.model_folder());
+    let engine_root = local_engines::models::resolve_model_directory(
+        storage_root,
+        format.engine_id(),
+        model_directory,
+    )?;
     let repo_slug = repo_slug(&details.repo_id)?;
     let revision_short = &details.revision[..12];
     let bundle_digest = Sha256::digest(format!(
@@ -1035,7 +1031,13 @@ async fn register_downloaded_model(
     let path = path.to_str().ok_or_else(model_storage_error)?.to_owned();
     let engine = engine_id.to_owned();
     let model = task::spawn_blocking(move || {
-        local_engines::models::register_with_storage_action(&storage_root, &engine, &path, "keep")
+        local_engines::models::register_with_storage_action(
+            &storage_root,
+            &engine,
+            &path,
+            None,
+            "keep",
+        )
     })
     .await
     .map_err(|_| model_storage_error())??;

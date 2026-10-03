@@ -75,7 +75,7 @@
   "localModelAddFile": "Modelldatei hinzufügen",
   "localModelAddFolder": "Modellordner hinzufügen",
   "localModelStorageChoiceTitle": "Speicherort für das Modell auswählen",
-  "localModelStorageChoiceTarget": "OpenChat-Modellordner: %LOCALAPPDATA%\\OpenChat\\models\\{folder}",
+  "localModelStorageChoiceTarget": "Ausgewählter Modellordner: {folder}",
   "@localModelStorageChoiceTarget": {
     "placeholders": {
       "folder": {
@@ -83,22 +83,26 @@
       }
     }
   },
-  "localModelMoveToFolder": "Modell in den Ordner „{folder}“ verschieben",
-  "@localModelMoveToFolder": {
-    "placeholders": {
-      "folder": {
-        "type": "String"
-      }
-    }
-  },
-  "localModelCopyToFolder": "Modell in den Ordner „{folder}“ kopieren",
-  "@localModelCopyToFolder": {
-    "placeholders": {
-      "folder": {
-        "type": "String"
-      }
-    }
-  },
+  "localModelDirectoryTitle": "Modellordner",
+  "localModelDirectoryDescription": "Wähle den Speicherort für Modelle dieser Engine. Bereits registrierte Modelle werden dadurch nicht verschoben.",
+  "localModelChooseDirectory": "Ordner auswählen",
+  "localModelUseDefaultDirectory": "Standard verwenden",
+  "localModelScanDirectory": "Ordner durchsuchen",
+  "localModelScanningDirectory": "Ordner wird durchsucht …",
+  "localModelDiscoveryTitle": "Nicht registrierte Modelle gefunden",
+  "localModelDiscoveryPrompt": "{count, plural, =1{OpenChat hat 1 unterstütztes, noch nicht registriertes Modell in diesem Ordner gefunden. Jetzt registrieren?} other{OpenChat hat {count} unterstützte, noch nicht registrierte Modelle in diesem Ordner gefunden. Jetzt registrieren?}}",
+  "@localModelDiscoveryPrompt": { "placeholders": { "count": { "type": "int" } } },
+  "localModelDiscoveryTruncated": "Die sichere Suchgrenze wurde erreicht. Wähle einen kleineren Ordner, um weitere Modelle zu finden.",
+  "localModelDiscoveryEmpty": "In diesem Ordner wurden keine neuen unterstützten Modelle gefunden.",
+  "localModelDiscoveryRegisterAll": "Gefundene Modelle registrieren",
+  "localModelDiscoveryRegistered": "{count, plural, =1{1 Modell registriert.} other{{count} Modelle registriert.}}",
+  "@localModelDiscoveryRegistered": { "placeholders": { "count": { "type": "int" } } },
+  "localModelDiscoveryPartial": "{registered} von {total} Modellen registriert. Einige Modelle konnten nicht registriert werden.",
+  "@localModelDiscoveryPartial": { "placeholders": { "registered": { "type": "int" }, "total": { "type": "int" } } },
+  "localModelDirectoryUnavailable": "Dieser Modellordner ist nicht verfügbar. Wähle einen vorhandenen Ordner, auf den OpenChat zugreifen kann.",
+  "localModelDiscoveryFailed": "Der Modellordner konnte nicht durchsucht werden. Prüfe die Zugriffsrechte und versuche es erneut.",
+  "localModelMoveToFolder": "Modell in diesen Ordner verschieben",
+  "localModelCopyToFolder": "Modell in diesen Ordner kopieren",
   "localModelKeepInPlace": "Modell am aktuellen Speicherort belassen",
   "localModelSaving": "Modell wird gespeichert …",
   "localModelTransferError": "Das Modell konnte nicht kopiert oder verschoben werden. Das Original wurde am bisherigen Speicherort belassen.",
@@ -1113,14 +1117,7 @@
   "modelNoFiles": "Für dieses Format sind keine kompatiblen Dateien verfügbar.",
   "modelGatedBadge": "Zugriff erforderlich",
   "modelPrivateBadge": "Privat",
-  "modelSavedToFolder": "Gespeichert in OpenChat/models/{folder}",
-  "@modelSavedToFolder": {
-    "placeholders": {
-      "folder": {
-        "type": "String"
-      }
-    }
-  },
+  "modelSavedToFolder": "Downloads werden im Bereich Einstellungen im ausgewählten Ordner für diese Engine gespeichert.",
   "userQuestionTitle": "Der Assistent wartet auf deine Antwort",
   "userQuestionRequiredHint": "Pflichtfragen sind gekennzeichnet",
   "userQuestionSubmit": "Antwort senden",

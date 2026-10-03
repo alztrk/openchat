@@ -56,6 +56,7 @@ class SettingsPreferences {
   static const _appFontKey = 'appearance.conversation_font';
   static const _defaultModelKey = 'models.default_model';
   static const _hiddenModelKeysKey = 'models.hidden_keys';
+  static const _localModelDirectoryPrefix = 'models.local_engine_directory.';
   static const maxSharedInstructionsCharacters = 4096;
 
   final SharedPreferencesAsync _preferences;
@@ -237,4 +238,38 @@ class SettingsPreferences {
       jsonEncode(keys.toList(growable: false)),
     );
   }
+
+  Future<String?> readLocalModelDirectory(String engineId) async {
+    final value = await _preferences.getString(
+      '$_localModelDirectoryPrefix${_validatedLocalEngineId(engineId)}',
+    );
+    final path = value?.trim();
+    return path == null || path.isEmpty ? null : path;
+  }
+
+  Future<void> writeLocalModelDirectory(String engineId, String? path) {
+    final key =
+        '$_localModelDirectoryPrefix${_validatedLocalEngineId(engineId)}';
+    final normalizedPath = path?.trim();
+    if (normalizedPath == null || normalizedPath.isEmpty) {
+      return _preferences.remove(key);
+    }
+    if (normalizedPath.contains('\u0000')) {
+      throw ArgumentError.value(
+        path,
+        'path',
+        'The model directory is invalid.',
+      );
+    }
+    return _preferences.setString(key, normalizedPath);
+  }
+
+  String _validatedLocalEngineId(String engineId) => switch (engineId) {
+    'llama_cpp' || 'exllama' || 'vllm' => engineId,
+    _ => throw ArgumentError.value(
+      engineId,
+      'engineId',
+      'The local engine is not supported.',
+    ),
+  };
 }
