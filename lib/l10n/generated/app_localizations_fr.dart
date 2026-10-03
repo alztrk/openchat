@@ -1157,6 +1157,14 @@ class AppLocalizationsFr extends AppLocalizations {
       'L\'historique des discussions locales n\'a pas pu être ouvert.';
 
   @override
+  String get historyStorageCorruptDescription =>
+      'La base de données locale est endommagée. Aucune mise à jour du schéma n\'a été appliquée. Restaurez une sauvegarde vérifiée pour continuer.';
+
+  @override
+  String get historyStorageBackupFailedDescription =>
+      'OpenChat n\'a pas pu vérifier une sauvegarde avant la mise à jour et l\'a interrompue. Vérifiez l\'espace disque disponible, puis réessayez.';
+
+  @override
   String get historyStorageUnavailableStatus => 'Indisponible';
 
   @override

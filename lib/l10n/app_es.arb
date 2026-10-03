@@ -492,6 +492,8 @@
   "historyCheckingDescription": "Preparando el historial de chats local.",
   "historyCheckingStatus": "Preparando",
   "historyStorageUnavailableDescription": "No se pudo abrir el historial de chats local.",
+  "historyStorageCorruptDescription": "La base de datos local está dañada. No se aplicaron cambios de esquema. Restaura una copia verificada para continuar.",
+  "historyStorageBackupFailedDescription": "OpenChat no pudo verificar una copia de seguridad antes de la actualización y la detuvo. Comprueba el espacio disponible y vuelve a intentarlo.",
   "historyStorageUnavailableStatus": "No disponible",
   "historyLoading": "Cargando conversaciones...",
   "historyLoadFailed": "No se pudo cargar el historial de chats. Reinicia la aplicación.",

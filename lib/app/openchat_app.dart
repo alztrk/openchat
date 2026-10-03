@@ -118,6 +118,19 @@ class _OpenChatAppState extends State<OpenChatApp> {
         String? databasePath;
         String? storageRoot;
         if (Platform.isWindows) {
+          phase = 'database_preflight';
+          final localAppData = Platform.environment['LOCALAPPDATA'];
+          if (localAppData == null || localAppData.isEmpty) {
+            throw const OpenChatServiceException(
+              code: 'invalid_storage_path',
+              message: 'The local app data directory is unavailable.',
+            );
+          }
+          final preflightDatabasePath =
+              '$localAppData${Platform.pathSeparator}OpenChat'
+              '${Platform.pathSeparator}db${Platform.pathSeparator}openchat.sqlite3';
+          await OpenChatDatabase.verifyExistingFile(preflightDatabasePath);
+
           await _serviceClient.start();
           phase = 'service_health';
           final health = await _serviceClient.call('system.health');
@@ -141,6 +154,19 @@ class _OpenChatAppState extends State<OpenChatApp> {
             databasePath: databasePath,
             storageRoot: storageRoot,
           );
+          phase = 'database_prepare';
+          final preparation = await _serviceClient.call(
+            'system.database.prepare',
+            params: <String, Object?>{
+              'chatSchemaVersion': OpenChatDatabase.currentSchemaVersion,
+            },
+          );
+          if (preparation['status'] != 'ready') {
+            throw const OpenChatServiceException(
+              code: 'database_prepare_failed',
+              message: 'The local database could not be safely prepared for an update.',
+            );
+          }
         }
 
         phase = 'database_open';
@@ -242,6 +268,7 @@ class _OpenChatAppState extends State<OpenChatApp> {
   }
 
   String _startupFailureCode(Object error) {
+    if (error is DatabaseIntegrityFailure) return error.code;
     if (error is OpenChatServiceException) return error.code;
     if (error is! DriftRemoteException) return error.runtimeType.toString();
 
@@ -282,6 +309,45 @@ class _OpenChatAppState extends State<OpenChatApp> {
   }
 
   bool _isRetryableRuntimeFailure(Object error) {
+    if (error is DatabaseIntegrityFailure) return error.retryable;
+    if (error is OpenChatServiceException) {
+      return error.code != 'invalid_storage_path' &&
+          error.code != 'service_executable_missing' &&
+          error.code != 'database_corrupt' &&
+          error.code != 'database_prepare_failed';
+    }
+    if (_isCorruptDatabaseFailure(error)) return false;
+    return true;
+  }
+
+  bool _isCorruptDatabaseFailure(Object? error) {
+    if (error is DatabaseIntegrityFailure) return error.isCorrupt;
+    if (error is OpenChatServiceException) {
+      return error.code == 'database_corrupt';
+    }
+    if (error is! DriftRemoteException) return false;
+
+    final description = error.remoteCause.toString().toLowerCase();
+    if (description.contains('malformed') ||
+        description.contains('not a database')) {
+      return true;
+    }
+    return RegExp(r'sqliteexception\((11|26)(?:,|\))').hasMatch(description);
+  }
+
+  HistoryStorageStatus _historyStorageStatusFor(Object? error) {
+    if (_isCorruptDatabaseFailure(error)) return HistoryStorageStatus.corrupt;
+    if (error is OpenChatServiceException) {
+      if (error.code == 'database_prepare_failed') {
+        return HistoryStorageStatus.backupUnavailable;
+      }
+    }
+    return HistoryStorageStatus.unavailable;
+  }
+
+  bool _canRetryStorageManually(Object? error) {
+    if (_isCorruptDatabaseFailure(error)) return false;
+    if (error is DatabaseIntegrityFailure) return error.retryable;
     if (error is OpenChatServiceException) {
       return error.code != 'invalid_storage_path' &&
           error.code != 'service_executable_missing';
@@ -530,7 +596,7 @@ class _OpenChatAppState extends State<OpenChatApp> {
             final storageStatus = runtime != null
                 ? HistoryStorageStatus.available
                 : snapshot.hasError
-                ? HistoryStorageStatus.unavailable
+                ? _historyStorageStatusFor(snapshot.error)
                 : HistoryStorageStatus.loading;
 
             return ChatScreen(
@@ -552,7 +618,9 @@ class _OpenChatAppState extends State<OpenChatApp> {
               openCodeApiKeyStore: _openCodeApiKeyStore,
               serviceClient: _serviceClient,
               onRetryStorage: snapshot.hasError
-                  ? _retryRuntimeInitialization
+                  ? _canRetryStorageManually(snapshot.error)
+                        ? _retryRuntimeInitialization
+                        : null
                   : null,
               historyStorageStatus: storageStatus,
             );

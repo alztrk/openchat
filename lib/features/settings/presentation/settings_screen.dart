@@ -587,6 +587,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             HistoryStorageStatus.available => l10n.historyDeviceDescription,
             HistoryStorageStatus.unavailable =>
               l10n.historyStorageUnavailableDescription,
+            HistoryStorageStatus.corrupt =>
+              l10n.historyStorageCorruptDescription,
+            HistoryStorageStatus.backupUnavailable =>
+              l10n.historyStorageBackupFailedDescription,
           },
           textTheme: textTheme,
           controlWidth: 144,
@@ -597,6 +601,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               HistoryStorageStatus.loading => l10n.historyCheckingStatus,
               HistoryStorageStatus.available => l10n.historyDeviceStatus,
               HistoryStorageStatus.unavailable =>
+                l10n.historyStorageUnavailableStatus,
+              HistoryStorageStatus.corrupt ||
+              HistoryStorageStatus.backupUnavailable =>
                 l10n.historyStorageUnavailableStatus,
             },
             palette: palette,

@@ -374,6 +374,8 @@
   "historyCheckingDescription": "Yerel sohbet geçmişi hazırlanıyor.",
   "historyCheckingStatus": "Hazırlanıyor",
   "historyStorageUnavailableDescription": "Yerel sohbet geçmişi açılamadı.",
+  "historyStorageCorruptDescription": "Yerel veritabanı bozuk görünüyor. Verileri korumak için şema güncellemeleri durduruldu; devam etmek için doğrulanmış yedekten kurtarma gerekiyor.",
+  "historyStorageBackupFailedDescription": "Güncelleme öncesi veritabanı yedeği doğrulanamadığı için işlem durduruldu. Boş disk alanını kontrol edip yeniden dene.",
   "historyStorageUnavailableStatus": "Kullanılamıyor",
   "historyLoading": "Sohbetler yükleniyor...",
   "historyLoadFailed": "Sohbet geçmişi yüklenemedi. Uygulamayı yeniden başlat.",

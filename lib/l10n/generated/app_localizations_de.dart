@@ -1155,6 +1155,14 @@ class AppLocalizationsDe extends AppLocalizations {
       'Der lokale Chatverlauf konnte nicht geöffnet werden.';
 
   @override
+  String get historyStorageCorruptDescription =>
+      'Die lokale Datenbank ist beschädigt. Es wurden keine Schemaänderungen vorgenommen. Stelle ein geprüftes Backup wieder her, um fortzufahren.';
+
+  @override
+  String get historyStorageBackupFailedDescription =>
+      'OpenChat konnte kein geprüftes Datenbank-Backup vor dem Update erstellen und hat das Update abgebrochen. Prüfe den freien Speicherplatz und versuche es erneut.';
+
+  @override
   String get historyStorageUnavailableStatus => 'Nicht verfügbar';
 
   @override

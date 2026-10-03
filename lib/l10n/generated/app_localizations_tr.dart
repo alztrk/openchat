@@ -1126,6 +1126,14 @@ class AppLocalizationsTr extends AppLocalizations {
       'Yerel sohbet geçmişi açılamadı.';
 
   @override
+  String get historyStorageCorruptDescription =>
+      'Yerel veritabanı bozuk görünüyor. Verileri korumak için şema güncellemeleri durduruldu; devam etmek için doğrulanmış yedekten kurtarma gerekiyor.';
+
+  @override
+  String get historyStorageBackupFailedDescription =>
+      'Güncelleme öncesi veritabanı yedeği doğrulanamadığı için işlem durduruldu. Boş disk alanını kontrol edip yeniden dene.';
+
+  @override
   String get historyStorageUnavailableStatus => 'Kullanılamıyor';
 
   @override

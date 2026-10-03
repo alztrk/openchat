@@ -1,1 +1,7 @@
-enum HistoryStorageStatus { loading, available, unavailable }
+enum HistoryStorageStatus {
+  loading,
+  available,
+  unavailable,
+  corrupt,
+  backupUnavailable,
+}

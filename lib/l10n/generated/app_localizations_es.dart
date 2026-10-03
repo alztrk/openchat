@@ -1151,6 +1151,14 @@ class AppLocalizationsEs extends AppLocalizations {
       'No se pudo abrir el historial de chats local.';
 
   @override
+  String get historyStorageCorruptDescription =>
+      'La base de datos local está dañada. No se aplicaron cambios de esquema. Restaura una copia verificada para continuar.';
+
+  @override
+  String get historyStorageBackupFailedDescription =>
+      'OpenChat no pudo verificar una copia de seguridad antes de la actualización y la detuvo. Comprueba el espacio disponible y vuelve a intentarlo.';
+
+  @override
   String get historyStorageUnavailableStatus => 'No disponible';
 
   @override

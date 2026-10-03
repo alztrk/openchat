@@ -492,6 +492,8 @@
   "historyCheckingDescription": "Préparation de l’historique local des conversations.",
   "historyCheckingStatus": "Préparation",
   "historyStorageUnavailableDescription": "L'historique des discussions locales n'a pas pu être ouvert.",
+  "historyStorageCorruptDescription": "La base de données locale est endommagée. Aucune mise à jour du schéma n'a été appliquée. Restaurez une sauvegarde vérifiée pour continuer.",
+  "historyStorageBackupFailedDescription": "OpenChat n'a pas pu vérifier une sauvegarde avant la mise à jour et l'a interrompue. Vérifiez l'espace disque disponible, puis réessayez.",
   "historyStorageUnavailableStatus": "Indisponible",
   "historyLoading": "Chargement des conversations…",
   "historyLoadFailed": "L'historique des discussions n'a pas pu être chargé. Redémarrez l'application.",

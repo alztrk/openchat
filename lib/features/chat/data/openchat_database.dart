@@ -1,5 +1,9 @@
+import 'dart:io';
+import 'dart:isolate';
+
 import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 part 'openchat_database.g.dart';
 
@@ -76,8 +80,50 @@ class OpenChatDatabase extends _$OpenChatDatabase {
   OpenChatDatabase.atPath(String databasePath)
     : super(_databaseAtPath(databasePath));
 
+  static const currentSchemaVersion = 10;
+
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => currentSchemaVersion;
+
+  static Future<void> verifyExistingFile(String databasePath) =>
+      Isolate.run(() => _verifyExistingFile(databasePath));
+
+  static void _verifyExistingFile(String databasePath) {
+    final file = File(databasePath);
+    if (!file.existsSync() || file.lengthSync() == 0) return;
+
+    sqlite.Database? database;
+    try {
+      database = sqlite.sqlite3.open(
+        databasePath,
+        mode: sqlite.OpenMode.readOnly,
+      );
+      final result = database.select('PRAGMA quick_check(1)');
+      if (result.length != 1 || result.first.values.single != 'ok') {
+        throw const DatabaseIntegrityFailure(
+          code: 'database_corrupt',
+          isCorrupt: true,
+          retryable: false,
+        );
+      }
+    } on sqlite.SqliteException catch (error) {
+      final isCorrupt = error.resultCode == 11 || error.resultCode == 26;
+      final isRetryable =
+          error.resultCode == 5 ||
+          error.resultCode == 6 ||
+          error.resultCode == 10 ||
+          error.resultCode == 14;
+      throw DatabaseIntegrityFailure(
+        code: isCorrupt
+            ? 'database_corrupt'
+            : 'database_integrity_check_failed',
+        isCorrupt: isCorrupt,
+        retryable: isRetryable,
+      );
+    } finally {
+      database?.close();
+    }
+  }
 
   @override
   // Keep schema changes and their published version in one write transaction.
@@ -201,6 +247,18 @@ class OpenChatDatabase extends _$OpenChatDatabase {
     if (columns.any((row) => row.read<String>('name') == column.name)) return;
     await migrator.addColumn(table, column);
   }
+}
+
+final class DatabaseIntegrityFailure implements Exception {
+  const DatabaseIntegrityFailure({
+    required this.code,
+    required this.isCorrupt,
+    required this.retryable,
+  });
+
+  final String code;
+  final bool isCorrupt;
+  final bool retryable;
 }
 
 QueryExecutor _databaseAtPath(String path) {

@@ -374,6 +374,8 @@
   "historyCheckingDescription": "Preparing local chat history.",
   "historyCheckingStatus": "Preparing",
   "historyStorageUnavailableDescription": "Local chat history could not be opened.",
+  "historyStorageCorruptDescription": "The local database is damaged. No schema updates were applied. Restore a verified backup to continue.",
+  "historyStorageBackupFailedDescription": "OpenChat could not verify a pre-update database backup, so it stopped the update. Check available disk space and retry.",
   "historyStorageUnavailableStatus": "Unavailable",
   "historyLoading": "Loading conversations...",
   "historyLoadFailed": "Chat history could not be loaded. Restart the app.",

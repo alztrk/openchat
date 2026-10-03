@@ -491,8 +491,11 @@ impl SemanticRuntime {
         let vector_count = connection.query_row(
             "SELECT COUNT(*) FROM conversation_memory_embeddings WHERE model_id = ?1",
             [MODEL_ID],
-            |row| row.get::<_, usize>(0),
+            |row| row.get::<_, i64>(0),
         )?;
+        let vector_count = usize::try_from(vector_count).map_err(|_| {
+            SemanticMemoryError::Index("semantic vector count is out of range".to_owned())
+        })?;
         if vector_count > 0 {
             index
                 .reserve(vector_count)

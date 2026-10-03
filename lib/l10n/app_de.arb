@@ -492,6 +492,8 @@
   "historyCheckingDescription": "Lokaler Chatverlauf wird vorbereitet.",
   "historyCheckingStatus": "Wird vorbereitet",
   "historyStorageUnavailableDescription": "Der lokale Chatverlauf konnte nicht geöffnet werden.",
+  "historyStorageCorruptDescription": "Die lokale Datenbank ist beschädigt. Es wurden keine Schemaänderungen vorgenommen. Stelle ein geprüftes Backup wieder her, um fortzufahren.",
+  "historyStorageBackupFailedDescription": "OpenChat konnte kein geprüftes Datenbank-Backup vor dem Update erstellen und hat das Update abgebrochen. Prüfe den freien Speicherplatz und versuche es erneut.",
   "historyStorageUnavailableStatus": "Nicht verfügbar",
   "historyLoading": "Unterhaltungen werden geladen …",
   "historyLoadFailed": "Der Chatverlauf konnte nicht geladen werden. Starten Sie die App neu.",

@@ -38,6 +38,30 @@ pub(crate) async fn dispatch(
             "storage_root": storage.root().to_string_lossy(),
             "schema_version": storage.schema_version(),
         })),
+        "system.database.prepare" => {
+            let chat_schema_version = request
+                .params
+                .get("chatSchemaVersion")
+                .and_then(Value::as_i64)
+                .filter(|version| (1..=100).contains(version))
+                .ok_or_else(|| {
+                    ServiceError::new(
+                        "invalid_request_params",
+                        "The local database schema version is invalid.",
+                        false,
+                    )
+                })?;
+            let backup_created = storage
+                .prepare_chat_schema_migration(chat_schema_version)
+                .map_err(|_| {
+                    ServiceError::new(
+                        "database_prepare_failed",
+                        "The local database could not be safely prepared for an update.",
+                        false,
+                    )
+                })?;
+            Ok(json!({"status": "ready", "backupCreated": backup_created}))
+        }
         "system.initialize" => {
             let schema_version = storage.initialize_backend_schema().map_err(|_| {
                 ServiceError::new(

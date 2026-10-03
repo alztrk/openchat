@@ -3024,11 +3024,15 @@ class _ChatScreenState extends State<ChatScreen> {
                 conversationSnapshot.connectionState ==
                     ConnectionState.waiting);
         final l10n = context.openchatL10n;
-        final historyError = conversationSnapshot.hasError
-            ? l10n.historyLoadFailed
-            : widget.historyStorageStatus == HistoryStorageStatus.unavailable
-            ? l10n.historyStorageUnavailableDescription
-            : null;
+        final historyError = switch (widget.historyStorageStatus) {
+          HistoryStorageStatus.corrupt => l10n.historyStorageCorruptDescription,
+          HistoryStorageStatus.backupUnavailable =>
+            l10n.historyStorageBackupFailedDescription,
+          HistoryStorageStatus.unavailable =>
+            l10n.historyStorageUnavailableDescription,
+          HistoryStorageStatus.loading || HistoryStorageStatus.available =>
+            conversationSnapshot.hasError ? l10n.historyLoadFailed : null,
+        };
         final resolvedStorageStatus = conversationSnapshot.hasError
             ? HistoryStorageStatus.unavailable
             : widget.historyStorageStatus;
@@ -3072,7 +3076,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           errorMessage: historyError,
                           onRetryStorage:
                               resolvedStorageStatus ==
-                                  HistoryStorageStatus.unavailable
+                                      HistoryStorageStatus.unavailable ||
+                                  resolvedStorageStatus ==
+                                      HistoryStorageStatus.backupUnavailable
                               ? widget.onRetryStorage
                               : null,
                         ),

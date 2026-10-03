@@ -2072,6 +2072,18 @@ abstract class AppLocalizations {
   /// **'Local chat history could not be opened.'**
   String get historyStorageUnavailableDescription;
 
+  /// No description provided for @historyStorageCorruptDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'The local database is damaged. No schema updates were applied. Restore a verified backup to continue.'**
+  String get historyStorageCorruptDescription;
+
+  /// No description provided for @historyStorageBackupFailedDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenChat could not verify a pre-update database backup, so it stopped the update. Check available disk space and retry.'**
+  String get historyStorageBackupFailedDescription;
+
   /// No description provided for @historyStorageUnavailableStatus.
   ///
   /// In en, this message translates to:
