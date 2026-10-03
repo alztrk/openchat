@@ -10,8 +10,8 @@ This roadmap reflects the repository's current implementation. It has no calenda
 - Gemini, Groq, Cerebras, OpenRouter, and Mistral through their official OpenAI-compatible Chat Completions APIs, with API keys in platform secure storage and six-hour per-key model catalogs. Mistral exposes context, vision, and documented reasoning capabilities; OpenRouter models are filtered to current zero-price text-chat entries that advertise tool support.
 - Shared provider request, tool, and stream event types across ChatGPT, OpenCode, Gemini, Groq, Cerebras, OpenRouter, and Mistral, plus local shared instructions.
 - Embedded release catalogs and a verified, cancellable installer for llama.cpp on Windows x64. vLLM and ExLlama are catalogued but installation stays blocked until their full runtime dependencies can be pinned and verified. Local model download, process supervision, and chat routing are not implemented yet.
-- Local projects with read-only file listing, search, reading, and file metadata tools. Tool calls, arguments, progress, and results are stored with assistant messages and shown in the conversation UI.
-- Global `Onay İste` and `Tam erişim` settings for local file tools. Approval is per call and the Rust service enforces the selected path scope.
+- Local workspace tools for file listing, search, reading, metadata, writing, and editing, plus web search, URL reading, and terminal command/session tools. Tool calls, arguments, progress, and results are stored with assistant messages and shown in the conversation UI.
+- Global `Onay İste` and `Tam erişim` settings govern local file and terminal calls. Approval is per call; canonical path checks apply to filesystem tools and do not sandbox terminal processes.
 - Conversation history, project grouping, model favorites, rename/delete/pin actions, retry, and Markdown export. Tool activity is included in Markdown exports.
 - Per-conversation memory inspection, bounded hybrid FTS5 and optional local semantic archive search with dated source excerpts, and a confirmed reset for compacted context that preserves full history.
 - A Windows portable executable build script and local data directories for the database, logs, and cache.
@@ -108,7 +108,7 @@ These bullets describe code present in the repository. They do not mean that eve
 ## Explicit boundaries
 
 - No centralized account, message, or credential service; OpenChat remains local-first and self-hostable in its app model.
-- No file editing or shell execution by project tools.
+- No OS process sandbox for local terminal tools; commands run with the same operating-system permissions as OpenChat.
 - No automatic use of ChatGPT reset credits.
 - No additional OpenCode wire protocols until the shared provider contract stage is complete.
 - Do not reuse Gemini CLI/Code Assist or consumer Antigravity OAuth credentials or quotas in OpenChat; use only provider-documented flows permitted for external clients.
