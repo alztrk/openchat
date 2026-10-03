@@ -70,6 +70,11 @@ pub(super) fn api_compatible_provider(provider_id: &str) -> Option<ApiCompatible
             name: "OpenRouter",
             base_url: "https://openrouter.ai/api/v1",
         }),
+        "mistral" => Some(ApiCompatibleProvider {
+            id: "mistral",
+            name: "Mistral",
+            base_url: "https://api.mistral.ai/v1",
+        }),
         _ => None,
     }
 }
@@ -276,6 +281,7 @@ fn provider_name(provider_id: Option<&str>) -> &'static str {
         Some("groq") => "Groq",
         Some("cerebras") => "Cerebras",
         Some("openrouter") => "OpenRouter",
+        Some("mistral") => "Mistral",
         _ => "OpenCode",
     }
 }

@@ -46,6 +46,19 @@ pub(super) fn build_provider_request(
             }
             Some(level.to_owned())
         }
+        ("mistral", Some(level)) => {
+            if !super::provider_models::mistral_reasoning_levels(&model_id)
+                .iter()
+                .any(|supported| supported == level)
+            {
+                return Err(ServiceError::new(
+                    "invalid_request_params",
+                    "The selected reasoning level is not supported by this Mistral model.",
+                    false,
+                ));
+            }
+            Some(level.to_owned())
+        }
         _ => None,
     };
     if excluded_assistant_message_id.is_some_and(|id| {
@@ -82,7 +95,11 @@ pub(super) fn build_provider_request(
         ),
         messages,
         last_message_id,
-        tools: tools::definitions_for_provider(provider_id),
+        tools: if provider_id == "chatgpt_api" {
+            tools::definitions_for_chatgpt_api()
+        } else {
+            tools::definitions_for_provider(provider_id)
+        },
         reasoning_effort,
     })
 }
@@ -163,7 +180,15 @@ pub(super) fn chat_completion_body(
         if let Some(reasoning_effort) = request.reasoning_effort.as_deref() {
             body["reasoning_effort"] = json!(reasoning_effort);
         }
-    } else if !request.tools.is_empty() {
+    } else {
+        if provider_id == "mistral"
+            && let Some(reasoning_effort) = request.reasoning_effort.as_deref()
+        {
+            body["reasoning_effort"] = json!(reasoning_effort);
+        }
+        if request.tools.is_empty() {
+            return body;
+        }
         body["tools"] = json!(
             request
                 .tools
@@ -326,7 +351,7 @@ mod tests {
 
     #[test]
     fn leaves_usage_flags_out_when_the_provider_reports_usage_automatically() {
-        for provider_id in ["cerebras", "openrouter"] {
+        for provider_id in ["cerebras", "openrouter", "mistral"] {
             let body = chat_completion_body(&request(), &[], provider_id);
 
             assert!(body.get("stream_options").is_none(), "{provider_id}");
@@ -342,6 +367,16 @@ mod tests {
         assert_eq!(body["tools"][1]["function"]["name"], "read");
         assert_eq!(body["tool_choice"], "auto");
         assert_eq!(body["parallel_tool_calls"], false);
+    }
+
+    #[test]
+    fn sends_mistral_reasoning_effort_without_unsupported_stream_options() {
+        let mut request = request();
+        request.reasoning_effort = Some("high".to_owned());
+        let body = chat_completion_body(&request, &[], "mistral");
+
+        assert_eq!(body["reasoning_effort"], "high");
+        assert!(body.get("stream_options").is_none());
     }
 
     #[test]

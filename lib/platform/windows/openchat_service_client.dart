@@ -19,8 +19,33 @@ class OpenChatServiceClient {
   StreamSubscription<String>? _stderrSubscription;
   int _nextRequestId = 0;
   bool _isClosing = false;
+  bool _isClosed = false;
+  Future<void>? _recovery;
+  String? _expectedDatabasePath;
+  String? _expectedStorageRoot;
 
   Stream<OpenChatServiceEvent> get events => _events.stream;
+
+  void setStorageLocations({
+    required String databasePath,
+    required String storageRoot,
+  }) {
+    if (databasePath.isEmpty || storageRoot.isEmpty) {
+      throw const OpenChatServiceException(
+        code: 'invalid_storage_path',
+        message: 'The local service did not provide valid storage paths.',
+      );
+    }
+    _expectedDatabasePath ??= _normalizeWindowsPath(databasePath);
+    _expectedStorageRoot ??= _normalizeWindowsPath(storageRoot);
+    if (_expectedDatabasePath != _normalizeWindowsPath(databasePath) ||
+        _expectedStorageRoot != _normalizeWindowsPath(storageRoot)) {
+      throw const OpenChatServiceException(
+        code: 'storage_path_changed',
+        message: 'The local service reported a different storage location.',
+      );
+    }
+  }
 
   void completeDatabaseInitialization({OpenChatServiceException? error}) {
     if (_databaseInitialization.isCompleted) return;
@@ -82,6 +107,12 @@ class OpenChatServiceClient {
   }
 
   Future<void> start() async {
+    if (_isClosed) {
+      throw const OpenChatServiceException(
+        code: 'service_closed',
+        message: 'The local service client has been closed.',
+      );
+    }
     if (!Platform.isWindows) {
       throw const OpenChatServiceException(
         code: 'unsupported_platform',
@@ -115,7 +146,11 @@ class OpenChatServiceClient {
           .transform(utf8.decoder)
           .transform(const LineSplitter())
           .listen(_handleDiagnosticLine, onError: _handleOutputError);
-      unawaited(process.exitCode.then(_handleProcessExit));
+      unawaited(
+        process.exitCode.then(
+          (exitCode) => _handleProcessExit(process, exitCode),
+        ),
+      );
     } on ProcessException {
       throw const OpenChatServiceException(
         code: 'service_start_failed',
@@ -127,10 +162,11 @@ class OpenChatServiceClient {
   Future<Map<String, Object?>> call(
     String method, {
     Map<String, Object?> params = const <String, Object?>{},
+    Duration timeout = _requestTimeout,
   }) async {
     final operation = await startOperation(method, params: params);
     try {
-      return await operation.result.timeout(_requestTimeout);
+      return await operation.result.timeout(timeout);
     } on TimeoutException {
       _forgetOperation(operation.id);
       unawaited(operation.cancel());
@@ -146,9 +182,21 @@ class OpenChatServiceClient {
     String method, {
     Map<String, Object?> params = const <String, Object?>{},
   }) async {
+    if (_isClosed) {
+      throw const OpenChatServiceException(
+        code: 'service_closed',
+        message: 'The local service client has been closed.',
+      );
+    }
     if (method != 'system.health' && method != 'system.initialize') {
       final initializationError = await _databaseInitialization.future;
       if (initializationError != null) throw initializationError;
+    }
+
+    if (_process == null &&
+        method != 'system.health' &&
+        method != 'system.initialize') {
+      await _ensureRecovered();
     }
 
     final process = _process;
@@ -194,6 +242,7 @@ class OpenChatServiceClient {
     return OpenChatServiceOperation._(
       id: id,
       events: pending.events.stream,
+      eventsDone: pending.events.done,
       result: pending.result.future,
       cancel: () => cancel(id),
     );
@@ -226,6 +275,7 @@ class OpenChatServiceClient {
   }
 
   Future<void> close() async {
+    _isClosed = true;
     final process = _process;
     if (process == null) {
       await _events.close();
@@ -407,8 +457,8 @@ class OpenChatServiceClient {
     );
   }
 
-  void _handleProcessExit(int exitCode) {
-    if (_isClosing) return;
+  void _handleProcessExit(Process process, int exitCode) {
+    if (_isClosing || !identical(_process, process)) return;
     _process = null;
     unawaited(_stdoutSubscription?.cancel());
     unawaited(_stderrSubscription?.cancel());
@@ -422,6 +472,82 @@ class OpenChatServiceClient {
       ),
     );
   }
+
+  Future<void> _ensureRecovered() async {
+    if (_process != null) return;
+    final activeRecovery = _recovery;
+    if (activeRecovery != null) {
+      await activeRecovery;
+      return;
+    }
+
+    final recovery = _recoverService();
+    _recovery = recovery;
+    try {
+      await recovery;
+    } finally {
+      if (identical(_recovery, recovery)) _recovery = null;
+    }
+  }
+
+  Future<void> _recoverService() async {
+    try {
+      if (_expectedDatabasePath == null || _expectedStorageRoot == null) {
+        throw const OpenChatServiceException(
+          code: 'storage_location_unavailable',
+          message: 'The local storage location is not initialized.',
+        );
+      }
+      await start();
+      final health = await call('system.health');
+      final databasePath = health['database_path'];
+      final storageRoot = health['storage_root'];
+      if (databasePath is! String ||
+          storageRoot is! String ||
+          _normalizeWindowsPath(databasePath) != _expectedDatabasePath ||
+          _normalizeWindowsPath(storageRoot) != _expectedStorageRoot) {
+        throw const OpenChatServiceException(
+          code: 'storage_path_changed',
+          message: 'The local service reported a different storage location.',
+        );
+      }
+      final initialization = await call('system.initialize');
+      if (initialization['status'] != 'ready') {
+        throw const OpenChatServiceException(
+          code: 'storage_initialization_failed',
+          message: 'Local conversation storage could not be initialized.',
+          retryable: true,
+        );
+      }
+      if (!_events.isClosed) {
+        _events.add(
+          OpenChatServiceEvent(
+            name: 'local_service.recovered',
+            data: const <String, Object?>{},
+          ),
+        );
+      }
+    } on Object catch (error, stackTrace) {
+      try {
+        await restartAfterInitializationFailure();
+      } on Object catch (cleanupError, cleanupStackTrace) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: cleanupError,
+            stack: cleanupStackTrace,
+            library: 'local_service',
+            context: ErrorDescription(
+              'while cleaning up a failed service recovery',
+            ),
+          ),
+        );
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+
+  String _normalizeWindowsPath(String path) =>
+      File(path).absolute.path.replaceAll('/', r'\').toLowerCase();
 
   void _forgetOperation(int id) {
     final pending = _pendingRequests.remove(id);
@@ -466,12 +592,14 @@ class OpenChatServiceOperation {
   const OpenChatServiceOperation._({
     required this.id,
     required this.events,
+    required this.eventsDone,
     required this.result,
     required this.cancel,
   });
 
   final int id;
   final Stream<OpenChatServiceEvent> events;
+  final Future<void> eventsDone;
   final Future<Map<String, Object?>> result;
   final Future<bool> Function() cancel;
 }

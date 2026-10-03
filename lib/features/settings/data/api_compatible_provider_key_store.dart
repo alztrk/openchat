@@ -20,6 +20,7 @@ class ApiCompatibleProviderKeyStore {
     'groq',
     'cerebras',
     'openrouter',
+    'mistral',
   };
   static const _storageKeyPrefix = 'openchat.compatible_provider.api_key.';
 

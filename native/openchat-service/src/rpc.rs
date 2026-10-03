@@ -1,4 +1,10 @@
-use std::{path::Path, sync::Arc};
+use std::{
+    path::Path,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
 use rusqlite::OptionalExtension;
 use serde_json::{Value, json};
@@ -7,11 +13,12 @@ use tokio::sync::watch as tokio_watch;
 use crate::{
     chat_operation::ChatSendContext,
     chatgpt::ChatGptService,
-    chatgpt_store, instructions, openai_api, openai_compatible,
+    chatgpt_store, hugging_face, instructions, local_engines, openai_api, openai_compatible,
     permissions::ToolPermissionBroker,
     protocol::{EventSink, Request, Response, ServiceError},
     storage::AppStorage,
     tools::{self, ToolPermissionMode},
+    user_question_broker::{self, RunOutcome, UserQuestionBroker},
 };
 pub(crate) async fn dispatch(
     storage: &AppStorage,
@@ -20,6 +27,9 @@ pub(crate) async fn dispatch(
     mut cancellation: tokio_watch::Receiver<bool>,
     events: EventSink,
     permission_broker: ToolPermissionBroker,
+    user_question_broker: UserQuestionBroker,
+    shutdown_requested: Arc<AtomicBool>,
+    startup_recovered: Arc<AtomicBool>,
 ) -> Result<Value, ServiceError> {
     match request.method.as_str() {
         "system.health" => Ok(json!({
@@ -36,6 +46,28 @@ pub(crate) async fn dispatch(
                     false,
                 )
             })?;
+            if startup_recovered
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                let recovery = (|| {
+                    let connection = storage.connect().map_err(|_| ())?;
+                    crate::storage::user_questions::interrupt_running_runs_after_restart(
+                        &connection,
+                        None,
+                    )
+                    .map(|_| ())
+                    .map_err(|_| ())
+                })();
+                if recovery.is_err() {
+                    startup_recovered.store(false, Ordering::SeqCst);
+                    return Err(ServiceError::new(
+                        "question_storage_unavailable",
+                        "Pending AI questions could not be recovered.",
+                        true,
+                    ));
+                }
+            }
             Ok(json!({"status": "ready", "schema_version": schema_version}))
         }
         "chatgpt.oauth.start" => service.oauth_sign_in(&mut cancellation).await,
@@ -167,6 +199,10 @@ pub(crate) async fn dispatch(
                     | "groq"
                     | "cerebras"
                     | "openrouter"
+                    | "mistral"
+                    | "llama_cpp"
+                    | "vllm"
+                    | "exllama"
             ) {
                 return Err(invalid_context_usage_params());
             }
@@ -298,6 +334,104 @@ pub(crate) async fn dispatch(
             })?;
             Ok(json!({"ready": true}))
         }
+        "local.engines.list" => local_engines::list(storage).await,
+        "local.models.list" => local_engines::model_catalog(storage),
+        "models.hub.search" => {
+            let query = match request.params.get("query") {
+                None | Some(Value::Null) => "",
+                Some(Value::String(query)) => query,
+                _ => {
+                    return Err(ServiceError::new(
+                        "invalid_request_params",
+                        "The model search query must be text.",
+                        false,
+                    ));
+                }
+            };
+            let format = required_string(&request.params, "format")?;
+            let sort = required_string(&request.params, "sort")?;
+            let cursor = match request.params.get("cursor") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(cursor)) => Some(cursor.as_str()),
+                _ => {
+                    return Err(ServiceError::new(
+                        "invalid_request_params",
+                        "The model search cursor must be text.",
+                        false,
+                    ));
+                }
+            };
+            hugging_face::search(query, format, sort, cursor).await
+        }
+        "models.hub.files" => {
+            let repo_id = required_string(&request.params, "repoId")?;
+            let format = required_string(&request.params, "format")?;
+            hugging_face::files(repo_id, format).await
+        }
+        "models.hub.download" => {
+            let repo_id = required_string(&request.params, "repoId")?;
+            let revision = required_string(&request.params, "revision")?;
+            let format = required_string(&request.params, "format")?;
+            let group_id = required_string(&request.params, "groupId")?;
+            let component_path = optional_string(&request.params, "componentPath")?;
+            hugging_face::download(
+                storage,
+                repo_id,
+                revision,
+                format,
+                group_id,
+                component_path,
+                &request.id,
+                &events,
+                &mut cancellation,
+            )
+            .await
+        }
+        "local.models.register" => {
+            local_engines::register_model(
+                storage,
+                required_string(&request.params, "engineId")?,
+                required_string(&request.params, "modelPath")?,
+                required_string(&request.params, "storageAction")?,
+            )
+            .await
+        }
+        "local.models.remove" => {
+            let model_id = required_string(&request.params, "modelId")?;
+            local_engines::remove_model(storage, model_id).await
+        }
+        "local.engines.start" => {
+            let model_id = required_string(&request.params, "modelId")?;
+            local_engines::start_model(storage, model_id, &mut cancellation).await
+        }
+        "local.engines.stop" => local_engines::stop_runtime().await,
+        "local.engines.install" => {
+            let engine_id = required_string(&request.params, "engineId")?;
+            let variant_id = required_string(&request.params, "variantId")?;
+            let (manifest, variant) = local_engines::find_variant(engine_id, variant_id)?;
+            if !local_engines::can_install(&manifest, &variant).await {
+                return Err(ServiceError::new(
+                    "local_engine_install_unavailable",
+                    "The selected local engine package is not available for this device.",
+                    false,
+                ));
+            }
+            let installed = local_engines::installer::install_engine_variant(
+                storage,
+                &manifest,
+                &variant,
+                &request.id,
+                &events,
+                &mut cancellation,
+            )
+            .await?;
+            Ok(json!({
+                "installed": true,
+                "engineId": installed.engine_id,
+                "variantId": installed.variant_id,
+                "releaseTag": installed.release_tag,
+            }))
+        }
         "chat.memory.reset_compaction" => {
             let conversation_id = required_memory_conversation_id(&request.params)?;
             let reset = chatgpt_store::reset_conversation_context(storage, conversation_id)
@@ -312,30 +446,30 @@ pub(crate) async fn dispatch(
         }
         "chat.send" => {
             let conversation_id = required_string(&request.params, "conversationId")?;
+            let resume_run_id = optional_string(&request.params, "resumeRunId")?;
             let api_key = optional_api_key(&request.params, "apiKey")?;
             let api_key_connection_id = optional_string(&request.params, "apiKeyConnectionId")?;
-            let reasoning_effort = optional_string(&request.params, "reasoningEffort")?;
-            let custom_instructions = optional_string(&request.params, "customInstructions")?;
+            let requested_reasoning_effort = optional_string(&request.params, "reasoningEffort")?;
+            let requested_custom_instructions =
+                optional_string(&request.params, "customInstructions")?;
             let permission_mode = ToolPermissionMode::from_rpc(optional_string(
                 &request.params,
                 "toolPermissionMode",
             )?)?;
-            instructions::validate_custom_instructions(custom_instructions)
-                .map_err(|message| ServiceError::new("invalid_request_params", message, false))?;
             let excluded_assistant_message_id =
                 optional_string(&request.params, "excludedAssistantMessageId")?;
-            let route = storage
-                .connect()
-                .map_err(|_| {
-                    ServiceError::new(
-                        "storage_unavailable",
-                        "Chat history could not be read.",
-                        false,
-                    )
-                })?
+            let connection = storage.connect().map_err(|_| {
+                ServiceError::new(
+                    "storage_unavailable",
+                    "Chat history could not be read.",
+                    false,
+                )
+            })?;
+            let route = connection
                 .query_row(
                     "SELECT conversations.provider_id, projects.folder_path,
-                            conversations.api_key_connection_id
+                            conversations.api_key_connection_id, conversations.model_id,
+                            conversations.connection_id, conversations.workspace_id
                      FROM conversations
                      LEFT JOIN projects ON projects.id = conversations.project_id
                      WHERE conversations.id = ?1",
@@ -345,6 +479,9 @@ pub(crate) async fn dispatch(
                             row.get::<_, Option<String>>(0)?,
                             row.get::<_, Option<String>>(1)?,
                             row.get::<_, Option<String>>(2)?,
+                            row.get::<_, Option<String>>(3)?,
+                            row.get::<_, Option<String>>(4)?,
+                            row.get::<_, Option<String>>(5)?,
                         ))
                     },
                 )
@@ -356,36 +493,205 @@ pub(crate) async fn dispatch(
                         false,
                     )
                 })?;
-            let (provider_id, project_root, stored_api_key_connection_id) =
-                route.unwrap_or((None, None, None));
+            let (
+                provider_id,
+                project_root,
+                stored_api_key_connection_id,
+                model_id,
+                connection_id,
+                workspace_id,
+            ) = route.unwrap_or((None, None, None, None, None, None));
+            let resuming_question_run = resume_run_id.is_some();
+            let (run_id, custom_instructions, reasoning_effort) = if let Some(run_id) =
+                resume_run_id
+            {
+                let run = crate::storage::user_questions::load_run_for_conversation(
+                    &connection,
+                    conversation_id,
+                    run_id,
+                )
+                .map_err(map_question_storage_error)?;
+                let checkpoint = run.checkpoint.as_ref().ok_or_else(|| {
+                    ServiceError::new(
+                        "question_run_checkpoint_missing",
+                        "The pending AI response has no saved continuation data.",
+                        false,
+                    )
+                })?;
+                if checkpoint.get("providerId").and_then(Value::as_str) != provider_id.as_deref()
+                    || checkpoint.get("modelId").and_then(Value::as_str) != model_id.as_deref()
+                    || checkpoint.get("connectionId").and_then(Value::as_str)
+                        != connection_id.as_deref()
+                    || checkpoint.get("workspaceId").and_then(Value::as_str)
+                        != workspace_id.as_deref()
+                    || checkpoint
+                        .get("providerConnectionId")
+                        .or_else(|| checkpoint.get("apiKeyConnectionId"))
+                        .and_then(Value::as_str)
+                        != stored_api_key_connection_id.as_deref()
+                {
+                    return Err(ServiceError::new(
+                        "question_route_changed",
+                        "The conversation model changed while the AI was waiting. Restore the original model to continue.",
+                        false,
+                    ));
+                }
+                let custom_instructions = checkpoint
+                    .get("customInstructions")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                let reasoning_effort = checkpoint
+                    .get("reasoningEffort")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                instructions::validate_custom_instructions(custom_instructions.as_deref())
+                    .map_err(|message| {
+                        ServiceError::new("question_run_checkpoint_invalid", message, false)
+                    })?;
+                crate::storage::user_questions::claim_run_resume(
+                    &connection,
+                    conversation_id,
+                    run_id,
+                )
+                .map_err(map_question_storage_error)?;
+                (run_id.to_owned(), custom_instructions, reasoning_effort)
+            } else {
+                let run_id = uuid::Uuid::new_v4().simple().to_string();
+                crate::storage::user_questions::create_run(
+                    &connection,
+                    &crate::storage::user_questions::NewAgentRun {
+                        run_id: run_id.clone(),
+                        conversation_id: conversation_id.to_owned(),
+                    },
+                )
+                .map_err(map_question_storage_error)?;
+                instructions::validate_custom_instructions(requested_custom_instructions).map_err(
+                    |message| ServiceError::new("invalid_request_params", message, false),
+                )?;
+                let checkpoint = json!({
+                    "version": 1,
+                    "providerId": provider_id,
+                    "modelId": model_id,
+                    "connectionId": connection_id,
+                    "workspaceId": workspace_id,
+                    "providerConnectionId": stored_api_key_connection_id,
+                    "customInstructions": requested_custom_instructions,
+                    "reasoningEffort": requested_reasoning_effort,
+                });
+                crate::storage::user_questions::save_checkpoint(
+                    &connection,
+                    conversation_id,
+                    &run_id,
+                    0,
+                    &checkpoint,
+                )
+                .map_err(map_question_storage_error)?;
+                (
+                    run_id,
+                    requested_custom_instructions.map(str::to_owned),
+                    requested_reasoning_effort.map(str::to_owned),
+                )
+            };
             let context = ChatSendContext {
                 request_id: request.id,
+                run_id: run_id.clone(),
                 conversation_id,
                 excluded_assistant_message_id,
-                custom_instructions,
+                custom_instructions: custom_instructions.as_deref(),
                 project_root: project_root.as_deref().map(Path::new),
                 data_root: storage.root(),
+                storage,
                 permission_mode,
                 permission_broker: &permission_broker,
+                user_question_broker: &user_question_broker,
                 cancellation: &mut cancellation,
                 events,
             };
-            match provider_id.as_deref() {
+            let result = match provider_id.as_deref() {
                 Some(
-                    "opencode" | "chatgpt_api" | "gemini" | "groq" | "cerebras" | "openrouter",
+                    "opencode" | "chatgpt_api" | "gemini" | "groq" | "cerebras" | "openrouter"
+                    | "mistral" | "llama_cpp" | "vllm" | "exllama",
                 ) => {
                     openai_compatible::send_message(
                         storage,
+                        service,
                         context,
                         api_key,
                         api_key_connection_id,
                         stored_api_key_connection_id,
-                        reasoning_effort,
+                        reasoning_effort.as_deref(),
                     )
                     .await
                 }
-                _ => service.send_message(context, reasoning_effort).await,
-            }
+                _ => {
+                    service
+                        .send_message(context, reasoning_effort.as_deref())
+                        .await
+                }
+            };
+            let outcome = match &result {
+                Ok(response)
+                    if response
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .is_some_and(|status| status == "stopped") =>
+                {
+                    RunOutcome::Cancelled
+                }
+                Ok(_) => RunOutcome::Completed,
+                Err(error) if error.code == "operation_cancelled" => {
+                    if shutdown_requested.load(Ordering::SeqCst) {
+                        RunOutcome::Interrupted
+                    } else {
+                        RunOutcome::Cancelled
+                    }
+                }
+                Err(error)
+                    if error.code == "question_delivery_failed"
+                        || error.code == "question_wait_interrupted"
+                        || error.code == "question_storage_unavailable" =>
+                {
+                    RunOutcome::Interrupted
+                }
+                Err(_) if resuming_question_run => RunOutcome::Interrupted,
+                Err(_) => RunOutcome::Failed,
+            };
+            user_question_broker
+                .finish_run(storage, conversation_id, &run_id, outcome)
+                .await?;
+            result
+        }
+        "chat.questions.list" => {
+            let conversation_id = required_string(&request.params, "conversationId")?;
+            let groups = user_question_broker
+                .list_pending(storage, conversation_id)
+                .await?;
+            Ok(json!({"questions": groups}))
+        }
+        "chat.questions.respond" => {
+            let conversation_id = required_string(&request.params, "conversationId")?;
+            let group_id = required_string(&request.params, "groupId")?;
+            let expected_revision = request
+                .params
+                .get("revision")
+                .and_then(Value::as_i64)
+                .filter(|revision| *revision >= 0)
+                .ok_or_else(|| invalid_question_request("question revision"))?;
+            let answers = user_question_broker::parse_answers(
+                request
+                    .params
+                    .get("answers")
+                    .ok_or_else(|| invalid_question_request("question answers"))?,
+            )?;
+            user_question_broker
+                .submit(
+                    storage,
+                    conversation_id,
+                    group_id,
+                    expected_revision,
+                    &answers,
+                )
+                .await
         }
         "chat.tool.permission.respond" => {
             let approval_request_id = required_string(&request.params, "approvalRequestId")?;
@@ -539,6 +845,42 @@ fn invalid_context_usage_params() -> ServiceError {
     )
 }
 
+fn map_question_storage_error(
+    error: crate::storage::user_questions::UserQuestionError,
+) -> ServiceError {
+    use crate::storage::user_questions::UserQuestionError;
+    match error {
+        UserQuestionError::InvalidInput(_) => invalid_question_request("question data"),
+        UserQuestionError::NotFound(_) => ServiceError::new(
+            "question_run_not_found",
+            "The pending AI response could not be found.",
+            false,
+        ),
+        UserQuestionError::Conflict(_) | UserQuestionError::StaleRevision { .. } => {
+            ServiceError::new(
+                "question_run_unavailable",
+                "The pending AI response is no longer available to resume.",
+                false,
+            )
+        }
+        UserQuestionError::Database(_) | UserQuestionError::CorruptStoredData(_) => {
+            ServiceError::new(
+                "question_storage_unavailable",
+                "The pending AI response could not be resumed.",
+                true,
+            )
+        }
+    }
+}
+
+fn invalid_question_request(field: &str) -> ServiceError {
+    ServiceError::new(
+        "invalid_request_params",
+        format!("The {field} value is invalid."),
+        false,
+    )
+}
+
 fn optional_string<'a>(params: &'a Value, name: &str) -> Result<Option<&'a str>, ServiceError> {
     match params.get(name) {
         None | Some(Value::Null) => Ok(None),
@@ -568,9 +910,26 @@ fn optional_api_key<'a>(
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::{Arc, atomic::AtomicBool},
+    };
 
-    use super::{required_memory_conversation_id, required_memory_search_query};
+    use rusqlite::params;
+    use serde_json::json;
+    use tokio::sync::watch;
+    use uuid::Uuid;
+
+    use crate::{
+        chatgpt::ChatGptService,
+        permissions::ToolPermissionBroker,
+        protocol::{EventSink, Request},
+        storage::{AppStorage, user_questions},
+        user_question_broker::UserQuestionBroker,
+    };
+
+    use super::{dispatch, required_memory_conversation_id, required_memory_search_query};
 
     #[test]
     fn memory_rpc_rejects_unbounded_or_ambiguous_values() {
@@ -594,5 +953,113 @@ mod tests {
                 .expect("valid archive query"),
             "archive clue"
         );
+    }
+
+    #[tokio::test]
+    async fn chat_send_saves_initial_provider_checkpoint_before_provider_authentication() {
+        let directory = TestDirectory::new();
+        let storage =
+            Arc::new(AppStorage::open_at(directory.0.clone()).expect("open test storage"));
+        let connection = storage.connect().expect("connect test storage");
+        connection
+            .execute_batch(
+                "CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                 ALTER TABLE conversations ADD COLUMN project_id TEXT;
+                 ALTER TABLE conversations ADD COLUMN model_id TEXT;
+                 ALTER TABLE conversations ADD COLUMN connection_id TEXT;
+                 ALTER TABLE conversations ADD COLUMN workspace_id TEXT;
+                 CREATE TABLE projects (id TEXT PRIMARY KEY, folder_path TEXT);
+                 CREATE TABLE messages (
+                    rowid INTEGER PRIMARY KEY,
+                    id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at INTEGER,
+                    tool_activities TEXT NOT NULL DEFAULT '[]'
+                 );",
+            )
+            .expect("create desktop conversation schema");
+        drop(connection);
+        storage
+            .initialize_backend_schema()
+            .expect("initialize native conversation schema");
+        let connection = storage.connect().expect("connect initialized test storage");
+        connection
+            .execute(
+                "INSERT INTO conversations (
+                    id, provider_id, project_id, model_id, connection_id, workspace_id,
+                    api_key_connection_id
+                 ) VALUES (?1, 'gemini', NULL, 'test-model', NULL, NULL, 'gemini')",
+                params!["conversation"],
+            )
+            .expect("insert API-key provider conversation");
+        drop(connection);
+
+        let service = Arc::new(
+            ChatGptService::new(Arc::clone(&storage)).expect("initialize ChatGPT service"),
+        );
+        let request = Request {
+            id: json!(1),
+            method: "chat.send".to_owned(),
+            params: json!({
+                "conversationId": "conversation",
+                "apiKeyConnectionId": "gemini",
+            }),
+        };
+        let (_cancel_sender, cancellation) = watch::channel(false);
+        let result = dispatch(
+            &storage,
+            &service,
+            request,
+            cancellation,
+            EventSink::new(),
+            ToolPermissionBroker::default(),
+            UserQuestionBroker::default(),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(true)),
+        )
+        .await;
+
+        let error = result.expect_err("provider authentication should be required");
+        assert_eq!(error.code, "authentication_required");
+
+        let connection = storage.connect().expect("reconnect test storage");
+        let run_id: String = connection
+            .query_row(
+                "SELECT id FROM agent_runs WHERE conversation_id = ?1",
+                ["conversation"],
+                |row| row.get(0),
+            )
+            .expect("chat.send should create a run");
+        let run = user_questions::load_run_for_conversation(&connection, "conversation", &run_id)
+            .expect("load chat.send run");
+        let checkpoint = run
+            .checkpoint
+            .expect("initial route checkpoint should be saved");
+        assert_eq!(checkpoint["providerConnectionId"], "gemini");
+        assert!(checkpoint.get("apiKey").is_none());
+        assert!(checkpoint.get("apiKeyConnectionId").is_none());
+
+        drop(connection);
+        drop(service);
+        drop(storage);
+    }
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("openchat-rpc-test-{}", Uuid::new_v4()));
+            fs::create_dir(&path).expect("create isolated test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).expect("remove isolated test directory");
+        }
     }
 }

@@ -17,7 +17,7 @@ use crate::{
     chatgpt_store::{self, AssistantMessageWrite, ChatGptModel},
     protocol::ServiceError,
     provider_schema::{ChatStreamEvent, ChatStreamSnapshot},
-    tools::ToolExecutor,
+    tools::{ImageGenerationContext, ToolExecutor},
 };
 
 impl ChatGptService {
@@ -36,8 +36,11 @@ impl ChatGptService {
             excluded_assistant_message_id,
             project_root,
             data_root,
+            storage,
             permission_mode,
             permission_broker,
+            user_question_broker,
+            run_id,
             cancellation,
             events,
             ..
@@ -106,6 +109,12 @@ impl ChatGptService {
         let mut output_tokens = None;
         let mut input_tokens;
         let mut tool_executor = ToolExecutor::new(project_root, data_root, permission_mode);
+        let image_generation = Some(ImageGenerationContext::ChatGptOAuth {
+            service: self,
+            connection_id: &route.connection_id,
+            workspace_id: &route.workspace_id,
+            turn_id: Some(&message_id),
+        });
         'model_turn: loop {
             if let Err(error) =
                 crate::context_compaction::validate_request_context(&payload, model.context_window)
@@ -513,13 +522,18 @@ impl ChatGptService {
                     let snapshot =
                         ChatStreamSnapshot::new(conversation_id, &message_id, &content, created_at);
                     let result = match tool_executor
-                        .execute_call(
+                        .execute_call_with_image_context(
                             call,
                             permission_broker,
                             &request_id,
                             &snapshot,
                             &events,
                             cancellation,
+                            storage,
+                            &run_id,
+                            "chatgpt",
+                            user_question_broker,
+                            image_generation.as_ref(),
                         )
                         .await
                     {
@@ -585,9 +599,29 @@ impl ChatGptService {
                 };
                 input.extend(response_output_items);
                 for result in results {
-                    let output = match serde_json::to_string(&result.output) {
-                        Ok(output) => output,
-                        Err(_) => {
+                    let output = match crate::attachments::function_call_output_value(
+                        storage.root(),
+                        conversation_id,
+                        &message_id,
+                        &result.output,
+                    ) {
+                        Ok(Some(output)) => output,
+                        Ok(None) => match serde_json::to_string(&result.output) {
+                            Ok(output) => Value::String(output),
+                            Err(_) => {
+                                self.persist_terminal_message(AssistantMessageWrite {
+                                    conversation_id,
+                                    message_id: &message_id,
+                                    content: &content,
+                                    status: "failed",
+                                    created_at_unix_ms: created_at,
+                                    output_tokens,
+                                    elapsed: Some(started.elapsed()),
+                                })?;
+                                return Err(invalid_response_error());
+                            }
+                        },
+                        Err(error) => {
                             self.persist_terminal_message(AssistantMessageWrite {
                                 conversation_id,
                                 message_id: &message_id,
@@ -597,7 +631,7 @@ impl ChatGptService {
                                 output_tokens,
                                 elapsed: Some(started.elapsed()),
                             })?;
-                            return Err(invalid_response_error());
+                            return Err(error);
                         }
                     };
                     input.push(json!({

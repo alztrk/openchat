@@ -99,6 +99,7 @@ class ChatGptModel {
     this.workspaceId,
     this.sourceLabel,
     this.groupId,
+    this.unavailabilityReason,
   });
 
   final String id;
@@ -115,6 +116,7 @@ class ChatGptModel {
   final String? workspaceId;
   final String? sourceLabel;
   final String? groupId;
+  final String? unavailabilityReason;
 
   String get routeKey =>
       '$providerId:${connectionId ?? ''}:${workspaceId ?? ''}:$id';
@@ -140,6 +142,7 @@ class ChatGptModel {
     workspaceId: workspaceId,
     sourceLabel: sourceLabel,
     groupId: groupId,
+    unavailabilityReason: unavailabilityReason,
   );
 
   factory ChatGptModel.fromJson(Map<String, Object?> json) {
@@ -174,6 +177,7 @@ class ChatGptModel {
       supportsImages: supportsImages == true,
       isAvailable: json['isAvailable'] == true,
       groupId: _optionalString(json, 'groupId'),
+      unavailabilityReason: _optionalString(json, 'reason'),
     );
   }
 }

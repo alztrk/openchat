@@ -10,16 +10,36 @@ use tokio::{
 #[derive(Clone)]
 pub struct EventSink {
     output: Arc<Mutex<Stdout>>,
+    #[cfg(test)]
+    test_events: Option<tokio::sync::mpsc::UnboundedSender<Response>>,
 }
 
 impl EventSink {
     pub fn new() -> Self {
         Self {
             output: Arc::new(Mutex::new(tokio::io::stdout())),
+            #[cfg(test)]
+            test_events: None,
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn test_channel() -> (Self, tokio::sync::mpsc::UnboundedReceiver<Response>) {
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        (
+            Self {
+                output: Arc::new(Mutex::new(tokio::io::stdout())),
+                test_events: Some(sender),
+            },
+            receiver,
+        )
+    }
+
     pub async fn send(&self, response: &Response) -> io::Result<()> {
+        #[cfg(test)]
+        if let Some(test_events) = &self.test_events {
+            return test_events.send(response.clone()).map_err(io::Error::other);
+        }
         let encoded = serde_json::to_vec(response).map_err(io::Error::other)?;
         let mut output = self.output.lock().await;
         output.write_all(&encoded).await?;
@@ -40,7 +60,7 @@ fn empty_params() -> Value {
     Value::Object(Default::default())
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Response {
     pub id: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -85,7 +105,7 @@ impl Response {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct ServiceError {
     pub code: &'static str,
     pub message: String,

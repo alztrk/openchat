@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:openchat/features/chat/domain/chat_attachment.dart';
 
@@ -34,9 +35,15 @@ class ChatAttachmentStore {
         'The selected attachments exceed the supported count or total size.',
       );
     }
+    final preparedAttachments =
+        <({ChatAttachment attachment, Uint8List bytes})>[];
     for (final attachment in attachments) {
       _validateIdentifier(attachment.id, 'attachmentId');
-      final bytes = attachment.bytes;
+      final bytes = await _readAttachmentBytes(
+        attachment,
+        conversationId: conversationId,
+        messageId: messageId,
+      );
       final maxBytes = attachment.isImage
           ? maximumImageBytes
           : maximumTextBytes;
@@ -44,8 +51,7 @@ class ChatAttachmentStore {
       final extension = extensionSeparator < 0
           ? ''
           : attachment.name.substring(extensionSeparator + 1).toLowerCase();
-      if (bytes == null ||
-          !attachment.isAvailable ||
+      if (!attachment.isAvailable ||
           bytes.length != attachment.sizeBytes ||
           bytes.isEmpty ||
           bytes.length > maxBytes ||
@@ -73,6 +79,7 @@ class ChatAttachmentStore {
           'The selected image data did not match its file type.',
         );
       }
+      preparedAttachments.add((attachment: attachment, bytes: bytes));
     }
 
     final parent = Directory(_conversationPath(conversationId));
@@ -82,15 +89,11 @@ class ChatAttachmentStore {
     );
     try {
       await staging.create(recursive: true);
-      for (final attachment in attachments) {
-        final file = File(_attachmentPath(staging.path, attachment.id));
-        final bytes = attachment.bytes;
-        if (bytes == null) {
-          throw const ChatAttachmentStorageException(
-            'A selected attachment was no longer available.',
-          );
-        }
-        await file.writeAsBytes(bytes, flush: true);
+      for (final prepared in preparedAttachments) {
+        final file = File(
+          _attachmentPath(staging.path, prepared.attachment.id),
+        );
+        await file.writeAsBytes(prepared.bytes, flush: true);
       }
       if (await destination.exists()) {
         await destination.delete(recursive: true);
@@ -114,6 +117,43 @@ class ChatAttachmentStore {
           error,
         ),
         stackTrace,
+      );
+    }
+  }
+
+  Future<Uint8List> _readAttachmentBytes(
+    ChatAttachment attachment, {
+    required String conversationId,
+    required String messageId,
+  }) async {
+    final bytes = attachment.bytes;
+    if (bytes != null) return bytes;
+
+    final sourcePath = attachment.localPath;
+    if (sourcePath == null) {
+      throw const ChatAttachmentStorageException(
+        'The selected attachment is no longer available.',
+      );
+    }
+    try {
+      final source = File(sourcePath);
+      final destination = File(
+        _attachmentPath(_messagePath(conversationId, messageId), attachment.id),
+      );
+      if (!await source.exists() ||
+          !await destination.exists() ||
+          await source.resolveSymbolicLinks() !=
+              await destination.resolveSymbolicLinks() ||
+          await source.length() != attachment.sizeBytes) {
+        throw const ChatAttachmentStorageException(
+          'The selected attachment is no longer available in this message.',
+        );
+      }
+      return await source.readAsBytes();
+    } on FileSystemException catch (error) {
+      throw ChatAttachmentStorageException(
+        'The selected attachment could not be read.',
+        error,
       );
     }
   }

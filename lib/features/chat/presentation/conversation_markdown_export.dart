@@ -15,6 +15,7 @@ String buildConversationMarkdown(
     'groq' => l10n.groqProvider,
     'cerebras' => l10n.cerebrasProvider,
     'openrouter' => l10n.openRouterProvider,
+    'mistral' => l10n.mistralProvider,
     _ => l10n.chatGptProvider,
   };
   final modelLabel = conversation.modelId ?? l10n.messageModelUnavailable;
@@ -67,6 +68,7 @@ String buildConversationMarkdown(
         'status': switch (activity.status) {
           chat.ChatToolActivityStatus.awaitingApproval =>
             l10n.toolAwaitingApproval,
+          chat.ChatToolActivityStatus.waitingForUser => l10n.toolWaitingForUser,
           chat.ChatToolActivityStatus.running => l10n.toolRunning,
           chat.ChatToolActivityStatus.completed => l10n.toolCompleted,
           chat.ChatToolActivityStatus.failed => l10n.toolFailed,

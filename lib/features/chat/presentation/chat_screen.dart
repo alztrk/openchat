@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -10,9 +11,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/openchat_toast.dart';
 import 'package:openchat/features/chat/data/chat_repository.dart';
+import 'package:openchat/features/chat/data/chat_stream_message_persister.dart';
 import 'package:openchat/features/chat/data/chat_attachment_store.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
 import 'package:openchat/features/chat/domain/chat_conversation.dart';
+import 'package:openchat/features/chat/domain/agent_question.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart' as chat;
 import 'package:openchat/features/chat/domain/chat_attachment.dart';
 import 'package:openchat/features/chat/domain/chat_project.dart';
@@ -22,6 +25,9 @@ import 'package:openchat/features/chat/domain/default_model_preference.dart';
 import 'package:openchat/features/chat/domain/history_storage_status.dart';
 import 'package:openchat/features/chat/domain/model_favorite.dart';
 import 'package:openchat/features/chat/domain/tool_permission_request.dart';
+import 'package:openchat/features/models/data/hugging_face_models_repository.dart';
+import 'package:openchat/features/models/presentation/local_models_page.dart';
+import 'package:openchat/features/models/presentation/models_page.dart';
 import 'package:openchat/features/settings/data/api_compatible_provider_key_store.dart';
 import 'package:openchat/features/settings/data/chat_gpt_api_key_store.dart';
 import 'package:openchat/features/settings/data/open_code_api_key_store.dart';
@@ -30,12 +36,15 @@ import 'package:openchat/features/settings/domain/chat_gpt_api_key_connection.da
 import 'package:openchat/features/settings/presentation/settings_screen.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/platform/windows/openchat_service_client.dart';
+import 'package:openchat/platform/windows/user_question_notifications.dart';
 
 import 'package:openchat/features/chat/presentation/conversation_markdown_export.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_navigation_rail.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_sidebar.dart';
 import 'package:openchat/features/chat/presentation/widgets/create_project_dialog.dart';
+
+const _localEngineProviderIds = <String>{'llama_cpp', 'vllm', 'exllama'};
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
@@ -99,6 +108,8 @@ class _ChatScreenState extends State<ChatScreen> {
   final _messageScrollController = ScrollController();
   final List<ChatAttachment> _pendingAttachments = <ChatAttachment>[];
   bool _settingsOpen = false;
+  bool _modelsPageOpen = false;
+  bool _localModelsPageOpen = false;
   bool _sidebarsCompact = false;
   bool _isSending = false;
   bool _isLoadingToolPermissionMode = true;
@@ -108,6 +119,18 @@ class _ChatScreenState extends State<ChatScreen> {
   ToolPermissionRequest? _pendingToolPermissionRequest;
   bool _isRespondingToToolPermission = false;
   String? _toolPermissionError;
+  List<AgentQuestionGroup> _pendingQuestionGroups =
+      const <AgentQuestionGroup>[];
+  bool _isResumingQuestion = false;
+  bool _isLoadingPendingQuestions = false;
+  bool _questionLoadFailed = false;
+  int _questionListGeneration = 0;
+  String? _focusedQuestionGroupId;
+  final Set<String> _questionRunRefreshConversations = <String>{};
+  StreamSubscription<OpenChatServiceEvent>? _questionServiceEvents;
+  late final UserQuestionNotifications _questionNotifications =
+      UserQuestionNotifications();
+  late final Future<void> _questionNotificationsReady;
   String? _activeChatConversationId;
   String? _replacingAssistantMessageId;
   bool _isLoadingConnections = false;
@@ -150,6 +173,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Stream<List<chat.ChatMessage>>? _messageStream;
   Stream<List<FavoriteModel>>? _favoriteModelsStream;
   ConversationMemoryRepository? _conversationMemoryRepository;
+  HuggingFaceDownloadController? _modelDownloadController;
 
   @override
   void initState() {
@@ -158,7 +182,16 @@ class _ChatScreenState extends State<ChatScreen> {
     _conversationMemoryRepository = serviceClient == null
         ? null
         : ConversationMemoryRepository(serviceClient);
+    _modelDownloadController = serviceClient == null
+        ? null
+        : HuggingFaceDownloadController(
+            HuggingFaceModelsRepository(serviceClient),
+          );
+    _modelDownloadController?.addListener(_handleModelDownloadChanged);
     _bindRepositoryStreams();
+    _bindQuestionServiceEvents();
+    _questionNotificationsReady = _initializeQuestionNotifications();
+    unawaited(_questionNotificationsReady);
     unawaited(_loadToolPermissionMode());
     if (widget.historyStorageStatus == HistoryStorageStatus.available) {
       unawaited(_loadProviderState());
@@ -169,10 +202,22 @@ class _ChatScreenState extends State<ChatScreen> {
   void didUpdateWidget(covariant ChatScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.serviceClient != widget.serviceClient) {
+      unawaited(_questionServiceEvents?.cancel());
+      _questionServiceEvents = null;
+      _bindQuestionServiceEvents();
       final serviceClient = widget.serviceClient;
       _conversationMemoryRepository = serviceClient == null
           ? null
           : ConversationMemoryRepository(serviceClient);
+      final oldController = _modelDownloadController;
+      oldController?.removeListener(_handleModelDownloadChanged);
+      oldController?.dispose();
+      _modelDownloadController = serviceClient == null
+          ? null
+          : HuggingFaceDownloadController(
+              HuggingFaceModelsRepository(serviceClient),
+            );
+      _modelDownloadController?.addListener(_handleModelDownloadChanged);
     }
     if (oldWidget.chatRepository != widget.chatRepository ||
         oldWidget.historyStorageStatus != widget.historyStorageStatus) {
@@ -208,16 +253,413 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _selectConversation(String conversationId) {
     _modelSelectionGeneration++;
+    _questionListGeneration++;
     _resetMessageScroll();
     setState(() {
       _selectedConversationId = conversationId;
+      _settingsOpen = false;
+      _modelsPageOpen = false;
+      _localModelsPageOpen = false;
       _messageStream = widget.chatRepository?.watchMessages(conversationId);
       _selectedModelId = null;
       _selectedReasoningEffort = null;
       _isUpdatingConversationModel = false;
       _titleEditRequestId = null;
+      _pendingQuestionGroups = const <AgentQuestionGroup>[];
+      _isLoadingPendingQuestions = true;
+      _questionLoadFailed = false;
     });
     unawaited(_loadConversationModels(conversationId));
+    unawaited(_loadPendingQuestionGroups(conversationId));
+  }
+
+  void _bindQuestionServiceEvents() {
+    final service = widget.serviceClient;
+    if (service == null) return;
+    _questionServiceEvents = service.events.listen(
+      (event) {
+        final conversationId = _selectedConversationId;
+        if (event.name == 'local_service.recovered' && conversationId != null) {
+          unawaited(_loadPendingQuestionGroups(conversationId));
+        }
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'user_questions',
+            context: ErrorDescription(
+              'while listening for local service recovery',
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _initializeQuestionNotifications() async {
+    try {
+      final launchTarget = await _questionNotifications.initialize(
+        onSelected: _openQuestionNotification,
+      );
+      if (launchTarget != null) _openQuestionNotification(launchTarget);
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'notifications',
+          context: ErrorDescription(
+            'while initializing AI question notifications',
+          ),
+        ),
+      );
+    }
+  }
+
+  void _openQuestionNotification(UserQuestionNotificationTarget target) {
+    if (!mounted) return;
+    if (_selectedConversationId != target.conversationId) {
+      _selectConversation(target.conversationId);
+    } else {
+      setState(() {
+        _settingsOpen = false;
+        _modelsPageOpen = false;
+        _localModelsPageOpen = false;
+      });
+    }
+    unawaited(_focusQuestionNotification(target));
+  }
+
+  Future<void> _focusQuestionNotification(
+    UserQuestionNotificationTarget target,
+  ) async {
+    await _loadPendingQuestionGroups(target.conversationId);
+    if (!mounted ||
+        _selectedConversationId != target.conversationId ||
+        _questionLoadFailed) {
+      return;
+    }
+    if (!_pendingQuestionGroups.any((group) => group.id == target.groupId)) {
+      _showMessage(context.openchatL10n.userQuestionUnavailable);
+      return;
+    }
+    setState(() => _focusedQuestionGroupId = target.groupId);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _focusedQuestionGroupId == target.groupId) {
+        setState(() => _focusedQuestionGroupId = null);
+      }
+    });
+  }
+
+  Future<void> _loadPendingQuestionGroups(String conversationId) async {
+    final generation = ++_questionListGeneration;
+    final service = widget.serviceClient;
+    if (service == null) {
+      if (mounted &&
+          generation == _questionListGeneration &&
+          _selectedConversationId == conversationId) {
+        setState(() {
+          _isLoadingPendingQuestions = false;
+          _questionLoadFailed = true;
+        });
+      }
+      return;
+    }
+    if (mounted &&
+        generation == _questionListGeneration &&
+        _selectedConversationId == conversationId) {
+      setState(() => _isLoadingPendingQuestions = true);
+    }
+    try {
+      final response = await service.call(
+        'chat.questions.list',
+        params: <String, Object?>{'conversationId': conversationId},
+      );
+      final rawGroups = response['questions'];
+      if (rawGroups is! List<Object?>) {
+        throw const FormatException('The pending question list was invalid.');
+      }
+      final groups = rawGroups
+          .map(AgentQuestionGroup.fromJson)
+          .toList(growable: false);
+      if (!mounted ||
+          generation != _questionListGeneration ||
+          _selectedConversationId != conversationId) {
+        return;
+      }
+      setState(() {
+        _pendingQuestionGroups = groups;
+        _isLoadingPendingQuestions = false;
+        _questionLoadFailed = false;
+      });
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'user_questions',
+          context: ErrorDescription('while loading pending AI questions'),
+        ),
+      );
+      if (!mounted ||
+          generation != _questionListGeneration ||
+          _selectedConversationId != conversationId) {
+        return;
+      }
+      setState(() {
+        _isLoadingPendingQuestions = false;
+        _questionLoadFailed = true;
+      });
+      _showMessage(context.openchatL10n.userQuestionLoadFailed);
+    }
+  }
+
+  Future<void> _handleQuestionRequested(Map<String, Object?> data) async {
+    AgentQuestionGroup group;
+    try {
+      group = AgentQuestionGroup.fromJson(data);
+    } on FormatException catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'user_questions',
+          context: ErrorDescription('while reading a pending AI question'),
+        ),
+      );
+      final activeConversationId = _selectedConversationId;
+      if (mounted && activeConversationId != null) {
+        unawaited(_loadPendingQuestionGroups(activeConversationId));
+      }
+      if (mounted) _showMessage(context.openchatL10n.userQuestionLoadFailed);
+      return;
+    }
+
+    if (mounted && _selectedConversationId == group.conversationId) {
+      _questionListGeneration++;
+      setState(() {
+        _pendingQuestionGroups = <AgentQuestionGroup>[
+          ..._pendingQuestionGroups.where((item) => item.id != group.id),
+          group,
+        ];
+        _isLoadingPendingQuestions = false;
+        _questionLoadFailed = false;
+      });
+    }
+    if (!Platform.isWindows) return;
+    final l10n = context.openchatL10n;
+    try {
+      await _questionNotificationsReady;
+      await _questionNotifications.show(
+        groupId: group.id,
+        conversationId: group.conversationId,
+        title: l10n.userQuestionNotificationTitle,
+        body: l10n.userQuestionNotificationBody,
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'notifications',
+          context: ErrorDescription(
+            'while notifying about a pending AI question',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<String?> _submitQuestionAnswers(
+    ChatConversation? selectedConversation,
+    AgentQuestionGroup group,
+    List<AgentQuestionAnswer> answers,
+  ) async {
+    final l10n = context.openchatL10n;
+    if (selectedConversation == null ||
+        selectedConversation.id != group.conversationId) {
+      return l10n.userQuestionUnavailable;
+    }
+    if (group.isAnswered) {
+      return _resumeAnsweredQuestion(selectedConversation, group);
+    }
+    final service = widget.serviceClient;
+    if (service == null) return l10n.userQuestionUnavailable;
+
+    setState(() => _isResumingQuestion = true);
+    try {
+      final response = await service.call(
+        'chat.questions.respond',
+        params: <String, Object?>{
+          'conversationId': group.conversationId,
+          'groupId': group.id,
+          'revision': group.revision,
+          'answers': answers.map((answer) => answer.toJson()).toList(),
+        },
+      );
+      final executionActive = response['executionActive'];
+      final idempotent = response['idempotent'];
+      final question = AgentQuestionGroup.fromJson(response['question']);
+      if (executionActive is! bool || idempotent is! bool) {
+        throw const FormatException('The question response was invalid.');
+      }
+      if (executionActive) {
+        _questionRunRefreshConversations.add(group.conversationId);
+        _removeQuestionGroup(group.id);
+        return null;
+      }
+      _replaceQuestionGroup(question);
+      if (idempotent) return null;
+
+      await _persistQuestionToolAnswer(question, answers, finishMessage: true);
+      await _sendMessage(selectedConversation, resumeRunId: question.runId);
+      await _loadPendingQuestionGroups(group.conversationId);
+      return null;
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'user_questions',
+          context: ErrorDescription('while saving and resuming an AI question'),
+        ),
+      );
+      await _loadPendingQuestionGroups(group.conversationId);
+      return l10n.userQuestionSubmitFailed;
+    } finally {
+      if (mounted) setState(() => _isResumingQuestion = false);
+    }
+  }
+
+  Future<String?> _resumeAnsweredQuestion(
+    ChatConversation selectedConversation,
+    AgentQuestionGroup group,
+  ) async {
+    final l10n = context.openchatL10n;
+    setState(() => _isResumingQuestion = true);
+    try {
+      await _persistQuestionToolAnswer(
+        group,
+        group.savedAnswers,
+        finishMessage: true,
+      );
+      await _sendMessage(selectedConversation, resumeRunId: group.runId);
+      await _loadPendingQuestionGroups(group.conversationId);
+      return null;
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'user_questions',
+          context: ErrorDescription('while resuming a saved AI question'),
+        ),
+      );
+      await _loadPendingQuestionGroups(group.conversationId);
+      return l10n.userQuestionResumeFailed;
+    } finally {
+      if (mounted) setState(() => _isResumingQuestion = false);
+    }
+  }
+
+  Future<void> _persistQuestionToolAnswer(
+    AgentQuestionGroup group,
+    List<AgentQuestionAnswer> answers, {
+    required bool finishMessage,
+  }) async {
+    final repository = widget.chatRepository;
+    final assistantMessageId = group.assistantMessageId;
+    final toolCallId = group.toolCallId;
+    final toolName = group.toolName;
+    final arguments = group.toolArguments;
+    if (repository == null ||
+        assistantMessageId == null ||
+        toolCallId == null ||
+        toolName == null ||
+        arguments == null) {
+      throw const FormatException(
+        'The saved question continuation was incomplete.',
+      );
+    }
+    final messages = await repository.getMessages(group.conversationId);
+    chat.ChatMessage? message;
+    for (final candidate in messages) {
+      if (candidate.id == assistantMessageId) {
+        message = candidate;
+        break;
+      }
+    }
+    if (message == null || message.role != chat.ChatMessageRole.assistant) {
+      throw const FormatException(
+        'The assistant message for this question is missing.',
+      );
+    }
+    final output = <String, Object?>{
+      'answers': answers.map((answer) => answer.toJson()).toList(),
+    };
+    final activities = List<chat.ChatToolActivity>.of(message.toolActivities);
+    final activityIndex = activities.indexWhere(
+      (activity) => activity.callId == toolCallId,
+    );
+    final completed = chat.ChatToolActivity(
+      callId: toolCallId,
+      name: toolName,
+      arguments: arguments,
+      roundId: activityIndex < 0 ? null : activities[activityIndex].roundId,
+      assistantTextBeforeByteOffset: activityIndex < 0
+          ? null
+          : activities[activityIndex].assistantTextBeforeByteOffset,
+      output: output,
+      targetPath: null,
+      status: chat.ChatToolActivityStatus.completed,
+    );
+    if (activityIndex < 0) {
+      activities.add(completed);
+    } else {
+      activities[activityIndex] = completed;
+    }
+    await repository.saveMessage(
+      conversationId: group.conversationId,
+      message: chat.ChatMessage(
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        attachments: message.attachments,
+        createdAt: message.createdAt,
+        outputTokens: message.outputTokens,
+        tokensPerSecond: message.tokensPerSecond,
+        elapsed: message.elapsed,
+        reasoningSummaries: message.reasoningSummaries,
+        toolActivities: List<chat.ChatToolActivity>.unmodifiable(activities),
+        status: finishMessage && !_isSending
+            ? chat.ChatMessageStatus.completed
+            : message.status,
+        failureCode: message.failureCode,
+      ),
+    );
+  }
+
+  void _replaceQuestionGroup(AgentQuestionGroup group) {
+    if (!mounted || _selectedConversationId != group.conversationId) return;
+    _questionListGeneration++;
+    setState(() {
+      _pendingQuestionGroups = <AgentQuestionGroup>[
+        for (final current in _pendingQuestionGroups)
+          if (current.id == group.id) group else current,
+      ];
+    });
+  }
+
+  void _removeQuestionGroup(String groupId) {
+    if (!mounted) return;
+    _questionListGeneration++;
+    setState(() {
+      _pendingQuestionGroups = _pendingQuestionGroups
+          .where((group) => group.id != groupId)
+          .toList(growable: false);
+    });
   }
 
   Future<void> _loadProviderState({bool forceRefresh = false}) async {
@@ -435,6 +877,7 @@ class _ChatScreenState extends State<ChatScreen> {
         'groq' => 'groq',
         'cerebras' => 'cerebras',
         'openrouter' => 'openrouter',
+        'mistral' => 'mistral',
         _ =>
           conversation?.connectionId != null
               ? 'chatgpt'
@@ -561,6 +1004,7 @@ class _ChatScreenState extends State<ChatScreen> {
         Map<String, Object?> response, {
         required String routeProviderId,
         required String groupId,
+        String? localEngineId,
         String? connectionId,
         String? workspaceId,
         String? sourceLabel,
@@ -573,8 +1017,15 @@ class _ChatScreenState extends State<ChatScreen> {
             'The provider model catalog was invalid.',
           );
         }
+        final scopedModels = localEngineId == null
+            ? rawModels
+            : rawModels
+                  .where(
+                    (value) => _objectMap(value)['engineId'] == localEngineId,
+                  )
+                  .toList(growable: false);
         return (
-          models: rawModels
+          models: scopedModels
               .map((value) => ChatGptModel.fromJson(_objectMap(value)))
               .map(
                 (model) => model.withRoute(
@@ -590,7 +1041,16 @@ class _ChatScreenState extends State<ChatScreen> {
         );
       }
 
-      if (providerFamily == 'opencode') {
+      if (_localEngineProviderIds.contains(providerFamily)) {
+        final response = await service.call('local.models.list');
+        final catalog = parseCatalog(
+          response,
+          routeProviderId: providerFamily,
+          groupId: 'models',
+          localEngineId: providerFamily,
+        );
+        models.addAll(catalog.models);
+      } else if (providerFamily == 'opencode') {
         final apiKey = await widget.openCodeApiKeyStore?.readApiKey();
         final response = await service.call(
           'opencode.models.list',
@@ -963,6 +1423,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (favorite.providerId != 'chatgpt' &&
         favorite.providerId != 'chatgpt_api' &&
         favorite.providerId != 'opencode' &&
+        !_localEngineProviderIds.contains(favorite.providerId) &&
         !ApiCompatibleProviderKeyStore.providerIds.contains(
           favorite.providerId,
         )) {
@@ -1016,6 +1477,7 @@ class _ChatScreenState extends State<ChatScreen> {
         .contains(providerId);
     if ((providerId != 'chatgpt' &&
             providerId != 'opencode' &&
+            !_localEngineProviderIds.contains(providerId) &&
             !isCompatibleProvider) ||
         (providerId == 'chatgpt' && !_isChatGptConnected) ||
         (isCompatibleProvider &&
@@ -1124,6 +1586,26 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _selectedReasoningEffort = effort);
   }
 
+  void _handleModelDownloadChanged() {
+    final controller = _modelDownloadController;
+    final model = controller?.downloadedModel;
+    if (controller?.status != HuggingFaceDownloadStatus.completed ||
+        model == null ||
+        _providerFamily(_selectedProviderId) != model.engineId) {
+      return;
+    }
+    unawaited(
+      _loadModels(
+        providerId: _selectedProviderId,
+        selectedModelId: _selectedModelId,
+        selectedModelRouteKey: _selectedModelId == null
+            ? null
+            : _routeKey(_selectedProviderId, modelId: _selectedModelId),
+        forceRefresh: true,
+      ),
+    );
+  }
+
   void _resetMessageScroll() {
     if (_messageScrollController.hasClients) {
       _messageScrollController.jumpTo(0);
@@ -1148,11 +1630,17 @@ class _ChatScreenState extends State<ChatScreen> {
       _selectedConnectionId = defaultModel?.connectionId;
       _selectedWorkspaceId = defaultModel?.workspaceId;
       _messageStream = null;
+      _pendingQuestionGroups = const <AgentQuestionGroup>[];
+      _isLoadingPendingQuestions = false;
+      _isResumingQuestion = false;
+      _questionLoadFailed = false;
       _selectedModelId = defaultModel?.modelId;
       _selectedReasoningEffort = null;
       _isUpdatingConversationModel = false;
       _titleEditRequestId = null;
       _settingsOpen = false;
+      _modelsPageOpen = false;
+      _localModelsPageOpen = false;
     });
     unawaited(_loadProviderState());
   }
@@ -1191,6 +1679,9 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       _selectedConversationId = null;
       _messageStream = null;
+      _pendingQuestionGroups = const <AgentQuestionGroup>[];
+      _isLoadingPendingQuestions = false;
+      _questionLoadFailed = false;
       _isUpdatingConversationModel = false;
       _titleEditRequestId = null;
     });
@@ -1199,6 +1690,7 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _sendMessage(
     ChatConversation? selectedConversation, {
     chat.ChatMessage? responseToReplace,
+    String? resumeRunId,
   }) async {
     if (_isSending ||
         _isUpdatingConversationModel ||
@@ -1207,19 +1699,29 @@ class _ChatScreenState extends State<ChatScreen> {
         _isSavingToolPermissionMode) {
       return;
     }
+    if (resumeRunId == null &&
+        (_isLoadingPendingQuestions ||
+            _questionLoadFailed ||
+            _pendingQuestionGroups.isNotEmpty)) {
+      return;
+    }
     final toolPermissionMode = _toolPermissionMode;
     final repository = widget.chatRepository;
     final service = widget.serviceClient;
     final l10n = context.openchatL10n;
-    final text = responseToReplace == null
+    final text = responseToReplace == null && resumeRunId == null
         ? _messageController.text.trim()
         : '';
-    final attachments = responseToReplace == null
+    final attachments = responseToReplace == null && resumeRunId == null
         ? List<ChatAttachment>.unmodifiable(_pendingAttachments)
         : const <ChatAttachment>[];
     if (repository == null ||
         service == null ||
-        (responseToReplace == null && text.isEmpty && attachments.isEmpty)) {
+        (resumeRunId != null && selectedConversation == null) ||
+        (responseToReplace == null &&
+            resumeRunId == null &&
+            text.isEmpty &&
+            attachments.isEmpty)) {
       return;
     }
 
@@ -1249,6 +1751,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _showMessage(context.openchatL10n.modelRequired);
       return;
     }
+
     final modelRouteKey = _routeKey(
       providerId,
       modelId: modelId,
@@ -1369,7 +1872,9 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     try {
-      if (responseToReplace == null && selectedConversation == null) {
+      if (responseToReplace == null &&
+          resumeRunId == null &&
+          selectedConversation == null) {
         await repository.createConversation(
           id: conversationId,
           title: l10n.conversationTitle,
@@ -1387,7 +1892,7 @@ class _ChatScreenState extends State<ChatScreen> {
           });
         }
       }
-      if (responseToReplace == null) {
+      if (responseToReplace == null && resumeRunId == null) {
         await repository.saveMessage(
           conversationId: conversationId,
           message: chat.ChatMessage(
@@ -1419,7 +1924,7 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    if (responseToReplace == null) {
+    if (responseToReplace == null && resumeRunId == null) {
       _messageController.clear();
       if (mounted) setState(_pendingAttachments.clear);
     }
@@ -1437,8 +1942,32 @@ class _ChatScreenState extends State<ChatScreen> {
     var streamChunkCount = 0;
     int? liveOutputTokens;
     double? liveTokensPerSecond;
-    var persistence = Future<void>.value();
+    final streamMessagePersister = ChatStreamMessagePersister(
+      write: (message) => repository.saveMessage(
+        conversationId: conversationId,
+        message: message,
+        updateConversationTimestamp: false,
+      ),
+    );
     StreamSubscription<OpenChatServiceEvent>? subscription;
+    OpenChatServiceOperation? operation;
+
+    Future<void> flushFailedStreamPersistence() async {
+      try {
+        await streamMessagePersister.flush();
+      } on Object catch (error, stackTrace) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'chat_history',
+            context: ErrorDescription(
+              'while flushing streamed assistant message updates',
+            ),
+          ),
+        );
+      }
+    }
 
     Future<bool> preserveFailedResponse({
       String failureCode = 'chat_request_failed',
@@ -1523,14 +2052,18 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     try {
-      final operation = await service.startOperation(
+      final activeOperation = await service.startOperation(
         'chat.send',
         params: <String, Object?>{
           'conversationId': conversationId,
+          ...?switch (resumeRunId) {
+            final runId? => <String, Object?>{'resumeRunId': runId},
+            _ => null,
+          },
           if (sharedInstructions.trim().isNotEmpty)
             'customInstructions': sharedInstructions,
           ...?switch (apiKey) {
-            final apiKey? => <String, Object?>{'apiKey': apiKey},
+            final key? => <String, Object?>{'apiKey': key},
             _ => null,
           },
           if (_isApiKeyRouteProvider(providerId))
@@ -1541,14 +2074,25 @@ class _ChatScreenState extends State<ChatScreen> {
             },
             _ => null,
           },
-          if (_selectedReasoningEffort != null)
-            'reasoningEffort': _selectedReasoningEffort,
+          ...?switch (_selectedReasoningEffort) {
+            final effort? => <String, Object?>{'reasoningEffort': effort},
+            _ => null,
+          },
           'toolPermissionMode': toolPermissionMode.serviceValue,
         },
       );
-      _activeChatOperation = operation;
-      subscription = operation.events.listen(
+      operation = activeOperation;
+      _activeChatOperation = activeOperation;
+      subscription = activeOperation.events.listen(
         (event) {
+          if (event.name == 'chat.question.requested') {
+            final conversationId = event.data['conversationId'];
+            if (conversationId is String) {
+              _questionRunRefreshConversations.add(conversationId);
+            }
+            unawaited(_handleQuestionRequested(event.data));
+            return;
+          }
           if (event.name == 'chat.tool.permission.requested') {
             _handleToolPermissionRequest(event.data);
             return;
@@ -1629,12 +2173,7 @@ class _ChatScreenState extends State<ChatScreen> {
             toolActivities: assistantToolActivities,
             status: chat.ChatMessageStatus.streaming,
           );
-          persistence = persistence.then(
-            (_) => repository.saveMessage(
-              conversationId: conversationId,
-              message: snapshot,
-            ),
-          );
+          streamMessagePersister.add(snapshot);
         },
         onError: (Object error, StackTrace stackTrace) {
           FlutterError.reportError(
@@ -1649,8 +2188,9 @@ class _ChatScreenState extends State<ChatScreen> {
           );
         },
       );
-      final result = await operation.result;
-      await persistence;
+      final result = await activeOperation.result;
+      await activeOperation.eventsDone;
+      await streamMessagePersister.flush();
       final resultStatus = result['status'];
       final status = switch (resultStatus) {
         'completed' => chat.ChatMessageStatus.completed,
@@ -1745,7 +2285,19 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       }
     } on OpenChatServiceException catch (error) {
-      await persistence;
+      if (resumeRunId != null ||
+          error.code == 'question_delivery_failed' ||
+          error.code == 'question_wait_interrupted' ||
+          error.code == 'question_storage_unavailable' ||
+          error.code == 'service_exited' ||
+          error.code == 'service_pipe_failed' ||
+          error.code == 'service_unavailable') {
+        _questionRunRefreshConversations.add(conversationId);
+      }
+      if (operation case final activeOperation?) {
+        await activeOperation.eventsDone;
+      }
+      await flushFailedStreamPersistence();
       final retryCleanupSucceeded = await preserveFailedResponse(
         failureCode: error.code,
       );
@@ -1757,7 +2309,13 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       }
     } on Object catch (error, stackTrace) {
-      await persistence;
+      if (resumeRunId != null) {
+        _questionRunRefreshConversations.add(conversationId);
+      }
+      if (operation case final activeOperation?) {
+        await activeOperation.eventsDone;
+      }
+      await flushFailedStreamPersistence();
       final retryCleanupSucceeded = await preserveFailedResponse();
       FlutterError.reportError(
         FlutterErrorDetails(
@@ -1788,6 +2346,9 @@ class _ChatScreenState extends State<ChatScreen> {
             _replacingAssistantMessageId = null;
           }
         });
+      }
+      if (_questionRunRefreshConversations.remove(conversationId)) {
+        await _loadPendingQuestionGroups(conversationId);
       }
     }
   }
@@ -2428,10 +2989,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    unawaited(_questionServiceEvents?.cancel());
     _pendingAttachments.clear();
     _searchController.dispose();
     _messageController.dispose();
     _messageScrollController.dispose();
+    final downloadController = _modelDownloadController;
+    downloadController?.removeListener(_handleModelDownloadChanged);
+    downloadController?.dispose();
     super.dispose();
   }
 
@@ -2472,6 +3037,7 @@ class _ChatScreenState extends State<ChatScreen> {
           builder: (context, constraints) {
             final showSidebar =
                 !_settingsOpen &&
+                !_modelsPageOpen &&
                 constraints.maxWidth >= OpenChatSpacing.sidebarBreakpoint;
             final expandedRail =
                 !_sidebarsCompact &&
@@ -2489,6 +3055,8 @@ class _ChatScreenState extends State<ChatScreen> {
               key: _scaffoldKey,
               drawer:
                   _settingsOpen ||
+                      _modelsPageOpen ||
+                      _localModelsPageOpen ||
                       constraints.maxWidth >= OpenChatSpacing.sidebarBreakpoint
                   ? null
                   : Drawer(
@@ -2518,9 +3086,24 @@ class _ChatScreenState extends State<ChatScreen> {
                       ChatNavigationRail(
                         expanded: expandedRail,
                         settingsSelected: _settingsOpen,
+                        modelsSelected: _modelsPageOpen,
+                        localModelsSelected: _localModelsPageOpen,
                         onOpenChat: _startNewConversation,
-                        onOpenSettings: () =>
-                            setState(() => _settingsOpen = true),
+                        onOpenSettings: () => setState(() {
+                          _settingsOpen = true;
+                          _modelsPageOpen = false;
+                          _localModelsPageOpen = false;
+                        }),
+                        onOpenModels: () => setState(() {
+                          _modelsPageOpen = true;
+                          _settingsOpen = false;
+                          _localModelsPageOpen = false;
+                        }),
+                        onOpenLocalModels: () => setState(() {
+                          _localModelsPageOpen = true;
+                          _settingsOpen = false;
+                          _modelsPageOpen = false;
+                        }),
                         onToggleTheme: _handleThemeToggle,
                         sidebarsCompact: _sidebarsCompact,
                         onToggleSidebars: () => setState(
@@ -2561,8 +3144,26 @@ class _ChatScreenState extends State<ChatScreen> {
                                 widget.apiCompatibleProviderKeyStore,
                             openCodeApiKeyStore: widget.openCodeApiKeyStore,
                             serviceClient: widget.serviceClient,
+                            chatRepository: widget.chatRepository,
                             onProviderStateChanged: _refreshProviderState,
                             onConnectionRemoved: _handleConnectionRemoved,
+                          ),
+                        )
+                      else if (_modelsPageOpen)
+                        Expanded(
+                          child: ModelsPage(
+                            serviceClient: widget.serviceClient,
+                            downloadController: _modelDownloadController,
+                          ),
+                        )
+                      else if (_localModelsPageOpen)
+                        Expanded(
+                          child: LocalModelsPage(
+                            serviceClient: widget.serviceClient,
+                            onOpenModelCatalog: () => setState(() {
+                              _modelsPageOpen = true;
+                              _localModelsPageOpen = false;
+                            }),
                           ),
                         )
                       else ...[
@@ -2733,7 +3334,13 @@ class _ChatScreenState extends State<ChatScreen> {
         selectedModel?.displayName ??
         selectedModelId ??
         widget.selectedModelLabel;
-    final modelOptions = _models.where((model) => model.isAvailable).toList();
+    final modelOptions = _models
+        .where(
+          (model) =>
+              model.isAvailable ||
+              _localEngineProviderIds.contains(model.providerId),
+        )
+        .toList();
     final reasoningOptions = selectedModel?.reasoningLevels ?? const <String>[];
     final selectedReasoning =
         reasoningOptions.contains(_selectedReasoningEffort)
@@ -2741,6 +3348,7 @@ class _ChatScreenState extends State<ChatScreen> {
         : null;
     final routeReady =
         routeProviderId == 'opencode' ||
+        _localEngineProviderIds.contains(routeProviderId) ||
         (routeProviderId == 'chatgpt' &&
             routeConnectionId != null &&
             routeWorkspaceId != null) ||
@@ -2749,6 +3357,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final modelRouteReady =
         _loadedProviderId == _providerFamily(routeProviderId) &&
         (routeProviderId == 'opencode' ||
+            _localEngineProviderIds.contains(routeProviderId) ||
             (_isApiKeyRouteProvider(routeProviderId) &&
                 _loadedApiKeyConnectionIds.contains(routeApiKeyConnectionId)) ||
             (ApiCompatibleProviderKeyStore.providerIds.contains(
@@ -2767,6 +3376,9 @@ class _ChatScreenState extends State<ChatScreen> {
         modelRouteReady &&
         selectedModel != null &&
         !_isUpdatingConversationModel &&
+        !_isLoadingPendingQuestions &&
+        !_questionLoadFailed &&
+        _pendingQuestionGroups.isEmpty &&
         !_isSending;
     final l10n = context.openchatL10n;
     final modelsEmptyLabel =
@@ -2836,6 +3448,7 @@ class _ChatScreenState extends State<ChatScreen> {
               isChatGptConnected: _isChatGptConnected,
               availableProviderIds: {
                 'opencode',
+                ..._localEngineProviderIds,
                 if (_isChatGptConnected) 'chatgpt',
                 ..._availableCompatibleProviderIds,
               },
@@ -2884,6 +3497,24 @@ class _ChatScreenState extends State<ChatScreen> {
                   unawaited(_respondToToolPermission(approved: true)),
               onDenyToolPermission: () =>
                   unawaited(_respondToToolPermission(approved: false)),
+              pendingQuestionGroups: _pendingQuestionGroups,
+              focusedQuestionGroupId: _focusedQuestionGroupId,
+              isResumingQuestion: _isResumingQuestion,
+              pendingQuestionError: _questionLoadFailed
+                  ? context.openchatL10n.userQuestionLoadFailed
+                  : null,
+              onRetryPendingQuestions: selectedConversation == null
+                  ? null
+                  : () => unawaited(
+                      _loadPendingQuestionGroups(selectedConversation.id),
+                    ),
+              onSubmitQuestionAnswers: selectedConversation == null
+                  ? null
+                  : (group, answers) => _submitQuestionAnswers(
+                      selectedConversation,
+                      group,
+                      answers,
+                    ),
               conversationTitle: selectedConversation?.title,
               conversationId: selectedConversation?.id,
               contextProviderId: routeProviderId,

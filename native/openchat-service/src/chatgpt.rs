@@ -26,10 +26,14 @@ use crate::{
 
 mod account;
 mod compaction;
+mod images;
 mod response_events;
 mod response_parser;
 mod streaming;
 mod title_generation;
+pub(super) use self::images::{
+    ImageBackground, ImageGenerationAuth, ImageGenerationRequest, ImageQuality,
+};
 use self::response_parser::{
     ensure_success, http_error, parse_models, parse_reset_credits, parse_usage, responses_tool,
 };
@@ -187,7 +191,7 @@ impl ChatGptService {
             ),
             messages: Vec::new(),
             last_message_id,
-            tools: tools::definitions(),
+            tools: tools::definitions_for_chatgpt_model(),
             reasoning_effort: reasoning_effort
                 .filter(|effort| model.reasoning_levels.iter().any(|level| level == *effort))
                 .map(str::to_owned),
@@ -410,6 +414,49 @@ impl ChatGptService {
         body: Option<Value>,
         response_context_id: Option<&str>,
     ) -> Result<Response, ServiceError> {
+        self.authorized_request_with_image_turn_id(
+            method,
+            url,
+            connection_id,
+            external_workspace_id,
+            body,
+            response_context_id,
+            None,
+        )
+        .await
+    }
+
+    async fn authorized_image_request(
+        &self,
+        method: Method,
+        url: String,
+        connection_id: &str,
+        external_workspace_id: &str,
+        body: Option<Value>,
+        image_turn_id: Option<&str>,
+    ) -> Result<Response, ServiceError> {
+        self.authorized_request_with_image_turn_id(
+            method,
+            url,
+            connection_id,
+            external_workspace_id,
+            body,
+            None,
+            image_turn_id,
+        )
+        .await
+    }
+
+    async fn authorized_request_with_image_turn_id(
+        &self,
+        method: Method,
+        url: String,
+        connection_id: &str,
+        external_workspace_id: &str,
+        body: Option<Value>,
+        response_context_id: Option<&str>,
+        image_turn_id: Option<&str>,
+    ) -> Result<Response, ServiceError> {
         let tokens = self.load_request_tokens(connection_id).await?;
         let observed_access_token = Zeroizing::new(tokens.access_token().to_owned());
         let response = self
@@ -420,6 +467,7 @@ impl ChatGptService {
                 &observed_access_token,
                 body.as_ref(),
                 response_context_id,
+                image_turn_id,
             )
             .await?;
         if response.status() != StatusCode::UNAUTHORIZED {
@@ -436,6 +484,7 @@ impl ChatGptService {
             refreshed.access_token(),
             body.as_ref(),
             response_context_id,
+            image_turn_id,
         )
         .await
         .and_then(|response| {
@@ -476,6 +525,7 @@ impl ChatGptService {
                 &observed_access_token,
                 request.body.as_ref(),
                 Some(request.response_context_id),
+                None,
             ) => result?,
         };
         if first_result.status() != StatusCode::UNAUTHORIZED {
@@ -506,6 +556,7 @@ impl ChatGptService {
                 refreshed.access_token(),
                 request.body.as_ref(),
                 Some(request.response_context_id),
+                None,
             ) => result?,
         };
         if response.status() == StatusCode::UNAUTHORIZED {
@@ -527,6 +578,7 @@ impl ChatGptService {
         access_token: &str,
         body: Option<&Value>,
         response_context_id: Option<&str>,
+        image_turn_id: Option<&str>,
     ) -> Result<Response, ServiceError> {
         let mut request = self
             .http
@@ -547,10 +599,17 @@ impl ChatGptService {
                 .header("thread-id", context_id)
                 .header("x-client-request-id", context_id);
         }
+        request = apply_image_turn_id_header(request, image_turn_id);
         if let Some(body) = body {
             request = request.json(body);
         }
-        request.send().await.map_err(|_| network_error())
+        request.send().await.map_err(|error| {
+            if error.is_timeout() {
+                provider_timeout()
+            } else {
+                network_error()
+            }
+        })
     }
 
     async fn load_request_tokens(
@@ -809,6 +868,16 @@ fn network_error() -> ServiceError {
     )
 }
 
+fn apply_image_turn_id_header(
+    request: reqwest::RequestBuilder,
+    image_turn_id: Option<&str>,
+) -> reqwest::RequestBuilder {
+    match image_turn_id {
+        Some(image_turn_id) => request.header("x-codex-image-turn-id", image_turn_id),
+        None => request,
+    }
+}
+
 fn provider_timeout() -> ServiceError {
     ServiceError::new(
         "provider_timeout",
@@ -863,4 +932,35 @@ fn protocol_error() -> ServiceError {
         "OpenChat could not update the local app with the ChatGPT response.",
         false,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_image_turn_id_header;
+    use reqwest::Client;
+
+    #[test]
+    fn image_turn_header_is_added_only_for_codex_correlation() {
+        let request = apply_image_turn_id_header(
+            Client::new().post("https://chatgpt.com/backend-api/codex/images/generations"),
+            Some("turn-123"),
+        )
+        .build()
+        .expect("request should build");
+        assert_eq!(
+            request
+                .headers()
+                .get("x-codex-image-turn-id")
+                .and_then(|value| value.to_str().ok()),
+            Some("turn-123")
+        );
+
+        let request = apply_image_turn_id_header(
+            Client::new().post("https://api.openai.com/v1/images/generations"),
+            None,
+        )
+        .build()
+        .expect("request should build");
+        assert!(request.headers().get("x-codex-image-turn-id").is_none());
+    }
 }

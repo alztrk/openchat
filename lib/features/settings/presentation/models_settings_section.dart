@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/openchat_toast.dart';
+import 'package:openchat/features/chat/data/chat_repository.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/chat/domain/default_model_preference.dart';
+import 'package:openchat/features/chat/domain/model_favorite.dart';
 import 'package:openchat/features/chat/presentation/widgets/provider_icon.dart';
 import 'package:openchat/features/settings/data/api_compatible_provider_key_store.dart';
 import 'package:openchat/features/settings/data/chat_gpt_api_key_store.dart';
@@ -23,6 +25,7 @@ class ModelsSettingsSection extends StatefulWidget {
     required this.apiCompatibleProviderKeyStore,
     required this.openCodeApiKeyStore,
     required this.settingsPreferences,
+    this.chatRepository,
     this.onChanged,
   });
 
@@ -31,6 +34,7 @@ class ModelsSettingsSection extends StatefulWidget {
   final ApiCompatibleProviderKeyStore? apiCompatibleProviderKeyStore;
   final OpenCodeApiKeyStore? openCodeApiKeyStore;
   final SettingsPreferences settingsPreferences;
+  final ChatRepository? chatRepository;
   final Future<void> Function()? onChanged;
 
   @override
@@ -44,12 +48,23 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
   Map<String, List<ChatGptModel>> _providerModels = {};
   Set<String> _hiddenModelKeys = {};
   DefaultModelPreference? _defaultModel;
+  late Stream<List<FavoriteModel>>? _favoriteModelsStream;
+  final Set<String> _favoriteChangesInProgress = {};
   final Map<String, String> _providerErrors = {};
 
   @override
   void initState() {
     super.initState();
+    _favoriteModelsStream = widget.chatRepository?.watchModelFavorites();
     unawaited(_loadData());
+  }
+
+  @override
+  void didUpdateWidget(covariant ModelsSettingsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.chatRepository != widget.chatRepository) {
+      _favoriteModelsStream = widget.chatRepository?.watchModelFavorites();
+    }
   }
 
   @override
@@ -304,14 +319,16 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
       displayName: model.displayName,
       connectionId: model.connectionId,
       workspaceId: model.workspaceId,
-      apiKeyConnectionId:
-          model.providerId == 'chatgpt_api' ? model.connectionId : null,
+      apiKeyConnectionId: model.providerId == 'chatgpt_api'
+          ? model.connectionId
+          : null,
     );
 
     // If it was hidden, unhide it
     Set<String>? updatedHidden;
     if (_hiddenModelKeys.contains(model.routeKey)) {
-      updatedHidden = Set<String>.from(_hiddenModelKeys)..remove(model.routeKey);
+      updatedHidden = Set<String>.from(_hiddenModelKeys)
+        ..remove(model.routeKey);
       await widget.settingsPreferences.writeHiddenModelKeys(updatedHidden);
     }
 
@@ -345,6 +362,45 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
     }
   }
 
+  Future<void> _toggleModelFavorite(
+    ChatGptModel model, {
+    required bool isFavorite,
+  }) async {
+    final repository = widget.chatRepository;
+    final key = model.routeKey;
+    if (repository == null || !_favoriteChangesInProgress.add(key)) return;
+
+    setState(() {});
+    try {
+      await repository.setModelFavorite(
+        providerId: model.providerId,
+        modelId: model.id,
+        displayName: model.displayName,
+        sourceConnectionId: model.connectionId,
+        isFavorite: !isFavorite,
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'model_favorites',
+          context: ErrorDescription('while saving a model favorite'),
+        ),
+      );
+      if (mounted) {
+        showOpenChatToast(
+          context,
+          context.openchatL10n.chatHistoryUnavailable,
+          type: OpenChatToastType.error,
+        );
+      }
+    } finally {
+      _favoriteChangesInProgress.remove(key);
+      if (mounted) setState(() {});
+    }
+  }
+
   String _providerLabel(String providerId, BuildContext context) {
     final l10n = context.openchatL10n;
     return switch (providerId) {
@@ -354,6 +410,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
       'groq' => l10n.groqProvider,
       'cerebras' => l10n.cerebrasProvider,
       'openrouter' => l10n.openRouterProvider,
+      'mistral' => l10n.mistralProvider,
       _ => providerId,
     };
   }
@@ -362,6 +419,29 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
   Widget build(BuildContext context) {
     final palette = OpenChatPalette.of(context);
     final l10n = context.openchatL10n;
+
+    return StreamBuilder<List<FavoriteModel>>(
+      stream: _favoriteModelsStream,
+      builder: (context, favoriteSnapshot) => _buildModelsContent(
+        context,
+        palette,
+        l10n,
+        favoriteModels: favoriteSnapshot.data ?? const <FavoriteModel>[],
+        canManageFavorites:
+            widget.chatRepository != null &&
+            favoriteSnapshot.hasData &&
+            !favoriteSnapshot.hasError,
+      ),
+    );
+  }
+
+  Widget _buildModelsContent(
+    BuildContext context,
+    OpenChatPalette palette,
+    AppLocalizations l10n, {
+    required List<FavoriteModel> favoriteModels,
+    required bool canManageFavorites,
+  }) {
     final query = _searchQuery.trim().toLowerCase();
 
     var filteredModelCount = 0;
@@ -414,21 +494,15 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                       horizontal: 10,
                       vertical: 9,
                     ),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: palette.border),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide(color: palette.secondaryIcon),
-                    ),
                   ),
                 ),
               ),
             ),
             const SizedBox(width: 10),
             OutlinedButton.icon(
-              onPressed: _isLoading ? null : () => _loadData(forceRefresh: true),
+              onPressed: _isLoading
+                  ? null
+                  : () => _loadData(forceRefresh: true),
               icon: _isLoading
                   ? const SizedBox.square(
                       dimension: 14,
@@ -443,9 +517,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
         if (_isLoading)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 32),
-            child: Center(
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
+            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
           )
         else if (filteredModelCount == 0)
           Card(
@@ -475,6 +547,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
             'groq',
             'cerebras',
             'openrouter',
+            'mistral',
           ]) ...[
             if (_providerModels.containsKey(providerId)) ...[
               _buildProviderCard(
@@ -483,6 +556,8 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                 models: _providerModels[providerId]!,
                 query: query,
                 palette: palette,
+                favoriteModels: favoriteModels,
+                canManageFavorites: canManageFavorites,
               ),
               const SizedBox(height: 16),
             ],
@@ -498,14 +573,18 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
     required List<ChatGptModel> models,
     required String query,
     required OpenChatPalette palette,
+    required List<FavoriteModel> favoriteModels,
+    required bool canManageFavorites,
   }) {
     final l10n = context.openchatL10n;
-    final filtered = models.where((model) {
-      if (query.isEmpty) return true;
-      return model.displayName.toLowerCase().contains(query) ||
-          model.id.toLowerCase().contains(query) ||
-          (model.sourceLabel?.toLowerCase().contains(query) ?? false);
-    }).toList(growable: false);
+    final filtered = models
+        .where((model) {
+          if (query.isEmpty) return true;
+          return model.displayName.toLowerCase().contains(query) ||
+              model.id.toLowerCase().contains(query) ||
+              (model.sourceLabel?.toLowerCase().contains(query) ?? false);
+        })
+        .toList(growable: false);
 
     if (filtered.isEmpty) return const SizedBox.shrink();
 
@@ -537,10 +616,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                 const Spacer(),
                 Text(
                   '${filtered.length} model',
-                  style: TextStyle(
-                    color: palette.secondaryText,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: palette.secondaryText, fontSize: 12),
                 ),
               ],
             ),
@@ -549,7 +625,14 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
             const SizedBox(height: 8),
             for (var i = 0; i < filtered.length; i++) ...[
               if (i > 0) Divider(height: 1, color: palette.border),
-              _buildModelRow(context, filtered[i], palette, l10n),
+              _buildModelRow(
+                context,
+                filtered[i],
+                palette,
+                l10n,
+                favoriteModels: favoriteModels,
+                canManageFavorites: canManageFavorites,
+              ),
             ],
           ],
         ),
@@ -561,14 +644,26 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
     BuildContext context,
     ChatGptModel model,
     OpenChatPalette palette,
-    AppLocalizations l10n,
-  ) {
+    AppLocalizations l10n, {
+    required List<FavoriteModel> favoriteModels,
+    required bool canManageFavorites,
+  }) {
     final key = model.routeKey;
     final isHidden = _hiddenModelKeys.contains(key);
     final isDefault = _defaultModel?.routeKey == key;
+    final isFavorite = favoriteModels.any(
+      (favorite) =>
+          favorite.providerId == model.providerId &&
+          favorite.modelId == model.id &&
+          (!_isApiKeyModel(model.providerId) ||
+              favorite.sourceConnectionId == model.connectionId),
+    );
+    final favoriteChangeInProgress = _favoriteChangesInProgress.contains(key);
 
     final openCodeTier = model.providerId == 'opencode'
-        ? (model.groupId == 'free' ? l10n.openCodeFreeModel : l10n.openCodePaidModel)
+        ? (model.groupId == 'free'
+              ? l10n.openCodeFreeModel
+              : l10n.openCodePaidModel)
         : null;
 
     final contextWindowText = model.contextWindow != null
@@ -594,7 +689,9 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                         color: isHidden ? palette.secondaryText : palette.text,
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
-                        decoration: isHidden ? TextDecoration.lineThrough : null,
+                        decoration: isHidden
+                            ? TextDecoration.lineThrough
+                            : null,
                       ),
                     ),
                     if (isDefault)
@@ -695,18 +792,38 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
             ),
           ),
           const SizedBox(width: 8),
-          // Default Button
+          IconButton(
+            tooltip: canManageFavorites
+                ? isFavorite
+                      ? l10n.removeModelFavorite
+                      : l10n.addModelFavorite
+                : l10n.chatHistoryUnavailable,
+            onPressed: canManageFavorites && !favoriteChangeInProgress
+                ? () => unawaited(
+                    _toggleModelFavorite(model, isFavorite: isFavorite),
+                  )
+                : null,
+            icon: Icon(
+              isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
+              color: isFavorite ? palette.accent : palette.secondaryIcon,
+              size: 18,
+            ),
+          ),
+          // Default button
           if (isDefault)
             OutlinedButton.icon(
               onPressed: () => _clearDefaultModel(),
               style: OutlinedButton.styleFrom(
                 foregroundColor: palette.accent,
                 side: BorderSide(color: palette.accent),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              icon: const Icon(Icons.star_rounded, size: 15),
+              icon: const Icon(Icons.check_rounded, size: 15),
               label: Text(
                 l10n.defaultModel,
                 style: const TextStyle(fontSize: 12),
@@ -717,11 +834,13 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
               onPressed: () => _setDefaultModel(model),
               style: TextButton.styleFrom(
                 foregroundColor: palette.secondaryText,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              icon: const Icon(Icons.star_outline_rounded, size: 15),
               label: Text(
                 l10n.setDefaultModel,
                 style: const TextStyle(fontSize: 12),
@@ -746,3 +865,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
     );
   }
 }
+
+bool _isApiKeyModel(String providerId) =>
+    providerId == 'chatgpt_api' ||
+    ApiCompatibleProviderKeyStore.providerIds.contains(providerId);

@@ -5,7 +5,10 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:intl/intl.dart' as intl;
 
+import 'app_localizations_de.dart';
 import 'app_localizations_en.dart';
+import 'app_localizations_es.dart';
+import 'app_localizations_fr.dart';
 import 'app_localizations_tr.dart';
 
 // ignore_for_file: type=lint
@@ -94,7 +97,10 @@ abstract class AppLocalizations {
 
   /// A list of this localizations delegate's supported locales.
   static const List<Locale> supportedLocales = <Locale>[
+    Locale('de'),
     Locale('en'),
+    Locale('es'),
+    Locale('fr'),
     Locale('tr'),
   ];
 
@@ -193,6 +199,438 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Manage models from connected providers, set a default model, and hide models you don\'t need.'**
   String get modelsDescription;
+
+  /// No description provided for @localEngines.
+  ///
+  /// In en, this message translates to:
+  /// **'Local engines'**
+  String get localEngines;
+
+  /// No description provided for @localEnginesDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Install verified local runtimes, register your own model files, and check whether a runtime is healthy. Move or copy models into an engine folder, or keep them where they are.'**
+  String get localEnginesDescription;
+
+  /// No description provided for @localEnginesUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The local engine service is not available yet.'**
+  String get localEnginesUnavailable;
+
+  /// No description provided for @localEnginesLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Local engine information could not be loaded.'**
+  String get localEnginesLoadFailed;
+
+  /// No description provided for @localEnginesEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No local engine releases are available.'**
+  String get localEnginesEmpty;
+
+  /// No description provided for @localEnginesReload.
+  ///
+  /// In en, this message translates to:
+  /// **'Reload'**
+  String get localEnginesReload;
+
+  /// No description provided for @localEngineRelease.
+  ///
+  /// In en, this message translates to:
+  /// **'Release {tag}'**
+  String localEngineRelease(String tag);
+
+  /// No description provided for @localEngineVariants.
+  ///
+  /// In en, this message translates to:
+  /// **'Packages'**
+  String get localEngineVariants;
+
+  /// No description provided for @localEngineStable.
+  ///
+  /// In en, this message translates to:
+  /// **'Stable'**
+  String get localEngineStable;
+
+  /// No description provided for @localEnginePreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview'**
+  String get localEnginePreview;
+
+  /// No description provided for @localEngineNightly.
+  ///
+  /// In en, this message translates to:
+  /// **'Nightly'**
+  String get localEngineNightly;
+
+  /// No description provided for @localEngineRecommended.
+  ///
+  /// In en, this message translates to:
+  /// **'Recommended'**
+  String get localEngineRecommended;
+
+  /// No description provided for @localEngineAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Available'**
+  String get localEngineAvailable;
+
+  /// No description provided for @localEngineInstalled.
+  ///
+  /// In en, this message translates to:
+  /// **'Installed'**
+  String get localEngineInstalled;
+
+  /// No description provided for @localEngineNotInstalled.
+  ///
+  /// In en, this message translates to:
+  /// **'Not installed'**
+  String get localEngineNotInstalled;
+
+  /// No description provided for @localEngineBlocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Blocked'**
+  String get localEngineBlocked;
+
+  /// No description provided for @localEngineUnsupportedPlatform.
+  ///
+  /// In en, this message translates to:
+  /// **'Unsupported platform'**
+  String get localEngineUnsupportedPlatform;
+
+  /// No description provided for @localEngineHardwareUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Hardware unavailable'**
+  String get localEngineHardwareUnavailable;
+
+  /// No description provided for @localEngineVllmBlockedReason.
+  ///
+  /// In en, this message translates to:
+  /// **'The vLLM package depends on PyTorch and a full Python runtime that OpenChat does not yet install from a complete, hash-verified dependency lock. Native Windows is unsupported upstream; managed WSL2 setup is not available yet.'**
+  String get localEngineVllmBlockedReason;
+
+  /// No description provided for @localEngineExllamaBlockedReason.
+  ///
+  /// In en, this message translates to:
+  /// **'The ExLlamaV3 runtime is not ready for installation yet. OpenChat must pin and verify the complete TabbyAPI, PyTorch, Triton, Flash Linear Attention, and Python dependency set before offering it.'**
+  String get localEngineExllamaBlockedReason;
+
+  /// No description provided for @localEngineRuntimeRequirements.
+  ///
+  /// In en, this message translates to:
+  /// **'Requirements: {requirements}'**
+  String localEngineRuntimeRequirements(String requirements);
+
+  /// No description provided for @localEngineInstall.
+  ///
+  /// In en, this message translates to:
+  /// **'Install'**
+  String get localEngineInstall;
+
+  /// No description provided for @localEngineInstalling.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing installation...'**
+  String get localEngineInstalling;
+
+  /// No description provided for @localEngineInstallProgress.
+  ///
+  /// In en, this message translates to:
+  /// **'Local engine installation progress'**
+  String get localEngineInstallProgress;
+
+  /// No description provided for @localEngineCancelInstall.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel installation'**
+  String get localEngineCancelInstall;
+
+  /// No description provided for @localEngineCancellingInstall.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelling...'**
+  String get localEngineCancellingInstall;
+
+  /// No description provided for @localEngineInstallFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The local engine could not be installed. The catalog was refreshed.'**
+  String get localEngineInstallFailed;
+
+  /// No description provided for @localEngineHealth.
+  ///
+  /// In en, this message translates to:
+  /// **'Runtime status'**
+  String get localEngineHealth;
+
+  /// No description provided for @localEngineRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Running'**
+  String get localEngineRunning;
+
+  /// No description provided for @localEngineStopped.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped'**
+  String get localEngineStopped;
+
+  /// No description provided for @localEngineUnhealthy.
+  ///
+  /// In en, this message translates to:
+  /// **'Not responding'**
+  String get localEngineUnhealthy;
+
+  /// No description provided for @localEngineUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This engine cannot be started yet.'**
+  String get localEngineUnavailable;
+
+  /// No description provided for @localEngineStartModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Start model'**
+  String get localEngineStartModel;
+
+  /// No description provided for @localEngineStopModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop engine'**
+  String get localEngineStopModel;
+
+  /// No description provided for @localModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Registered models'**
+  String get localModels;
+
+  /// No description provided for @localModelsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No models are registered for this engine.'**
+  String get localModelsEmpty;
+
+  /// No description provided for @localModelsPageTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Local models'**
+  String get localModelsPageTitle;
+
+  /// No description provided for @localModelsPageDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'View downloaded and registered local models.'**
+  String get localModelsPageDescription;
+
+  /// No description provided for @localModelsPageEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No local models are registered yet.'**
+  String get localModelsPageEmpty;
+
+  /// No description provided for @localModelsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Local models could not be loaded.'**
+  String get localModelsLoadFailed;
+
+  /// No description provided for @localModelsRefresh.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh'**
+  String get localModelsRefresh;
+
+  /// No description provided for @localModelsDiscover.
+  ///
+  /// In en, this message translates to:
+  /// **'Discover models'**
+  String get localModelsDiscover;
+
+  /// No description provided for @localModelAddFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Add model file'**
+  String get localModelAddFile;
+
+  /// No description provided for @localModelAddFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Add model folder'**
+  String get localModelAddFolder;
+
+  /// No description provided for @localModelStorageChoiceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose where to keep the model'**
+  String get localModelStorageChoiceTitle;
+
+  /// No description provided for @localModelStorageChoiceTarget.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenChat model folder: %LOCALAPPDATA%\\OpenChat\\models\\{folder}'**
+  String localModelStorageChoiceTarget(String folder);
+
+  /// No description provided for @localModelMoveToFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Move model to the {folder} folder'**
+  String localModelMoveToFolder(String folder);
+
+  /// No description provided for @localModelCopyToFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy model to the {folder} folder'**
+  String localModelCopyToFolder(String folder);
+
+  /// No description provided for @localModelKeepInPlace.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep the model where it is'**
+  String get localModelKeepInPlace;
+
+  /// No description provided for @localModelSaving.
+  ///
+  /// In en, this message translates to:
+  /// **'Saving model...'**
+  String get localModelSaving;
+
+  /// No description provided for @localModelTransferError.
+  ///
+  /// In en, this message translates to:
+  /// **'The model could not be copied or moved. The original model was left in place.'**
+  String get localModelTransferError;
+
+  /// No description provided for @localModelTransferRecoveryError.
+  ///
+  /// In en, this message translates to:
+  /// **'The model could not be registered or restored. A complete model copy remains in the OpenChat model folder; select it there to register it.'**
+  String get localModelTransferRecoveryError;
+
+  /// No description provided for @localModelRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove registration'**
+  String get localModelRemove;
+
+  /// No description provided for @localModelRemoveConfirmation.
+  ///
+  /// In en, this message translates to:
+  /// **'Only the OpenChat registration will be removed. The model file will stay on disk. Continue?'**
+  String get localModelRemoveConfirmation;
+
+  /// No description provided for @localModelCancelStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel startup'**
+  String get localModelCancelStart;
+
+  /// No description provided for @localModelStopping.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopping runtime...'**
+  String get localModelStopping;
+
+  /// No description provided for @localModelActionError.
+  ///
+  /// In en, this message translates to:
+  /// **'The local model action could not be completed.'**
+  String get localModelActionError;
+
+  /// No description provided for @localModelPathMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'The model path could not be found. Move it back or remove its registration.'**
+  String get localModelPathMissing;
+
+  /// No description provided for @localModelEngineNotReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Available after this engine is installed and can run models.'**
+  String get localModelEngineNotReady;
+
+  /// No description provided for @localModelInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected file or folder is not a valid model for this engine.'**
+  String get localModelInvalid;
+
+  /// No description provided for @localModelPathError.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected model file or folder could not be accessed.'**
+  String get localModelPathError;
+
+  /// No description provided for @localModelStoragePathError.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenChat could not create its model folders. Check available storage and permissions, then try again.'**
+  String get localModelStoragePathError;
+
+  /// No description provided for @localModelStorageError.
+  ///
+  /// In en, this message translates to:
+  /// **'The model registration could not be written to the database.'**
+  String get localModelStorageError;
+
+  /// No description provided for @localModelStartError.
+  ///
+  /// In en, this message translates to:
+  /// **'The model could not be started. Check the runtime installation and model file.'**
+  String get localModelStartError;
+
+  /// No description provided for @localModelStartTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'The model did not become ready in time. Try a smaller model or check your hardware.'**
+  String get localModelStartTimeout;
+
+  /// No description provided for @localModelSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Local model registered.'**
+  String get localModelSaved;
+
+  /// No description provided for @localModelRemoved.
+  ///
+  /// In en, this message translates to:
+  /// **'Local model registration removed.'**
+  String get localModelRemoved;
+
+  /// No description provided for @localEngineStageDownloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading'**
+  String get localEngineStageDownloading;
+
+  /// No description provided for @localEngineStageVerifying.
+  ///
+  /// In en, this message translates to:
+  /// **'Verifying'**
+  String get localEngineStageVerifying;
+
+  /// No description provided for @localEngineStageExtracting.
+  ///
+  /// In en, this message translates to:
+  /// **'Extracting'**
+  String get localEngineStageExtracting;
+
+  /// No description provided for @localEngineStagePublishing.
+  ///
+  /// In en, this message translates to:
+  /// **'Finishing installation'**
+  String get localEngineStagePublishing;
+
+  /// No description provided for @localEngineStageReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready'**
+  String get localEngineStageReady;
 
   /// No description provided for @defaultModel.
   ///
@@ -356,6 +794,12 @@ abstract class AppLocalizations {
   /// **'OpenRouter'**
   String get openRouterProvider;
 
+  /// No description provided for @mistralProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Mistral'**
+  String get mistralProvider;
+
   /// No description provided for @geminiApiDescription.
   ///
   /// In en, this message translates to:
@@ -379,6 +823,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Only models listed at \$0 for input and output with text and tool support appear here. Actual access and limits can change.'**
   String get openRouterApiDescription;
+
+  /// No description provided for @mistralApiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a Mistral API key to use the chat models available to your account. Free access, pricing, and usage limits depend on your Mistral plan.'**
+  String get mistralApiDescription;
 
   /// No description provided for @geminiUnpaidDataNotice.
   ///
@@ -1538,6 +1988,24 @@ abstract class AppLocalizations {
   /// **'Turkish'**
   String get turkishLanguage;
 
+  /// No description provided for @spanishLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Spanish'**
+  String get spanishLanguage;
+
+  /// No description provided for @germanLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'German'**
+  String get germanLanguage;
+
+  /// No description provided for @frenchLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'French'**
+  String get frenchLanguage;
+
   /// No description provided for @languageSaveFailed.
   ///
   /// In en, this message translates to:
@@ -2688,6 +3156,12 @@ abstract class AppLocalizations {
   /// **'Running'**
   String get toolRunning;
 
+  /// No description provided for @toolWaitingForUser.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for your answer'**
+  String get toolWaitingForUser;
+
   /// No description provided for @toolCompleted.
   ///
   /// In en, this message translates to:
@@ -3107,6 +3581,414 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Workspace: {name}'**
   String workspaceQuotaLabel(String name);
+
+  /// No description provided for @modelsPageDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Find and download models hosted on Hugging Face.'**
+  String get modelsPageDescription;
+
+  /// No description provided for @modelSortDownloads.
+  ///
+  /// In en, this message translates to:
+  /// **'Most downloaded'**
+  String get modelSortDownloads;
+
+  /// No description provided for @modelSortLikes.
+  ///
+  /// In en, this message translates to:
+  /// **'Most liked'**
+  String get modelSortLikes;
+
+  /// No description provided for @modelSortRecentlyUpdated.
+  ///
+  /// In en, this message translates to:
+  /// **'Recently updated'**
+  String get modelSortRecentlyUpdated;
+
+  /// No description provided for @modelPreviousPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous'**
+  String get modelPreviousPage;
+
+  /// No description provided for @modelNextPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Next'**
+  String get modelNextPage;
+
+  /// No description provided for @modelPageLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Page {page}'**
+  String modelPageLabel(int page);
+
+  /// No description provided for @modelFormatGguf.
+  ///
+  /// In en, this message translates to:
+  /// **'GGUF · llama.cpp'**
+  String get modelFormatGguf;
+
+  /// No description provided for @modelFormatTransformers.
+  ///
+  /// In en, this message translates to:
+  /// **'Transformers · vLLM'**
+  String get modelFormatTransformers;
+
+  /// No description provided for @modelFormatExllama.
+  ///
+  /// In en, this message translates to:
+  /// **'ExLlama · EXL3'**
+  String get modelFormatExllama;
+
+  /// No description provided for @huggingFaceModelSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search Hugging Face models'**
+  String get huggingFaceModelSearchHint;
+
+  /// No description provided for @modelSearchRefresh.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh model results'**
+  String get modelSearchRefresh;
+
+  /// No description provided for @modelSearchEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No models matched this search.'**
+  String get modelSearchEmpty;
+
+  /// No description provided for @modelSearchFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Hugging Face models could not be loaded.'**
+  String get modelSearchFailed;
+
+  /// No description provided for @modelSearchUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Hugging Face could not be reached. Check your connection and try again.'**
+  String get modelSearchUnavailable;
+
+  /// No description provided for @modelSearchRateLimited.
+  ///
+  /// In en, this message translates to:
+  /// **'Hugging Face is receiving too many requests. Wait a moment and try again.'**
+  String get modelSearchRateLimited;
+
+  /// No description provided for @modelSearchInvalidResponse.
+  ///
+  /// In en, this message translates to:
+  /// **'Hugging Face returned model data OpenChat could not read. Try again shortly.'**
+  String get modelSearchInvalidResponse;
+
+  /// No description provided for @modelSearchTimedOut.
+  ///
+  /// In en, this message translates to:
+  /// **'Hugging Face took too long to respond. Try again.'**
+  String get modelSearchTimedOut;
+
+  /// No description provided for @modelChooseForDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a model to inspect its files.'**
+  String get modelChooseForDetails;
+
+  /// No description provided for @modelDownloadsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloads'**
+  String get modelDownloadsLabel;
+
+  /// No description provided for @modelLikesLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Likes'**
+  String get modelLikesLabel;
+
+  /// No description provided for @modelLicenseLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'License'**
+  String get modelLicenseLabel;
+
+  /// No description provided for @modelRevisionLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Revision'**
+  String get modelRevisionLabel;
+
+  /// No description provided for @modelFilesLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model files'**
+  String get modelFilesLabel;
+
+  /// No description provided for @modelVisionComponentsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Vision components'**
+  String get modelVisionComponentsLabel;
+
+  /// No description provided for @modelMtpComponentsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'MTP components'**
+  String get modelMtpComponentsLabel;
+
+  /// No description provided for @modelAuxiliaryComponentsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Other auxiliary components'**
+  String get modelAuxiliaryComponentsLabel;
+
+  /// No description provided for @modelDownloadComponentButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Download this component'**
+  String get modelDownloadComponentButton;
+
+  /// No description provided for @modelComponentDownloaded.
+  ///
+  /// In en, this message translates to:
+  /// **'Component downloaded'**
+  String get modelComponentDownloaded;
+
+  /// No description provided for @modelShowMoreComponents.
+  ///
+  /// In en, this message translates to:
+  /// **'Show more components'**
+  String get modelShowMoreComponents;
+
+  /// No description provided for @modelReadmeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model description'**
+  String get modelReadmeLabel;
+
+  /// No description provided for @modelReadmeMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'This model does not have a README.'**
+  String get modelReadmeMissing;
+
+  /// No description provided for @modelReadmeAccessDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'Access to this repository is required to view its description.'**
+  String get modelReadmeAccessDenied;
+
+  /// No description provided for @modelReadmeTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'The README is too large to display.'**
+  String get modelReadmeTooLarge;
+
+  /// No description provided for @modelReadmeUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The model description could not be loaded.'**
+  String get modelReadmeUnavailable;
+
+  /// No description provided for @modelDownloadOptionsLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Download options'**
+  String get modelDownloadOptionsLabel;
+
+  /// No description provided for @modelDownloadGroupLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'File set'**
+  String get modelDownloadGroupLabel;
+
+  /// No description provided for @modelDownloadSizeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Size'**
+  String get modelDownloadSizeLabel;
+
+  /// No description provided for @modelDownloadButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Download model'**
+  String get modelDownloadButton;
+
+  /// No description provided for @modelCancelDownload.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel download'**
+  String get modelCancelDownload;
+
+  /// No description provided for @modelDownloadRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'File {fileIndex} of {fileCount}: {fileName}'**
+  String modelDownloadRunning(String fileName, int fileIndex, int fileCount);
+
+  /// No description provided for @modelDownloadComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Model downloaded and added to Local Models.'**
+  String get modelDownloadComplete;
+
+  /// No description provided for @modelDownloadCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Model download cancelled. You can resume it later.'**
+  String get modelDownloadCancelled;
+
+  /// No description provided for @modelDownloadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The model could not be downloaded.'**
+  String get modelDownloadFailed;
+
+  /// No description provided for @modelDownloadProgressUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Download progress could not be read.'**
+  String get modelDownloadProgressUnavailable;
+
+  /// No description provided for @modelRevisionChanged.
+  ///
+  /// In en, this message translates to:
+  /// **'This model changed on Hugging Face. Reload its files and try again.'**
+  String get modelRevisionChanged;
+
+  /// No description provided for @modelDownloadAccessNeeded.
+  ///
+  /// In en, this message translates to:
+  /// **'This repository is gated or private and needs Hugging Face access.'**
+  String get modelDownloadAccessNeeded;
+
+  /// No description provided for @modelNoCompatibleFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'No complete compatible model files were found in this repository.'**
+  String get modelNoCompatibleFiles;
+
+  /// No description provided for @modelUnknownDownloadSize.
+  ///
+  /// In en, this message translates to:
+  /// **'The file size is unavailable, so this download cannot start safely.'**
+  String get modelUnknownDownloadSize;
+
+  /// No description provided for @modelDetailsLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading model files…'**
+  String get modelDetailsLoading;
+
+  /// No description provided for @modelNoFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'No compatible files are available for this format.'**
+  String get modelNoFiles;
+
+  /// No description provided for @modelGatedBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Access required'**
+  String get modelGatedBadge;
+
+  /// No description provided for @modelPrivateBadge.
+  ///
+  /// In en, this message translates to:
+  /// **'Private'**
+  String get modelPrivateBadge;
+
+  /// No description provided for @modelSavedToFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved in OpenChat/models/{folder}'**
+  String modelSavedToFolder(String folder);
+
+  /// No description provided for @userQuestionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'The assistant needs your input'**
+  String get userQuestionTitle;
+
+  /// No description provided for @userQuestionRequiredHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Required questions are marked'**
+  String get userQuestionRequiredHint;
+
+  /// No description provided for @userQuestionSubmit.
+  ///
+  /// In en, this message translates to:
+  /// **'Send answer'**
+  String get userQuestionSubmit;
+
+  /// No description provided for @userQuestionResuming.
+  ///
+  /// In en, this message translates to:
+  /// **'Resuming the assistant'**
+  String get userQuestionResuming;
+
+  /// No description provided for @userQuestionUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This question is no longer available. Reload the conversation.'**
+  String get userQuestionUnavailable;
+
+  /// No description provided for @userQuestionRequiredValidation.
+  ///
+  /// In en, this message translates to:
+  /// **'Answer each required question to continue.'**
+  String get userQuestionRequiredValidation;
+
+  /// No description provided for @userQuestionSubmitFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Your answer could not be saved. Try again.'**
+  String get userQuestionSubmitFailed;
+
+  /// No description provided for @userQuestionRequiredLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Required'**
+  String get userQuestionRequiredLabel;
+
+  /// No description provided for @userQuestionContinue.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue assistant'**
+  String get userQuestionContinue;
+
+  /// No description provided for @userQuestionSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Your answer is saved. Continue when ready.'**
+  String get userQuestionSaved;
+
+  /// No description provided for @userQuestionLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The pending question could not be loaded. Try again.'**
+  String get userQuestionLoadFailed;
+
+  /// No description provided for @userQuestionResumeFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The saved answer is ready, but the assistant could not continue. Try again.'**
+  String get userQuestionResumeFailed;
+
+  /// No description provided for @userQuestionNotificationTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenChat is waiting for you'**
+  String get userQuestionNotificationTitle;
+
+  /// No description provided for @userQuestionNotificationBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The AI is waiting for your response.'**
+  String get userQuestionNotificationBody;
 }
 
 class _AppLocalizationsDelegate
@@ -3120,7 +4002,7 @@ class _AppLocalizationsDelegate
 
   @override
   bool isSupported(Locale locale) =>
-      <String>['en', 'tr'].contains(locale.languageCode);
+      <String>['de', 'en', 'es', 'fr', 'tr'].contains(locale.languageCode);
 
   @override
   bool shouldReload(_AppLocalizationsDelegate old) => false;
@@ -3129,8 +4011,14 @@ class _AppLocalizationsDelegate
 AppLocalizations lookupAppLocalizations(Locale locale) {
   // Lookup logic when only language code is specified.
   switch (locale.languageCode) {
+    case 'de':
+      return AppLocalizationsDe();
     case 'en':
       return AppLocalizationsEn();
+    case 'es':
+      return AppLocalizationsEs();
+    case 'fr':
+      return AppLocalizationsFr();
     case 'tr':
       return AppLocalizationsTr();
   }

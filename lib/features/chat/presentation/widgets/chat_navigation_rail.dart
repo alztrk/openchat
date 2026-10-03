@@ -8,7 +8,11 @@ class ChatNavigationRail extends StatelessWidget {
   const ChatNavigationRail({
     required this.expanded,
     required this.settingsSelected,
+    this.modelsSelected = false,
+    this.localModelsSelected = false,
     required this.onOpenChat,
+    this.onOpenModels,
+    this.onOpenLocalModels,
     required this.onOpenSettings,
     required this.onToggleTheme,
     this.sidebarsCompact = false,
@@ -18,7 +22,11 @@ class ChatNavigationRail extends StatelessWidget {
 
   final bool expanded;
   final bool settingsSelected;
+  final bool modelsSelected;
+  final bool localModelsSelected;
   final VoidCallback onOpenChat;
+  final VoidCallback? onOpenModels;
+  final VoidCallback? onOpenLocalModels;
   final VoidCallback onOpenSettings;
   final VoidCallback onToggleTheme;
   final bool sidebarsCompact;
@@ -63,16 +71,56 @@ class ChatNavigationRail extends StatelessWidget {
                       _RailNavigationButton(
                         expanded: expanded,
                         label: l10n.home,
-                        selected: !settingsSelected,
+                        selected:
+                            !settingsSelected &&
+                            !modelsSelected &&
+                            !localModelsSelected,
                         icon: _RailIcon(
                           assetPath: 'assets/icons/home.svg',
-                          color: settingsSelected
+                          color:
+                              settingsSelected ||
+                                  modelsSelected ||
+                                  localModelsSelected
                               ? palette.secondaryIcon
                               : palette.accentIcon,
                         ),
                         palette: palette,
                         onPressed: onOpenChat,
                       ),
+                      if (onOpenModels case final openModels?) ...[
+                        const SizedBox(height: 8),
+                        _RailNavigationButton(
+                          expanded: expanded,
+                          label: l10n.models,
+                          selected: modelsSelected,
+                          icon: Icon(
+                            Icons.view_list_rounded,
+                            color: modelsSelected
+                                ? palette.accentIcon
+                                : palette.secondaryIcon,
+                            size: 19,
+                          ),
+                          palette: palette,
+                          onPressed: openModels,
+                        ),
+                      ],
+                      if (onOpenLocalModels case final openLocalModels?) ...[
+                        const SizedBox(height: 8),
+                        _RailNavigationButton(
+                          expanded: expanded,
+                          label: l10n.localModelsPageTitle,
+                          selected: localModelsSelected,
+                          icon: Icon(
+                            Icons.folder_copy_outlined,
+                            color: localModelsSelected
+                                ? palette.accentIcon
+                                : palette.secondaryIcon,
+                            size: 19,
+                          ),
+                          palette: palette,
+                          onPressed: openLocalModels,
+                        ),
+                      ],
                     ],
                   ),
                 ),

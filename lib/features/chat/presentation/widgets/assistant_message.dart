@@ -3,15 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
-import 'package:html/parser.dart' as html_parser;
 import 'package:intl/intl.dart';
-import 'package:markdown/markdown.dart' as markdown;
 
 import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/app/safe_markdown.dart';
+import 'package:openchat/features/chat/presentation/widgets/chat_surface_card.dart';
 import 'package:openchat/app/openchat_toast.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
+import 'package:openchat/features/chat/presentation/widgets/chat_attachment_gallery.dart';
 import 'package:openchat/features/chat/presentation/widgets/provider_icon.dart';
 import 'package:openchat/features/chat/presentation/widgets/tool_activity.dart';
 
@@ -102,6 +103,15 @@ class AssistantMessage extends StatelessWidget {
                     isStreaming: message.status == ChatMessageStatus.streaming,
                     palette: palette,
                   ),
+                ),
+              ],
+              if (message.attachments.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                ChatAttachmentGallery(
+                  attachments: message.attachments,
+                  palette: palette,
+                  preferredImageWidth: 280,
+                  imageHeight: 200,
                 ),
               ],
               const SizedBox(height: 6),
@@ -450,17 +460,11 @@ class _ReasoningSummaryAccordion extends StatelessWidget {
         ? l10n.reasoningSummary
         : l10n.reasoningSummaryWithDuration(_formatDuration(duration, l10n));
 
-    const cardRadius = BorderRadius.all(Radius.circular(14));
+    final cardRadius = BorderRadius.circular(OpenChatRadii.card);
 
     return Tooltip(
       message: l10n.reasoningSummaryTooltip,
-      child: Container(
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: palette.selected,
-          borderRadius: cardRadius,
-          border: Border.all(color: palette.border),
-        ),
+      child: ChatSurfaceCard(
         child: Material(
           color: Colors.transparent,
           child: Theme(
@@ -471,10 +475,8 @@ class _ReasoningSummaryAccordion extends StatelessWidget {
               visualDensity: VisualDensity.compact,
               iconColor: palette.secondaryIcon,
               collapsedIconColor: palette.secondaryIcon,
-              shape: const RoundedRectangleBorder(borderRadius: cardRadius),
-              collapsedShape: const RoundedRectangleBorder(
-                borderRadius: cardRadius,
-              ),
+              shape: RoundedRectangleBorder(borderRadius: cardRadius),
+              collapsedShape: RoundedRectangleBorder(borderRadius: cardRadius),
               leading: Icon(
                 Icons.psychology_alt_outlined,
                 color: palette.secondaryIcon,
@@ -566,12 +568,7 @@ class _AssistantResponseContentState extends State<_AssistantResponseContent> {
     if (_cachedContent == widget.content && cachedHtml != null) {
       return _buildHtmlWidget(cachedHtml, textStyle);
     }
-    final markdownHtml = markdown.markdownToHtml(
-      widget.content,
-      extensionSet: markdown.ExtensionSet.gitHubFlavored,
-      encodeHtml: false,
-    );
-    final safeHtml = _sanitizeAssistantHtml(markdownHtml);
+    final safeHtml = markdownToSafeHtml(widget.content);
     _cachedContent = widget.content;
     _cachedSafeHtml = safeHtml;
 
@@ -615,43 +612,6 @@ final _streamingMarkdownSyntax = RegExp(
 
 bool _containsMarkdownSyntax(String content) =>
     _streamingMarkdownSyntax.hasMatch(content);
-
-String _sanitizeAssistantHtml(String source) {
-  final fragment = html_parser.parseFragment(source);
-  const blockedTags = <String>{
-    'script',
-    'style',
-    'iframe',
-    'object',
-    'embed',
-    'form',
-    'input',
-    'textarea',
-    'select',
-    'option',
-    'button',
-    'img',
-    'video',
-    'audio',
-    'source',
-    'link',
-    'meta',
-    'base',
-    'svg',
-    'canvas',
-  };
-  for (final element in fragment.querySelectorAll('*').toList()) {
-    if (blockedTags.contains(element.localName)) {
-      element.remove();
-      continue;
-    }
-    element.attributes.removeWhere(
-      (name, _) =>
-          !const {'class', 'colspan', 'rowspan', 'start'}.contains(name),
-    );
-  }
-  return fragment.outerHtml;
-}
 
 String _cssColor(Color color) {
   final rgb = color.toARGB32() & 0x00ffffff;

@@ -43,35 +43,35 @@ class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
       Color.alphaBlend(border.withValues(alpha: 0.58), surface);
 
   static const light = OpenChatPalette(
-    navigation: Color(0xFFE9E3DA),
-    surface: Color(0xFFF5F3EE),
-    composer: Color(0xFFEEEAE3),
-    selected: Color(0xFFDED7CE),
-    hover: Color(0xFFF2EDE6),
-    border: Color(0xFFDDD7CE),
-    controlBorder: Color(0xFF887F74),
-    text: Color(0xFF292724),
-    brandInk: Color(0xFF262F2B),
-    secondaryText: Color(0xFF676057),
-    secondaryIcon: Color(0xFF746F68),
-    accent: Color(0xFF8E563B),
-    accentIcon: Color(0xFF8A4F37),
+    navigation: Color(0xFFEEF2F6),
+    surface: Color(0xFFFFFFFF),
+    composer: Color(0xFFFFFFFF),
+    selected: Color(0xFFE7EFFC),
+    hover: Color(0xFFF3F6FA),
+    border: Color(0xFFD9E0E8),
+    controlBorder: Color(0xFF9AA4B2),
+    text: Color(0xFF171B24),
+    brandInk: Color(0xFF171B24),
+    secondaryText: Color(0xFF5A6472),
+    secondaryIcon: Color(0xFF667085),
+    accent: Color(0xFF2563EB),
+    accentIcon: Color(0xFF2563EB),
   );
 
   static const dark = OpenChatPalette(
-    navigation: Color(0xFF1B1917),
-    surface: Color(0xFF24211E),
-    composer: Color(0xFF2B2723),
-    selected: Color(0xFF39332D),
-    hover: Color(0xFF322D28),
-    border: Color(0xFF403A34),
-    controlBorder: Color(0xFF847B70),
-    text: Color(0xFFEEE9E2),
-    brandInk: Color(0xFFEEE9E2),
-    secondaryText: Color(0xFFB0A79E),
-    secondaryIcon: Color(0xFFB0A79E),
-    accent: Color(0xFFCF9270),
-    accentIcon: Color(0xFFCF9270),
+    navigation: Color(0xFF171B21),
+    surface: Color(0xFF1B2027),
+    composer: Color(0xFF20262F),
+    selected: Color(0xFF27364C),
+    hover: Color(0xFF232B35),
+    border: Color(0xFF39424E),
+    controlBorder: Color(0xFF718096),
+    text: Color(0xFFF3F5F7),
+    brandInk: Color(0xFFF3F5F7),
+    secondaryText: Color(0xFFA9B3C0),
+    secondaryIcon: Color(0xFFA9B3C0),
+    accent: Color(0xFF70A1FF),
+    accentIcon: Color(0xFF70A1FF),
   );
 
   static OpenChatPalette of(BuildContext context) {
@@ -139,6 +139,191 @@ class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
   }
 }
 
+/// Semantic colors shared by controls, surfaces, status states, and focus.
+///
+/// Keep these roles independent from component-specific palette names so a
+/// component can use the same visual language in both light and dark themes.
+class OpenChatSemanticColors extends ThemeExtension<OpenChatSemanticColors> {
+  const OpenChatSemanticColors({
+    required this.background,
+    required this.foreground,
+    required this.muted,
+    required this.mutedForeground,
+    required this.surface,
+    required this.elevatedSurface,
+    required this.border,
+    required this.subtleBorder,
+    required this.primary,
+    required this.primaryHover,
+    required this.primaryActive,
+    required this.primaryForeground,
+    required this.secondary,
+    required this.accent,
+    required this.destructive,
+    required this.warning,
+    required this.success,
+    required this.info,
+    required this.focusRing,
+  });
+
+  final Color background;
+  final Color foreground;
+  final Color muted;
+  final Color mutedForeground;
+  final Color surface;
+  final Color elevatedSurface;
+  final Color border;
+  final Color subtleBorder;
+  final Color primary;
+  final Color primaryHover;
+  final Color primaryActive;
+  final Color primaryForeground;
+  final Color secondary;
+  final Color accent;
+  final Color destructive;
+  final Color warning;
+  final Color success;
+  final Color info;
+  final Color focusRing;
+
+  static const light = OpenChatSemanticColors(
+    background: Color(0xFFF7F9FC),
+    foreground: Color(0xFF171B24),
+    muted: Color(0xFFEEF2F6),
+    mutedForeground: Color(0xFF5A6472),
+    surface: Color(0xFFFFFFFF),
+    elevatedSurface: Color(0xFFFFFFFF),
+    border: Color(0xFFD9E0E8),
+    subtleBorder: Color(0xFFE9EDF2),
+    primary: Color(0xFF2563EB),
+    primaryHover: Color(0xFF1D4ED8),
+    primaryActive: Color(0xFF1E40AF),
+    primaryForeground: Color(0xFFFFFFFF),
+    secondary: Color(0xFFEAF0F8),
+    accent: Color(0xFF3B82F6),
+    destructive: Color(0xFFC62828),
+    warning: Color(0xFFB45309),
+    success: Color(0xFF16794A),
+    info: Color(0xFF0369A1),
+    focusRing: Color(0xFF2563EB),
+  );
+
+  static const dark = OpenChatSemanticColors(
+    background: Color(0xFF15181D),
+    foreground: Color(0xFFF3F5F7),
+    muted: Color(0xFF222831),
+    mutedForeground: Color(0xFFA9B3C0),
+    surface: Color(0xFF1B2027),
+    elevatedSurface: Color(0xFF252C35),
+    border: Color(0xFF39424E),
+    subtleBorder: Color(0xFF2D353F),
+    primary: Color(0xFF70A1FF),
+    primaryHover: Color(0xFF93B8FF),
+    primaryActive: Color(0xFFB0CAFF),
+    primaryForeground: Color(0xFF071426),
+    secondary: Color(0xFF28313D),
+    accent: Color(0xFF5B9BFF),
+    destructive: Color(0xFFF38B8B),
+    warning: Color(0xFFF6C177),
+    success: Color(0xFF71D6A1),
+    info: Color(0xFF7CC4FF),
+    focusRing: Color(0xFF8BB5FF),
+  );
+
+  static OpenChatSemanticColors of(BuildContext context) {
+    final colors = Theme.of(context).extension<OpenChatSemanticColors>();
+    if (colors == null) {
+      throw StateError(
+        'OpenChatSemanticColors is missing from the active theme.',
+      );
+    }
+    return colors;
+  }
+
+  @override
+  OpenChatSemanticColors copyWith({
+    Color? background,
+    Color? foreground,
+    Color? muted,
+    Color? mutedForeground,
+    Color? surface,
+    Color? elevatedSurface,
+    Color? border,
+    Color? subtleBorder,
+    Color? primary,
+    Color? primaryHover,
+    Color? primaryActive,
+    Color? primaryForeground,
+    Color? secondary,
+    Color? accent,
+    Color? destructive,
+    Color? warning,
+    Color? success,
+    Color? info,
+    Color? focusRing,
+  }) {
+    return OpenChatSemanticColors(
+      background: background ?? this.background,
+      foreground: foreground ?? this.foreground,
+      muted: muted ?? this.muted,
+      mutedForeground: mutedForeground ?? this.mutedForeground,
+      surface: surface ?? this.surface,
+      elevatedSurface: elevatedSurface ?? this.elevatedSurface,
+      border: border ?? this.border,
+      subtleBorder: subtleBorder ?? this.subtleBorder,
+      primary: primary ?? this.primary,
+      primaryHover: primaryHover ?? this.primaryHover,
+      primaryActive: primaryActive ?? this.primaryActive,
+      primaryForeground: primaryForeground ?? this.primaryForeground,
+      secondary: secondary ?? this.secondary,
+      accent: accent ?? this.accent,
+      destructive: destructive ?? this.destructive,
+      warning: warning ?? this.warning,
+      success: success ?? this.success,
+      info: info ?? this.info,
+      focusRing: focusRing ?? this.focusRing,
+    );
+  }
+
+  @override
+  OpenChatSemanticColors lerp(
+    ThemeExtension<OpenChatSemanticColors>? other,
+    double t,
+  ) {
+    if (other is! OpenChatSemanticColors) return this;
+    return OpenChatSemanticColors(
+      background: Color.lerp(background, other.background, t) ?? background,
+      foreground: Color.lerp(foreground, other.foreground, t) ?? foreground,
+      muted: Color.lerp(muted, other.muted, t) ?? muted,
+      mutedForeground:
+          Color.lerp(mutedForeground, other.mutedForeground, t) ??
+          mutedForeground,
+      surface: Color.lerp(surface, other.surface, t) ?? surface,
+      elevatedSurface:
+          Color.lerp(elevatedSurface, other.elevatedSurface, t) ??
+          elevatedSurface,
+      border: Color.lerp(border, other.border, t) ?? border,
+      subtleBorder:
+          Color.lerp(subtleBorder, other.subtleBorder, t) ?? subtleBorder,
+      primary: Color.lerp(primary, other.primary, t) ?? primary,
+      primaryHover:
+          Color.lerp(primaryHover, other.primaryHover, t) ?? primaryHover,
+      primaryActive:
+          Color.lerp(primaryActive, other.primaryActive, t) ?? primaryActive,
+      primaryForeground:
+          Color.lerp(primaryForeground, other.primaryForeground, t) ??
+          primaryForeground,
+      secondary: Color.lerp(secondary, other.secondary, t) ?? secondary,
+      accent: Color.lerp(accent, other.accent, t) ?? accent,
+      destructive: Color.lerp(destructive, other.destructive, t) ?? destructive,
+      warning: Color.lerp(warning, other.warning, t) ?? warning,
+      success: Color.lerp(success, other.success, t) ?? success,
+      info: Color.lerp(info, other.info, t) ?? info,
+      focusRing: Color.lerp(focusRing, other.focusRing, t) ?? focusRing,
+    );
+  }
+}
+
 class OpenChatConversationStyle
     extends ThemeExtension<OpenChatConversationStyle> {
   const OpenChatConversationStyle({
@@ -194,6 +379,13 @@ abstract final class OpenChatSpacing {
   static const sidebarBreakpoint = 900.0;
 }
 
+abstract final class OpenChatRadii {
+  static const control = 8.0;
+  static const menu = 10.0;
+  static const card = 14.0;
+  static const dialog = 16.0;
+}
+
 abstract final class OpenChatTheme {
   static final ThemeData light = _create(
     OpenChatPalette.light,
@@ -206,146 +398,320 @@ abstract final class OpenChatTheme {
     Brightness brightness, {
     String fontFamily = 'Manrope',
   }) {
+    final semantic = brightness == Brightness.light
+        ? OpenChatSemanticColors.light
+        : OpenChatSemanticColors.dark;
     final colorScheme = ColorScheme.fromSeed(
-      seedColor: palette.accent,
+      seedColor: semantic.primary,
       brightness: brightness,
-      surface: palette.surface,
-      primary: palette.accent,
-      onPrimary: palette.surface,
-      onSurface: palette.text,
-      outline: palette.border,
+      surface: semantic.surface,
+      primary: semantic.primary,
+      onPrimary: semantic.primaryForeground,
+      onSurface: semantic.foreground,
+      outline: semantic.border,
+      error: semantic.destructive,
     );
 
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
       fontFamily: fontFamily,
-      scaffoldBackgroundColor: palette.surface,
+      scaffoldBackgroundColor: semantic.background,
       colorScheme: colorScheme,
       extensions: <ThemeExtension<dynamic>>[
         palette,
+        semantic,
         const OpenChatConversationStyle(),
       ],
       textTheme: TextTheme(
         headlineSmall: TextStyle(
-          color: palette.text,
+          color: semantic.foreground,
           fontSize: 24,
           fontWeight: FontWeight.w600,
           letterSpacing: 0,
           height: 1.3,
         ),
         titleLarge: TextStyle(
-          color: palette.text,
+          color: semantic.foreground,
           fontSize: 18,
           fontWeight: FontWeight.w600,
           letterSpacing: 0,
           height: 1.2,
         ),
         titleMedium: TextStyle(
-          color: palette.text,
+          color: semantic.foreground,
           fontSize: 16,
           fontWeight: FontWeight.w600,
           letterSpacing: 0,
           height: 1.4,
         ),
         bodyLarge: TextStyle(
-          color: palette.text,
+          color: semantic.foreground,
           fontSize: 15,
           fontWeight: FontWeight.w500,
           letterSpacing: 0,
           height: 1.45,
         ),
         bodyMedium: TextStyle(
-          color: palette.secondaryText,
+          color: semantic.mutedForeground,
           fontSize: 13,
           fontWeight: FontWeight.w500,
           letterSpacing: 0,
           height: 1.5,
         ),
         bodySmall: TextStyle(
-          color: palette.secondaryText,
+          color: semantic.mutedForeground,
           fontSize: 12,
           fontWeight: FontWeight.w500,
           letterSpacing: 0,
           height: 1.45,
         ),
         labelLarge: TextStyle(
-          color: palette.text,
+          color: semantic.foreground,
           fontSize: 13,
           fontWeight: FontWeight.w600,
           letterSpacing: 0,
           height: 1.4,
         ),
       ).apply(fontFamily: fontFamily),
-      dividerColor: palette.border,
+      dividerColor: semantic.border,
       inputDecorationTheme: InputDecorationTheme(
-        hintStyle: TextStyle(color: palette.secondaryText, fontSize: 13),
+        hintStyle: TextStyle(color: semantic.mutedForeground, fontSize: 13),
+        labelStyle: TextStyle(color: semantic.mutedForeground, fontSize: 13),
+        floatingLabelStyle: TextStyle(color: semantic.primary, fontSize: 13),
         filled: true,
-        fillColor: palette.surface,
+        fillColor: semantic.surface,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: palette.controlBorder),
+          borderRadius: BorderRadius.circular(OpenChatRadii.control),
+          borderSide: BorderSide(color: semantic.border),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: palette.controlBorder),
+          borderRadius: BorderRadius.circular(OpenChatRadii.control),
+          borderSide: BorderSide(color: semantic.border),
         ),
         disabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(OpenChatRadii.control),
           borderSide: BorderSide(color: palette.disabledBorder),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: palette.accent),
+          borderRadius: BorderRadius.circular(OpenChatRadii.control),
+          borderSide: BorderSide(color: semantic.focusRing, width: 1.4),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(OpenChatRadii.control),
+          borderSide: BorderSide(color: colorScheme.error),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(OpenChatRadii.control),
+          borderSide: BorderSide(color: colorScheme.error, width: 1.4),
         ),
       ),
       iconButtonTheme: IconButtonThemeData(
-        style: IconButton.styleFrom(
-          foregroundColor: palette.secondaryText,
-          disabledForegroundColor: palette.disabledIcon,
-          minimumSize: const Size(36, 36),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        style: ButtonStyle(
+          foregroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.disabled)
+                ? palette.disabledIcon
+                : palette.secondaryText,
+          ),
+          minimumSize: const WidgetStatePropertyAll(Size(36, 36)),
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(OpenChatRadii.control),
+            ),
+          ),
+          overlayColor: _controlOverlay(palette),
         ),
       ),
       textButtonTheme: TextButtonThemeData(
-        style: TextButton.styleFrom(
-          disabledForegroundColor: palette.disabledForeground,
+        style: ButtonStyle(
+          foregroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.disabled)
+                ? palette.disabledForeground
+                : palette.text,
+          ),
+          minimumSize: const WidgetStatePropertyAll(Size(36, 36)),
+          padding: const WidgetStatePropertyAll(
+            EdgeInsets.symmetric(horizontal: 10),
+          ),
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(OpenChatRadii.control),
+            ),
+          ),
+          overlayColor: _controlOverlay(palette),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
-        style:
-            OutlinedButton.styleFrom(
-              foregroundColor: palette.text,
-              disabledForegroundColor: palette.disabledForeground,
-              disabledBackgroundColor: palette.disabledSurface,
-              side: BorderSide(color: palette.border),
-              minimumSize: const Size(36, 36),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              textStyle: TextStyle(
-                color: palette.text,
-                fontWeight: FontWeight.w500,
-                fontSize: 13,
-              ),
-            ).copyWith(
-              side: WidgetStateProperty.resolveWith<BorderSide?>((states) {
-                final color = states.contains(WidgetState.disabled)
-                    ? palette.disabledBorder
-                    : palette.border;
-                return BorderSide(color: color);
-              }),
+        style: ButtonStyle(
+          foregroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.disabled)
+                ? palette.disabledForeground
+                : palette.text,
+          ),
+          backgroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.disabled)
+                ? palette.disabledSurface
+                : Colors.transparent,
+          ),
+          side: WidgetStateProperty.resolveWith((states) {
+            final color = states.contains(WidgetState.disabled)
+                ? palette.disabledBorder
+                : states.contains(WidgetState.focused)
+                ? semantic.focusRing
+                : semantic.border;
+            return BorderSide(color: color);
+          }),
+          minimumSize: const WidgetStatePropertyAll(Size(36, 36)),
+          padding: const WidgetStatePropertyAll(
+            EdgeInsets.symmetric(horizontal: 10),
+          ),
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(OpenChatRadii.control),
             ),
+          ),
+          textStyle: WidgetStatePropertyAll(
+            TextStyle(
+              color: semantic.foreground,
+              fontWeight: FontWeight.w500,
+              fontSize: 13,
+            ),
+          ),
+          overlayColor: _controlOverlay(palette),
+        ),
       ),
       filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          disabledForegroundColor: palette.disabledForeground,
-          disabledBackgroundColor: palette.disabledSurface,
+        style: ButtonStyle(
+          foregroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.disabled)
+                ? palette.disabledForeground
+                : colorScheme.onPrimary,
+          ),
+          backgroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.disabled)
+                ? palette.disabledSurface
+                : colorScheme.primary,
+          ),
+          minimumSize: const WidgetStatePropertyAll(Size(36, 36)),
+          padding: const WidgetStatePropertyAll(
+            EdgeInsets.symmetric(horizontal: 12),
+          ),
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(OpenChatRadii.control),
+            ),
+          ),
+          textStyle: WidgetStatePropertyAll(
+            TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              fontFamily: fontFamily,
+            ),
+          ),
+          overlayColor: _primaryOverlay(palette),
+        ),
+      ),
+      elevatedButtonTheme: ElevatedButtonThemeData(
+        style: ButtonStyle(
+          foregroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.disabled)
+                ? palette.disabledForeground
+                : palette.text,
+          ),
+          backgroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.disabled)
+                ? palette.disabledSurface
+                : palette.selected,
+          ),
+          elevation: const WidgetStatePropertyAll(0),
+          minimumSize: const WidgetStatePropertyAll(Size(36, 36)),
+          padding: const WidgetStatePropertyAll(
+            EdgeInsets.symmetric(horizontal: 12),
+          ),
+          shape: WidgetStatePropertyAll(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(OpenChatRadii.control),
+            ),
+          ),
+          overlayColor: _controlOverlay(palette),
+        ),
+      ),
+      dialogTheme: DialogThemeData(
+        backgroundColor: semantic.elevatedSurface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 8,
+        shadowColor: Colors.black.withValues(alpha: 0.16),
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(OpenChatRadii.dialog),
+        ),
+        titleTextStyle: TextStyle(
+          color: semantic.foreground,
+          fontFamily: fontFamily,
+          fontSize: 18,
+          fontWeight: FontWeight.w600,
+          height: 1.3,
+        ),
+        contentTextStyle: TextStyle(
+          color: semantic.mutedForeground,
+          fontFamily: fontFamily,
+          fontSize: 13,
+          height: 1.5,
+        ),
+      ),
+      cardTheme: CardThemeData(
+        color: semantic.surface,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: semantic.border),
+        ),
+      ),
+      tooltipTheme: TooltipThemeData(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: semantic.elevatedSurface,
+          border: Border.all(color: semantic.border),
+          borderRadius: BorderRadius.circular(OpenChatRadii.control),
+        ),
+        textStyle: TextStyle(
+          color: semantic.foreground,
+          fontFamily: fontFamily,
+          fontSize: 12,
+          height: 1.35,
         ),
       ),
     );
+  }
+
+  static WidgetStateProperty<Color?> _controlOverlay(OpenChatPalette palette) {
+    return WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.disabled)) return Colors.transparent;
+      if (states.contains(WidgetState.pressed)) {
+        return palette.selected.withValues(alpha: 0.8);
+      }
+      if (states.contains(WidgetState.hovered) ||
+          states.contains(WidgetState.focused)) {
+        return palette.hover.withValues(alpha: 0.7);
+      }
+      return Colors.transparent;
+    });
+  }
+
+  static WidgetStateProperty<Color?> _primaryOverlay(OpenChatPalette palette) {
+    return WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.disabled)) return Colors.transparent;
+      if (states.contains(WidgetState.pressed)) {
+        return palette.surface.withValues(alpha: 0.22);
+      }
+      if (states.contains(WidgetState.hovered) ||
+          states.contains(WidgetState.focused)) {
+        return palette.surface.withValues(alpha: 0.14);
+      }
+      return Colors.transparent;
+    });
   }
 
   static ThemeData withConversationStyle(
@@ -357,9 +723,15 @@ abstract final class OpenChatTheme {
     if (palette == null) {
       throw StateError('OpenChatPalette is missing from the active theme.');
     }
+    final semantic =
+        theme.extension<OpenChatSemanticColors>() ??
+        (theme.brightness == Brightness.light
+            ? OpenChatSemanticColors.light
+            : OpenChatSemanticColors.dark);
     return _create(palette, theme.brightness, fontFamily: fontFamily).copyWith(
       extensions: <ThemeExtension<dynamic>>[
         palette,
+        semantic,
         OpenChatConversationStyle(maxWidth: maxWidth, fontFamily: fontFamily),
       ],
     );

@@ -12,7 +12,8 @@ class _FakeServiceClient extends OpenChatServiceClient {
   final Future<Map<String, Object?>> Function(
     String method,
     Map<String, Object?> params,
-  ) handler;
+  )
+  handler;
 
   final List<({String method, Map<String, Object?> params})> calls = [];
 
@@ -20,6 +21,7 @@ class _FakeServiceClient extends OpenChatServiceClient {
   Future<Map<String, Object?>> call(
     String method, {
     Map<String, Object?> params = const <String, Object?>{},
+    Duration timeout = const Duration(seconds: 15),
   }) {
     calls.add((method: method, params: params));
     return handler(method, params);

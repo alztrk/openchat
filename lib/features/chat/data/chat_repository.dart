@@ -16,7 +16,13 @@ const _compatibleProviderIds = <String>{
   'groq',
   'cerebras',
   'openrouter',
+  'mistral',
 };
+
+const _localEngineProviderIds = <String>{'llama_cpp', 'vllm', 'exllama'};
+
+bool _isLocalEngineProvider(String? providerId) =>
+    providerId != null && _localEngineProviderIds.contains(providerId);
 
 bool _isApiKeyRouteProvider(String? providerId) =>
     providerId == 'chatgpt_api' ||
@@ -103,7 +109,8 @@ class ChatRepository {
     if (providerId != 'chatgpt' &&
         providerId != 'chatgpt_api' &&
         providerId != 'opencode' &&
-        !_compatibleProviderIds.contains(providerId)) {
+        !_compatibleProviderIds.contains(providerId) &&
+        !_isLocalEngineProvider(providerId)) {
       throw ArgumentError.value(providerId, 'providerId', 'Unknown provider.');
     }
     final normalizedModelId = _requireValue(modelId, 'modelId');
@@ -278,16 +285,19 @@ class ChatRepository {
     }
     final selectedProvider = providerId?.trim();
     final isOpenCode = selectedProvider == 'opencode';
+    final isLocalEngine = _isLocalEngineProvider(selectedProvider);
     final hasApiKeyRoute = _isApiKeyRouteProvider(selectedProvider);
     if (selectedProvider != null &&
         selectedProvider != 'chatgpt' &&
         !isOpenCode &&
+        !isLocalEngine &&
         !hasApiKeyRoute) {
       throw ArgumentError.value(providerId, 'providerId', 'Unknown provider.');
     }
     final hasOAuthRoute = connectionId != null || workspaceId != null;
     final hasApiRoute = apiKeyConnectionId != null;
-    if ((isOpenCode && (hasOAuthRoute || hasApiRoute || modelId == null)) ||
+    if (((isOpenCode || isLocalEngine) &&
+            (hasOAuthRoute || hasApiRoute || modelId == null)) ||
         (hasApiKeyRoute &&
             (!hasApiRoute ||
                 hasOAuthRoute ||
@@ -295,6 +305,7 @@ class ChatRepository {
                 (_compatibleProviderIds.contains(selectedProvider) &&
                     apiKeyConnectionId != selectedProvider))) ||
         (!isOpenCode &&
+            !isLocalEngine &&
             !hasApiKeyRoute &&
             (hasApiRoute ||
                 ((connectionId == null) != (workspaceId == null)) ||
@@ -379,28 +390,34 @@ class ChatRepository {
     final normalizedProviderId = _requireValue(providerId, 'providerId');
     final normalizedModelId = _requireValue(modelId, 'modelId');
     final isOpenCode = normalizedProviderId == 'opencode';
+    final isLocalEngine = _isLocalEngineProvider(normalizedProviderId);
     final hasApiKeyRoute = _isApiKeyRouteProvider(normalizedProviderId);
-    if (!isOpenCode && !hasApiKeyRoute && normalizedProviderId != 'chatgpt') {
+    if (!isOpenCode &&
+        !isLocalEngine &&
+        !hasApiKeyRoute &&
+        normalizedProviderId != 'chatgpt') {
       throw ArgumentError.value(providerId, 'providerId', 'Unknown provider.');
     }
     final hasOAuthRoute = connectionId != null || workspaceId != null;
-    if ((isOpenCode && (hasOAuthRoute || apiKeyConnectionId != null)) ||
+    if (((isOpenCode || isLocalEngine) &&
+            (hasOAuthRoute || apiKeyConnectionId != null)) ||
         (hasApiKeyRoute &&
             (apiKeyConnectionId == null ||
                 hasOAuthRoute ||
                 (_compatibleProviderIds.contains(normalizedProviderId) &&
                     apiKeyConnectionId != normalizedProviderId))) ||
         (!isOpenCode &&
+            !isLocalEngine &&
             !hasApiKeyRoute &&
             (apiKeyConnectionId != null ||
                 connectionId == null ||
                 workspaceId == null))) {
       throw ArgumentError('The provider route is incomplete or incompatible.');
     }
-    final normalizedConnectionId = isOpenCode || hasApiKeyRoute
+    final normalizedConnectionId = isOpenCode || isLocalEngine || hasApiKeyRoute
         ? null
         : _requireValue(connectionId ?? '', 'connectionId');
-    final normalizedWorkspaceId = isOpenCode || hasApiKeyRoute
+    final normalizedWorkspaceId = isOpenCode || isLocalEngine || hasApiKeyRoute
         ? null
         : _requireValue(workspaceId ?? '', 'workspaceId');
     final normalizedApiKeyConnectionId = hasApiKeyRoute
@@ -503,6 +520,7 @@ class ChatRepository {
   Future<void> saveMessage({
     required String conversationId,
     required domain.ChatMessage message,
+    bool updateConversationTimestamp = true,
   }) async {
     if (message.id.trim().isEmpty) {
       throw ArgumentError.value(
@@ -537,6 +555,21 @@ class ChatRepository {
           throw ConversationNotFoundException(conversationId);
         }
 
+        final existingMessage = message.attachments.isEmpty
+            ? await (_database.select(_database.messages)..where(
+                    (row) =>
+                        row.conversationId.equals(conversationId) &
+                        row.id.equals(message.id),
+                  ))
+                  .getSingleOrNull()
+            : null;
+        final storedMessageAttachments = message.attachments.isNotEmpty
+            ? message.attachments
+            : existingMessage == null
+            ? const <ChatAttachment>[]
+            : ChatMessageContentCodec.decode(existingMessage.content)
+                  .attachments;
+
         final createdAt = message.createdAt ?? DateTime.now().toUtc();
         final createdAtMilliseconds = createdAt.toUtc().millisecondsSinceEpoch;
         await _database
@@ -548,7 +581,7 @@ class ChatRepository {
                 role: message.role.name,
                 content: ChatMessageContentCodec.encode(
                   message.content,
-                  message.attachments,
+                  storedMessageAttachments,
                 ),
                 createdAt: Value(createdAtMilliseconds),
                 outputTokens: Value(message.outputTokens),
@@ -573,17 +606,19 @@ class ChatRepository {
               ),
             );
 
-        await (_database.update(
-          _database.conversations,
-        )..where((row) => row.id.equals(conversationId))).write(
-          ConversationsCompanion(
-            updatedAt: Value(
-              createdAtMilliseconds > conversation.updatedAt
-                  ? createdAtMilliseconds
-                  : conversation.updatedAt,
+        if (updateConversationTimestamp) {
+          await (_database.update(
+            _database.conversations,
+          )..where((row) => row.id.equals(conversationId))).write(
+            ConversationsCompanion(
+              updatedAt: Value(
+                createdAtMilliseconds > conversation.updatedAt
+                    ? createdAtMilliseconds
+                    : conversation.updatedAt,
+              ),
             ),
-          ),
-        );
+          );
+        }
       });
     } on Object catch (error, stackTrace) {
       if (attachmentsSaved && attachmentStore != null) {

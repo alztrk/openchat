@@ -1,0 +1,1136 @@
+{
+  "@@locale": "fr",
+  "appTitle": "OpenChat",
+  "newChat": "Nouvelle discussion",
+  "chats": "Discussions",
+  "collapseSidebars": "Réduire les barres latérales",
+  "showSidebars": "Afficher les barres latérales",
+  "home": "Accueil",
+  "extensions": "Extensions",
+  "scheduled": "Planifiées",
+  "design": "Design",
+  "security": "Sécurité",
+  "sectionUnavailable": "Cette rubrique n'est pas encore disponible.",
+  "settings": "Paramètres",
+  "settingsDescription": "Connexions, apparence et données locales",
+  "connections": "Connexions",
+  "models": "Modèles",
+  "modelsDescription": "Gérez les modèles des fournisseurs connectés, définissez un modèle par défaut et masquez les modèles dont vous n'avez pas besoin.",
+  "localEngines": "Moteurs locaux",
+  "localEnginesDescription": "Installez des environnements d'exécution locaux vérifiés, enregistrez vos propres fichiers de modèle et vérifiez si un environnement d'exécution est sain. Déplacez ou copiez des modèles dans un dossier de moteur, ou conservez-les là où ils se trouvent.",
+  "localEnginesUnavailable": "Le service moteur local n'est pas encore disponible.",
+  "localEnginesLoadFailed": "Les informations sur le moteur local n'ont pas pu être chargées.",
+  "localEnginesEmpty": "Aucune version locale du moteur n’est disponible.",
+  "localEnginesReload": "Recharger",
+  "localEngineRelease": "Version {tag}",
+  "@localEngineRelease": {
+    "placeholders": {
+      "tag": {
+        "type": "String"
+      }
+    }
+  },
+  "localEngineVariants": "Packages",
+  "localEngineStable": "Stable",
+  "localEnginePreview": "Aperçu",
+  "localEngineNightly": "Nightly",
+  "localEngineRecommended": "Recommandé",
+  "localEngineAvailable": "Disponible",
+  "localEngineInstalled": "Installé",
+  "localEngineNotInstalled": "Non installé",
+  "localEngineBlocked": "Bloqué",
+  "localEngineUnsupportedPlatform": "Plateforme non prise en charge",
+  "localEngineHardwareUnavailable": "Matériel indisponible",
+  "localEngineVllmBlockedReason": "Le package vLLM dépend de PyTorch et d’un runtime Python complet qu’OpenChat n’installe pas encore avec un verrou de dépendances complet et vérifié par hachage. Windows natif n’est pas pris en charge en amont ; la configuration WSL2 gérée n’est pas encore disponible.",
+  "localEngineExllamaBlockedReason": "Le runtime ExLlamaV3 n'est pas encore prêt pour l'installation. OpenChat doit épingler et vérifier l'ensemble complet de dépendances TabbyAPI, PyTorch, Triton, Flash Linear Attention et Python avant de le proposer.",
+  "localEngineRuntimeRequirements": "Configuration requise : {requirements}",
+  "@localEngineRuntimeRequirements": {
+    "placeholders": {
+      "requirements": {
+        "type": "String"
+      }
+    }
+  },
+  "localEngineInstall": "Installer",
+  "localEngineInstalling": "Préparation de l'installation...",
+  "localEngineInstallProgress": "Progression de l'installation du moteur local",
+  "localEngineCancelInstall": "Annuler l'installation",
+  "localEngineCancellingInstall": "Annulation...",
+  "localEngineInstallFailed": "Le moteur local n'a pas pu être installé. Le catalogue a été rafraîchi.",
+  "localEngineHealth": "État du runtime",
+  "localEngineRunning": "En cours d'exécution",
+  "localEngineStopped": "Arrêté",
+  "localEngineUnhealthy": "Ne répond pas",
+  "localEngineUnavailable": "Ce moteur ne peut pas encore démarrer.",
+  "localEngineStartModel": "Démarrer le modèle",
+  "localEngineStopModel": "Arrêter le moteur",
+  "localModels": "Modèles enregistrés",
+  "localModelsEmpty": "Aucun modèle n'est enregistré pour ce moteur.",
+  "localModelsPageTitle": "Modèles locaux",
+  "localModelsPageDescription": "Affichez les modèles locaux téléchargés et enregistrés.",
+  "localModelsPageEmpty": "Aucun modèle local n'est encore enregistré.",
+  "localModelsLoadFailed": "Les modèles locaux n'ont pas pu être chargés.",
+  "localModelsRefresh": "Rafraîchir",
+  "localModelsDiscover": "Découvrir des modèles",
+  "localModelAddFile": "Ajouter un fichier modèle",
+  "localModelAddFolder": "Ajouter un dossier modèle",
+  "localModelStorageChoiceTitle": "Choisir l’emplacement du modèle",
+  "localModelStorageChoiceTarget": "Dossier modèle OpenChat : %LOCALAPPDATA%\\OpenChat\\models\\{folder}",
+  "@localModelStorageChoiceTarget": {
+    "placeholders": {
+      "folder": {
+        "type": "String"
+      }
+    }
+  },
+  "localModelMoveToFolder": "Déplacer le modèle vers le dossier {folder}",
+  "@localModelMoveToFolder": {
+    "placeholders": {
+      "folder": {
+        "type": "String"
+      }
+    }
+  },
+  "localModelCopyToFolder": "Copier le modèle dans le dossier {folder}",
+  "@localModelCopyToFolder": {
+    "placeholders": {
+      "folder": {
+        "type": "String"
+      }
+    }
+  },
+  "localModelKeepInPlace": "Conserver le modèle à son emplacement",
+  "localModelSaving": "Enregistrement du modèle…",
+  "localModelTransferError": "Le modèle n'a pas pu être copié ou déplacé. Le modèle original a été laissé en place.",
+  "localModelTransferRecoveryError": "Le modèle n'a pas pu être enregistré ou restauré. Une copie complète du modèle reste dans le dossier du modèle OpenChat ; sélectionnez-le ici pour l'enregistrer.",
+  "localModelRemove": "Supprimer l’enregistrement",
+  "localModelRemoveConfirmation": "Seul l’enregistrement OpenChat sera supprimé. Le fichier du modèle restera sur le disque. Continuer ?",
+  "localModelCancelStart": "Annuler le démarrage",
+  "localModelStopping": "Arrêt du runtime…",
+  "localModelActionError": "L'action de modèle local n'a pas pu être réalisée.",
+  "localModelPathMissing": "Chemin du modèle introuvable. Restaurez le fichier à son emplacement ou supprimez son enregistrement.",
+  "localModelEngineNotReady": "Disponible une fois le moteur installé et capable d’exécuter des modèles.",
+  "localModelInvalid": "Le fichier ou dossier sélectionné n'est pas un modèle valide pour ce moteur.",
+  "localModelPathError": "Le fichier ou dossier de modèle sélectionné n'est pas accessible.",
+  "localModelStoragePathError": "OpenChat n'a pas pu créer ses dossiers de modèles. Vérifiez l'espace de stockage disponible et les autorisations, puis réessayez.",
+  "localModelStorageError": "L'enregistrement du modèle n'a pas pu être écrit dans la base de données.",
+  "localModelStartError": "Le modèle n'a pas pu être démarré. Vérifiez l'installation du runtime et le fichier de modèle.",
+  "localModelStartTimeout": "Le modèle n’était pas prêt à temps. Essayez un modèle plus petit ou vérifiez votre matériel.",
+  "localModelSaved": "Modèle local enregistré.",
+  "localModelRemoved": "Enregistrement du modèle local supprimé.",
+  "localEngineStageDownloading": "Téléchargement",
+  "localEngineStageVerifying": "Vérification",
+  "localEngineStageExtracting": "Extraction",
+  "localEngineStagePublishing": "Finalisation de l’installation",
+  "localEngineStageReady": "Prêt",
+  "defaultModel": "Par défaut",
+  "setDefaultModel": "Définir comme modèle par défaut",
+  "clearDefaultModel": "Supprimer le modèle par défaut",
+  "defaultModelUpdated": "Modèle par défaut mis à jour : {model}",
+  "@defaultModelUpdated": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "defaultModelCleared": "Modèle par défaut supprimé.",
+  "hideModel": "Cacher",
+  "showModel": "Afficher",
+  "hiddenModel": "Caché",
+  "modelHidden": "Modèle masqué : {model}",
+  "@modelHidden": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "modelUnhidden": "Modèle affiché : {model}",
+  "@modelUnhidden": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
+  "noModelsFound": "Aucun modèle trouvé.",
+  "refreshModels": "Actualiser les modèles",
+  "connectedProvidersModels": "Modèles de fournisseurs connectés",
+  "noConnectedProviders": "Aucun fournisseur connecté pour l'instant. Connectez des comptes ou ajoutez des clés API dans l'onglet Connexions.",
+  "sharedInstructions": "Instructions partagées",
+  "sharedInstructionsDescription": "Ces instructions sont envoyées avec chaque fournisseur connecté. L'accès aux outils de fichiers suit le paramètre d'accès aux outils.",
+  "sharedInstructionsHint": "Décrivez comment vous souhaitez que les réponses soient rédigées...",
+  "sharedInstructionsLoadFailed": "Impossible de charger les instructions partagées. Réessayez.",
+  "sharedInstructionsSaveFailed": "Impossible d’enregistrer les instructions partagées.",
+  "sharedInstructionsSaved": "Instructions partagées enregistrées.",
+  "sharedInstructionsTooLong": "Les instructions partagées ne peuvent pas dépasser 4 096 caractères.",
+  "chatGptProvider": "ChatGPT",
+  "openCodeProvider": "OpenCode",
+  "geminiProvider": "Gemini",
+  "groqProvider": "Groq",
+  "cerebrasProvider": "Cerebras",
+  "openRouterProvider": "OpenRouter",
+  "mistralProvider": "Mistral",
+  "geminiApiDescription": "Ajoutez une clé API Google AI Studio pour utiliser les modèles disponibles pour votre compte. L’accès gratuit dépend du modèle et de votre quota.",
+  "groqApiDescription": "Utilisez les modèles activés pour votre compte avec une clé API Groq. La tarification et les limites d’utilisation varient selon le forfait et le modèle.",
+  "cerebrasApiDescription": "Utilisez les modèles compatibles avec les outils disponibles pour votre compte avec une clé API Cerebras. L’accès, la tarification et les limites varient selon le modèle et le compte.",
+  "openRouterApiDescription": "Seuls les modèles affichant un prix de 0 $ pour l’entrée et la sortie, avec prise en charge du texte et des outils, apparaissent ici. L’accès réel et les limites peuvent changer.",
+  "mistralApiDescription": "Ajoutez une clé API Mistral pour utiliser les modèles de chat disponibles pour votre compte. L’accès gratuit, la tarification et les limites d’utilisation dépendent de votre forfait Mistral.",
+  "geminiUnpaidDataNotice": "Avec le niveau gratuit de l’API Gemini, Google peut utiliser le contenu envoyé pour améliorer ses produits. Consultez les conditions d’utilisation des données de Google avant d’envoyer des informations sensibles.",
+  "providerApiKey": "Clé API",
+  "providerKeySaved": "La clé API est enregistrée en toute sécurité sur cet appareil.",
+  "providerKeySavedSuffix": "La clé API se terminant par ••••{suffix} est enregistrée en toute sécurité sur cet appareil.",
+  "@providerKeySavedSuffix": {
+    "placeholders": {
+      "suffix": {}
+    }
+  },
+  "providerNoKey": "Aucune clé API n'est connectée.",
+  "providerKeyInvalid": "Entrez une clé API valide pour ce fournisseur. N’incluez pas d’espaces ; la clé peut comporter jusqu’à 4 096 caractères.",
+  "providerKeyStorageFailed": "La clé API n'a pas pu être lue ou enregistrée en toute sécurité.",
+  "favoriteModels": "Favoris",
+  "favoriteModelsEmpty": "Pas encore de modèles favoris.",
+  "modelSearchHint": "Rechercher des modèles...",
+  "modelSearchNoResults": "Aucun modèle ne correspond à votre recherche.",
+  "addModelFavorite": "Ajouter aux modèles favoris",
+  "removeModelFavorite": "Supprimer des favoris",
+  "openCodeConsole": "OpenCode Console",
+  "openCodeConsoleDescription": "Les modèles gratuits fonctionnent sans clé. Ajoutez une clé Console API pour les modèles payants ; chaque demande est facturée sur votre solde Console.",
+  "openCodeKeySaved": "La clé API Console se terminant par ••••{suffix} est enregistrée en toute sécurité sur cet appareil.",
+  "@openCodeKeySaved": {
+    "placeholders": {
+      "suffix": {}
+    }
+  },
+  "openCodeNoKey": "Aucune clé API Console. Les modèles gratuits sont disponibles.",
+  "openCodeApiKey": "Clé API Console OpenCode",
+  "openCodeKeyInvalid": "Saisissez une clé API non vide, sans espaces ni sauts de ligne (jusqu'à 4 096 caractères).",
+  "openCodeKeyStorageFailed": "La clé Console API n’a pas pu être lue ou enregistrée en toute sécurité.",
+  "openCodePaidModel": "Payant",
+  "openCodeFreeModel": "Gratuit",
+  "modelSourceApi": "API",
+  "modelSourceOAuth": "OAuth",
+  "openCodeFreeModels": "Modèles gratuits",
+  "openCodeApiModels": "Modèles API",
+  "modelContextWindow": "Fenêtre de contexte · {value} jetons",
+  "@modelContextWindow": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "openCodeModelContextWindow": "Catalogue OpenCode (Models.dev) · contexte : {value} jetons",
+  "@openCodeModelContextWindow": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "add": "Ajouter",
+  "edit": "Modifier",
+  "exportConversation": "Exporter la conversation",
+  "deleteConversation": "Supprimer la conversation",
+  "confirmDeleteConversationTitle": "Supprimer cette conversation ?",
+  "confirmDeleteConversation": "Cela supprimera définitivement « {title} » et tous ses messages de cet appareil.",
+  "@confirmDeleteConversation": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "stopResponseBeforeDelete": "Arrêtez la réponse en cours avant de supprimer cette conversation.",
+  "conversationDeleted": "Conversation supprimée.",
+  "conversationDeleteFailed": "Impossible de supprimer la conversation. Réessayez.",
+  "conversationExported": "Conversation exportée au format Markdown.",
+  "conversationExportFailed": "Impossible d’exporter la conversation. Réessayez.",
+  "conversationExportProvider": "Fournisseur",
+  "conversationExportModel": "Modèle",
+  "conversationExportCreated": "Créé",
+  "conversationExportStatus": "Statut",
+  "toolPermissions": "Accès aux outils",
+  "toolPermissionsDescription": "Choisissez où les outils de fichiers de l’IA peuvent agir et si chaque appel nécessite votre approbation.",
+  "toolPermissionRequireApproval": "Demander une autorisation",
+  "toolPermissionRequireApprovalDescription": "Les outils de fichiers demandent une autorisation avant chaque appel et sont limités au dossier du projet et à %LOCALAPPDATA%\\OpenChat. L’exécution de commandes n’est pas disponible.",
+  "toolPermissionFullAccess": "Accès complet",
+  "toolPermissionFullAccessDescription": "Les outils de fichiers peuvent lire et modifier des fichiers dans n'importe quel dossier sans rien demander. L'exécution de la commande n'est pas disponible.",
+  "toolPermissionSettingsLoadFailed": "Impossible de charger les paramètres d’accès aux outils.",
+  "toolPermissionSettingsSaveFailed": "Impossible d’enregistrer les paramètres d’accès aux outils. Réessayez.",
+  "toolPermissionRequestTitle": "Autorisation de l'outil",
+  "toolPermissionRequestDescription": "L'IA souhaite utiliser cet outil à l'emplacement sélectionné. L'autorisation s'applique uniquement à cet appel.",
+  "toolPermissionRequestExpired": "Cette demande d'autorisation d'outil n'est plus active.",
+  "toolPermissionResponseFailed": "Votre choix n’a pas pu être envoyé. Réessayez.",
+  "toolPermissionContent": "Contenu à écrire",
+  "toolPermissionOldText": "Texte à trouver",
+  "toolPermissionNewText": "Texte de remplacement",
+  "toolPermissionQuery": "Rechercher du texte",
+  "toolPermissionOffset": "Position de départ",
+  "toolPermissionLimit": "Résultats maximaux",
+  "toolPermissionStartLine": "Ligne de départ",
+  "toolPermissionLineCount": "Nombre de lignes",
+  "toolPermissionIncludeHidden": "Inclure les fichiers cachés",
+  "commonYes": "Oui",
+  "commonNo": "Non",
+  "toolPermissionTarget": "Emplacement à accéder",
+  "toolPermissionTool": "Outil",
+  "toolPermissionArguments": "Détails de la demande",
+  "toolPermissionDeny": "Refuser",
+  "toolPermissionStopResponse": "Arrêter la réponse",
+  "toolPermissionAllowOnce": "Autoriser cet appel",
+  "toolDenied": "Refusé",
+  "toolCancelled": "Annulé",
+  "toolAwaitingApproval": "En attente d'approbation",
+  "conversationExportToolActivity": "Activité de l'outil",
+  "responseReplaceFailed": "La nouvelle réponse a été enregistrée, mais la réponse précédente n'a pas pu être remplacée.",
+  "responseRetryNotCompleted": "La nouvelle réponse n’est pas terminée. La réponse précédente a été conservée.",
+  "responseRetryCleanupFailed": "Impossible de nettoyer la nouvelle tentative. Actualisez l’historique des conversations.",
+  "responseInProgress": "Réponse en cours",
+  "responseRetryUnavailable": "Cette réponse ne peut pas être réessayée. Commencez plutôt un nouveau message.",
+  "providerRateLimited": "Le fournisseur a signalé une limite d’utilisation. Réessayez plus tard.",
+  "providerAuthenticationRequired": "Le fournisseur a rejeté la demande. Vérifiez la connexion et l'accès au modèle.",
+  "providerRequestFailed": "Le fournisseur n’a pas pu terminer la réponse. Vos messages enregistrés sont toujours disponibles.",
+  "contextWindowExceeded": "La conversation est trop volumineuse pour la fenêtre contextuelle de ce modèle. Raccourcissez le dernier message ou choisissez un modèle avec une fenêtre contextuelle plus grande. Votre historique de discussion est enregistré.",
+  "openCodeFreeTierRestricted": "Les modèles gratuits OpenCode ne sont disponibles que dans l'application OpenCode.",
+  "apiKey": "Clé API",
+  "apiKeyInputLabel": "Clé API",
+  "apiKeyRequired": "Entrez une clé API.",
+  "apiKeyInvalidFormat": "Entrez une clé API OpenAI valide. Elle doit commencer par sk-.",
+  "apiKeyAlreadySaved": "Cette clé API est déjà enregistrée.",
+  "apiKeySaved": "Clé API enregistrée en toute sécurité sur cet appareil.",
+  "apiKeySaveFailed": "Impossible d’enregistrer la clé API en toute sécurité. Réessayez.",
+  "apiKeyLoadFailed": "Les clés API enregistrées n'ont pas pu être chargées.",
+  "savedApiKey": "Clé enregistrée",
+  "savedApiKeyWithSuffix": "Clé se terminant par ••••{suffix}",
+  "@savedApiKeyWithSuffix": {
+    "placeholders": {
+      "suffix": {
+        "type": "String"
+      }
+    }
+  },
+  "showApiKey": "Afficher la clé API",
+  "hideApiKey": "Masquer la clé API",
+  "retry": "Réessayer",
+  "save": "Enregistrer",
+  "saving": "Enregistrement…",
+  "oauth": "OAuth",
+  "oauthSigningIn": "Connexion…",
+  "oauthBrowserWaiting": "Terminez la connexion dans le navigateur.",
+  "oauthConnectionsLoadFailed": "Les connexions ChatGPT OAuth n'ont pas pu être chargées.",
+  "oauthSignInFailed": "La connexion à ChatGPT n’a pas pu être effectuée. Vérifiez le navigateur et réessayez.",
+  "oauthConnectionAdded": "Compte ChatGPT connecté.",
+  "oldCredentialCleanupFailed": "Le compte est connecté, mais un ancien identifiant enregistré n’a pas pu être supprimé. Redémarrez OpenChat et réessayez.",
+  "connectionSelectionFailed": "Le compte ChatGPT n'a pas pu être sélectionné.",
+  "removeChatGptConnection": "Supprimer la connexion ChatGPT",
+  "removeConnectionAction": "Supprimer",
+  "confirmRemoveConnection": "Supprimer {name} et les identifiants enregistrés associés ? Les conversations et messages existants resteront sur cet appareil.",
+  "@confirmRemoveConnection": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "connectionRemoveSucceeded": "Connexion supprimée. Les discussions et messages existants sont toujours disponibles.",
+  "connectionRemoveFailed": "Impossible de supprimer la connexion. Réessayez.",
+  "workspaceSelectionFailed": "Impossible de sélectionner l’espace de travail ChatGPT.",
+  "chatGptAccount": "Compte ChatGPT",
+  "planUnavailable": "Forfait indisponible",
+  "accountPlan": "Plan : {plan}",
+  "@accountPlan": {
+    "placeholders": {
+      "plan": {
+        "type": "String"
+      }
+    }
+  },
+  "connectionNeedsSignIn": "Connectez-vous à nouveau pour utiliser ce compte.",
+  "connectionSelected": "Sélectionné",
+  "useConnection": "Utiliser ce compte",
+  "selectWorkspace": "Choisir un espace de travail",
+  "workspaceWithoutName": "Espace de travail",
+  "workspace": "Espace de travail",
+  "workspaceUnavailable": "Aucune information sur l'espace de travail n'est disponible.",
+  "selectAccountForWorkspace": "Sélectionnez ce compte pour choisir son espace de travail.",
+  "accountEmailUnavailable": "Adresse e-mail indisponible",
+  "accountUsage": "Utilisation · {plan}",
+  "@accountUsage": {
+    "placeholders": {
+      "plan": {
+        "type": "String"
+      }
+    }
+  },
+  "refreshUsage": "Actualiser l'utilisation",
+  "ordinaryUsageAvailable": "L’utilisation normale est disponible.",
+  "ordinaryUsageUnavailable": "L’utilisation normale n’est actuellement pas disponible.",
+  "ordinaryUsageUnknown": "La disponibilité de l'utilisation n'a pas pu être déterminée.",
+  "usageUpdatedAt": "Mis à jour : {time}",
+  "@usageUpdatedAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "usageLoadFailed": "Les informations d'utilisation n'ont pas pu être chargées.",
+  "usageFiveHour": "5 heures",
+  "usageWeekly": "Hebdomadaire",
+  "usageMonthly": "Mensuel",
+  "workspaceNumbered": "Espace de travail {number}",
+  "@workspaceNumbered": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
+  "quotaResetsAt": "Réinitialisation : {time}",
+  "@quotaResetsAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "creditExpiresAt": "Expire : {time}",
+  "@creditExpiresAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "creditGrantedAt": "Accordé : {time}",
+  "@creditGrantedAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "noResetCredits": "Aucun crédit de réinitialisation disponible.",
+  "usageUsedPercent": "{percent} % utilisés",
+  "@usageUsedPercent": {
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "resetCreditCountUnavailable": "Nombre de crédits de réinitialisation indisponible.",
+  "resetCreditsAvailable": "Crédits de réinitialisation disponibles : {count}",
+  "@resetCreditsAvailable": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "resetCredit": "Crédit de réinitialisation",
+  "statusUnavailable": "Statut indisponible",
+  "resetCreditDetailsUnavailable": "Les détails du crédit de réinitialisation n'ont pas été renvoyés.",
+  "resetCreditAvailableStatus": "Disponible",
+  "useResetCredit": "Utiliser le crédit",
+  "resetCreditRedeeming": "Utilisation…",
+  "confirmResetCreditTitle": "Utiliser ce crédit de réinitialisation ?",
+  "confirmResetCreditMessage": "Un crédit de réinitialisation va être utilisé. Cette action est irréversible. Continuer ?",
+  "confirmResetCreditAction": "Utiliser le crédit",
+  "resetCreditApplied": "La limite d'utilisation a été réinitialisée.",
+  "resetCreditAlreadyUsed": "Ce crédit de réinitialisation a déjà été utilisé.",
+  "resetCreditNothingToReset": "Il n’y a aucune limite d’utilisation à réinitialiser pour le moment.",
+  "resetCreditNoLongerAvailable": "Ce crédit de réinitialisation n'est plus disponible. Actualisez les informations d’utilisation.",
+  "resetCreditOutcomeUnknown": "Le résultat n'a pas pu être confirmé. Actualisez les informations d'utilisation avant d'utiliser à nouveau ce crédit.",
+  "resetCreditRefreshRequired": "Le résultat précédent n'a pas pu être confirmé. Actualisez les informations d'utilisation avant de réessayer.",
+  "resetCreditRejected": "ChatGPT n’a pas accepté la demande de réinitialisation pour ce compte.",
+  "resetCreditSignInRequired": "Reconnectez-vous à votre compte ChatGPT, puis réessayez.",
+  "noChatGptConnections": "Aucune connexion ChatGPT pour l’instant.",
+  "apiKeyConnectionUnavailable": "La connexion par clé API n’a pas encore été ajoutée.",
+  "oauthConnectionUnavailable": "La connexion OAuth n’a pas encore été ajoutée.",
+  "titleGenerationTarget": "Titres de conversation automatiques",
+  "titleGenerationTargetDescription": "Lorsque le compte de la conversation ne dispose d’aucun autre modèle, OpenChat peut utiliser le compte choisi ici. La génération de titres est ignorée lorsque l’utilisation normale n’est pas disponible.",
+  "titleUseConversationAccount": "Utiliser le compte de conversation",
+  "titleAccountUnavailable": "Le compte de titres sélectionné n’est pas disponible",
+  "titleWorkspaceHint": "Choisissez un espace de travail pour les titres",
+  "titleWorkspaceRequired": "Choisissez un espace de travail avant que ce compte puisse générer des titres.",
+  "titlePreferenceLoadFailed": "La préférence du compte titre n'a pas pu être chargée.",
+  "titlePreferenceSaveFailed": "La préférence du compte titre n'a pas pu être enregistrée.",
+  "appearance": "Apparence",
+  "themeSettingDescription": "Choisissez l'apparence de l'application.",
+  "conversationWidth": "Largeur des réponses",
+  "conversationWidthDescription": "Choisissez la largeur de ligne utilisée pour les réponses de conversation.",
+  "widthNarrow": "Étroite",
+  "widthNormal": "Normale",
+  "widthWide": "Large",
+  "conversationTextSize": "Taille du texte",
+  "conversationTextSizeDescription": "Choisissez la taille du texte utilisée dans l'application.",
+  "textSizeSmall": "Petite",
+  "textSizeNormal": "Normale",
+  "textSizeLarge": "Grande",
+  "appFont": "Police de l'application",
+  "appFontDescription": "Choisissez la police utilisée dans OpenChat.",
+  "appearancePreferenceSaveFailed": "Impossible d’enregistrer la préférence d’apparence. Réessayez.",
+  "language": "Langue de l'application",
+  "languageSettingDescription": "Choisissez la langue utilisée par l'application.",
+  "systemLanguage": "Langue de l'appareil",
+  "englishLanguage": "Anglais",
+  "turkishLanguage": "Turc",
+  "spanishLanguage": "Espagnol",
+  "germanLanguage": "Allemand",
+  "frenchLanguage": "Français",
+  "languageSaveFailed": "Impossible d’enregistrer la préférence de langue. Réessayez.",
+  "systemTheme": "Système",
+  "lightTheme": "Clair",
+  "darkTheme": "Sombre",
+  "localData": "Données locales",
+  "conversationHistory": "Historique des discussions",
+  "historyDeviceDescription": "Les conversations sont stockées sur cet appareil.",
+  "historyDeviceStatus": "Sur cet appareil",
+  "historyCheckingDescription": "Préparation de l’historique local des conversations.",
+  "historyCheckingStatus": "Préparation",
+  "historyStorageUnavailableDescription": "L'historique des discussions locales n'a pas pu être ouvert.",
+  "historyStorageUnavailableStatus": "Indisponible",
+  "historyLoading": "Chargement des conversations…",
+  "historyLoadFailed": "L'historique des discussions n'a pas pu être chargé. Redémarrez l'application.",
+  "messageHistoryLoadFailed": "Les messages de cette conversation n'ont pas pu être chargés.",
+  "messageHistoryLoading": "Chargement des messages de conversation.",
+  "clearConversationHistory": "Effacer tout l'historique",
+  "clearConversationHistoryDescription": "Supprimez définitivement les conversations et les messages stockés sur cet appareil.",
+  "confirmClearHistoryTitle": "Effacer tout l'historique des discussions ?",
+  "confirmClearHistoryBody": "Cela supprime définitivement toutes les discussions et messages stockés sur cet appareil. Cette action ne peut pas être annulée.",
+  "cancel": "Annuler",
+  "deleteAll": "Tout supprimer",
+  "clearingHistory": "Suppression…",
+  "clearHistorySucceeded": "L'historique des discussions a été supprimé.",
+  "clearHistoryFailed": "Impossible de supprimer l’historique des conversations. Réessayez.",
+  "themeSaveFailed": "Impossible d’enregistrer la préférence de thème. Réessayez.",
+  "searchChats": "Rechercher des discussions",
+  "searchChatsHint": "Recherchez vos discussions",
+  "projects": "Projets",
+  "noProjects": "Aucun projet pour l'instant",
+  "createProject": "Créer un projet",
+  "projectName": "Nom du projet",
+  "projectNameRequired": "Entrez un nom de projet.",
+  "projectFolder": "Dossier du projet",
+  "chooseProjectFolder": "Choisir un dossier",
+  "projectFolderNotSelected": "Choisissez un dossier pour continuer.",
+  "projectFolderSelectionFailed": "Le dossier n'a pas pu être sélectionné.",
+  "projectCreateFailed": "Le projet n'a pas pu être créé.",
+  "projectCreated": "Projet créé.",
+  "projectLoadFailed": "Les projets n'ont pas pu être chargés.",
+  "projectMoveFailed": "Impossible de déplacer la conversation vers le projet.",
+  "pinnedChats": "Conversations épinglées",
+  "noPinnedChats": "Aucune discussion épinglée pour l'instant",
+  "noChatsTitle": "Aucune conversation",
+  "noChatsSearchTitle": "Aucune conversation à rechercher",
+  "showMore": "Afficher plus",
+  "projectOptions": "Options du projet",
+  "newProjectConversation": "Démarrer une nouvelle discussion de projet",
+  "newConversation": "Démarrer une nouvelle conversation",
+  "conversationTitle": "Nouvelle discussion",
+  "conversationMemory": "Mémoire de la conversation",
+  "conversationMemoryDescription": "Examinez le contexte compacté de cette conversation et recherchez ses anciens messages.",
+  "conversationMemoryCurrentConversation": "Conversation sélectionnée : {title}",
+  "@conversationMemoryCurrentConversation": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "conversationMemoryNoConversation": "Ouvrez une conversation pour inspecter sa mémoire.",
+  "contextUsageTitle": "Utilisation du contexte",
+  "contextUsageUsed": "Utilisation : environ {count} jetons",
+  "@contextUsageUsed": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "contextUsageSummary": "~{used} / {limit} jetons ({percent})",
+  "@contextUsageSummary": {
+    "placeholders": {
+      "used": {
+        "type": "String"
+      },
+      "limit": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "contextUsageModelLimit": "{count} jetons",
+  "@contextUsageModelLimit": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "contextUsageNoModelLimit": "Limite du modèle inconnue.",
+  "contextUsageProviderMeasurement": "Dernière mesure du fournisseur : {count} jetons",
+  "@contextUsageProviderMeasurement": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "contextUsageInstructionsEstimate": "Instructions : {count} jetons · {percent}",
+  "@contextUsageInstructionsEstimate": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "contextUsageToolDefinitionsEstimate": "Définitions d’outils : {count} jetons · {percent}",
+  "@contextUsageToolDefinitionsEstimate": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "contextUsageMessagesEstimate": "Messages : {count} jetons · {percent}",
+  "@contextUsageMessagesEstimate": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "contextUsageAttachmentsEstimate": "Pièces jointes : {count} jetons · {percent}",
+  "@contextUsageAttachmentsEstimate": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "contextUsageAttachmentEstimate": "{name} : {count} jetons · {percent}",
+  "@contextUsageAttachmentEstimate": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "contextUsageDraftAttachment": "Brouillon · {name}",
+  "@contextUsageDraftAttachment": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "contextUsageUserMessagesEstimate": "Utilisateur : {count} jetons · {percent}",
+  "@contextUsageUserMessagesEstimate": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "contextUsageAssistantMessagesEstimate": "Assistant : {count} jetons · {percent}",
+  "@contextUsageAssistantMessagesEstimate": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "contextUsageToolsEstimate": "Utilisation des outils : {count} jetons · {percent}",
+  "@contextUsageToolsEstimate": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "contextUsageToolUsageEstimate": "{name} : {count} jetons · {percent}",
+  "@contextUsageToolUsageEstimate": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "contextUsageMemoryEstimate": "Mémoire compactée : {count} jetons · {percent}",
+  "@contextUsageMemoryEstimate": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "contextUsageDraftEstimate": "Brouillon : {count} jetons · {percent}",
+  "@contextUsageDraftEstimate": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "contextUsageFreeSpaceEstimate": "Espace libre : jetons {count} · {percent}",
+  "@contextUsageFreeSpaceEstimate": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
+  "contextUsageOverLimit": "Limite du modèle dépassée.",
+  "contextUsageMeasurementUnavailable": "Les détails de la mémoire n'ont pas pu être chargés.",
+  "contextUsageInstructionUnavailable": "Les détails des instructions n'ont pas pu être chargés.",
+  "contextUsageConfigurationUnavailable": "Impossible de charger les estimations des instructions et des définitions d’outils.",
+  "contextUsageConfigurationLoading": "Préparation des estimations des instructions et des définitions d’outils…",
+  "conversationMemorySemanticTitle": "Recherche sémantique",
+  "conversationMemorySemanticDescription": "Téléchargez un modèle multilingue d'environ 136 Mo pour retrouver les anciens messages formulés différemment.",
+  "conversationMemorySemanticPrepare": "Préparer",
+  "conversationMemorySemanticChecking": "Vérification de la recherche sémantique locale…",
+  "conversationMemorySemanticPreparing": "Téléchargement et vérification du modèle…",
+  "conversationMemorySemanticDownloadProgress": "{percent}% téléchargé · {downloaded} / {total} MB",
+  "@conversationMemorySemanticDownloadProgress": {
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      },
+      "downloaded": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "conversationMemorySemanticIndexing": "Création de l’index des archives locales…",
+  "conversationMemorySemanticCancelling": "Annulation du téléchargement…",
+  "conversationMemorySemanticDownloadCancelled": "Téléchargement annulé. La recherche par mot-clé reste disponible.",
+  "conversationMemorySemanticPrepareFailed": "Impossible de préparer le modèle. Réessayez ; les parties téléchargées valides seront réutilisées.",
+  "conversationMemorySemanticKeywordSearchFallback": "La recherche par mots-clés reste disponible avant la préparation.",
+  "conversationMemorySemanticReady": "La recherche sémantique locale est prête",
+  "conversationMemorySemanticIndexNotice": "Le modèle fonctionne sur cet appareil. La première recherche peut indexer les messages plus anciens et les détails des outils enregistrés localement et prendre plus de temps.",
+  "conversationMemorySummaryTitle": "Contexte compacté",
+  "conversationMemoryNoSummary": "Il n’y a pas encore de résumé compacté.",
+  "conversationMemoryCheckpointDescription": "Le fournisseur stocke le contexte sous forme de point de contrôle réutilisable au lieu d'un texte récapitulatif lisible. L'historique complet des messages reste dans les archives.",
+  "conversationMemoryLastPromptTokens": "Dernière demande · {provider} · {model} · Jetons d'entrée {count}",
+  "@conversationMemoryLastPromptTokens": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      },
+      "model": {
+        "type": "String"
+      },
+      "count": {
+        "type": "String"
+      }
+    }
+  },
+  "conversationMemorySearchTitle": "Rechercher dans les archives",
+  "conversationMemorySearchHint": "Entrez un sujet ou une expression plus ancienne...",
+  "conversationMemorySearchAction": "Rechercher",
+  "conversationMemorySearchQueryTooShort": "Entrez au moins deux caractères à rechercher.",
+  "conversationMemorySearchInstruction": "Les messages terminés et les résultats des outils sont recherchés uniquement dans cette conversation.",
+  "conversationMemorySearchNoResults": "Aucune entrée correspondante dans l’archive.",
+  "conversationMemorySearchFailed": "Impossible de rechercher dans l’archive de la conversation. Réessayez.",
+  "conversationMemoryLoadFailed": "Impossible de charger le contexte compacté. Réessayez.",
+  "conversationMemoryResetAction": "Réinitialiser le contexte",
+  "conversationMemoryResetTitle": "Réinitialiser le contexte compacté ?",
+  "conversationMemoryResetConfirmation": "Le contexte compacté enregistré et la dernière mesure de demande seront supprimés. L’historique complet des messages et les archives resteront ; le contexte compacté peut être recréé lors d’une requête ultérieure si nécessaire.",
+  "conversationMemoryResetConfirm": "Réinitialiser",
+  "conversationMemoryResetFailed": "Le contexte compacté n'a pas pu être réinitialisé.",
+  "conversationMemoryUserMessage": "Message utilisateur",
+  "conversationMemoryAssistantMessage": "Réponse de l'assistant",
+  "renameConversation": "Modifier le titre du chat",
+  "pinConversation": "Épingler le chat",
+  "unpinConversation": "Désépingler le chat",
+  "conversationTitleRequired": "Le titre du chat ne peut pas être vide.",
+  "conversationTitleSaveFailed": "Le titre du chat n'a pas pu être enregistré.",
+  "conversationModelSaveFailed": "Le modèle de discussion n'a pas pu être enregistré. Le modèle précédent est toujours sélectionné.",
+  "moreOptions": "Plus d'options",
+  "emptyChatWelcomeTitle": "Comment puis-je aider ?",
+  "emptyChatWelcomeBody": "Posez une question pour commencer à discuter.",
+  "switchToDarkMode": "Passer au thème sombre",
+  "switchToLightMode": "Passer au thème clair",
+  "theme": "Thème",
+  "keyboardHint": "Entrée pour envoyer · Maj+Entrée pour une nouvelle ligne",
+  "minimizeWindow": "Réduire la fenêtre",
+  "maximizeWindow": "Agrandir la fenêtre",
+  "restoreWindow": "Restaurer la fenêtre",
+  "modelSelection": "Choisir le modèle",
+  "noModelConnected": "Aucun modèle n'est encore connecté",
+  "noModelConnectedBody": "Connectez un fournisseur et choisissez l'un de ses modèles pour démarrer une conversation.",
+  "close": "Fermer",
+  "reasoning": "Raisonnement",
+  "reasoningMedium": "Moyen",
+  "reasoningMinimal": "Minimal",
+  "reasoningLow": "Faible",
+  "reasoningHigh": "Élevé",
+  "reasoningExtraHigh": "Très élevé",
+  "reasoningMax": "Maximum",
+  "reasoningUltra": "Ultra",
+  "reasoningDefault": "Par défaut",
+  "reasoningDefaultHint": "Aucun niveau de raisonnement personnalisé n'est envoyé. Le comportement par défaut du fournisseur est utilisé ; le niveau n'est pas adapté à la difficulté de la tâche.",
+  "stop": "Arrêter",
+  "modelsLoading": "Chargement des modèles...",
+  "modelsUnavailable": "Modèles indisponibles",
+  "noModelsAvailable": "Aucun modèle n'est actuellement disponible pour ce compte.",
+  "providerDataUnavailable": "Le fournisseur a renvoyé des données qu’OpenChat n’a pas pu lire. Actualisez la connexion et réessayez.",
+  "oauthResponseInvalid": "Le résultat de la connexion n'a pas pu être lu. Essayez de vous connecter à nouveau.",
+  "modelCatalogUnavailable": "La liste des modèles n'est pas disponible. Actualisez la connexion du fournisseur et réessayez.",
+  "messageSaveFailed": "Votre message n'a pas pu être enregistré dans l'historique des discussions locales.",
+  "chatHistoryUnavailable": "Impossible de mettre à jour l’historique des conversations. Réessayez.",
+  "chatRequestFailed": "La réponse n'a pas pu être complétée. Vos messages enregistrés sont toujours disponibles.",
+  "cachedCatalog": "modèles en cache",
+  "attachFile": "Joindre un fichier",
+  "attachmentsUnavailable": "Les pièces jointes ne sont pas encore disponibles.",
+  "removeAttachment": "Supprimer la pièce jointe",
+  "previewImage": "Agrandir l’image",
+  "attachmentUnavailable": "Cette pièce jointe n'est pas disponible.",
+  "attachmentCountExceeded": "Vous pouvez joindre jusqu'à 10 fichiers et 3 images.",
+  "attachmentFileTooLarge": "Le fichier dépasse la limite de taille autorisée.",
+  "attachmentTotalTooLarge": "Les pièces jointes ne peuvent pas dépasser 14 Mo au total.",
+  "unsupportedAttachmentFile": "Ce type de fichier n'est pas pris en charge.",
+  "attachmentReadFailed": "Le fichier n'a pas pu être lu. Sélectionnez-le à nouveau et réessayez.",
+  "attachmentSaveFailed": "La pièce jointe n'a pas pu être enregistrée. Sélectionnez-le à nouveau et réessayez.",
+  "attachmentMustBeUtf8": "Les pièces jointes texte doivent être encodées en UTF-8.",
+  "attachmentInvalidImage": "Le format du fichier image n'a pas pu être vérifié.",
+  "modelDoesNotSupportImages": "Le modèle sélectionné ne prend pas en charge les pièces jointes d'images.",
+  "messageHint": "Écrire un message...",
+  "sendMessage": "Envoyer un message",
+  "send": "Envoyer",
+  "welcomeTitle": "Démarrer une conversation",
+  "welcomeBody": "Connectez un modèle d'IA avant de démarrer une conversation.",
+  "historyOpen": "Ouvrir l'historique des discussions",
+  "assistantDisclaimer": "Les réponses de l’IA peuvent être inexactes. Vérifiez les informations importantes.",
+  "modelRequired": "Connectez un modèle avant d'envoyer un message.",
+  "selectedModelUnavailable": "Ce modèle n'est plus disponible. Choisissez un autre modèle.",
+  "messageModelUnavailable": "Modèle indisponible",
+  "userMessage": "Utilisateur",
+  "copyMessage": "Copier le message",
+  "messageCopied": "Message copié dans le presse-papiers.",
+  "messageCopyFailed": "Le message n'a pas pu être copié dans le presse-papiers.",
+  "today": "Aujourd'hui",
+  "unavailableTime": "—:—",
+  "unavailableValue": "—",
+  "responseMetadata": "{rate} jetons/s · {tokens} jetons · {time}",
+  "@responseMetadata": {
+    "placeholders": {
+      "rate": {
+        "type": "String"
+      },
+      "tokens": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "responseCompleted": "Réponse terminée",
+  "responseCompletedWithDuration": "Réponse terminée · {duration}",
+  "@responseCompletedWithDuration": {
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
+  "reasoningSummary": "Résumé du raisonnement",
+  "reasoningSummaryWithDuration": "Résumé du raisonnement · {duration}",
+  "@reasoningSummaryWithDuration": {
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
+  "reasoningSummaryTooltip": "Un résumé fourni par le modèle. La durée correspond au temps qu'il a fallu pour arriver dans le flux ; il ne s’agit pas de données de chaîne de pensée cachées.",
+  "toolRunning": "En cours",
+  "toolWaitingForUser": "En attente de votre réponse",
+  "toolCompleted": "Terminé",
+  "toolFailed": "Échec",
+  "toolInput": "Entrée",
+  "toolOutput": "Sortie",
+  "toolListFiles": "Lister les fichiers",
+  "toolSearchFiles": "Rechercher des fichiers",
+  "toolReadFile": "Lire le fichier",
+  "toolGetFileInfo": "Obtenir des informations sur le fichier",
+  "toolWriteFile": "Écrire dans un fichier",
+  "toolEditFile": "Modifier le fichier",
+  "toolExecuteCommand": "Exécuter la commande",
+  "toolSendTerminalInput": "Envoyer l'entrée du terminal",
+  "toolWebSearch": "Recherche sur le Web",
+  "toolReadUrlContent": "Lire la page Web",
+  "toolSearchQuery": "Requête de recherche",
+  "toolWebSearchNoResults": "Aucun résultat Web trouvé.",
+  "toolWebSearchResultCount": "{count, plural, =0{0 résultat} one{1 résultat} other{{count} résultats}}",
+  "@toolWebSearchResultCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "toolUrl": "URL",
+  "toolReadUrlLength": "Caractères {count}",
+  "@toolReadUrlLength": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "toolOpenUrl": "Ouvrir dans le navigateur",
+  "toolCopyUrl": "Copier URL",
+  "toolCopyContent": "Copier le contenu",
+  "toolCopyFailed": "Le contenu n'a pas pu être copié.",
+  "toolOperationWorking": "Cette opération est en cours.",
+  "toolOperationFailed": "L'opération n'a pas pu être complétée.",
+  "toolOperationUnavailable": "Le résultat n'a pas pu être affiché.",
+  "toolOperationTruncated": "Seule une partie du résultat est disponible.",
+  "toolSearchNoMatches": "Aucune correspondance trouvée.",
+  "toolSearchMoreResults": "D’autres correspondances sont disponibles.",
+  "toolSearchMatchCount": "{count, plural, =0{0 correspondance} one{1 correspondance} other{{count} correspondances}}",
+  "@toolSearchMatchCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "toolReadNoLines": "Il n'y a aucune ligne dans cette plage.",
+  "toolReadMoreLines": "D'autres lignes sont disponibles.",
+  "toolReadLineCount": "{count, plural, =0{0 ligne} one{1 ligne} other{{count} lignes}}",
+  "@toolReadLineCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "toolFileTypeFile": "Fichier",
+  "toolFileTypeDirectory": "Dossier",
+  "toolWriteSuccess": "{size} écrit",
+  "@toolWriteSuccess": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
+  "toolFilePreview": "Aperçu du contenu écrit",
+  "toolEditSuccess": "{count, plural, one{# modification appliquée} other{# modifications appliquées}}",
+  "@toolEditSuccess": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "toolEditBefore": "Avant",
+  "toolEditAfter": "Après",
+  "toolPermissionCommand": "Commande",
+  "toolPermissionTerminalId": "ID du terminal",
+  "toolPermissionInput": "Entrée du terminal",
+  "toolTerminalNoOutput": "Aucune sortie produite.",
+  "toolTerminalWaitingOutput": "En attente de sortie ou d'entrée...",
+  "toolTerminalRunning": "En cours d'exécution...",
+  "toolTerminalTerminated": "Terminé",
+  "toolTerminalWaitingForInput": "En attente d’une entrée",
+  "toolTerminalExitCode": "Code de sortie : {code}",
+  "@toolTerminalExitCode": {
+    "placeholders": {
+      "code": {
+        "type": "int"
+      }
+    }
+  },
+  "toolTerminalCopied": "Copié dans le presse-papiers",
+  "toolTechnicalDetails": "Détails",
+  "toolFileCount": "{count, plural, =0{Aucun élément} one{1 élément} other{{count} éléments}}",
+  "@toolFileCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "toolEmptyListing": "Il n'y a aucun élément à afficher dans ce dossier.",
+  "toolListingUnavailable": "Cette liste de fichiers n'a pas pu être affichée.",
+  "toolListingIncomplete": "Certains éléments n'ont pas pu être répertoriés.",
+  "toolMoreFilesAvailable": "D’autres éléments sont disponibles.",
+  "toolDesktopLocation": "Bureau",
+  "toolProjectLocation": "Dossier du projet",
+  "toolOpenChatLocation": "Dossier de données d'application",
+  "responseFailed": "Échec de la réponse",
+  "responseStopped": "Réponse arrêtée",
+  "secondsShort": "{count} sec",
+  "@secondsShort": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "usageQuotas": "Quotas d'utilisation",
+  "usageQuotasDescription": "Affichez les quotas restants, les limites d'utilisation et les temps de réinitialisation pour tous vos comptes ChatGPT connectés.",
+  "refreshAll": "Tout actualiser",
+  "noChatGptAccountsForQuota": "Aucun compte ChatGPT connecté trouvé.",
+  "noChatGptAccountsForQuotaDescription": "Connectez votre compte ChatGPT dans l'onglet Connexions pour afficher vos limites d'utilisation et vos quotas.",
+  "goToConnections": "Accéder aux connexions",
+  "activeAccountBadge": "Actif",
+  "workspaceQuotaLabel": "Espace de travail : {name}",
+  "@workspaceQuotaLabel": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "modelsPageDescription": "Recherchez et téléchargez des modèles hébergés sur Hugging Face.",
+  "modelSortDownloads": "Les plus téléchargés",
+  "modelSortLikes": "Les plus appréciés",
+  "modelSortRecentlyUpdated": "Récemment mis à jour",
+  "modelPreviousPage": "Précédent",
+  "modelNextPage": "Suivant",
+  "modelPageLabel": "Page {page}",
+  "@modelPageLabel": {
+    "placeholders": {
+      "page": {
+        "type": "int"
+      }
+    }
+  },
+  "modelFormatGguf": "GGUF · llama.cpp",
+  "modelFormatTransformers": "Transformers · vLLM",
+  "modelFormatExllama": "ExLlama · EXL3",
+  "huggingFaceModelSearchHint": "Recherche des modèles Hugging Face",
+  "modelSearchRefresh": "Actualiser les résultats du modèle",
+  "modelSearchEmpty": "Aucun modèle ne correspond à cette recherche.",
+  "modelSearchFailed": "Les modèles Hugging Face n'ont pas pu être chargés.",
+  "modelSearchUnavailable": "Hugging Face n'a pas pu être atteint. Vérifiez votre connexion et réessayez.",
+  "modelSearchRateLimited": "Hugging Face reçoit trop de demandes. Attendez un moment et réessayez.",
+  "modelSearchInvalidResponse": "Hugging Face a renvoyé des données de modèle qu’OpenChat n’a pas pu lire. Réessayez bientôt.",
+  "modelSearchTimedOut": "Hugging Face a mis trop longtemps à répondre. Réessayez.",
+  "modelChooseForDetails": "Choisissez un modèle pour inspecter ses fichiers.",
+  "modelDownloadsLabel": "Téléchargements",
+  "modelLikesLabel": "Mentions J’aime",
+  "modelLicenseLabel": "Licence",
+  "modelRevisionLabel": "Révision",
+  "modelFilesLabel": "Fichiers de modèle",
+  "modelVisionComponentsLabel": "Composants de vision",
+  "modelMtpComponentsLabel": "Composants MTP",
+  "modelAuxiliaryComponentsLabel": "Autres composants auxiliaires",
+  "modelDownloadComponentButton": "Télécharger ce composant",
+  "modelComponentDownloaded": "Composant téléchargé",
+  "modelShowMoreComponents": "Afficher plus de composants",
+  "modelReadmeLabel": "Description du modèle",
+  "modelReadmeMissing": "Ce modèle n'a pas de README.",
+  "modelReadmeAccessDenied": "L'accès à ce référentiel est requis pour visualiser sa description.",
+  "modelReadmeTooLarge": "Le README est trop grand pour être affiché.",
+  "modelReadmeUnavailable": "La description du modèle n'a pas pu être chargée.",
+  "modelDownloadOptionsLabel": "Options de téléchargement",
+  "modelDownloadGroupLabel": "Ensemble de fichiers",
+  "modelDownloadSizeLabel": "Taille",
+  "modelDownloadButton": "Télécharger le modèle",
+  "modelCancelDownload": "Annuler le téléchargement",
+  "modelDownloadRunning": "Fichier {fileIndex} de {fileCount} : {fileName}",
+  "@modelDownloadRunning": {
+    "placeholders": {
+      "fileName": {
+        "type": "String"
+      },
+      "fileIndex": {
+        "type": "int"
+      },
+      "fileCount": {
+        "type": "int"
+      }
+    }
+  },
+  "modelDownloadComplete": "Modèle téléchargé et ajouté aux modèles locaux.",
+  "modelDownloadCancelled": "Téléchargement du modèle annulé. Vous pourrez le reprendre plus tard.",
+  "modelDownloadFailed": "Le modèle n'a pas pu être téléchargé.",
+  "modelDownloadProgressUnavailable": "La progression du téléchargement n'a pas pu être lue.",
+  "modelRevisionChanged": "Ce modèle a changé sur Hugging Face. Rechargez ses fichiers et réessayez.",
+  "modelDownloadAccessNeeded": "Ce dépôt est restreint ou privé et nécessite un accès Hugging Face.",
+  "modelNoCompatibleFiles": "Aucun fichier de modèle compatible complet n'a été trouvé dans ce référentiel.",
+  "modelUnknownDownloadSize": "La taille du fichier n'est pas disponible, ce téléchargement ne peut donc pas démarrer en toute sécurité.",
+  "modelDetailsLoading": "Chargement des fichiers de modèle…",
+  "modelNoFiles": "Aucun fichier compatible n'est disponible pour ce format.",
+  "modelGatedBadge": "Accès requis",
+  "modelPrivateBadge": "Privé",
+  "modelSavedToFolder": "Enregistré dans OpenChat/models/{folder}",
+  "@modelSavedToFolder": {
+    "placeholders": {
+      "folder": {
+        "type": "String"
+      }
+    }
+  },
+  "userQuestionTitle": "L’assistant attend votre réponse",
+  "userQuestionRequiredHint": "Les questions obligatoires sont signalées",
+  "userQuestionSubmit": "Envoyer la réponse",
+  "userQuestionResuming": "Reprise de l’assistant",
+  "userQuestionUnavailable": "Cette question n’est plus disponible. Rechargez la conversation.",
+  "userQuestionRequiredValidation": "Répondez à toutes les questions obligatoires pour continuer.",
+  "userQuestionSubmitFailed": "Votre réponse n’a pas pu être enregistrée. Réessayez.",
+  "userQuestionRequiredLabel": "Obligatoire",
+  "userQuestionContinue": "Reprendre l’assistant",
+  "userQuestionSaved": "Votre réponse est enregistrée. Reprenez quand vous le souhaitez.",
+  "userQuestionLoadFailed": "La question en attente n’a pas pu être chargée. Réessayez.",
+  "userQuestionResumeFailed": "La réponse est enregistrée, mais l’assistant n’a pas pu reprendre. Réessayez.",
+  "userQuestionNotificationTitle": "OpenChat vous attend",
+  "userQuestionNotificationBody": "L’IA attend votre réponse."
+}

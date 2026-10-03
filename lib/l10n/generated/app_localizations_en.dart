@@ -59,6 +59,251 @@ class AppLocalizationsEn extends AppLocalizations {
       'Manage models from connected providers, set a default model, and hide models you don\'t need.';
 
   @override
+  String get localEngines => 'Local engines';
+
+  @override
+  String get localEnginesDescription =>
+      'Install verified local runtimes, register your own model files, and check whether a runtime is healthy. Move or copy models into an engine folder, or keep them where they are.';
+
+  @override
+  String get localEnginesUnavailable =>
+      'The local engine service is not available yet.';
+
+  @override
+  String get localEnginesLoadFailed =>
+      'Local engine information could not be loaded.';
+
+  @override
+  String get localEnginesEmpty => 'No local engine releases are available.';
+
+  @override
+  String get localEnginesReload => 'Reload';
+
+  @override
+  String localEngineRelease(String tag) {
+    return 'Release $tag';
+  }
+
+  @override
+  String get localEngineVariants => 'Packages';
+
+  @override
+  String get localEngineStable => 'Stable';
+
+  @override
+  String get localEnginePreview => 'Preview';
+
+  @override
+  String get localEngineNightly => 'Nightly';
+
+  @override
+  String get localEngineRecommended => 'Recommended';
+
+  @override
+  String get localEngineAvailable => 'Available';
+
+  @override
+  String get localEngineInstalled => 'Installed';
+
+  @override
+  String get localEngineNotInstalled => 'Not installed';
+
+  @override
+  String get localEngineBlocked => 'Blocked';
+
+  @override
+  String get localEngineUnsupportedPlatform => 'Unsupported platform';
+
+  @override
+  String get localEngineHardwareUnavailable => 'Hardware unavailable';
+
+  @override
+  String get localEngineVllmBlockedReason =>
+      'The vLLM package depends on PyTorch and a full Python runtime that OpenChat does not yet install from a complete, hash-verified dependency lock. Native Windows is unsupported upstream; managed WSL2 setup is not available yet.';
+
+  @override
+  String get localEngineExllamaBlockedReason =>
+      'The ExLlamaV3 runtime is not ready for installation yet. OpenChat must pin and verify the complete TabbyAPI, PyTorch, Triton, Flash Linear Attention, and Python dependency set before offering it.';
+
+  @override
+  String localEngineRuntimeRequirements(String requirements) {
+    return 'Requirements: $requirements';
+  }
+
+  @override
+  String get localEngineInstall => 'Install';
+
+  @override
+  String get localEngineInstalling => 'Preparing installation...';
+
+  @override
+  String get localEngineInstallProgress => 'Local engine installation progress';
+
+  @override
+  String get localEngineCancelInstall => 'Cancel installation';
+
+  @override
+  String get localEngineCancellingInstall => 'Cancelling...';
+
+  @override
+  String get localEngineInstallFailed =>
+      'The local engine could not be installed. The catalog was refreshed.';
+
+  @override
+  String get localEngineHealth => 'Runtime status';
+
+  @override
+  String get localEngineRunning => 'Running';
+
+  @override
+  String get localEngineStopped => 'Stopped';
+
+  @override
+  String get localEngineUnhealthy => 'Not responding';
+
+  @override
+  String get localEngineUnavailable => 'This engine cannot be started yet.';
+
+  @override
+  String get localEngineStartModel => 'Start model';
+
+  @override
+  String get localEngineStopModel => 'Stop engine';
+
+  @override
+  String get localModels => 'Registered models';
+
+  @override
+  String get localModelsEmpty => 'No models are registered for this engine.';
+
+  @override
+  String get localModelsPageTitle => 'Local models';
+
+  @override
+  String get localModelsPageDescription =>
+      'View downloaded and registered local models.';
+
+  @override
+  String get localModelsPageEmpty => 'No local models are registered yet.';
+
+  @override
+  String get localModelsLoadFailed => 'Local models could not be loaded.';
+
+  @override
+  String get localModelsRefresh => 'Refresh';
+
+  @override
+  String get localModelsDiscover => 'Discover models';
+
+  @override
+  String get localModelAddFile => 'Add model file';
+
+  @override
+  String get localModelAddFolder => 'Add model folder';
+
+  @override
+  String get localModelStorageChoiceTitle => 'Choose where to keep the model';
+
+  @override
+  String localModelStorageChoiceTarget(String folder) {
+    return 'OpenChat model folder: %LOCALAPPDATA%\\OpenChat\\models\\$folder';
+  }
+
+  @override
+  String localModelMoveToFolder(String folder) {
+    return 'Move model to the $folder folder';
+  }
+
+  @override
+  String localModelCopyToFolder(String folder) {
+    return 'Copy model to the $folder folder';
+  }
+
+  @override
+  String get localModelKeepInPlace => 'Keep the model where it is';
+
+  @override
+  String get localModelSaving => 'Saving model...';
+
+  @override
+  String get localModelTransferError =>
+      'The model could not be copied or moved. The original model was left in place.';
+
+  @override
+  String get localModelTransferRecoveryError =>
+      'The model could not be registered or restored. A complete model copy remains in the OpenChat model folder; select it there to register it.';
+
+  @override
+  String get localModelRemove => 'Remove registration';
+
+  @override
+  String get localModelRemoveConfirmation =>
+      'Only the OpenChat registration will be removed. The model file will stay on disk. Continue?';
+
+  @override
+  String get localModelCancelStart => 'Cancel startup';
+
+  @override
+  String get localModelStopping => 'Stopping runtime...';
+
+  @override
+  String get localModelActionError =>
+      'The local model action could not be completed.';
+
+  @override
+  String get localModelPathMissing =>
+      'The model path could not be found. Move it back or remove its registration.';
+
+  @override
+  String get localModelEngineNotReady =>
+      'Available after this engine is installed and can run models.';
+
+  @override
+  String get localModelInvalid =>
+      'The selected file or folder is not a valid model for this engine.';
+
+  @override
+  String get localModelPathError =>
+      'The selected model file or folder could not be accessed.';
+
+  @override
+  String get localModelStoragePathError =>
+      'OpenChat could not create its model folders. Check available storage and permissions, then try again.';
+
+  @override
+  String get localModelStorageError =>
+      'The model registration could not be written to the database.';
+
+  @override
+  String get localModelStartError =>
+      'The model could not be started. Check the runtime installation and model file.';
+
+  @override
+  String get localModelStartTimeout =>
+      'The model did not become ready in time. Try a smaller model or check your hardware.';
+
+  @override
+  String get localModelSaved => 'Local model registered.';
+
+  @override
+  String get localModelRemoved => 'Local model registration removed.';
+
+  @override
+  String get localEngineStageDownloading => 'Downloading';
+
+  @override
+  String get localEngineStageVerifying => 'Verifying';
+
+  @override
+  String get localEngineStageExtracting => 'Extracting';
+
+  @override
+  String get localEngineStagePublishing => 'Finishing installation';
+
+  @override
+  String get localEngineStageReady => 'Ready';
+
+  @override
   String get defaultModel => 'Default';
 
   @override
@@ -152,6 +397,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get openRouterProvider => 'OpenRouter';
 
   @override
+  String get mistralProvider => 'Mistral';
+
+  @override
   String get geminiApiDescription =>
       'Add a Google AI Studio API key to use the models available to your account. Free access depends on the model and your quota.';
 
@@ -166,6 +414,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get openRouterApiDescription =>
       'Only models listed at \$0 for input and output with text and tool support appear here. Actual access and limits can change.';
+
+  @override
+  String get mistralApiDescription =>
+      'Add a Mistral API key to use the chat models available to your account. Free access, pricing, and usage limits depend on your Mistral plan.';
 
   @override
   String get geminiUnpaidDataNotice =>
@@ -837,6 +1089,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get turkishLanguage => 'Turkish';
+
+  @override
+  String get spanishLanguage => 'Spanish';
+
+  @override
+  String get germanLanguage => 'German';
+
+  @override
+  String get frenchLanguage => 'French';
 
   @override
   String get languageSaveFailed =>
@@ -1526,6 +1787,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolRunning => 'Running';
 
   @override
+  String get toolWaitingForUser => 'Waiting for your answer';
+
+  @override
   String get toolCompleted => 'Completed';
 
   @override
@@ -1791,4 +2055,235 @@ class AppLocalizationsEn extends AppLocalizations {
   String workspaceQuotaLabel(String name) {
     return 'Workspace: $name';
   }
+
+  @override
+  String get modelsPageDescription =>
+      'Find and download models hosted on Hugging Face.';
+
+  @override
+  String get modelSortDownloads => 'Most downloaded';
+
+  @override
+  String get modelSortLikes => 'Most liked';
+
+  @override
+  String get modelSortRecentlyUpdated => 'Recently updated';
+
+  @override
+  String get modelPreviousPage => 'Previous';
+
+  @override
+  String get modelNextPage => 'Next';
+
+  @override
+  String modelPageLabel(int page) {
+    return 'Page $page';
+  }
+
+  @override
+  String get modelFormatGguf => 'GGUF · llama.cpp';
+
+  @override
+  String get modelFormatTransformers => 'Transformers · vLLM';
+
+  @override
+  String get modelFormatExllama => 'ExLlama · EXL3';
+
+  @override
+  String get huggingFaceModelSearchHint => 'Search Hugging Face models';
+
+  @override
+  String get modelSearchRefresh => 'Refresh model results';
+
+  @override
+  String get modelSearchEmpty => 'No models matched this search.';
+
+  @override
+  String get modelSearchFailed => 'Hugging Face models could not be loaded.';
+
+  @override
+  String get modelSearchUnavailable =>
+      'Hugging Face could not be reached. Check your connection and try again.';
+
+  @override
+  String get modelSearchRateLimited =>
+      'Hugging Face is receiving too many requests. Wait a moment and try again.';
+
+  @override
+  String get modelSearchInvalidResponse =>
+      'Hugging Face returned model data OpenChat could not read. Try again shortly.';
+
+  @override
+  String get modelSearchTimedOut =>
+      'Hugging Face took too long to respond. Try again.';
+
+  @override
+  String get modelChooseForDetails => 'Choose a model to inspect its files.';
+
+  @override
+  String get modelDownloadsLabel => 'Downloads';
+
+  @override
+  String get modelLikesLabel => 'Likes';
+
+  @override
+  String get modelLicenseLabel => 'License';
+
+  @override
+  String get modelRevisionLabel => 'Revision';
+
+  @override
+  String get modelFilesLabel => 'Model files';
+
+  @override
+  String get modelVisionComponentsLabel => 'Vision components';
+
+  @override
+  String get modelMtpComponentsLabel => 'MTP components';
+
+  @override
+  String get modelAuxiliaryComponentsLabel => 'Other auxiliary components';
+
+  @override
+  String get modelDownloadComponentButton => 'Download this component';
+
+  @override
+  String get modelComponentDownloaded => 'Component downloaded';
+
+  @override
+  String get modelShowMoreComponents => 'Show more components';
+
+  @override
+  String get modelReadmeLabel => 'Model description';
+
+  @override
+  String get modelReadmeMissing => 'This model does not have a README.';
+
+  @override
+  String get modelReadmeAccessDenied =>
+      'Access to this repository is required to view its description.';
+
+  @override
+  String get modelReadmeTooLarge => 'The README is too large to display.';
+
+  @override
+  String get modelReadmeUnavailable =>
+      'The model description could not be loaded.';
+
+  @override
+  String get modelDownloadOptionsLabel => 'Download options';
+
+  @override
+  String get modelDownloadGroupLabel => 'File set';
+
+  @override
+  String get modelDownloadSizeLabel => 'Size';
+
+  @override
+  String get modelDownloadButton => 'Download model';
+
+  @override
+  String get modelCancelDownload => 'Cancel download';
+
+  @override
+  String modelDownloadRunning(String fileName, int fileIndex, int fileCount) {
+    return 'File $fileIndex of $fileCount: $fileName';
+  }
+
+  @override
+  String get modelDownloadComplete =>
+      'Model downloaded and added to Local Models.';
+
+  @override
+  String get modelDownloadCancelled =>
+      'Model download cancelled. You can resume it later.';
+
+  @override
+  String get modelDownloadFailed => 'The model could not be downloaded.';
+
+  @override
+  String get modelDownloadProgressUnavailable =>
+      'Download progress could not be read.';
+
+  @override
+  String get modelRevisionChanged =>
+      'This model changed on Hugging Face. Reload its files and try again.';
+
+  @override
+  String get modelDownloadAccessNeeded =>
+      'This repository is gated or private and needs Hugging Face access.';
+
+  @override
+  String get modelNoCompatibleFiles =>
+      'No complete compatible model files were found in this repository.';
+
+  @override
+  String get modelUnknownDownloadSize =>
+      'The file size is unavailable, so this download cannot start safely.';
+
+  @override
+  String get modelDetailsLoading => 'Loading model files…';
+
+  @override
+  String get modelNoFiles =>
+      'No compatible files are available for this format.';
+
+  @override
+  String get modelGatedBadge => 'Access required';
+
+  @override
+  String get modelPrivateBadge => 'Private';
+
+  @override
+  String modelSavedToFolder(String folder) {
+    return 'Saved in OpenChat/models/$folder';
+  }
+
+  @override
+  String get userQuestionTitle => 'The assistant needs your input';
+
+  @override
+  String get userQuestionRequiredHint => 'Required questions are marked';
+
+  @override
+  String get userQuestionSubmit => 'Send answer';
+
+  @override
+  String get userQuestionResuming => 'Resuming the assistant';
+
+  @override
+  String get userQuestionUnavailable =>
+      'This question is no longer available. Reload the conversation.';
+
+  @override
+  String get userQuestionRequiredValidation =>
+      'Answer each required question to continue.';
+
+  @override
+  String get userQuestionSubmitFailed =>
+      'Your answer could not be saved. Try again.';
+
+  @override
+  String get userQuestionRequiredLabel => 'Required';
+
+  @override
+  String get userQuestionContinue => 'Continue assistant';
+
+  @override
+  String get userQuestionSaved => 'Your answer is saved. Continue when ready.';
+
+  @override
+  String get userQuestionLoadFailed =>
+      'The pending question could not be loaded. Try again.';
+
+  @override
+  String get userQuestionResumeFailed =>
+      'The saved answer is ready, but the assistant could not continue. Try again.';
+
+  @override
+  String get userQuestionNotificationTitle => 'OpenChat is waiting for you';
+
+  @override
+  String get userQuestionNotificationBody =>
+      'The AI is waiting for your response.';
 }

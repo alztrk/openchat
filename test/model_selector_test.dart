@@ -24,6 +24,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     var isChatGptConnected = false;
+    var availableProviderIds = <String>{};
     var selectedProviderId = 'opencode';
     late StateSetter updateSelector;
 
@@ -49,6 +50,7 @@ void main() {
                   selectedModelRouteKey: null,
                   providerId: selectedProviderId,
                   isChatGptConnected: isChatGptConnected,
+                  availableProviderIds: availableProviderIds,
                   onProviderSelected: (providerId) =>
                       setState(() => selectedProviderId = providerId),
                   isLoadingModels: false,
@@ -85,6 +87,21 @@ void main() {
     await tester.tap(find.text('ChatGPT'));
     await tester.pumpAndSettle();
     expect(selectedProviderId, 'chatgpt');
+
+    var mistralTab = tester.widget<TextButton>(
+      find.widgetWithText(TextButton, 'Mistral'),
+    );
+    expect(mistralTab.onPressed, isNull);
+
+    updateSelector(() => availableProviderIds = {'mistral'});
+    await tester.pumpAndSettle();
+    mistralTab = tester.widget<TextButton>(
+      find.widgetWithText(TextButton, 'Mistral'),
+    );
+    expect(mistralTab.onPressed, isNotNull);
+    await tester.tap(find.text('Mistral'));
+    await tester.pumpAndSettle();
+    expect(selectedProviderId, 'mistral');
   });
 
   testWidgets('model catalog shows source and OpenCode category sections', (

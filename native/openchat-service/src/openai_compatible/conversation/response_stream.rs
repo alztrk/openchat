@@ -176,10 +176,18 @@ pub(super) async fn receive(
             }
 
             saw_finish_reason |= finish_reason(&value).is_some();
-            if let Some(text) = value
-                .pointer("/choices/0/delta/content")
-                .and_then(Value::as_str)
-            {
+            let is_mistral = request.route.provider_id.as_deref() == Some("mistral");
+            let mistral_delta = is_mistral.then(|| mistral_content_delta(&value));
+            let text = mistral_delta
+                .as_ref()
+                .and_then(|delta| (!delta.text.is_empty()).then_some(delta.text.as_str()))
+                .or_else(|| {
+                    (!is_mistral)
+                        .then(|| value.pointer("/choices/0/delta/content"))
+                        .flatten()
+                        .and_then(Value::as_str)
+                });
+            if let Some(text) = text {
                 request.content.push_str(text);
                 round_content.push_str(text);
                 request
@@ -196,11 +204,16 @@ pub(super) async fn receive(
                     .await
                     .map_err(|_| protocol_error())?;
             }
-            if let Some(reasoning) = value
-                .pointer("/choices/0/delta/reasoning_content")
-                .or_else(|| value.pointer("/choices/0/delta/reasoning"))
-                .and_then(Value::as_str)
-            {
+            let reasoning = mistral_delta
+                .as_ref()
+                .and_then(|delta| (!delta.reasoning.is_empty()).then_some(delta.reasoning.as_str()))
+                .or_else(|| {
+                    value
+                        .pointer("/choices/0/delta/reasoning_content")
+                        .or_else(|| value.pointer("/choices/0/delta/reasoning"))
+                        .and_then(Value::as_str)
+                });
+            if let Some(reasoning) = reasoning {
                 request.reasoning_content.push_str(reasoning);
                 let summary = ReasoningSummary {
                     id: format!("reasoning_{}", request.message_id),
@@ -265,4 +278,90 @@ pub(super) async fn receive(
         round_content,
         tool_calls: parse_streamed_tool_calls(tool_calls, request.route.is_opencode)?,
     })
+}
+
+struct MistralContentDelta {
+    text: String,
+    reasoning: String,
+}
+
+fn mistral_content_delta(value: &Value) -> MistralContentDelta {
+    let mut delta = MistralContentDelta {
+        text: String::new(),
+        reasoning: String::new(),
+    };
+    let Some(content) = value.pointer("/choices/0/delta/content") else {
+        return delta;
+    };
+    match content {
+        Value::String(text) => delta.text.push_str(text),
+        Value::Array(parts) => {
+            for part in parts {
+                match part.get("type").and_then(Value::as_str) {
+                    Some("thinking") => {
+                        append_mistral_thinking(part.get("thinking"), &mut delta.reasoning)
+                    }
+                    Some("text") => append_text_field(part, &mut delta.text),
+                    _ => append_text_field(part, &mut delta.text),
+                }
+            }
+        }
+        _ => {}
+    }
+    delta
+}
+
+fn append_mistral_thinking(value: Option<&Value>, output: &mut String) {
+    match value {
+        Some(Value::String(text)) => output.push_str(text),
+        Some(Value::Array(parts)) => {
+            for part in parts {
+                append_text_field(part, output);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn append_text_field(value: &Value, output: &mut String) {
+    if let Some(text) = value.get("text").and_then(Value::as_str) {
+        output.push_str(text);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::mistral_content_delta;
+
+    #[test]
+    fn parses_mistral_thinking_and_text_content_parts() {
+        let delta = mistral_content_delta(&json!({
+            "choices": [{
+                "delta": {
+                    "content": [
+                        {
+                            "type": "thinking",
+                            "thinking": [{"type": "text", "text": "First step. "}]
+                        },
+                        {"type": "text", "text": "Answer."}
+                    ]
+                }
+            }]
+        }));
+
+        assert_eq!(delta.reasoning, "First step. ");
+        assert_eq!(delta.text, "Answer.");
+    }
+
+    #[test]
+    fn parses_plain_mistral_text_deltas() {
+        let delta = mistral_content_delta(&json!({
+            "choices": [{"delta": {"content": "Answer."}}]
+        }));
+
+        assert!(delta.reasoning.is_empty());
+        assert_eq!(delta.text, "Answer.");
+    }
 }

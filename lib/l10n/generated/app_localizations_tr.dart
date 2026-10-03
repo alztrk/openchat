@@ -59,6 +59,248 @@ class AppLocalizationsTr extends AppLocalizations {
       'Bağlı sağlayıcıların modellerini yönetin, varsayılan modeli belirleyin ve istemediğiniz modelleri gizleyin.';
 
   @override
+  String get localEngines => 'Yerel motorlar';
+
+  @override
+  String get localEnginesDescription =>
+      'Doğrulanmış yerel motorları kurun, kendi model dosyalarınızı kaydedin ve motorun çalışma durumunu kontrol edin. Modelleri motor klasörüne taşıyabilir, kopyalayabilir veya mevcut konumunda bırakabilirsiniz.';
+
+  @override
+  String get localEnginesUnavailable =>
+      'Yerel motor servisi henüz kullanılamıyor.';
+
+  @override
+  String get localEnginesLoadFailed => 'Yerel motor bilgileri yüklenemedi.';
+
+  @override
+  String get localEnginesEmpty => 'Kullanılabilir yerel motor sürümü yok.';
+
+  @override
+  String get localEnginesReload => 'Yenile';
+
+  @override
+  String localEngineRelease(String tag) {
+    return 'Sürüm $tag';
+  }
+
+  @override
+  String get localEngineVariants => 'Paketler';
+
+  @override
+  String get localEngineStable => 'Kararlı';
+
+  @override
+  String get localEnginePreview => 'Ön izleme';
+
+  @override
+  String get localEngineNightly => 'Gecelik';
+
+  @override
+  String get localEngineRecommended => 'Önerilen';
+
+  @override
+  String get localEngineAvailable => 'Kullanılabilir';
+
+  @override
+  String get localEngineInstalled => 'Kurulu';
+
+  @override
+  String get localEngineNotInstalled => 'Kurulu değil';
+
+  @override
+  String get localEngineBlocked => 'Engellendi';
+
+  @override
+  String get localEngineUnsupportedPlatform => 'Desteklenmeyen platform';
+
+  @override
+  String get localEngineHardwareUnavailable => 'Donanım kullanılamıyor';
+
+  @override
+  String get localEngineVllmBlockedReason =>
+      'vLLM paketi, OpenChat\'in henüz eksiksiz ve hash doğrulamalı bir bağımlılık kilidiyle kurmadığı PyTorch ve Python çalışma zamanına ihtiyaç duyuyor. Yerel Windows desteği yok; yönetilen WSL2 kurulumu da henüz kullanılamıyor.';
+
+  @override
+  String get localEngineExllamaBlockedReason =>
+      'ExLlamaV3 çalışma zamanı henüz kurulum için hazır değil. Kurulum seçeneği sunulmadan önce TabbyAPI, PyTorch, Triton, Flash Linear Attention ve Python bağımlılıklarının tamamı sabitlenip doğrulanmalı.';
+
+  @override
+  String localEngineRuntimeRequirements(String requirements) {
+    return 'Gereksinimler: $requirements';
+  }
+
+  @override
+  String get localEngineInstall => 'Kur';
+
+  @override
+  String get localEngineInstalling => 'Kurulum hazırlanıyor...';
+
+  @override
+  String get localEngineInstallProgress => 'Yerel motor kurulum ilerlemesi';
+
+  @override
+  String get localEngineCancelInstall => 'Kurulumu iptal et';
+
+  @override
+  String get localEngineCancellingInstall => 'İptal ediliyor...';
+
+  @override
+  String get localEngineInstallFailed =>
+      'Yerel motor kurulamadı. Katalog yenilendi.';
+
+  @override
+  String get localEngineHealth => 'Çalışma durumu';
+
+  @override
+  String get localEngineRunning => 'Çalışıyor';
+
+  @override
+  String get localEngineStopped => 'Durduruldu';
+
+  @override
+  String get localEngineUnhealthy => 'Yanıt vermiyor';
+
+  @override
+  String get localEngineUnavailable => 'Bu motor şu an çalıştırılamıyor.';
+
+  @override
+  String get localEngineStartModel => 'Modeli başlat';
+
+  @override
+  String get localEngineStopModel => 'Motoru durdur';
+
+  @override
+  String get localModels => 'Kayıtlı modeller';
+
+  @override
+  String get localModelsEmpty => 'Bu motor için kayıtlı model yok.';
+
+  @override
+  String get localModelsPageTitle => 'Yerel modeller';
+
+  @override
+  String get localModelsPageDescription =>
+      'İndirilen ve kaydedilen yerel modelleri görüntüleyin.';
+
+  @override
+  String get localModelsPageEmpty => 'Henüz kayıtlı bir yerel model yok.';
+
+  @override
+  String get localModelsLoadFailed => 'Yerel modeller yüklenemedi.';
+
+  @override
+  String get localModelsRefresh => 'Yenile';
+
+  @override
+  String get localModelsDiscover => 'Modelleri keşfet';
+
+  @override
+  String get localModelAddFile => 'Model dosyası ekle';
+
+  @override
+  String get localModelAddFolder => 'Model klasörü ekle';
+
+  @override
+  String get localModelStorageChoiceTitle => 'Modelin konumunu seçin';
+
+  @override
+  String localModelStorageChoiceTarget(String folder) {
+    return 'OpenChat model klasörü: %LOCALAPPDATA%\\OpenChat\\models\\$folder';
+  }
+
+  @override
+  String localModelMoveToFolder(String folder) {
+    return 'Modeli $folder klasörüne taşı';
+  }
+
+  @override
+  String localModelCopyToFolder(String folder) {
+    return 'Modeli $folder klasörüne kopyala';
+  }
+
+  @override
+  String get localModelKeepInPlace => 'Model olduğu yerde kalsın';
+
+  @override
+  String get localModelSaving => 'Model kaydediliyor...';
+
+  @override
+  String get localModelTransferError =>
+      'Model taşınamadı veya kopyalanamadı. Özgün model yerinde bırakıldı.';
+
+  @override
+  String get localModelTransferRecoveryError =>
+      'Model kaydedilemedi veya eski konumuna döndürülemedi. Tam bir kopyası OpenChat model klasöründe kaldı; kaydetmek için o klasörden yeniden seçin.';
+
+  @override
+  String get localModelRemove => 'Kaydı kaldır';
+
+  @override
+  String get localModelRemoveConfirmation =>
+      'Model dosyası silinmeden yalnızca OpenChat kaydı kaldırılır. Devam edilsin mi?';
+
+  @override
+  String get localModelCancelStart => 'Başlatmayı iptal et';
+
+  @override
+  String get localModelStopping => 'Motor durduruluyor...';
+
+  @override
+  String get localModelActionError => 'Yerel model işlemi tamamlanamadı.';
+
+  @override
+  String get localModelPathMissing =>
+      'Model yolu bulunamadı. Dosyayı geri taşıyın veya kaydı kaldırın.';
+
+  @override
+  String get localModelEngineNotReady =>
+      'Motor kurulup çalıştırılabilir duruma gelince kullanılabilir.';
+
+  @override
+  String get localModelInvalid =>
+      'Seçilen dosya veya klasör bu motor için geçerli bir model değil.';
+
+  @override
+  String get localModelPathError =>
+      'Model dosyasına veya klasörüne erişilemiyor.';
+
+  @override
+  String get localModelStoragePathError =>
+      'OpenChat model klasörleri oluşturulamadı. Depolama alanını ve izinleri kontrol edip yeniden deneyin.';
+
+  @override
+  String get localModelStorageError => 'Model kaydı veritabanına yazılamadı.';
+
+  @override
+  String get localModelStartError =>
+      'Model başlatılamadı. Motorun kurulumunu ve model dosyasını kontrol edin.';
+
+  @override
+  String get localModelStartTimeout =>
+      'Model belirtilen süre içinde hazır olmadı. Daha küçük bir model deneyin veya donanımınızı kontrol edin.';
+
+  @override
+  String get localModelSaved => 'Yerel model kaydedildi.';
+
+  @override
+  String get localModelRemoved => 'Yerel model kaydı kaldırıldı.';
+
+  @override
+  String get localEngineStageDownloading => 'İndiriliyor';
+
+  @override
+  String get localEngineStageVerifying => 'Doğrulanıyor';
+
+  @override
+  String get localEngineStageExtracting => 'Çıkartılıyor';
+
+  @override
+  String get localEngineStagePublishing => 'Kurulum tamamlanıyor';
+
+  @override
+  String get localEngineStageReady => 'Hazır';
+
+  @override
   String get defaultModel => 'Varsayılan';
 
   @override
@@ -151,6 +393,9 @@ class AppLocalizationsTr extends AppLocalizations {
   String get openRouterProvider => 'OpenRouter';
 
   @override
+  String get mistralProvider => 'Mistral';
+
+  @override
   String get geminiApiDescription =>
       'Google AI Studio API anahtarını ekleyerek erişebildiğin modelleri kullan. Ücretsiz kullanım model ve kota sınırına bağlıdır.';
 
@@ -165,6 +410,10 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get openRouterApiDescription =>
       'Yalnızca katalogda girdi ve çıktı fiyatı 0 \$ olan, metin ve araç desteği görünen modeller listelenir. Gerçek erişim ve limitler değişebilir.';
+
+  @override
+  String get mistralApiDescription =>
+      'Mistral API anahtarını ekleyerek hesabında erişime açık sohbet modellerini kullan. Ücretsiz kullanım, ücret ve limitler Mistral planına göre değişir.';
 
   @override
   String get geminiUnpaidDataNotice =>
@@ -831,6 +1080,15 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get turkishLanguage => 'Türkçe';
+
+  @override
+  String get spanishLanguage => 'İspanyolca';
+
+  @override
+  String get germanLanguage => 'Almanca';
+
+  @override
+  String get frenchLanguage => 'Fransızca';
 
   @override
   String get languageSaveFailed =>
@@ -1511,6 +1769,9 @@ class AppLocalizationsTr extends AppLocalizations {
   String get toolRunning => 'Çalışıyor';
 
   @override
+  String get toolWaitingForUser => 'Yanıtın bekleniyor';
+
+  @override
   String get toolCompleted => 'Tamamlandı';
 
   @override
@@ -1776,4 +2037,235 @@ class AppLocalizationsTr extends AppLocalizations {
   String workspaceQuotaLabel(String name) {
     return 'Çalışma alanı: $name';
   }
+
+  @override
+  String get modelsPageDescription =>
+      'Hugging Face’teki modelleri bul ve indir.';
+
+  @override
+  String get modelSortDownloads => 'En çok indirilen';
+
+  @override
+  String get modelSortLikes => 'En çok beğenilen';
+
+  @override
+  String get modelSortRecentlyUpdated => 'Son güncellenen';
+
+  @override
+  String get modelPreviousPage => 'Önceki';
+
+  @override
+  String get modelNextPage => 'Sonraki';
+
+  @override
+  String modelPageLabel(int page) {
+    return 'Sayfa $page';
+  }
+
+  @override
+  String get modelFormatGguf => 'GGUF · llama.cpp';
+
+  @override
+  String get modelFormatTransformers => 'Transformers · vLLM';
+
+  @override
+  String get modelFormatExllama => 'ExLlama · EXL3';
+
+  @override
+  String get huggingFaceModelSearchHint => 'Hugging Face modellerinde ara';
+
+  @override
+  String get modelSearchRefresh => 'Model sonuçlarını yenile';
+
+  @override
+  String get modelSearchEmpty => 'Bu aramayla eşleşen model yok.';
+
+  @override
+  String get modelSearchFailed => 'Hugging Face modelleri yüklenemedi.';
+
+  @override
+  String get modelSearchUnavailable =>
+      'Hugging Face\'e ulaşılamıyor. Bağlantını kontrol edip tekrar dene.';
+
+  @override
+  String get modelSearchRateLimited =>
+      'Hugging Face çok fazla istek alıyor. Biraz bekleyip tekrar dene.';
+
+  @override
+  String get modelSearchInvalidResponse =>
+      'Hugging Face\'in gönderdiği model bilgileri okunamadı. Biraz sonra tekrar dene.';
+
+  @override
+  String get modelSearchTimedOut =>
+      'Hugging Face yanıt vermekte gecikti. Tekrar dene.';
+
+  @override
+  String get modelChooseForDetails =>
+      'Dosyalarını incelemek için bir model seç.';
+
+  @override
+  String get modelDownloadsLabel => 'İndirme sayısı';
+
+  @override
+  String get modelLikesLabel => 'Beğeni sayısı';
+
+  @override
+  String get modelLicenseLabel => 'Lisans';
+
+  @override
+  String get modelRevisionLabel => 'Sürüm';
+
+  @override
+  String get modelFilesLabel => 'Model dosyaları';
+
+  @override
+  String get modelVisionComponentsLabel => 'Görsel bileşenleri';
+
+  @override
+  String get modelMtpComponentsLabel => 'MTP bileşenleri';
+
+  @override
+  String get modelAuxiliaryComponentsLabel => 'Diğer yardımcı bileşenler';
+
+  @override
+  String get modelDownloadComponentButton => 'Bu bileşeni indir';
+
+  @override
+  String get modelComponentDownloaded => 'Bileşen indirildi';
+
+  @override
+  String get modelShowMoreComponents => 'Daha fazla bileşen göster';
+
+  @override
+  String get modelReadmeLabel => 'Model açıklaması';
+
+  @override
+  String get modelReadmeMissing =>
+      'Bu model için README açıklaması bulunmuyor.';
+
+  @override
+  String get modelReadmeAccessDenied =>
+      'Model açıklamasını görüntülemek için bu depoya erişim gerekiyor.';
+
+  @override
+  String get modelReadmeTooLarge =>
+      'README dosyası görüntülenemeyecek kadar büyük.';
+
+  @override
+  String get modelReadmeUnavailable => 'Model açıklaması yüklenemedi.';
+
+  @override
+  String get modelDownloadOptionsLabel => 'İndirme seçenekleri';
+
+  @override
+  String get modelDownloadGroupLabel => 'Dosya grubu';
+
+  @override
+  String get modelDownloadSizeLabel => 'Boyut';
+
+  @override
+  String get modelDownloadButton => 'Modeli indir';
+
+  @override
+  String get modelCancelDownload => 'İndirmeyi iptal et';
+
+  @override
+  String modelDownloadRunning(String fileName, int fileIndex, int fileCount) {
+    return 'Dosya $fileIndex/$fileCount: $fileName';
+  }
+
+  @override
+  String get modelDownloadComplete =>
+      'Model indirildi ve Yerel Modeller’e eklendi.';
+
+  @override
+  String get modelDownloadCancelled =>
+      'Model indirmesi iptal edildi. Daha sonra sürdürebilirsin.';
+
+  @override
+  String get modelDownloadFailed => 'Model indirilemedi.';
+
+  @override
+  String get modelDownloadProgressUnavailable =>
+      'İndirme ilerlemesi okunamadı.';
+
+  @override
+  String get modelRevisionChanged =>
+      'Model Hugging Face’te değişmiş. Dosyalarını yeniden yükleyip tekrar dene.';
+
+  @override
+  String get modelDownloadAccessNeeded =>
+      'Bu model deposu erişim istiyor. Hugging Face hesabı bağlantısı henüz desteklenmiyor.';
+
+  @override
+  String get modelNoCompatibleFiles =>
+      'Bu depoda seçilen biçimle uyumlu eksiksiz model dosyası bulunamadı.';
+
+  @override
+  String get modelUnknownDownloadSize =>
+      'Dosya boyutu bilinmediği için indirme güvenli biçimde başlatılamıyor.';
+
+  @override
+  String get modelDetailsLoading => 'Model dosyaları yükleniyor…';
+
+  @override
+  String get modelNoFiles => 'Bu biçim için uyumlu dosya yok.';
+
+  @override
+  String get modelGatedBadge => 'Erişim gerekli';
+
+  @override
+  String get modelPrivateBadge => 'Özel';
+
+  @override
+  String modelSavedToFolder(String folder) {
+    return 'OpenChat/models/$folder konumuna kaydedildi';
+  }
+
+  @override
+  String get userQuestionTitle => 'Asistan yanıtını bekliyor';
+
+  @override
+  String get userQuestionRequiredHint => 'Zorunlu sorular işaretlidir';
+
+  @override
+  String get userQuestionSubmit => 'Yanıtı gönder';
+
+  @override
+  String get userQuestionResuming => 'Asistan devam ediyor';
+
+  @override
+  String get userQuestionUnavailable =>
+      'Bu soru artık kullanılmıyor. Konuşmayı yeniden yükle.';
+
+  @override
+  String get userQuestionRequiredValidation =>
+      'Devam etmek için zorunlu soruları yanıtla.';
+
+  @override
+  String get userQuestionSubmitFailed => 'Yanıtın kaydedilemedi. Tekrar dene.';
+
+  @override
+  String get userQuestionRequiredLabel => 'Zorunlu';
+
+  @override
+  String get userQuestionContinue => 'Asistanı sürdür';
+
+  @override
+  String get userQuestionSaved =>
+      'Yanıtın kaydedildi. Hazır olduğunda devam et.';
+
+  @override
+  String get userQuestionLoadFailed =>
+      'Bekleyen soru yüklenemedi. Tekrar dene.';
+
+  @override
+  String get userQuestionResumeFailed =>
+      'Yanıtın kaydedildi ancak asistan devam edemedi. Tekrar dene.';
+
+  @override
+  String get userQuestionNotificationTitle => 'OpenChat seni bekliyor';
+
+  @override
+  String get userQuestionNotificationBody => 'Yapay zekâ yanıtını bekliyor.';
 }

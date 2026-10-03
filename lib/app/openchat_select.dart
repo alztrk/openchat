@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'package:openchat/app/openchat_dropdown.dart';
 import 'package:openchat/app/openchat_theme.dart';
 
 class OpenChatSelectOption<T> {
@@ -60,40 +61,6 @@ class OpenChatSelect<T> extends StatelessWidget {
   final double trailingGap;
   final ButtonStyle? triggerStyle;
 
-  static MenuStyle menuStyle(
-    OpenChatPalette palette, {
-    EdgeInsets padding = const EdgeInsets.all(4),
-  }) {
-    return MenuStyle(
-      backgroundColor: WidgetStatePropertyAll(palette.surface),
-      elevation: const WidgetStatePropertyAll(6),
-      padding: WidgetStatePropertyAll(padding),
-      side: WidgetStatePropertyAll(BorderSide(color: palette.border)),
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
-  }
-
-  static ButtonStyle menuItemStyle(OpenChatPalette palette) {
-    return ButtonStyle(
-      minimumSize: const WidgetStatePropertyAll(Size(0, 42)),
-      padding: const WidgetStatePropertyAll(EdgeInsets.zero),
-      overlayColor: WidgetStateProperty.resolveWith((states) {
-        if (states.contains(WidgetState.disabled)) return Colors.transparent;
-        if (states.contains(WidgetState.pressed)) return palette.selected;
-        if (states.contains(WidgetState.hovered) ||
-            states.contains(WidgetState.focused)) {
-          return palette.hover;
-        }
-        return Colors.transparent;
-      }),
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final isEnabled = onChanged != null && options.isNotEmpty;
@@ -106,16 +73,16 @@ class OpenChatSelect<T> extends StatelessWidget {
     final resolvedMenuWidth = math.min(requestedMenuWidth, availableWidth);
     final trailing = trailingContent;
 
-    return MenuAnchor(
+    return OpenChatDropdown(
+      palette: palette,
       alignmentOffset: const Offset(0, 6),
-      style: menuStyle(palette),
       menuChildren: [
         for (final option in options)
           MenuItemButton(
             onPressed: option.enabled && onChanged != null
                 ? () => onChanged!(option.value)
                 : null,
-            style: menuItemStyle(palette),
+            style: OpenChatDropdown.menuItemStyle(palette),
             child: SizedBox(
               width: resolvedMenuWidth,
               height: 42,
@@ -204,7 +171,7 @@ class OpenChatSelect<T> extends StatelessWidget {
                   color: isEnabled ? palette.border : palette.disabledBorder,
                 ),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(9),
+                  borderRadius: BorderRadius.circular(OpenChatRadii.control),
                 ),
               ),
           child: Row(

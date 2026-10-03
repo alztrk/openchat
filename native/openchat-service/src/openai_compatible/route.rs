@@ -29,12 +29,13 @@ impl ChatRoute {
     }
 }
 
-pub(super) fn resolve_chat_route(
+pub(super) async fn resolve_chat_route(
     storage: &AppStorage,
     conversation_id: &str,
     api_key: Option<&str>,
     requested_api_key_connection_id: Option<&str>,
     stored_api_key_connection_id: Option<&str>,
+    cancellation: &mut tokio::sync::watch::Receiver<bool>,
 ) -> Result<ChatRoute, ServiceError> {
     let (provider_id, model_id) = storage
         .connect()
@@ -93,6 +94,17 @@ pub(super) fn resolve_chat_route(
                 None,
             )
         }
+        Some("llama_cpp") => {
+            if requested_api_key_connection_id.is_some()
+                || stored_api_key_connection_id.is_some()
+                || api_key.is_some()
+            {
+                return Err(route_error());
+            }
+            let chat_url = crate::local_engines::chat_url(storage, &model_id, cancellation).await?;
+            (chat_url, true, false, None, None, false, None)
+        }
+        Some("vllm" | "exllama") => return Err(local_engine_unavailable_error()),
         Some("chatgpt_api") => {
             if requested_api_key_connection_id != stored_api_key_connection_id {
                 return Err(route_error());
@@ -153,6 +165,14 @@ pub(super) fn resolve_chat_route(
         supports_images,
         connection_id,
     })
+}
+
+fn local_engine_unavailable_error() -> ServiceError {
+    ServiceError::new(
+        "local_engine_unavailable",
+        "The selected local inference engine is not ready on this device.",
+        false,
+    )
 }
 
 #[cfg(test)]

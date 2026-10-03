@@ -1256,10 +1256,32 @@ async fn simulate_execute_command_with_user_permission_approval_flow() {
         permissions::ToolPermissionBroker,
         protocol::EventSink,
         provider_schema::{ChatStreamSnapshot, ToolCall},
+        storage::AppStorage,
+        user_question_broker::UserQuestionBroker,
     };
+    use std::sync::Arc;
     use tokio::sync::watch;
 
     let directory = TestDirectory::new();
+    let storage = Arc::new(
+        AppStorage::open_at(PathBuf::from(directory.root())).expect("open isolated test storage"),
+    );
+    storage
+        .connect()
+        .expect("connect isolated test storage")
+        .execute_batch(
+            "CREATE TABLE messages (
+                id TEXT NOT NULL,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at INTEGER,
+                tool_activities TEXT NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL,
+                UNIQUE(conversation_id, id)
+            );",
+        )
+        .expect("create assistant message checkpoint schema");
     let broker = ToolPermissionBroker::default();
     let events = EventSink::new();
     let request_id = json!("test_req_1");
@@ -1286,6 +1308,8 @@ async fn simulate_execute_command_with_user_permission_approval_flow() {
         let request_id = request_id.clone();
         let snapshot = snapshot.clone();
         let events = events.clone();
+        let storage = Arc::clone(&storage);
+        let user_questions = UserQuestionBroker::default();
         async move {
             executor
                 .execute_call(
@@ -1295,6 +1319,10 @@ async fn simulate_execute_command_with_user_permission_approval_flow() {
                     &snapshot,
                     &events,
                     &mut cancellation_rx,
+                    &storage,
+                    "test_run_1",
+                    "opencode",
+                    &user_questions,
                 )
                 .await
         }
@@ -1346,6 +1374,8 @@ async fn simulate_execute_command_with_user_permission_approval_flow() {
         let request_id = request_id.clone();
         let snapshot = snapshot.clone();
         let events = events.clone();
+        let storage = Arc::clone(&storage);
+        let user_questions = UserQuestionBroker::default();
         async move {
             executor
                 .execute_call(
@@ -1355,6 +1385,10 @@ async fn simulate_execute_command_with_user_permission_approval_flow() {
                     &snapshot,
                     &events,
                     &mut cancellation_rx2,
+                    &storage,
+                    "test_run_2",
+                    "opencode",
+                    &user_questions,
                 )
                 .await
         }

@@ -8,6 +8,12 @@ Tool calls are processed locally and their results are returned to the same prov
 
 In `Onay İste`, each valid call emits `chat.tool.permission.requested` with its approval ID, tool name, canonical target path, and arguments. Flutter returns the one-time decision with `chat.tool.permission.respond`; a bounded in-memory broker connects that decision to the waiting request. Each call also emits shared `chat.tool.updated` activity for approval waiting, execution, and its result or denial. The desktop UI shows the tool name, target path, JSON arguments, and JSON output or error under the assistant message. Tool activity is saved with local chat history, so it remains visible after reopening a conversation and is included in Markdown conversation exports.
 
+## AI questions
+
+The `ask_user` tool lets a model pause its active response with one or more structured choice or free-form questions. The native service validates question IDs, options, required answers, and text limits, then stores the question group and run checkpoint in SQLite before emitting `chat.question.requested`. Each answer submission is revision-checked and idempotent. When the original execution is still active, the answer wakes that execution; after a service restart, the same saved run can be resumed from its checkpoint.
+
+Pending questions and answered continuation points can be reloaded with `chat.questions.list`. Windows builds also issue a native notification with only the bounded conversation and question IDs; selecting it opens the conversation. If notification delivery is unavailable, the pending card remains available in the conversation. A stopped run cancels unanswered questions. A shutdown interruption preserves a pending question for recovery. Tool status checkpoints are saved before their UI events so reopening history does not depend on receiving every live event.
+
 ## Search behavior
 
 - Searches skip dot-hidden paths and common generated or dependency directories by default: `.dart_tool`, `.gradle`, `.next`, `.nuxt`, `build`, `coverage`, `DerivedData`, `dist`, `node_modules`, `Pods`, `target`, and `vendor`.

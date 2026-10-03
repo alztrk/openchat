@@ -70,6 +70,35 @@ void main() {
     },
   );
 
+  test('all supported locale preferences persist and restore', () async {
+    final writer = SettingsPreferences(SharedPreferencesAsync());
+    final reader = SettingsPreferences(SharedPreferencesAsync());
+    const locales = <Locale?>[
+      null,
+      Locale('en'),
+      Locale('tr'),
+      Locale('es'),
+      Locale('de'),
+      Locale('fr'),
+    ];
+
+    for (final locale in locales) {
+      await writer.writeLocale(locale);
+      expect(await reader.readLocale(), locale);
+    }
+  });
+
+  test(
+    'unknown saved locale falls back to system without becoming supported',
+    () async {
+      final preferences = SharedPreferencesAsync();
+      await preferences.setString('appearance.locale', 'xx');
+
+      final reader = SettingsPreferences(preferences);
+      expect(await reader.readLocale(), isNull);
+    },
+  );
+
   test('default model preference and hidden model keys persist', () async {
     final writer = SettingsPreferences(SharedPreferencesAsync());
 
@@ -82,7 +111,10 @@ void main() {
       displayName: 'Big Pickle',
     );
     await writer.writeDefaultModel(preference);
-    await writer.writeHiddenModelKeys({'opencode:::mimo-v2.5-free', 'opencode:::space-bunny-free'});
+    await writer.writeHiddenModelKeys({
+      'opencode:::mimo-v2.5-free',
+      'opencode:::space-bunny-free',
+    });
 
     final reopenedReader = SettingsPreferences(SharedPreferencesAsync());
     final savedModel = await reopenedReader.readDefaultModel();
@@ -224,6 +256,12 @@ void main() {
     await tester.tap(find.text('Georgia'));
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('English'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Spanish'));
+    await tester.pumpAndSettle();
+    expect(await preferences.readLocale(), const Locale('es'));
+
     expect(
       await preferences.readConversationWidth(),
       ConversationWidthPreference.wide,
@@ -234,7 +272,7 @@ void main() {
     );
     expect(await preferences.readAppFont(), AppFontPreference.georgia);
     expect(await preferences.readThemeMode(), ThemeMode.dark);
-    expect(await preferences.readLocale(), const Locale('en'));
+    expect(await preferences.readLocale(), const Locale('es'));
     final style = Theme.of(tester.element(find.byType(SettingsScreen)))
         .extension<OpenChatConversationStyle>();
     expect(

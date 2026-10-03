@@ -299,7 +299,7 @@ Future<void> _expectCompactNavigationRailMatchesFigma(
 
   expect(
     tester.getRect(find.byTooltip('Anasayfa')),
-    const Rect.fromLTWH(14, 123, 44, 44),
+    const Rect.fromLTWH(13.5, 114, 44, 44),
   );
   expect(
     tester.getRect(find.byType(ChatNavigationRail)),
@@ -307,7 +307,7 @@ Future<void> _expectCompactNavigationRailMatchesFigma(
   );
   expect(
     tester.getRect(find.byKey(const ValueKey<String>('compact-brand'))),
-    const Rect.fromLTWH(14, 21, 44, 44),
+    const Rect.fromLTWH(13, 20, 45, 44),
   );
   expect(find.text('OpenChat'), findsNothing);
 
@@ -562,7 +562,7 @@ void _expectNarrowFigmaSidebarGeometry(WidgetTester tester) {
   );
   expect(
     tester.getRect(find.byKey(const ValueKey<String>('compact-brand'))),
-    const Rect.fromLTWH(14, 21, 44, 44),
+    const Rect.fromLTWH(13, 20, 45, 44),
   );
   expect(
     tester.getRect(find.byType(ConversationSidebar)),
@@ -578,7 +578,7 @@ void _expectCompactFigmaSidebarGeometry(WidgetTester tester) {
   );
   expect(
     tester.getRect(find.byKey(const ValueKey<String>('compact-brand'))),
-    const Rect.fromLTWH(14, 21, 44, 44),
+    const Rect.fromLTWH(13, 20, 45, 44),
   );
   expect(
     tester.getRect(find.byType(ConversationSidebar)),
@@ -669,7 +669,7 @@ Future<void> _expectNarrowComposerGeometry(
   );
   await tester.pumpAndSettle();
 
-  _expectComposerControls(tester, outlinedButtonCount: 4);
+  _expectComposerControls(tester, outlinedButtonCount: 3);
 }
 
 Future<void> _expectPaneMatchesFigma(
@@ -734,7 +734,7 @@ void _expectComposerGeometry(
 }) {
   _expectComposerControls(
     tester,
-    outlinedButtonCount: hasReasoningSelector ? 4 : 3,
+    outlinedButtonCount: hasReasoningSelector ? 3 : 2,
   );
 }
 

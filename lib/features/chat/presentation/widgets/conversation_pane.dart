@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/openchat_toast.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
+import 'package:openchat/features/chat/domain/agent_question.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/domain/chat_attachment.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
@@ -21,7 +22,9 @@ import 'package:openchat/platform/windows/window_controls.dart';
 import 'package:openchat/features/chat/presentation/widgets/assistant_message.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_attachment_gallery.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_composer.dart';
+import 'package:openchat/features/chat/presentation/widgets/chat_surface_card.dart';
 import 'package:openchat/features/chat/presentation/widgets/tool_permission_card.dart';
+import 'package:openchat/features/chat/presentation/widgets/user_question_card.dart';
 import 'package:openchat/features/chat/presentation/widgets/window_control_bar.dart';
 
 class ConversationPane extends StatelessWidget {
@@ -82,6 +85,12 @@ class ConversationPane extends StatelessWidget {
     this.toolPermissionError,
     this.onApproveToolPermission,
     this.onDenyToolPermission,
+    this.pendingQuestionGroups = const <AgentQuestionGroup>[],
+    this.focusedQuestionGroupId,
+    this.isResumingQuestion = false,
+    this.pendingQuestionError,
+    this.onRetryPendingQuestions,
+    this.onSubmitQuestionAnswers,
     this.showWindowControls,
     this.messageScrollController,
     super.key,
@@ -152,6 +161,16 @@ class ConversationPane extends StatelessWidget {
   final String? toolPermissionError;
   final VoidCallback? onApproveToolPermission;
   final VoidCallback? onDenyToolPermission;
+  final List<AgentQuestionGroup> pendingQuestionGroups;
+  final String? focusedQuestionGroupId;
+  final bool isResumingQuestion;
+  final String? pendingQuestionError;
+  final VoidCallback? onRetryPendingQuestions;
+  final Future<String?> Function(
+    AgentQuestionGroup group,
+    List<AgentQuestionAnswer> answers,
+  )?
+  onSubmitQuestionAnswers;
   final bool? showWindowControls;
 
   @override
@@ -218,6 +237,49 @@ class ConversationPane extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (pendingQuestionError case final error?) ...[
+                    ChatSurfaceCard(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.error_outline_rounded,
+                            size: 16,
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Semantics(
+                              liveRegion: true,
+                              child: Text(
+                                error,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: onRetryPendingQuestions,
+                            child: Text(l10n.retry),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  for (final group in pendingQuestionGroups) ...[
+                    UserQuestionCard(
+                      group: group,
+                      focusOnBuild: group.id == focusedQuestionGroupId,
+                      isResuming: isResumingQuestion,
+                      onSubmit: (answers) =>
+                          onSubmitQuestionAnswers?.call(group, answers) ??
+                          Future<String?>.value(l10n.userQuestionUnavailable),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
                   if (toolPermissionRequest case final request?) ...[
                     ToolPermissionCard(
                       request: request,
@@ -1067,24 +1129,6 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
                                             horizontal: 12,
                                             vertical: 9,
                                           ),
-                                      border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                        borderSide: BorderSide(
-                                          color: palette.border,
-                                        ),
-                                      ),
-                                      enabledBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                        borderSide: BorderSide(
-                                          color: palette.border,
-                                        ),
-                                      ),
-                                      focusedBorder: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                        borderSide: BorderSide(
-                                          color: palette.accent,
-                                        ),
-                                      ),
                                     ),
                                   ),
                                 ),

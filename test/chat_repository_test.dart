@@ -1,9 +1,12 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:openchat/features/chat/data/chat_attachment_store.dart';
 import 'package:openchat/features/chat/data/chat_repository.dart';
 import 'package:openchat/features/chat/data/openchat_database.dart';
+import 'package:openchat/features/chat/domain/chat_attachment.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 
 void main() {
@@ -134,6 +137,132 @@ void main() {
       throwsA(isA<ConversationNotFoundException>()),
     );
   });
+
+  test(
+    'streaming message updates do not reorder the conversation list',
+    () async {
+      final database = OpenChatDatabase(NativeDatabase.memory());
+      addTearDown(database.close);
+      final repository = ChatRepository(database);
+      final conversationCreatedAt = DateTime.utc(2026, 9, 26, 12, 30);
+      await repository.createConversation(
+        id: 'conversation-streaming',
+        title: 'Streaming',
+        createdAt: conversationCreatedAt,
+      );
+
+      await repository.saveMessage(
+        conversationId: 'conversation-streaming',
+        message: ChatMessage(
+          id: 'assistant-streaming',
+          role: ChatMessageRole.assistant,
+          content: 'Partial response',
+          createdAt: conversationCreatedAt.add(const Duration(hours: 1)),
+          status: ChatMessageStatus.streaming,
+        ),
+        updateConversationTimestamp: false,
+      );
+
+      expect(
+        (await repository.getConversation('conversation-streaming'))?.updatedAt,
+        conversationCreatedAt,
+      );
+
+      await repository.saveMessage(
+        conversationId: 'conversation-streaming',
+        message: ChatMessage(
+          id: 'assistant-streaming',
+          role: ChatMessageRole.assistant,
+          content: 'Completed response',
+          createdAt: conversationCreatedAt.add(const Duration(hours: 1)),
+          status: ChatMessageStatus.completed,
+        ),
+      );
+
+      expect(
+        (await repository.getConversation('conversation-streaming'))?.updatedAt,
+        conversationCreatedAt.add(const Duration(hours: 1)),
+      );
+    },
+  );
+
+  test(
+    'streaming assistant updates preserve generated image attachments',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'openchat-generated-image-',
+      );
+      final database = OpenChatDatabase(
+        NativeDatabase(
+          File('${directory.path}${Platform.pathSeparator}history.sqlite'),
+        ),
+      );
+      addTearDown(() async {
+        await database.close();
+        await directory.delete(recursive: true);
+      });
+      final repository = ChatRepository(
+        database,
+        attachmentStore: ChatAttachmentStore(directory.path),
+      );
+      final createdAt = DateTime.utc(2026, 10, 3, 12);
+      await repository.createConversation(
+        id: 'generated-image-conversation',
+        title: 'Generated image',
+        createdAt: createdAt,
+      );
+      final imageBytes = Uint8List.fromList(<int>[
+        0x89,
+        0x50,
+        0x4e,
+        0x47,
+        0x0d,
+        0x0a,
+        0x1a,
+        0x0a,
+      ]);
+
+      await repository.saveMessage(
+        conversationId: 'generated-image-conversation',
+        message: ChatMessage(
+          id: 'generated-image-message',
+          role: ChatMessageRole.assistant,
+          content: 'Creating the image.',
+          createdAt: createdAt,
+          attachments: <ChatAttachment>[
+            ChatAttachment(
+              id: 'generated-image-1',
+              name: 'generated-image-1.png',
+              mimeType: 'image/png',
+              sizeBytes: imageBytes.length,
+              kind: ChatAttachmentKind.image,
+              bytes: imageBytes,
+            ),
+          ],
+          status: ChatMessageStatus.streaming,
+        ),
+      );
+      await repository.saveMessage(
+        conversationId: 'generated-image-conversation',
+        message: ChatMessage(
+          id: 'generated-image-message',
+          role: ChatMessageRole.assistant,
+          content: 'The image is ready.',
+          createdAt: createdAt,
+          status: ChatMessageStatus.completed,
+        ),
+      );
+
+      final saved = (await repository.getMessages(
+        'generated-image-conversation',
+      )).single;
+      expect(saved.content, 'The image is ready.');
+      expect(saved.attachments, hasLength(1));
+      expect(saved.attachments.single.name, 'generated-image-1.png');
+      expect(saved.attachments.single.isAvailable, isTrue);
+      expect(saved.attachments.single.localPath, isNotNull);
+    },
+  );
 
   test(
     'persists tool round ordering metadata with the assistant message',

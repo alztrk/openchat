@@ -22,7 +22,9 @@ void main() {
   }
 
   group('ToolWebSearchResult', () {
-    testWidgets('renders search query, results, domain, and snippet', (tester) async {
+    testWidgets('renders search query, results, domain, and snippet', (
+      tester,
+    ) async {
       const locale = Locale('tr');
       final l10n = await AppLocalizations.delegate.load(locale);
 
@@ -30,7 +32,10 @@ void main() {
         callId: 'call_search_1',
         name: 'web_search',
         status: ChatToolActivityStatus.completed,
-        arguments: const <String, Object?>{'query': 'rust tokio async', 'limit': 2},
+        arguments: const <String, Object?>{
+          'query': 'rust tokio async',
+          'limit': 2,
+        },
         output: const <String, Object?>{
           'query': 'rust tokio async',
           'total_results': 2,
@@ -66,11 +71,17 @@ void main() {
       await tester.tap(find.text(l10n.toolWebSearch));
       await tester.pumpAndSettle();
 
-      expect(find.text('Tokio - An asynchronous runtime for Rust'), findsAtLeastNWidgets(1));
+      expect(
+        find.text('Tokio - An asynchronous runtime for Rust'),
+        findsAtLeastNWidgets(1),
+      );
       expect(find.text('GOOGLE'), findsAtLeastNWidgets(1));
       expect(find.text('DUCKDUCKGO'), findsAtLeastNWidgets(1));
       expect(find.text('tokio.rs'), findsAtLeastNWidgets(1));
-      expect(find.text('Tokio is an event-driven, non-blocking I/O platform.'), findsAtLeastNWidgets(1));
+      expect(
+        find.text('Tokio is an event-driven, non-blocking I/O platform.'),
+        findsAtLeastNWidgets(1),
+      );
     });
 
     testWidgets('shows empty notice when no results returned', (tester) async {
@@ -108,43 +119,49 @@ void main() {
   });
 
   group('ToolReadUrlResult', () {
-    testWidgets('renders webpage title, length, markdown content, and truncated badge', (tester) async {
-      const locale = Locale('tr');
-      final l10n = await AppLocalizations.delegate.load(locale);
+    testWidgets(
+      'renders webpage title, length, markdown content, and truncated badge',
+      (tester) async {
+        const locale = Locale('tr');
+        final l10n = await AppLocalizations.delegate.load(locale);
 
-      final activity = ChatToolActivity(
-        callId: 'call_read_url_1',
-        name: 'read_url_content',
-        status: ChatToolActivityStatus.completed,
-        arguments: const <String, Object?>{'url': 'https://docs.rs/tokio'},
-        output: const <String, Object?>{
-          'url': 'https://docs.rs/tokio',
-          'title': 'Tokio Documentation',
-          'content': '# Tokio Core\nRuntime for building fast applications.',
-          'length': 48,
-          'truncated': true,
-        },
-      );
+        final activity = ChatToolActivity(
+          callId: 'call_read_url_1',
+          name: 'read_url_content',
+          status: ChatToolActivityStatus.completed,
+          arguments: const <String, Object?>{'url': 'https://docs.rs/tokio'},
+          output: const <String, Object?>{
+            'url': 'https://docs.rs/tokio',
+            'title': 'Tokio Documentation',
+            'content': '# Tokio Core\nRuntime for building fast applications.',
+            'length': 48,
+            'truncated': true,
+          },
+        );
 
-      await tester.pumpWidget(
-        buildTestableWidget(
-          locale: locale,
-          child: ToolActivityAccordion(
-            activity: activity,
-            palette: OpenChatPalette.light,
+        await tester.pumpWidget(
+          buildTestableWidget(
+            locale: locale,
+            child: ToolActivityAccordion(
+              activity: activity,
+              palette: OpenChatPalette.light,
+            ),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
+        );
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.text(l10n.toolReadUrlContent));
-      await tester.pumpAndSettle();
+        await tester.tap(find.text(l10n.toolReadUrlContent));
+        await tester.pumpAndSettle();
 
-      expect(find.text('Tokio Documentation'), findsAtLeastNWidgets(1));
-      expect(find.text(l10n.toolReadUrlLength(48)), findsAtLeastNWidgets(1));
-      expect(find.text(l10n.toolOperationTruncated), findsAtLeastNWidgets(1));
-      expect(find.text('# Tokio Core\nRuntime for building fast applications.'), findsAtLeastNWidgets(1));
-    });
+        expect(find.text('Tokio Documentation'), findsAtLeastNWidgets(1));
+        expect(find.text(l10n.toolReadUrlLength(48)), findsAtLeastNWidgets(1));
+        expect(find.text(l10n.toolOperationTruncated), findsAtLeastNWidgets(1));
+        expect(
+          find.text('# Tokio Core\nRuntime for building fast applications.'),
+          findsAtLeastNWidgets(1),
+        );
+      },
+    );
   });
 
   group('ToolPermissionCard with Web Tools', () {

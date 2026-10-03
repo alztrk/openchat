@@ -527,6 +527,7 @@ mod tests {
             "groupId": "free",
             "supportsReasoning": false,
             "catalogStatus": null,
+            "supportsImages": false,
         });
         assert!(!has_model_groups(std::slice::from_ref(&model)));
         model["inputTokenLimit"] = json!(null);

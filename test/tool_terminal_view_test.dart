@@ -138,7 +138,9 @@ void main() {
     expect(find.text(l10n.toolTerminalExitCode(101)), findsOneWidget);
   });
 
-  testWidgets('renders terminated badge when session is killed', (tester) async {
+  testWidgets('renders terminated badge when session is killed', (
+    tester,
+  ) async {
     const locale = Locale('tr');
     final l10n = await AppLocalizations.delegate.load(locale);
 

@@ -38,7 +38,8 @@ class ToolTerminalData {
     final rawCommand = arguments?['command'] ?? outputMap?['command'];
     final command = rawCommand is String ? rawCommand : null;
 
-    final rawTermId = arguments?['terminal_id'] ??
+    final rawTermId =
+        arguments?['terminal_id'] ??
         arguments?['terminalId'] ??
         outputMap?['terminal_id'] ??
         outputMap?['terminalId'];
@@ -50,17 +51,19 @@ class ToolTerminalData {
     final rawOutput = outputMap?['output'];
     final output = rawOutput is String ? rawOutput : null;
 
-    final isRunning = outputMap?['is_running'] == true ||
+    final isRunning =
+        outputMap?['is_running'] == true ||
         activity.status == ChatToolActivityStatus.running;
 
-    final waitingForInput = outputMap?['waiting_for_input'] == true ||
+    final waitingForInput =
+        outputMap?['waiting_for_input'] == true ||
         (isRunning && (outputMap?['waiting_for_input'] ?? true) == true);
 
     final rawExitCode = outputMap?['exit_code'];
     final exitCode = rawExitCode is int ? rawExitCode : null;
 
-    final isTerminated = outputMap?['status'] == 'terminated' ||
-        outputMap?['is_killed'] == true;
+    final isTerminated =
+        outputMap?['status'] == 'terminated' || outputMap?['is_killed'] == true;
 
     final isTruncated = outputMap?['truncated'] == true;
 
@@ -139,7 +142,10 @@ class ToolTerminalResult extends StatelessWidget {
                   iconSize: 14,
                   visualDensity: VisualDensity.compact,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                  constraints: const BoxConstraints(
+                    minWidth: 24,
+                    minHeight: 24,
+                  ),
                   icon: Icon(Icons.copy_rounded, color: palette.secondaryIcon),
                   onPressed: () {
                     final textToCopy = cleanedOutput.isNotEmpty
@@ -202,7 +208,9 @@ class ToolTerminalResult extends StatelessWidget {
               decoration: BoxDecoration(
                 color: palette.composer.withValues(alpha: 0.6),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: palette.border.withValues(alpha: 0.6)),
+                border: Border.all(
+                  color: palette.border.withValues(alpha: 0.6),
+                ),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -256,45 +264,45 @@ class ToolTerminalResult extends StatelessWidget {
                         ),
                       )
                     : cleanedOutput.isNotEmpty
-                        ? SelectableText(
-                            cleanedOutput,
-                            style: TextStyle(
-                              color: palette.text,
-                              fontFamily: 'monospace',
-                              fontSize: 12,
-                              height: 18 / 12,
+                    ? SelectableText(
+                        cleanedOutput,
+                        style: TextStyle(
+                          color: palette.text,
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                          height: 18 / 12,
+                        ),
+                      )
+                    : data.isRunning
+                    ? Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox.square(
+                            dimension: 12,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.5,
+                              color: palette.accent,
                             ),
-                          )
-                        : data.isRunning
-                            ? Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  SizedBox.square(
-                                    dimension: 12,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 1.5,
-                                      color: palette.accent,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    l10n.toolTerminalWaitingOutput,
-                                    style: TextStyle(
-                                      color: palette.secondaryText,
-                                      fontSize: 11,
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                                  ),
-                                ],
-                              )
-                            : Text(
-                                l10n.toolTerminalNoOutput,
-                                style: TextStyle(
-                                  color: palette.secondaryText,
-                                  fontSize: 11,
-                                  fontStyle: FontStyle.italic,
-                                ),
-                              ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            l10n.toolTerminalWaitingOutput,
+                            style: TextStyle(
+                              color: palette.secondaryText,
+                              fontSize: 11,
+                              fontStyle: FontStyle.italic,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Text(
+                        l10n.toolTerminalNoOutput,
+                        style: TextStyle(
+                          color: palette.secondaryText,
+                          fontSize: 11,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
               ),
             ),
           ),
@@ -391,7 +399,9 @@ class _TerminalStatusBadge extends StatelessWidget {
 
     if (data.exitCode case final code?) {
       final isSuccess = code == 0;
-      final badgeColor = isSuccess ? palette.secondaryIcon : theme.colorScheme.error;
+      final badgeColor = isSuccess
+          ? palette.secondaryIcon
+          : theme.colorScheme.error;
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
         decoration: BoxDecoration(

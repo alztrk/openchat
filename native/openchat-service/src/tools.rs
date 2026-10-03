@@ -529,15 +529,72 @@ pub fn opencode_required_tools() -> Vec<ToolDefinition> {
     definitions_for_provider("opencode")
 }
 
-pub fn definitions_for_provider(_provider_id: &str) -> Vec<ToolDefinition> {
+pub fn definitions_for_provider(provider_id: &str) -> Vec<ToolDefinition> {
     definitions()
+        .into_iter()
+        .filter(|tool| {
+            tool.name != "generate_image" || matches!(provider_id, "chatgpt" | "chatgpt_api")
+        })
+        .collect()
+}
+
+pub fn definitions_for_chatgpt_model() -> Vec<ToolDefinition> {
+    definitions_for_provider("chatgpt")
+        .into_iter()
+        .map(|mut tool| {
+            if tool.name == "generate_image"
+                && let Some(properties) = tool
+                    .parameters
+                    .get_mut("properties")
+                    .and_then(Value::as_object_mut)
+            {
+                properties.remove("count");
+            }
+            tool
+        })
+        .collect()
+}
+
+pub fn definitions_for_chatgpt_api() -> Vec<ToolDefinition> {
+    let mut definitions = definitions_for_provider("chatgpt_api");
+    if let Some(image_tool) = definitions
+        .iter_mut()
+        .find(|tool| tool.name == "generate_image")
+        && let Some(properties) = image_tool
+            .parameters
+            .get_mut("properties")
+            .and_then(Value::as_object_mut)
+    {
+        properties.insert(
+            "count".to_owned(),
+            json!({
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3,
+                "description": "Number of images to generate. Defaults to one."
+            }),
+        );
+        properties.insert(
+            "quality".to_owned(),
+            json!({
+                "type": "string",
+                "enum": ["low", "medium", "high", "xhigh", "max", "auto"],
+                "description": "xhigh and max require gpt-image-2.5-sunburst or gpt-image-2.5-flare."
+            }),
+        );
+    }
+    definitions
 }
 
 pub fn context_usage_definitions(
     provider_id: &str,
     uses_responses_api: bool,
 ) -> Vec<(String, Value)> {
-    let definitions = definitions_for_provider(provider_id);
+    let definitions = match provider_id {
+        "chatgpt" => definitions_for_chatgpt_model(),
+        "chatgpt_api" => definitions_for_chatgpt_api(),
+        _ => definitions_for_provider(provider_id),
+    };
     if provider_id == "opencode" {
         let wire_tools = if uses_responses_api {
             opencode_responses_wire_tools(&definitions)
@@ -724,6 +781,108 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false
             }),
         ),
+        (
+            "generate_image",
+            "Generate an image using the connected ChatGPT image-generation capability.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "prompt": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 10000,
+                        "description": "A detailed description of the image to generate."
+                    },
+                    "model": {
+                        "type": "string",
+                        "maxLength": 128,
+                        "description": "Optional image model. Defaults to gpt-image-2."
+                    },
+                    "size": {
+                        "type": "string",
+                        "description": "Optional size such as auto, 1024x1024, 1536x1024, or 1024x1536."
+                    },
+                    "quality": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high", "auto"]
+                    },
+                    "count": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 3,
+                        "description": "Number of images to generate when the connected image endpoint supports multiple outputs."
+                    },
+                    "background": {
+                        "type": "string",
+                        "enum": ["transparent", "opaque", "auto"]
+                    }
+                },
+                "required": ["prompt"],
+                "additionalProperties": false
+            }),
+        ),
+        (
+            "ask_user",
+            "Pause this response and ask the user one or more questions. Use choice questions for a single selection and text questions for a free-form reply. Wait for the answer before continuing.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "questions": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 32,
+                        "items": {
+                            "oneOf": [
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "string", "minLength": 1, "maxLength": 128},
+                                        "kind": {"type": "string", "const": "choice"},
+                                        "title": {"type": "string", "minLength": 1, "maxLength": 2000},
+                                        "description": {"type": "string", "maxLength": 2000},
+                                        "options": {
+                                            "type": "array",
+                                            "minItems": 2,
+                                            "maxItems": 128,
+                                            "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                    "id": {"type": "string", "minLength": 1, "maxLength": 128},
+                                                    "label": {"type": "string", "minLength": 1, "maxLength": 1000}
+                                                },
+                                                "required": ["id", "label"],
+                                                "additionalProperties": false
+                                            }
+                                        },
+                                        "required": {"type": "boolean"},
+                                        "placeholder": {"type": "string", "maxLength": 1000},
+                                        "maxLength": {"type": "integer", "minimum": 1, "maximum": 16000}
+                                    },
+                                    "required": ["id", "kind", "title", "options"],
+                                    "additionalProperties": false
+                                },
+                                {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "string", "minLength": 1, "maxLength": 128},
+                                        "kind": {"type": "string", "const": "text"},
+                                        "title": {"type": "string", "minLength": 1, "maxLength": 2000},
+                                        "description": {"type": "string", "maxLength": 2000},
+                                        "required": {"type": "boolean"},
+                                        "placeholder": {"type": "string", "maxLength": 1000},
+                                        "maxLength": {"type": "integer", "minimum": 1, "maximum": 16000}
+                                    },
+                                    "required": ["id", "kind", "title"],
+                                    "additionalProperties": false
+                                }
+                            ]
+                        }
+                    }
+                },
+                "required": ["questions"],
+                "additionalProperties": false
+            }),
+        ),
     ]
     .into_iter()
     .map(|(name, description, parameters)| ToolDefinition {
@@ -735,8 +894,73 @@ pub fn definitions() -> Vec<ToolDefinition> {
 }
 
 mod executor;
+pub(crate) use executor::ImageGenerationContext;
 pub(crate) use executor::tool_call_limit_error;
 pub use executor::{ToolExecutor, ToolPermissionMode};
+
+#[cfg(test)]
+mod image_tool_tests {
+    use super::{
+        definitions, definitions_for_chatgpt_api, definitions_for_chatgpt_model,
+        definitions_for_provider,
+    };
+
+    #[test]
+    fn image_generation_is_advertised_only_for_supported_chatgpt_routes() {
+        assert!(
+            definitions()
+                .iter()
+                .any(|tool| tool.name == "generate_image")
+        );
+        assert!(
+            definitions_for_provider("chatgpt")
+                .iter()
+                .any(|tool| tool.name == "generate_image")
+        );
+        assert!(
+            definitions_for_chatgpt_api()
+                .iter()
+                .any(|tool| tool.name == "generate_image")
+        );
+        let api_image_tool = definitions_for_chatgpt_api()
+            .into_iter()
+            .find(|tool| tool.name == "generate_image")
+            .expect("API image tool");
+        assert_eq!(
+            api_image_tool.parameters["properties"]["count"]["maximum"],
+            3
+        );
+        for provider_id in [
+            "opencode",
+            "gemini",
+            "groq",
+            "cerebras",
+            "mistral",
+            "openrouter",
+        ] {
+            assert!(
+                !definitions_for_provider(provider_id)
+                    .iter()
+                    .any(|tool| tool.name == "generate_image"),
+                "{provider_id}"
+            );
+        }
+    }
+
+    #[test]
+    fn image_generation_is_independent_from_image_input_capability() {
+        assert!(
+            definitions_for_chatgpt_model()
+                .iter()
+                .any(|tool| tool.name == "generate_image")
+        );
+        let image_tool = definitions_for_chatgpt_model()
+            .into_iter()
+            .find(|tool| tool.name == "generate_image")
+            .expect("OAuth image tool");
+        assert!(image_tool.parameters["properties"].get("count").is_none());
+    }
+}
 
 fn resolve_directory(
     root: impl AsRef<Path>,

@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/openchat_toast.dart';
+import 'package:openchat/features/chat/data/chat_repository.dart';
 import 'package:openchat/features/chat/domain/history_storage_status.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_memory_dialog.dart';
@@ -21,6 +22,7 @@ import 'package:openchat/platform/windows/window_controls.dart';
 
 import 'package:openchat/features/settings/presentation/chat_gpt_connection_section.dart';
 import 'package:openchat/features/settings/presentation/compatible_provider_connection_section.dart';
+import 'package:openchat/features/settings/presentation/local_engines_settings_section.dart';
 import 'package:openchat/features/settings/presentation/models_settings_section.dart';
 import 'package:openchat/features/settings/presentation/open_code_connection_section.dart';
 import 'package:openchat/features/settings/presentation/usage_quotas_settings_section.dart';
@@ -31,6 +33,7 @@ enum _SettingsSection {
   connections,
   usageQuotas,
   models,
+  localEngines,
   conversationMemory,
   sharedInstructions,
   appearance,
@@ -60,6 +63,7 @@ class SettingsScreen extends StatefulWidget {
     this.apiCompatibleProviderKeyStore,
     this.openCodeApiKeyStore,
     this.serviceClient,
+    this.chatRepository,
     this.onProviderStateChanged,
     this.onConnectionRemoved,
     super.key,
@@ -88,6 +92,7 @@ class SettingsScreen extends StatefulWidget {
   final ApiCompatibleProviderKeyStore? apiCompatibleProviderKeyStore;
   final OpenCodeApiKeyStore? openCodeApiKeyStore;
   final OpenChatServiceClient? serviceClient;
+  final ChatRepository? chatRepository;
   final Future<void> Function()? onProviderStateChanged;
   final Future<void> Function(String connectionId)? onConnectionRemoved;
 
@@ -149,6 +154,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _SettingsSection.connections => l10n.connections,
           _SettingsSection.usageQuotas => l10n.usageQuotas,
           _SettingsSection.models => l10n.models,
+          _SettingsSection.localEngines => l10n.localEngines,
           _SettingsSection.conversationMemory => l10n.conversationMemory,
           _SettingsSection.sharedInstructions => l10n.sharedInstructions,
           _SettingsSection.appearance => l10n.appearance,
@@ -202,7 +208,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   widget.apiCompatibleProviderKeyStore,
                               openCodeApiKeyStore: widget.openCodeApiKeyStore,
                               settingsPreferences: widget.settingsPreferences,
+                              chatRepository: widget.chatRepository,
                               onChanged: widget.onProviderStateChanged,
+                            ),
+                          ),
+                          _buildSectionPage(
+                            section: _SettingsSection.localEngines,
+                            horizontalInset: horizontalInset,
+                            child: LocalEnginesSettingsSection(
+                              serviceClient: widget.serviceClient,
                             ),
                           ),
                           _buildSectionPage(
@@ -354,18 +368,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               filled: true,
               fillColor: palette.composer,
               contentPadding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: palette.border),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: palette.border),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: palette.accent, width: 1.4),
-              ),
             ),
             onChanged: (_) => setState(() {}),
           ),
@@ -451,6 +453,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   value: 'en',
                   label: l10n.englishLanguage,
                 ),
+                OpenChatSelectOption<String>(
+                  value: 'es',
+                  label: l10n.spanishLanguage,
+                ),
+                OpenChatSelectOption<String>(
+                  value: 'de',
+                  label: l10n.germanLanguage,
+                ),
+                OpenChatSelectOption<String>(
+                  value: 'fr',
+                  label: l10n.frenchLanguage,
+                ),
               ],
               value: languageCode,
               onChanged: _isSavingLanguage || widget.onLocaleChanged == null
@@ -463,6 +477,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           unawaited(_changeLocale(const Locale('tr')));
                         case 'en':
                           unawaited(_changeLocale(const Locale('en')));
+                        case 'es':
+                          unawaited(_changeLocale(const Locale('es')));
+                        case 'de':
+                          unawaited(_changeLocale(const Locale('de')));
+                        case 'fr':
+                          unawaited(_changeLocale(const Locale('fr')));
                         default:
                           throw StateError(
                             'Unsupported language preference: $value',
@@ -1012,6 +1032,11 @@ class _SettingsSidebar extends StatelessWidget {
         section: _SettingsSection.models,
         label: l10n.models,
         icon: Icons.tune_rounded,
+      ),
+      (
+        section: _SettingsSection.localEngines,
+        label: l10n.localEngines,
+        icon: Icons.memory_rounded,
       ),
       (
         section: _SettingsSection.conversationMemory,

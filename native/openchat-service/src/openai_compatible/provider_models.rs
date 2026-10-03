@@ -142,6 +142,12 @@ fn parse_models(
                             })
                         });
                     if id.is_empty()
+                        || (provider_id == "mistral"
+                            && (item.get("archived").and_then(Value::as_bool) == Some(true)
+                                || item
+                                    .pointer("/capabilities/completion_chat")
+                                    .and_then(Value::as_bool)
+                                    != Some(true)))
                         || (provider_id == "openrouter" && !is_free_tool_model(item))
                         || (provider_id == "cerebras"
                             && !supports_cerebras_tools(details))
@@ -160,6 +166,12 @@ fn parse_models(
                         .iter()
                         .find_map(|key| item.get(key).and_then(Value::as_i64))
                         .or_else(|| {
+                            (provider_id == "mistral")
+                                .then(|| item.get("max_context_length"))
+                                .flatten()
+                                .and_then(Value::as_i64)
+                        })
+                        .or_else(|| {
                             details
                                 .and_then(|model| model.pointer("/limits/max_context_length"))
                                 .and_then(Value::as_i64)
@@ -167,7 +179,13 @@ fn parse_models(
                         .or(input_token_limit)
                         .filter(|value| *value > 0);
                     let supports_images = supports_images(provider_id, id, item, details);
-                    Some(json!({
+                    let reasoning_levels = if provider_id == "mistral" {
+                        mistral_reasoning_levels(id)
+                    } else {
+                        Vec::new()
+                    };
+                    let supports_reasoning = !reasoning_levels.is_empty();
+                    let mut model = json!({
                         "id": id,
                         "displayName": item.get("name").or_else(|| details.and_then(|model| model.get("name").or_else(|| model.get("displayName")))).and_then(Value::as_str).filter(|name| !name.trim().is_empty()).unwrap_or(id),
                         "description": item.get("description").or_else(|| details.and_then(|model| model.get("description"))).and_then(Value::as_str).filter(|description| !description.trim().is_empty()),
@@ -176,9 +194,13 @@ fn parse_models(
                         "inputTokenLimit": input_token_limit,
                         "groupId": if provider_id == "openrouter" { "free" } else { "models" },
                         "defaultReasoningLevel": null,
-                        "reasoningLevels": [],
+                        "reasoningLevels": reasoning_levels,
                         "isAvailable": true,
-                    }))
+                    });
+                    if provider_id == "mistral" {
+                        model["supportsReasoning"] = json!(supports_reasoning);
+                    }
+                    Some(model)
                 })
                 .take(MAX_MODELS)
                 .collect()
@@ -260,8 +282,16 @@ fn supports_images(
                     .and_then(|modality| modality.split_once("->"))
                     .is_some_and(|(input, _)| input.split('+').any(|kind| kind == "image"))
         }
+        "mistral" => advertised_vision || modalities_include_image,
         _ => false,
     }
+}
+
+pub(super) fn mistral_reasoning_levels(model_id: &str) -> Vec<String> {
+    if matches!(model_id, "mistral-small-latest" | "mistral-medium-3-5") {
+        return ["none", "high"].map(str::to_owned).to_vec();
+    }
+    Vec::new()
 }
 
 fn supports_cerebras_tools(model: Option<&Value>) -> bool {
@@ -492,7 +522,8 @@ mod tests {
         assert!(!has_current_limit_metadata(&[json!({"id": "model"})]));
         assert!(has_current_limit_metadata(&[json!({
             "id": "model",
-            "inputTokenLimit": null
+            "inputTokenLimit": null,
+            "supportsImages": false
         })]));
     }
 
@@ -552,6 +583,43 @@ mod tests {
         )
         .expect("parse OpenRouter models");
         assert_eq!(model_context_window(&openrouter, "free-model"), Some(65536));
+
+        let mistral = parse_models(
+            "mistral",
+            &json!({
+                "data": [
+                    {
+                        "id": "mistral-small-latest",
+                        "max_context_length": 131072,
+                        "capabilities": {
+                            "completion_chat": true,
+                            "function_calling": true,
+                            "vision": false
+                        },
+                        "archived": false
+                    },
+                    {
+                        "id": "mistral-embed",
+                        "max_context_length": 8192,
+                        "capabilities": {
+                            "completion_chat": false,
+                            "function_calling": false,
+                            "vision": false
+                        },
+                        "archived": false
+                    }
+                ]
+            }),
+            None,
+        )
+        .expect("parse Mistral models");
+        assert_eq!(mistral.len(), 1);
+        assert_eq!(
+            model_context_window(&mistral, "mistral-small-latest"),
+            Some(131072)
+        );
+        assert_eq!(mistral[0]["supportsReasoning"], true);
+        assert_eq!(mistral[0]["reasoningLevels"], json!(["none", "high"]));
     }
 
     #[test]

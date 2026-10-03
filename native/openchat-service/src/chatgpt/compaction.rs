@@ -747,7 +747,7 @@ mod tests {
 
         assert_eq!(input[0], checkpoint);
         assert_eq!(input[1]["role"], "user");
-        assert_eq!(input[1]["content"], "Keep the earlier decision.");
+        assert_eq!(input[1]["content"][0]["text"], "Keep the earlier decision.");
         assert_eq!(input[2]["role"], "assistant");
         assert_eq!(input[2]["content"], "I will keep it.");
         assert_eq!(input[3]["type"], "compaction_trigger");

@@ -4,7 +4,9 @@ mod chatgpt;
 mod chatgpt_store;
 mod context_compaction;
 mod history;
+mod hugging_face;
 mod instructions;
+mod local_engines;
 mod oauth;
 mod openai_api;
 mod openai_compatible;
@@ -15,6 +17,7 @@ mod rpc;
 mod service;
 mod storage;
 mod tools;
+mod user_question_broker;
 
 #[cfg(windows)]
 pub mod credentials;

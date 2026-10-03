@@ -1,6 +1,9 @@
 use rusqlite::{OptionalExtension, Row, params, types::Type};
 
-use crate::storage::AppStorage;
+use crate::{
+    provider_schema::{ChatStreamSnapshot, ToolActivity},
+    storage::AppStorage,
+};
 
 use super::{
     AssistantMessageWrite, ConversationRoute, NewTitleJob, StoredMessage, unix_time_millis,
@@ -172,6 +175,19 @@ pub fn save_assistant_message(
         (seconds > 0.0).then_some(tokens as f64 / seconds)
     });
     let database = storage.connect()?;
+    let existing_content = database
+        .query_row(
+            "SELECT content FROM messages
+             WHERE conversation_id = ?1 AND id = ?2 AND role = 'assistant'",
+            params![message.conversation_id, message.message_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    let content = crate::attachments::merge_content_preserving_attachments(
+        existing_content.as_deref(),
+        message.content,
+    )
+    .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
     database.execute(
         "INSERT INTO messages (
             id, conversation_id, role, content, created_at, output_tokens,
@@ -186,7 +202,7 @@ pub fn save_assistant_message(
         params![
             message.message_id,
             message.conversation_id,
-            message.content,
+            content,
             message.created_at_unix_ms,
             message.output_tokens,
             tokens_per_second,
@@ -197,6 +213,47 @@ pub fn save_assistant_message(
     database.execute(
         "UPDATE conversations SET updated_at = MAX(updated_at, ?2) WHERE id = ?1",
         params![message.conversation_id, message.created_at_unix_ms],
+    )?;
+    Ok(())
+}
+
+pub fn save_assistant_tool_checkpoint(
+    storage: &AppStorage,
+    snapshot: &ChatStreamSnapshot,
+    activities: &[ToolActivity],
+) -> rusqlite::Result<()> {
+    let activities_json = serde_json::to_string(activities)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    let database = storage.connect()?;
+    let existing_content = database
+        .query_row(
+            "SELECT content FROM messages
+             WHERE conversation_id = ?1 AND id = ?2 AND role = 'assistant'",
+            params![snapshot.conversation_id, snapshot.message_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    let content = crate::attachments::merge_content_preserving_attachments(
+        existing_content.as_deref(),
+        &snapshot.content,
+    )
+    .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    database.execute(
+        "INSERT INTO messages (
+            id, conversation_id, role, content, created_at, tool_activities, status
+         ) VALUES (?1, ?2, 'assistant', ?3, ?4, ?5, 'streaming')
+         ON CONFLICT(conversation_id, id) DO UPDATE SET
+            content = excluded.content,
+            created_at = COALESCE(messages.created_at, excluded.created_at),
+            tool_activities = excluded.tool_activities,
+            status = 'streaming'",
+        params![
+            snapshot.message_id,
+            snapshot.conversation_id,
+            content,
+            snapshot.created_at_unix_ms,
+            activities_json,
+        ],
     )?;
     Ok(())
 }

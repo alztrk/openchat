@@ -6,6 +6,7 @@ enum ChatMessageStatus { streaming, completed, failed, stopped }
 
 enum ChatToolActivityStatus {
   awaitingApproval,
+  waitingForUser,
   running,
   completed,
   failed,
@@ -72,6 +73,7 @@ class ChatToolActivity {
     }
     final status = switch (statusValue) {
       'awaitingApproval' => ChatToolActivityStatus.awaitingApproval,
+      'waitingForUser' => ChatToolActivityStatus.waitingForUser,
       'running' => ChatToolActivityStatus.running,
       'completed' => ChatToolActivityStatus.completed,
       'failed' => ChatToolActivityStatus.failed,

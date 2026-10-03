@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     chat_operation::ChatSendContext,
+    chatgpt::ChatGptService,
     chatgpt_store::{self, AssistantMessageWrite, ConversationContextState},
     context_compaction,
     protocol::ServiceError,
@@ -23,6 +24,7 @@ mod tool_round;
 
 pub async fn send_message(
     storage: &AppStorage,
+    image_service: &ChatGptService,
     context: ChatSendContext<'_>,
     api_key: Option<&str>,
     requested_api_key_connection_id: Option<&str>,
@@ -36,8 +38,11 @@ pub async fn send_message(
         custom_instructions,
         project_root,
         data_root,
+        storage: context_storage,
         permission_mode,
         permission_broker,
+        user_question_broker,
+        run_id,
         cancellation,
         events,
     } = context;
@@ -47,7 +52,9 @@ pub async fn send_message(
         api_key,
         requested_api_key_connection_id,
         stored_api_key_connection_id.as_deref(),
-    )?;
+        cancellation,
+    )
+    .await?;
     let provider_id = route.provider_id.as_deref().ok_or_else(route_error)?;
     let mut context_state =
         chatgpt_store::load_conversation_context_state(storage, conversation_id)
@@ -289,6 +296,7 @@ pub async fn send_message(
     let result = stream_conversation(
         &route,
         provider_id,
+        image_service,
         &provider_request,
         &mut messages,
         &mut tool_executor,
@@ -303,7 +311,10 @@ pub async fn send_message(
             output_tokens: &mut output_tokens,
             input_tokens: &mut input_tokens,
             started,
+            storage: context_storage,
+            run_id: &run_id,
             permission_broker,
+            user_question_broker,
             cancellation,
             events: &events,
         },
@@ -379,7 +390,10 @@ struct StreamConversationContext<'a> {
     output_tokens: &'a mut Option<i64>,
     input_tokens: &'a mut Option<i64>,
     started: Instant,
+    storage: &'a AppStorage,
+    run_id: &'a str,
     permission_broker: &'a crate::permissions::ToolPermissionBroker,
+    user_question_broker: &'a crate::user_question_broker::UserQuestionBroker,
     cancellation: &'a mut tokio::sync::watch::Receiver<bool>,
     events: &'a crate::protocol::EventSink,
 }
@@ -387,6 +401,7 @@ struct StreamConversationContext<'a> {
 async fn stream_conversation(
     route: &route::ChatRoute,
     provider_id: &str,
+    image_service: &ChatGptService,
     provider_request: &crate::provider_schema::ProviderChatRequest,
     messages: &mut Vec<Value>,
     tool_executor: &mut ToolExecutor,
@@ -438,7 +453,19 @@ async fn stream_conversation(
                 message_id: context.message_id,
                 created_at: context.created_at,
                 content: context.content,
+                storage: context.storage,
+                run_id: context.run_id,
+                provider_id,
+                image_generation: if provider_id == "chatgpt_api" {
+                    api_key.map(|api_key| crate::tools::ImageGenerationContext::ApiKey {
+                        service: image_service,
+                        api_key,
+                    })
+                } else {
+                    None
+                },
                 permission_broker: context.permission_broker,
+                user_question_broker: context.user_question_broker,
                 cancellation: context.cancellation,
                 events: context.events,
             },

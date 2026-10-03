@@ -1,0 +1,1205 @@
+import 'dart:async';
+
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/app/local_engine_icon.dart';
+import 'package:openchat/features/settings/data/local_engines_models.dart';
+import 'package:openchat/features/settings/data/local_engines_repository.dart';
+import 'package:openchat/l10n/generated/app_localizations.dart';
+import 'package:openchat/l10n/openchat_localizations.dart';
+import 'package:openchat/platform/windows/openchat_service_client.dart';
+
+enum _LocalEnginesLoadState { loading, loaded, unavailable, failed }
+
+class LocalEnginesSettingsSection extends StatefulWidget {
+  const LocalEnginesSettingsSection({required this.serviceClient, super.key});
+
+  final OpenChatServiceClient? serviceClient;
+
+  @override
+  State<LocalEnginesSettingsSection> createState() =>
+      _LocalEnginesSettingsSectionState();
+}
+
+class _LocalEnginesSettingsSectionState
+    extends State<LocalEnginesSettingsSection> {
+  _LocalEnginesLoadState _loadState = _LocalEnginesLoadState.loading;
+  LocalEngineCatalog? _catalog;
+  String? _installError;
+  String? _installingEngineId;
+  String? _installingVariantId;
+  LocalEngineInstallOperation? _activeOperation;
+  LocalEngineInstallProgress? _latestProgress;
+  final Map<String, LocalEngineInstallProgress> _assetProgress = {};
+  StreamSubscription<LocalEngineInstallProgress>? _progressSubscription;
+  bool _isCancelling = false;
+  bool _progressStreamFailed = false;
+  bool _cancelRequested = false;
+  String? _modelActionError;
+  String? _registeringEngineId;
+  String? _startingModelId;
+  String? _removingModelId;
+  LocalEngineRuntimeOperation? _runtimeOperation;
+  bool _isCancellingRuntime = false;
+  int _loadGeneration = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadCatalog());
+  }
+
+  @override
+  void didUpdateWidget(covariant LocalEnginesSettingsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.serviceClient != widget.serviceClient) {
+      unawaited(_loadCatalog());
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_progressSubscription?.cancel());
+    super.dispose();
+  }
+
+  Future<void> _loadCatalog() async {
+    if (!mounted) return;
+    final service = widget.serviceClient;
+    final generation = ++_loadGeneration;
+    if (service == null) {
+      if (mounted) {
+        setState(() {
+          _catalog = null;
+          _loadState = _LocalEnginesLoadState.unavailable;
+        });
+      }
+      return;
+    }
+
+    setState(() {
+      _loadState = _LocalEnginesLoadState.loading;
+    });
+
+    try {
+      final catalog = await LocalEnginesRepository(service).loadCatalog();
+      if (!mounted || generation != _loadGeneration) return;
+      setState(() {
+        _catalog = catalog;
+        _loadState = _LocalEnginesLoadState.loaded;
+      });
+    } on OpenChatServiceException {
+      if (!mounted || generation != _loadGeneration) return;
+      setState(() {
+        _catalog = null;
+        _loadState = _LocalEnginesLoadState.failed;
+      });
+    } on FormatException {
+      if (!mounted || generation != _loadGeneration) return;
+      setState(() {
+        _catalog = null;
+        _loadState = _LocalEnginesLoadState.failed;
+      });
+    }
+  }
+
+  Future<void> _install(LocalEngine engine, LocalEngineVariant variant) async {
+    final service = widget.serviceClient;
+    if (service == null || !variant.canInstall || _activeOperation != null) {
+      return;
+    }
+
+    _cancelRequested = false;
+    _progressStreamFailed = false;
+    setState(() {
+      _installError = null;
+      _installingEngineId = engine.engineId;
+      _installingVariantId = variant.variantId;
+      _latestProgress = null;
+      _assetProgress.clear();
+      _isCancelling = false;
+    });
+
+    LocalEngineInstallOperation? operation;
+    Object? failure;
+    try {
+      operation = await LocalEnginesRepository(service)
+          .install(engineId: engine.engineId, variantId: variant.variantId);
+      if (!mounted) {
+        await operation.cancel();
+        return;
+      }
+
+      setState(() => _activeOperation = operation);
+      _progressSubscription = operation.progress.listen(
+        _handleProgress,
+        onError: (Object error, StackTrace stackTrace) {
+          _progressStreamFailed = true;
+        },
+      );
+      final result = await operation.result;
+      if (_progressStreamFailed) {
+        throw const FormatException('The local engine progress was invalid.');
+      }
+      if (!result.installed) {
+        throw const FormatException(
+          'The local engine service did not confirm installation.',
+        );
+      }
+    } catch (error) {
+      failure = error;
+    } finally {
+      await _progressSubscription?.cancel();
+      _progressSubscription = null;
+      final cancelled = _cancelRequested;
+      if (mounted) {
+        setState(() {
+          _activeOperation = null;
+          _installingEngineId = null;
+          _installingVariantId = null;
+          _latestProgress = null;
+          _assetProgress.clear();
+          _isCancelling = false;
+          _installError = failure == null || cancelled ? null : 'install';
+        });
+      }
+      await _loadCatalog();
+    }
+  }
+
+  void _handleProgress(LocalEngineInstallProgress progress) {
+    if (!mounted || progress.engineId != _installingEngineId) return;
+    if (progress.variantId != _installingVariantId) return;
+    setState(() {
+      _latestProgress = progress;
+      _assetProgress[progress.assetName] = progress;
+    });
+  }
+
+  Future<void> _cancelInstall() async {
+    final operation = _activeOperation;
+    if (operation == null || _isCancelling) return;
+
+    _cancelRequested = true;
+    setState(() => _isCancelling = true);
+    final cancelled = await operation.cancel();
+    if (!cancelled && mounted) {
+      _cancelRequested = false;
+      setState(() => _isCancelling = false);
+    }
+  }
+
+  Future<void> _registerModel(LocalEngine engine) async {
+    final service = widget.serviceClient;
+    if (service == null || _registeringEngineId != null) return;
+
+    String? path;
+    try {
+      if (engine.engineId == 'llama_cpp') {
+        final files = await FilePicker.pickFiles(
+          dialogTitle: engine.displayName,
+          type: FileType.custom,
+          allowedExtensions: const <String>['gguf'],
+        );
+        path = files.isEmpty ? null : files.first.path;
+      } else {
+        path = await FilePicker.getDirectoryPath(
+          dialogTitle: engine.displayName,
+        );
+      }
+    } on PlatformException {
+      if (mounted) setState(() => _modelActionError = 'picker');
+      return;
+    }
+    if (path == null || path.trim().isEmpty) return;
+    if (!mounted) return;
+
+    final folderName = switch (engine.engineId) {
+      'llama_cpp' => 'llama',
+      'exllama' => 'exllama',
+      'vllm' => 'vllm',
+      _ => engine.engineId,
+    };
+    final storageAction = await _chooseModelStorageAction(folderName);
+    if (!mounted || storageAction == null) return;
+
+    setState(() {
+      _modelActionError = null;
+      _registeringEngineId = engine.engineId;
+    });
+    try {
+      await LocalEnginesRepository(service).registerModel(
+        engineId: engine.engineId,
+        modelPath: path,
+        storageAction: storageAction,
+      );
+    } on OpenChatServiceException catch (error) {
+      if (mounted) setState(() => _modelActionError = error.code);
+    } on FormatException {
+      if (mounted) setState(() => _modelActionError = 'invalid_response');
+    } on PlatformException {
+      if (mounted) setState(() => _modelActionError = 'path');
+    } finally {
+      if (mounted) setState(() => _registeringEngineId = null);
+      await _loadCatalog();
+    }
+  }
+
+  Future<LocalModelStorageAction?> _chooseModelStorageAction(
+    String folderName,
+  ) {
+    return showDialog<LocalModelStorageAction>(
+      context: context,
+      builder: (dialogContext) {
+        final l10n = dialogContext.openchatL10n;
+        return AlertDialog(
+          title: Text(l10n.localModelStorageChoiceTitle),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(l10n.localModelStorageChoiceTarget(folderName)),
+                const SizedBox(height: 16),
+                _buildStorageActionButton(
+                  dialogContext,
+                  action: LocalModelStorageAction.move,
+                  icon: Icons.drive_file_move_rounded,
+                  label: l10n.localModelMoveToFolder(folderName),
+                ),
+                const SizedBox(height: 8),
+                _buildStorageActionButton(
+                  dialogContext,
+                  action: LocalModelStorageAction.copy,
+                  icon: Icons.copy_all_outlined,
+                  label: l10n.localModelCopyToFolder(folderName),
+                ),
+                const SizedBox(height: 8),
+                _buildStorageActionButton(
+                  dialogContext,
+                  action: LocalModelStorageAction.keep,
+                  icon: Icons.folder_open_outlined,
+                  label: l10n.localModelKeepInPlace,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(l10n.cancel),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildStorageActionButton(
+    BuildContext context, {
+    required LocalModelStorageAction action,
+    required IconData icon,
+    required String label,
+  }) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: () => Navigator.of(context).pop(action),
+        icon: Icon(icon),
+        label: Text(label),
+      ),
+    );
+  }
+
+  Future<void> _removeModel(LocalRegisteredModel model) async {
+    final service = widget.serviceClient;
+    if (service == null || _removingModelId != null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(context.openchatL10n.localModelRemove),
+        content: Text(context.openchatL10n.localModelRemoveConfirmation),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: Text(context.openchatL10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: Text(context.openchatL10n.localModelRemove),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _modelActionError = null;
+      _removingModelId = model.id;
+    });
+    try {
+      final removed = await LocalEnginesRepository(service)
+          .removeModel(model.id);
+      if (!removed) {
+        throw const FormatException('Model registration was absent.');
+      }
+    } on OpenChatServiceException catch (error) {
+      if (mounted) setState(() => _modelActionError = error.code);
+    } on FormatException {
+      if (mounted) setState(() => _modelActionError = 'invalid_response');
+    } finally {
+      if (mounted) setState(() => _removingModelId = null);
+      await _loadCatalog();
+    }
+  }
+
+  Future<void> _startModel(LocalRegisteredModel model) async {
+    final service = widget.serviceClient;
+    if (service == null || !model.isAvailable || _runtimeOperation != null) {
+      return;
+    }
+    setState(() {
+      _modelActionError = null;
+      _startingModelId = model.id;
+      _isCancellingRuntime = false;
+    });
+    try {
+      final operation = await LocalEnginesRepository(service)
+          .startModel(model.id);
+      if (!mounted) {
+        await operation.cancel();
+        return;
+      }
+      setState(() => _runtimeOperation = operation);
+      final result = await operation.result;
+      if (result.status != 'running') {
+        throw const FormatException('Local model health check did not pass.');
+      }
+    } on OpenChatServiceException catch (error) {
+      if (mounted && error.code != 'operation_cancelled') {
+        setState(() => _modelActionError = error.code);
+      }
+    } on FormatException {
+      if (mounted) setState(() => _modelActionError = 'start_failed');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _runtimeOperation = null;
+          _startingModelId = null;
+          _isCancellingRuntime = false;
+        });
+      }
+      await _loadCatalog();
+    }
+  }
+
+  Future<void> _stopRuntime() async {
+    final service = widget.serviceClient;
+    if (service == null || _startingModelId != null) return;
+    setState(() {
+      _modelActionError = null;
+      _startingModelId = 'stopping';
+    });
+    try {
+      await LocalEnginesRepository(service).stopRuntime();
+    } on OpenChatServiceException catch (error) {
+      if (mounted) setState(() => _modelActionError = error.code);
+    } on FormatException {
+      if (mounted) setState(() => _modelActionError = 'start_failed');
+    } finally {
+      if (mounted) setState(() => _startingModelId = null);
+      await _loadCatalog();
+    }
+  }
+
+  Future<void> _cancelRuntimeStart() async {
+    final operation = _runtimeOperation;
+    if (operation == null || _isCancellingRuntime) return;
+    setState(() => _isCancellingRuntime = true);
+    final cancelled = await operation.cancel();
+    if (!cancelled && mounted) setState(() => _isCancellingRuntime = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          l10n.localEnginesDescription,
+          style: TextStyle(
+            color: palette.secondaryText,
+            fontSize: 13,
+            height: 1.45,
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (_installError != null) ...[
+          _buildMessageCard(
+            context,
+            icon: Icons.error_outline_rounded,
+            message: l10n.localEngineInstallFailed,
+            action: OutlinedButton.icon(
+              onPressed: _loadState == _LocalEnginesLoadState.loading
+                  ? null
+                  : () => unawaited(_loadCatalog()),
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: Text(l10n.localEnginesReload),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        if (_modelActionError != null) ...[
+          _buildMessageCard(
+            context,
+            icon: Icons.error_outline_rounded,
+            message: _modelActionErrorLabel(l10n, _modelActionError!),
+            action: TextButton(
+              onPressed: () => setState(() => _modelActionError = null),
+              child: Text(l10n.close),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        switch (_loadState) {
+          _LocalEnginesLoadState.loading => const LinearProgressIndicator(),
+          _LocalEnginesLoadState.unavailable => _buildMessageCard(
+            context,
+            icon: Icons.memory_outlined,
+            message: l10n.localEnginesUnavailable,
+          ),
+          _LocalEnginesLoadState.failed => _buildMessageCard(
+            context,
+            icon: Icons.error_outline_rounded,
+            message: l10n.localEnginesLoadFailed,
+            action: OutlinedButton.icon(
+              onPressed: () => unawaited(_loadCatalog()),
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: Text(l10n.retry),
+            ),
+          ),
+          _LocalEnginesLoadState.loaded => _buildLoadedState(context),
+        },
+      ],
+    );
+  }
+
+  Widget _buildLoadedState(BuildContext context) {
+    final l10n = context.openchatL10n;
+    final catalog = _catalog;
+    if (catalog == null || catalog.engines.isEmpty) {
+      return _buildMessageCard(
+        context,
+        icon: Icons.memory_outlined,
+        message: l10n.localEnginesEmpty,
+        action: OutlinedButton.icon(
+          onPressed: () => unawaited(_loadCatalog()),
+          icon: const Icon(Icons.refresh_rounded, size: 16),
+          label: Text(l10n.localEnginesReload),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var index = 0; index < catalog.engines.length; index++) ...[
+          if (index > 0) const SizedBox(height: 14),
+          _buildEngineCard(context, catalog.engines[index]),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildEngineCard(BuildContext context, LocalEngine engine) {
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
+    final isBlocked = engine.catalogStatus == 'blocked';
+
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: palette.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: palette.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LocalEngineIcon(
+                  engineId: engine.engineId,
+                  color: palette.accentIcon,
+                  size: 24,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          Text(
+                            engine.displayName,
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          _buildBadge(
+                            context,
+                            _channelLabel(l10n, engine.channel),
+                            emphasized: engine.channel != 'stable',
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        l10n.localEngineRelease(engine.releaseTag),
+                        style: TextStyle(
+                          color: palette.secondaryText,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (isBlocked && engine.statusReason != null) ...[
+              const SizedBox(height: 14),
+              _buildReasonBanner(context, _statusReasonLabel(l10n, engine)),
+            ],
+            const SizedBox(height: 14),
+            Text(
+              l10n.localEngineVariants,
+              style: TextStyle(
+                color: palette.secondaryText,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (var index = 0; index < engine.variants.length; index++) ...[
+              if (index > 0) const SizedBox(height: 8),
+              _buildVariantTile(context, engine, engine.variants[index]),
+            ],
+            const SizedBox(height: 16),
+            _buildRuntimeStatus(context, engine),
+            const SizedBox(height: 16),
+            _buildRegisteredModels(context, engine),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRuntimeStatus(BuildContext context, LocalEngine engine) {
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
+    final installed = engine.variants.any((variant) => variant.installed);
+    final statusLabel = engine.catalogStatus == 'blocked'
+        ? l10n.localEngineUnavailable
+        : !installed
+        ? l10n.localEngineNotInstalled
+        : switch (engine.runtimeStatus) {
+            'running' => l10n.localEngineRunning,
+            'stopped' => l10n.localEngineStopped,
+            'unhealthy' => l10n.localEngineUnhealthy,
+            _ => l10n.localEngineUnavailable,
+          };
+    final statusEmphasized = installed && engine.runtimeStatus == 'running';
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            l10n.localEngineHealth,
+            style: TextStyle(
+              color: palette.secondaryText,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        _buildBadge(context, statusLabel, emphasized: statusEmphasized),
+      ],
+    );
+  }
+
+  Widget _buildRegisteredModels(BuildContext context, LocalEngine engine) {
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
+    final models = (_catalog?.models ?? const <LocalRegisteredModel>[])
+        .where((model) => model.engineId == engine.engineId)
+        .toList(growable: false);
+    final isRegistering = _registeringEngineId == engine.engineId;
+    final addLabel = engine.engineId == 'llama_cpp'
+        ? l10n.localModelAddFile
+        : l10n.localModelAddFolder;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            Text(
+              l10n.localModels,
+              style: TextStyle(
+                color: palette.secondaryText,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: isRegistering || _registeringEngineId != null
+                  ? null
+                  : () => unawaited(_registerModel(engine)),
+              icon: isRegistering
+                  ? const SizedBox.square(
+                      dimension: 15,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add_rounded, size: 17),
+              label: Text(isRegistering ? l10n.localModelSaving : addLabel),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (models.isEmpty)
+          Text(
+            l10n.localModelsEmpty,
+            style: TextStyle(color: palette.secondaryText, fontSize: 12),
+          )
+        else
+          for (var index = 0; index < models.length; index++) ...[
+            if (index > 0) const SizedBox(height: 8),
+            _buildRegisteredModel(context, models[index]),
+          ],
+      ],
+    );
+  }
+
+  Widget _buildRegisteredModel(
+    BuildContext context,
+    LocalRegisteredModel model,
+  ) {
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
+    final runtime = _catalog?.runtime;
+    final isRunning =
+        runtime?.status == 'running' && runtime?.modelId == model.id;
+    final isStarting = _startingModelId == model.id;
+    final isStopping = _startingModelId == 'stopping' && isRunning;
+    final isRemoving = _removingModelId == model.id;
+    final isBusy =
+        _runtimeOperation != null ||
+        _startingModelId != null ||
+        _removingModelId != null;
+    final modelState = !model.pathExists
+        ? l10n.localModelPathMissing
+        : model.isAvailable
+        ? null
+        : l10n.localModelEngineNotReady;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: palette.composer,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    model.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: model.isAvailable
+                          ? palette.text
+                          : palette.secondaryText,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Tooltip(
+                    message: model.path,
+                    child: Text(
+                      modelState ?? model.path,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: palette.secondaryText,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            if (isStarting || isStopping)
+              IconButton(
+                tooltip: isStopping
+                    ? l10n.localModelStopping
+                    : l10n.localModelCancelStart,
+                onPressed:
+                    isStarting &&
+                        _runtimeOperation != null &&
+                        !_isCancellingRuntime
+                    ? () => unawaited(_cancelRuntimeStart())
+                    : null,
+                icon: SizedBox.square(
+                  dimension: 16,
+                  child: isStopping || _isCancellingRuntime
+                      ? const CircularProgressIndicator(strokeWidth: 2)
+                      : const Icon(Icons.close_rounded, size: 16),
+                ),
+              )
+            else if (isRunning)
+              IconButton(
+                tooltip: l10n.localEngineStopModel,
+                onPressed: isBusy ? null : () => unawaited(_stopRuntime()),
+                icon: const Icon(Icons.stop_circle_outlined),
+              )
+            else
+              IconButton(
+                tooltip: l10n.localEngineStartModel,
+                onPressed: !model.isAvailable || isBusy
+                    ? null
+                    : () => unawaited(_startModel(model)),
+                icon: const Icon(Icons.play_circle_outline_rounded),
+              ),
+            IconButton(
+              tooltip: l10n.localModelRemove,
+              onPressed: isBusy ? null : () => unawaited(_removeModel(model)),
+              icon: isRemoving
+                  ? const SizedBox.square(
+                      dimension: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.delete_outline_rounded),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _modelActionErrorLabel(AppLocalizations l10n, String code) =>
+      switch (code) {
+        'local_model_format_invalid' => l10n.localModelInvalid,
+        'local_model_path_unavailable' ||
+        'picker' ||
+        'path' => l10n.localModelPathError,
+        'local_model_storage_path_unavailable' =>
+          l10n.localModelStoragePathError,
+        'local_model_storage_unavailable' => l10n.localModelStorageError,
+        'local_model_transfer_failed' => l10n.localModelTransferError,
+        'local_model_transfer_recovery_needed' =>
+          l10n.localModelTransferRecoveryError,
+        'local_engine_not_installed' ||
+        'local_engine_unavailable' ||
+        'local_engine_variant_unavailable' ||
+        'local_engine_install_unavailable' ||
+        'local_model_unavailable' => l10n.localModelEngineNotReady,
+        'local_engine_start_timeout' => l10n.localModelStartTimeout,
+        'start_failed' ||
+        'local_engine_start_failed' ||
+        'local_engine_runtime_unavailable' => l10n.localModelStartError,
+        _ => l10n.localModelActionError,
+      };
+
+  Widget _buildVariantTile(
+    BuildContext context,
+    LocalEngine engine,
+    LocalEngineVariant variant,
+  ) {
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
+    final isInstalling =
+        _installingEngineId == engine.engineId &&
+        _installingVariantId == variant.variantId;
+    final canStart =
+        variant.canInstall &&
+        _activeOperation == null &&
+        _installingEngineId == null;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: palette.composer,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        _acceleratorLabel(variant.accelerator),
+                        style: TextStyle(
+                          color: palette.text,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      _buildBadge(context, variant.os),
+                      _buildBadge(context, variant.architecture),
+                      if (variant.recommended)
+                        _buildBadge(
+                          context,
+                          l10n.localEngineRecommended,
+                          emphasized: true,
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  _variantStatusLabel(l10n, variant.status),
+                  style: TextStyle(
+                    color: variant.installed
+                        ? palette.accent
+                        : palette.secondaryText,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            if (variant.runtimeRequirements.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                l10n.localEngineRuntimeRequirements(
+                  variant.runtimeRequirements.join(' · '),
+                ),
+                style: TextStyle(
+                  color: palette.secondaryText,
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
+            ],
+            if (isInstalling) ...[
+              const SizedBox(height: 12),
+              _buildInstallProgress(context),
+            ] else if (variant.canInstall) ...[
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton.icon(
+                  onPressed: canStart
+                      ? () => unawaited(_install(engine, variant))
+                      : null,
+                  icon: const Icon(Icons.download_rounded, size: 16),
+                  label: Text(l10n.localEngineInstall),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInstallProgress(BuildContext context) {
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
+    final latest = _latestProgress;
+    final fraction = latest?.fraction;
+    final assetProgress = _assetProgress.values.toList(growable: false);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                latest == null
+                    ? l10n.localEngineInstalling
+                    : _stageLabel(l10n, latest.stage),
+                style: TextStyle(
+                  color: palette.text,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            if (latest != null)
+              Text(
+                latest.assetName,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: palette.secondaryText, fontSize: 12),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Semantics(
+          label: l10n.localEngineInstallProgress,
+          value: fraction == null ? null : '${(fraction * 100).round()}%',
+          child: LinearProgressIndicator(value: fraction),
+        ),
+        if (latest != null) ...[
+          const SizedBox(height: 6),
+          Text(
+            _progressDetails(l10n, latest),
+            style: TextStyle(color: palette.secondaryText, fontSize: 11),
+          ),
+        ],
+        if (assetProgress.length > 1) ...[
+          const SizedBox(height: 10),
+          for (final progress in assetProgress) ...[
+            _buildAssetProgressRow(context, progress),
+            if (progress != assetProgress.last) const SizedBox(height: 6),
+          ],
+        ],
+        const SizedBox(height: 10),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: _activeOperation == null || _isCancelling
+                ? null
+                : _cancelInstall,
+            icon: _isCancelling
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.close_rounded, size: 16),
+            label: Text(
+              _isCancelling
+                  ? l10n.localEngineCancellingInstall
+                  : l10n.localEngineCancelInstall,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildAssetProgressRow(
+    BuildContext context,
+    LocalEngineInstallProgress progress,
+  ) {
+    final palette = OpenChatPalette.of(context);
+    final fraction = progress.fraction;
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            progress.assetName,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: palette.secondaryText, fontSize: 11),
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 92,
+          child: LinearProgressIndicator(value: fraction, minHeight: 3),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMessageCard(
+    BuildContext context, {
+    required IconData icon,
+    required String message,
+    Widget? action,
+  }) {
+    final palette = OpenChatPalette.of(context);
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: palette.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: palette.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Icon(icon, color: palette.secondaryIcon, size: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: TextStyle(color: palette.secondaryText, fontSize: 13),
+              ),
+            ),
+            if (action != null) ...[const SizedBox(width: 12), action],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReasonBanner(BuildContext context, String reason) {
+    final palette = OpenChatPalette.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: palette.hover,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              Icons.info_outline_rounded,
+              color: palette.accentIcon,
+              size: 17,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                reason,
+                style: TextStyle(
+                  color: palette.text,
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBadge(
+    BuildContext context,
+    String label, {
+    bool emphasized = false,
+  }) {
+    final palette = OpenChatPalette.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: emphasized
+            ? palette.accent.withValues(alpha: 0.12)
+            : palette.hover,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: emphasized
+              ? palette.accent.withValues(alpha: 0.35)
+              : palette.border,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: emphasized ? palette.accent : palette.secondaryText,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _channelLabel(AppLocalizations l10n, String channel) =>
+      switch (channel) {
+        'stable' => l10n.localEngineStable,
+        'preview' => l10n.localEnginePreview,
+        'nightly' => l10n.localEngineNightly,
+        _ => channel,
+      };
+
+  String _statusReasonLabel(AppLocalizations l10n, LocalEngine engine) =>
+      switch (engine.engineId) {
+        'vllm' => l10n.localEngineVllmBlockedReason,
+        'exllama' => l10n.localEngineExllamaBlockedReason,
+        _ => engine.statusReason ?? l10n.localEngineBlocked,
+      };
+
+  String _variantStatusLabel(AppLocalizations l10n, String status) =>
+      switch (status) {
+        'available' => l10n.localEngineAvailable,
+        'installed' => l10n.localEngineInstalled,
+        'blocked' => l10n.localEngineBlocked,
+        'unsupported_platform' => l10n.localEngineUnsupportedPlatform,
+        'hardware_unavailable' => l10n.localEngineHardwareUnavailable,
+        _ => status,
+      };
+
+  String _stageLabel(AppLocalizations l10n, String stage) => switch (stage) {
+    'downloading' => l10n.localEngineStageDownloading,
+    'verifying' => l10n.localEngineStageVerifying,
+    'extracting' => l10n.localEngineStageExtracting,
+    'publishing' => l10n.localEngineStagePublishing,
+    'ready' => l10n.localEngineStageReady,
+    _ => stage,
+  };
+
+  String _progressDetails(
+    AppLocalizations l10n,
+    LocalEngineInstallProgress progress,
+  ) {
+    final bytes =
+        '${_formatBytes(progress.downloadedBytes)} / ${_formatBytes(progress.totalBytes)}';
+    final index = progress.assetIndex != null && progress.assetCount != null
+        ? ' · ${progress.assetIndex! + 1}/${progress.assetCount}'
+        : '';
+    return '${_stageLabel(l10n, progress.stage)} · $bytes$index';
+  }
+
+  String _acceleratorLabel(String accelerator) => switch (accelerator) {
+    'cuda' => 'CUDA',
+    'vulkan' => 'Vulkan',
+    'metal' => 'Metal',
+    'xpu' => 'XPU',
+    'cpu' => 'CPU',
+    _ => accelerator,
+  };
+
+  String _formatBytes(int bytes) {
+    if (bytes < 1024) return '$bytes B';
+    if (bytes < 1024 * 1024) {
+      return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    }
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+}

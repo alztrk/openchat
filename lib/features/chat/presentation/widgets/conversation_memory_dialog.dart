@@ -878,6 +878,7 @@ String _providerLabel(AppLocalizations l10n, String providerId) =>
       'groq' => l10n.groqProvider,
       'cerebras' => l10n.cerebrasProvider,
       'openrouter' => l10n.openRouterProvider,
+      'mistral' => l10n.mistralProvider,
       _ => providerId,
     };
 

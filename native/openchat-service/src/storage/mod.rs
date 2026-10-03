@@ -13,6 +13,7 @@ use std::{
 use rusqlite::{Connection, OpenFlags};
 
 mod schema;
+pub(crate) mod user_questions;
 use schema::{INITIAL_SCHEMA_VERSION, SCHEMA_VERSION, initialize_schema};
 
 pub struct AppStorage {

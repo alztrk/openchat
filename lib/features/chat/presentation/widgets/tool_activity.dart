@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/features/chat/presentation/widgets/chat_surface_card.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
@@ -25,6 +26,7 @@ class ToolActivityAccordion extends StatelessWidget {
     final l10n = context.openchatL10n;
     final statusLabel = switch (activity.status) {
       ChatToolActivityStatus.awaitingApproval => l10n.toolAwaitingApproval,
+      ChatToolActivityStatus.waitingForUser => l10n.toolWaitingForUser,
       ChatToolActivityStatus.running => l10n.toolRunning,
       ChatToolActivityStatus.completed => l10n.toolCompleted,
       ChatToolActivityStatus.failed => l10n.toolFailed,
@@ -34,6 +36,11 @@ class ToolActivityAccordion extends StatelessWidget {
     final statusIndicator = switch (activity.status) {
       ChatToolActivityStatus.awaitingApproval => Icon(
         Icons.lock_outline_rounded,
+        size: 12,
+        color: palette.accent,
+      ),
+      ChatToolActivityStatus.waitingForUser => Icon(
+        Icons.question_answer_outlined,
         size: 12,
         color: palette.accent,
       ),
@@ -67,6 +74,7 @@ class ToolActivityAccordion extends StatelessWidget {
     };
     final statusColor = switch (activity.status) {
       ChatToolActivityStatus.awaitingApproval ||
+      ChatToolActivityStatus.waitingForUser ||
       ChatToolActivityStatus.running => palette.accent,
       ChatToolActivityStatus.failed ||
       ChatToolActivityStatus.denied => Theme.of(context).colorScheme.error,
@@ -85,6 +93,7 @@ class ToolActivityAccordion extends StatelessWidget {
     )?['message'];
     final fileListingMessage = switch (activity.status) {
       ChatToolActivityStatus.awaitingApproval => l10n.toolAwaitingApproval,
+      ChatToolActivityStatus.waitingForUser => l10n.toolWaitingForUser,
       ChatToolActivityStatus.running => l10n.toolOperationWorking,
       ChatToolActivityStatus.completed =>
         fileListingError is String && fileListingError.isNotEmpty
@@ -108,15 +117,9 @@ class ToolActivityAccordion extends StatelessWidget {
     final terminalData = isTerminal
         ? ToolTerminalData.fromActivity(activity)
         : null;
-    const cardRadius = BorderRadius.all(Radius.circular(14));
+    final cardRadius = BorderRadius.circular(OpenChatRadii.card);
 
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: palette.selected,
-        borderRadius: cardRadius,
-        border: Border.all(color: palette.border),
-      ),
+    return ChatSurfaceCard(
       child: Material(
         color: Colors.transparent,
         child: Theme(
@@ -125,16 +128,15 @@ class ToolActivityAccordion extends StatelessWidget {
             key: ValueKey<String>('tool-${activity.callId}'),
             initiallyExpanded:
                 activity.status == ChatToolActivityStatus.running ||
+                activity.status == ChatToolActivityStatus.waitingForUser ||
                 activity.status == ChatToolActivityStatus.awaitingApproval,
             tilePadding: const EdgeInsets.symmetric(horizontal: 10),
             childrenPadding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
             visualDensity: VisualDensity.compact,
             iconColor: palette.secondaryIcon,
             collapsedIconColor: palette.secondaryIcon,
-            shape: const RoundedRectangleBorder(borderRadius: cardRadius),
-            collapsedShape: const RoundedRectangleBorder(
-              borderRadius: cardRadius,
-            ),
+            shape: RoundedRectangleBorder(borderRadius: cardRadius),
+            collapsedShape: RoundedRectangleBorder(borderRadius: cardRadius),
             leading: Tooltip(
               message: _toolActivityName(activity.name, l10n),
               child: Semantics(

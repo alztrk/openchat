@@ -137,6 +137,10 @@ class _OpenChatAppState extends State<OpenChatApp> {
             );
           }
           storageRoot = resolvedStorageRoot;
+          _serviceClient.setStorageLocations(
+            databasePath: databasePath,
+            storageRoot: storageRoot,
+          );
         }
 
         phase = 'database_open';

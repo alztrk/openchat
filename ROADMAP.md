@@ -7,8 +7,9 @@ This roadmap reflects the repository's current implementation. It has no calenda
 - Flutter desktop UI with a local Rust child service and SQLite conversation storage under `%LOCALAPPDATA%\OpenChat`.
 - ChatGPT OAuth connections, account/workspace selection, model catalog, account and quota information, streamed Responses, cancellation, and background conversation titles.
 - OpenCode Console through its OpenAI Chat Completions endpoint. Other OpenCode protocol families are not supported.
-- Gemini, Groq, Cerebras, and OpenRouter through their official OpenAI-compatible Chat Completions APIs, with API keys in platform secure storage and six-hour per-key model catalogs. OpenRouter models are filtered to current zero-price text-chat entries that advertise tool support.
-- Shared provider request, tool, and stream event types across ChatGPT, OpenCode, Gemini, Groq, Cerebras, and OpenRouter, plus local shared instructions.
+- Gemini, Groq, Cerebras, OpenRouter, and Mistral through their official OpenAI-compatible Chat Completions APIs, with API keys in platform secure storage and six-hour per-key model catalogs. Mistral exposes context, vision, and documented reasoning capabilities; OpenRouter models are filtered to current zero-price text-chat entries that advertise tool support.
+- Shared provider request, tool, and stream event types across ChatGPT, OpenCode, Gemini, Groq, Cerebras, OpenRouter, and Mistral, plus local shared instructions.
+- Embedded release catalogs and a verified, cancellable installer for llama.cpp on Windows x64. vLLM and ExLlama are catalogued but installation stays blocked until their full runtime dependencies can be pinned and verified. Local model download, process supervision, and chat routing are not implemented yet.
 - Local projects with read-only file listing, search, reading, and file metadata tools. Tool calls, arguments, progress, and results are stored with assistant messages and shown in the conversation UI.
 - Global `Onay İste` and `Tam erişim` settings for local file tools. Approval is per call and the Rust service enforces the selected path scope.
 - Conversation history, project grouping, model favorites, rename/delete/pin actions, retry, and Markdown export. Tool activity is included in Markdown exports.
@@ -42,7 +43,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ## 3. Validate API-key providers
 
-**Status: implemented in source; pending live validation.** Gemini, Groq, Cerebras, and OpenRouter are connected through their official OpenAI-compatible endpoints.
+**Status: implemented in source; pending live validation.** Gemini, Groq, Cerebras, OpenRouter, and Mistral are connected through their official OpenAI-compatible endpoints.
 
 - Verify model catalog loading, streaming, cancellation, errors, local history, and tool calls with real accounts for each provider.
 - Confirm current pricing, quota, tool-use capability, and data handling against each provider's account terms.
@@ -50,7 +51,21 @@ These bullets describe code present in the repository. They do not mean that eve
 
 **Exit criteria:** every provider completes those real workflows without changing the shared chat UI or leaking keys and provider payloads into logs.
 
-## 4. Add Gemini API OAuth
+## 4. Build managed local inference
+
+**Status: in progress.** OpenChat owns the engine release catalog, installation, model files, process lifecycle, and local request route. Users do not need to install a separate engine or configure a third-party inference service.
+
+- Keep release metadata tied to immutable upstream versions. Verify each downloadable engine and model asset by exact size and SHA-256 before publishing it into OpenChat's managed runtime or model directory.
+- Finish llama.cpp runtime selection for NVIDIA CUDA and CPU. Detect enough GPU and driver information to recommend only compatible variants; keep unsupported packages visible with a clear reason.
+- Keep vLLM and ExLlama unavailable until every runtime dependency, including accelerator-specific libraries and transitive packages, is pinned to verifiable artifacts. Do not install from mutable package indexes or run an unpinned setup script.
+- Add model catalogs and model downloads separately from engine binaries. Show file size, destination, progress, cancellation, integrity verification, and recovery after interrupted downloads.
+- Launch the selected engine as an OpenChat-managed child process with a loopback-only endpoint, readiness and health checks, bounded logs, cancellation, restart behavior, and clean shutdown.
+- Route the shared chat, tool, reasoning, vision, and streaming contract to the local runtime only when that model advertises the required capability. Keep provider payloads and local process details inside the Rust service.
+- Extend package selection, secure storage, process supervision, and data directories to Linux and macOS. Treat WSL2 as a separate managed Linux runtime for vLLM rather than claiming native Windows support.
+
+**Exit criteria:** a user can select a hardware-compatible engine and model, install and verify both through OpenChat, start and stop the local runtime, send and cancel a streamed chat request, and reopen its conversation without a separate CLI or external inference API.
+
+## 5. Add Gemini API OAuth
 
 **Status: planned.** Let users authenticate to the Gemini Developer API with their Google account, without entering a Gemini API key. This is the Gemini API's documented OAuth flow and uses OpenChat's own OAuth client; it is separate from Gemini CLI and Code Assist authentication.
 
@@ -62,7 +77,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 **Exit criteria:** a user can connect a Google account through OpenChat's OAuth client and send Gemini API requests without an API key; setup, quota, billing, and authentication failures are clear, and no Gemini CLI or Code Assist OAuth credentials are reused.
 
-## 5. Evaluate a compliant Antigravity integration
+## 6. Evaluate a compliant Antigravity integration
 
 **Status: research required.** Do not use consumer Antigravity OAuth from OpenChat. Evaluate only a Google-documented Enterprise or Cloud integration, such as a supported Vertex AI or ADC route, if its product terms authorize a third-party desktop client.
 
@@ -72,7 +87,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 **Exit criteria:** either a documented, terms-compliant Enterprise integration path has concrete implementation requirements, or the roadmap records that Antigravity cannot be integrated as an external provider.
 
-## 6. Expand desktop platforms
+## 7. Expand desktop platforms
 
 **Status: later.** Windows remains the supported first target. Bring the local Rust service and credential storage to Linux and macOS before mobile.
 
@@ -82,7 +97,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 **Exit criteria:** each desktop build packages its service, stores secrets in the platform's secure store, and keeps durable application data in that platform's user data directory.
 
-## 7. Evaluate mobile support
+## 8. Evaluate mobile support
 
 **Status: later.** Android and iOS require a service lifecycle and secure-storage design that fits mobile process and permission limits. Start this work after desktop provider behavior is stable.
 
@@ -106,3 +121,8 @@ These bullets describe code present in the repository. They do not mean that eve
 - [Antigravity terms of service](https://antigravity.google/terms)
 - [Antigravity Enterprise documentation](https://antigravity.google/docs/enterprise)
 - [Antigravity SDK authentication overview](https://antigravity.google/docs/sdk/overview)
+- [Mistral Models API](https://docs.mistral.ai/api/endpoint/models)
+- [Mistral reasoning with Chat Completions](https://docs.mistral.ai/studio/conversations/reasoning)
+- [llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases)
+- [vLLM installation guide](https://docs.vllm.ai/en/latest/getting_started/installation/)
+- [ExLlamaV3 releases](https://github.com/turboderp-org/exllamav3/releases)

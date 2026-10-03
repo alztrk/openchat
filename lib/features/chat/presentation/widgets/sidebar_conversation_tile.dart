@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:openchat/app/openchat_dropdown.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
@@ -97,6 +98,9 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
   Widget build(BuildContext context) {
     final palette = OpenChatPalette.of(context);
     final l10n = context.openchatL10n;
+    final onRename = widget.onRename;
+    final onExport = widget.onExport;
+    final onDelete = widget.onDelete;
     final hasActions =
         widget.onTogglePinned != null ||
         widget.onRename != null ||
@@ -189,50 +193,54 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                                 SizedBox(
                                   width: 32,
                                   height: 36,
-                                  child: PopupMenuButton<String>(
-                                    tooltip: l10n.moreOptions,
-                                    position: PopupMenuPosition.under,
-                                    padding: EdgeInsets.zero,
-                                    iconSize: 17,
-                                    onOpened: () =>
+                                  child: OpenChatDropdown(
+                                    palette: palette,
+                                    alignmentOffset: const Offset(-152, 6),
+                                    onOpen: () =>
                                         setState(() => _menuOpen = true),
-                                    onCanceled: () =>
+                                    onClose: () =>
                                         setState(() => _menuOpen = false),
-                                    onSelected: (value) {
-                                      setState(() => _menuOpen = false);
-                                      if (value == 'rename') {
-                                        widget.onRename?.call();
-                                      } else if (value == 'export') {
-                                        widget.onExport?.call();
-                                      } else if (value == 'delete') {
-                                        widget.onDelete?.call();
-                                      }
-                                    },
-                                    itemBuilder: (context) => [
-                                      if (widget.onRename != null)
-                                        PopupMenuItem<String>(
-                                          value: 'rename',
-                                          child: Text(l10n.renameConversation),
+                                    menuChildren: [
+                                      if (onRename != null)
+                                        _menuActionItem(
+                                          palette: palette,
+                                          label: l10n.renameConversation,
+                                          onPressed: onRename,
                                         ),
-                                      if (widget.onExport != null)
-                                        PopupMenuItem<String>(
-                                          value: 'export',
-                                          child: Text(l10n.exportConversation),
+                                      if (onExport != null)
+                                        _menuActionItem(
+                                          palette: palette,
+                                          label: l10n.exportConversation,
+                                          onPressed: onExport,
                                         ),
-                                      if (widget.onDelete != null)
-                                        PopupMenuItem<String>(
-                                          value: 'delete',
-                                          child: Text(
-                                            l10n.deleteConversation,
-                                            style: TextStyle(
-                                              color: Theme.of(context)
-                                                  .colorScheme
-                                                  .error,
-                                            ),
-                                          ),
+                                      if (onDelete != null)
+                                        _menuActionItem(
+                                          palette: palette,
+                                          label: l10n.deleteConversation,
+                                          foregroundColor: Theme.of(context)
+                                              .colorScheme
+                                              .error,
+                                          onPressed: onDelete,
                                         ),
                                     ],
-                                    icon: const Icon(Icons.more_horiz_rounded),
+                                    builder: (context, controller, _) =>
+                                        IconButton(
+                                          tooltip: l10n.moreOptions,
+                                          visualDensity: VisualDensity.compact,
+                                          padding: EdgeInsets.zero,
+                                          constraints:
+                                              const BoxConstraints.tightFor(
+                                                width: 32,
+                                                height: 36,
+                                              ),
+                                          onPressed: () => controller.isOpen
+                                              ? controller.close()
+                                              : controller.open(),
+                                          icon: const Icon(
+                                            Icons.more_horiz_rounded,
+                                            size: 17,
+                                          ),
+                                        ),
                                   ),
                                 ),
                             ],
@@ -244,6 +252,29 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                 ),
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _menuActionItem({
+    required OpenChatPalette palette,
+    required String label,
+    required VoidCallback onPressed,
+    Color? foregroundColor,
+  }) {
+    return MenuItemButton(
+      onPressed: onPressed,
+      style: OpenChatDropdown.menuItemStyle(palette),
+      child: SizedBox(
+        width: 184,
+        height: 42,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(label, style: TextStyle(color: foregroundColor)),
           ),
         ),
       ),

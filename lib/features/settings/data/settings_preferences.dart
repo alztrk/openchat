@@ -125,8 +125,12 @@ class SettingsPreferences {
   Future<Locale?> readLocale() async {
     final value = await _preferences.getString(_localeKey);
     return switch (value) {
+      null || 'system' => null,
       'en' => const Locale('en'),
       'tr' => const Locale('tr'),
+      'es' => const Locale('es'),
+      'de' => const Locale('de'),
+      'fr' => const Locale('fr'),
       _ => null,
     };
   }
@@ -136,10 +140,13 @@ class SettingsPreferences {
       null => 'system',
       'en' => 'en',
       'tr' => 'tr',
+      'es' => 'es',
+      'de' => 'de',
+      'fr' => 'fr',
       final languageCode => throw ArgumentError.value(
         languageCode,
         'locale',
-        'Only the supported English and Turkish locales can be saved.',
+        'Only the supported English, Turkish, Spanish, German, and French locales can be saved.',
       ),
     };
     return _preferences.setString(_localeKey, value);

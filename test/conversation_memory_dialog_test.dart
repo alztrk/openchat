@@ -200,6 +200,7 @@ class _FakeMemoryServiceClient extends OpenChatServiceClient {
   Future<Map<String, Object?>> call(
     String method, {
     Map<String, Object?> params = const <String, Object?>{},
+    Duration timeout = const Duration(seconds: 15),
   }) async {
     if (method == 'chat.memory.inspect') {
       calls.add('$method:${params['conversationId']}');

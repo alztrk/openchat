@@ -4,7 +4,9 @@ use crate::{
     permissions::ToolPermissionBroker,
     protocol::{EventSink, ServiceError},
     provider_schema::{ChatStreamSnapshot, ToolCall},
-    tools::ToolExecutor,
+    storage::AppStorage,
+    tools::{ImageGenerationContext, ToolExecutor},
+    user_question_broker::UserQuestionBroker,
 };
 
 use super::super::invalid_response_error;
@@ -15,7 +17,12 @@ pub(super) struct ToolRoundContext<'a> {
     pub(super) message_id: &'a str,
     pub(super) created_at: i64,
     pub(super) content: &'a str,
+    pub(super) storage: &'a AppStorage,
+    pub(super) run_id: &'a str,
+    pub(super) provider_id: &'a str,
+    pub(super) image_generation: Option<ImageGenerationContext<'a>>,
     pub(super) permission_broker: &'a ToolPermissionBroker,
+    pub(super) user_question_broker: &'a UserQuestionBroker,
     pub(super) cancellation: &'a mut tokio::sync::watch::Receiver<bool>,
     pub(super) events: &'a EventSink,
 }
@@ -39,13 +46,18 @@ pub(super) async fn execute(
         );
         results.push(
             tool_executor
-                .execute_call(
+                .execute_call_with_image_context(
                     call,
                     context.permission_broker,
                     context.request_id,
                     &snapshot,
                     context.events,
                     context.cancellation,
+                    context.storage,
+                    context.run_id,
+                    context.provider_id,
+                    context.user_question_broker,
+                    context.image_generation.as_ref(),
                 )
                 .await?,
         );

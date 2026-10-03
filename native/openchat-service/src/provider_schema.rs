@@ -90,6 +90,7 @@ pub struct ToolResult {
 #[serde(rename_all = "camelCase")]
 pub enum ToolActivityStatus {
     AwaitingApproval,
+    WaitingForUser,
     Running,
     Completed,
     Failed,
@@ -138,6 +139,19 @@ impl ToolActivity {
             target_path,
             output: None,
             status: ToolActivityStatus::Running,
+        }
+    }
+
+    pub fn waiting_for_user(call: &ToolCall) -> Self {
+        Self {
+            call_id: call.id.clone(),
+            name: call.name.clone(),
+            arguments: call.arguments.clone(),
+            round_id: None,
+            assistant_text_before_byte_offset: None,
+            target_path: None,
+            output: None,
+            status: ToolActivityStatus::WaitingForUser,
         }
     }
 

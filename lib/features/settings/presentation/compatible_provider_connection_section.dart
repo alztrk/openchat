@@ -287,6 +287,7 @@ class _CompatibleProviderConnectionSectionState
     'groq' => l10n.groqProvider,
     'cerebras' => l10n.cerebrasProvider,
     'openrouter' => l10n.openRouterProvider,
+    'mistral' => l10n.mistralProvider,
     _ => widget.providerId,
   };
 
@@ -295,6 +296,7 @@ class _CompatibleProviderConnectionSectionState
     'groq' => l10n.groqApiDescription,
     'cerebras' => l10n.cerebrasApiDescription,
     'openrouter' => l10n.openRouterApiDescription,
+    'mistral' => l10n.mistralApiDescription,
     _ => '',
   };
 }

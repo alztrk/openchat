@@ -2,7 +2,10 @@ use std::{
     collections::HashMap,
     ffi::{OsStr, OsString},
     path::PathBuf,
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use crate::{
@@ -11,6 +14,7 @@ use crate::{
     protocol::{EventSink, Request, Response, ServiceError},
     rpc,
     storage::AppStorage,
+    user_question_broker::UserQuestionBroker,
 };
 use serde_json::{Value, json};
 use tokio::{
@@ -92,6 +96,9 @@ async fn run_protocol(
         HashMap::<String, tokio_watch::Sender<bool>>::new(),
     ));
     let permission_broker = ToolPermissionBroker::default();
+    let user_question_broker = UserQuestionBroker::default();
+    let shutdown_requested = Arc::new(AtomicBool::new(false));
+    let startup_recovered = Arc::new(AtomicBool::new(false));
 
     while let Some(line) = input.next_line().await? {
         if line.len() > MAX_REQUEST_BYTES {
@@ -151,6 +158,7 @@ async fn run_protocol(
         }
 
         if request.method == "system.shutdown" {
+            shutdown_requested.store(true, Ordering::SeqCst);
             output
                 .send(&Response::success(request.id, json!({"stopping": true})))
                 .await?;
@@ -212,6 +220,9 @@ async fn run_protocol(
         let operation_storage = Arc::clone(&storage);
         let operation_service = Arc::clone(&service);
         let operation_permissions = permission_broker.clone();
+        let operation_questions = user_question_broker.clone();
+        let operation_shutdown = Arc::clone(&shutdown_requested);
+        let operation_recovery = Arc::clone(&startup_recovered);
         let operation_output = output.clone();
         let operation_map = Arc::clone(&active_operations);
         tokio::spawn(async move {
@@ -223,6 +234,9 @@ async fn run_protocol(
                 cancellation_receiver,
                 operation_output.clone(),
                 operation_permissions,
+                operation_questions,
+                operation_shutdown,
+                operation_recovery,
             )
             .await
             {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/features/chat/presentation/widgets/chat_surface_card.dart';
 import 'package:openchat/features/chat/domain/tool_permission_request.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
@@ -27,14 +28,9 @@ class ToolPermissionCard extends StatelessWidget {
     final theme = Theme.of(context);
     final l10n = context.openchatL10n;
 
-    return Container(
+    return ChatSurfaceCard(
       key: const ValueKey<String>('tool-permission-card'),
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: palette.selected,
-        border: Border.all(color: palette.border),
-        borderRadius: BorderRadius.circular(14),
-      ),
       child: LayoutBuilder(
         builder: (context, constraints) {
           final details = _RequestDetails(
@@ -150,10 +146,10 @@ class _RequestDetails extends StatelessWidget {
                       request.toolName == 'read_url'
                   ? Icons.language_rounded
                   : (request.toolName == 'execute_command' ||
-                          request.toolName == 'bash' ||
-                          request.toolName == 'send_terminal_input'
-                      ? Icons.terminal_rounded
-                      : Icons.folder_open_outlined),
+                            request.toolName == 'bash' ||
+                            request.toolName == 'send_terminal_input'
+                        ? Icons.terminal_rounded
+                        : Icons.folder_open_outlined),
               size: 15,
               color: palette.secondaryIcon,
             ),
@@ -379,10 +375,7 @@ List<({String label, String value})> _requestDetails(
     ],
     'web_search' => [
       detail(l10n.toolSearchQuery, argument('query')),
-      detail(
-        l10n.toolPermissionLimit,
-        scalar(request.arguments['limit'] ?? 5),
-      ),
+      detail(l10n.toolPermissionLimit, scalar(request.arguments['limit'] ?? 5)),
     ],
     'read_url_content' || 'read_url' => [
       detail(l10n.toolUrl, argument('url')),

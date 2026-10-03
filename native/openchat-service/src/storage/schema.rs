@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
-pub(super) const SCHEMA_VERSION: i64 = 15;
+pub(super) const SCHEMA_VERSION: i64 = 17;
 pub(super) const INITIAL_SCHEMA_VERSION: i64 = 2;
 pub(super) fn initialize_schema(
     connection: &Connection,
@@ -700,7 +700,227 @@ pub(super) fn initialize_schema(
         transaction.commit()?;
     }
 
-    Ok(SCHEMA_VERSION)
+    if current_version < 16 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE agent_runs (
+                id TEXT PRIMARY KEY NOT NULL,
+                conversation_id TEXT NOT NULL
+                    REFERENCES conversations(id) ON DELETE CASCADE,
+                status TEXT NOT NULL CHECK (
+                    status IN ('running', 'paused', 'completed', 'cancelled',
+                               'interrupted', 'failed')
+                ),
+                checkpoint_json TEXT CHECK (
+                    checkpoint_json IS NULL OR (
+                        json_valid(checkpoint_json) = 1
+                        AND length(checkpoint_json) <= 262144
+                    )
+                ),
+                checkpoint_revision INTEGER NOT NULL DEFAULT 0
+                    CHECK (checkpoint_revision >= 0),
+                checkpoint_updated_at_unix_ms INTEGER,
+                created_at_unix_ms INTEGER NOT NULL,
+                updated_at_unix_ms INTEGER NOT NULL,
+                finished_at_unix_ms INTEGER,
+                CHECK (
+                    (checkpoint_json IS NULL AND checkpoint_updated_at_unix_ms IS NULL)
+                    OR (checkpoint_json IS NOT NULL AND checkpoint_updated_at_unix_ms IS NOT NULL)
+                ),
+                CHECK (
+                    (status IN ('completed', 'cancelled', 'failed')
+                        AND finished_at_unix_ms IS NOT NULL)
+                    OR (status NOT IN ('completed', 'cancelled', 'failed')
+                        AND finished_at_unix_ms IS NULL)
+                )
+            );
+
+            CREATE INDEX agent_runs_conversation_idx
+                ON agent_runs(conversation_id, created_at_unix_ms DESC);
+            CREATE INDEX agent_runs_status_idx
+                ON agent_runs(status, updated_at_unix_ms DESC);
+
+            CREATE TABLE pending_question_groups (
+                id TEXT PRIMARY KEY NOT NULL,
+                run_id TEXT NOT NULL REFERENCES agent_runs(id) ON DELETE CASCADE,
+                sequence INTEGER NOT NULL CHECK (sequence > 0),
+                status TEXT NOT NULL CHECK (
+                    status IN ('pending', 'answered', 'cancelled', 'expired')
+                ),
+                revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),
+                answers_json TEXT CHECK (
+                    answers_json IS NULL OR (
+                        json_valid(answers_json) = 1
+                        AND length(answers_json) <= 131072
+                    )
+                ),
+                created_at_unix_ms INTEGER NOT NULL,
+                updated_at_unix_ms INTEGER NOT NULL,
+                answered_at_unix_ms INTEGER,
+                UNIQUE (run_id, sequence),
+                CHECK (
+                    (status = 'answered'
+                        AND answers_json IS NOT NULL
+                        AND answered_at_unix_ms IS NOT NULL)
+                    OR (status <> 'answered'
+                        AND answers_json IS NULL
+                        AND answered_at_unix_ms IS NULL)
+                )
+            );
+
+            CREATE INDEX pending_question_groups_run_idx
+                ON pending_question_groups(run_id, status, sequence);
+
+            CREATE TABLE pending_question_items (
+                group_id TEXT NOT NULL
+                    REFERENCES pending_question_groups(id) ON DELETE CASCADE,
+                item_id TEXT PRIMARY KEY NOT NULL,
+                position INTEGER NOT NULL CHECK (position >= 0),
+                question_json TEXT NOT NULL CHECK (
+                    json_valid(question_json) = 1
+                    AND length(question_json) <= 65536
+                ),
+                UNIQUE (group_id, position)
+            );
+
+            CREATE INDEX pending_question_items_group_idx
+                ON pending_question_items(group_id, position);
+
+            CREATE TRIGGER agent_runs_status_guard
+            BEFORE UPDATE OF status ON agent_runs
+            WHEN OLD.status <> NEW.status
+                AND NOT (
+                    (OLD.status = 'running'
+                        AND NEW.status IN ('paused', 'completed', 'cancelled',
+                                           'interrupted', 'failed'))
+                    OR (OLD.status = 'paused'
+                        AND NEW.status IN ('running', 'cancelled', 'interrupted'))
+                    OR (OLD.status = 'interrupted'
+                        AND NEW.status IN ('running', 'cancelled'))
+                )
+            BEGIN
+                SELECT RAISE(ABORT, 'invalid agent run status transition');
+            END;
+
+            CREATE TRIGGER pending_question_groups_status_guard
+            BEFORE UPDATE OF status ON pending_question_groups
+            WHEN OLD.status <> NEW.status
+                AND NOT (
+                    OLD.status = 'pending'
+                    AND NEW.status IN ('answered', 'cancelled', 'expired')
+                )
+            BEGIN
+                SELECT RAISE(ABORT, 'invalid question group status transition');
+            END;",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (16, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 16;
+    }
+
+    if current_version >= target_version {
+        return Ok(current_version);
+    }
+
+    if current_version < 17 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "DROP TRIGGER agent_runs_status_guard;
+
+            CREATE TRIGGER agent_runs_status_guard
+            BEFORE UPDATE OF status ON agent_runs
+            WHEN OLD.status <> NEW.status
+                AND NOT (
+                    (OLD.status = 'running'
+                        AND NEW.status IN ('paused', 'completed', 'cancelled',
+                                           'interrupted', 'failed'))
+                    OR (OLD.status = 'paused'
+                        AND NEW.status IN ('running', 'cancelled', 'interrupted', 'failed'))
+                    OR (OLD.status = 'interrupted'
+                        AND NEW.status IN ('running', 'cancelled', 'failed'))
+                )
+            BEGIN
+                SELECT RAISE(ABORT, 'invalid agent run status transition');
+            END;
+
+            CREATE TRIGGER agent_runs_terminal_pending_guard
+            BEFORE UPDATE OF status ON agent_runs
+            WHEN NEW.status IN ('completed', 'cancelled', 'failed')
+                AND EXISTS (
+                    SELECT 1 FROM pending_question_groups
+                    WHERE run_id = NEW.id AND status = 'pending'
+                )
+            BEGIN
+                SELECT RAISE(ABORT, 'terminal agent run cannot have pending questions');
+            END;
+
+            CREATE TRIGGER pending_question_groups_run_state_guard
+            BEFORE INSERT ON pending_question_groups
+            WHEN COALESCE(
+                (SELECT status FROM agent_runs WHERE id = NEW.run_id), ''
+            ) NOT IN ('paused', 'interrupted')
+            BEGIN
+                SELECT RAISE(ABORT, 'pending questions require a paused or interrupted run');
+            END;
+
+            CREATE TRIGGER agent_runs_checkpoint_byte_guard_insert
+            BEFORE INSERT ON agent_runs
+            WHEN NEW.checkpoint_json IS NOT NULL
+                AND length(CAST(NEW.checkpoint_json AS BLOB)) > 262144
+            BEGIN
+                SELECT RAISE(ABORT, 'agent run checkpoint exceeds its byte limit');
+            END;
+
+            CREATE TRIGGER agent_runs_checkpoint_byte_guard_update
+            BEFORE UPDATE OF checkpoint_json ON agent_runs
+            WHEN NEW.checkpoint_json IS NOT NULL
+                AND length(CAST(NEW.checkpoint_json AS BLOB)) > 262144
+            BEGIN
+                SELECT RAISE(ABORT, 'agent run checkpoint exceeds its byte limit');
+            END;
+
+            CREATE TRIGGER pending_question_groups_answers_byte_guard_insert
+            BEFORE INSERT ON pending_question_groups
+            WHEN NEW.answers_json IS NOT NULL
+                AND length(CAST(NEW.answers_json AS BLOB)) > 131072
+            BEGIN
+                SELECT RAISE(ABORT, 'question answers exceed their byte limit');
+            END;
+
+            CREATE TRIGGER pending_question_groups_answers_byte_guard_update
+            BEFORE UPDATE OF answers_json ON pending_question_groups
+            WHEN NEW.answers_json IS NOT NULL
+                AND length(CAST(NEW.answers_json AS BLOB)) > 131072
+            BEGIN
+                SELECT RAISE(ABORT, 'question answers exceed their byte limit');
+            END;
+
+            CREATE TRIGGER pending_question_items_question_byte_guard_insert
+            BEFORE INSERT ON pending_question_items
+            WHEN length(CAST(NEW.question_json AS BLOB)) > 65536
+            BEGIN
+                SELECT RAISE(ABORT, 'question item exceeds its byte limit');
+            END;
+
+            CREATE TRIGGER pending_question_items_question_byte_guard_update
+            BEFORE UPDATE OF question_json ON pending_question_items
+            WHEN length(CAST(NEW.question_json AS BLOB)) > 65536
+            BEGIN
+                SELECT RAISE(ABORT, 'question item exceeds its byte limit');
+            END;",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (17, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 17;
+    }
+
+    Ok(current_version)
 }
 
 fn unix_time_millis() -> rusqlite::Result<i64> {
@@ -828,7 +1048,7 @@ mod tests {
                 END;",
             )
             .expect("create version thirteen schema with a conflicting trigger");
-        for version in 1..(SCHEMA_VERSION - 1) {
+        for version in 1..14 {
             connection
                 .execute(
                     "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms)
@@ -862,7 +1082,126 @@ mod tests {
                 |row| row.get::<_, i64>(0),
             )
             .expect("read migration version after failure");
-        assert_eq!(migration_version, SCHEMA_VERSION - 2);
+        assert_eq!(migration_version, 13);
+    }
+
+    #[test]
+    fn failed_user_question_migration_rolls_back_partial_schema_changes() {
+        let connection = Connection::open_in_memory().expect("open in-memory database");
+        connection
+            .execute_batch(
+                "CREATE TABLE openchat_backend_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at_unix_ms INTEGER NOT NULL
+                );
+                CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                CREATE TABLE migration_trigger_conflict (id INTEGER);
+                CREATE TRIGGER agent_runs_status_guard
+                AFTER INSERT ON migration_trigger_conflict
+                BEGIN
+                    SELECT 1;
+                END;",
+            )
+            .expect("create migration trigger fixture");
+        for version in 1..=15 {
+            connection
+                .execute(
+                    "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms)
+                     VALUES (?1, 0)",
+                    [version],
+                )
+                .expect("record version fifteen migration history");
+        }
+
+        initialize_schema(&connection, SCHEMA_VERSION)
+            .expect_err("conflicting trigger must abort the user question migration");
+        for table in [
+            "agent_runs",
+            "pending_question_groups",
+            "pending_question_items",
+        ] {
+            let exists = connection
+                .query_row(
+                    "SELECT EXISTS (
+                        SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1
+                    )",
+                    [table],
+                    |row| row.get::<_, bool>(0),
+                )
+                .expect("check rolled-back user question table");
+            assert!(!exists, "partial table {table} survived the rollback");
+        }
+        let migration_version = connection
+            .query_row(
+                "SELECT MAX(version) FROM openchat_backend_migrations",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("read migration version after user question failure");
+        assert_eq!(migration_version, 15);
+    }
+
+    #[test]
+    fn failed_user_question_hardening_migration_rolls_back_trigger_changes() {
+        let connection = Connection::open_in_memory().expect("open in-memory database");
+        connection
+            .execute_batch(
+                "CREATE TABLE openchat_backend_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at_unix_ms INTEGER NOT NULL
+                );
+                CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);",
+            )
+            .expect("create hardening migration fixture");
+        for version in 1..=15 {
+            connection
+                .execute(
+                    "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms)
+                     VALUES (?1, 0)",
+                    [version],
+                )
+                .expect("record version fifteen migration history");
+        }
+        initialize_schema(&connection, 16).expect("apply user question migration");
+        connection
+            .execute_batch(
+                "CREATE TABLE migration_trigger_conflict (id INTEGER);
+                 CREATE TRIGGER agent_runs_checkpoint_byte_guard_insert
+                 AFTER INSERT ON migration_trigger_conflict
+                 BEGIN
+                     SELECT 1;
+                 END;",
+            )
+            .expect("create hardening trigger conflict");
+
+        initialize_schema(&connection, SCHEMA_VERSION)
+            .expect_err("conflicting hardening trigger must abort the migration");
+        let migration_version = connection
+            .query_row(
+                "SELECT MAX(version) FROM openchat_backend_migrations",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("read migration version after hardening failure");
+        assert_eq!(migration_version, 16);
+        let status_trigger_count = connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'trigger' AND name = 'agent_runs_status_guard'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("check restored status trigger");
+        assert_eq!(status_trigger_count, 1);
+        let byte_trigger_sql = connection
+            .query_row(
+                "SELECT sql FROM sqlite_master
+                 WHERE type = 'trigger' AND name = 'agent_runs_checkpoint_byte_guard_insert'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("read conflicting byte trigger");
+        assert!(byte_trigger_sql.contains("migration_trigger_conflict"));
     }
 
     #[test]
@@ -893,7 +1232,7 @@ mod tests {
                     ('before-migration', 'conversation', 'user', 'historical term', 'completed', 1);",
             )
             .expect("create pre-migration schema");
-        for version in 1..(SCHEMA_VERSION - 2) {
+        for version in 1..13 {
             connection
                 .execute(
                     "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms)

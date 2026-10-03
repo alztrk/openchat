@@ -3,7 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
-import 'package:openchat/app/openchat_select.dart';
+import 'package:openchat/app/openchat_dropdown.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/chat/domain/model_favorite.dart';
@@ -68,6 +68,11 @@ class ModelSelector extends StatefulWidget {
 
 class _ModelSelectorState extends State<ModelSelector> {
   static const double _menuHeight = 420;
+  static const Set<String> _localEngineProviderIds = <String>{
+    'llama_cpp',
+    'vllm',
+    'exllama',
+  };
 
   final _menuController = MenuController();
   final _searchController = TextEditingController();
@@ -127,7 +132,8 @@ class _ModelSelectorState extends State<ModelSelector> {
     final availableModels = widget.models
         .where(
           (model) =>
-              model.isAvailable &&
+              (model.isAvailable ||
+                  _localEngineProviderIds.contains(model.providerId)) &&
               !widget.hiddenModelKeys.contains(model.routeKey) &&
               !widget.hiddenModelKeys.contains(
                 '${model.providerId}:${model.id}',
@@ -194,15 +200,14 @@ class _ModelSelectorState extends State<ModelSelector> {
       menuWidth < 420 ? 112.0 : 152.0,
     );
 
-    return MenuAnchor(
+    return OpenChatDropdown(
+      palette: widget.palette,
       controller: _menuController,
       crossAxisUnconstrained: true,
       alignmentOffset: const Offset(0, 8),
       reservedPadding: const EdgeInsets.all(12),
-      style: OpenChatSelect.menuStyle(widget.palette, padding: EdgeInsets.zero)
-          .copyWith(
-            maximumSize: WidgetStatePropertyAll(Size(menuWidth, _menuHeight)),
-          ),
+      menuPadding: EdgeInsets.zero,
+      maximumSize: Size(menuWidth, _menuHeight),
       menuChildren: [
         SizedBox(
           width: menuWidth,
@@ -214,33 +219,37 @@ class _ModelSelectorState extends State<ModelSelector> {
                 width: providerWidth,
                 color: widget.palette.navigation,
                 padding: const EdgeInsets.all(8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _ModelProviderTab(
-                      providerId: 'favorites',
-                      label: l10n.favoriteModels,
-                      selected: _showFavorites,
-                      onPressed: _selectFavorites,
-                      palette: widget.palette,
-                    ),
-                    const SizedBox(height: 4),
-                    for (final providerId in _providerIds) ...[
+                child: SingleChildScrollView(
+                  primary: false,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
                       _ModelProviderTab(
-                        providerId: providerId,
-                        label: _providerLabel(providerId, l10n),
-                        selected:
-                            !_showFavorites && widget.providerId == providerId,
-                        onPressed:
-                            !_isProviderAvailable(providerId) ||
-                                widget.onProviderSelected == null
-                            ? null
-                            : () => _selectProvider(providerId),
+                        providerId: 'favorites',
+                        label: l10n.favoriteModels,
+                        selected: _showFavorites,
+                        onPressed: _selectFavorites,
                         palette: widget.palette,
                       ),
                       const SizedBox(height: 4),
+                      for (final providerId in _providerIds) ...[
+                        _ModelProviderTab(
+                          providerId: providerId,
+                          label: _providerLabel(providerId, l10n),
+                          selected:
+                              !_showFavorites &&
+                              widget.providerId == providerId,
+                          onPressed:
+                              !_isProviderAvailable(providerId) ||
+                                  widget.onProviderSelected == null
+                              ? null
+                              : () => _selectProvider(providerId),
+                          palette: widget.palette,
+                        ),
+                        const SizedBox(height: 4),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
               VerticalDivider(
@@ -285,18 +294,6 @@ class _ModelSelectorState extends State<ModelSelector> {
                             ),
                             filled: true,
                             fillColor: widget.palette.navigation,
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(
-                                color: widget.palette.border,
-                              ),
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              borderSide: BorderSide(
-                                color: widget.palette.secondaryIcon,
-                              ),
-                            ),
                           ),
                         ),
                       ),
@@ -366,6 +363,8 @@ class _ModelSelectorState extends State<ModelSelector> {
                                       ),
                                       contextWindow:
                                           favoriteModel?.contextWindow,
+                                      isAvailable:
+                                          favoriteModel?.isAvailable ?? true,
                                       selected:
                                           _providerFamily(
                                                 favorite.providerId,
@@ -434,9 +433,14 @@ class _ModelSelectorState extends State<ModelSelector> {
                                     ),
                                     title: title,
                                     description: _modelDescription(
-                                      model.description,
+                                      model.description ??
+                                          _unavailableModelDescription(
+                                            model,
+                                            l10n,
+                                          ),
                                     ),
                                     contextWindow: model.contextWindow,
+                                    isAvailable: model.isAvailable,
                                     selected:
                                         model.routeKey ==
                                         widget.selectedModelRouteKey,
@@ -445,14 +449,17 @@ class _ModelSelectorState extends State<ModelSelector> {
                                     addFavoriteLabel: l10n.addModelFavorite,
                                     removeFavoriteLabel:
                                         l10n.removeModelFavorite,
-                                    onSelected: widget.onSelected == null
+                                    onSelected:
+                                        !model.isAvailable ||
+                                            widget.onSelected == null
                                         ? null
                                         : () {
                                             widget.onSelected!(model);
                                             _menuController.close();
                                           },
                                     onToggleFavorite:
-                                        widget.onFavoriteChanged == null
+                                        !model.isAvailable ||
+                                            widget.onFavoriteChanged == null
                                         ? null
                                         : () => widget.onFavoriteChanged!(
                                             model.providerId,
@@ -583,6 +590,10 @@ const _providerIds = <String>[
   'groq',
   'cerebras',
   'openrouter',
+  'mistral',
+  'llama_cpp',
+  'vllm',
+  'exllama',
 ];
 
 String _providerLabel(String providerId, AppLocalizations l10n) =>
@@ -593,6 +604,10 @@ String _providerLabel(String providerId, AppLocalizations l10n) =>
       'groq' => l10n.groqProvider,
       'cerebras' => l10n.cerebrasProvider,
       'openrouter' => l10n.openRouterProvider,
+      'mistral' => l10n.mistralProvider,
+      'llama_cpp' => 'llama.cpp',
+      'vllm' => 'vLLM',
+      'exllama' => 'ExLlamaV3',
       _ => providerId,
     };
 
@@ -601,7 +616,8 @@ bool _isApiKeyProvider(String providerId) =>
     providerId == 'gemini' ||
     providerId == 'groq' ||
     providerId == 'cerebras' ||
-    providerId == 'openrouter';
+    providerId == 'openrouter' ||
+    providerId == 'mistral';
 
 String _providerFamily(String providerId) =>
     providerId == 'chatgpt_api' ? 'chatgpt' : providerId;
@@ -651,6 +667,7 @@ class _ModelOption extends StatefulWidget {
     required this.title,
     required this.description,
     required this.contextWindow,
+    required this.isAvailable,
     required this.selected,
     required this.isFavorite,
     required this.palette,
@@ -665,6 +682,7 @@ class _ModelOption extends StatefulWidget {
   final String title;
   final String? description;
   final int? contextWindow;
+  final bool isAvailable;
   final bool selected;
   final bool isFavorite;
   final OpenChatPalette palette;
@@ -748,7 +766,9 @@ class _ModelOptionState extends State<_ModelOption> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: widget.palette.text,
+                                  color: widget.isAvailable
+                                      ? widget.palette.text
+                                      : widget.palette.secondaryText,
                                   fontSize: 13,
                                 ),
                               ),
@@ -862,6 +882,21 @@ ChatGptModel? _findFavoriteModel(
 String? _modelDescription(String? description) {
   final value = description?.trim();
   return value == null || value.isEmpty ? null : value;
+}
+
+String? _unavailableModelDescription(
+  ChatGptModel model,
+  AppLocalizations l10n,
+) {
+  if (model.isAvailable ||
+      !_ModelSelectorState._localEngineProviderIds.contains(model.providerId)) {
+    return null;
+  }
+  return switch (model.unavailabilityReason) {
+    'model_file_missing' => l10n.localModelPathMissing,
+    'local_engine_not_ready' => l10n.localModelEngineNotReady,
+    _ => l10n.localModelEngineNotReady,
+  };
 }
 
 String _formatContextWindow(int tokens) {
