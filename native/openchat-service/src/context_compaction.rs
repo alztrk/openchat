@@ -362,7 +362,21 @@ pub(crate) fn message_token_estimate(message: &StoredMessage) -> i64 {
             text_token_estimate(heading).saturating_add(text_token_estimate(content))
         })
         .fold(0, i64::saturating_add);
-    text_tokens.saturating_add(activity_tokens)
+    let image_tokens = if message.role == "user" {
+        let image_count = message
+            .attachments
+            .iter()
+            .filter(|attachment| attachment.kind == "image")
+            .count();
+        i64::try_from(image_count)
+            .unwrap_or(i64::MAX)
+            .saturating_mul(IMAGE_TOKEN_ESTIMATE)
+    } else {
+        0
+    };
+    text_tokens
+        .saturating_add(activity_tokens)
+        .saturating_add(image_tokens)
 }
 
 pub(crate) fn text_token_estimate(text: &str) -> i64 {
@@ -394,13 +408,13 @@ fn trigger_tokens(context_window: i64) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::chatgpt_store::{ConversationContextState, StoredMessage};
+    use crate::chatgpt_store::{ConversationContextState, StoredAttachment, StoredMessage};
     use serde_json::json;
 
     use super::{
         CompactionCheck, compaction_payload_matches_route, compaction_prefix_end,
-        local_extractive_summary, local_summary_byte_limit, should_compact, text_token_estimate,
-        validate_request_context,
+        local_extractive_summary, local_summary_byte_limit, message_token_estimate, should_compact,
+        text_token_estimate, validate_request_context,
     };
 
     fn message(id: &str, role: &str, content: &str) -> StoredMessage {
@@ -460,6 +474,49 @@ mod tests {
     fn text_estimate_counts_utf8_bytes() {
         assert_eq!(text_token_estimate("hello"), 5);
         assert_eq!(text_token_estimate("界"), 3);
+    }
+
+    #[test]
+    fn message_estimate_counts_user_images_as_context_tokens() {
+        let mut user_message = message("user", "user", "Describe these images.");
+        let text_only_tokens = message_token_estimate(&user_message);
+        user_message.attachments = vec![
+            StoredAttachment {
+                mime_type: "image/png".to_owned(),
+                kind: "image".to_owned(),
+                content: Some(Vec::new()),
+            },
+            StoredAttachment {
+                mime_type: "image/jpeg".to_owned(),
+                kind: "image".to_owned(),
+                content: Some(Vec::new()),
+            },
+        ];
+
+        assert_eq!(
+            message_token_estimate(&user_message).saturating_sub(text_only_tokens),
+            2 * super::IMAGE_TOKEN_ESTIMATE
+        );
+
+        let previous_prompt = message("last", "user", "");
+        let mut image_message = message("image", "user", "Compare these.");
+        image_message.attachments = user_message.attachments.clone();
+        let messages = [previous_prompt, image_message];
+        let state = usage_state(100, "provider", "model", None);
+        assert!(should_compact(CompactionCheck {
+            context_window: Some(2048),
+            state: Some(&state),
+            provider_id: "provider",
+            model_id: "model",
+            connection_id: None,
+            workspace_id: None,
+            messages: &messages,
+            instructions: "",
+            active_compaction_matches: false,
+        }));
+
+        user_message.role = "assistant".to_owned();
+        assert_eq!(message_token_estimate(&user_message), text_only_tokens);
     }
 
     #[test]
