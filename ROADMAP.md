@@ -18,17 +18,14 @@ This roadmap reflects the repository's current implementation. It has no calenda
 
 These bullets describe code present in the repository. They do not mean that every provider endpoint or account flow has been verified against a live service.
 
-## 1. Close the Windows first release
+## 1. Confirm the Windows baseline
 
-**Status: in progress.** Finish and validate the ChatGPT-first Windows experience before adding another provider.
+**Status: verified by the user.** The Windows app, ChatGPT, and OpenCode have been exercised repeatedly and are currently working. Do not treat baseline release validation as an open implementation task.
 
-- Build a fresh portable executable from the current source.
-- Manually verify the packaged app with a real ChatGPT account: sign in, load account/model/quota information, stream a response, stop a response, and reopen the saved conversation.
-- Manually verify OpenCode's supported OpenAI-compatible models, including the unsupported-tool/error path where a model does not accept tool calls.
-- Confirm that existing local databases upgrade without losing conversations, projects, favorites, or tool activity.
-- Check that failures remain actionable and that credentials, message content, tool output, and private provider payloads stay out of service logs.
+- Recheck these workflows as regression coverage when a change affects them.
+- Validate API-key providers with live accounts when credentials become available; that work remains in the provider-specific stage below and does not block the confirmed Windows baseline.
 
-**Exit criteria:** the packaged Windows app completes those real workflows, existing local data survives upgrade, and unsupported or unavailable provider behavior is presented clearly.
+**Exit criteria:** met for the current Windows, ChatGPT, and OpenCode baseline. Reopen this stage only if a regression or release-specific change requires it.
 
 ## 2. Stabilize the provider contract
 
