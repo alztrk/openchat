@@ -4,6 +4,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod url_fetch;
+
 use base64::Engine;
 use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, HeaderMap, HeaderValue, USER_AGENT};
 use serde::{Deserialize, Serialize};
@@ -18,7 +20,7 @@ const DEFAULT_SEARCH_LIMIT: usize = 8;
 const MAX_SEARCH_LIMIT: usize = 20;
 const CACHE_TTL_SECS: u64 = 300; // 5 minutes cache
 
-static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+static HTTP_CLIENT: LazyLock<Result<reqwest::Client, reqwest::Error>> = LazyLock::new(|| {
     let mut headers = HeaderMap::new();
     headers.insert(
         USER_AGENT,
@@ -45,8 +47,13 @@ static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .pool_idle_timeout(Duration::from_secs(120))
         .pool_max_idle_per_host(10)
         .build()
-        .unwrap_or_else(|_| reqwest::Client::new())
 });
+
+fn http_client() -> Result<&'static reqwest::Client, String> {
+    HTTP_CLIENT
+        .as_ref()
+        .map_err(|_| "The web search client could not be initialized.".to_owned())
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SearchResultItem {
@@ -87,7 +94,7 @@ const SEARXNG_INSTANCES: &[&str] = &[
 async fn search_bing_html(query: &str, limit: usize) -> Result<Vec<SearchResultItem>, String> {
     let encoded: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
     let url = format!("https://www.bing.com/search?q={encoded}&setlang=tr");
-    let resp = HTTP_CLIENT
+    let resp = http_client()?
         .get(&url)
         .send()
         .await
@@ -246,7 +253,7 @@ async fn search_searxng_instance(
 ) -> Result<Vec<SearchResultItem>, String> {
     let encoded_query: String = url::form_urlencoded::byte_serialize(query.as_bytes()).collect();
     let url = format!("{instance}/search?q={encoded_query}&format=json&categories=general");
-    let resp = HTTP_CLIENT
+    let resp = http_client()?
         .get(&url)
         .send()
         .await
@@ -304,7 +311,7 @@ async fn search_duckduckgo_html(
     query: &str,
     limit: usize,
 ) -> Result<Vec<SearchResultItem>, String> {
-    let resp = HTTP_CLIENT
+    let resp = http_client()?
         .post("https://html.duckduckgo.com/html/")
         .form(&[("q", query), ("b", "")])
         .send()
@@ -513,23 +520,41 @@ async fn search_wikipedia(query: &str, limit: usize) -> Result<Vec<SearchResultI
     );
 
     let tr_fut = async {
-        if let Ok(resp) = HTTP_CLIENT.get(&tr_url).send().await
-            && resp.status().is_success()
-            && let Ok(json_val) = resp.json::<Value>().await
-        {
-            return parse_wikipedia_opensearch(&json_val);
+        let response = http_client()?
+            .get(&tr_url)
+            .send()
+            .await
+            .map_err(|_| "The Turkish Wikipedia request failed.".to_owned())?;
+        if !response.status().is_success() {
+            return Err(format!(
+                "Turkish Wikipedia returned HTTP {}.",
+                response.status()
+            ));
         }
-        Err("tr failed".to_string())
+        let json_value = response
+            .json::<Value>()
+            .await
+            .map_err(|_| "The Turkish Wikipedia response could not be read.".to_owned())?;
+        parse_wikipedia_opensearch(&json_value)
     };
 
     let en_fut = async {
-        if let Ok(resp) = HTTP_CLIENT.get(&en_url).send().await
-            && resp.status().is_success()
-            && let Ok(json_val) = resp.json::<Value>().await
-        {
-            return parse_wikipedia_opensearch(&json_val);
+        let response = http_client()?
+            .get(&en_url)
+            .send()
+            .await
+            .map_err(|_| "The English Wikipedia request failed.".to_owned())?;
+        if !response.status().is_success() {
+            return Err(format!(
+                "English Wikipedia returned HTTP {}.",
+                response.status()
+            ));
         }
-        Err("en failed".to_string())
+        let json_value = response
+            .json::<Value>()
+            .await
+            .map_err(|_| "The English Wikipedia response could not be read.".to_owned())?;
+        parse_wikipedia_opensearch(&json_value)
     };
 
     let (tr_res, en_res) = tokio::join!(tr_fut, en_fut);
@@ -705,10 +730,8 @@ pub async fn execute_read_url(
         return Err("URL cannot be empty.".to_owned());
     }
 
-    let parsed_url = Url::parse(url_trimmed).map_err(|e| format!("Invalid URL: {e}"))?;
-    if parsed_url.scheme() != "http" && parsed_url.scheme() != "https" {
-        return Err("Only http and https protocols are supported.".to_owned());
-    }
+    let parsed_url = Url::parse(url_trimmed).map_err(|_| "The URL is invalid.".to_owned())?;
+    let parsed_url = url_fetch::validate_http_url(parsed_url)?;
 
     let max_chars = max_chars_opt
         .unwrap_or(DEFAULT_MAX_CHARS)
@@ -725,64 +748,37 @@ pub async fn execute_read_url(
     }
 
     // 2. Fetch page HTML
-    let resp = HTTP_CLIENT
-        .get(url_trimmed)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch URL: {e}"))?;
-
-    let status = resp.status();
-    if !status.is_success() {
-        return Err(format!("Web server returned HTTP {status}"));
-    }
-
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("")
-        .to_lowercase();
-
     // Stream and limit bytes dynamically based on max_chars
     let byte_limit = (max_chars * 16).clamp(128 * 1024, MAX_HTML_BYTES);
-    let mut bytes = Vec::new();
-    let mut stream = resp.bytes_stream();
-    use futures_util::StreamExt;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Network read error: {e}"))?;
-        bytes.extend_from_slice(&chunk);
-        if bytes.len() >= byte_limit {
-            break;
-        }
-    }
+    let page = url_fetch::fetch_public_page(parsed_url, byte_limit).await?;
+    let raw_text = String::from_utf8_lossy(&page.bytes).to_string();
 
-    let raw_text = String::from_utf8_lossy(&bytes).to_string();
-
-    let result = if content_type.contains("text/plain") || content_type.contains("application/json")
+    let result = if page.content_type.contains("text/plain")
+        || page.content_type.contains("application/json")
     {
-        let truncated = raw_text.len() > max_chars;
+        let truncated = page.truncated || raw_text.len() > max_chars;
         let content: String = raw_text.chars().take(max_chars).collect();
         json!({
-            "url": url_trimmed,
-            "title": parsed_url.domain().unwrap_or(""),
+            "url": page.url.as_str(),
+            "title": page.url.host_str().unwrap_or(""),
             "content": content,
             "length": content.len(),
             "truncated": truncated
         })
     } else {
         let title = extract_title(&raw_text)
-            .unwrap_or_else(|| parsed_url.domain().unwrap_or("").to_owned());
+            .unwrap_or_else(|| page.url.host_str().unwrap_or("").to_owned());
 
         let cleaned_html = strip_boilerplate_tags(&raw_text);
         let markdown =
             htmd::convert(&cleaned_html).unwrap_or_else(|_| clean_html_tags(&cleaned_html));
         let normalized = normalize_markdown_newlines(&markdown);
 
-        let truncated = normalized.len() > max_chars;
+        let truncated = page.truncated || normalized.len() > max_chars;
         let content: String = normalized.chars().take(max_chars).collect();
 
         json!({
-            "url": url_trimmed,
+            "url": page.url.as_str(),
             "title": title,
             "content": content,
             "length": content.len(),
