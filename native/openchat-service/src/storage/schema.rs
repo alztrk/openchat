@@ -2,12 +2,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
-pub(super) const SCHEMA_VERSION: i64 = 17;
+pub(super) const SCHEMA_VERSION: i64 = 18;
 pub(super) const INITIAL_SCHEMA_VERSION: i64 = 2;
 pub(super) fn initialize_schema(
     connection: &Connection,
     target_version: i64,
 ) -> rusqlite::Result<i64> {
+    if !(1..=SCHEMA_VERSION).contains(&target_version) {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS openchat_backend_migrations (
             version INTEGER PRIMARY KEY,
@@ -143,6 +146,9 @@ pub(super) fn initialize_schema(
         )?;
         transaction.commit()?;
         current_version = 1;
+        if current_version >= target_version {
+            return Ok(current_version);
+        }
     }
 
     if current_version < 2 {
@@ -203,6 +209,9 @@ pub(super) fn initialize_schema(
         )?;
         transaction.commit()?;
         current_version = 3;
+        if current_version >= target_version {
+            return Ok(current_version);
+        }
     }
 
     if current_version < 4 {
@@ -214,6 +223,10 @@ pub(super) fn initialize_schema(
             [unix_time_millis()?],
         )?;
         transaction.commit()?;
+        current_version = 4;
+        if current_version >= target_version {
+            return Ok(current_version);
+        }
     }
 
     if current_version < 5 {
@@ -241,6 +254,9 @@ pub(super) fn initialize_schema(
         )?;
         transaction.commit()?;
         current_version = 5;
+        if current_version >= target_version {
+            return Ok(current_version);
+        }
     }
 
     if current_version < 6 {
@@ -255,6 +271,10 @@ pub(super) fn initialize_schema(
             [unix_time_millis()?],
         )?;
         transaction.commit()?;
+        current_version = 6;
+        if current_version >= target_version {
+            return Ok(current_version);
+        }
     }
 
     if current_version < 7 {
@@ -275,6 +295,10 @@ pub(super) fn initialize_schema(
             [unix_time_millis()?],
         )?;
         transaction.commit()?;
+        current_version = 7;
+        if current_version >= target_version {
+            return Ok(current_version);
+        }
     }
 
     if current_version < 8 {
@@ -300,6 +324,10 @@ pub(super) fn initialize_schema(
             [unix_time_millis()?],
         )?;
         transaction.commit()?;
+        current_version = 8;
+        if current_version >= target_version {
+            return Ok(current_version);
+        }
     }
 
     if current_version < 9 {
@@ -329,6 +357,10 @@ pub(super) fn initialize_schema(
             [unix_time_millis()?],
         )?;
         transaction.commit()?;
+        current_version = 9;
+        if current_version >= target_version {
+            return Ok(current_version);
+        }
     }
 
     if current_version < 10 {
@@ -347,6 +379,10 @@ pub(super) fn initialize_schema(
             [unix_time_millis()?],
         )?;
         transaction.commit()?;
+        current_version = 10;
+        if current_version >= target_version {
+            return Ok(current_version);
+        }
     }
 
     if current_version < 11 {
@@ -385,6 +421,10 @@ pub(super) fn initialize_schema(
             [unix_time_millis()?],
         )?;
         transaction.commit()?;
+        current_version = 11;
+        if current_version >= target_version {
+            return Ok(current_version);
+        }
     }
 
     if current_version < 12 {
@@ -400,6 +440,10 @@ pub(super) fn initialize_schema(
             [unix_time_millis()?],
         )?;
         transaction.commit()?;
+        current_version = 12;
+        if current_version >= target_version {
+            return Ok(current_version);
+        }
     }
 
     if current_version < 13 {
@@ -456,6 +500,10 @@ pub(super) fn initialize_schema(
             [unix_time_millis()?],
         )?;
         transaction.commit()?;
+        current_version = 13;
+        if current_version >= target_version {
+            return Ok(current_version);
+        }
     }
 
     if current_version < 14 {
@@ -570,6 +618,10 @@ pub(super) fn initialize_schema(
             [unix_time_millis()?],
         )?;
         transaction.commit()?;
+        current_version = 14;
+        if current_version >= target_version {
+            return Ok(current_version);
+        }
     }
 
     if current_version < 15 {
@@ -698,6 +750,10 @@ pub(super) fn initialize_schema(
             [unix_time_millis()?],
         )?;
         transaction.commit()?;
+        current_version = 15;
+        if current_version >= target_version {
+            return Ok(current_version);
+        }
     }
 
     if current_version < 16 {
@@ -918,6 +974,60 @@ pub(super) fn initialize_schema(
         )?;
         transaction.commit()?;
         current_version = 17;
+        if current_version >= target_version {
+            return Ok(current_version);
+        }
+    }
+
+    if current_version < 18 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "DROP INDEX pending_question_items_group_idx;
+            ALTER TABLE pending_question_items
+                RENAME TO pending_question_items_v17;
+
+            CREATE TABLE pending_question_items (
+                group_id TEXT NOT NULL
+                    REFERENCES pending_question_groups(id) ON DELETE CASCADE,
+                item_id TEXT NOT NULL,
+                position INTEGER NOT NULL CHECK (position >= 0),
+                question_json TEXT NOT NULL CHECK (
+                    json_valid(question_json) = 1
+                    AND length(question_json) <= 65536
+                ),
+                PRIMARY KEY (group_id, item_id),
+                UNIQUE (group_id, position)
+            );
+
+            INSERT INTO pending_question_items (group_id, item_id, position, question_json)
+            SELECT group_id, item_id, position, question_json
+            FROM pending_question_items_v17;
+
+            DROP TABLE pending_question_items_v17;
+
+            CREATE INDEX pending_question_items_group_idx
+                ON pending_question_items(group_id, position);
+
+            CREATE TRIGGER pending_question_items_question_byte_guard_insert
+            BEFORE INSERT ON pending_question_items
+            WHEN length(CAST(NEW.question_json AS BLOB)) > 65536
+            BEGIN
+                SELECT RAISE(ABORT, 'question item exceeds its byte limit');
+            END;
+
+            CREATE TRIGGER pending_question_items_question_byte_guard_update
+            BEFORE UPDATE OF question_json ON pending_question_items
+            WHEN length(CAST(NEW.question_json AS BLOB)) > 65536
+            BEGIN
+                SELECT RAISE(ABORT, 'question item exceeds its byte limit');
+            END;",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (18, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 18;
     }
 
     Ok(current_version)
@@ -936,6 +1046,112 @@ mod tests {
     use rusqlite::Connection;
 
     use super::{SCHEMA_VERSION, initialize_schema};
+
+    #[test]
+    fn schema_initialization_stops_at_each_requested_target() {
+        let connection = Connection::open_in_memory().expect("open in-memory database");
+        connection
+            .execute_batch("CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);")
+            .expect("create the host conversation table");
+
+        assert_eq!(
+            initialize_schema(&connection, 1).expect("apply initial schema only"),
+            1
+        );
+        let version_after_initial = connection
+            .query_row(
+                "SELECT MAX(version) FROM openchat_backend_migrations",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("read initial migration version");
+        assert_eq!(version_after_initial, 1);
+
+        assert_eq!(
+            initialize_schema(&connection, 4).expect("apply schema through version four"),
+            4
+        );
+        let version_after_upgrade = connection
+            .query_row(
+                "SELECT MAX(version) FROM openchat_backend_migrations",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("read upgraded migration version");
+        assert_eq!(version_after_upgrade, 4);
+    }
+
+    #[test]
+    fn question_item_ids_are_unique_within_each_group_and_existing_items_survive_upgrade() {
+        let connection = Connection::open_in_memory().expect("open in-memory database");
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys = ON;
+                CREATE TABLE openchat_backend_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at_unix_ms INTEGER NOT NULL
+                );
+                CREATE TABLE pending_question_groups (id TEXT PRIMARY KEY NOT NULL);
+                CREATE TABLE pending_question_items (
+                    group_id TEXT NOT NULL REFERENCES pending_question_groups(id) ON DELETE CASCADE,
+                    item_id TEXT PRIMARY KEY NOT NULL,
+                    position INTEGER NOT NULL CHECK (position >= 0),
+                    question_json TEXT NOT NULL CHECK (json_valid(question_json) = 1),
+                    UNIQUE (group_id, position)
+                );
+                CREATE INDEX pending_question_items_group_idx
+                    ON pending_question_items(group_id, position);
+                INSERT INTO pending_question_groups (id) VALUES ('first'), ('second');
+                INSERT INTO pending_question_items (group_id, item_id, position, question_json)
+                    VALUES ('first', 'mode', 0, '{\"id\":\"mode\"}');",
+            )
+            .expect("create version seventeen question schema");
+        for version in 1..=17 {
+            connection
+                .execute(
+                    "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms)
+                     VALUES (?1, 0)",
+                    [version],
+                )
+                .expect("record prior schema version");
+        }
+
+        assert_eq!(
+            initialize_schema(&connection, SCHEMA_VERSION)
+                .expect("apply question identity migration"),
+            SCHEMA_VERSION
+        );
+        connection
+            .execute(
+                "INSERT INTO pending_question_items (group_id, item_id, position, question_json)
+                 VALUES ('second', 'mode', 0, '{\"id\":\"mode\"}')",
+                [],
+            )
+            .expect("allow matching item ids in separate question groups");
+
+        let item_count = connection
+            .query_row("SELECT COUNT(*) FROM pending_question_items", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .expect("count migrated question items");
+        assert_eq!(item_count, 2);
+        let original_json = connection
+            .query_row(
+                "SELECT question_json FROM pending_question_items
+                 WHERE group_id = 'first' AND item_id = 'mode'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("read preserved question item");
+        assert_eq!(original_json, "{\"id\":\"mode\"}");
+        assert!(connection
+            .execute(
+                "INSERT INTO pending_question_items (group_id, item_id, position, question_json)
+                 VALUES ('first', 'mode', 1, '{\"id\":\"mode\"}')",
+                [],
+            )
+            .is_err());
+    }
 
     #[test]
     fn compaction_and_archive_migrations_upgrade_version_ten_without_losing_messages() {
