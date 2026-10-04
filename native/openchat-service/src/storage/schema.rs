@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
-pub(super) const SCHEMA_VERSION: i64 = 20;
+pub(super) const SCHEMA_VERSION: i64 = 21;
 pub(super) const INITIAL_SCHEMA_VERSION: i64 = 2;
 
 const REDACTED_TOOL_INDEX_TRIGGERS: &str = r#"
@@ -1464,6 +1464,94 @@ pub(super) fn initialize_schema(
         )?;
         transaction.commit()?;
         current_version = 20;
+    }
+
+    if current_version < 21 && target_version >= 21 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE file_change_blobs (
+                hash TEXT PRIMARY KEY NOT NULL CHECK (
+                    length(hash) = 64 AND hash NOT GLOB '*[^0-9a-f]*'
+                ),
+                size_bytes INTEGER NOT NULL CHECK (size_bytes BETWEEN 0 AND 16777216),
+                state TEXT NOT NULL CHECK (state IN ('writing', 'pending', 'ready')),
+                created_at_unix_ms INTEGER NOT NULL
+            );
+
+            CREATE TABLE conversation_file_changes (
+                conversation_id TEXT NOT NULL
+                    REFERENCES conversations(id) ON DELETE CASCADE,
+                id TEXT NOT NULL CHECK (
+                    length(id) = 64 AND id NOT GLOB '*[^0-9a-f]*'
+                ),
+                root TEXT NOT NULL CHECK (length(root) BETWEEN 1 AND 32768),
+                path TEXT NOT NULL CHECK (length(path) BETWEEN 1 AND 32768),
+                baseline_exists INTEGER NOT NULL CHECK (baseline_exists IN (0, 1)),
+                baseline_hash TEXT CHECK (
+                    baseline_hash IS NULL OR (
+                        length(baseline_hash) = 64 AND baseline_hash NOT GLOB '*[^0-9a-f]*'
+                    )
+                ),
+                baseline_blob_hash TEXT REFERENCES file_change_blobs(hash),
+                expected_exists INTEGER NOT NULL CHECK (expected_exists IN (0, 1)),
+                expected_hash TEXT CHECK (
+                    expected_hash IS NULL OR (
+                        length(expected_hash) = 64 AND expected_hash NOT GLOB '*[^0-9a-f]*'
+                    )
+                ),
+                added_lines INTEGER CHECK (added_lines IS NULL OR added_lines >= 0),
+                removed_lines INTEGER CHECK (removed_lines IS NULL OR removed_lines >= 0),
+                is_binary INTEGER NOT NULL CHECK (is_binary IN (0, 1)),
+                diff_available INTEGER NOT NULL CHECK (diff_available IN (0, 1)),
+                status TEXT NOT NULL CHECK (status IN ('active', 'reverted', 'conflict')),
+                CHECK (baseline_exists = 0 OR baseline_hash IS NOT NULL),
+                CHECK (expected_exists = 0 OR expected_hash IS NOT NULL),
+                PRIMARY KEY (conversation_id, id),
+                UNIQUE (conversation_id, root, path)
+            );
+
+            CREATE INDEX conversation_file_changes_conversation_idx
+                ON conversation_file_changes (conversation_id, path);
+
+            CREATE TABLE file_change_legacy_imports (
+                conversation_id TEXT PRIMARY KEY NOT NULL
+                    REFERENCES conversations(id) ON DELETE CASCADE,
+                imported_at_unix_ms INTEGER NOT NULL
+            );
+
+            CREATE TRIGGER conversation_file_changes_blob_delete
+            AFTER DELETE ON conversation_file_changes
+            WHEN OLD.baseline_blob_hash IS NOT NULL
+            BEGIN
+                UPDATE file_change_blobs
+                   SET state = 'pending'
+                 WHERE hash = OLD.baseline_blob_hash
+                   AND NOT EXISTS (
+                       SELECT 1 FROM conversation_file_changes
+                        WHERE baseline_blob_hash = OLD.baseline_blob_hash
+                   );
+            END;
+
+            CREATE TRIGGER conversation_file_changes_blob_update
+            AFTER UPDATE OF baseline_blob_hash ON conversation_file_changes
+            WHEN OLD.baseline_blob_hash IS NOT NULL
+             AND OLD.baseline_blob_hash IS NOT NEW.baseline_blob_hash
+            BEGIN
+                UPDATE file_change_blobs
+                   SET state = 'pending'
+                 WHERE hash = OLD.baseline_blob_hash
+                   AND NOT EXISTS (
+                       SELECT 1 FROM conversation_file_changes
+                        WHERE baseline_blob_hash = OLD.baseline_blob_hash
+                   );
+            END;",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (21, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 21;
     }
 
     Ok(current_version)

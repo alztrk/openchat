@@ -4,7 +4,7 @@ OpenChat can create a passphrase-protected backup of the local SQLite profile da
 
 ## Included and excluded data
 
-The database contains local conversations and application records stored in SQLite, including provider catalog and connection metadata. API keys and OAuth tokens remain in the operating system's secure credential store and are never read into the archive. Global preferences stored outside SQLite, model files, and runtime binaries are also excluded. When restoring on another computer, reconnect provider accounts and register local models again as needed.
+The database contains local conversations and application records stored in SQLite, including provider catalog and connection metadata. Local workspace file-change history and its source snapshots are removed from the exported database copy because they belong to paths on the current computer and may contain project source code. The active database and its local snapshots are not changed by export. API keys and OAuth tokens remain in the operating system's secure credential store and are never read into the archive. Global preferences stored outside SQLite, model files, and runtime binaries are also excluded. When restoring on another computer, reconnect provider accounts and register local models again as needed.
 
 Conversation and tool content, attachment text, and local file paths may be sensitive. Store the backup and its passphrase separately.
 

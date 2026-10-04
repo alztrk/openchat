@@ -481,7 +481,7 @@ impl ToolExecutor {
         let mut output = execute_model_tool(&prepared).await;
         qualify_output_paths(&mut output, &prepared);
         let (file_changes, file_changes_error) = finish_file_change_capture(
-            storage.root(),
+            storage,
             &snapshot.conversation_id,
             &prepared,
             file_change_capture,
@@ -808,7 +808,7 @@ fn capture_file_change_before(prepared: &PreparedToolCall) -> PendingFileChangeC
 }
 
 fn finish_file_change_capture(
-    data_root: &Path,
+    storage: &crate::storage::AppStorage,
     conversation_id: &str,
     prepared: &PreparedToolCall,
     capture: PendingFileChangeCapture,
@@ -852,7 +852,7 @@ fn finish_file_change_capture(
             }
         }
     };
-    match crate::file_changes::record_deltas(data_root, conversation_id, &prepared.root, deltas) {
+    match crate::file_changes::record_deltas(storage, conversation_id, &prepared.root, deltas) {
         Ok(changes) => (changes, None),
         Err(error) => (Vec::new(), Some(tracking_error_code(error).to_owned())),
     }

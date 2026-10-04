@@ -280,6 +280,7 @@ fn export_inner(
     storage::create_verified_database_snapshot(&source, &database_snapshot_path)
         .map_err(|_| ArchiveFailure::Storage)?;
     drop(source);
+    strip_workspace_file_changes(&database_snapshot_path)?;
 
     let database = Connection::open_with_flags(
         &database_snapshot_path,
@@ -359,6 +360,42 @@ fn export_inner(
     fs::rename(partial.path.as_path(), &target).map_err(map_destination_error)?;
     partial.disarm();
     Ok(archive_summary(&manifest, false))
+}
+
+fn strip_workspace_file_changes(database_path: &Path) -> Result<(), ArchiveFailure> {
+    let database = Connection::open(database_path).map_err(|_| ArchiveFailure::Storage)?;
+    let mut present = 0;
+    for table in [
+        "conversation_file_changes",
+        "file_change_blobs",
+        "file_change_legacy_imports",
+    ] {
+        present += database
+            .query_row(
+                "SELECT EXISTS (
+                    SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1
+                )",
+                [table],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(|_| ArchiveFailure::Storage)? as usize;
+    }
+    if present == 0 {
+        return Ok(());
+    }
+    if present != 3 {
+        return Err(ArchiveFailure::Storage);
+    }
+    database
+        .execute_batch(
+            "PRAGMA foreign_keys = ON;
+             BEGIN IMMEDIATE;
+             DELETE FROM conversation_file_changes;
+             DELETE FROM file_change_legacy_imports;
+             DELETE FROM file_change_blobs;
+             COMMIT;",
+        )
+        .map_err(|_| ArchiveFailure::Storage)
 }
 
 fn prepare_restore_inner(
@@ -1425,6 +1462,7 @@ mod tests {
 
     use rusqlite::{Connection, params};
     use serde_json::json;
+    use sha2::{Digest, Sha256};
     use std::sync::Mutex;
     use uuid::Uuid;
 
@@ -1442,6 +1480,8 @@ mod tests {
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         let source_directory = TestDirectory::new("source");
         let source = seed_profile(&source_directory.0, "source-chat", true);
+        let local_snapshot_path = add_workspace_file_change(&source);
+        assert!(local_snapshot_path.is_file());
         let archive_directory = source_directory.0.join("exports");
         fs::create_dir(&archive_directory).expect("create export directory");
         let archive_path = archive_directory.join("profile.openchatprofilebackup");
@@ -1454,6 +1494,9 @@ mod tests {
         assert_eq!(export_result["conversationCount"], 1);
         assert_eq!(export_result["attachmentCount"], 1);
         assert_eq!(export_result["requiresRestart"], false);
+        assert_eq!(workspace_file_change_count(&source), 1);
+        assert_eq!(workspace_file_blob_count(&source), 1);
+        assert!(local_snapshot_path.is_file());
 
         let destination_directory = TestDirectory::new("destination");
         let destination = seed_profile(&destination_directory.0, "existing-chat", true);
@@ -1493,6 +1536,14 @@ mod tests {
         restored
             .initialize_backend_schema()
             .expect("validate restored backend schema");
+        assert_eq!(workspace_file_change_count(&restored), 0);
+        assert_eq!(workspace_file_blob_count(&restored), 0);
+        assert!(
+            !destination_directory
+                .0
+                .join("attachments/snapshots")
+                .exists()
+        );
         restored
             .commit_pending_profile_restore()
             .expect("commit verified restore");
@@ -1722,6 +1773,71 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("look up conversation")
+    }
+
+    fn add_workspace_file_change(storage: &AppStorage) -> PathBuf {
+        let original = b"workspace source snapshot";
+        let hash = format!("{:x}", Sha256::digest(original));
+        let snapshot_path = storage
+            .root()
+            .join("attachments/snapshots")
+            .join(&hash[..2])
+            .join(format!("{hash}.blob"));
+        fs::create_dir_all(snapshot_path.parent().expect("snapshot parent"))
+            .expect("create snapshot storage");
+        fs::write(&snapshot_path, original).expect("write local workspace snapshot");
+        let connection = storage.connect().expect("connect to source profile");
+        connection
+            .execute(
+                "INSERT INTO file_change_blobs (
+                    hash, size_bytes, state, created_at_unix_ms
+                 ) VALUES (?1, ?2, 'ready', 1)",
+                params![hash, original.len() as i64],
+            )
+            .expect("insert local snapshot metadata");
+        connection
+            .execute(
+                "INSERT INTO conversation_file_changes (
+                    conversation_id, id, root, path, baseline_exists, baseline_hash,
+                    baseline_blob_hash, expected_exists, expected_hash, added_lines,
+                    removed_lines, is_binary, diff_available, status
+                 ) VALUES (
+                    'source-chat', ?1, 'C:/workspace', 'private.rs', 1, ?2,
+                    ?2, 0, NULL, NULL, NULL, 0, 0, 'active'
+                 )",
+                params!["a".repeat(64), hash],
+            )
+            .expect("insert local workspace change");
+        connection
+            .execute(
+                "INSERT INTO file_change_legacy_imports (conversation_id, imported_at_unix_ms)
+                 VALUES ('source-chat', 1)",
+                [],
+            )
+            .expect("insert migration marker");
+        snapshot_path
+    }
+
+    fn workspace_file_change_count(storage: &AppStorage) -> i64 {
+        storage
+            .connect()
+            .expect("connect to profile database")
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_file_changes",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count workspace file changes")
+    }
+
+    fn workspace_file_blob_count(storage: &AppStorage) -> i64 {
+        storage
+            .connect()
+            .expect("connect to profile database")
+            .query_row("SELECT COUNT(*) FROM file_change_blobs", [], |row| {
+                row.get(0)
+            })
+            .expect("count workspace snapshots")
     }
 
     struct TestDirectory(PathBuf);

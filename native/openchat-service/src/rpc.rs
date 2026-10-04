@@ -107,21 +107,21 @@ pub(crate) async fn dispatch(
         }
         "chat.file_changes.list" => {
             let conversation_id = required_string(&request.params, "conversationId")?;
-            let changes = crate::file_changes::list_changes(storage.root(), conversation_id)
+            let changes = crate::file_changes::list_changes(storage, conversation_id)
                 .map_err(file_changes_unavailable)?;
             Ok(json!({"changes": changes}))
         }
         "chat.file_changes.diff" => {
             let conversation_id = required_string(&request.params, "conversationId")?;
             let change_id = required_string(&request.params, "changeId")?;
-            crate::file_changes::read_diff(storage.root(), conversation_id, change_id)
+            crate::file_changes::read_diff(storage, conversation_id, change_id)
                 .map_err(file_changes_unavailable)
         }
         "chat.file_changes.revert" => {
             let conversation_id = required_string(&request.params, "conversationId")?;
             let change_id = required_string(&request.params, "changeId")?;
             let changes = crate::file_changes::revert_change(
-                storage.root(),
+                storage,
                 conversation_id,
                 change_id,
             )
@@ -142,13 +142,12 @@ pub(crate) async fn dispatch(
         }
         "chat.file_changes.delete" => {
             let conversation_id = required_string(&request.params, "conversationId")?;
-            crate::file_changes::delete_conversation_changes(storage.root(), conversation_id)
+            crate::file_changes::delete_conversation_changes(storage, conversation_id)
                 .map_err(file_changes_unavailable)?;
             Ok(json!({"deleted": true}))
         }
         "chat.file_changes.delete_all" => {
-            crate::file_changes::delete_all_changes(storage.root())
-                .map_err(file_changes_unavailable)?;
+            crate::file_changes::delete_all_changes(storage).map_err(file_changes_unavailable)?;
             Ok(json!({"deleted": true}))
         }
         "chatgpt.oauth.start" => service.oauth_sign_in(&mut cancellation).await,
