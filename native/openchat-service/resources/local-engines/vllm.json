@@ -8,26 +8,25 @@
   "sourceCommit": "ced6857afa0ea7b2e3f0846a62e1394e90f15607",
   "channel": "stable",
   "license": "Apache-2.0",
-  "catalogStatus": "blocked",
-  "statusReason": "vLLM release wheels are verified upstream assets, but a complete OpenChat-managed installation is not yet integrity-pinned: PyTorch, backend-specific indexes, and transitive Python dependencies still need a lockfile with exact hashes. Native Windows is unsupported by upstream; Windows requires an explicitly user-managed WSL2 Linux environment. Docker images and mutable wheel indexes are recorded as sources only and are not installable assets in this catalog.",
+  "catalogStatus": "installable",
   "variants": [
     {
       "variantId": "linux-x86_64-cuda13",
       "os": "linux",
       "architecture": "x86_64",
       "accelerator": "cuda",
+      "minimumDriverVersion": "580.0",
+      "recommendedDriverVersion": "580.0",
       "runtimeRequirements": [
-        "Linux x86_64 with glibc >= 2.28",
-        "Python 3.10-3.13",
-        "NVIDIA GPU and a driver compatible with the CUDA 13.0 build",
-        "The v0.30.0 release body identifies this generic manylinux wheel as the CUDA 13.0 wheel",
-        "A hash-pinned PyTorch CUDA runtime and all transitive Python dependencies are still required"
+        "Linux x86_64 with glibc 2.28 or newer",
+        "NVIDIA driver 580 or newer with CUDA 13.0 support",
+        "OpenChat installs the pinned Python 3.12.13 environment and locked vLLM 0.30.0 dependencies",
+        "The selected model must be a local Transformers model supported by vLLM"
       ],
-      "entrypoint": "vllm serve <model> --host 127.0.0.1 --port <port>",
+      "entrypoint": "python/environment/.venv/bin/vllm",
       "requiredFiles": [
-        "A managed Python environment",
-        "A hash-pinned PyTorch CUDA 13.0 dependency set",
-        "The selected local model"
+        "python/environment/.venv/bin/vllm",
+        "python/environment/.venv/bin/python"
       ],
       "assets": [
         {
@@ -36,263 +35,42 @@
           "sizeBytes": 314883777,
           "sha256": "sha256:ef52ee58c410ead0b8afb190838fa4cbcb52075596f67862a03859d984966ac4",
           "role": "primary"
+        },
+        {
+          "name": "uv-x86_64-unknown-linux-gnu.tar.gz",
+          "url": "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-unknown-linux-gnu.tar.gz",
+          "sizeBytes": 21373358,
+          "sha256": "sha256:eaf842262aa1c418d8ecc5605f02ee1ebfd369124fa48548e85f9481a47831a9",
+          "role": "companion",
+          "companionFor": "linux-x86_64-cuda13"
         }
       ],
       "capabilities": [
         "openai-compatible-chat-completions",
         "streaming",
-        "model-dependent-tool-calling"
+        "model-dependent-tool-calling",
+        "model-dependent-image-input"
       ]
-    },
-    {
-      "variantId": "linux-aarch64-cuda13",
-      "os": "linux",
-      "architecture": "aarch64",
-      "accelerator": "cuda",
-      "runtimeRequirements": [
-        "Linux ARM64 with glibc >= 2.28",
-        "Python 3.10-3.13",
-        "NVIDIA GPU and a driver compatible with the CUDA 13.0 build",
-        "The v0.30.0 release body identifies this generic manylinux wheel as the CUDA 13.0 wheel",
-        "A hash-pinned PyTorch CUDA runtime and all transitive Python dependencies are still required"
-      ],
-      "entrypoint": "vllm serve <model> --host 127.0.0.1 --port <port>",
-      "requiredFiles": [
-        "A managed Python environment",
-        "A hash-pinned PyTorch CUDA 13.0 dependency set",
-        "The selected local model"
-      ],
-      "assets": [
-        {
-          "name": "vllm-0.30.0-cp38-abi3-manylinux_2_28_aarch64.whl",
-          "url": "https://github.com/vllm-project/vllm/releases/download/v0.30.0/vllm-0.30.0-cp38-abi3-manylinux_2_28_aarch64.whl",
-          "sizeBytes": 309984160,
-          "sha256": "sha256:eb3e11bab695d085098579a6eda2d602419adec3826ebfbcce9a3ffa543eb62e",
-          "role": "primary"
-        }
-      ],
-      "capabilities": [
-        "openai-compatible-chat-completions",
-        "streaming",
-        "model-dependent-tool-calling"
-      ]
-    },
-    {
-      "variantId": "linux-x86_64-cuda12.9",
-      "os": "linux",
-      "architecture": "x86_64",
-      "accelerator": "cuda",
-      "runtimeRequirements": [
-        "Linux x86_64 with glibc >= 2.28",
-        "Python 3.10-3.13",
-        "NVIDIA GPU and a driver compatible with CUDA 12.9",
-        "A hash-pinned PyTorch CUDA 12.9 dependency set and all transitive Python dependencies are still required"
-      ],
-      "entrypoint": "vllm serve <model> --host 127.0.0.1 --port <port>",
-      "requiredFiles": [
-        "A managed Python environment",
-        "A hash-pinned PyTorch CUDA 12.9 dependency set",
-        "The selected local model"
-      ],
-      "assets": [
-        {
-          "name": "vllm-0.30.0+cu129-cp38-abi3-manylinux_2_28_x86_64.whl",
-          "url": "https://github.com/vllm-project/vllm/releases/download/v0.30.0/vllm-0.30.0%2Bcu129-cp38-abi3-manylinux_2_28_x86_64.whl",
-          "sizeBytes": 545459905,
-          "sha256": "sha256:e98cb69659bfcfc849cf11ce0781a7161d40b02b51a6c3636924a5909f2aabcc",
-          "role": "primary"
-        }
-      ],
-      "capabilities": [
-        "openai-compatible-chat-completions",
-        "streaming",
-        "model-dependent-tool-calling"
-      ]
-    },
-    {
-      "variantId": "linux-aarch64-cuda12.9",
-      "os": "linux",
-      "architecture": "aarch64",
-      "accelerator": "cuda",
-      "runtimeRequirements": [
-        "Linux ARM64 with glibc >= 2.28",
-        "Python 3.10-3.13",
-        "NVIDIA GPU and a driver compatible with CUDA 12.9",
-        "A hash-pinned PyTorch CUDA 12.9 dependency set and all transitive Python dependencies are still required"
-      ],
-      "entrypoint": "vllm serve <model> --host 127.0.0.1 --port <port>",
-      "requiredFiles": [
-        "A managed Python environment",
-        "A hash-pinned PyTorch CUDA 12.9 dependency set",
-        "The selected local model"
-      ],
-      "assets": [
-        {
-          "name": "vllm-0.30.0+cu129-cp38-abi3-manylinux_2_28_aarch64.whl",
-          "url": "https://github.com/vllm-project/vllm/releases/download/v0.30.0/vllm-0.30.0%2Bcu129-cp38-abi3-manylinux_2_28_aarch64.whl",
-          "sizeBytes": 519981036,
-          "sha256": "sha256:fdb57ab5fa1c3ac4c94a6eff52579df32cc9aab5da9863880d03e7167e088e77",
-          "role": "primary"
-        }
-      ],
-      "capabilities": [
-        "openai-compatible-chat-completions",
-        "streaming",
-        "model-dependent-tool-calling"
-      ]
-    },
-    {
-      "variantId": "linux-x86_64-cpu",
-      "os": "linux",
-      "architecture": "x86_64",
-      "accelerator": "cpu",
-      "runtimeRequirements": [
-        "Linux x86_64 with glibc >= 2.39",
-        "Python 3.10-3.13",
-        "A hash-pinned CPU PyTorch dependency set and all transitive Python dependencies are still required"
-      ],
-      "entrypoint": "vllm serve <model> --host 127.0.0.1 --port <port>",
-      "requiredFiles": [
-        "A managed Python environment",
-        "A hash-pinned CPU PyTorch dependency set",
-        "The selected local model"
-      ],
-      "assets": [
-        {
-          "name": "vllm-0.30.0+cpu-cp38-abi3-manylinux_2_39_x86_64.whl",
-          "url": "https://github.com/vllm-project/vllm/releases/download/v0.30.0/vllm-0.30.0%2Bcpu-cp38-abi3-manylinux_2_39_x86_64.whl",
-          "sizeBytes": 147429514,
-          "sha256": "sha256:0ee75278b3626c5d0b7c310c6d62afae93e900f4eac339c91e333fde5108ed78",
-          "role": "primary"
-        }
-      ],
-      "capabilities": [
-        "openai-compatible-chat-completions",
-        "streaming"
-      ]
-    },
-    {
-      "variantId": "linux-aarch64-cpu",
-      "os": "linux",
-      "architecture": "aarch64",
-      "accelerator": "cpu",
-      "runtimeRequirements": [
-        "Linux ARM64 with glibc >= 2.39",
-        "Python 3.10-3.13",
-        "A hash-pinned CPU PyTorch dependency set and all transitive Python dependencies are still required"
-      ],
-      "entrypoint": "vllm serve <model> --host 127.0.0.1 --port <port>",
-      "requiredFiles": [
-        "A managed Python environment",
-        "A hash-pinned CPU PyTorch dependency set",
-        "The selected local model"
-      ],
-      "assets": [
-        {
-          "name": "vllm-0.30.0+cpu-cp38-abi3-manylinux_2_39_aarch64.whl",
-          "url": "https://github.com/vllm-project/vllm/releases/download/v0.30.0/vllm-0.30.0%2Bcpu-cp38-abi3-manylinux_2_39_aarch64.whl",
-          "sizeBytes": 68320910,
-          "sha256": "sha256:0423f802029362ca31940262c580ed3f5af9d10bd123106a47f0fde6296f3c47",
-          "role": "primary"
-        }
-      ],
-      "capabilities": [
-        "openai-compatible-chat-completions",
-        "streaming"
-      ]
-    },
-    {
-      "variantId": "macos-aarch64-cpu",
-      "os": "macos",
-      "architecture": "aarch64",
-      "accelerator": "cpu",
-      "runtimeRequirements": [
-        "macOS 11 or newer on Apple Silicon",
-        "Python 3.12",
-        "A hash-pinned CPU PyTorch dependency set and all transitive Python dependencies are still required"
-      ],
-      "entrypoint": "vllm serve <model> --host 127.0.0.1 --port <port>",
-      "requiredFiles": [
-        "A managed Python environment",
-        "A hash-pinned CPU PyTorch dependency set",
-        "The selected local model"
-      ],
-      "assets": [
-        {
-          "name": "vllm-0.30.0+cpu-cp312-cp312-macosx_11_0_arm64.whl",
-          "url": "https://github.com/vllm-project/vllm/releases/download/v0.30.0/vllm-0.30.0%2Bcpu-cp312-cp312-macosx_11_0_arm64.whl",
-          "sizeBytes": 28969368,
-          "sha256": "sha256:fd9adfd566a8afa4ecbdf36b04bab10ebf43cd9ca18eca4b0a0bf2013b8de135",
-          "role": "primary"
-        }
-      ],
-      "capabilities": [
-        "openai-compatible-chat-completions",
-        "streaming"
-      ]
-    },
-    {
-      "variantId": "linux-x86_64-xpu",
-      "os": "linux",
-      "architecture": "x86_64",
-      "accelerator": "xpu",
-      "runtimeRequirements": [
-        "Linux x86_64 with glibc >= 2.34",
-        "Python 3.10-3.13",
-        "An Intel XPU runtime and a hash-pinned PyTorch XPU dependency set",
-        "All transitive Python dependencies are still required"
-      ],
-      "entrypoint": "vllm serve <model> --host 127.0.0.1 --port <port>",
-      "requiredFiles": [
-        "A managed Python environment",
-        "A hash-pinned PyTorch XPU dependency set",
-        "The selected local model"
-      ],
-      "assets": [
-        {
-          "name": "vllm-0.30.0+xpu-cp38-abi3-manylinux_2_34_x86_64.whl",
-          "url": "https://github.com/vllm-project/vllm/releases/download/v0.30.0/vllm-0.30.0%2Bxpu-cp38-abi3-manylinux_2_34_x86_64.whl",
-          "sizeBytes": 32637452,
-          "sha256": "sha256:b5c09abc6a91c7b4430b7f36cd606ffd29e95b73c5f48f026bd2ebd2261124d6",
-          "role": "primary"
-        }
-      ],
-      "capabilities": [
-        "openai-compatible-chat-completions",
-        "streaming"
-      ]
-    },
-    {
-      "variantId": "windows-native-unsupported",
-      "os": "windows",
-      "architecture": "x86_64",
-      "accelerator": "cuda",
-      "runtimeRequirements": [
-        "Unsupported: upstream vLLM does not provide native Windows support",
-        "Do not install a Linux wheel directly on native Windows"
-      ],
-      "entrypoint": "",
-      "requiredFiles": [],
-      "assets": [],
-      "capabilities": []
     },
     {
       "variantId": "windows-wsl2-linux-x86_64-cuda13",
       "os": "linux",
+      "hostOs": "windows",
       "architecture": "x86_64",
       "accelerator": "cuda",
+      "minimumDriverVersion": "580.0",
+      "recommendedDriverVersion": "580.0",
       "runtimeRequirements": [
-        "Host=Windows with a user-managed WSL2 Linux distribution",
-        "The Linux distribution must satisfy the Linux x86_64 CUDA 13.0 requirements",
-        "OpenChat must not silently enable or install WSL2 or GPU integration",
-        "A hash-pinned PyTorch CUDA runtime and all transitive Python dependencies are still required"
+        "The Windows host must already have WSL2 and an existing default Linux distribution; OpenChat does not enable or install a distribution",
+        "WSL2 must expose the NVIDIA GPU through nvidia-smi with driver 580 or newer",
+        "OpenChat installs its pinned Python 3.12.13 environment and locked vLLM 0.30.0 dependencies into the managed runtime",
+        "The selected Windows model directory is accessed through the WSL mounted drive and may load more slowly than a native Linux filesystem",
+        "The selected model must be a local Transformers model supported by vLLM"
       ],
-      "entrypoint": "vllm serve <model> --host 127.0.0.1 --port <port>",
+      "entrypoint": "python/environment/.venv/bin/vllm",
       "requiredFiles": [
-        "A user-managed WSL2 environment",
-        "A managed Python environment inside WSL2",
-        "A hash-pinned PyTorch CUDA 13.0 dependency set",
-        "The selected local model"
+        "python/environment/.venv/bin/vllm",
+        "python/environment/.venv/bin/python"
       ],
       "assets": [
         {
@@ -301,22 +79,33 @@
           "sizeBytes": 314883777,
           "sha256": "sha256:ef52ee58c410ead0b8afb190838fa4cbcb52075596f67862a03859d984966ac4",
           "role": "primary"
+        },
+        {
+          "name": "uv-x86_64-unknown-linux-gnu.tar.gz",
+          "url": "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-unknown-linux-gnu.tar.gz",
+          "sizeBytes": 21373358,
+          "sha256": "sha256:eaf842262aa1c418d8ecc5605f02ee1ebfd369124fa48548e85f9481a47831a9",
+          "role": "companion",
+          "companionFor": "windows-wsl2-linux-x86_64-cuda13"
         }
       ],
       "capabilities": [
         "openai-compatible-chat-completions",
         "streaming",
-        "model-dependent-tool-calling"
+        "model-dependent-tool-calling",
+        "model-dependent-image-input"
       ]
     }
   ],
   "sources": [
     "https://github.com/vllm-project/vllm/releases/tag/v0.30.0",
-    "https://docs.vllm.ai/en/stable/getting_started/installation/",
-    "https://docs.vllm.ai/en/latest/getting_started/installation/gpu/",
-    "https://docs.vllm.ai/en/latest/serving/online_serving/openai_compatible_server/",
-    "https://pypi.org/project/vllm/",
-    "https://wheels.vllm.ai/0.30.0/",
-    "https://hub.docker.com/r/vllm/vllm-openai/tags"
+    "https://github.com/vllm-project/vllm/blob/v0.30.0/pyproject.toml",
+    "https://github.com/vllm-project/vllm/blob/v0.30.0/requirements/cuda.txt",
+    "https://github.com/vllm-project/vllm/blob/v0.30.0/requirements/common.txt",
+    "https://docs.vllm.ai/en/v0.30.0/getting_started/installation/gpu/",
+    "https://pytorch.org/get-started/previous-versions/",
+    "https://download.pytorch.org/whl/cu130/",
+    "https://github.com/astral-sh/uv/releases/tag/0.12.0",
+    "https://docs.astral.sh/uv/"
   ]
 }

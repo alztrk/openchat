@@ -125,7 +125,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get localEngineVllmBlockedReason =>
-      'vLLM paketi, OpenChat\'in henüz eksiksiz ve hash doğrulamalı bir bağımlılık kilidiyle kurmadığı PyTorch ve Python çalışma zamanına ihtiyaç duyuyor. Yerel Windows desteği yok; yönetilen WSL2 kurulumu da henüz kullanılamıyor.';
+      'vLLM için 580 veya üzeri NVIDIA sürücüsü ve mevcut bir Linux ortamı gerekir. Windows\'ta GPU erişimi olan, önceden kurulmuş bir WSL2 dağıtımı kullanılır.';
 
   @override
   String get localEngineExllamaBlockedReason =>
@@ -377,6 +377,10 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get localEngineStageExtracting => 'Çıkartılıyor';
+
+  @override
+  String get localEngineStageRuntimeSetup =>
+      'Python çalışma zamanı hazırlanıyor';
 
   @override
   String get localEngineStagePublishing => 'Kurulum tamamlanıyor';

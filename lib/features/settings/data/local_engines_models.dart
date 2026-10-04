@@ -284,6 +284,7 @@ class LocalEngineInstallProgress {
   final int? assetCount;
 
   double? get fraction {
+    if (stage == 'setting_up_runtime') return null;
     if (totalBytes <= 0) return null;
     return (downloadedBytes / totalBytes).clamp(0, 1).toDouble();
   }

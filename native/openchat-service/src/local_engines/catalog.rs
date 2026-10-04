@@ -46,6 +46,8 @@ pub struct EngineManifest {
 pub struct EngineVariant {
     pub variant_id: String,
     pub os: String,
+    #[serde(default)]
+    pub host_os: Option<String>,
     pub architecture: String,
     pub accelerator: String,
     #[serde(default)]
@@ -232,6 +234,19 @@ fn validate_variant(
     variant_ids.push(variant.variant_id.clone());
 
     validate_allowed(&variant.os, "os", ALLOWED_OS)?;
+    if let Some(host_os) = variant.host_os.as_deref() {
+        validate_allowed(host_os, "hostOs", ALLOWED_OS)?;
+        if host_os == variant.os
+            || !(host_os == "windows"
+                && variant.os == "linux"
+                && variant.variant_id.starts_with("windows-wsl2-"))
+        {
+            return Err(invalid(format!(
+                "variant {:?} has an unsupported hostOs/runtime OS combination",
+                variant.variant_id
+            )));
+        }
+    }
     validate_allowed(&variant.architecture, "architecture", ALLOWED_ARCHITECTURES)?;
     validate_allowed(&variant.accelerator, "accelerator", ALLOWED_ACCELERATORS)?;
     validate_driver_requirements(variant, catalog_status)?;

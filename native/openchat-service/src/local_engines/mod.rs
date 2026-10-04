@@ -6,6 +6,8 @@ pub(crate) mod installer;
 pub(crate) mod models;
 mod python_runtime;
 mod runtime;
+mod vllm_runtime;
+mod wsl;
 
 use std::time::Duration;
 
@@ -56,6 +58,11 @@ pub(crate) fn manifests() -> Result<Vec<EngineManifest>, ServiceError> {
 pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
     models::ensure_storage_directories(storage.root())?;
     let nvidia_driver = nvidia_driver_status().await;
+    let wsl_nvidia_driver = if host_os() == "windows" {
+        wsl_nvidia_driver_status().await
+    } else {
+        nvidia_driver
+    };
     let cuda_available = matches!(nvidia_driver, NvidiaDriverStatus::Detected(_));
     let runtime = runtime::status(storage).await?;
     let registered_models = models::list(storage)?;
@@ -73,8 +80,13 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
                         )
                     })?
                     .to_owned();
+            let manifest_driver = if manifest.engine_id == "vllm" && host_os() == "windows" {
+                wsl_nvidia_driver
+            } else {
+                nvidia_driver
+            };
             let recommended_variant =
-                recommended_variant_id(&manifest, nvidia_driver, host_os(), host_architecture());
+                recommended_variant_id(&manifest, manifest_driver, host_os(), host_architecture());
             let variants = manifest
                 .variants
                 .iter()
@@ -83,7 +95,7 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
                         storage,
                         &manifest,
                         variant,
-                        nvidia_driver,
+                        driver_status_for_variant(variant, nvidia_driver, wsl_nvidia_driver),
                         recommended_variant.as_deref(),
                     )
                 })
@@ -269,13 +281,17 @@ pub(crate) fn find_variant(
 
 pub(crate) async fn can_install(manifest: &EngineManifest, variant: &EngineVariant) -> bool {
     if manifest.catalog_status != "installable"
-        || variant.os != host_os()
+        || variant_host_os(variant) != host_os()
         || variant.architecture != host_architecture()
     {
         return false;
     }
-    variant.accelerator != "cuda"
-        || variant_hardware_status(variant, nvidia_driver_status().await).is_none()
+    let driver_status = if variant_uses_wsl(variant) {
+        wsl_nvidia_driver_status().await
+    } else {
+        nvidia_driver_status().await
+    };
+    variant.accelerator != "cuda" || variant_hardware_status(variant, driver_status).is_none()
 }
 
 fn variant_json(
@@ -286,7 +302,8 @@ fn variant_json(
     recommended_variant: Option<&str>,
 ) -> Result<Value, ServiceError> {
     let installed = installer::installed_engine(storage, manifest, variant)?.is_some();
-    let platform_matches = variant.os == host_os() && variant.architecture == host_architecture();
+    let platform_matches =
+        variant_host_os(variant) == host_os() && variant.architecture == host_architecture();
     let hardware_status = variant_hardware_status(variant, nvidia_driver);
     let can_install = manifest.catalog_status == "installable"
         && platform_matches
@@ -303,7 +320,8 @@ fn variant_json(
     };
     Ok(json!({
         "variantId": variant.variant_id,
-        "os": variant.os,
+        "os": variant_host_os(variant),
+        "runtimeOs": variant.os,
         "architecture": variant.architecture,
         "accelerator": variant.accelerator,
         "runtimeRequirements": variant.runtime_requirements,
@@ -357,7 +375,7 @@ fn recommended_variant_id(
         .variants
         .iter()
         .filter(|variant| {
-            variant.os == os
+            variant_host_os(variant) == os
                 && variant.architecture == architecture
                 && variant.accelerator == "cuda"
         })
@@ -377,7 +395,9 @@ fn recommended_variant_id(
         .variants
         .iter()
         .find(|variant| {
-            variant.os == os && variant.architecture == architecture && variant.accelerator == "cpu"
+            variant_host_os(variant) == os
+                && variant.architecture == architecture
+                && variant.accelerator == "cpu"
         })
         .map(|variant| variant.variant_id.clone())
 }
@@ -409,6 +429,43 @@ async fn nvidia_driver_status() -> NvidiaDriverStatus {
         Ok(None) => NvidiaDriverStatus::NotDetected,
         Err(()) => NvidiaDriverStatus::VersionUnavailable,
     }
+}
+
+#[cfg(windows)]
+async fn wsl_nvidia_driver_status() -> NvidiaDriverStatus {
+    let output = match wsl::nvidia_driver_output().await {
+        Ok(output) => output,
+        Err(()) => return NvidiaDriverStatus::VersionUnavailable,
+    };
+    let Ok(stdout) = std::str::from_utf8(&output) else {
+        return NvidiaDriverStatus::VersionUnavailable;
+    };
+    match parse_nvidia_driver_output(stdout) {
+        Ok(Some(version)) => NvidiaDriverStatus::Detected(version),
+        Ok(None) => NvidiaDriverStatus::NotDetected,
+        Err(()) => NvidiaDriverStatus::VersionUnavailable,
+    }
+}
+
+#[cfg(not(windows))]
+async fn wsl_nvidia_driver_status() -> NvidiaDriverStatus {
+    NvidiaDriverStatus::NotDetected
+}
+
+fn driver_status_for_variant(
+    variant: &EngineVariant,
+    host: NvidiaDriverStatus,
+    wsl: NvidiaDriverStatus,
+) -> NvidiaDriverStatus {
+    if variant_uses_wsl(variant) { wsl } else { host }
+}
+
+fn variant_host_os(variant: &EngineVariant) -> &str {
+    variant.host_os.as_deref().unwrap_or(&variant.os)
+}
+
+fn variant_uses_wsl(variant: &EngineVariant) -> bool {
+    variant.os == "linux" && variant.host_os.as_deref() == Some("windows")
 }
 
 fn parse_nvidia_driver_output(value: &str) -> Result<Option<DriverVersion>, ()> {
@@ -602,6 +659,35 @@ mod tests {
                 Some("be74bf0a00bcb3a518e6feb7606f150c189be637")
             );
         }
+    }
+
+    #[test]
+    fn vllm_windows_variant_targets_the_existing_wsl2_host() {
+        let manifest = parse_manifest(
+            CATALOGS
+                .iter()
+                .find(|(engine_id, _)| *engine_id == "vllm")
+                .expect("vLLM catalog should be embedded")
+                .1,
+        )
+        .expect("vLLM catalog should validate");
+        let variant = manifest
+            .variants
+            .iter()
+            .find(|variant| variant.variant_id == "windows-wsl2-linux-x86_64-cuda13")
+            .expect("Windows WSL2 variant should exist");
+        let driver = NvidiaDriverStatus::Detected(
+            DriverVersion::parse("610.62").expect("the supported driver version should parse"),
+        );
+
+        assert_eq!(variant.host_os.as_deref(), Some("windows"));
+        assert_eq!(variant.os, "linux");
+        assert_eq!(super::variant_host_os(variant), "windows");
+        assert_eq!(super::variant_hardware_status(variant, driver), None);
+        assert_eq!(
+            recommended_variant_id(&manifest, driver, "windows", "x86_64").as_deref(),
+            Some("windows-wsl2-linux-x86_64-cuda13")
+        );
     }
 
     fn llama_cpp_manifest() -> super::catalog::EngineManifest {

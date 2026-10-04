@@ -105,7 +105,7 @@ pub(super) async fn resolve_chat_route(
                 None,
             )
         }
-        Some("llama_cpp" | "exllama") => {
+        Some("llama_cpp" | "exllama" | "vllm") => {
             if requested_api_key_connection_id.is_some()
                 || stored_api_key_connection_id.is_some()
                 || api_key.is_some()
@@ -126,7 +126,6 @@ pub(super) async fn resolve_chat_route(
                 endpoint.api_key,
             )
         }
-        Some("vllm") => return Err(local_engine_unavailable_error()),
         Some("chatgpt_api") => {
             if requested_api_key_connection_id != stored_api_key_connection_id {
                 return Err(route_error());
@@ -198,14 +197,6 @@ pub(super) async fn resolve_chat_route(
         connection_id,
         local_api_key,
     })
-}
-
-fn local_engine_unavailable_error() -> ServiceError {
-    ServiceError::new(
-        "local_engine_unavailable",
-        "The selected local inference engine is not ready on this device.",
-        false,
-    )
 }
 
 #[cfg(test)]

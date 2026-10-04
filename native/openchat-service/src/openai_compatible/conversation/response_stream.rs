@@ -334,7 +334,7 @@ fn connection_error(route: &super::super::route::ChatRoute) -> ServiceError {
 }
 
 fn is_local_runtime(provider_id: Option<&str>) -> bool {
-    matches!(provider_id, Some("llama_cpp" | "exllama"))
+    matches!(provider_id, Some("llama_cpp" | "exllama" | "vllm"))
 }
 
 fn local_inference_error() -> ServiceError {
@@ -455,6 +455,10 @@ mod tests {
         );
         assert_eq!(
             connection_error(&route("exllama")).code,
+            "local_engine_runtime_unavailable"
+        );
+        assert_eq!(
+            connection_error(&route("vllm")).code,
             "local_engine_runtime_unavailable"
         );
     }

@@ -16,7 +16,7 @@ use crate::{protocol::ServiceError, storage::AppStorage};
 
 use super::{
     installer::{InstalledEngine, installed_engine},
-    manifests, models,
+    manifests, models, wsl,
 };
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(300);
@@ -55,6 +55,8 @@ struct RunningServer {
 struct RuntimeLaunch {
     arguments: Vec<OsString>,
     current_directory: PathBuf,
+    use_wsl: bool,
+    initial_capabilities: Option<RuntimeCapabilities>,
     provider_model_id: String,
     api_key: Option<Zeroizing<String>>,
     session_directory: Option<PathBuf>,
@@ -69,7 +71,7 @@ pub(crate) async fn start_model(
         return Err(cancelled_error());
     }
     let model = models::find(storage, model_id)?.ok_or_else(model_unavailable_error)?;
-    if !model_path_matches_engine(&model) {
+    if !model_path_matches_engine(&model)? {
         return Err(model_unavailable_error());
     }
     let installed =
@@ -109,14 +111,22 @@ pub(crate) async fn start_model(
         "llama_cpp" => RuntimeLaunch {
             arguments: llama_server_arguments(&model, port)?,
             current_directory: installed.root.clone(),
+            use_wsl: false,
+            initial_capabilities: None,
             provider_model_id: model.id.clone(),
             api_key: None,
             session_directory: None,
         },
         "exllama" => prepare_tabby_session(&model, &installed, port)?,
+        "vllm" => prepare_vllm_session(&model, &installed, port).await?,
         _ => return Err(model_unavailable_error()),
     };
-    let child = match Command::new(&installed.entrypoint)
+    let mut command = if launch.use_wsl {
+        wsl::command(&installed.entrypoint, true).map_err(|_| runtime_error())?
+    } else {
+        Command::new(&installed.entrypoint)
+    };
+    let child = match command
         .args(&launch.arguments)
         .current_dir(&launch.current_directory)
         .stdin(Stdio::null())
@@ -143,7 +153,7 @@ pub(crate) async fn start_model(
         provider_model_id: launch.provider_model_id,
         port,
         child,
-        capabilities: None,
+        capabilities: launch.initial_capabilities,
         api_key: launch.api_key,
         session_directory: launch.session_directory,
     });
@@ -194,9 +204,12 @@ pub(crate) async fn start_model(
             }
         };
         if ready {
-            let capabilities = match runtime_capabilities_or_cancel(port, api_key, cancellation)
-                .await
-            {
+            let initial_capabilities = state.as_ref().and_then(|server| server.capabilities);
+            let capabilities_result = match initial_capabilities {
+                Some(capabilities) => Ok(capabilities),
+                None => runtime_capabilities_or_cancel(port, api_key, cancellation).await,
+            };
+            let capabilities = match capabilities_result {
                 Ok(capabilities) => capabilities,
                 Err(error) => {
                     stop_server(storage, &mut state).await?;
@@ -310,7 +323,7 @@ pub(crate) fn is_model_available(
     storage: &AppStorage,
     model: &models::RegisteredModel,
 ) -> Result<bool, ServiceError> {
-    if !model_path_matches_engine(model) {
+    if !model_path_matches_engine(model)? {
         return Ok(false);
     }
     Ok(installed_engine_for(storage, &model.engine_id)?.is_some())
@@ -481,8 +494,8 @@ fn llama_server_arguments(
     Ok(arguments)
 }
 
-fn model_path_matches_engine(model: &models::RegisteredModel) -> bool {
-    match model.engine_id.as_str() {
+fn model_path_matches_engine(model: &models::RegisteredModel) -> Result<bool, ServiceError> {
+    Ok(match model.engine_id.as_str() {
         "llama_cpp" => {
             model.path_kind == "file"
                 && model.path.is_file()
@@ -493,8 +506,13 @@ fn model_path_matches_engine(model: &models::RegisteredModel) -> bool {
                     .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
         }
         "exllama" => model.path_kind == "directory" && model.path.is_dir(),
+        "vllm" => {
+            model.path_kind == "directory"
+                && model.path.is_dir()
+                && models::has_transformers_model_files(&model.path)?
+        }
         _ => false,
-    }
+    })
 }
 
 fn installed_engine_for(
@@ -506,7 +524,8 @@ fn installed_engine_for(
         .find(|manifest| manifest.engine_id == engine_id)
         .ok_or_else(engine_not_installed_error)?;
     let variants = manifest.variants.iter().filter(|variant| {
-        variant.os == std::env::consts::OS && variant.architecture == std::env::consts::ARCH
+        variant.host_os.as_deref().unwrap_or(&variant.os) == std::env::consts::OS
+            && variant.architecture == std::env::consts::ARCH
     });
     for variant in variants {
         if let Some(engine) = installed_engine(storage, &manifest, variant)? {
@@ -591,10 +610,55 @@ fn prepare_tabby_session(
             config_path.into_os_string(),
         ],
         current_directory: session_directory.clone(),
+        use_wsl: false,
+        initial_capabilities: None,
         provider_model_id: model_name.to_owned(),
         api_key: Some(api_key),
         session_directory: Some(session_directory),
     })
+}
+
+async fn prepare_vllm_session(
+    model: &models::RegisteredModel,
+    installed: &InstalledEngine,
+    port: u16,
+) -> Result<RuntimeLaunch, ServiceError> {
+    let metadata = models::transformers_model_metadata(&model.path)
+        .filter(|metadata| metadata.context_window.is_some())
+        .ok_or_else(runtime_capability_error)?;
+    let use_wsl = installed.variant_id.starts_with("windows-wsl2-");
+    let model_path = wsl::path(&model.path, use_wsl)
+        .await
+        .map_err(|_| model_unavailable_error())?;
+    let arguments = vllm_server_arguments(&model_path, &model.id, port);
+    Ok(RuntimeLaunch {
+        arguments,
+        current_directory: installed.root.clone(),
+        use_wsl,
+        initial_capabilities: Some(RuntimeCapabilities {
+            context_window: metadata
+                .context_window
+                .ok_or_else(runtime_capability_error)?,
+            supports_images: metadata.supports_images,
+            supports_tool_calls: None,
+        }),
+        provider_model_id: model.id.clone(),
+        api_key: None,
+        session_directory: None,
+    })
+}
+
+fn vllm_server_arguments(model_path: &std::path::Path, model_id: &str, port: u16) -> Vec<OsString> {
+    vec![
+        OsString::from("serve"),
+        model_path.as_os_str().to_owned(),
+        OsString::from("--host"),
+        OsString::from("127.0.0.1"),
+        OsString::from("--port"),
+        OsString::from(port.to_string()),
+        OsString::from("--served-model-name"),
+        OsString::from(model_id),
+    ]
 }
 
 fn create_private_runtime_session(path: &std::path::Path) -> Result<(), ServiceError> {
@@ -781,7 +845,7 @@ mod tests {
     use super::{
         InstalledEngine, MAX_RUNTIME_PROPERTIES_BYTES, RuntimeCapabilities, health_check_or_cancel,
         llama_server_arguments, parse_runtime_capabilities, prepare_tabby_session,
-        read_runtime_capabilities, start_model,
+        read_runtime_capabilities, start_model, vllm_server_arguments,
     };
 
     struct TestDirectory(PathBuf);
@@ -951,6 +1015,24 @@ mod tests {
         let arguments = llama_server_arguments(&model, 12345).expect("arguments should build");
 
         assert!(!arguments.iter().any(|argument| argument == "--mmproj"));
+    }
+
+    #[test]
+    fn vllm_arguments_use_the_local_model_and_loopback_only() {
+        let arguments = vllm_server_arguments(
+            std::path::Path::new("/mnt/d/models/local-transformer"),
+            "registered-model-id",
+            49183,
+        );
+
+        assert_eq!(arguments[0], "serve");
+        assert_eq!(arguments[1], "/mnt/d/models/local-transformer");
+        assert_eq!(arguments[2], "--host");
+        assert_eq!(arguments[3], "127.0.0.1");
+        assert_eq!(arguments[4], "--port");
+        assert_eq!(arguments[5], "49183");
+        assert_eq!(arguments[6], "--served-model-name");
+        assert_eq!(arguments[7], "registered-model-id");
     }
 
     #[tokio::test]

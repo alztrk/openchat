@@ -1173,7 +1173,7 @@ class _LocalEnginesSettingsSectionState
                 ),
               ),
             ),
-            if (latest != null)
+            if (latest != null && latest.stage != 'setting_up_runtime')
               Text(
                 latest.assetName,
                 overflow: TextOverflow.ellipsis,
@@ -1187,7 +1187,7 @@ class _LocalEnginesSettingsSectionState
           value: fraction == null ? null : '${(fraction * 100).round()}%',
           child: LinearProgressIndicator(value: fraction),
         ),
-        if (latest != null) ...[
+        if (latest != null && latest.stage != 'setting_up_runtime') ...[
           const SizedBox(height: 6),
           Text(
             _progressDetails(l10n, latest),
@@ -1384,6 +1384,7 @@ class _LocalEnginesSettingsSectionState
     'downloading' => l10n.localEngineStageDownloading,
     'verifying' => l10n.localEngineStageVerifying,
     'extracting' => l10n.localEngineStageExtracting,
+    'setting_up_runtime' => l10n.localEngineStageRuntimeSetup,
     'publishing' => l10n.localEngineStagePublishing,
     'ready' => l10n.localEngineStageReady,
     _ => stage,

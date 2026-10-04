@@ -127,7 +127,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get localEngineVllmBlockedReason =>
-      'El paquete de vLLM depende de PyTorch y de un runtime completo de Python que OpenChat todavía no instala mediante un bloqueo de dependencias completo verificado con hashes. Windows nativo no es compatible oficialmente; la configuración administrada de WSL2 aún no está disponible.';
+      'vLLM requiere un controlador NVIDIA versión 580 o posterior y un entorno Linux existente. En Windows, usa una distribución WSL2 existente con acceso a la GPU.';
 
   @override
   String get localEngineExllamaBlockedReason =>
@@ -384,6 +384,9 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get localEngineStageExtracting => 'Extrayendo';
+
+  @override
+  String get localEngineStageRuntimeSetup => 'Preparando el entorno de Python';
 
   @override
   String get localEngineStagePublishing => 'Finalizando la instalación';

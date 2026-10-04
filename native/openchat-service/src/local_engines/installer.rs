@@ -91,8 +91,8 @@ pub async fn install_engine_variant(
     check_cancelled(cancellation)?;
 
     let target = installed_engine_path(storage, manifest, variant)?;
-    if manifest.engine_id == "exllama" && target.exists() {
-        remove_interrupted_exllama_installation(&target, manifest, variant)?;
+    if uses_managed_python_runtime(&manifest.engine_id) && target.exists() {
+        remove_interrupted_python_installation(&target, manifest, variant)?;
     }
     let runtimes_root = storage.root().join("runtimes");
     let staging_root = runtimes_root
@@ -303,8 +303,10 @@ async fn install_staged(
 
     check_cancelled(cancellation)?;
 
-    let published_root = if manifest.engine_id == "exllama" {
-        normalize_exllama_source_tree(payload_root, variant)?;
+    let published_root = if uses_managed_python_runtime(&manifest.engine_id) {
+        if manifest.engine_id == "exllama" {
+            normalize_exllama_source_tree(payload_root, variant)?;
+        }
         write_pending_install_marker(payload_root, manifest, variant).await?;
         let target_parent = target.parent().ok_or_else(storage_error)?;
         async_fs::create_dir_all(target_parent)
@@ -316,9 +318,28 @@ async fn install_staged(
         async_fs::rename(payload_root, &target)
             .await
             .map_err(|_| publish_error())?;
-        if let Err(error) =
-            super::python_runtime::install_exllama(target, variant, cancellation).await
-        {
+        if let Some(asset) = variant.assets.last() {
+            send_progress(
+                request_id,
+                events,
+                manifest,
+                variant,
+                asset,
+                asset_count.saturating_sub(1),
+                asset_count,
+                "setting_up_runtime",
+                0,
+            )
+            .await?;
+        }
+        let install_result = match manifest.engine_id.as_str() {
+            "exllama" => {
+                super::python_runtime::install_exllama(target, variant, cancellation).await
+            }
+            "vllm" => super::vllm_runtime::install_vllm(target, variant, cancellation).await,
+            _ => Err(invalid_install_error()),
+        };
+        if let Err(error) = install_result {
             async_fs::remove_dir_all(&target)
                 .await
                 .map_err(|_| storage_error())?;
@@ -332,7 +353,7 @@ async fn install_staged(
     check_cancelled(cancellation)?;
     verify_required_files(published_root, manifest, variant)?;
     write_install_marker(published_root, manifest, variant).await?;
-    if manifest.engine_id == "exllama" {
+    if uses_managed_python_runtime(&manifest.engine_id) {
         async_fs::remove_file(published_root.join(PENDING_INSTALL_MARKER))
             .await
             .map_err(|_| storage_error())?;
@@ -354,7 +375,7 @@ async fn install_staged(
         .await?;
     }
 
-    if manifest.engine_id != "exllama" {
+    if !uses_managed_python_runtime(&manifest.engine_id) {
         let target_parent = target.parent().ok_or_else(storage_error)?;
         async_fs::create_dir_all(target_parent)
             .await
@@ -381,7 +402,7 @@ async fn remove_directory_if_present(path: &Path) -> Result<(), ServiceError> {
     }
 }
 
-fn remove_interrupted_exllama_installation(
+fn remove_interrupted_python_installation(
     target: &Path,
     manifest: &EngineManifest,
     variant: &EngineVariant,
@@ -407,6 +428,10 @@ fn remove_interrupted_exllama_installation(
     fs::remove_dir_all(target).map_err(|_| storage_error())
 }
 
+fn uses_managed_python_runtime(engine_id: &str) -> bool {
+    matches!(engine_id, "exllama" | "vllm")
+}
+
 fn extract_downloaded_asset(
     archive_path: &Path,
     destination: &Path,
@@ -415,7 +440,7 @@ fn extract_downloaded_asset(
 ) -> Result<(), ServiceError> {
     let name = asset.name.to_ascii_lowercase();
     if name.ends_with(".whl") {
-        if manifest.engine_id != "exllama" || asset.role != "primary" {
+        if !uses_managed_python_runtime(&manifest.engine_id) || asset.role != "primary" {
             return Err(unsupported_archive_error());
         }
         return Ok(());
@@ -748,6 +773,7 @@ async fn send_progress(
     phase: &str,
     downloaded_bytes: u64,
 ) -> Result<(), ServiceError> {
+    let is_runtime_setup = phase == "setting_up_runtime";
     events
         .send(&Response::event(
             request_id.clone(),
@@ -759,8 +785,8 @@ async fn send_progress(
                 "assetName": asset.name,
                 "assetIndex": asset_index,
                 "assetCount": asset_count,
-                "downloadedBytes": downloaded_bytes,
-                "totalBytes": asset.size_bytes,
+                "downloadedBytes": if is_runtime_setup { 0 } else { downloaded_bytes },
+                "totalBytes": if is_runtime_setup { 0 } else { asset.size_bytes },
             }),
         ))
         .await
@@ -840,7 +866,7 @@ fn validate_install_request(
         let name = asset.name.to_ascii_lowercase();
         let supported_asset = name.ends_with(".zip")
             || name.ends_with(".tar.gz")
-            || (manifest.engine_id == "exllama"
+            || (uses_managed_python_runtime(&manifest.engine_id)
                 && asset.role == "primary"
                 && name.ends_with(".whl"));
         if !supported_asset {
@@ -1090,12 +1116,40 @@ mod tests {
 
     use super::{
         INSTALL_MARKER, INSTALL_MARKER_VERSION, InstalledMarker, archive_relative_path,
-        extract_tar_gz_archive, installed_engine, installed_engine_path,
+        extract_downloaded_asset, extract_tar_gz_archive, installed_engine, installed_engine_path,
+        validate_install_request,
     };
     use crate::{local_engines::catalog::parse_manifest, storage::AppStorage};
 
     const LLAMA_CPP_MANIFEST: &[u8] =
         include_bytes!("../../resources/local-engines/llama_cpp.json");
+    const VLLM_MANIFEST: &[u8] = include_bytes!("../../resources/local-engines/vllm.json");
+
+    #[test]
+    fn validates_locked_vllm_assets_for_linux_and_windows_wsl() {
+        let manifest = parse_manifest(VLLM_MANIFEST).expect("vLLM catalog should validate");
+        for variant_id in ["linux-x86_64-cuda13", "windows-wsl2-linux-x86_64-cuda13"] {
+            let variant = manifest
+                .variants
+                .iter()
+                .find(|variant| variant.variant_id == variant_id)
+                .expect("supported vLLM variant should exist");
+            validate_install_request(&manifest, variant)
+                .expect("pinned release assets should pass installer validation");
+            let wheel = variant
+                .assets
+                .iter()
+                .find(|asset| asset.name.ends_with(".whl"))
+                .expect("vLLM wheel should be pinned");
+            extract_downloaded_asset(
+                std::path::Path::new("not-read-for-verified-wheel"),
+                std::path::Path::new("unused-destination"),
+                &manifest,
+                wheel,
+            )
+            .expect("verified vLLM wheel should be retained for managed installation");
+        }
+    }
 
     #[test]
     fn rejects_unsafe_archive_paths() {

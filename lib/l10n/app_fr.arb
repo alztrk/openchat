@@ -43,7 +43,7 @@
   "localEngineHardwareUnavailable": "Matériel indisponible",
   "localEngineDriverUnsupported": "Mettez à jour le pilote NVIDIA",
   "localEngineDriverVersionUnavailable": "Impossible de vérifier la version du pilote NVIDIA",
-  "localEngineVllmBlockedReason": "Le package vLLM dépend de PyTorch et d’un runtime Python complet qu’OpenChat n’installe pas encore avec un verrou de dépendances complet et vérifié par hachage. Windows natif n’est pas pris en charge en amont ; la configuration WSL2 gérée n’est pas encore disponible.",
+  "localEngineVllmBlockedReason": "vLLM nécessite un pilote NVIDIA version 580 ou ultérieure et un environnement Linux existant. Sous Windows, il utilise une distribution WSL2 existante avec accès au GPU.",
   "localEngineExllamaBlockedReason": "Le runtime ExLlamaV3 n'est pas encore prêt pour l'installation. OpenChat doit épingler et vérifier l'ensemble complet de dépendances TabbyAPI, PyTorch, Triton, Flash Linear Attention et Python avant de le proposer.",
   "localEngineRuntimeRequirements": "Configuration requise : {requirements}",
   "@localEngineRuntimeRequirements": {
@@ -130,6 +130,7 @@
   "localEngineStageDownloading": "Téléchargement",
   "localEngineStageVerifying": "Vérification",
   "localEngineStageExtracting": "Extraction",
+  "localEngineStageRuntimeSetup": "Préparation de l’environnement Python",
   "localEngineStagePublishing": "Finalisation de l’installation",
   "localEngineStageReady": "Prêt",
   "defaultModel": "Par défaut",

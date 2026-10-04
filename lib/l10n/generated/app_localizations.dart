@@ -323,7 +323,7 @@ abstract class AppLocalizations {
   /// No description provided for @localEngineVllmBlockedReason.
   ///
   /// In en, this message translates to:
-  /// **'The vLLM package depends on PyTorch and a full Python runtime that OpenChat does not yet install from a complete, hash-verified dependency lock. Native Windows is unsupported upstream; managed WSL2 setup is not available yet.'**
+  /// **'vLLM requires an NVIDIA driver version 580 or newer and an existing Linux environment. On Windows, it uses an existing WSL2 distribution with GPU access.'**
   String get localEngineVllmBlockedReason;
 
   /// No description provided for @localEngineExllamaBlockedReason.
@@ -739,6 +739,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Extracting'**
   String get localEngineStageExtracting;
+
+  /// No description provided for @localEngineStageRuntimeSetup.
+  ///
+  /// In en, this message translates to:
+  /// **'Setting up the Python runtime'**
+  String get localEngineStageRuntimeSetup;
 
   /// No description provided for @localEngineStagePublishing.
   ///

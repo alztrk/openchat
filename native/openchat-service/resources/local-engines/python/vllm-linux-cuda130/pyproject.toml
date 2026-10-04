@@ -1,0 +1,25 @@
+[project]
+name = "openchat-vllm-runtime"
+version = "0.30.0"
+requires-python = "==3.12.*"
+dependencies = [
+    "torch==2.13.0",
+    "torchaudio==2.11.0",
+    "torchcodec==0.17.0",
+    "torchvision==0.28.0",
+    "vllm==0.30.0",
+]
+
+[tool.uv]
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu130" }
+torchaudio = { index = "pytorch-cu130" }
+torchvision = { index = "pytorch-cu130" }
+torchcodec = { index = "pytorch-cu130" }
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
