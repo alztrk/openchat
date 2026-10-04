@@ -13,7 +13,7 @@ This roadmap reflects the repository's current implementation. It has no calenda
 - Local workspace tools for file listing, search, reading, metadata, writing, and editing, plus web search, URL reading, and terminal command/session tools. Tool calls, arguments, progress, and results are stored with assistant messages and shown in the conversation UI.
 - Global `Ask for approval` and `Full access` settings govern local file and terminal calls. Approval is per call; canonical path checks apply to filesystem tools and do not sandbox terminal processes.
 - Conversation history, project grouping, model favorites, rename/delete/pin actions, retry, and Markdown export. Tool activity is included in Markdown exports.
-- Per-conversation memory inspection, bounded hybrid FTS5 and optional local semantic archive search with dated source excerpts, and a confirmed reset for compacted context that preserves full history.
+- Per-conversation memory inspection, bounded hybrid FTS5 and optional local semantic archive search with dated source excerpts, best-effort credential redaction in derived tool indexes, and a confirmed reset for compacted context that preserves full history.
 - A Windows portable executable build script and local data directories for the database, logs, and cache.
 
 These bullets describe code present in the repository. They do not mean that every provider endpoint or account flow has been verified against a live service.
@@ -41,7 +41,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ## 3. Validate API-key providers
 
-**Status: implemented in source; pending live validation.** Gemini, Groq, Cerebras, OpenRouter, and Mistral are connected through their official OpenAI-compatible endpoints.
+**Status: implemented in source; live account validation deferred until the first GitHub release at the user's request.** Gemini, Groq, Cerebras, OpenRouter, and Mistral are connected through their official OpenAI-compatible endpoints.
 
 - Verify model catalog loading, streaming, cancellation, errors, local history, and tool calls with real accounts for each provider.
 - Confirm current pricing, quota, tool-use capability, and data handling against each provider's account terms.
@@ -140,18 +140,18 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ## 12. Harden network access and indexed data
 
-**Status: planned.** Close the existing network-fetch and local search-data risks before adding remote tools or broader automation.
+**Status: implemented in source and covered by deterministic tests.** The URL policy, archive-index controls, untrusted retrieval boundary, and best-effort credential redaction are in place.
 
 - Add an outbound URL policy for read_url_content. Reject loopback, private, link-local, multicast, reserved, and cloud metadata destinations; validate every redirect and protect DNS resolution from rebinding between validation and connection.
 - Give users clear control over which tool results enter full-text and semantic indexes. Support excluding selected tool types or conversations, clearing derived indexes, and documenting what is stored locally.
 - Keep tool output and historical excerpts marked as untrusted. Never treat retrieved or indexed content as instructions.
-- Redact known credential formats from searchable tool arguments and outputs where reliable detection is possible; make the limits of detection explicit.
+- Redact common credential field names and visible provider token formats from derived keyword and semantic indexes. The migration rebuilds old tool-index rows, removes their old vectors, queues sanitized content for re-embedding, and prunes stale semantic cache files when a new index is loaded. Original message and tool data stay unchanged. Detection does not cover every custom, encoded, or transformed secret.
 
 **Exit criteria:** URL fetches cannot reach prohibited network destinations through direct URLs or redirects; sensitive tool results can be excluded and removed from derived indexes; and existing MCP/browser plans inherit the same network and data-handling policy.
 
 ## 13. Close provider, storage, and runtime correctness gaps
 
-**Status: planned.** Fix bounded parsing, migration, metadata, download, and process-lifecycle issues found in the source audit.
+**Status: implemented in source and covered by deterministic tests.** The audited provider parsing, migration, metadata, download, and process-lifecycle gaps have focused fixes and regression coverage.
 
 - Reject Responses API tool-call events with a missing, invalid, or out-of-range output index. Apply the per-turn tool-call limit to every event that can create a call.
 - Make schema initialization stop at every requested target version. Align user-question item identity between group-level validation and database uniqueness.
@@ -165,7 +165,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ## 14. Automate integration and release validation
 
-**Status: planned.** Make offline, deterministic checks cover the boundaries between Flutter, the Rust service, providers, local runtimes, and the portable launcher.
+**Status: implemented in source and covered by local validation.** Offline checks cover the Flutter/Rust boundary, provider fixtures, migrations, local lifecycle behavior, and the portable launcher. GitHub Actions is configured; a remote run still requires a push or manual workflow dispatch.
 
 - Move the live web-search smoke test and fixed-duration file benchmark out of the default test suite. Keep manual network checks opt-in and run performance benchmarks separately from correctness tests.
 - Add local HTTP fixtures for Chat Completions, Responses, SSE, tool-call round trips, malformed events, cancellation, timeouts, and 401/429/5xx responses.
@@ -178,15 +178,15 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ## 15. Add portable backup, import, and restore
 
-**Status: planned.** Let users move and recover local OpenChat data without exporting credentials.
+**Status: selected-conversation archive v1 implemented.** Users can export selected conversations with attachments, inspect and validate archives, and restore with duplicate handling and rollback. Full-profile database backup and broader interchange formats remain planned.
 
-- Create a versioned archive containing selected conversations or the full local database, attachments, and non-secret settings.
-- Support encrypted backups with an explicit key setup and recovery path. Never include provider API keys, OAuth tokens, or other credentials.
-- Provide integrity manifests, dry-run restore, schema migration, duplicate detection, and clear conflict handling.
-- Use a consistent SQLite backup method and restore transaction so failed imports leave the current profile usable.
-- Keep Markdown export and add a structured JSON/ZIP interchange format with optional attachment inclusion and path/secret redaction.
+- Create a versioned archive for selected conversations and their attachments; full-profile database backup and global settings are not included.
+- Encrypt archives with a passphrase and an age v1 stream. Never include provider API keys, OAuth tokens, linked account/workspace identifiers, projects, or global settings.
+- Inspect and validate archive contents and integrity before restore. Detect duplicate conversation IDs and offer skip-existing or import-as-copy behavior.
+- Restore database rows in one transaction and create attachments exclusively with rollback cleanup so failed imports leave the current profile usable.
+- Keep Markdown export separate. JSON/ZIP interchange, schema-upgrading restore, and full-profile backup remain future work.
 
-**Exit criteria:** a user can verify, restore, or move an archive to another OpenChat profile; failed restore is recoverable; and credentials remain in platform secure storage.
+**Exit criteria for selected-conversation v1:** a user can inspect, export, and restore selected conversations and attachments into another local profile; failed restore is recoverable; and linked credentials remain in platform secure storage. Full-profile migration is not part of this stage's delivered scope.
 
 ## 16. Build a searchable conversation library
 
