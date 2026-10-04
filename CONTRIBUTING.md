@@ -23,7 +23,18 @@ Windows development requires Flutter, Rust with Cargo, and the Visual Studio C++
 
 ## Checks
 
+- GitHub Actions runs the checks below on Windows without provider credentials or live provider requests.
+- `flutter pub get --enforce-lockfile`
+- `flutter gen-l10n`
+- `dart format --output=none --set-exit-if-changed lib test`
 - `flutter analyze`
+- `flutter test`
 - `cargo fmt --manifest-path native/openchat-service/Cargo.toml -- --check`
-- `flutter build windows --release`
+- `cargo fmt --manifest-path native/openchat-launcher/Cargo.toml -- --check`
+- `cargo check --all-targets --locked --manifest-path native/openchat-service/Cargo.toml`
+- `cargo test --locked --manifest-path native/openchat-service/Cargo.toml`
+- `tools/build_windows_portable.ps1`
+- `cargo test --locked --manifest-path native/openchat-launcher/Cargo.toml --target-dir build/launcher-test-target`
 - `git diff --check`
+
+The Windows workflow uploads the portable executable as a short-lived build artifact. It does not publish a GitHub release. Live provider-account checks remain deferred until the first GitHub release.

@@ -64,12 +64,7 @@ fn launch() -> Result<(), LaunchError> {
     }
 
     let bundle_directory = cache_root.join(format!("bundle-{bundle_id}"));
-    prepare_bundle(
-        &cache_root,
-        &bundle_directory,
-        &bundle_id,
-        EMBEDDED_BUNDLE,
-    )?;
+    prepare_bundle(&cache_root, &bundle_directory, &bundle_id, EMBEDDED_BUNDLE)?;
 
     let application = bundle_directory.join("openchat.exe");
     let mut command = Command::new(application);
@@ -123,8 +118,8 @@ fn cleanup_staging_directory(staging_directory: &Path, original_error: LaunchErr
 }
 
 fn extract_bundle(destination: &Path, bundle_id: &str, payload: &[u8]) -> Result<(), LaunchError> {
-    let mut archive = ZipArchive::new(Cursor::new(payload))
-        .map_err(|_| LaunchError::EmbeddedBundleInvalid)?;
+    let mut archive =
+        ZipArchive::new(Cursor::new(payload)).map_err(|_| LaunchError::EmbeddedBundleInvalid)?;
     if archive.is_empty() {
         return Err(LaunchError::EmbeddedBundleInvalid);
     }
@@ -347,7 +342,9 @@ mod tests {
             archive
                 .start_file(file, options)
                 .expect("start required archive file");
-            archive.write_all(file.as_bytes()).expect("write archive file");
+            archive
+                .write_all(file.as_bytes())
+                .expect("write archive file");
         }
         archive
             .finish()
@@ -398,9 +395,7 @@ mod tests {
         assert!(prepare_bundle(cache_root, &bundle_directory, &id, payload).is_err());
         assert!(!bundle_directory.exists());
         assert_eq!(
-            fs::read_dir(cache_root)
-                .expect("read cache root")
-                .count(),
+            fs::read_dir(cache_root).expect("read cache root").count(),
             0
         );
 
@@ -409,7 +404,11 @@ mod tests {
         let valid_directory = cache_root.join(format!("bundle-{valid_id}"));
         prepare_bundle(cache_root, &valid_directory, &valid_id, &valid)
             .expect("retry with a valid archive");
-        assert!(Path::new(&valid_directory).join(".openchat-bundle-id").is_file());
+        assert!(
+            Path::new(&valid_directory)
+                .join(".openchat-bundle-id")
+                .is_file()
+        );
     }
 
     #[test]
@@ -421,12 +420,18 @@ mod tests {
             .start_file("openchat.exe", SimpleFileOptions::default())
             .expect("start incomplete archive file");
         archive.write_all(b"app").expect("write app file");
-        let payload = archive.finish().expect("finish incomplete archive").into_inner();
+        let payload = archive
+            .finish()
+            .expect("finish incomplete archive")
+            .into_inner();
         let id = bundle_id(&payload);
         let bundle_directory = cache_root.join(format!("bundle-{id}"));
 
         assert!(prepare_bundle(cache_root, &bundle_directory, &id, &payload).is_err());
         assert!(!bundle_directory.exists());
-        assert_eq!(fs::read_dir(cache_root).expect("read cache root").count(), 0);
+        assert_eq!(
+            fs::read_dir(cache_root).expect("read cache root").count(),
+            0
+        );
     }
 }

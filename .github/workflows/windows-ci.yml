@@ -1,0 +1,79 @@
+name: Windows CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows validation and portable package
+    runs-on: windows-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.1
+          cache: true
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Resolve locked Flutter packages
+        run: flutter pub get --enforce-lockfile
+
+      - name: Generate localizations
+        run: flutter gen-l10n
+
+      - name: Check Dart formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Analyze Flutter application
+        run: flutter analyze
+
+      - name: Run Flutter tests
+        run: flutter test
+
+      - name: Check Rust formatting
+        run: |
+          cargo fmt --manifest-path native/openchat-service/Cargo.toml -- --check
+          cargo fmt --manifest-path native/openchat-launcher/Cargo.toml -- --check
+
+      - name: Check and test native service
+        run: |
+          cargo check --all-targets --locked --manifest-path native/openchat-service/Cargo.toml
+          cargo test --locked --manifest-path native/openchat-service/Cargo.toml
+
+      - name: Build Windows portable package
+        shell: pwsh
+        run: .\tools\build_windows_portable.ps1
+
+      - name: Smoke-test portable launcher extraction
+        run: cargo test --locked --manifest-path native/openchat-launcher/Cargo.toml --target-dir build/launcher-test-target
+
+      - name: Upload portable executable
+        uses: actions/upload-artifact@v7
+        with:
+          name: OpenChat-Windows-portable
+          path: build/outputs/OpenChat.exe
+          if-no-files-found: error
+          retention-days: 14
