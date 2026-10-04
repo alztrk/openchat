@@ -117,7 +117,7 @@ pub(crate) async fn nvidia_driver_output() -> Result<Vec<u8>, ()> {
     command
         .args([
             OsStr::new("--exec"),
-            OsStr::new("nvidia-smi"),
+            OsStr::new("/usr/lib/wsl/lib/nvidia-smi"),
             OsStr::new("--query-gpu=driver_version"),
             OsStr::new("--format=csv,noheader,nounits"),
         ])
