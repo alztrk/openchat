@@ -239,6 +239,10 @@ pub(super) fn chat_request_http_error(
     provider_id: Option<&str>,
     request_includes_tools: bool,
 ) -> ServiceError {
+    if status == StatusCode::NOT_FOUND {
+        return model_error();
+    }
+
     if request_includes_tools
         && matches!(
             status,
@@ -376,6 +380,11 @@ mod tests {
             false,
         );
         assert_eq!(ordinary_bad_request.code, "provider_request_failed");
+
+        let missing_model =
+            super::chat_request_http_error(reqwest::StatusCode::NOT_FOUND, Some("mistral"), true);
+        assert_eq!(missing_model.code, "model_unavailable");
+        assert!(!missing_model.retryable);
 
         let unauthorized = super::chat_request_http_error(
             reqwest::StatusCode::UNAUTHORIZED,
