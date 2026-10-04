@@ -111,6 +111,13 @@ class AppLocalizationsTr extends AppLocalizations {
   String get localEngineBlocked => 'Engellendi';
 
   @override
+  String get localEngineDeprecated => 'Kullanımdan kaldırıldı';
+
+  @override
+  String get localEngineWindowsDeprecatedReason =>
+      'Windows\'ta vLLM ve ExLlama\'nın yeni kurulumları devre dışı. Mevcut motor dosyaları ve model kayıtları korunur.';
+
+  @override
   String get localEngineUnsupportedPlatform => 'Desteklenmeyen platform';
 
   @override

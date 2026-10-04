@@ -33,6 +33,8 @@
   "localEngineInstalled": "Installed",
   "localEngineNotInstalled": "Not installed",
   "localEngineBlocked": "Blocked",
+  "localEngineDeprecated": "Deprecated",
+  "localEngineWindowsDeprecatedReason": "New vLLM and ExLlama installs are disabled on Windows. Existing runtime files and model registrations are kept.",
   "localEngineUnsupportedPlatform": "Unsupported platform",
   "localEngineHardwareUnavailable": "Hardware unavailable",
   "localEngineDriverUnsupported": "Update NVIDIA driver",

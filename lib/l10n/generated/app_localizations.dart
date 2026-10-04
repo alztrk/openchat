@@ -296,6 +296,18 @@ abstract class AppLocalizations {
   /// **'Blocked'**
   String get localEngineBlocked;
 
+  /// No description provided for @localEngineDeprecated.
+  ///
+  /// In en, this message translates to:
+  /// **'Deprecated'**
+  String get localEngineDeprecated;
+
+  /// No description provided for @localEngineWindowsDeprecatedReason.
+  ///
+  /// In en, this message translates to:
+  /// **'New vLLM and ExLlama installs are disabled on Windows. Existing runtime files and model registrations are kept.'**
+  String get localEngineWindowsDeprecatedReason;
+
   /// No description provided for @localEngineUnsupportedPlatform.
   ///
   /// In en, this message translates to:

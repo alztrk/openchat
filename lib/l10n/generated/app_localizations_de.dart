@@ -114,6 +114,13 @@ class AppLocalizationsDe extends AppLocalizations {
   String get localEngineBlocked => 'Blockiert';
 
   @override
+  String get localEngineDeprecated => 'Veraltet';
+
+  @override
+  String get localEngineWindowsDeprecatedReason =>
+      'Neue Installationen von vLLM und ExLlama sind unter Windows deaktiviert. Vorhandene Laufzeitdateien und Modellregistrierungen bleiben erhalten.';
+
+  @override
   String get localEngineUnsupportedPlatform => 'Nicht unterstützte Plattform';
 
   @override

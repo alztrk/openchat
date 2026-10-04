@@ -40,6 +40,8 @@ const CATALOGS: &[(&str, &[u8])] = &[
     ),
 ];
 
+const WINDOWS_DEPRECATED_ENGINE_IDS: &[&str] = &["vllm", "exllama"];
+
 pub(crate) fn manifests() -> Result<Vec<EngineManifest>, ServiceError> {
     CATALOGS
         .iter()
@@ -58,7 +60,9 @@ pub(crate) fn manifests() -> Result<Vec<EngineManifest>, ServiceError> {
 pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
     models::ensure_storage_directories(storage.root())?;
     let nvidia_driver = nvidia_driver_status().await;
-    let wsl_nvidia_driver = if host_os() == "windows" {
+    let wsl_nvidia_driver = if host_os() == "windows"
+        && catalog_status_for_host("vllm", "installable", host_os()) == "installable"
+    {
         wsl_nvidia_driver_status().await
     } else {
         nvidia_driver
@@ -69,6 +73,13 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
     let engines = manifests()?
         .into_iter()
         .map(|manifest| {
+            let catalog_status =
+                catalog_status_for_host(&manifest.engine_id, &manifest.catalog_status, host_os());
+            let status_reason = status_reason_for_host(
+                &manifest.engine_id,
+                manifest.status_reason.as_deref(),
+                host_os(),
+            );
             let model_directory =
                 models::default_model_directory(storage.root(), &manifest.engine_id)?
                     .to_str()
@@ -85,8 +96,11 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
             } else {
                 nvidia_driver
             };
-            let recommended_variant =
-                recommended_variant_id(&manifest, manifest_driver, host_os(), host_architecture());
+            let recommended_variant = if catalog_status == "installable" {
+                recommended_variant_id(&manifest, manifest_driver, host_os(), host_architecture())
+            } else {
+                None
+            };
             let variants = manifest
                 .variants
                 .iter()
@@ -95,6 +109,7 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
                         storage,
                         &manifest,
                         variant,
+                        catalog_status,
                         driver_status_for_variant(variant, nvidia_driver, wsl_nvidia_driver),
                         recommended_variant.as_deref(),
                     )
@@ -105,8 +120,8 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
                 "displayName": manifest.display_name,
                 "releaseTag": manifest.release_tag,
                 "channel": manifest.channel,
-                "catalogStatus": manifest.catalog_status,
-                "statusReason": manifest.status_reason,
+                "catalogStatus": catalog_status,
+                "statusReason": status_reason,
                 "modelDirectory": model_directory,
                 "runtimeStatus": if manifest.engine_id == "llama_cpp" {
                     runtime.get("status").cloned().unwrap_or(Value::Null)
@@ -280,10 +295,7 @@ pub(crate) fn find_variant(
 }
 
 pub(crate) async fn can_install(manifest: &EngineManifest, variant: &EngineVariant) -> bool {
-    if manifest.catalog_status != "installable"
-        || variant_host_os(variant) != host_os()
-        || variant.architecture != host_architecture()
-    {
+    if !can_install_on_host(manifest, variant, host_os(), host_architecture()) {
         return false;
     }
     let driver_status = if variant_uses_wsl(variant) {
@@ -294,10 +306,22 @@ pub(crate) async fn can_install(manifest: &EngineManifest, variant: &EngineVaria
     variant.accelerator != "cuda" || variant_hardware_status(variant, driver_status).is_none()
 }
 
+fn can_install_on_host(
+    manifest: &EngineManifest,
+    variant: &EngineVariant,
+    os: &str,
+    architecture: &str,
+) -> bool {
+    catalog_status_for_host(&manifest.engine_id, &manifest.catalog_status, os) == "installable"
+        && variant_host_os(variant) == os
+        && variant.architecture == architecture
+}
+
 fn variant_json(
     storage: &AppStorage,
     manifest: &EngineManifest,
     variant: &EngineVariant,
+    catalog_status: &str,
     nvidia_driver: NvidiaDriverStatus,
     recommended_variant: Option<&str>,
 ) -> Result<Value, ServiceError> {
@@ -305,13 +329,15 @@ fn variant_json(
     let platform_matches =
         variant_host_os(variant) == host_os() && variant.architecture == host_architecture();
     let hardware_status = variant_hardware_status(variant, nvidia_driver);
-    let can_install = manifest.catalog_status == "installable"
+    let can_install = catalog_status == "installable"
         && platform_matches
         && hardware_status.is_none()
         && !installed;
     let status = if installed {
         "installed"
-    } else if manifest.catalog_status == "blocked" {
+    } else if catalog_status == "deprecated" {
+        "deprecated"
+    } else if catalog_status == "blocked" {
         "blocked"
     } else if !platform_matches {
         "unsupported_platform"
@@ -464,6 +490,26 @@ fn variant_host_os(variant: &EngineVariant) -> &str {
     variant.host_os.as_deref().unwrap_or(&variant.os)
 }
 
+fn catalog_status_for_host<'a>(engine_id: &str, catalog_status: &'a str, os: &str) -> &'a str {
+    if os == "windows" && WINDOWS_DEPRECATED_ENGINE_IDS.contains(&engine_id) {
+        "deprecated"
+    } else {
+        catalog_status
+    }
+}
+
+fn status_reason_for_host<'a>(
+    engine_id: &str,
+    status_reason: Option<&'a str>,
+    os: &str,
+) -> Option<&'a str> {
+    if os == "windows" && WINDOWS_DEPRECATED_ENGINE_IDS.contains(&engine_id) {
+        Some("windows_deprecated")
+    } else {
+        status_reason
+    }
+}
+
 fn variant_uses_wsl(variant: &EngineVariant) -> bool {
     variant.os == "linux" && variant.host_os.as_deref() == Some("windows")
 }
@@ -580,6 +626,80 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(engine_ids, ["llama_cpp", "vllm", "exllama"]);
+    }
+
+    #[test]
+    fn only_llama_cpp_remains_installable_on_windows() {
+        for engine_id in ["vllm", "exllama"] {
+            assert_eq!(
+                super::catalog_status_for_host(engine_id, "installable", "windows"),
+                "deprecated"
+            );
+            assert_eq!(
+                super::status_reason_for_host(engine_id, None, "windows"),
+                Some("windows_deprecated")
+            );
+            assert_eq!(
+                super::catalog_status_for_host(engine_id, "installable", "linux"),
+                "installable"
+            );
+        }
+
+        assert_eq!(
+            super::catalog_status_for_host("llama_cpp", "installable", "windows"),
+            "installable"
+        );
+    }
+
+    #[test]
+    fn deprecated_engines_are_rejected_by_the_host_install_guard() {
+        for engine_id in ["vllm", "exllama"] {
+            let manifest = CATALOGS
+                .iter()
+                .find(|(candidate_id, _)| *candidate_id == engine_id)
+                .and_then(|(_, bytes)| parse_manifest(bytes).ok())
+                .expect("engine catalog should validate");
+            let windows_variant = manifest
+                .variants
+                .iter()
+                .find(|variant| super::variant_host_os(variant) == "windows")
+                .expect("Windows variant should exist");
+            let linux_variant = manifest
+                .variants
+                .iter()
+                .find(|variant| super::variant_host_os(variant) == "linux")
+                .expect("Linux variant should exist");
+
+            assert!(!super::can_install_on_host(
+                &manifest,
+                windows_variant,
+                "windows",
+                "x86_64"
+            ));
+            assert!(super::can_install_on_host(
+                &manifest,
+                linux_variant,
+                "linux",
+                "x86_64"
+            ));
+        }
+
+        let llama_manifest = CATALOGS
+            .iter()
+            .find(|(candidate_id, _)| *candidate_id == "llama_cpp")
+            .and_then(|(_, bytes)| parse_manifest(bytes).ok())
+            .expect("llama.cpp catalog should validate");
+        let windows_variant = llama_manifest
+            .variants
+            .iter()
+            .find(|variant| super::variant_host_os(variant) == "windows")
+            .expect("Windows variant should exist");
+        assert!(super::can_install_on_host(
+            &llama_manifest,
+            windows_variant,
+            "windows",
+            "x86_64"
+        ));
     }
 
     #[test]

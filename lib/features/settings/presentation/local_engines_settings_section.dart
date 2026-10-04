@@ -719,6 +719,7 @@ class _LocalEnginesSettingsSectionState
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
     final isBlocked = engine.catalogStatus == 'blocked';
+    final isDeprecated = engine.catalogStatus == 'deprecated';
 
     return Card(
       margin: EdgeInsets.zero,
@@ -760,6 +761,8 @@ class _LocalEnginesSettingsSectionState
                             _channelLabel(l10n, engine.channel),
                             emphasized: engine.channel != 'stable',
                           ),
+                          if (isDeprecated)
+                            _buildBadge(context, l10n.localEngineDeprecated),
                         ],
                       ),
                       const SizedBox(height: 4),
@@ -775,7 +778,7 @@ class _LocalEnginesSettingsSectionState
                 ),
               ],
             ),
-            if (isBlocked && engine.statusReason != null) ...[
+            if ((isBlocked || isDeprecated) && engine.statusReason != null) ...[
               const SizedBox(height: 14),
               _buildReasonBanner(context, _statusReasonLabel(l10n, engine)),
             ],
@@ -1361,17 +1364,20 @@ class _LocalEnginesSettingsSectionState
       };
 
   String _statusReasonLabel(AppLocalizations l10n, LocalEngine engine) =>
-      switch (engine.engineId) {
-        'vllm' => l10n.localEngineVllmBlockedReason,
-        'exllama' => l10n.localEngineExllamaBlockedReason,
-        _ => engine.statusReason ?? l10n.localEngineBlocked,
-      };
+      engine.catalogStatus == 'deprecated'
+      ? l10n.localEngineWindowsDeprecatedReason
+      : switch (engine.engineId) {
+          'vllm' => l10n.localEngineVllmBlockedReason,
+          'exllama' => l10n.localEngineExllamaBlockedReason,
+          _ => engine.statusReason ?? l10n.localEngineBlocked,
+        };
 
   String _variantStatusLabel(AppLocalizations l10n, String status) =>
       switch (status) {
         'available' => l10n.localEngineAvailable,
         'installed' => l10n.localEngineInstalled,
         'blocked' => l10n.localEngineBlocked,
+        'deprecated' => l10n.localEngineDeprecated,
         'unsupported_platform' => l10n.localEngineUnsupportedPlatform,
         'hardware_unavailable' => l10n.localEngineHardwareUnavailable,
         'driver_unsupported' => l10n.localEngineDriverUnsupported,

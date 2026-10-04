@@ -33,6 +33,8 @@
   "localEngineInstalled": "Kurulu",
   "localEngineNotInstalled": "Kurulu değil",
   "localEngineBlocked": "Engellendi",
+  "localEngineDeprecated": "Kullanımdan kaldırıldı",
+  "localEngineWindowsDeprecatedReason": "Windows'ta vLLM ve ExLlama'nın yeni kurulumları devre dışı. Mevcut motor dosyaları ve model kayıtları korunur.",
   "localEngineUnsupportedPlatform": "Desteklenmeyen platform",
   "localEngineHardwareUnavailable": "Donanım kullanılamıyor",
   "localEngineDriverUnsupported": "NVIDIA sürücüsünü güncelleyin",
