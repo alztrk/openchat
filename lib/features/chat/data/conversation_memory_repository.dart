@@ -75,6 +75,40 @@ class ConversationMemoryRepository {
     return ConversationMemoryState.fromServiceResponse(response);
   }
 
+  Future<ArchiveIndexSettings> setConversationArchiveIncluded({
+    required String conversationId,
+    required bool included,
+  }) async {
+    final response = await _serviceClient.call(
+      'chat.memory.archive.set_conversation',
+      params: <String, Object?>{
+        'conversationId': conversationId,
+        'included': included,
+      },
+    );
+    return ArchiveIndexSettings.fromServiceResponse(
+      response['archiveIndexSettings'],
+    );
+  }
+
+  Future<ArchiveIndexSettings> setArchiveToolIncluded({
+    required String conversationId,
+    required String toolName,
+    required bool included,
+  }) async {
+    final response = await _serviceClient.call(
+      'chat.memory.archive.set_tool',
+      params: <String, Object?>{
+        'conversationId': conversationId,
+        'toolName': toolName,
+        'included': included,
+      },
+    );
+    return ArchiveIndexSettings.fromServiceResponse(
+      response['archiveIndexSettings'],
+    );
+  }
+
   Future<List<ArchivedMemoryResult>> search(
     String conversationId,
     String query,

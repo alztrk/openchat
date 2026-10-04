@@ -8,6 +8,7 @@ class ConversationMemoryState {
     required this.compactedThroughMessageId,
     required this.summary,
     required this.lastPrompt,
+    required this.archiveIndexSettings,
   });
 
   final String? compactionKind;
@@ -18,6 +19,7 @@ class ConversationMemoryState {
   final String? compactedThroughMessageId;
   final String? summary;
   final ConversationMemoryPrompt? lastPrompt;
+  final ArchiveIndexSettings archiveIndexSettings;
 
   bool get hasContext => compactionKind != null;
 
@@ -58,6 +60,9 @@ class ConversationMemoryState {
           _ => throw const FormatException('Invalid compaction boundary.'),
         };
     final lastPrompt = _optionalObjectMap(response['lastPrompt']);
+    final archiveIndexSettings = ArchiveIndexSettings.fromServiceResponse(
+      response['archiveIndexSettings'],
+    );
     if ((kind == 'summary') != (summary != null)) {
       throw const FormatException('The conversation summary is inconsistent.');
     }
@@ -72,7 +77,70 @@ class ConversationMemoryState {
       lastPrompt: lastPrompt == null
           ? null
           : ConversationMemoryPrompt.fromServiceResponse(lastPrompt),
+      archiveIndexSettings: archiveIndexSettings,
     );
+  }
+
+  ConversationMemoryState withArchiveIndexSettings(
+    ArchiveIndexSettings settings,
+  ) => ConversationMemoryState(
+    compactionKind: compactionKind,
+    compactionProviderId: compactionProviderId,
+    compactionModelId: compactionModelId,
+    compactionConnectionId: compactionConnectionId,
+    compactionWorkspaceId: compactionWorkspaceId,
+    compactedThroughMessageId: compactedThroughMessageId,
+    summary: summary,
+    lastPrompt: lastPrompt,
+    archiveIndexSettings: settings,
+  );
+}
+
+class ArchiveIndexSettings {
+  const ArchiveIndexSettings({required this.included, required this.tools});
+
+  final bool included;
+  final List<ArchiveIndexTool> tools;
+
+  factory ArchiveIndexSettings.fromServiceResponse(Object? rawSettings) {
+    final settings = _requiredObjectMap(rawSettings);
+    final included = settings['included'];
+    final rawTools = settings['tools'];
+    if (included is! bool || rawTools is! List || rawTools.length > 128) {
+      throw const FormatException('Invalid archive indexing settings.');
+    }
+    final tools = rawTools
+        .map(ArchiveIndexTool.fromServiceResponse)
+        .toList(growable: false);
+    final names = tools.map((tool) => tool.name).toSet();
+    if (names.length != tools.length) {
+      throw const FormatException('Duplicate archive indexing tool.');
+    }
+    return ArchiveIndexSettings(
+      included: included,
+      tools: List<ArchiveIndexTool>.unmodifiable(tools),
+    );
+  }
+}
+
+class ArchiveIndexTool {
+  const ArchiveIndexTool({required this.name, required this.included});
+
+  final String name;
+  final bool included;
+
+  factory ArchiveIndexTool.fromServiceResponse(Object? rawTool) {
+    final tool = _requiredObjectMap(rawTool);
+    final name = tool['name'];
+    final included = tool['included'];
+    if (name is! String ||
+        name.trim().isEmpty ||
+        name.length > 128 ||
+        name != name.trim() ||
+        included is! bool) {
+      throw const FormatException('Invalid archive indexing tool.');
+    }
+    return ArchiveIndexTool(name: name, included: included);
   }
 }
 

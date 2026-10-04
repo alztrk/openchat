@@ -1469,6 +1469,16 @@ mod tests {
             .execute_batch(
                 "PRAGMA foreign_keys = ON;
                  CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                 CREATE TABLE messages (
+                    conversation_id TEXT NOT NULL,
+                    id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at INTEGER,
+                    tool_activities TEXT NOT NULL DEFAULT '[]',
+                    PRIMARY KEY (conversation_id, id)
+                 );
                  CREATE TABLE openchat_backend_migrations (
                     version INTEGER PRIMARY KEY,
                     applied_at_unix_ms INTEGER NOT NULL

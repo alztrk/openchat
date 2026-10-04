@@ -2940,6 +2940,66 @@ abstract class AppLocalizations {
   /// **'Completed messages and tool results are searched in this conversation only.'**
   String get conversationMemorySearchInstruction;
 
+  /// No description provided for @conversationMemoryArchiveSettingsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Archive indexing'**
+  String get conversationMemoryArchiveSettingsTitle;
+
+  /// No description provided for @conversationMemoryArchiveSettingsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose which saved conversation text can be added to local archive search. Turning an item off deletes its derived search and semantic index data; the original conversation stays saved.'**
+  String get conversationMemoryArchiveSettingsDescription;
+
+  /// No description provided for @conversationMemoryArchiveIncludeConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Include this conversation'**
+  String get conversationMemoryArchiveIncludeConversation;
+
+  /// No description provided for @conversationMemoryArchiveConversationIncluded.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages and included tool results can appear in archive search.'**
+  String get conversationMemoryArchiveConversationIncluded;
+
+  /// No description provided for @conversationMemoryArchiveConversationExcluded.
+  ///
+  /// In en, this message translates to:
+  /// **'This conversation\'s derived archive indexes are removed and it is excluded from future indexing.'**
+  String get conversationMemoryArchiveConversationExcluded;
+
+  /// No description provided for @conversationMemoryArchiveToolsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool results'**
+  String get conversationMemoryArchiveToolsTitle;
+
+  /// No description provided for @conversationMemoryArchiveToolIncluded.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved details from this tool can appear in archive search.'**
+  String get conversationMemoryArchiveToolIncluded;
+
+  /// No description provided for @conversationMemoryArchiveToolExcluded.
+  ///
+  /// In en, this message translates to:
+  /// **'This tool\'s saved details are removed from archive indexes.'**
+  String get conversationMemoryArchiveToolExcluded;
+
+  /// No description provided for @conversationMemoryArchiveNoTools.
+  ///
+  /// In en, this message translates to:
+  /// **'No completed tool results are saved in this conversation.'**
+  String get conversationMemoryArchiveNoTools;
+
+  /// No description provided for @conversationMemoryArchiveSettingsSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Archive indexing settings could not be saved. Try again.'**
+  String get conversationMemoryArchiveSettingsSaveFailed;
+
   /// No description provided for @conversationMemorySearchNoResults.
   ///
   /// In en, this message translates to:

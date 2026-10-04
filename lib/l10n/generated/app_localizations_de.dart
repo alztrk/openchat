@@ -1728,6 +1728,44 @@ class AppLocalizationsDe extends AppLocalizations {
       'Abgeschlossene Nachrichten und Toolergebnisse werden nur in dieser Unterhaltung durchsucht.';
 
   @override
+  String get conversationMemoryArchiveSettingsTitle => 'Archivindexierung';
+
+  @override
+  String get conversationMemoryArchiveSettingsDescription =>
+      'Wählen Sie, welche gespeicherten Unterhaltungstexte in die lokale Archivsuche aufgenommen werden. Beim Ausschalten werden die abgeleiteten Such- und semantischen Indexdaten gelöscht; die Unterhaltung selbst bleibt gespeichert.';
+
+  @override
+  String get conversationMemoryArchiveIncludeConversation =>
+      'Diese Unterhaltung einbeziehen';
+
+  @override
+  String get conversationMemoryArchiveConversationIncluded =>
+      'Nachrichten und einbezogene Werkzeugergebnisse können in der Archivsuche erscheinen.';
+
+  @override
+  String get conversationMemoryArchiveConversationExcluded =>
+      'Die abgeleiteten Archivindizes dieser Unterhaltung werden gelöscht und sie wird nicht weiter indexiert.';
+
+  @override
+  String get conversationMemoryArchiveToolsTitle => 'Werkzeugergebnisse';
+
+  @override
+  String get conversationMemoryArchiveToolIncluded =>
+      'Gespeicherte Details dieses Werkzeugs können in der Archivsuche erscheinen.';
+
+  @override
+  String get conversationMemoryArchiveToolExcluded =>
+      'Gespeicherte Details dieses Werkzeugs werden aus den Archivindizes entfernt.';
+
+  @override
+  String get conversationMemoryArchiveNoTools =>
+      'In dieser Unterhaltung sind keine abgeschlossenen Werkzeugergebnisse gespeichert.';
+
+  @override
+  String get conversationMemoryArchiveSettingsSaveFailed =>
+      'Die Einstellungen zur Archivindexierung konnten nicht gespeichert werden. Versuchen Sie es erneut.';
+
+  @override
   String get conversationMemorySearchNoResults =>
       'Keine passenden Archiveinträge.';
 

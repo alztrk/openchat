@@ -1720,6 +1720,45 @@ class AppLocalizationsEs extends AppLocalizations {
       'Solo se buscan mensajes completados y resultados de herramientas dentro de esta conversación.';
 
   @override
+  String get conversationMemoryArchiveSettingsTitle => 'Indexación del archivo';
+
+  @override
+  String get conversationMemoryArchiveSettingsDescription =>
+      'Elige qué texto guardado de la conversación puede añadirse a la búsqueda local del archivo. Al desactivar una opción, se eliminan sus índices derivados de búsqueda y semánticos; la conversación original se conserva.';
+
+  @override
+  String get conversationMemoryArchiveIncludeConversation =>
+      'Incluir esta conversación';
+
+  @override
+  String get conversationMemoryArchiveConversationIncluded =>
+      'Los mensajes y los resultados de herramientas incluidos pueden aparecer en la búsqueda del archivo.';
+
+  @override
+  String get conversationMemoryArchiveConversationExcluded =>
+      'Se eliminan los índices derivados de esta conversación y se excluye de futuras indexaciones.';
+
+  @override
+  String get conversationMemoryArchiveToolsTitle =>
+      'Resultados de herramientas';
+
+  @override
+  String get conversationMemoryArchiveToolIncluded =>
+      'Los detalles guardados de esta herramienta pueden aparecer en la búsqueda del archivo.';
+
+  @override
+  String get conversationMemoryArchiveToolExcluded =>
+      'Los detalles guardados de esta herramienta se eliminan de los índices del archivo.';
+
+  @override
+  String get conversationMemoryArchiveNoTools =>
+      'No hay resultados de herramientas completados guardados en esta conversación.';
+
+  @override
+  String get conversationMemoryArchiveSettingsSaveFailed =>
+      'No se pudieron guardar los ajustes de indexación del archivo. Inténtalo de nuevo.';
+
+  @override
   String get conversationMemorySearchNoResults =>
       'No hay entradas coincidentes en el archivo.';
 

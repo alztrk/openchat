@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
-pub(super) const SCHEMA_VERSION: i64 = 18;
+pub(super) const SCHEMA_VERSION: i64 = 19;
 pub(super) const INITIAL_SCHEMA_VERSION: i64 = 2;
 pub(super) fn initialize_schema(
     connection: &Connection,
@@ -1028,6 +1028,224 @@ pub(super) fn initialize_schema(
         )?;
         transaction.commit()?;
         current_version = 18;
+        if current_version >= target_version {
+            return Ok(current_version);
+        }
+    }
+
+    if current_version < 19 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE conversation_memory_archive_settings (
+                conversation_id TEXT PRIMARY KEY NOT NULL
+                    REFERENCES conversations(id) ON DELETE CASCADE,
+                included INTEGER NOT NULL CHECK (included IN (0, 1))
+            );
+
+            CREATE TABLE conversation_memory_excluded_tools (
+                conversation_id TEXT NOT NULL
+                    REFERENCES conversations(id) ON DELETE CASCADE,
+                tool_name TEXT NOT NULL CHECK (length(trim(tool_name)) BETWEEN 1 AND 128),
+                PRIMARY KEY (conversation_id, tool_name)
+            );
+
+            DROP TRIGGER IF EXISTS conversation_memory_message_insert;
+            DROP TRIGGER IF EXISTS conversation_memory_message_update;
+            CREATE TRIGGER conversation_memory_message_insert
+            AFTER INSERT ON messages
+            WHEN NEW.role IN ('user', 'assistant')
+                AND NEW.status = 'completed'
+                AND COALESCE((
+                    SELECT included FROM conversation_memory_archive_settings
+                    WHERE conversation_id = NEW.conversation_id
+                ), 1) = 1
+            BEGIN
+                INSERT INTO conversation_memory_fts (
+                    rowid, conversation_id, message_id, role, scope_token, content
+                ) VALUES (
+                    NEW.rowid, NEW.conversation_id, NEW.id, NEW.role,
+                    'scope' || lower(hex(CAST(NEW.conversation_id AS BLOB))), NEW.content
+                );
+            END;
+
+            CREATE TRIGGER conversation_memory_message_update
+            AFTER UPDATE OF conversation_id, id, role, content, status ON messages
+            WHEN OLD.status = 'completed' OR NEW.status = 'completed'
+            BEGIN
+                DELETE FROM conversation_memory_fts WHERE rowid = OLD.rowid;
+                INSERT INTO conversation_memory_fts (
+                    rowid, conversation_id, message_id, role, scope_token, content
+                ) SELECT
+                    NEW.rowid, NEW.conversation_id, NEW.id, NEW.role,
+                    'scope' || lower(hex(CAST(NEW.conversation_id AS BLOB))), NEW.content
+                WHERE NEW.role IN ('user', 'assistant') AND NEW.status = 'completed'
+                  AND COALESCE((
+                      SELECT included FROM conversation_memory_archive_settings
+                      WHERE conversation_id = NEW.conversation_id
+                  ), 1) = 1;
+            END;
+
+            DROP TRIGGER IF EXISTS conversation_memory_tool_insert;
+            DROP TRIGGER IF EXISTS conversation_memory_tool_update;
+            CREATE TRIGGER conversation_memory_tool_insert
+            AFTER INSERT ON messages
+            WHEN NEW.role = 'assistant'
+                AND NEW.status = 'completed'
+                AND COALESCE((
+                    SELECT included FROM conversation_memory_archive_settings
+                    WHERE conversation_id = NEW.conversation_id
+                ), 1) = 1
+                AND json_type(
+                    CASE WHEN json_valid(NEW.tool_activities)
+                         THEN NEW.tool_activities ELSE '[]' END
+                ) = 'array'
+                AND EXISTS (
+                    SELECT 1 FROM json_each(
+                        CASE WHEN json_valid(NEW.tool_activities)
+                             THEN NEW.tool_activities ELSE '[]' END
+                    ) AS activity
+                    WHERE json_type(activity.value, '$.output') IS NOT NULL
+                      AND json_extract(activity.value, '$.status')
+                          IN ('completed', 'failed', 'denied', 'cancelled')
+                      AND NOT EXISTS (
+                          SELECT 1 FROM conversation_memory_excluded_tools AS excluded
+                          WHERE excluded.conversation_id = NEW.conversation_id
+                            AND excluded.tool_name = COALESCE(
+                                json_extract(activity.value, '$.name'), ''
+                            )
+                      )
+                )
+            BEGIN
+                INSERT INTO conversation_memory_tools_fts (
+                    rowid, conversation_id, message_id, role, scope_token, content
+                ) VALUES (
+                    NEW.rowid, NEW.conversation_id, NEW.id, NEW.role,
+                    'scope' || lower(hex(CAST(NEW.conversation_id AS BLOB))),
+                    (
+                        SELECT group_concat(
+                            COALESCE(json_extract(activity.value, '$.name'), '') || ' ' ||
+                            COALESCE(json_extract(activity.value, '$.arguments'), '') || ' ' ||
+                            COALESCE(json_extract(activity.value, '$.output'), ''),
+                            char(10)
+                        )
+                        FROM json_each(
+                            CASE WHEN json_valid(NEW.tool_activities)
+                                 THEN NEW.tool_activities ELSE '[]' END
+                        ) AS activity
+                        WHERE json_type(activity.value, '$.output') IS NOT NULL
+                          AND json_extract(activity.value, '$.status')
+                              IN ('completed', 'failed', 'denied', 'cancelled')
+                          AND NOT EXISTS (
+                              SELECT 1 FROM conversation_memory_excluded_tools AS excluded
+                              WHERE excluded.conversation_id = NEW.conversation_id
+                                AND excluded.tool_name = COALESCE(
+                                    json_extract(activity.value, '$.name'), ''
+                                )
+                          )
+                    )
+                );
+            END;
+
+            CREATE TRIGGER conversation_memory_tool_update
+            AFTER UPDATE OF conversation_id, id, role, status, tool_activities ON messages
+            BEGIN
+                DELETE FROM conversation_memory_tools_fts WHERE rowid = OLD.rowid;
+                INSERT INTO conversation_memory_tools_fts (
+                    rowid, conversation_id, message_id, role, scope_token, content
+                )
+                SELECT
+                    NEW.rowid, NEW.conversation_id, NEW.id, NEW.role,
+                    'scope' || lower(hex(CAST(NEW.conversation_id AS BLOB))),
+                    (
+                        SELECT group_concat(
+                            COALESCE(json_extract(activity.value, '$.name'), '') || ' ' ||
+                            COALESCE(json_extract(activity.value, '$.arguments'), '') || ' ' ||
+                            COALESCE(json_extract(activity.value, '$.output'), ''),
+                            char(10)
+                        )
+                        FROM json_each(
+                            CASE WHEN json_valid(NEW.tool_activities)
+                                 THEN NEW.tool_activities ELSE '[]' END
+                        ) AS activity
+                        WHERE json_type(activity.value, '$.output') IS NOT NULL
+                          AND json_extract(activity.value, '$.status')
+                              IN ('completed', 'failed', 'denied', 'cancelled')
+                          AND NOT EXISTS (
+                              SELECT 1 FROM conversation_memory_excluded_tools AS excluded
+                              WHERE excluded.conversation_id = NEW.conversation_id
+                                AND excluded.tool_name = COALESCE(
+                                    json_extract(activity.value, '$.name'), ''
+                                )
+                          )
+                    )
+                WHERE NEW.role = 'assistant'
+                  AND NEW.status = 'completed'
+                  AND COALESCE((
+                      SELECT included FROM conversation_memory_archive_settings
+                      WHERE conversation_id = NEW.conversation_id
+                  ), 1) = 1
+                  AND json_type(
+                      CASE WHEN json_valid(NEW.tool_activities)
+                           THEN NEW.tool_activities ELSE '[]' END
+                  ) = 'array'
+                  AND EXISTS (
+                      SELECT 1 FROM json_each(
+                          CASE WHEN json_valid(NEW.tool_activities)
+                               THEN NEW.tool_activities ELSE '[]' END
+                      ) AS activity
+                      WHERE json_type(activity.value, '$.output') IS NOT NULL
+                        AND json_extract(activity.value, '$.status')
+                            IN ('completed', 'failed', 'denied', 'cancelled')
+                        AND NOT EXISTS (
+                            SELECT 1 FROM conversation_memory_excluded_tools AS excluded
+                            WHERE excluded.conversation_id = NEW.conversation_id
+                              AND excluded.tool_name = COALESCE(
+                                  json_extract(activity.value, '$.name'), ''
+                              )
+                        )
+                  );
+            END;
+
+            DROP TRIGGER IF EXISTS conversation_memory_embedding_message_insert;
+            DROP TRIGGER IF EXISTS conversation_memory_embedding_message_update;
+            CREATE TRIGGER conversation_memory_embedding_message_insert
+            AFTER INSERT ON messages
+            WHEN NEW.role IN ('user', 'assistant') AND NEW.status = 'completed'
+                AND COALESCE((
+                    SELECT included FROM conversation_memory_archive_settings
+                    WHERE conversation_id = NEW.conversation_id
+                ), 1) = 1
+            BEGIN
+                INSERT OR IGNORE INTO conversation_memory_embedding_pending (
+                    conversation_id, message_id
+                ) VALUES (NEW.conversation_id, NEW.id);
+            END;
+
+            CREATE TRIGGER conversation_memory_embedding_message_update
+            AFTER UPDATE OF conversation_id, id, role, content, status, tool_activities ON messages
+            BEGIN
+                DELETE FROM conversation_memory_embedding_pending
+                    WHERE conversation_id = OLD.conversation_id AND message_id = OLD.id;
+                DELETE FROM conversation_memory_embedding_state
+                    WHERE conversation_id = OLD.conversation_id AND message_id = OLD.id;
+                DELETE FROM conversation_memory_embeddings
+                    WHERE conversation_id = OLD.conversation_id AND message_id = OLD.id;
+                INSERT OR IGNORE INTO conversation_memory_embedding_pending (
+                    conversation_id, message_id
+                ) SELECT NEW.conversation_id, NEW.id
+                    WHERE NEW.role IN ('user', 'assistant') AND NEW.status = 'completed'
+                      AND COALESCE((
+                          SELECT included FROM conversation_memory_archive_settings
+                          WHERE conversation_id = NEW.conversation_id
+                      ), 1) = 1;
+            END;",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (19, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 19;
     }
 
     Ok(current_version)
@@ -1092,6 +1310,16 @@ mod tests {
                     applied_at_unix_ms INTEGER NOT NULL
                 );
                 CREATE TABLE pending_question_groups (id TEXT PRIMARY KEY NOT NULL);
+                CREATE TABLE messages (
+                    conversation_id TEXT NOT NULL,
+                    id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at INTEGER,
+                    tool_activities TEXT NOT NULL DEFAULT '[]',
+                    PRIMARY KEY (conversation_id, id)
+                );
                 CREATE TABLE pending_question_items (
                     group_id TEXT NOT NULL REFERENCES pending_question_groups(id) ON DELETE CASCADE,
                     item_id TEXT PRIMARY KEY NOT NULL,
@@ -1570,6 +1798,14 @@ mod tests {
                     tool_activities TEXT NOT NULL DEFAULT '[]',
                     PRIMARY KEY (conversation_id, id)
                 );
+                CREATE VIRTUAL TABLE conversation_memory_fts USING fts5(
+                    conversation_id UNINDEXED, message_id UNINDEXED, role UNINDEXED,
+                    scope_token, content
+                );
+                CREATE VIRTUAL TABLE conversation_memory_tools_fts USING fts5(
+                    conversation_id UNINDEXED, message_id UNINDEXED, role UNINDEXED,
+                    scope_token, content
+                );
                 INSERT INTO conversations (id) VALUES ('conversation-a');",
             )
             .expect("create schema fourteen fixture");
@@ -1686,5 +1922,142 @@ mod tests {
             )
             .expect("read source message after indexing");
         assert_eq!(source_content, "Edited source message.");
+    }
+
+    #[test]
+    fn archive_index_controls_gate_new_message_and_tool_indexes() {
+        let connection = Connection::open_in_memory().expect("open in-memory database");
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys = ON;
+                CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                CREATE TABLE messages (
+                    id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL REFERENCES conversations(id),
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at INTEGER,
+                    output_tokens INTEGER,
+                    tool_activities TEXT NOT NULL DEFAULT '[]',
+                    PRIMARY KEY (conversation_id, id)
+                );
+                INSERT INTO conversations (id) VALUES ('conversation-a'), ('conversation-b');",
+            )
+            .expect("create host schema");
+        assert_eq!(
+            initialize_schema(&connection, 18).expect("apply schema through version 18"),
+            18
+        );
+        connection
+            .execute(
+                "INSERT INTO messages
+                    (id, conversation_id, role, content, status, created_at)
+                 VALUES ('prior', 'conversation-a', 'user', 'priorarchiveword', 'completed', 1)",
+                [],
+            )
+            .expect("insert a pre-control completed message");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM conversation_memory_fts
+                     WHERE conversation_id = 'conversation-a'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("count previously indexed messages"),
+            1
+        );
+
+        assert_eq!(
+            initialize_schema(&connection, SCHEMA_VERSION).expect("apply archive index controls"),
+            SCHEMA_VERSION
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM conversation_memory_fts
+                     WHERE conversation_id = 'conversation-a'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("preserve existing archive entries by default"),
+            1
+        );
+
+        connection
+            .execute(
+                "INSERT INTO conversation_memory_archive_settings (conversation_id, included)
+                 VALUES ('conversation-a', 0)",
+                [],
+            )
+            .expect("exclude one conversation");
+        connection
+            .execute(
+                "INSERT INTO messages
+                    (id, conversation_id, role, content, status, created_at)
+                 VALUES ('excluded', 'conversation-a', 'user', 'neverindexword', 'completed', 2)",
+                [],
+            )
+            .expect("insert a message into the excluded conversation");
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM conversation_memory_fts
+                     WHERE conversation_id = 'conversation-a'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("count rows for excluded conversation"),
+            1
+        );
+        assert_eq!(
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM conversation_memory_embedding_pending
+                     WHERE conversation_id = 'conversation-a' AND message_id = 'excluded'",
+                    [],
+                    |row| row.get::<_, i64>(0),
+                )
+                .expect("check semantic pending rows for excluded conversation"),
+            0
+        );
+
+        connection
+            .execute(
+                "INSERT INTO conversation_memory_excluded_tools (conversation_id, tool_name)
+                 VALUES ('conversation-b', 'read')",
+                [],
+            )
+            .expect("exclude one tool");
+        connection
+            .execute(
+                "INSERT INTO messages (
+                    id, conversation_id, role, content, status, created_at, tool_activities
+                 ) VALUES (
+                    'tools', 'conversation-b', 'assistant', 'assistanttext', 'completed', 3,
+                    '[{\"name\":\"read\",\"arguments\":{},\"output\":{\"content\":\"readsecretword\"},\"status\":\"completed\"},{\"name\":\"write\",\"arguments\":{},\"output\":{\"content\":\"writevisibleword\"},\"status\":\"completed\"}]'
+                 )",
+                [],
+            )
+            .expect("insert completed activity for included and excluded tools");
+        let excluded_tool_hits = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_memory_tools_fts
+                 WHERE conversation_memory_tools_fts MATCH 'content : \"readsecretword\"'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("search excluded tool output");
+        let included_tool_hits = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_memory_tools_fts
+                 WHERE conversation_memory_tools_fts MATCH 'content : \"writevisibleword\"'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("search included tool output");
+        assert_eq!(excluded_tool_hits, 0);
+        assert_eq!(included_tool_hits, 1);
     }
 }

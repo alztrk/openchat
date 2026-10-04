@@ -1,4 +1,5 @@
 mod index;
+mod preferences;
 mod search;
 mod semantic;
 
@@ -10,6 +11,57 @@ pub struct ArchivedMemoryExcerpt {
     pub role: String,
     pub content: String,
     pub created_at_unix_ms: i64,
+}
+
+pub use preferences::{ArchiveIndexSettings, ArchiveIndexTool};
+
+pub fn archive_index_settings(
+    storage: &AppStorage,
+    conversation_id: &str,
+) -> rusqlite::Result<ArchiveIndexSettings> {
+    let connection = storage.connect()?;
+    preferences::load(&connection, conversation_id)
+}
+
+pub async fn set_conversation_archive_included(
+    storage: &AppStorage,
+    conversation_id: &str,
+    included: bool,
+) -> rusqlite::Result<ArchiveIndexSettings> {
+    let mut connection = storage.connect()?;
+    let (settings, changed) =
+        preferences::set_conversation_included(&mut connection, conversation_id, included)?;
+    drop(connection);
+    if changed {
+        semantic::invalidate_cached_index(
+            storage.database_path().to_owned(),
+            storage.semantic_memory_cache_directory(),
+        )
+        .await
+        .map_err(semantic_database_error)?;
+    }
+    Ok(settings)
+}
+
+pub async fn set_archive_tool_included(
+    storage: &AppStorage,
+    conversation_id: &str,
+    tool_name: &str,
+    included: bool,
+) -> rusqlite::Result<ArchiveIndexSettings> {
+    let mut connection = storage.connect()?;
+    let (settings, changed) =
+        preferences::set_tool_included(&mut connection, conversation_id, tool_name, included)?;
+    drop(connection);
+    if changed {
+        semantic::invalidate_cached_index(
+            storage.database_path().to_owned(),
+            storage.semantic_memory_cache_directory(),
+        )
+        .await
+        .map_err(semantic_database_error)?;
+    }
+    Ok(settings)
 }
 
 pub async fn retrieve_archived_memories(

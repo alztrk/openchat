@@ -1733,6 +1733,45 @@ class AppLocalizationsFr extends AppLocalizations {
       'Les messages terminés et les résultats des outils sont recherchés uniquement dans cette conversation.';
 
   @override
+  String get conversationMemoryArchiveSettingsTitle =>
+      'Indexation de l’archive';
+
+  @override
+  String get conversationMemoryArchiveSettingsDescription =>
+      'Choisissez les textes enregistrés de la conversation qui peuvent être ajoutés à la recherche locale de l’archive. Désactiver une option supprime ses index de recherche et sémantiques dérivés ; la conversation d’origine reste enregistrée.';
+
+  @override
+  String get conversationMemoryArchiveIncludeConversation =>
+      'Inclure cette conversation';
+
+  @override
+  String get conversationMemoryArchiveConversationIncluded =>
+      'Les messages et les résultats d’outils inclus peuvent apparaître dans la recherche de l’archive.';
+
+  @override
+  String get conversationMemoryArchiveConversationExcluded =>
+      'Les index dérivés de cette conversation sont supprimés et elle ne sera plus indexée.';
+
+  @override
+  String get conversationMemoryArchiveToolsTitle => 'Résultats des outils';
+
+  @override
+  String get conversationMemoryArchiveToolIncluded =>
+      'Les détails enregistrés de cet outil peuvent apparaître dans la recherche de l’archive.';
+
+  @override
+  String get conversationMemoryArchiveToolExcluded =>
+      'Les détails enregistrés de cet outil sont supprimés des index de l’archive.';
+
+  @override
+  String get conversationMemoryArchiveNoTools =>
+      'Aucun résultat d’outil terminé n’est enregistré dans cette conversation.';
+
+  @override
+  String get conversationMemoryArchiveSettingsSaveFailed =>
+      'Impossible d’enregistrer les paramètres d’indexation de l’archive. Réessayez.';
+
+  @override
   String get conversationMemorySearchNoResults =>
       'Aucune entrée correspondante dans l’archive.';
 

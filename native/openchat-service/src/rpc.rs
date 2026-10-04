@@ -166,6 +166,14 @@ pub(crate) async fn dispatch(
                         true,
                     )
                 })?;
+            let archive_index_settings =
+                chatgpt_store::archive_index_settings(storage, conversation_id).map_err(|_| {
+                    ServiceError::new(
+                        "conversation_memory_unavailable",
+                        "Conversation archive settings could not be loaded.",
+                        true,
+                    )
+                })?;
             let compaction_kind = state
                 .as_ref()
                 .and_then(|context| context.compaction_kind.as_deref());
@@ -210,7 +218,54 @@ pub(crate) async fn dispatch(
                 "compactedThroughMessageId": compacted_through_message_id,
                 "summary": summary,
                 "lastPrompt": last_prompt,
+                "archiveIndexSettings": archive_index_settings_json(&archive_index_settings),
             }))
+        }
+        "chat.memory.archive.set_conversation" => {
+            let conversation_id = required_memory_conversation_id(&request.params)?;
+            let included = request
+                .params
+                .get("included")
+                .and_then(Value::as_bool)
+                .ok_or_else(invalid_memory_archive_settings_params)?;
+            let settings = chatgpt_store::set_conversation_archive_included(
+                storage,
+                conversation_id,
+                included,
+            )
+            .await
+            .map_err(|_| {
+                ServiceError::new(
+                    "conversation_memory_unavailable",
+                    "Conversation archive settings could not be saved.",
+                    true,
+                )
+            })?;
+            Ok(json!({"archiveIndexSettings": archive_index_settings_json(&settings)}))
+        }
+        "chat.memory.archive.set_tool" => {
+            let conversation_id = required_memory_conversation_id(&request.params)?;
+            let tool_name = required_string(&request.params, "toolName")?;
+            let included = request
+                .params
+                .get("included")
+                .and_then(Value::as_bool)
+                .ok_or_else(invalid_memory_archive_settings_params)?;
+            let settings = chatgpt_store::set_archive_tool_included(
+                storage,
+                conversation_id,
+                tool_name,
+                included,
+            )
+            .await
+            .map_err(|_| {
+                ServiceError::new(
+                    "conversation_memory_unavailable",
+                    "Conversation archive settings could not be saved.",
+                    true,
+                )
+            })?;
+            Ok(json!({"archiveIndexSettings": archive_index_settings_json(&settings)}))
         }
         "chat.context.usage.estimate" => {
             let provider_id = required_string(&request.params, "providerId")?;
@@ -933,6 +988,24 @@ fn required_memory_search_query(params: &Value) -> Result<&str, ServiceError> {
         ));
     }
     Ok(query)
+}
+
+fn archive_index_settings_json(settings: &chatgpt_store::ArchiveIndexSettings) -> Value {
+    json!({
+        "included": settings.included,
+        "tools": settings.tools.iter().map(|tool: &chatgpt_store::ArchiveIndexTool| json!({
+            "name": tool.name,
+            "included": tool.included,
+        })).collect::<Vec<_>>(),
+    })
+}
+
+fn invalid_memory_archive_settings_params() -> ServiceError {
+    ServiceError::new(
+        "conversation_memory_settings_invalid",
+        "Conversation archive settings are invalid.",
+        false,
+    )
 }
 
 fn invalid_context_usage_params() -> ServiceError {

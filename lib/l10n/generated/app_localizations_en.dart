@@ -1702,6 +1702,44 @@ class AppLocalizationsEn extends AppLocalizations {
       'Completed messages and tool results are searched in this conversation only.';
 
   @override
+  String get conversationMemoryArchiveSettingsTitle => 'Archive indexing';
+
+  @override
+  String get conversationMemoryArchiveSettingsDescription =>
+      'Choose which saved conversation text can be added to local archive search. Turning an item off deletes its derived search and semantic index data; the original conversation stays saved.';
+
+  @override
+  String get conversationMemoryArchiveIncludeConversation =>
+      'Include this conversation';
+
+  @override
+  String get conversationMemoryArchiveConversationIncluded =>
+      'Messages and included tool results can appear in archive search.';
+
+  @override
+  String get conversationMemoryArchiveConversationExcluded =>
+      'This conversation\'s derived archive indexes are removed and it is excluded from future indexing.';
+
+  @override
+  String get conversationMemoryArchiveToolsTitle => 'Tool results';
+
+  @override
+  String get conversationMemoryArchiveToolIncluded =>
+      'Saved details from this tool can appear in archive search.';
+
+  @override
+  String get conversationMemoryArchiveToolExcluded =>
+      'This tool\'s saved details are removed from archive indexes.';
+
+  @override
+  String get conversationMemoryArchiveNoTools =>
+      'No completed tool results are saved in this conversation.';
+
+  @override
+  String get conversationMemoryArchiveSettingsSaveFailed =>
+      'Archive indexing settings could not be saved. Try again.';
+
+  @override
   String get conversationMemorySearchNoResults =>
       'No matching archive entries.';
 

@@ -6,6 +6,10 @@ pub(super) fn ensure_archived_memory_indexes(
     connection: &Connection,
     conversation_id: &str,
 ) -> rusqlite::Result<()> {
+    if !archive_indexing_enabled(connection, conversation_id)? {
+        return Ok(());
+    }
+
     let is_backfilled = connection
         .query_row(
             "SELECT 1 FROM conversation_memory_index_state WHERE conversation_id = ?1",
@@ -71,6 +75,13 @@ pub(super) fn ensure_archived_memory_indexes(
                         WHERE json_type(activity.value, '$.output') IS NOT NULL
                           AND json_extract(activity.value, '$.status')
                               IN ('completed', 'failed', 'denied', 'cancelled')
+                          AND NOT EXISTS (
+                              SELECT 1 FROM conversation_memory_excluded_tools AS excluded
+                              WHERE excluded.conversation_id = message.conversation_id
+                                AND excluded.tool_name = COALESCE(
+                                    json_extract(activity.value, '$.name'), ''
+                                )
+                          )
                     )
              FROM messages AS message
              WHERE message.conversation_id = ?1
@@ -88,6 +99,13 @@ pub(super) fn ensure_archived_memory_indexes(
                     WHERE json_type(activity.value, '$.output') IS NOT NULL
                       AND json_extract(activity.value, '$.status')
                           IN ('completed', 'failed', 'denied', 'cancelled')
+                      AND NOT EXISTS (
+                          SELECT 1 FROM conversation_memory_excluded_tools AS excluded
+                          WHERE excluded.conversation_id = message.conversation_id
+                            AND excluded.tool_name = COALESCE(
+                                json_extract(activity.value, '$.name'), ''
+                            )
+                      )
                )
                AND NOT EXISTS (
                     SELECT 1 FROM conversation_memory_tools_fts AS indexed
@@ -105,4 +123,19 @@ pub(super) fn ensure_archived_memory_indexes(
     }
 
     Ok(())
+}
+
+pub(super) fn archive_indexing_enabled(
+    connection: &Connection,
+    conversation_id: &str,
+) -> rusqlite::Result<bool> {
+    connection
+        .query_row(
+            "SELECT included FROM conversation_memory_archive_settings
+             WHERE conversation_id = ?1",
+            [conversation_id],
+            |row| row.get::<_, bool>(0),
+        )
+        .optional()
+        .map(|included| included.unwrap_or(true))
 }

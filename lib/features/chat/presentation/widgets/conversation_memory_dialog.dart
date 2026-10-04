@@ -53,6 +53,8 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
   bool _loadFailed = false;
   bool _searchFailed = false;
   bool _resetFailed = false;
+  bool _isSavingArchiveSettings = false;
+  bool _archiveSettingsFailed = false;
   bool? _semanticSearchReady;
   bool _isPreparingSemanticSearch = false;
   bool _isCancellingSemanticPreparation = false;
@@ -82,6 +84,8 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
       _searchQueryTooShort = false;
       _searchFailed = false;
       _resetFailed = false;
+      _isSavingArchiveSettings = false;
+      _archiveSettingsFailed = false;
       _loadMemory();
       if (oldWidget.repository != widget.repository) {
         _semanticSearchReady = null;
@@ -376,6 +380,48 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
     }
   }
 
+  Future<void> _saveArchiveSettings(
+    Future<ArchiveIndexSettings> Function(
+      ConversationMemoryRepository repository,
+      String conversationId,
+    )
+    save,
+  ) async {
+    final repository = widget.repository;
+    final conversationId = widget.conversationId;
+    if (repository == null ||
+        conversationId == null ||
+        _isSavingArchiveSettings) {
+      return;
+    }
+    setState(() {
+      _isSavingArchiveSettings = true;
+      _archiveSettingsFailed = false;
+    });
+    try {
+      final settings = await save(repository, conversationId);
+      if (!mounted || widget.conversationId != conversationId) return;
+      final memoryState = _memoryState;
+      setState(() {
+        if (memoryState != null) {
+          _memoryState = memoryState.withArchiveIndexSettings(settings);
+        }
+        _isSavingArchiveSettings = false;
+      });
+    } on Object catch (error, stackTrace) {
+      _reportMemoryError(
+        error,
+        stackTrace,
+        'while saving conversation archive indexing settings',
+      );
+      if (!mounted || widget.conversationId != conversationId) return;
+      setState(() {
+        _isSavingArchiveSettings = false;
+        _archiveSettingsFailed = true;
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.embedded) return _buildEmbedded(context);
@@ -407,6 +453,8 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
             _buildSemanticSearchSection(context),
             const SizedBox(height: 14),
             _buildSummarySection(context),
+            const SizedBox(height: 8),
+            _buildArchiveIndexSection(context),
             const SizedBox(height: 18),
             Text(
               l10n.conversationMemorySearchTitle,
@@ -518,6 +566,8 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
           )
         else ...[
           _buildSummarySection(context),
+          const SizedBox(height: 8),
+          _buildArchiveIndexSection(context),
           const SizedBox(height: 18),
           Text(
             l10n.conversationMemorySearchTitle,
@@ -809,6 +859,184 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
           ],
         ],
       ),
+    );
+  }
+
+  Widget _buildArchiveIndexSection(BuildContext context) {
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
+    final settings = _memoryState?.archiveIndexSettings;
+    if (settings == null || _isLoadingMemory || _loadFailed) {
+      return const SizedBox.shrink();
+    }
+
+    return Material(
+      color: palette.composer,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: palette.border),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ListTile(
+        leading: const Icon(Icons.manage_search_rounded),
+        title: Text(l10n.conversationMemoryArchiveSettingsTitle),
+        subtitle: Text(
+          settings.included
+              ? l10n.conversationMemoryArchiveConversationIncluded
+              : l10n.conversationMemoryArchiveConversationExcluded,
+        ),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: _showArchiveIndexSettings,
+      ),
+    );
+  }
+
+  Future<void> _showArchiveIndexSettings() async {
+    final currentSettings = _memoryState?.archiveIndexSettings;
+    if (currentSettings == null || widget.conversationId == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final size = MediaQuery.sizeOf(dialogContext);
+        final contentHeight = (size.height - 220).clamp(160.0, 520.0);
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) => AlertDialog(
+            title: Text(
+              context.openchatL10n.conversationMemoryArchiveSettingsTitle,
+            ),
+            content: SizedBox(
+              width: size.width < 640 ? size.width * 0.78 : 520,
+              height: contentHeight,
+              child: SingleChildScrollView(
+                child: _buildArchiveIndexControls(
+                  dialogContext,
+                  setDialogState,
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text(context.openchatL10n.close),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildArchiveIndexControls(
+    BuildContext dialogContext,
+    StateSetter setDialogState,
+  ) {
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
+    final settings = _memoryState?.archiveIndexSettings;
+    if (settings == null) return const SizedBox.shrink();
+    final detailStyle = Theme.of(context).textTheme.bodySmall
+        ?.copyWith(color: palette.secondaryText);
+
+    Future<void> save(
+      Future<ArchiveIndexSettings> Function(
+        ConversationMemoryRepository repository,
+        String conversationId,
+      )
+      update,
+    ) async {
+      final pendingSave = _saveArchiveSettings(update);
+      setDialogState(() {});
+      await pendingSave;
+      if (dialogContext.mounted) setDialogState(() {});
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          l10n.conversationMemoryArchiveSettingsDescription,
+          style: detailStyle,
+        ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: Text(l10n.conversationMemoryArchiveIncludeConversation),
+          subtitle: Text(
+            settings.included
+                ? l10n.conversationMemoryArchiveConversationIncluded
+                : l10n.conversationMemoryArchiveConversationExcluded,
+          ),
+          value: settings.included,
+          onChanged: _isSavingArchiveSettings
+              ? null
+              : (included) => save(
+                  (repository, conversationId) =>
+                      repository.setConversationArchiveIncluded(
+                        conversationId: conversationId,
+                        included: included,
+                      ),
+                ),
+        ),
+        if (settings.tools.isNotEmpty) ...[
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 2),
+              child: Text(
+                l10n.conversationMemoryArchiveToolsTitle,
+                style: Theme.of(context).textTheme.labelLarge,
+              ),
+            ),
+          ),
+          for (final tool in settings.tools)
+            SwitchListTile.adaptive(
+              key: ValueKey('archive-tool-${tool.name}'),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: Text(tool.name),
+              subtitle: Text(
+                tool.included
+                    ? l10n.conversationMemoryArchiveToolIncluded
+                    : l10n.conversationMemoryArchiveToolExcluded,
+              ),
+              value: tool.included,
+              onChanged: !settings.included || _isSavingArchiveSettings
+                  ? null
+                  : (included) => save(
+                      (repository, conversationId) =>
+                          repository.setArchiveToolIncluded(
+                            conversationId: conversationId,
+                            toolName: tool.name,
+                            included: included,
+                          ),
+                    ),
+            ),
+        ] else
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                l10n.conversationMemoryArchiveNoTools,
+                style: detailStyle,
+              ),
+            ),
+          ),
+        if (_isSavingArchiveSettings) ...[
+          const SizedBox(height: 8),
+          const LinearProgressIndicator(),
+        ],
+        if (_archiveSettingsFailed) ...[
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              l10n.conversationMemoryArchiveSettingsSaveFailed,
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
+            ),
+          ),
+        ],
+      ],
     );
   }
 

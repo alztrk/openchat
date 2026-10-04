@@ -1688,6 +1688,44 @@ class AppLocalizationsTr extends AppLocalizations {
       'Tamamlanmış mesajlar ve araç sonuçları yalnızca bu sohbet içinde aranır.';
 
   @override
+  String get conversationMemoryArchiveSettingsTitle => 'Arşiv indeksleme';
+
+  @override
+  String get conversationMemoryArchiveSettingsDescription =>
+      'Yerel arşiv aramasına hangi kayıtlı sohbet metinlerinin ekleneceğini seç. Bir öğeyi kapatırsan ona ait arama ve anlamsal indeks verileri silinir; asıl sohbet kayıtlı kalır.';
+
+  @override
+  String get conversationMemoryArchiveIncludeConversation =>
+      'Bu sohbeti dahil et';
+
+  @override
+  String get conversationMemoryArchiveConversationIncluded =>
+      'Mesajlar ve dahil edilen araç sonuçları arşiv aramasında yer alabilir.';
+
+  @override
+  String get conversationMemoryArchiveConversationExcluded =>
+      'Bu sohbetin türetilmiş arşiv indeksleri silinir ve yeni indekslemeye alınmaz.';
+
+  @override
+  String get conversationMemoryArchiveToolsTitle => 'Araç sonuçları';
+
+  @override
+  String get conversationMemoryArchiveToolIncluded =>
+      'Bu aracın kayıtlı ayrıntıları arşiv aramasında yer alabilir.';
+
+  @override
+  String get conversationMemoryArchiveToolExcluded =>
+      'Bu aracın kayıtlı ayrıntıları arşiv indekslerinden silinir.';
+
+  @override
+  String get conversationMemoryArchiveNoTools =>
+      'Bu sohbette tamamlanmış araç sonucu yok.';
+
+  @override
+  String get conversationMemoryArchiveSettingsSaveFailed =>
+      'Arşiv indeksleme ayarları kaydedilemedi. Yeniden dene.';
+
+  @override
   String get conversationMemorySearchNoResults => 'Eşleşen arşiv kaydı yok.';
 
   @override

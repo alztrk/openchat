@@ -75,6 +75,9 @@ pub(super) fn search_archived_memories_from_connection(
     result_limit: i64,
     snippet_words: i64,
 ) -> rusqlite::Result<Vec<ArchivedMemoryExcerpt>> {
+    if !index::archive_indexing_enabled(connection, conversation_id)? {
+        return Ok(Vec::new());
+    }
     index::ensure_archived_memory_indexes(connection, conversation_id)?;
 
     let mut statement = connection.prepare(

@@ -84,6 +84,60 @@ void main() {
     );
   });
 
+  testWidgets(
+    'lets users exclude conversations and individual tools from archive indexing',
+    (tester) async {
+      _setViewport(tester);
+      final service = _FakeMemoryServiceClient();
+
+      await tester.pumpWidget(_testApp(service));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Arşiv indeksleme'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Bu sohbeti dahil et'), findsOneWidget);
+      expect(find.text('read'), findsOneWidget);
+
+      final conversationSwitch = find.descendant(
+        of: find.widgetWithText(SwitchListTile, 'Bu sohbeti dahil et'),
+        matching: find.byType(Switch),
+      );
+      await tester.tap(conversationSwitch);
+      await tester.pumpAndSettle();
+      expect(
+        service.calls,
+        contains('chat.memory.archive.set_conversation:conversation-1:false'),
+      );
+      expect(
+        find.text(
+          'Bu sohbetin türetilmiş arşiv indeksleri silinir ve yeni indekslemeye alınmaz.',
+        ),
+        findsNWidgets(2),
+      );
+
+      await tester.tap(conversationSwitch);
+      await tester.pumpAndSettle();
+      final toolSwitch = find.descendant(
+        of: find.widgetWithText(SwitchListTile, 'read'),
+        matching: find.byType(Switch),
+      );
+      await tester.ensureVisible(toolSwitch);
+      await tester.pumpAndSettle();
+      await tester.tap(toolSwitch);
+      await tester.pumpAndSettle();
+      expect(
+        service.calls,
+        contains('chat.memory.archive.set_tool:conversation-1:read:false'),
+      );
+      expect(
+        find.text(
+          'Bu aracın kayıtlı ayrıntıları arşiv indekslerinden silinir.',
+        ),
+        findsOneWidget,
+      );
+    },
+  );
+
   testWidgets('downloads the semantic model only after the user requests it', (
     tester,
   ) async {
@@ -195,6 +249,8 @@ class _FakeMemoryServiceClient extends OpenChatServiceClient {
   String? summary = 'Older preferences summary.';
   int resetCount = 0;
   bool semanticReady = false;
+  bool archiveIncluded = true;
+  bool readToolIncluded = true;
 
   @override
   Future<Map<String, Object?>> call(
@@ -215,7 +271,24 @@ class _FakeMemoryServiceClient extends OpenChatServiceClient {
                 'providerId': 'opencode',
                 'modelId': 'test-model',
               },
+        'archiveIndexSettings': _archiveSettings(),
       };
+    }
+    if (method == 'chat.memory.archive.set_conversation') {
+      final included = params['included'];
+      if (included is! bool) throw StateError('Missing archive selection.');
+      archiveIncluded = included;
+      calls.add('$method:${params['conversationId']}:$archiveIncluded');
+      return <String, Object?>{'archiveIndexSettings': _archiveSettings()};
+    }
+    if (method == 'chat.memory.archive.set_tool') {
+      final included = params['included'];
+      if (included is! bool) throw StateError('Missing tool selection.');
+      readToolIncluded = included;
+      calls.add(
+        '$method:${params['conversationId']}:${params['toolName']}:$readToolIncluded',
+      );
+      return <String, Object?>{'archiveIndexSettings': _archiveSettings()};
     }
     if (method == 'chat.memory.semantic.status') {
       calls.add(method);
@@ -247,6 +320,13 @@ class _FakeMemoryServiceClient extends OpenChatServiceClient {
     }
     throw StateError('Unexpected method $method.');
   }
+
+  Map<String, Object?> _archiveSettings() => <String, Object?>{
+    'included': archiveIncluded,
+    'tools': <Map<String, Object?>>[
+      <String, Object?>{'name': 'read', 'included': readToolIncluded},
+    ],
+  };
 }
 
 class _FakeConversationMemoryRepository extends ConversationMemoryRepository {

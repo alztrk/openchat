@@ -29,7 +29,7 @@ use usearch::{
     ffi::{MetricKind, ScalarKind},
 };
 
-use super::{ArchivedMemoryExcerpt, search};
+use super::{ArchivedMemoryExcerpt, index, search};
 
 const MODEL_ID: &str = "multilingual-e5-small-761b726d";
 const MODEL_REPOSITORY: &str = "Xenova/multilingual-e5-small";
@@ -140,6 +140,11 @@ enum WorkerMessage {
         query: String,
         result_limit: usize,
         response: SyncSender<Result<Vec<ArchivedMemoryExcerpt>, SemanticMemoryError>>,
+    },
+    InvalidateIndex {
+        database_path: PathBuf,
+        cache_directory: PathBuf,
+        response: SyncSender<Result<(), SemanticMemoryError>>,
     },
 }
 
@@ -358,8 +363,38 @@ fn worker_loop(receiver: Receiver<WorkerMessage>) {
                 );
                 let _ = response.send(result);
             }
+            WorkerMessage::InvalidateIndex {
+                database_path,
+                cache_directory,
+                response,
+            } => {
+                let result = runtime.invalidate_cached_index(&database_path, &cache_directory);
+                let _ = response.send(result);
+            }
         }
     }
+}
+
+pub(super) async fn invalidate_cached_index(
+    database_path: PathBuf,
+    cache_directory: PathBuf,
+) -> Result<(), SemanticMemoryError> {
+    tokio::task::spawn_blocking(move || {
+        let sender = worker_sender()?;
+        let (response_sender, response_receiver) = mpsc::sync_channel(1);
+        sender
+            .send(WorkerMessage::InvalidateIndex {
+                database_path,
+                cache_directory,
+                response: response_sender,
+            })
+            .map_err(|error| SemanticMemoryError::Worker(error.to_string()))?;
+        response_receiver
+            .recv()
+            .map_err(|error| SemanticMemoryError::Worker(error.to_string()))?
+    })
+    .await
+    .map_err(|error| SemanticMemoryError::Worker(error.to_string()))?
 }
 
 #[derive(Default)]
@@ -390,6 +425,9 @@ impl SemanticRuntime {
         result_limit: usize,
     ) -> Result<Vec<ArchivedMemoryExcerpt>, SemanticMemoryError> {
         let connection = open_database(database_path)?;
+        if !index::archive_indexing_enabled(&connection, conversation_id)? {
+            return Ok(Vec::new());
+        }
         self.load_model_and_index(&connection, cache_directory)?;
         self.ensure_index_current(&connection, cache_directory)?;
         let namespace = ensure_namespace(&connection, conversation_id)?;
@@ -449,6 +487,15 @@ impl SemanticRuntime {
                 break;
             }
             candidate_count = candidate_count.saturating_mul(2).min(index.size());
+        }
+        if !index::archive_indexing_enabled(&connection, conversation_id)? {
+            return Ok(Vec::new());
+        }
+        let indexed_generation = self.index_generation.ok_or_else(|| {
+            SemanticMemoryError::Index("semantic index generation is unknown".to_owned())
+        })?;
+        if semantic_index_generation(&connection)? != indexed_generation {
+            return Ok(Vec::new());
         }
         Ok(excerpts.into_iter().map(|(_, excerpt)| excerpt).collect())
     }
@@ -535,6 +582,9 @@ impl SemanticRuntime {
         namespace: i64,
         cache_directory: &Path,
     ) -> Result<(), SemanticMemoryError> {
+        if !index::archive_indexing_enabled(connection, conversation_id)? {
+            return Ok(());
+        }
         connection.execute(
             "INSERT OR IGNORE INTO conversation_memory_embedding_backfill (conversation_id)
              VALUES (?1)",
@@ -542,6 +592,9 @@ impl SemanticRuntime {
         )?;
 
         loop {
+            if !index::archive_indexing_enabled(connection, conversation_id)? {
+                return Ok(());
+            }
             let pending = pending_messages(connection, conversation_id, through_message_id)?;
             if !pending.is_empty() {
                 self.embed_messages(connection, &pending, namespace, cache_directory)?;
@@ -577,6 +630,9 @@ impl SemanticRuntime {
                 params![conversation_id, last.created_at, last.message_id],
             )?;
         }
+        if !index::archive_indexing_enabled(connection, conversation_id)? {
+            return Ok(());
+        }
         let generation = semantic_index_generation(connection)?;
         let index = self
             .index
@@ -584,6 +640,54 @@ impl SemanticRuntime {
             .ok_or_else(|| SemanticMemoryError::Index("index is not loaded".to_owned()))?;
         save_index(connection, cache_directory, index, generation)?;
         self.index_generation = Some(generation);
+        Ok(())
+    }
+
+    fn invalidate_cached_index(
+        &mut self,
+        database_path: &Path,
+        cache_directory: &Path,
+    ) -> Result<(), SemanticMemoryError> {
+        let connection = open_database(database_path)?;
+        connection.execute(
+            "UPDATE conversation_memory_semantic_index_state
+             SET indexed_generation = NULL WHERE id = 1",
+            [],
+        )?;
+        self.index = None;
+        self.index_generation = None;
+
+        let directory = model_directory(cache_directory);
+        match fs::symlink_metadata(&directory) {
+            Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+                return Err(SemanticMemoryError::Index(
+                    "semantic index cache path is invalid".to_owned(),
+                ));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(SemanticMemoryError::Io(error.to_string())),
+        }
+        for entry in fs::read_dir(directory)? {
+            let path = entry?.path();
+            let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+                continue;
+            };
+            if file_name.starts_with("index-")
+                && (path
+                    .extension()
+                    .is_some_and(|extension| extension == "usearch")
+                    || file_name.ends_with(".usearch.partial"))
+            {
+                let metadata = fs::symlink_metadata(&path)?;
+                if metadata.file_type().is_symlink() || !metadata.is_file() {
+                    return Err(SemanticMemoryError::Index(
+                        "semantic index cache file is invalid".to_owned(),
+                    ));
+                }
+                fs::remove_file(path)?;
+            }
+        }
         Ok(())
     }
 
@@ -606,11 +710,28 @@ impl SemanticRuntime {
                 )
                 .optional()?;
             if current_hash.as_deref() == Some(content_hash.as_str()) {
-                connection.execute(
+                let transaction = begin_embedding_write(connection)?;
+                if !index::archive_indexing_enabled(&transaction, &message.conversation_id)? {
+                    transaction.rollback()?;
+                    return Ok(());
+                }
+                if current_embedding_source(
+                    &transaction,
+                    &message.conversation_id,
+                    &message.message_id,
+                )?
+                .as_deref()
+                    != Some(source_content.as_str())
+                {
+                    transaction.rollback()?;
+                    continue;
+                }
+                transaction.execute(
                     "DELETE FROM conversation_memory_embedding_pending
                      WHERE conversation_id = ?1 AND message_id = ?2",
                     params![message.conversation_id, message.message_id],
                 )?;
+                transaction.commit()?;
                 continue;
             }
 
@@ -639,7 +760,23 @@ impl SemanticRuntime {
                 .into_iter()
                 .map(quantize_embedding)
                 .collect::<Result<Vec<_>, _>>()?;
-            let old_ids = connection
+            let transaction = begin_embedding_write(connection)?;
+            if !index::archive_indexing_enabled(&transaction, &message.conversation_id)? {
+                transaction.rollback()?;
+                return Ok(());
+            }
+            if current_embedding_source(
+                &transaction,
+                &message.conversation_id,
+                &message.message_id,
+            )?
+            .as_deref()
+                != Some(source_content.as_str())
+            {
+                transaction.rollback()?;
+                continue;
+            }
+            let old_ids = transaction
                 .prepare(
                     "SELECT id FROM conversation_memory_embeddings
                      WHERE conversation_id = ?1 AND message_id = ?2",
@@ -649,8 +786,6 @@ impl SemanticRuntime {
                     |row| row.get::<_, i64>(0),
                 )?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
-
-            let transaction = connection.unchecked_transaction()?;
             transaction.execute(
                 "DELETE FROM conversation_memory_embeddings
                  WHERE conversation_id = ?1 AND message_id = ?2",
@@ -916,6 +1051,11 @@ fn pending_messages(
          LEFT JOIN conversation_memory_tools_fts AS tool ON tool.rowid = message.rowid
          WHERE message.conversation_id = ?1
            AND message.role IN ('user', 'assistant') AND message.status = 'completed'
+           AND NOT EXISTS (
+                SELECT 1 FROM conversation_memory_archive_settings AS excluded
+                WHERE excluded.conversation_id = message.conversation_id
+                  AND excluded.included = 0
+           )
            AND (?2 IS NULL OR (
                 COALESCE(message.created_at, 0) < COALESCE((
                     SELECT boundary.created_at FROM messages AS boundary
@@ -955,6 +1095,11 @@ fn next_backfill_messages(
          WHERE message.conversation_id = ?1
            AND message.role IN ('user', 'assistant') AND message.status = 'completed'
            AND state.message_id IS NULL
+           AND NOT EXISTS (
+                SELECT 1 FROM conversation_memory_archive_settings AS excluded
+                WHERE excluded.conversation_id = message.conversation_id
+                  AND excluded.included = 0
+           )
            AND (?2 IS NULL OR COALESCE(message.created_at, 0) > ?2
                 OR (COALESCE(message.created_at, 0) = ?2 AND message.id > ?3))
            AND (?4 IS NULL OR (
@@ -992,6 +1137,41 @@ fn memory_message_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<MemoryMe
         tool_content: row.get(3)?,
         created_at: row.get(4)?,
     })
+}
+
+fn begin_embedding_write(
+    connection: &Connection,
+) -> Result<rusqlite::Transaction<'_>, SemanticMemoryError> {
+    let transaction = connection.unchecked_transaction()?;
+    transaction.execute(
+        "UPDATE conversation_memory_semantic_index_state
+         SET generation = generation WHERE id = 1",
+        [],
+    )?;
+    Ok(transaction)
+}
+
+fn current_embedding_source(
+    connection: &Connection,
+    conversation_id: &str,
+    message_id: &str,
+) -> rusqlite::Result<Option<String>> {
+    connection
+        .query_row(
+            "SELECT message.content, COALESCE(tool.content, '')
+             FROM messages AS message
+             LEFT JOIN conversation_memory_tools_fts AS tool ON tool.rowid = message.rowid
+             WHERE message.conversation_id = ?1 AND message.id = ?2
+               AND message.role IN ('user', 'assistant') AND message.status = 'completed'",
+            params![conversation_id, message_id],
+            |row| {
+                Ok(embedding_content(
+                    &row.get::<_, String>(0)?,
+                    &row.get::<_, String>(1)?,
+                ))
+            },
+        )
+        .optional()
 }
 
 fn embedding_content(message_content: &str, tool_content: &str) -> String {
@@ -1497,8 +1677,8 @@ mod tests {
 
     use super::{
         INDEX_KEY_ID_BITS, ModelFile, SemanticMemoryError, download_file_from_url,
-        embedding_content, index_key, new_index, parse_content_range, pending_messages,
-        quantize_embedding, semantic_excerpt,
+        embedding_content, index_key, new_index, next_backfill_messages, parse_content_range,
+        pending_messages, quantize_embedding, semantic_excerpt,
     };
 
     struct TemporaryDirectory(PathBuf);
@@ -1747,6 +1927,73 @@ mod tests {
     }
 
     #[test]
+    fn semantic_pending_and_backfill_queries_skip_excluded_conversations() {
+        let connection = rusqlite::Connection::open_in_memory()
+            .expect("open semantic archive preference fixture");
+        connection
+            .execute_batch(
+                "CREATE TABLE messages (
+                    conversation_id TEXT NOT NULL,
+                    id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at INTEGER,
+                    PRIMARY KEY (conversation_id, id)
+                );
+                CREATE TABLE conversation_memory_embedding_pending (
+                    conversation_id TEXT NOT NULL,
+                    message_id TEXT NOT NULL,
+                    PRIMARY KEY (conversation_id, message_id)
+                );
+                CREATE TABLE conversation_memory_archive_settings (
+                    conversation_id TEXT PRIMARY KEY NOT NULL,
+                    included INTEGER NOT NULL
+                );
+                CREATE TABLE conversation_memory_embedding_state (
+                    conversation_id TEXT NOT NULL,
+                    message_id TEXT NOT NULL,
+                    model_id TEXT NOT NULL,
+                    PRIMARY KEY (conversation_id, message_id, model_id)
+                );
+                CREATE VIRTUAL TABLE conversation_memory_tools_fts USING fts5(
+                    conversation_id UNINDEXED, message_id UNINDEXED, role UNINDEXED,
+                    scope_token, content
+                );
+                INSERT INTO messages VALUES
+                    ('excluded', 'pending', 'user', 'should not embed', 'completed', 1),
+                    ('included', 'pending', 'user', 'can embed', 'completed', 1);
+                INSERT INTO conversation_memory_archive_settings VALUES ('excluded', 0);
+                INSERT INTO conversation_memory_embedding_pending VALUES ('excluded', 'pending');
+                INSERT INTO conversation_memory_embedding_pending VALUES ('included', 'pending');",
+            )
+            .expect("create pending and backfill archive fixture");
+
+        assert!(
+            pending_messages(&connection, "excluded", None)
+                .expect("read excluded pending messages")
+                .is_empty()
+        );
+        assert_eq!(
+            pending_messages(&connection, "included", None)
+                .expect("read included pending messages")
+                .len(),
+            1
+        );
+        assert!(
+            next_backfill_messages(&connection, "excluded", None, None, None)
+                .expect("read excluded backfill messages")
+                .is_empty()
+        );
+        assert_eq!(
+            next_backfill_messages(&connection, "included", None, None, None)
+                .expect("read included backfill messages")
+                .len(),
+            1
+        );
+    }
+
+    #[test]
     fn semantic_archive_rebuilds_tool_excerpts_from_the_filtered_tool_index() {
         let connection =
             rusqlite::Connection::open_in_memory().expect("open in-memory semantic archive");
@@ -1765,6 +2012,10 @@ mod tests {
                     conversation_id TEXT NOT NULL,
                     message_id TEXT NOT NULL,
                     PRIMARY KEY (conversation_id, message_id)
+                );
+                CREATE TABLE conversation_memory_archive_settings (
+                    conversation_id TEXT PRIMARY KEY NOT NULL,
+                    included INTEGER NOT NULL
                 );
                 CREATE TABLE conversation_memory_embeddings (
                     id INTEGER PRIMARY KEY,

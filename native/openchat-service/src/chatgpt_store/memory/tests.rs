@@ -76,6 +76,15 @@ fn archived_search_backfills_once_and_stays_within_conversation_and_boundary() {
                     created_at INTEGER,
                     tool_activities TEXT NOT NULL DEFAULT '[]'
                 );
+                CREATE TABLE conversation_memory_archive_settings (
+                    conversation_id TEXT PRIMARY KEY NOT NULL,
+                    included INTEGER NOT NULL
+                );
+                CREATE TABLE conversation_memory_excluded_tools (
+                    conversation_id TEXT NOT NULL,
+                    tool_name TEXT NOT NULL,
+                    PRIMARY KEY (conversation_id, tool_name)
+                );
                 CREATE TABLE conversation_memory_index_state (
                     conversation_id TEXT PRIMARY KEY NOT NULL,
                     backfilled_at_unix_ms INTEGER NOT NULL
@@ -196,6 +205,15 @@ fn archived_search_retrieves_completed_tool_activity_details() {
                     status TEXT NOT NULL,
                     created_at INTEGER,
                     tool_activities TEXT NOT NULL DEFAULT '[]'
+                );
+                CREATE TABLE conversation_memory_archive_settings (
+                    conversation_id TEXT PRIMARY KEY NOT NULL,
+                    included INTEGER NOT NULL
+                );
+                CREATE TABLE conversation_memory_excluded_tools (
+                    conversation_id TEXT NOT NULL,
+                    tool_name TEXT NOT NULL,
+                    PRIMARY KEY (conversation_id, tool_name)
                 );
                 CREATE TABLE conversation_memory_index_state (
                     conversation_id TEXT PRIMARY KEY NOT NULL,
