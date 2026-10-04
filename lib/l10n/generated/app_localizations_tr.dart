@@ -653,6 +653,14 @@ class AppLocalizationsTr extends AppLocalizations {
   String get toolPermissionRequireApproval => 'Onay İste';
 
   @override
+  String get selectedModelDoesNotSupportToolCalls =>
+      'Bu model araç çağrılarını desteklemiyor. Araç erişimi ayarı bu modelde etkili olmaz.';
+
+  @override
+  String get selectedModelToolSupportUnknown =>
+      'Bu model araç çağrısı desteğini bildirmiyor. OpenChat araçları göndermeyi deneyecek; sağlayıcı isteği reddedebilir.';
+
+  @override
   String get toolPermissionRequireApprovalDescription =>
       'Dosya araçları her çağrıda izin ister; proje klasörü ve %LOCALAPPDATA%\\OpenChat ile sınırlıdır. Komut çalıştırma desteklenmez.';
 
@@ -779,6 +787,10 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get providerRequestFailed =>
       'Sağlayıcı yanıtı tamamlayamadı. Kayıtlı mesajların kullanılabilir durumda.';
+
+  @override
+  String get providerToolRequestRejected =>
+      'Sağlayıcı, araç içeren isteği reddetti. Modelin araç desteğini kontrol et veya araç kullanabildiği belirtilen bir model seç.';
 
   @override
   String get contextWindowExceeded =>

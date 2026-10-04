@@ -178,6 +178,7 @@ class AssistantMessage extends StatelessWidget {
         'opencode_free_tier_restricted' => l10n.openCodeFreeTierRestricted,
         'authentication_required' => l10n.providerAuthenticationRequired,
         'rate_limited' => l10n.providerRateLimited,
+        'provider_tool_request_rejected' => l10n.providerToolRequestRejected,
         'model_unavailable' => l10n.selectedModelUnavailable,
         'local_engine_not_installed' ||
         'local_engine_unavailable' => l10n.localModelEngineNotReady,

@@ -2523,6 +2523,7 @@ class _ChatScreenState extends State<ChatScreen> {
       'opencode_free_tier_restricted' => l10n.openCodeFreeTierRestricted,
       'authentication_required' ||
       'refresh_rejected' => l10n.providerAuthenticationRequired,
+      'provider_tool_request_rejected' => l10n.providerToolRequestRejected,
       'provider_endpoint_unavailable' ||
       'invalid_provider_response' => l10n.providerRequestFailed,
       'model_unavailable' => l10n.selectedModelUnavailable,

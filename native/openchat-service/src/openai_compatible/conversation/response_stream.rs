@@ -10,8 +10,8 @@ use crate::{
 };
 
 use super::super::{
-    MAX_EVENT_BYTES, cancelled_error, client, http_error, invalid_response_error, network_error,
-    opencode_free_tier_restricted, protocol_error,
+    MAX_EVENT_BYTES, cancelled_error, chat_request_http_error, client, invalid_response_error,
+    network_error, opencode_free_tier_restricted, protocol_error,
     stream::{
         ResponsesStreamEffect, SseLine, StreamedToolCall, append_tool_call_deltas, finish_reason,
         handle_responses_api_event, parse_sse_line, parse_streamed_tool_calls, pop_sse_line,
@@ -23,6 +23,38 @@ use super::ResponseStreamRequest;
 pub(super) struct StreamedTurn {
     pub(super) round_content: String,
     pub(super) tool_calls: Vec<ToolCall>,
+}
+
+fn request_contains_tool_payload(body: &Value) -> bool {
+    let has_tool_definitions = body
+        .get("tools")
+        .and_then(Value::as_array)
+        .is_some_and(|tools| !tools.is_empty());
+    let has_chat_history = body
+        .get("messages")
+        .and_then(Value::as_array)
+        .is_some_and(|messages| {
+            messages.iter().any(|message| {
+                message
+                    .get("tool_calls")
+                    .and_then(Value::as_array)
+                    .is_some_and(|calls| !calls.is_empty())
+                    || message.get("role").and_then(Value::as_str) == Some("tool")
+            })
+        });
+    let has_responses_history = body
+        .get("input")
+        .and_then(Value::as_array)
+        .is_some_and(|items| {
+            items.iter().any(|item| {
+                matches!(
+                    item.get("type").and_then(Value::as_str),
+                    Some("function_call" | "function_call_output")
+                )
+            })
+        });
+
+    has_tool_definitions || has_chat_history || has_responses_history
 }
 
 pub(super) async fn receive(
@@ -73,7 +105,11 @@ pub(super) async fn receive(
         if request.route.provider_id.as_deref() == Some("llama_cpp") {
             return Err(local_inference_error());
         }
-        return Err(http_error(status, request.route.provider_id.as_deref()));
+        return Err(chat_request_http_error(
+            status,
+            request.route.provider_id.as_deref(),
+            request_contains_tool_payload(request.body),
+        ));
     }
 
     let mut stream = response.bytes_stream();
@@ -356,8 +392,32 @@ fn append_text_field(value: &Value, output: &mut String) {
 mod tests {
     use serde_json::json;
 
-    use super::{connection_error, local_inference_error, mistral_content_delta};
+    use super::{
+        connection_error, local_inference_error, mistral_content_delta,
+        request_contains_tool_payload,
+    };
     use crate::openai_compatible::route::ChatRoute;
+
+    #[test]
+    fn recognizes_tools_in_definitions_and_both_history_wire_formats() {
+        assert!(request_contains_tool_payload(&json!({
+            "tools": [{"type": "function"}]
+        })));
+        assert!(request_contains_tool_payload(&json!({
+            "messages": [{"role": "assistant", "tool_calls": [{"id": "call_1"}]}]
+        })));
+        assert!(request_contains_tool_payload(&json!({
+            "messages": [{"role": "tool", "content": "done"}]
+        })));
+        assert!(request_contains_tool_payload(&json!({
+            "input": [{"type": "function_call_output"}]
+        })));
+        assert!(!request_contains_tool_payload(&json!({
+            "tools": [],
+            "messages": [{"role": "user", "content": "hello"}],
+            "input": [{"type": "message", "role": "user"}]
+        })));
+    }
 
     fn route(provider_id: &str) -> ChatRoute {
         ChatRoute {

@@ -1214,6 +1214,18 @@ abstract class AppLocalizations {
   /// **'Ask for approval'**
   String get toolPermissionRequireApproval;
 
+  /// No description provided for @selectedModelDoesNotSupportToolCalls.
+  ///
+  /// In en, this message translates to:
+  /// **'This model does not support tool calls. Tool access settings do not apply to it.'**
+  String get selectedModelDoesNotSupportToolCalls;
+
+  /// No description provided for @selectedModelToolSupportUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'This model does not report tool-call support. OpenChat will try sending tools; the provider may reject the request.'**
+  String get selectedModelToolSupportUnknown;
+
   /// No description provided for @toolPermissionRequireApprovalDescription.
   ///
   /// In en, this message translates to:
@@ -1441,6 +1453,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The provider could not complete the response. Your saved messages are still available.'**
   String get providerRequestFailed;
+
+  /// No description provided for @providerToolRequestRejected.
+  ///
+  /// In en, this message translates to:
+  /// **'The provider rejected a request containing tools. Check the model\'s tool support or choose a model that advertises tool use.'**
+  String get providerToolRequestRejected;
 
   /// No description provided for @contextWindowExceeded.
   ///

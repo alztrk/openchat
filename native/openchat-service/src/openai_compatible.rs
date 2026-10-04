@@ -234,6 +234,30 @@ fn http_error(status: StatusCode, provider_id: Option<&str>) -> ServiceError {
     }
 }
 
+pub(super) fn chat_request_http_error(
+    status: StatusCode,
+    provider_id: Option<&str>,
+    request_includes_tools: bool,
+) -> ServiceError {
+    if request_includes_tools
+        && matches!(
+            status,
+            StatusCode::BAD_REQUEST | StatusCode::UNPROCESSABLE_ENTITY
+        )
+    {
+        let provider = provider_name(provider_id);
+        return ServiceError::new(
+            "provider_tool_request_rejected",
+            format!(
+                "{provider} rejected a request containing tools. Check the selected model's tool support and the request format."
+            ),
+            false,
+        );
+    }
+
+    http_error(status, provider_id)
+}
+
 fn network_error() -> ServiceError {
     ServiceError::new(
         "network_unavailable",
@@ -329,6 +353,44 @@ mod tests {
     use std::collections::BTreeMap;
 
     use serde_json::{Value, json};
+
+    #[test]
+    fn classifies_tool_payload_rejections_separately_from_auth_and_quota_errors() {
+        let tool_rejection =
+            super::chat_request_http_error(reqwest::StatusCode::BAD_REQUEST, Some("mistral"), true);
+        assert_eq!(tool_rejection.code, "provider_tool_request_rejected");
+        assert!(!tool_rejection.retryable);
+        assert_eq!(
+            super::chat_request_http_error(
+                reqwest::StatusCode::UNPROCESSABLE_ENTITY,
+                Some("mistral"),
+                true,
+            )
+            .code,
+            "provider_tool_request_rejected"
+        );
+
+        let ordinary_bad_request = super::chat_request_http_error(
+            reqwest::StatusCode::BAD_REQUEST,
+            Some("mistral"),
+            false,
+        );
+        assert_eq!(ordinary_bad_request.code, "provider_request_failed");
+
+        let unauthorized = super::chat_request_http_error(
+            reqwest::StatusCode::UNAUTHORIZED,
+            Some("mistral"),
+            true,
+        );
+        assert_eq!(unauthorized.code, "authentication_required");
+
+        let rate_limited = super::chat_request_http_error(
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            Some("mistral"),
+            true,
+        );
+        assert_eq!(rate_limited.code, "rate_limited");
+    }
 
     use super::stream::{
         SseLine, StreamedToolCall, append_tool_call_deltas, finish_reason, parse_sse_line,

@@ -224,4 +224,40 @@ void main() {
       expect(find.textContaining('78'), findsOneWidget);
     },
   );
+
+  testWidgets('shows a localized explanation for tool request rejection', (
+    tester,
+  ) async {
+    const locale = Locale('tr');
+    final l10n = await AppLocalizations.delegate.load(locale);
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: locale,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.light,
+        home: Scaffold(
+          body: AssistantMessage(
+            message: ChatMessage(
+              id: 'tool-rejected',
+              role: ChatMessageRole.assistant,
+              content: '',
+              createdAt: DateTime.utc(2026, 10, 1, 12),
+              status: ChatMessageStatus.failed,
+              failureCode: 'provider_tool_request_rejected',
+            ),
+            modelLabel: 'Provider test model',
+            providerId: 'mistral',
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text(l10n.providerToolRequestRejected), findsOneWidget);
+  });
 }

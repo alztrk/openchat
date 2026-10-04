@@ -656,6 +656,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolPermissionRequireApproval => 'Ask for approval';
 
   @override
+  String get selectedModelDoesNotSupportToolCalls =>
+      'This model does not support tool calls. Tool access settings do not apply to it.';
+
+  @override
+  String get selectedModelToolSupportUnknown =>
+      'This model does not report tool-call support. OpenChat will try sending tools; the provider may reject the request.';
+
+  @override
   String get toolPermissionRequireApprovalDescription =>
       'File tools ask before each call and are limited to the project folder and %LOCALAPPDATA%\\OpenChat. Command execution is unavailable.';
 
@@ -782,6 +790,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get providerRequestFailed =>
       'The provider could not complete the response. Your saved messages are still available.';
+
+  @override
+  String get providerToolRequestRejected =>
+      'The provider rejected a request containing tools. Check the model\'s tool support or choose a model that advertises tool use.';
 
   @override
   String get contextWindowExceeded =>

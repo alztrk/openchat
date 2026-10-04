@@ -393,6 +393,8 @@ class _ComposerActions extends StatelessWidget {
       iconRoot: iconRoot,
       palette: palette,
       compact: compact,
+      hasSelectedModel: selectedModelId != null,
+      supportsToolCalls: contextSupportsTools,
       onSelected: onToolPermissionModeChanged,
     );
     final leftControls = Row(
@@ -682,6 +684,8 @@ class _ToolPermissionSelector extends StatelessWidget {
     required this.iconRoot,
     required this.palette,
     required this.compact,
+    required this.hasSelectedModel,
+    required this.supportsToolCalls,
     required this.onSelected,
   });
 
@@ -689,6 +693,8 @@ class _ToolPermissionSelector extends StatelessWidget {
   final String iconRoot;
   final OpenChatPalette palette;
   final bool compact;
+  final bool hasSelectedModel;
+  final bool? supportsToolCalls;
   final ValueChanged<ToolPermissionMode>? onSelected;
 
   @override
@@ -698,7 +704,7 @@ class _ToolPermissionSelector extends StatelessWidget {
       ToolPermissionMode.requireApproval => l10n.toolPermissionRequireApproval,
       ToolPermissionMode.fullAccess => l10n.toolPermissionFullAccess,
     };
-    return OpenChatSelect<ToolPermissionMode>(
+    final selector = OpenChatSelect<ToolPermissionMode>(
       options: [
         for (final option in ToolPermissionMode.values)
           OpenChatSelectOption<ToolPermissionMode>(
@@ -749,6 +755,15 @@ class _ToolPermissionSelector extends StatelessWidget {
       trailingContent: _composerChevron(iconRoot, palette),
       trailingGap: 0,
     );
+    final capabilityNotice = !hasSelectedModel
+        ? null
+        : switch (supportsToolCalls) {
+            true => null,
+            false => l10n.selectedModelDoesNotSupportToolCalls,
+            null => l10n.selectedModelToolSupportUnknown,
+          };
+    if (capabilityNotice == null) return selector;
+    return Tooltip(message: capabilityNotice, child: selector);
   }
 }
 
