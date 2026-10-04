@@ -1,9 +1,11 @@
 use std::{
-    ffi::OsString, net::SocketAddr, path::PathBuf, process::Stdio, sync::OnceLock, time::Duration,
+    collections::HashSet, ffi::OsString, net::SocketAddr, path::PathBuf, process::Stdio,
+    sync::OnceLock, time::Duration,
 };
 
 use reqwest::Client;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use tokio::{
     net::TcpListener,
     process::{Child, Command},
@@ -15,6 +17,7 @@ use zeroize::{Zeroize, Zeroizing};
 use crate::{protocol::ServiceError, storage::AppStorage};
 
 use super::{
+    external_server::{self, ExternalLlamaServerCandidate},
     installer::{InstalledEngine, installed_engine},
     manifests, models, settings, wsl,
 };
@@ -22,14 +25,19 @@ use super::{
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(300);
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(500);
 const MAX_RUNTIME_PROPERTIES_BYTES: usize = 4 * 1024 * 1024;
+const MAX_EXTERNAL_MODEL_CATALOG_BYTES: usize = 1024 * 1024;
+const MAX_EXTERNAL_MODEL_COUNT: usize = 128;
 
 static RUNNING_SERVER: OnceLock<Mutex<Option<RunningServer>>> = OnceLock::new();
+static EXTERNAL_LLAMA_SERVER: OnceLock<Mutex<Option<ConnectedExternalLlamaServer>>> =
+    OnceLock::new();
 static HEALTH_CLIENT: OnceLock<Result<Client, reqwest::Error>> = OnceLock::new();
 static PROPERTIES_CLIENT: OnceLock<Result<Client, reqwest::Error>> = OnceLock::new();
+static EXTERNAL_CLIENT: OnceLock<Result<Client, reqwest::Error>> = OnceLock::new();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct RuntimeCapabilities {
-    pub(crate) context_window: i64,
+    pub(crate) context_window: Option<i64>,
     pub(crate) supports_images: bool,
     pub(crate) supports_tool_calls: Option<bool>,
 }
@@ -39,6 +47,20 @@ pub(crate) struct RuntimeChatEndpoint {
     pub(crate) model_id: String,
     pub(crate) capabilities: RuntimeCapabilities,
     pub(crate) api_key: Option<Zeroizing<String>>,
+}
+
+#[derive(Clone)]
+struct ConnectedExternalLlamaServer {
+    process_id: u32,
+    port: u16,
+    models: Vec<ExternalLlamaModel>,
+}
+
+#[derive(Clone)]
+struct ExternalLlamaModel {
+    route_id: String,
+    provider_model_id: String,
+    capabilities: RuntimeCapabilities,
 }
 
 struct RunningServer {
@@ -294,11 +316,142 @@ pub(crate) async fn status(storage: &AppStorage) -> Result<Value, ServiceError> 
     Ok(status_json(state.as_ref(), status))
 }
 
+pub(crate) async fn external_server_status() -> Value {
+    let state = external_llama_server_state().lock().await;
+    match state.as_ref() {
+        Some(server) => json!({
+            "connected": true,
+            "processId": server.process_id,
+            "port": server.port,
+            "modelIds": server.models.iter().map(|model| model.provider_model_id.as_str()).collect::<Vec<_>>(),
+        }),
+        None => json!({"connected": false}),
+    }
+}
+
+pub(crate) async fn find_external_server_candidates()
+-> Result<Vec<ExternalLlamaServerCandidate>, ServiceError> {
+    let candidates = external_server::find_running_servers().await?;
+    let managed_process_id = managed_server_process_id().await;
+    let candidates = excluding_managed_server_process(candidates, managed_process_id);
+    reconcile_external_server_candidates(&candidates).await;
+    Ok(candidates)
+}
+
+fn excluding_managed_server_process(
+    candidates: Vec<ExternalLlamaServerCandidate>,
+    managed_process_id: Option<u32>,
+) -> Vec<ExternalLlamaServerCandidate> {
+    candidates
+        .into_iter()
+        .filter(|candidate| Some(candidate.process_id) != managed_process_id)
+        .collect()
+}
+
+async fn managed_server_process_id() -> Option<u32> {
+    running_state()
+        .lock()
+        .await
+        .as_ref()
+        .and_then(|server| server.child.id())
+}
+
+async fn candidate_is_external(
+    candidate: ExternalLlamaServerCandidate,
+) -> Result<bool, ServiceError> {
+    if managed_server_process_id().await == Some(candidate.process_id) {
+        return Ok(false);
+    }
+    external_server::candidate_is_running(candidate).await
+}
+
+pub(crate) async fn reconcile_external_server_candidates(
+    candidates: &[ExternalLlamaServerCandidate],
+) {
+    let mut state = external_llama_server_state().lock().await;
+    if state.as_ref().is_some_and(|server| {
+        !candidates.contains(&ExternalLlamaServerCandidate {
+            process_id: server.process_id,
+            port: server.port,
+        })
+    }) {
+        *state = None;
+    }
+}
+
+pub(crate) async fn connect_external_server(
+    process_id: u32,
+    port: u16,
+) -> Result<Value, ServiceError> {
+    let candidate = ExternalLlamaServerCandidate { process_id, port };
+    if !candidate_is_external(candidate).await? {
+        return Err(external_server_not_found_error());
+    }
+    if !external_health_check(port).await? {
+        return Err(external_server_not_ready_error());
+    }
+    let model_ids = fetch_external_model_ids(port).await?;
+
+    let capabilities = read_external_capabilities(port).await?;
+    if !candidate_is_external(candidate).await? {
+        return Err(external_server_not_found_error());
+    }
+
+    let models = model_ids
+        .into_iter()
+        .map(|provider_model_id| ExternalLlamaModel {
+            route_id: external_model_route_id(&provider_model_id),
+            provider_model_id,
+            capabilities,
+        })
+        .collect();
+    *external_llama_server_state().lock().await = Some(ConnectedExternalLlamaServer {
+        process_id,
+        port,
+        models,
+    });
+    Ok(external_server_status().await)
+}
+
+pub(crate) async fn disconnect_external_server() -> Value {
+    *external_llama_server_state().lock().await = None;
+    json!({"disconnected": true})
+}
+
+pub(crate) async fn chat_model_catalog(
+    storage: &AppStorage,
+    engine_id: &str,
+) -> Result<Value, ServiceError> {
+    if !["llama_cpp", "vllm", "exllama"].contains(&engine_id) {
+        return Err(ServiceError::new(
+            "local_engine_unknown",
+            "The selected local inference engine is not available.",
+            false,
+        ));
+    }
+
+    let mut catalog_models = models::list(storage)?
+        .into_iter()
+        .filter(|model| model.engine_id == engine_id)
+        .map(|model| {
+            let available = is_model_available(storage, &model)?;
+            models::to_json(&model, available)
+        })
+        .collect::<Result<Vec<_>, ServiceError>>()?;
+    if engine_id == "llama_cpp" {
+        catalog_models.extend(external_chat_models().await?);
+    }
+    Ok(json!({"freshness": "current", "models": catalog_models}))
+}
+
 pub(crate) async fn chat_url(
     storage: &AppStorage,
     model_id: &str,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<RuntimeChatEndpoint, ServiceError> {
+    if let Some(endpoint) = external_chat_endpoint(model_id, cancellation).await? {
+        return Ok(endpoint);
+    }
     let status = start_model(storage, model_id, cancellation).await?;
     let port = status
         .get("port")
@@ -317,6 +470,288 @@ pub(crate) async fn chat_url(
         capabilities,
         api_key: server.api_key.clone(),
     })
+}
+
+async fn external_chat_models() -> Result<Vec<Value>, ServiceError> {
+    let Some(server) = external_llama_server_state().lock().await.clone() else {
+        return Ok(Vec::new());
+    };
+    let candidate = ExternalLlamaServerCandidate {
+        process_id: server.process_id,
+        port: server.port,
+    };
+    if !candidate_is_external(candidate).await? {
+        clear_external_server_if_current(candidate).await;
+        return Ok(Vec::new());
+    }
+
+    Ok(server.models.iter().map(external_model_json).collect())
+}
+
+async fn external_chat_endpoint(
+    route_id: &str,
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<Option<RuntimeChatEndpoint>, ServiceError> {
+    let Some(server) = external_llama_server_state().lock().await.clone() else {
+        return Ok(None);
+    };
+    if !server.models.iter().any(|model| model.route_id == route_id) {
+        return Ok(None);
+    }
+    let candidate = ExternalLlamaServerCandidate {
+        process_id: server.process_id,
+        port: server.port,
+    };
+    if !candidate_is_external(candidate).await? {
+        clear_external_server_if_current(candidate).await;
+        return Err(external_server_not_found_error());
+    }
+    if !external_health_check_or_cancel(server.port, cancellation).await? {
+        clear_external_server_if_current(candidate).await;
+        return Err(external_server_not_ready_error());
+    }
+
+    let current = external_llama_server_state().lock().await;
+    let Some(current) = current
+        .as_ref()
+        .filter(|current| current.process_id == server.process_id && current.port == server.port)
+    else {
+        return Err(external_server_not_found_error());
+    };
+    let Some(model) = current
+        .models
+        .iter()
+        .find(|model| model.route_id == route_id)
+    else {
+        return Err(external_server_not_found_error());
+    };
+    Ok(Some(RuntimeChatEndpoint {
+        chat_url: format!("http://127.0.0.1:{}/v1/chat/completions", server.port),
+        model_id: model.provider_model_id.clone(),
+        capabilities: model.capabilities,
+        api_key: None,
+    }))
+}
+
+async fn clear_external_server_if_current(candidate: ExternalLlamaServerCandidate) {
+    let mut state = external_llama_server_state().lock().await;
+    if state.as_ref().is_some_and(|server| {
+        server.process_id == candidate.process_id && server.port == candidate.port
+    }) {
+        *state = None;
+    }
+}
+
+fn external_model_json(model: &ExternalLlamaModel) -> Value {
+    json!({
+        "id": model.route_id,
+        "engineId": "llama_cpp",
+        "displayName": model.provider_model_id,
+        "description": Value::Null,
+        "contextWindow": model.capabilities.context_window,
+        "reasoningLevels": [],
+        "supportsReasoning": false,
+        "supportsImages": model.capabilities.supports_images,
+        "supportsTools": model.capabilities.supports_tool_calls,
+        "defaultReasoningLevel": Value::Null,
+        "isAvailable": true,
+        "reason": Value::Null,
+    })
+}
+
+fn external_model_route_id(provider_model_id: &str) -> String {
+    let digest = Sha256::digest(provider_model_id.as_bytes());
+    let digest = digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("external-llama-{digest}")
+}
+
+async fn external_health_check(port: u16) -> Result<bool, ServiceError> {
+    let response = external_http_client()?
+        .get(format!("http://127.0.0.1:{port}/health"))
+        .send()
+        .await
+        .map_err(|_| external_server_not_ready_error())?;
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED
+        || response.status() == reqwest::StatusCode::FORBIDDEN
+    {
+        return Err(external_server_auth_error());
+    }
+    Ok(response.status().is_success())
+}
+
+async fn external_health_check_or_cancel(
+    port: u16,
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<bool, ServiceError> {
+    if *cancellation.borrow() || cancellation.has_changed().is_err() {
+        return Err(cancelled_error());
+    }
+    tokio::select! {
+        changed = cancellation.changed() => {
+            if changed.is_err() || *cancellation.borrow() {
+                Err(cancelled_error())
+            } else {
+                Ok(false)
+            }
+        }
+        ready = external_health_check(port) => ready,
+    }
+}
+
+async fn fetch_external_model_ids(port: u16) -> Result<Vec<String>, ServiceError> {
+    let response = external_http_client()?
+        .get(format!("http://127.0.0.1:{port}/v1/models"))
+        .send()
+        .await
+        .map_err(|_| external_server_catalog_error())?;
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED
+        || response.status() == reqwest::StatusCode::FORBIDDEN
+    {
+        return Err(external_server_auth_error());
+    }
+    if !response.status().is_success() {
+        return Err(external_server_catalog_error());
+    }
+    let response = read_bounded_json(
+        response,
+        MAX_EXTERNAL_MODEL_CATALOG_BYTES,
+        external_server_catalog_error,
+    )
+    .await?;
+    parse_external_model_ids(&response)
+}
+
+fn parse_external_model_ids(response: &Value) -> Result<Vec<String>, ServiceError> {
+    let raw_models = response
+        .get("data")
+        .and_then(Value::as_array)
+        .filter(|models| !models.is_empty() && models.len() <= MAX_EXTERNAL_MODEL_COUNT)
+        .ok_or_else(external_server_catalog_error)?;
+    let mut known_ids = HashSet::new();
+    let mut model_ids = Vec::with_capacity(raw_models.len());
+    for model in raw_models {
+        let model_id = model
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| {
+                !id.trim().is_empty()
+                    && id.chars().count() <= 512
+                    && !id.chars().any(char::is_control)
+            })
+            .ok_or_else(external_server_catalog_error)?;
+        if known_ids.insert(model_id.to_owned()) {
+            model_ids.push(model_id.to_owned());
+        }
+    }
+    if model_ids.is_empty() {
+        return Err(external_server_catalog_error());
+    }
+    Ok(model_ids)
+}
+
+async fn read_external_capabilities(port: u16) -> Result<RuntimeCapabilities, ServiceError> {
+    let response = external_http_client()?
+        .get(format!("http://127.0.0.1:{port}/props"))
+        .send()
+        .await
+        .map_err(|_| external_server_capability_error())?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(RuntimeCapabilities {
+            context_window: None,
+            supports_images: false,
+            supports_tool_calls: None,
+        });
+    }
+    if response.status() == reqwest::StatusCode::UNAUTHORIZED
+        || response.status() == reqwest::StatusCode::FORBIDDEN
+    {
+        return Ok(RuntimeCapabilities {
+            context_window: None,
+            supports_images: false,
+            supports_tool_calls: None,
+        });
+    }
+    if !response.status().is_success() {
+        return Err(external_server_capability_error());
+    }
+    let properties = read_bounded_json(
+        response,
+        MAX_RUNTIME_PROPERTIES_BYTES,
+        external_server_capability_error,
+    )
+    .await?;
+    Ok(parse_external_capabilities(&properties))
+}
+
+fn parse_external_capabilities(properties: &Value) -> RuntimeCapabilities {
+    let context_window = properties
+        .pointer("/default_generation_settings/n_ctx")
+        .and_then(Value::as_i64)
+        .filter(|context_window| *context_window > 0);
+    let supports_images = properties
+        .pointer("/modalities/vision")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let supports_tool_calls = match (
+        properties
+            .pointer("/chat_template_caps/supports_tools")
+            .and_then(Value::as_bool),
+        properties
+            .pointer("/chat_template_caps/supports_tool_calls")
+            .and_then(Value::as_bool),
+    ) {
+        (Some(supports_tools), Some(supports_tool_calls)) => {
+            Some(supports_tools && supports_tool_calls)
+        }
+        _ => None,
+    };
+    RuntimeCapabilities {
+        context_window,
+        supports_images,
+        supports_tool_calls,
+    }
+}
+
+async fn read_bounded_json(
+    mut response: reqwest::Response,
+    maximum_bytes: usize,
+    error: fn() -> ServiceError,
+) -> Result<Value, ServiceError> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > maximum_bytes as u64)
+    {
+        return Err(error());
+    }
+    let mut body = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(|_| error())? {
+        if body.len().saturating_add(chunk.len()) > maximum_bytes {
+            return Err(error());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    serde_json::from_slice(&body).map_err(|_| error())
+}
+
+fn external_http_client() -> Result<&'static Client, ServiceError> {
+    EXTERNAL_CLIENT
+        .get_or_init(|| {
+            Client::builder()
+                .no_proxy()
+                .redirect(reqwest::redirect::Policy::none())
+                .connect_timeout(Duration::from_secs(2))
+                .timeout(Duration::from_secs(5))
+                .build()
+        })
+        .as_ref()
+        .map_err(|_| external_server_not_ready_error())
+}
+
+fn external_llama_server_state() -> &'static Mutex<Option<ConnectedExternalLlamaServer>> {
+    EXTERNAL_LLAMA_SERVER.get_or_init(|| Mutex::new(None))
 }
 
 pub(crate) fn is_model_available(
@@ -459,7 +894,7 @@ fn parse_runtime_capabilities(properties: &Value) -> Result<RuntimeCapabilities,
     };
 
     Ok(RuntimeCapabilities {
-        context_window,
+        context_window: Some(context_window),
         supports_images,
         supports_tool_calls,
     })
@@ -655,9 +1090,11 @@ async fn prepare_vllm_session(
         current_directory: installed.root.clone(),
         use_wsl,
         initial_capabilities: Some(RuntimeCapabilities {
-            context_window: metadata
-                .context_window
-                .ok_or_else(runtime_capability_error)?,
+            context_window: Some(
+                metadata
+                    .context_window
+                    .ok_or_else(runtime_capability_error)?,
+            ),
             supports_images: metadata.supports_images,
             supports_tool_calls: None,
         }),
@@ -839,6 +1276,46 @@ fn runtime_capability_error() -> ServiceError {
     )
 }
 
+fn external_server_not_found_error() -> ServiceError {
+    ServiceError::new(
+        "local_engine_external_server_not_found",
+        "The selected llama-server process is no longer running on that port.",
+        true,
+    )
+}
+
+fn external_server_not_ready_error() -> ServiceError {
+    ServiceError::new(
+        "local_engine_external_server_not_ready",
+        "The selected llama-server did not pass its local health check.",
+        true,
+    )
+}
+
+fn external_server_auth_error() -> ServiceError {
+    ServiceError::new(
+        "local_engine_external_server_auth_required",
+        "The selected llama-server requires authentication that OpenChat has not been configured to provide.",
+        false,
+    )
+}
+
+fn external_server_catalog_error() -> ServiceError {
+    ServiceError::new(
+        "local_engine_external_server_catalog_invalid",
+        "The selected llama-server did not return a supported local model catalog.",
+        true,
+    )
+}
+
+fn external_server_capability_error() -> ServiceError {
+    ServiceError::new(
+        "local_engine_external_server_capabilities_invalid",
+        "The selected llama-server returned invalid capability information.",
+        true,
+    )
+}
+
 fn cancelled_error() -> ServiceError {
     ServiceError::new(
         "operation_cancelled",
@@ -862,9 +1339,12 @@ mod tests {
     use crate::storage::AppStorage;
 
     use super::{
-        InstalledEngine, MAX_RUNTIME_PROPERTIES_BYTES, RuntimeCapabilities, health_check_or_cancel,
-        installed_engine_for, llama_server_arguments, parse_runtime_capabilities,
-        prepare_tabby_session, read_runtime_capabilities, start_model, vllm_server_arguments,
+        ExternalLlamaModel, ExternalLlamaServerCandidate, InstalledEngine,
+        MAX_RUNTIME_PROPERTIES_BYTES, RuntimeCapabilities, excluding_managed_server_process,
+        external_model_json, external_model_route_id, health_check_or_cancel, installed_engine_for,
+        llama_server_arguments, parse_external_capabilities, parse_external_model_ids,
+        parse_runtime_capabilities, prepare_tabby_session, read_runtime_capabilities, start_model,
+        vllm_server_arguments,
     };
 
     struct TestDirectory(PathBuf);
@@ -909,6 +1389,107 @@ mod tests {
             installed.entrypoint,
             executable.canonicalize().expect("path should canonicalize")
         );
+    }
+
+    #[test]
+    fn external_detection_excludes_the_openchat_managed_process() {
+        let candidates = vec![
+            ExternalLlamaServerCandidate {
+                process_id: 4216,
+                port: 8080,
+            },
+            ExternalLlamaServerCandidate {
+                process_id: 5732,
+                port: 8081,
+            },
+        ];
+
+        assert_eq!(
+            excluding_managed_server_process(candidates, Some(4216)),
+            vec![ExternalLlamaServerCandidate {
+                process_id: 5732,
+                port: 8081,
+            }]
+        );
+    }
+
+    #[test]
+    fn parses_external_model_ids_without_duplicates_or_invalid_values() {
+        let parsed = parse_external_model_ids(&serde_json::json!({
+            "data": [
+                {"id": "qwen3-8b"},
+                {"id": "qwen3-8b"},
+                {"id": "llama-3.1-8b"}
+            ]
+        }))
+        .expect("the OpenAI-compatible catalog should parse");
+        assert_eq!(parsed, ["qwen3-8b", "llama-3.1-8b"]);
+
+        for response in [
+            serde_json::json!({"data": []}),
+            serde_json::json!({"data": [{"id": "  "}]}),
+            serde_json::json!({"data": [{"id": "qwen\n8b"}]}),
+        ] {
+            assert_eq!(
+                parse_external_model_ids(&response)
+                    .expect_err("invalid external catalog values must fail")
+                    .code,
+                "local_engine_external_server_catalog_invalid"
+            );
+        }
+    }
+
+    #[test]
+    fn leaves_unreported_external_capabilities_unknown() {
+        assert_eq!(
+            parse_external_capabilities(&serde_json::json!({
+                "default_generation_settings": {"n_ctx": 32768},
+                "modalities": {"vision": true}
+            })),
+            RuntimeCapabilities {
+                context_window: Some(32_768),
+                supports_images: true,
+                supports_tool_calls: None,
+            }
+        );
+        assert_eq!(
+            parse_external_capabilities(&serde_json::json!({})),
+            RuntimeCapabilities {
+                context_window: None,
+                supports_images: false,
+                supports_tool_calls: None,
+            }
+        );
+    }
+
+    #[test]
+    fn external_model_route_ids_are_stable_and_do_not_expose_model_text() {
+        let model_id = "private/model-id";
+        let route_id = external_model_route_id(model_id);
+
+        assert_eq!(route_id, external_model_route_id(model_id));
+        assert_ne!(route_id, external_model_route_id("different-model"));
+        assert!(route_id.starts_with("external-llama-"));
+        assert!(!route_id.contains("private"));
+    }
+
+    #[test]
+    fn external_model_catalog_does_not_invent_unknown_capabilities() {
+        let model = ExternalLlamaModel {
+            route_id: external_model_route_id("qwen3-8b"),
+            provider_model_id: "qwen3-8b".to_owned(),
+            capabilities: RuntimeCapabilities {
+                context_window: None,
+                supports_images: false,
+                supports_tool_calls: None,
+            },
+        };
+        let json = external_model_json(&model);
+
+        assert_eq!(json["isAvailable"], true);
+        assert_eq!(json["contextWindow"], serde_json::Value::Null);
+        assert_eq!(json["supportsTools"], serde_json::Value::Null);
+        assert_eq!(json["supportsImages"], false);
     }
 
     #[test]
@@ -1179,7 +1760,7 @@ mod tests {
                 .await
                 .expect("reported properties should be read"),
             RuntimeCapabilities {
-                context_window: 32_768,
+                context_window: Some(32_768),
                 supports_images: true,
                 supports_tool_calls: Some(true),
             }
@@ -1245,7 +1826,7 @@ mod tests {
         assert_eq!(
             parse_runtime_capabilities(&properties).expect("capabilities should parse"),
             RuntimeCapabilities {
-                context_window: 32_768,
+                context_window: Some(32_768),
                 supports_images: true,
                 supports_tool_calls: Some(true),
             }
@@ -1278,7 +1859,7 @@ mod tests {
         assert_eq!(
             parse_runtime_capabilities(&properties).expect("context should parse"),
             RuntimeCapabilities {
-                context_window: 4_096,
+                context_window: Some(4_096),
                 supports_images: false,
                 supports_tool_calls: None,
             }

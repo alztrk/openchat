@@ -369,6 +369,26 @@ pub(crate) async fn dispatch(
             storage,
             optional_string(&request.params, "path")?,
         ),
+        "local.engines.external_llama_server.detect" => {
+            local_engines::detect_external_llama_servers().await
+        }
+        "local.engines.external_llama_server.connect" => {
+            local_engines::connect_external_llama_server(
+                required_non_zero_u32(&request.params, "processId")?,
+                required_port(&request.params, "port")?,
+            )
+            .await
+        }
+        "local.engines.external_llama_server.disconnect" => {
+            Ok(local_engines::disconnect_external_llama_server().await)
+        }
+        "local.engines.chat_models.list" => {
+            local_engines::chat_model_catalog(
+                storage,
+                required_string(&request.params, "engineId")?,
+            )
+            .await
+        }
         "local.models.list" => local_engines::model_catalog(storage),
         "local.models.discover" => {
             local_engines::discover_models(
@@ -853,6 +873,32 @@ fn required_string<'a>(params: &'a Value, name: &str) -> Result<&'a str, Service
                 false,
             )
         })
+}
+
+fn required_non_zero_u32(params: &Value, name: &str) -> Result<u32, ServiceError> {
+    params
+        .get(name)
+        .and_then(Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(invalid_local_engine_request)
+}
+
+fn required_port(params: &Value, name: &str) -> Result<u16, ServiceError> {
+    params
+        .get(name)
+        .and_then(Value::as_u64)
+        .and_then(|value| u16::try_from(value).ok())
+        .filter(|value| *value > 0)
+        .ok_or_else(invalid_local_engine_request)
+}
+
+fn invalid_local_engine_request() -> ServiceError {
+    ServiceError::new(
+        "invalid_request_params",
+        "The local engine request parameters are invalid.",
+        false,
+    )
 }
 
 fn required_memory_conversation_id(params: &Value) -> Result<&str, ServiceError> {

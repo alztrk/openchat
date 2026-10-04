@@ -1042,7 +1042,10 @@ class _ChatScreenState extends State<ChatScreen> {
       }
 
       if (_localEngineProviderIds.contains(providerFamily)) {
-        final response = await service.call('local.models.list');
+        final response = await service.call(
+          'local.engines.chat_models.list',
+          params: <String, Object?>{'engineId': providerFamily},
+        );
         final catalog = parseCatalog(
           response,
           routeProviderId: providerFamily,

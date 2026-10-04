@@ -5,6 +5,7 @@ class LocalEngineCatalog {
     required this.engines,
     required this.models,
     required this.runtime,
+    required this.externalLlamaServer,
     this.llamaServerExecutablePath,
     this.llamaServerExecutableAvailable = false,
   });
@@ -12,6 +13,7 @@ class LocalEngineCatalog {
   final List<LocalEngine> engines;
   final List<LocalRegisteredModel> models;
   final LocalEngineRuntimeState runtime;
+  final LocalExternalLlamaServerState externalLlamaServer;
   final String? llamaServerExecutablePath;
   final bool llamaServerExecutableAvailable;
 
@@ -45,12 +47,74 @@ class LocalEngineCatalog {
           .map((value) => LocalRegisteredModel.fromJson(_objectMap(value)))
           .toList(growable: false),
       runtime: LocalEngineRuntimeState.fromJson(_objectMap(json['runtime'])),
+      externalLlamaServer: LocalExternalLlamaServerState.fromJson(
+        _objectMap(json['externalLlamaServer']),
+      ),
       llamaServerExecutablePath: _optionalString(
         json,
         'llamaServerExecutablePath',
       ),
       llamaServerExecutableAvailable:
           llamaServerExecutableAvailable == true,
+    );
+  }
+}
+
+class LocalExternalLlamaServerCandidate {
+  const LocalExternalLlamaServerCandidate({
+    required this.processId,
+    required this.port,
+  });
+
+  final int processId;
+  final int port;
+
+  String get key => '$processId:$port';
+
+  factory LocalExternalLlamaServerCandidate.fromJson(
+    Map<String, Object?> json,
+  ) {
+    return LocalExternalLlamaServerCandidate(
+      processId: _requiredPositiveInt(json, 'processId'),
+      port: _requiredPort(json, 'port'),
+    );
+  }
+}
+
+class LocalExternalLlamaServerState {
+  const LocalExternalLlamaServerState({
+    required this.connected,
+    this.processId,
+    this.port,
+    this.modelIds = const <String>[],
+  });
+
+  final bool connected;
+  final int? processId;
+  final int? port;
+  final List<String> modelIds;
+
+  factory LocalExternalLlamaServerState.fromJson(
+    Map<String, Object?> json,
+  ) {
+    final connected = json['connected'];
+    if (connected is! bool) {
+      throw const FormatException(
+        'External llama-server connection status was invalid.',
+      );
+    }
+    if (!connected) return const LocalExternalLlamaServerState(connected: false);
+    final modelIds = _requiredStringList(json, 'modelIds');
+    if (modelIds.isEmpty) {
+      throw const FormatException(
+        'External llama-server model list was empty.',
+      );
+    }
+    return LocalExternalLlamaServerState(
+      connected: true,
+      processId: _requiredPositiveInt(json, 'processId'),
+      port: _requiredPort(json, 'port'),
+      modelIds: modelIds,
     );
   }
 }
@@ -418,6 +482,18 @@ int _requiredNonNegativeInt(Map<String, Object?> json, String key) {
 int? _optionalNonNegativeInt(Map<String, Object?> json, String key) {
   if (!json.containsKey(key) || json[key] == null) return null;
   return _requiredNonNegativeInt(json, key);
+}
+
+int _requiredPositiveInt(Map<String, Object?> json, String key) {
+  final value = _requiredNonNegativeInt(json, key);
+  if (value > 0) return value;
+  throw FormatException('Local engine response field $key was invalid.');
+}
+
+int _requiredPort(Map<String, Object?> json, String key) {
+  final value = _requiredPositiveInt(json, key);
+  if (value <= 65535) return value;
+  throw FormatException('Local engine response field $key was invalid.');
 }
 
 List<String> _requiredStringList(Map<String, Object?> json, String key) {

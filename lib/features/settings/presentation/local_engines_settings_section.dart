@@ -57,6 +57,11 @@ class _LocalEnginesSettingsSectionState
   LocalEngineRuntimeOperation? _runtimeOperation;
   bool _isCancellingRuntime = false;
   bool _isSavingExecutablePath = false;
+  bool _isDetectingExternalServer = false;
+  bool _isConnectingExternalServer = false;
+  bool _isDisconnectingExternalServer = false;
+  bool _initialExternalServerScanStarted = false;
+  final Set<String> _handledExternalServerCandidates = <String>{};
   int _loadGeneration = 0;
 
   @override
@@ -123,6 +128,11 @@ class _LocalEnginesSettingsSectionState
           ..addAll(customDirectoryIds);
         _loadState = _LocalEnginesLoadState.loaded;
       });
+      if (!_initialExternalServerScanStarted &&
+          defaultTargetPlatform == TargetPlatform.windows) {
+        _initialExternalServerScanStarted = true;
+        await _detectExternalLlamaServers();
+      }
     } on OpenChatServiceException {
       if (!mounted || generation != _loadGeneration) return;
       setState(() {
@@ -141,6 +151,151 @@ class _LocalEnginesSettingsSectionState
         _catalog = null;
         _loadState = _LocalEnginesLoadState.failed;
       });
+    }
+  }
+
+  Future<void> _detectExternalLlamaServers({bool allowRepeat = false}) async {
+    final service = widget.serviceClient;
+    if (service == null || _isDetectingExternalServer) return;
+    setState(() {
+      _isDetectingExternalServer = true;
+      _modelActionError = null;
+    });
+
+    List<LocalExternalLlamaServerCandidate> servers;
+    try {
+      servers = await LocalEnginesRepository(
+        service,
+      ).detectExternalLlamaServers();
+    } on OpenChatServiceException catch (error) {
+      if (mounted) setState(() => _modelActionError = error.code);
+      return;
+    } on FormatException {
+      if (mounted) setState(() => _modelActionError = 'invalid_response');
+      return;
+    } on PlatformException {
+      if (mounted) setState(() => _modelActionError = 'scan_failed');
+      return;
+    } finally {
+      if (mounted) setState(() => _isDetectingExternalServer = false);
+    }
+
+    if (!mounted) return;
+    final connected = _catalog?.externalLlamaServer;
+    if (connected?.connected == true &&
+        !servers.any(
+          (server) =>
+              server.processId == connected?.processId &&
+              server.port == connected?.port,
+        )) {
+      await _loadCatalog();
+      if (!mounted) return;
+    }
+    if (servers.isEmpty) {
+      if (allowRepeat) {
+        showOpenChatToast(
+          context,
+          context.openchatL10n.localEngineExternalServerNotFound,
+          type: OpenChatToastType.info,
+        );
+      }
+      return;
+    }
+
+    for (final server in servers) {
+      if (!mounted) return;
+      final connected = _catalog?.externalLlamaServer;
+      if (connected?.connected == true &&
+          connected?.processId == server.processId &&
+          connected?.port == server.port) {
+        continue;
+      }
+      if (!allowRepeat &&
+          !_handledExternalServerCandidates.add(server.key)) {
+        continue;
+      }
+      _handledExternalServerCandidates.add(server.key);
+
+      final shouldConnect = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          final l10n = dialogContext.openchatL10n;
+          return AlertDialog(
+            title: Text(l10n.localEngineExternalServerFoundTitle),
+            content: SizedBox(
+              width: 420,
+              child: Text(
+                l10n.localEngineExternalServerFoundDescription(server.port),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: Text(l10n.localEngineExternalServerNotNow),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                icon: const Icon(Icons.link_rounded, size: 16),
+                label: Text(l10n.localEngineExternalServerConnect),
+              ),
+            ],
+          );
+        },
+      );
+      if (shouldConnect != true || !mounted) continue;
+
+      setState(() => _isConnectingExternalServer = true);
+      try {
+        final state = await LocalEnginesRepository(
+          service,
+        ).connectExternalLlamaServer(server);
+        if (!state.connected) {
+          throw const FormatException(
+            'The external llama-server was not connected.',
+          );
+        }
+        await _loadCatalog();
+        if (mounted) {
+          showOpenChatToast(
+            context,
+            context.openchatL10n.localEngineExternalServerConnected(
+              server.port,
+              state.modelIds.length,
+            ),
+            type: OpenChatToastType.success,
+          );
+        }
+        break;
+      } on OpenChatServiceException catch (error) {
+        if (mounted) setState(() => _modelActionError = error.code);
+      } on FormatException {
+        if (mounted) setState(() => _modelActionError = 'invalid_response');
+      } on PlatformException {
+        if (mounted) setState(() => _modelActionError = 'connect_failed');
+      } finally {
+        if (mounted) setState(() => _isConnectingExternalServer = false);
+      }
+    }
+  }
+
+  Future<void> _disconnectExternalLlamaServer() async {
+    final service = widget.serviceClient;
+    if (service == null || _isDisconnectingExternalServer) return;
+    setState(() {
+      _isDisconnectingExternalServer = true;
+      _modelActionError = null;
+    });
+    try {
+      await LocalEnginesRepository(service).disconnectExternalLlamaServer();
+      await _loadCatalog();
+    } on OpenChatServiceException catch (error) {
+      if (mounted) setState(() => _modelActionError = error.code);
+    } on FormatException {
+      if (mounted) setState(() => _modelActionError = 'invalid_response');
+    } on PlatformException {
+      if (mounted) setState(() => _modelActionError = 'connect_failed');
+    } finally {
+      if (mounted) setState(() => _isDisconnectingExternalServer = false);
     }
   }
 
@@ -854,6 +1009,10 @@ class _LocalEnginesSettingsSectionState
     final catalog = _catalog;
     final path = catalog?.llamaServerExecutablePath;
     final available = catalog?.llamaServerExecutableAvailable ?? false;
+    final externalServer = catalog?.externalLlamaServer;
+    final externalServerConnected = externalServer?.connected ?? false;
+    final externalServerPort = externalServer?.port;
+    final externalServerModelCount = externalServer?.modelIds.length ?? 0;
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -876,6 +1035,66 @@ class _LocalEnginesSettingsSectionState
               style: TextStyle(color: palette.secondaryText, fontSize: 12),
             ),
             const SizedBox(height: 10),
+            if (externalServerConnected && externalServerPort != null) ...[
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(7),
+                  border: Border.all(color: palette.border),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.link_rounded,
+                        size: 16,
+                        color: palette.accentIcon,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          l10n.localEngineExternalServerConnected(
+                            externalServerPort,
+                            externalServerModelCount,
+                          ),
+                          style: TextStyle(
+                            color: palette.text,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      TextButton(
+                        onPressed: _isDisconnectingExternalServer
+                            ? null
+                            : () => unawaited(
+                                _disconnectExternalLlamaServer(),
+                              ),
+                        child: _isDisconnectingExternalServer
+                            ? const SizedBox.square(
+                                dimension: 16,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Text(l10n.localEngineExternalServerDisconnect),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ] else if (_isConnectingExternalServer) ...[
+              const LinearProgressIndicator(),
+              const SizedBox(height: 8),
+              Text(
+                l10n.localEngineExternalServerConnecting,
+                style: TextStyle(color: palette.secondaryText, fontSize: 12),
+              ),
+            ] else
+              Text(
+                l10n.localEngineExternalServerNotConnected,
+                style: TextStyle(color: palette.secondaryText, fontSize: 12),
+              ),
+            const SizedBox(height: 8),
             if (path == null)
               Text(
                 l10n.localEngineExecutableNotConfigured,
@@ -903,6 +1122,21 @@ class _LocalEnginesSettingsSectionState
               spacing: 8,
               runSpacing: 8,
               children: [
+                if (defaultTargetPlatform == TargetPlatform.windows)
+                  OutlinedButton.icon(
+                    onPressed: _isDetectingExternalServer
+                        ? null
+                        : () => unawaited(
+                            _detectExternalLlamaServers(allowRepeat: true),
+                          ),
+                    icon: _isDetectingExternalServer
+                        ? const SizedBox.square(
+                            dimension: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.radar_rounded, size: 16),
+                    label: Text(l10n.localEngineExternalServerCheck),
+                  ),
                 OutlinedButton.icon(
                   onPressed: _isSavingExecutablePath
                       ? null
@@ -1182,6 +1416,15 @@ class _LocalEnginesSettingsSectionState
           l10n.localEngineExecutableInvalid,
         'local_engine_settings_unavailable' || 'settings' =>
           l10n.localEngineSettingsFailed,
+        'local_engine_process_scan_failed' || 'scan_failed' =>
+          l10n.localEngineExternalServerScanFailed,
+        'local_engine_external_server_auth_required' =>
+          l10n.localEngineExternalServerAuthRequired,
+        'local_engine_external_server_not_found' ||
+        'local_engine_external_server_not_ready' ||
+        'local_engine_external_server_catalog_invalid' ||
+        'local_engine_external_server_capabilities_invalid' ||
+        'connect_failed' => l10n.localEngineExternalServerConnectFailed,
         'start_failed' ||
         'local_engine_start_failed' ||
         'local_engine_runtime_unavailable' => l10n.localModelStartError,

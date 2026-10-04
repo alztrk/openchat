@@ -195,6 +195,62 @@ class AppLocalizationsTr extends AppLocalizations {
       'llama-server dosyası ayarı kaydedilemedi.';
 
   @override
+  String get localEngineExternalServerCheck => 'Çalışan llama-server\'ı ara';
+
+  @override
+  String get localEngineExternalServerNotConnected =>
+      'Kullanıcının başlattığı bir sunucuya bağlı değil. OpenChat bu sunucuyu başlatmaz veya durdurmaz.';
+
+  @override
+  String get localEngineExternalServerConnecting =>
+      'Seçilen yerel sunucu denetleniyor...';
+
+  @override
+  String get localEngineExternalServerFoundTitle =>
+      'Çalışan llama-server bulundu';
+
+  @override
+  String localEngineExternalServerFoundDescription(int port) {
+    return 'Bir llama.cpp sunucusu $port portunu dinliyor. OpenChat bağlanıp modellerini listeleyecek. OpenChat\'teki bağlantıyı kesmek sunucuyu durdurmaz.';
+  }
+
+  @override
+  String get localEngineExternalServerNotNow => 'Şimdi değil';
+
+  @override
+  String get localEngineExternalServerConnect => 'Bağlan';
+
+  @override
+  String localEngineExternalServerConnected(int port, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count model kullanılabilir',
+      one: '1 model kullanılabilir',
+    );
+    return '$port portuna bağlandı. $_temp0.';
+  }
+
+  @override
+  String get localEngineExternalServerDisconnect => 'Bağlantıyı kes';
+
+  @override
+  String get localEngineExternalServerNotFound =>
+      'Çalışan bir llama-server bulunamadı.';
+
+  @override
+  String get localEngineExternalServerScanFailed =>
+      'Çalışan llama-server süreçleri denetlenemedi.';
+
+  @override
+  String get localEngineExternalServerConnectFailed =>
+      'Bağlanılamadı. llama-server\'ın hazır olduğunu ve yerel model uç noktasını sunduğunu kontrol edin.';
+
+  @override
+  String get localEngineExternalServerAuthRequired =>
+      'Bu sunucu kimlik doğrulaması istiyor. OpenChat diğer süreçlerin kimlik bilgilerini okumaz veya yeniden kullanmaz.';
+
+  @override
   String get localEngineRunning => 'Çalışıyor';
 
   @override

@@ -34,6 +34,50 @@ class LocalEnginesRepository {
     }
   }
 
+  Future<List<LocalExternalLlamaServerCandidate>>
+  detectExternalLlamaServers() async {
+    final response = await _serviceClient.call(
+      'local.engines.external_llama_server.detect',
+    );
+    final rawServers = response['servers'];
+    if (rawServers is! List<Object?>) {
+      throw const FormatException(
+        'The external llama-server scan response was invalid.',
+      );
+    }
+    return rawServers
+        .map(
+          (server) => LocalExternalLlamaServerCandidate.fromJson(
+            _objectMap(server),
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  Future<LocalExternalLlamaServerState> connectExternalLlamaServer(
+    LocalExternalLlamaServerCandidate candidate,
+  ) async {
+    final response = await _serviceClient.call(
+      'local.engines.external_llama_server.connect',
+      params: <String, Object?>{
+        'processId': candidate.processId,
+        'port': candidate.port,
+      },
+    );
+    return LocalExternalLlamaServerState.fromJson(response);
+  }
+
+  Future<void> disconnectExternalLlamaServer() async {
+    final response = await _serviceClient.call(
+      'local.engines.external_llama_server.disconnect',
+    );
+    if (response['disconnected'] != true) {
+      throw const FormatException(
+        'The external llama-server connection was not cleared.',
+      );
+    }
+  }
+
   Future<LocalModelCatalog> loadModels() async {
     final response = await _serviceClient.call('local.models.list');
     return LocalModelCatalog.fromJson(response);
@@ -107,6 +151,25 @@ class LocalEnginesRepository {
     );
     return LocalEngineInstallOperation.fromServiceOperation(operation);
   }
+}
+
+Map<String, Object?> _objectMap(Object? value) {
+  if (value is Map<String, Object?>) return value;
+  if (value is Map) {
+    final result = <String, Object?>{};
+    for (final entry in value.entries) {
+      if (entry.key is! String) {
+        throw const FormatException(
+          'The external llama-server response contained an invalid key.',
+        );
+      }
+      result[entry.key as String] = entry.value;
+    }
+    return result;
+  }
+  throw const FormatException(
+    'The external llama-server response was invalid.',
+  );
 }
 
 class LocalEngineRuntimeOperation {

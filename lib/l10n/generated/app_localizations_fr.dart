@@ -199,6 +199,63 @@ class AppLocalizationsFr extends AppLocalizations {
       'Impossible d’enregistrer le paramètre llama-server.';
 
   @override
+  String get localEngineExternalServerCheck =>
+      'Rechercher un llama-server actif';
+
+  @override
+  String get localEngineExternalServerNotConnected =>
+      'Aucun serveur démarré par l’utilisateur n’est connecté. OpenChat ne démarrera ni n’arrêtera ce serveur.';
+
+  @override
+  String get localEngineExternalServerConnecting =>
+      'Vérification du serveur local sélectionné…';
+
+  @override
+  String get localEngineExternalServerFoundTitle =>
+      'Un llama-server actif a été détecté';
+
+  @override
+  String localEngineExternalServerFoundDescription(int port) {
+    return 'Un serveur llama.cpp écoute sur le port $port. OpenChat s’y connectera et affichera ses modèles. Se déconnecter d’OpenChat n’arrêtera pas le serveur.';
+  }
+
+  @override
+  String get localEngineExternalServerNotNow => 'Pas maintenant';
+
+  @override
+  String get localEngineExternalServerConnect => 'Se connecter';
+
+  @override
+  String localEngineExternalServerConnected(int port, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count modèles disponibles',
+      one: '1 modèle disponible',
+    );
+    return 'Connecté au port $port. $_temp0.';
+  }
+
+  @override
+  String get localEngineExternalServerDisconnect => 'Déconnecter';
+
+  @override
+  String get localEngineExternalServerNotFound =>
+      'Aucun llama-server actif n’a été trouvé.';
+
+  @override
+  String get localEngineExternalServerScanFailed =>
+      'Impossible de vérifier les processus llama-server actifs.';
+
+  @override
+  String get localEngineExternalServerConnectFailed =>
+      'Connexion impossible. Vérifiez que llama-server est prêt et expose son point de terminaison local de modèles.';
+
+  @override
+  String get localEngineExternalServerAuthRequired =>
+      'Ce serveur exige une authentification. OpenChat ne lit ni ne réutilise les identifiants d’autres processus.';
+
+  @override
   String get localEngineRunning => 'En cours d\'exécution';
 
   @override

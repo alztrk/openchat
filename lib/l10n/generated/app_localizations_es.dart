@@ -198,6 +198,63 @@ class AppLocalizationsEs extends AppLocalizations {
       'No se pudo guardar la configuración de llama-server.';
 
   @override
+  String get localEngineExternalServerCheck =>
+      'Buscar llama-server en ejecución';
+
+  @override
+  String get localEngineExternalServerNotConnected =>
+      'No hay ningún servidor iniciado por el usuario conectado. OpenChat no iniciará ni detendrá este servidor.';
+
+  @override
+  String get localEngineExternalServerConnecting =>
+      'Comprobando el servidor local seleccionado...';
+
+  @override
+  String get localEngineExternalServerFoundTitle =>
+      'Se encontró un llama-server en ejecución';
+
+  @override
+  String localEngineExternalServerFoundDescription(int port) {
+    return 'Hay un servidor llama.cpp escuchando en el puerto $port. OpenChat se conectará y mostrará sus modelos. Desconectarlo en OpenChat no detendrá el servidor.';
+  }
+
+  @override
+  String get localEngineExternalServerNotNow => 'Ahora no';
+
+  @override
+  String get localEngineExternalServerConnect => 'Conectar';
+
+  @override
+  String localEngineExternalServerConnected(int port, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Hay $count modelos disponibles',
+      one: 'Hay 1 modelo disponible',
+    );
+    return 'Conectado al puerto $port. $_temp0.';
+  }
+
+  @override
+  String get localEngineExternalServerDisconnect => 'Desconectar';
+
+  @override
+  String get localEngineExternalServerNotFound =>
+      'No se encontró ningún llama-server en ejecución.';
+
+  @override
+  String get localEngineExternalServerScanFailed =>
+      'No se pudieron comprobar los procesos llama-server en ejecución.';
+
+  @override
+  String get localEngineExternalServerConnectFailed =>
+      'No se pudo conectar. Comprueba que llama-server esté listo y exponga su endpoint local de modelos.';
+
+  @override
+  String get localEngineExternalServerAuthRequired =>
+      'Este servidor requiere autenticación. OpenChat no lee ni reutiliza credenciales de otros procesos.';
+
+  @override
   String get localEngineRunning => 'En ejecución';
 
   @override

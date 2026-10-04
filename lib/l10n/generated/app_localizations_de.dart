@@ -199,6 +199,63 @@ class AppLocalizationsDe extends AppLocalizations {
       'Die llama-server-Einstellung konnte nicht gespeichert werden.';
 
   @override
+  String get localEngineExternalServerCheck =>
+      'Nach laufendem llama-server suchen';
+
+  @override
+  String get localEngineExternalServerNotConnected =>
+      'Es ist kein selbst gestarteter Server verbunden. OpenChat startet oder beendet diesen Server nicht.';
+
+  @override
+  String get localEngineExternalServerConnecting =>
+      'Der ausgewählte lokale Server wird geprüft …';
+
+  @override
+  String get localEngineExternalServerFoundTitle =>
+      'Laufender llama-server gefunden';
+
+  @override
+  String localEngineExternalServerFoundDescription(int port) {
+    return 'Ein llama.cpp-Server lauscht auf Port $port. OpenChat verbindet sich und listet seine Modelle. Das Trennen in OpenChat beendet den Server nicht.';
+  }
+
+  @override
+  String get localEngineExternalServerNotNow => 'Jetzt nicht';
+
+  @override
+  String get localEngineExternalServerConnect => 'Verbinden';
+
+  @override
+  String localEngineExternalServerConnected(int port, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count Modelle verfügbar',
+      one: '1 Modell verfügbar',
+    );
+    return 'Mit Port $port verbunden. $_temp0.';
+  }
+
+  @override
+  String get localEngineExternalServerDisconnect => 'Trennen';
+
+  @override
+  String get localEngineExternalServerNotFound =>
+      'Kein laufender llama-server gefunden.';
+
+  @override
+  String get localEngineExternalServerScanFailed =>
+      'Laufende llama-server-Prozesse konnten nicht geprüft werden.';
+
+  @override
+  String get localEngineExternalServerConnectFailed =>
+      'Verbindung fehlgeschlagen. Prüfe, ob llama-server bereit ist und seinen lokalen Modellendpunkt bereitstellt.';
+
+  @override
+  String get localEngineExternalServerAuthRequired =>
+      'Dieser Server erfordert eine Authentifizierung. OpenChat liest oder übernimmt keine Zugangsdaten aus anderen Prozessen.';
+
+  @override
   String get localEngineRunning => 'Wird ausgeführt';
 
   @override

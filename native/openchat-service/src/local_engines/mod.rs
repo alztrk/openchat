@@ -1,6 +1,7 @@
 //! App-managed local inference engine releases.
 
 mod catalog;
+mod external_server;
 mod gguf;
 pub(crate) mod installer;
 pub(crate) mod models;
@@ -70,6 +71,7 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
     };
     let cuda_available = matches!(nvidia_driver, NvidiaDriverStatus::Detected(_));
     let runtime = runtime::status(storage).await?;
+    let external_llama_server = runtime::external_server_status().await;
     let llama_server_executable_path = settings::llama_server_executable_path(storage.root())?;
     let llama_server_executable_available = llama_server_executable_path
         .as_deref()
@@ -147,6 +149,7 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
             models::to_json(model, available)
         }).collect::<Result<Vec<_>, ServiceError>>()?,
         "runtime": runtime,
+        "externalLlamaServer": external_llama_server,
         "llamaServerExecutablePath": llama_server_executable_path
             .as_ref()
             .and_then(|path| path.to_str()),
@@ -195,6 +198,34 @@ pub(crate) fn set_llama_server_executable_path(
     path: Option<&str>,
 ) -> Result<Value, ServiceError> {
     settings::set_llama_server_executable_path(storage.root(), path)
+}
+
+pub(crate) async fn detect_external_llama_servers() -> Result<Value, ServiceError> {
+    let servers = runtime::find_external_server_candidates().await?;
+    Ok(json!({
+        "servers": servers.iter().map(|server| json!({
+            "processId": server.process_id,
+            "port": server.port,
+        })).collect::<Vec<_>>(),
+    }))
+}
+
+pub(crate) async fn connect_external_llama_server(
+    process_id: u32,
+    port: u16,
+) -> Result<Value, ServiceError> {
+    runtime::connect_external_server(process_id, port).await
+}
+
+pub(crate) async fn disconnect_external_llama_server() -> Value {
+    runtime::disconnect_external_server().await
+}
+
+pub(crate) async fn chat_model_catalog(
+    storage: &AppStorage,
+    engine_id: &str,
+) -> Result<Value, ServiceError> {
+    runtime::chat_model_catalog(storage, engine_id).await
 }
 
 pub(crate) fn model_is_available(

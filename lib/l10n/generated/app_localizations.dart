@@ -440,6 +440,84 @@ abstract class AppLocalizations {
   /// **'The llama-server executable setting could not be saved.'**
   String get localEngineSettingsFailed;
 
+  /// No description provided for @localEngineExternalServerCheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Check for running llama-server'**
+  String get localEngineExternalServerCheck;
+
+  /// No description provided for @localEngineExternalServerNotConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'No user-started server is connected. OpenChat will not start or stop this server.'**
+  String get localEngineExternalServerNotConnected;
+
+  /// No description provided for @localEngineExternalServerConnecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking the selected local server...'**
+  String get localEngineExternalServerConnecting;
+
+  /// No description provided for @localEngineExternalServerFoundTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Running llama-server found'**
+  String get localEngineExternalServerFoundTitle;
+
+  /// No description provided for @localEngineExternalServerFoundDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'A llama.cpp server is listening on port {port}. OpenChat will connect to it and list its models. Disconnecting in OpenChat will not stop the server.'**
+  String localEngineExternalServerFoundDescription(int port);
+
+  /// No description provided for @localEngineExternalServerNotNow.
+  ///
+  /// In en, this message translates to:
+  /// **'Not now'**
+  String get localEngineExternalServerNotNow;
+
+  /// No description provided for @localEngineExternalServerConnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect'**
+  String get localEngineExternalServerConnect;
+
+  /// No description provided for @localEngineExternalServerConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected on port {port}. {count, plural, =1{1 model available} other{{count} models available}}.'**
+  String localEngineExternalServerConnected(int port, int count);
+
+  /// No description provided for @localEngineExternalServerDisconnect.
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnect'**
+  String get localEngineExternalServerDisconnect;
+
+  /// No description provided for @localEngineExternalServerNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No running llama-server was found.'**
+  String get localEngineExternalServerNotFound;
+
+  /// No description provided for @localEngineExternalServerScanFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Running llama-server processes could not be checked.'**
+  String get localEngineExternalServerScanFailed;
+
+  /// No description provided for @localEngineExternalServerConnectFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not connect. Check that llama-server is ready and exposes its local model endpoint.'**
+  String get localEngineExternalServerConnectFailed;
+
+  /// No description provided for @localEngineExternalServerAuthRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'This server requires authentication. OpenChat does not read or reuse credentials from other processes.'**
+  String get localEngineExternalServerAuthRequired;
+
   /// No description provided for @localEngineRunning.
   ///
   /// In en, this message translates to:

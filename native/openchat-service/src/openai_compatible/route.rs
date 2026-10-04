@@ -118,7 +118,7 @@ pub(super) async fn resolve_chat_route(
                 endpoint.chat_url,
                 true,
                 false,
-                Some(endpoint.capabilities.context_window),
+                endpoint.capabilities.context_window,
                 None,
                 endpoint.capabilities.supports_images,
                 endpoint.capabilities.supports_tool_calls,

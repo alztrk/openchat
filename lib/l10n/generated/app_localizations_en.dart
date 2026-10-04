@@ -196,6 +196,62 @@ class AppLocalizationsEn extends AppLocalizations {
       'The llama-server executable setting could not be saved.';
 
   @override
+  String get localEngineExternalServerCheck => 'Check for running llama-server';
+
+  @override
+  String get localEngineExternalServerNotConnected =>
+      'No user-started server is connected. OpenChat will not start or stop this server.';
+
+  @override
+  String get localEngineExternalServerConnecting =>
+      'Checking the selected local server...';
+
+  @override
+  String get localEngineExternalServerFoundTitle =>
+      'Running llama-server found';
+
+  @override
+  String localEngineExternalServerFoundDescription(int port) {
+    return 'A llama.cpp server is listening on port $port. OpenChat will connect to it and list its models. Disconnecting in OpenChat will not stop the server.';
+  }
+
+  @override
+  String get localEngineExternalServerNotNow => 'Not now';
+
+  @override
+  String get localEngineExternalServerConnect => 'Connect';
+
+  @override
+  String localEngineExternalServerConnected(int port, int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count models available',
+      one: '1 model available',
+    );
+    return 'Connected on port $port. $_temp0.';
+  }
+
+  @override
+  String get localEngineExternalServerDisconnect => 'Disconnect';
+
+  @override
+  String get localEngineExternalServerNotFound =>
+      'No running llama-server was found.';
+
+  @override
+  String get localEngineExternalServerScanFailed =>
+      'Running llama-server processes could not be checked.';
+
+  @override
+  String get localEngineExternalServerConnectFailed =>
+      'Could not connect. Check that llama-server is ready and exposes its local model endpoint.';
+
+  @override
+  String get localEngineExternalServerAuthRequired =>
+      'This server requires authentication. OpenChat does not read or reuse credentials from other processes.';
+
+  @override
   String get localEngineRunning => 'Running';
 
   @override

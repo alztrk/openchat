@@ -34,6 +34,7 @@ void main() {
         ],
         'models': <Object?>[],
         'runtime': <String, Object?>{'status': 'stopped'},
+        'externalLlamaServer': <String, Object?>{'connected': false},
       });
 
       expect(catalog.engines, hasLength(1));
@@ -45,6 +46,7 @@ void main() {
         r'C:\llama\llama-server.exe',
       );
       expect(catalog.llamaServerExecutableAvailable, isTrue);
+      expect(catalog.externalLlamaServer.connected, isFalse);
     });
 
     test('rejects an invalid configured llama-server status', () {
@@ -53,7 +55,34 @@ void main() {
           'engines': <Object?>[],
           'models': <Object?>[],
           'runtime': <String, Object?>{'status': 'stopped'},
+          'externalLlamaServer': <String, Object?>{'connected': false},
           'llamaServerExecutableAvailable': 'yes',
+        }),
+        throwsFormatException,
+      );
+    });
+
+    test('parses a validated external llama-server connection', () {
+      final state = LocalExternalLlamaServerState.fromJson(
+        <String, Object?>{
+          'connected': true,
+          'processId': 4216,
+          'port': 8080,
+          'modelIds': <Object?>['qwen3-8b'],
+        },
+      );
+
+      expect(state.connected, isTrue);
+      expect(state.processId, 4216);
+      expect(state.port, 8080);
+      expect(state.modelIds, <String>['qwen3-8b']);
+    });
+
+    test('rejects invalid external llama-server endpoints', () {
+      expect(
+        () => LocalExternalLlamaServerCandidate.fromJson(<String, Object?>{
+          'processId': -1,
+          'port': 70000,
         }),
         throwsFormatException,
       );
