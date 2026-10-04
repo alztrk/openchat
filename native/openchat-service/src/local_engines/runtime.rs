@@ -322,7 +322,11 @@ fn cancelled_error() -> ServiceError {
 mod tests {
     use std::{fs, path::PathBuf};
 
-    use tokio::sync::watch;
+    use tokio::{
+        net::TcpListener,
+        sync::watch,
+        time::{Duration, timeout},
+    };
     use uuid::Uuid;
 
     use crate::storage::AppStorage;
@@ -375,6 +379,35 @@ mod tests {
         let error = health_check_or_cancel(0, &mut cancellation)
             .await
             .expect_err("a closed operation should stop its readiness wait");
+        assert_eq!(error.code, "operation_cancelled");
+    }
+
+    #[tokio::test]
+    async fn cancellation_interrupts_an_in_flight_health_request() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("the test health endpoint should bind");
+        let port = listener
+            .local_addr()
+            .expect("the test health endpoint should have an address")
+            .port();
+        let (sender, mut cancellation) = watch::channel(false);
+        let readiness =
+            tokio::spawn(async move { health_check_or_cancel(port, &mut cancellation).await });
+        let (_connection, _) = listener
+            .accept()
+            .await
+            .expect("the health request should reach the test endpoint");
+
+        sender
+            .send(true)
+            .expect("the active readiness request should receive cancellation");
+        let result = timeout(Duration::from_millis(250), readiness)
+            .await
+            .expect("cancellation should interrupt the pending health request")
+            .expect("the readiness task should finish");
+        let error = result.expect_err("a cancelled readiness wait should stop");
+
         assert_eq!(error.code, "operation_cancelled");
     }
 }
