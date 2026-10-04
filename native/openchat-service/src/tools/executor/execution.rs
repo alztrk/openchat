@@ -164,6 +164,7 @@ fn service_error(error: ServiceError) -> Value {
 mod tests {
     use super::execute_model_tool;
     use crate::tools::executor::{PreparedToolCall, ToolOperation, paths::ToolPathScope};
+    use crate::tools::terminal::TerminalSessionManager;
     use std::path::PathBuf;
 
     #[tokio::test]
@@ -185,7 +186,28 @@ mod tests {
             },
         };
 
-        let result = execute_model_tool(&prepared).await;
+        let mut result = execute_model_tool(&prepared).await;
+        for _ in 0..5 {
+            if result["is_running"] != true {
+                break;
+            }
+            let terminal_id = result["terminal_id"]
+                .as_str()
+                .expect("running command should expose its terminal session");
+            result = TerminalSessionManager::global()
+                .read_output_of(terminal_id, Some(1_000))
+                .await
+                .expect("echo command should remain readable");
+        }
+        if result["is_running"] == true {
+            if let Some(terminal_id) = result["terminal_id"].as_str() {
+                TerminalSessionManager::global()
+                    .kill_session(terminal_id)
+                    .await
+                    .expect("timed-out echo session should be terminated");
+            }
+        }
+        assert_ne!(result["is_running"], true, "echo process did not finish");
         assert_eq!(result["exit_code"], 0);
         let output = result["output"].as_str().unwrap_or("");
         assert!(output.contains("hello_openchat"));
