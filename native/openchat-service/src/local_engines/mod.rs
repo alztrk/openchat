@@ -108,7 +108,7 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
     Ok(json!({
         "engines": engines,
         "models": registered_models.iter().map(|model| {
-            Ok(models::to_json(model, runtime::is_model_available(storage, model)?))
+            Ok(models::to_json(model, runtime::is_model_available(storage, model)?)?)
         }).collect::<Result<Vec<_>, ServiceError>>()?,
         "runtime": runtime,
         "host": {
@@ -152,7 +152,7 @@ pub(crate) fn model_catalog(storage: &AppStorage) -> Result<Value, ServiceError>
             };
             let available = path_available && installed.contains(&model.engine_id);
             models::to_json(model, available)
-        }).collect::<Vec<_>>(),
+        }).collect::<Result<Vec<_>, ServiceError>>()?,
     }))
 }
 
@@ -193,7 +193,7 @@ pub(crate) async fn register_model(
         )
     })??;
     let available = runtime::is_model_available(storage, &model)?;
-    Ok(models::to_json(&model, available))
+    Ok(models::to_json(&model, available)?)
 }
 
 pub(crate) async fn discover_models(

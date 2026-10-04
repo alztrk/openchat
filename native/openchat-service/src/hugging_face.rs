@@ -1042,7 +1042,7 @@ async fn register_downloaded_model(
     .await
     .map_err(|_| model_storage_error())??;
     let available = local_engines::model_is_available(storage, &model)?;
-    Ok(local_engines::models::to_json(&model, available))
+    Ok(local_engines::models::to_json(&model, available)?)
 }
 
 fn group_missing_from_bundle(

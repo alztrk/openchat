@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, process::Stdio, sync::OnceLock, time::Duration};
+use std::{ffi::OsString, net::SocketAddr, process::Stdio, sync::OnceLock, time::Duration};
 
 use reqwest::Client;
 use serde_json::{Value, json};
@@ -83,15 +83,9 @@ pub(crate) async fn start_model(
 
     let port = available_loopback_port().await?;
     let started_at = Instant::now();
+    let arguments = llama_server_arguments(&model, port)?;
     let child = match Command::new(&installed.entrypoint)
-        .arg("--model")
-        .arg(&model.path)
-        .arg("--host")
-        .arg("127.0.0.1")
-        .arg("--port")
-        .arg(port.to_string())
-        .arg("--alias")
-        .arg(&model.id)
+        .args(arguments)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -398,6 +392,27 @@ async fn available_loopback_port() -> Result<u16, ServiceError> {
     Ok(address.port())
 }
 
+fn llama_server_arguments(
+    model: &models::RegisteredModel,
+    port: u16,
+) -> Result<Vec<OsString>, ServiceError> {
+    let mut arguments = vec![
+        OsString::from("--model"),
+        model.path.as_os_str().to_owned(),
+        OsString::from("--host"),
+        OsString::from("127.0.0.1"),
+        OsString::from("--port"),
+        OsString::from(port.to_string()),
+        OsString::from("--alias"),
+        OsString::from(&model.id),
+    ];
+    if let Some(projector) = models::vision_projector_path(&model.path)? {
+        arguments.push(OsString::from("--mmproj"));
+        arguments.push(projector.into_os_string());
+    }
+    Ok(arguments)
+}
+
 fn installed_llama_cpp(storage: &AppStorage) -> Result<Option<InstalledEngine>, ServiceError> {
     let manifest = manifests()?
         .into_iter()
@@ -539,7 +554,7 @@ mod tests {
 
     use super::{
         MAX_RUNTIME_PROPERTIES_BYTES, RuntimeCapabilities, health_check_or_cancel,
-        parse_runtime_capabilities, read_runtime_capabilities, start_model,
+        llama_server_arguments, parse_runtime_capabilities, read_runtime_capabilities, start_model,
     };
 
     struct TestDirectory(PathBuf);
@@ -557,6 +572,54 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn llama_server_arguments_pass_a_single_matching_vision_projector() {
+        let temporary = TestDirectory::new();
+        let model_path = temporary.0.join("vision-model.gguf");
+        let projector_path = temporary.0.join("mmproj-vision-model.gguf");
+        fs::write(&model_path, b"model").expect("model fixture should be written");
+        fs::write(&projector_path, b"projector").expect("projector fixture should be written");
+        let model = crate::local_engines::models::RegisteredModel {
+            id: "model-id".to_owned(),
+            engine_id: "llama_cpp".to_owned(),
+            display_name: "vision-model".to_owned(),
+            path: model_path,
+            path_kind: "file".to_owned(),
+            created_at_unix_ms: 0,
+        };
+
+        let arguments = llama_server_arguments(&model, 12345).expect("arguments should build");
+        let projector_argument = arguments
+            .iter()
+            .position(|argument| argument == "--mmproj")
+            .expect("projector argument should be included");
+
+        assert_eq!(
+            arguments[projector_argument + 1],
+            projector_path.as_os_str()
+        );
+        assert_eq!(arguments[5], "12345");
+    }
+
+    #[test]
+    fn llama_server_arguments_omit_projector_for_text_only_models() {
+        let temporary = TestDirectory::new();
+        let model_path = temporary.0.join("text-model.gguf");
+        fs::write(&model_path, b"model").expect("model fixture should be written");
+        let model = crate::local_engines::models::RegisteredModel {
+            id: "model-id".to_owned(),
+            engine_id: "llama_cpp".to_owned(),
+            display_name: "text-model".to_owned(),
+            path: model_path,
+            path_kind: "file".to_owned(),
+            created_at_unix_ms: 0,
+        };
+
+        let arguments = llama_server_arguments(&model, 12345).expect("arguments should build");
+
+        assert!(!arguments.iter().any(|argument| argument == "--mmproj"));
     }
 
     #[tokio::test]

@@ -124,6 +124,7 @@ fn scan_model_directory(
                         .extension()
                         .and_then(|extension| extension.to_str())
                         .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
+                    && !is_vision_projector(&path)
                     && !registered_paths.contains(&path)
                 {
                     let display_name = path
@@ -276,11 +277,45 @@ pub(crate) fn register_with_storage_action(
     }
 
     let destination = unique_destination(&target_directory, &source_path, path_kind)?;
-    let transfer = transfer_model(&source_path, &destination, path_kind, action)?;
+    let projector_source = if engine_id == "llama_cpp" {
+        vision_projector_path(&source_path)?
+    } else {
+        None
+    };
+    let projector_destination = projector_source
+        .as_ref()
+        .map(|_| projector_destination_for_model(&destination))
+        .transpose()?;
+    if let Some(projector_destination) = projector_destination.as_deref()
+        && path_entry_exists(projector_destination)?
+    {
+        return Err(projector_destination_conflict_error());
+    }
+
+    let mut transfers = Vec::with_capacity(2);
+    transfers.push(transfer_model(
+        &source_path,
+        &destination,
+        path_kind,
+        action,
+    )?);
+    if let (Some(projector_source), Some(projector_destination)) =
+        (projector_source, projector_destination)
+    {
+        match transfer_model(&projector_source, &projector_destination, "file", action) {
+            Ok(transfer) => transfers.push(transfer),
+            Err(error) => {
+                if rollback_model_transfers(&transfers).is_err() {
+                    return Err(transfer_recovery_error());
+                }
+                return Err(error);
+            }
+        }
+    }
     let destination = match destination.canonicalize() {
         Ok(destination) => destination,
         Err(_) => {
-            if rollback_transfer(&transfer, path_kind).is_err() {
+            if rollback_model_transfers(&transfers).is_err() {
                 return Err(transfer_recovery_error());
             }
             return Err(model_storage_path_error());
@@ -289,7 +324,7 @@ pub(crate) fn register_with_storage_action(
     match register_validated(database_root, engine_id, destination, path_kind) {
         Ok(model) => Ok(model),
         Err(error) => {
-            if rollback_transfer(&transfer, path_kind).is_err() {
+            if rollback_model_transfers(&transfers).is_err() {
                 return Err(transfer_recovery_error());
             }
             Err(error)
@@ -382,6 +417,7 @@ fn validate_model_path(
                 .extension()
                 .and_then(|extension| extension.to_str())
                 .is_none_or(|extension| !extension.eq_ignore_ascii_case("gguf"))
+            || is_vision_projector(&selected_path)
         {
             return Err(invalid_model_error());
         }
@@ -422,7 +458,7 @@ pub(crate) fn remove(storage: &AppStorage, model_id: &str) -> Result<bool, Servi
         .map_err(|_| database_error())
 }
 
-pub(crate) fn to_json(model: &RegisteredModel, available: bool) -> Value {
+pub(crate) fn to_json(model: &RegisteredModel, available: bool) -> Result<Value, ServiceError> {
     let path_exists = fs::metadata(&model.path).is_ok_and(|metadata| {
         if model.path_kind == "file" {
             metadata.is_file()
@@ -438,7 +474,11 @@ pub(crate) fn to_json(model: &RegisteredModel, available: bool) -> Value {
     } else {
         Value::Null
     };
-    json!({
+    let supports_images = path_exists
+        && model.engine_id == "llama_cpp"
+        && model.path_kind == "file"
+        && vision_projector_path(&model.path)?.is_some();
+    Ok(json!({
         "id": model.id,
         "engineId": model.engine_id,
         "displayName": model.display_name,
@@ -446,7 +486,7 @@ pub(crate) fn to_json(model: &RegisteredModel, available: bool) -> Value {
         "contextWindow": context_window,
         "reasoningLevels": [],
         "supportsReasoning": false,
-        "supportsImages": false,
+        "supportsImages": supports_images,
         "supportsTools": Value::Null,
         "defaultReasoningLevel": Value::Null,
         "path": model.path,
@@ -461,7 +501,7 @@ pub(crate) fn to_json(model: &RegisteredModel, available: bool) -> Value {
             json!("local_engine_not_ready")
         },
         "createdAtUnixMs": model.created_at_unix_ms,
-    })
+    }))
 }
 
 fn connect(storage: &AppStorage) -> Result<Connection, ServiceError> {
@@ -502,6 +542,7 @@ struct ModelTransfer {
     source: PathBuf,
     destination: PathBuf,
     action: StorageAction,
+    path_kind: String,
 }
 
 fn model_folder_name(engine_id: &str) -> Option<&'static str> {
@@ -553,6 +594,79 @@ fn unique_destination(
     Err(model_storage_path_error())
 }
 
+fn projector_destination_for_model(model_path: &Path) -> Result<PathBuf, ServiceError> {
+    let parent = model_path.parent().ok_or_else(model_storage_path_error)?;
+    let stem = model_path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .ok_or_else(invalid_model_path_error)?;
+    Ok(parent.join(format!("mmproj-{stem}.gguf")))
+}
+
+fn is_vision_projector(path: &Path) -> bool {
+    let has_gguf_extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"));
+    let stem = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .map(str::to_ascii_lowercase);
+    has_gguf_extension
+        && stem.is_some_and(|stem| {
+            stem.strip_prefix("mmproj").is_some_and(|suffix| {
+                suffix.is_empty() || matches!(suffix.chars().next(), Some('-' | '_' | '.'))
+            })
+        })
+}
+
+pub(crate) fn vision_projector_path(model_path: &Path) -> Result<Option<PathBuf>, ServiceError> {
+    let Some(model_stem) = model_path.file_stem().and_then(|name| name.to_str()) else {
+        return Err(invalid_model_path_error());
+    };
+    let Some(parent) = model_path.parent() else {
+        return Err(invalid_model_path_error());
+    };
+    let expected_name = format!("mmproj-{model_stem}.gguf");
+    let entries = match fs::read_dir(parent) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err(model_discovery_error()),
+    };
+    let mut candidates = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|_| model_discovery_error())?;
+        let file_type = entry.file_type().map_err(|_| model_discovery_error())?;
+        let path = entry.path();
+        if !file_type.is_file() || !is_vision_projector(&path) {
+            continue;
+        }
+        let metadata = fs::metadata(&path).map_err(|_| model_discovery_error())?;
+        if metadata.len() > 0 {
+            candidates.push(path);
+        }
+    }
+    let exact_matches = candidates
+        .iter()
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.eq_ignore_ascii_case(&expected_name))
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+
+    match exact_matches.as_slice() {
+        [projector] => Ok(Some(projector.clone())),
+        [] => match candidates.as_slice() {
+            [projector] => Ok(Some(projector.clone())),
+            _ => Ok(None),
+        },
+        _ => Ok(None),
+    }
+}
+
 fn path_entry_exists(path: &Path) -> Result<bool, ServiceError> {
     match fs::symlink_metadata(path) {
         Ok(_) => Ok(true),
@@ -574,7 +688,10 @@ fn transfer_model(
             if has_links || fs::rename(source, destination).is_err() {
                 copy_to_destination(source, destination, path_kind)?;
                 if remove_model_path(source, path_kind).is_err() {
-                    return Err(transfer_recovery_error());
+                    if remove_model_path(destination, path_kind).is_err() {
+                        return Err(transfer_recovery_error());
+                    }
+                    return Err(transfer_error());
                 }
             }
         }
@@ -584,6 +701,7 @@ fn transfer_model(
         source: source.to_path_buf(),
         destination: destination.to_path_buf(),
         action,
+        path_kind: path_kind.to_owned(),
     })
 }
 
@@ -687,6 +805,13 @@ fn rollback_transfer(transfer: &ModelTransfer, path_kind: &str) -> Result<(), ()
         }
         StorageAction::Keep => Ok(()),
     }
+}
+
+fn rollback_model_transfers(transfers: &[ModelTransfer]) -> Result<(), ()> {
+    for transfer in transfers.iter().rev() {
+        rollback_transfer(transfer, &transfer.path_kind)?;
+    }
+    Ok(())
 }
 
 fn remove_model_path(path: &Path, path_kind: &str) -> io::Result<()> {
@@ -816,6 +941,14 @@ fn transfer_recovery_error() -> ServiceError {
     )
 }
 
+fn projector_destination_conflict_error() -> ServiceError {
+    ServiceError::new(
+        "local_model_projector_destination_conflict",
+        "The destination already contains a projector with this model name. Choose another model folder.",
+        false,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::{collections::HashSet, fs, path::PathBuf};
@@ -825,7 +958,8 @@ mod tests {
     use crate::storage::AppStorage;
 
     use super::{
-        MAX_DISCOVERED_MODELS, discover, register_with_storage_action, scan_model_directory,
+        MAX_DISCOVERED_MODELS, discover, is_vision_projector, register_with_storage_action,
+        scan_model_directory, to_json, vision_projector_path,
     };
 
     struct TestDirectory(PathBuf);
@@ -852,7 +986,9 @@ mod tests {
         let nested = model_directory.join("Qwen").join("quantized");
         fs::create_dir_all(&nested).expect("model directory should be created");
         let model = nested.join("qwen-7b.gguf");
+        let projector = nested.join("mmproj-qwen-7b.gguf");
         fs::write(&model, b"model").expect("model fixture should be written");
+        fs::write(&projector, b"projector").expect("projector fixture should be written");
         fs::write(nested.join("readme.md"), b"not a model")
             .expect("non-model fixture should be written");
 
@@ -864,6 +1000,8 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].path, model);
         assert_eq!(found[0].path_kind, "file");
+        assert!(is_vision_projector(&projector));
+        assert!(!is_vision_projector(&nested.join("mmprojector-model.gguf")));
     }
 
     #[test]
@@ -961,7 +1099,9 @@ mod tests {
         fs::create_dir_all(&source_directory).expect("source directory should be created");
         fs::create_dir_all(&model_directory).expect("model directory should be created");
         let source_path = source_directory.join("qwen-7b.gguf");
+        let source_projector = source_directory.join("mmproj-qwen-7b.gguf");
         fs::write(&source_path, b"model").expect("model fixture should be written");
+        fs::write(&source_projector, b"projector").expect("projector fixture should be written");
 
         let model = register_with_storage_action(
             storage.root(),
@@ -985,5 +1125,125 @@ mod tests {
         );
         assert!(model.path.is_file());
         assert!(source_path.is_file());
+        assert!(source_projector.is_file());
+        let registered_projector = vision_projector_path(&model.path)
+            .expect("projector directory should be readable")
+            .expect("projector should be copied with the model");
+        assert!(registered_projector.is_file());
+        assert_eq!(
+            to_json(&model, true).expect("model metadata should serialize")["supportsImages"],
+            true
+        );
+    }
+
+    #[test]
+    fn moving_a_vision_model_moves_its_projector_as_a_pair() {
+        let temporary = TestDirectory::new();
+        let database_root = temporary.0.join("app");
+        let storage = AppStorage::open_at(database_root).expect("test storage should open");
+        let source_directory = temporary.0.join("source");
+        let model_directory = temporary.0.join("chosen-models");
+        fs::create_dir_all(&source_directory).expect("source directory should be created");
+        fs::create_dir_all(&model_directory).expect("model directory should be created");
+        let source_path = source_directory.join("qwen-7b.gguf");
+        let source_projector = source_directory.join("mmproj-qwen-7b.gguf");
+        fs::write(&source_path, b"model").expect("model fixture should be written");
+        fs::write(&source_projector, b"projector").expect("projector fixture should be written");
+
+        let model = register_with_storage_action(
+            storage.root(),
+            "llama_cpp",
+            source_path.to_str().expect("fixture path should be UTF-8"),
+            Some(
+                model_directory
+                    .to_str()
+                    .expect("fixture path should be UTF-8"),
+            ),
+            "move",
+        )
+        .expect("model and projector should be moved and registered");
+
+        assert!(!source_path.exists());
+        assert!(!source_projector.exists());
+        assert!(
+            vision_projector_path(&model.path)
+                .expect("projector directory should be readable")
+                .is_some()
+        );
+        assert_eq!(
+            to_json(&model, true).expect("model metadata should serialize")["supportsImages"],
+            true
+        );
+    }
+
+    #[test]
+    fn projector_pairing_prefers_exact_names_and_rejects_ambiguous_fallbacks() {
+        let temporary = TestDirectory::new();
+        let model = temporary.0.join("vision-model.gguf");
+        let exact_projector = temporary.0.join("mmproj-vision-model.gguf");
+        let other_projector = temporary.0.join("mmproj-another-model.gguf");
+        fs::write(&model, b"model").expect("model fixture should be written");
+        fs::write(&exact_projector, b"projector").expect("exact projector should be written");
+        fs::write(&other_projector, b"projector").expect("other projector should be written");
+
+        assert_eq!(
+            vision_projector_path(&model).expect("projector scan should succeed"),
+            Some(exact_projector.clone())
+        );
+
+        fs::remove_file(&exact_projector).expect("exact projector should be removed");
+        assert_eq!(
+            vision_projector_path(&model).expect("projector scan should succeed"),
+            Some(other_projector.clone())
+        );
+
+        let second_projector = temporary.0.join("mmproj-third-model.gguf");
+        fs::write(&second_projector, b"projector")
+            .expect("second unmatched projector should be written");
+        assert_eq!(
+            vision_projector_path(&model).expect("projector scan should succeed"),
+            None
+        );
+    }
+
+    #[test]
+    fn vision_projector_files_cannot_be_registered_as_primary_models() {
+        let temporary = TestDirectory::new();
+        let storage =
+            AppStorage::open_at(temporary.0.join("app")).expect("test storage should open");
+        let projector = temporary.0.join("mmproj-orphan.gguf");
+        fs::write(&projector, b"projector").expect("projector fixture should be written");
+
+        let error = register_with_storage_action(
+            storage.root(),
+            "llama_cpp",
+            projector.to_str().expect("fixture path should be UTF-8"),
+            None,
+            "keep",
+        )
+        .expect_err("a projector should not be registered as a main model");
+
+        assert_eq!(error.code, "local_model_format_invalid");
+    }
+
+    #[test]
+    fn missing_model_does_not_advertise_vision_from_a_leftover_projector() {
+        let temporary = TestDirectory::new();
+        let model_path = temporary.0.join("missing-model.gguf");
+        fs::write(temporary.0.join("mmproj-missing-model.gguf"), b"projector")
+            .expect("projector fixture should be written");
+        let model = super::RegisteredModel {
+            id: "model-id".to_owned(),
+            engine_id: "llama_cpp".to_owned(),
+            display_name: "missing-model".to_owned(),
+            path: model_path,
+            path_kind: "file".to_owned(),
+            created_at_unix_ms: 0,
+        };
+
+        let metadata = to_json(&model, true).expect("model metadata should serialize");
+
+        assert_eq!(metadata["pathExists"], false);
+        assert_eq!(metadata["supportsImages"], false);
     }
 }
