@@ -852,6 +852,11 @@ fn quantize_embedding(embedding: Vec<f32>) -> Result<Vec<i8>, SemanticMemoryErro
             embedding.len()
         )));
     }
+    if embedding.iter().any(|value| !value.is_finite()) {
+        return Err(SemanticMemoryError::Model(
+            "embedding contains a non-finite value".to_owned(),
+        ));
+    }
     let max_abs = embedding
         .iter()
         .map(|value| value.abs())
@@ -1862,6 +1867,14 @@ mod tests {
             quantize_embedding(vec![0.0; super::VECTOR_DIMENSIONS]),
             Err(SemanticMemoryError::Model(_))
         ));
+        for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let mut invalid_embedding = vec![0.0; super::VECTOR_DIMENSIONS];
+            invalid_embedding[super::VECTOR_DIMENSIONS - 1] = invalid;
+            assert!(matches!(
+                quantize_embedding(invalid_embedding),
+                Err(SemanticMemoryError::Model(_))
+            ));
+        }
     }
 
     #[test]

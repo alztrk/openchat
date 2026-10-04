@@ -223,12 +223,18 @@ fn model_matches_id(provider_id: &str, model: &Value, model_id: &str) -> bool {
 
 fn has_current_limit_metadata(models: &[Value]) -> bool {
     models.iter().all(|model| {
-        model.get("inputTokenLimit").is_some()
+        model
+            .get("inputTokenLimit")
+            .and_then(Value::as_u64)
+            .is_some_and(|limit| limit > 0)
             && model
                 .get("supportsImages")
                 .and_then(Value::as_bool)
                 .is_some()
-            && model.get("supportsTools").is_some()
+            && model
+                .get("supportsTools")
+                .and_then(Value::as_bool)
+                .is_some()
     })
 }
 
@@ -612,11 +618,17 @@ mod tests {
     #[test]
     fn cached_catalog_requires_current_prompt_limit_metadata() {
         assert!(!has_current_limit_metadata(&[json!({"id": "model"})]));
-        assert!(has_current_limit_metadata(&[json!({
+        assert!(!has_current_limit_metadata(&[json!({
             "id": "model",
             "inputTokenLimit": null,
             "supportsImages": false,
             "supportsTools": null
+        })]));
+        assert!(has_current_limit_metadata(&[json!({
+            "id": "model",
+            "inputTokenLimit": 8192,
+            "supportsImages": false,
+            "supportsTools": false
         })]));
     }
 
