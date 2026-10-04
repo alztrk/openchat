@@ -3,23 +3,23 @@
   "engineId": "exllama",
   "displayName": "ExLlamaV3 with TabbyAPI",
   "sourceRepository": "turboderp-org/exllamav3",
-  "releaseTag": "v1.5.3",
-  "releaseUrl": "https://github.com/turboderp-org/exllamav3/releases/tag/v1.5.3",
-  "sourceCommit": "d3739fd393337b1ff4d6c2a342b12f0c87a9592f",
+  "releaseTag": "v1.5.2",
+  "releaseUrl": "https://github.com/turboderp-org/exllamav3/releases/tag/v1.5.2",
+  "sourceCommit": "12414d0af7b3beeabdda5990f6b554b996fa1416",
   "channel": "stable",
   "license": "MIT (ExLlamaV3); AGPL-3.0 (TabbyAPI)",
   "catalogStatus": "blocked",
-  "statusReason": "The ExLlamaV3 wheel assets are published with upstream SHA-256 digests, but the recommended OpenAI-compatible TabbyAPI backend has no formal release assets and is explicitly a rolling source project. Its startup process installs mutable dependencies, its current dependency profile references a different ExLlama release, and the complete PyTorch, Triton, Flash Linear Attention, TabbyAPI, and transitive dependency set is not yet integrity-pinned by OpenChat. Do not install TabbyAPI from main or treat this catalog entry as ready for user installation.",
+  "statusReason": "This catalog is aligned with TabbyAPI commit be74bf0a00bcb3a518e6feb7606f150c189be637, which pins ExLlamaV3 1.5.2 and PyTorch 2.9.0 with CUDA 12.8. Installation remains blocked until OpenChat pins and installs the complete TabbyAPI, PyTorch, Triton, Flash Linear Attention, and transitive dependency set from verified artifacts.",
   "variants": [
     {
-      "variantId": "windows-x86_64-cuda12.8-python3.12-torch2.10",
+      "variantId": "windows-x86_64-cuda12.8-python3.12-torch2.9",
       "os": "windows",
       "architecture": "x86_64",
       "accelerator": "cuda",
       "runtimeRequirements": [
         "Python 3.12",
         "NVIDIA CUDA 12.8 or newer compatible with the selected PyTorch build",
-        "PyTorch 2.10.0 with CUDA 12.8",
+        "PyTorch 2.9.0 with CUDA 12.8",
         "triton-windows is required on Windows",
         "TabbyAPI source must be pinned to an integrity-verified revision before installation",
         "ExLlamaV3 supports EXL3 and FP16/BF16 model formats; selected model files must be downloaded separately"
@@ -27,16 +27,16 @@
       "entrypoint": "TabbyAPI start.py (requires a pinned source checkout; unavailable in this catalog)",
       "requiredFiles": [
         "The TabbyAPI source tree at a pinned commit",
-        "PyTorch 2.10.0 CUDA 12.8 and its verified dependencies",
+        "PyTorch 2.9.0 CUDA 12.8 and its verified dependencies",
         "triton-windows and flash-linear-attention with verified compatible versions",
         "The selected EXL3, FP16, or BF16 model"
       ],
       "assets": [
         {
-          "name": "exllamav3-1.5.3+cu128.torch2.10.0-cp312-cp312-win_amd64.whl",
-          "url": "https://github.com/turboderp-org/exllamav3/releases/download/v1.5.3/exllamav3-1.5.3%2Bcu128.torch2.10.0-cp312-cp312-win_amd64.whl",
-          "sizeBytes": 84564598,
-          "sha256": "sha256:c2b7b1b62581b41369ef996811eb52fe8b0933d833cd2df34224668a20dd1584",
+          "name": "exllamav3-1.5.2+cu128.torch2.9.0-cp312-cp312-win_amd64.whl",
+          "url": "https://github.com/turboderp-org/exllamav3/releases/download/v1.5.2/exllamav3-1.5.2%2Bcu128.torch2.9.0-cp312-cp312-win_amd64.whl",
+          "sizeBytes": 467957953,
+          "sha256": "sha256:08431208effacecda8cf852678a248ce142d14cd2a326533d319cb4cc25cb5a2",
           "role": "primary"
         }
       ],
@@ -50,14 +50,14 @@
       ]
     },
     {
-      "variantId": "linux-x86_64-cuda12.8-python3.12-torch2.10",
+      "variantId": "linux-x86_64-cuda12.8-python3.12-torch2.9",
       "os": "linux",
       "architecture": "x86_64",
       "accelerator": "cuda",
       "runtimeRequirements": [
         "Python 3.12",
         "NVIDIA CUDA 12.8 or newer compatible with the selected PyTorch build",
-        "PyTorch 2.10.0 with CUDA 12.8",
+        "PyTorch 2.9.0 with CUDA 12.8",
         "Triton is required on Linux",
         "TabbyAPI source must be pinned to an integrity-verified revision before installation",
         "ExLlamaV3 supports EXL3 and FP16/BF16 model formats; selected model files must be downloaded separately"
@@ -65,16 +65,16 @@
       "entrypoint": "TabbyAPI start.py (requires a pinned source checkout; unavailable in this catalog)",
       "requiredFiles": [
         "The TabbyAPI source tree at a pinned commit",
-        "PyTorch 2.10.0 CUDA 12.8 and its verified dependencies",
+        "PyTorch 2.9.0 CUDA 12.8 and its verified dependencies",
         "Triton and flash-linear-attention with verified compatible versions",
         "The selected EXL3, FP16, or BF16 model"
       ],
       "assets": [
         {
-          "name": "exllamav3-1.5.3+cu128.torch2.10.0-cp312-cp312-linux_x86_64.whl",
-          "url": "https://github.com/turboderp-org/exllamav3/releases/download/v1.5.3/exllamav3-1.5.3%2Bcu128.torch2.10.0-cp312-cp312-linux_x86_64.whl",
-          "sizeBytes": 121287389,
-          "sha256": "sha256:218a87ee74a6af53491e637325582eaf30cd7f897c7340ae6af44af068951fb1",
+          "name": "exllamav3-1.5.2+cu128.torch2.9.0-cp312-cp312-linux_x86_64.whl",
+          "url": "https://github.com/turboderp-org/exllamav3/releases/download/v1.5.2/exllamav3-1.5.2%2Bcu128.torch2.9.0-cp312-cp312-linux_x86_64.whl",
+          "sizeBytes": 504426976,
+          "sha256": "sha256:e4e2af239e4db71f090cfaf6698b3c3100ee8f31a0b575013f6cd6ca4822c5e5",
           "role": "primary"
         }
       ],
@@ -89,9 +89,9 @@
     }
   ],
   "sources": [
-    "https://github.com/turboderp-org/exllamav3/releases/tag/v1.5.3",
-    "https://github.com/turboderp-org/exllamav3/blob/v1.5.3/README.md",
-    "https://github.com/turboderp-org/exllamav3/blob/v1.5.3/pyproject.toml",
+    "https://github.com/turboderp-org/exllamav3/releases/tag/v1.5.2",
+    "https://github.com/turboderp-org/exllamav3/blob/v1.5.2/README.md",
+    "https://github.com/turboderp-org/exllamav3/blob/v1.5.2/pyproject.toml",
     "https://github.com/theroyallab/tabbyAPI/tree/be74bf0a00bcb3a518e6feb7606f150c189be637",
     "https://github.com/theroyallab/tabbyAPI/blob/be74bf0a00bcb3a518e6feb7606f150c189be637/README.md",
     "https://github.com/theroyallab/tabbyAPI/blob/be74bf0a00bcb3a518e6feb7606f150c189be637/pyproject.toml",

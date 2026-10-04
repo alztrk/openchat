@@ -512,6 +512,59 @@ mod tests {
         assert_eq!(engine_ids, ["llama_cpp", "vllm", "exllama"]);
     }
 
+    #[test]
+    fn exllama_catalog_matches_the_pinned_tabbyapi_dependency_versions() {
+        let manifest = parse_manifest(
+            CATALOGS
+                .iter()
+                .find(|(engine_id, _)| *engine_id == "exllama")
+                .expect("ExLlama catalog should be embedded")
+                .1,
+        )
+        .expect("ExLlama catalog should validate");
+
+        assert_eq!(manifest.release_tag, "v1.5.2");
+        assert_eq!(
+            manifest.source_commit.as_deref(),
+            Some("12414d0af7b3beeabdda5990f6b554b996fa1416")
+        );
+        assert_eq!(manifest.catalog_status, "blocked");
+
+        for (variant_id, asset_name, expected_size, expected_sha256) in [
+            (
+                "windows-x86_64-cuda12.8-python3.12-torch2.9",
+                "exllamav3-1.5.2+cu128.torch2.9.0-cp312-cp312-win_amd64.whl",
+                467_957_953,
+                "sha256:08431208effacecda8cf852678a248ce142d14cd2a326533d319cb4cc25cb5a2",
+            ),
+            (
+                "linux-x86_64-cuda12.8-python3.12-torch2.9",
+                "exllamav3-1.5.2+cu128.torch2.9.0-cp312-cp312-linux_x86_64.whl",
+                504_426_976,
+                "sha256:e4e2af239e4db71f090cfaf6698b3c3100ee8f31a0b575013f6cd6ca4822c5e5",
+            ),
+        ] {
+            let variant = manifest
+                .variants
+                .iter()
+                .find(|variant| variant.variant_id == variant_id)
+                .expect("pinned ExLlama variant should exist");
+            assert!(
+                variant
+                    .runtime_requirements
+                    .iter()
+                    .any(|requirement| { requirement == "PyTorch 2.9.0 with CUDA 12.8" })
+            );
+            let asset = variant
+                .assets
+                .iter()
+                .find(|asset| asset.name == asset_name)
+                .expect("matching ExLlama wheel should exist");
+            assert_eq!(asset.size_bytes, expected_size);
+            assert_eq!(asset.sha256, expected_sha256);
+        }
+    }
+
     fn llama_cpp_manifest() -> super::catalog::EngineManifest {
         parse_manifest(CATALOGS[0].1).expect("llama.cpp catalog should validate")
     }
