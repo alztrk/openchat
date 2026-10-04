@@ -22,6 +22,7 @@ use tokio::{
     sync::{Mutex, watch as tokio_watch},
     time::{Duration, sleep, timeout},
 };
+use zeroize::Zeroize;
 
 const MAX_REQUEST_BYTES: usize = 1024 * 1024;
 
@@ -101,7 +102,7 @@ async fn run_protocol(
     let startup_recovered = Arc::new(AtomicBool::new(false));
 
     loop {
-        let line = match input.next_line().await {
+        let mut line = match input.next_line().await {
             Ok(Some(line)) => line,
             Ok(None) => break,
             Err(error) => {
@@ -110,6 +111,7 @@ async fn run_protocol(
             }
         };
         if line.len() > MAX_REQUEST_BYTES {
+            line.zeroize();
             output
                 .send(&Response::failure(
                     Value::Null,
@@ -122,7 +124,9 @@ async fn run_protocol(
                 .await?;
             continue;
         }
-        let request = match serde_json::from_str::<Request>(&line) {
+        let parsed_request = serde_json::from_str::<Request>(&line);
+        line.zeroize();
+        let mut request = match parsed_request {
             Ok(request) => request,
             Err(_) => {
                 output
@@ -139,6 +143,7 @@ async fn run_protocol(
             }
         };
         if !request.id.is_string() && !request.id.is_u64() {
+            zeroize_passphrase(&mut request.params);
             output
                 .send(&Response::failure(
                     Value::Null,
@@ -152,6 +157,7 @@ async fn run_protocol(
             continue;
         }
         if !request.params.is_object() {
+            zeroize_passphrase(&mut request.params);
             output
                 .send(&Response::failure(
                     request.id,
@@ -166,6 +172,7 @@ async fn run_protocol(
         }
 
         if request.method == "system.shutdown" {
+            zeroize_passphrase(&mut request.params);
             shutdown_requested.store(true, Ordering::SeqCst);
             let response_result = output
                 .send(&Response::success(request.id, json!({"stopping": true})))
@@ -175,6 +182,7 @@ async fn run_protocol(
             return Ok(());
         }
         if request.method == "system.cancel" {
+            zeroize_passphrase(&mut request.params);
             let target = request.params.get("targetId").and_then(request_key_value);
             let cancelled = if let Some(target) = target {
                 let operations = active_operations.lock().await;
@@ -193,11 +201,21 @@ async fn run_protocol(
             continue;
         }
 
+        if !matches!(
+            request.method.as_str(),
+            "conversation.archive.export"
+                | "conversation.archive.inspect"
+                | "conversation.archive.restore"
+        ) {
+            zeroize_passphrase(&mut request.params);
+        }
+
         let operation_key = request_key(&request.id);
         let (cancellation_sender, cancellation_receiver) = tokio_watch::channel(false);
         {
             let mut operations = active_operations.lock().await;
             if operations.contains_key(&operation_key) {
+                zeroize_passphrase(&mut request.params);
                 output
                     .send(&Response::failure(
                         request.id,
@@ -247,6 +265,16 @@ async fn run_protocol(
     finish_service_shutdown(&storage, &active_operations).await;
     Ok(())
 }
+
+fn zeroize_passphrase(params: &mut Value) {
+    if let Some(Value::String(mut passphrase)) = params
+        .as_object_mut()
+        .and_then(|object| object.remove("passphrase"))
+    {
+        passphrase.zeroize();
+    }
+}
+
 fn request_key(id: &Value) -> String {
     match id {
         Value::String(value) => format!("s:{value}"),
@@ -296,7 +324,17 @@ async fn finish_service_shutdown(
 mod tests {
     use std::{env, ffi::OsString};
 
-    use super::parse_data_root;
+    use serde_json::json;
+
+    use super::{parse_data_root, zeroize_passphrase};
+
+    #[test]
+    fn request_cleanup_removes_the_archive_passphrase_field() {
+        let mut params = json!({"passphrase": "temporary archive secret", "path": "file"});
+        zeroize_passphrase(&mut params);
+        assert!(params.get("passphrase").is_none());
+        assert_eq!(params["path"], "file");
+    }
 
     #[test]
     fn data_root_option_requires_one_absolute_path() {

@@ -47,6 +47,82 @@ impl std::fmt::Display for AttachmentMetadataError {
 
 impl std::error::Error for AttachmentMetadataError {}
 
+pub(crate) fn message_attachment_metadata(
+    content: &str,
+) -> Result<Vec<AttachmentMetadata>, AttachmentMetadataError> {
+    let Some(encoded) = content.strip_prefix(MESSAGE_CONTENT_PREFIX) else {
+        return Ok(Vec::new());
+    };
+    let envelope = serde_json::from_str::<MessageEnvelope>(encoded)
+        .map_err(|_| AttachmentMetadataError("The saved attachment envelope is invalid."))?;
+    if envelope.attachments.is_empty() || envelope.attachments.len() > MAXIMUM_FILE_COUNT {
+        return Err(AttachmentMetadataError(
+            "The saved attachment count is invalid.",
+        ));
+    }
+
+    let mut ids = std::collections::HashSet::with_capacity(envelope.attachments.len());
+    let mut total_bytes = 0_usize;
+    let mut image_count = 0_usize;
+    for metadata in &envelope.attachments {
+        if !is_safe_identifier(&metadata.id)
+            || !ids.insert(metadata.id.as_str())
+            || metadata.name.trim().is_empty()
+            || metadata.name.chars().count() > 255
+            || metadata.name.chars().any(char::is_control)
+            || metadata.size_bytes == 0
+        {
+            return Err(AttachmentMetadataError(
+                "The saved attachment metadata is invalid.",
+            ));
+        }
+        let maximum_size = match (metadata.kind.as_str(), metadata.mime_type.as_str()) {
+            ("image", "image/png" | "image/jpeg" | "image/webp") => {
+                image_count = image_count.saturating_add(1);
+                MAXIMUM_IMAGE_BYTES
+            }
+            ("text", mime_type) if is_text_mime_type(mime_type) => MAXIMUM_TEXT_BYTES,
+            _ => {
+                return Err(AttachmentMetadataError(
+                    "The saved attachment type is invalid.",
+                ));
+            }
+        };
+        if metadata.size_bytes > maximum_size {
+            return Err(AttachmentMetadataError(
+                "The saved attachment size is invalid.",
+            ));
+        }
+        total_bytes = total_bytes.saturating_add(metadata.size_bytes);
+        if image_count > MAXIMUM_IMAGE_COUNT || total_bytes > MAXIMUM_TOTAL_BYTES {
+            return Err(AttachmentMetadataError(
+                "The saved attachment limits were exceeded.",
+            ));
+        }
+    }
+    Ok(envelope.attachments)
+}
+
+pub(crate) fn validate_portable_attachment_content(
+    metadata: &AttachmentMetadata,
+    bytes: &[u8],
+) -> Result<(), AttachmentMetadataError> {
+    if bytes.len() != metadata.size_bytes || bytes.is_empty() {
+        return Err(AttachmentMetadataError(
+            "The attachment content size is invalid.",
+        ));
+    }
+    match metadata.kind.as_str() {
+        "image" if has_valid_image_signature(&metadata.mime_type, bytes) => Ok(()),
+        "text" if is_text_mime_type(&metadata.mime_type) && std::str::from_utf8(bytes).is_ok() => {
+            Ok(())
+        }
+        _ => Err(AttachmentMetadataError(
+            "The attachment content does not match its declared type.",
+        )),
+    }
+}
+
 pub(crate) fn write_generated_images(
     storage_root: &Path,
     conversation_id: &str,
@@ -485,6 +561,28 @@ mod tests {
         assert_eq!(decoded.content, "final response");
         assert_eq!(decoded.attachments.len(), 1);
         assert_eq!(decoded.attachments[0].id, "image-1");
+    }
+
+    #[test]
+    fn portable_metadata_rejects_ambiguous_ids_and_control_characters() {
+        let prefix = MESSAGE_CONTENT_PREFIX;
+        let valid = format!(
+            "{prefix}{{\"content\":\"text\",\"attachments\":[{{\"id\":\"file-1\",\"name\":\"notes.txt\",\"mimeType\":\"text/plain\",\"sizeBytes\":4,\"kind\":\"text\"}}]}}"
+        );
+        let metadata = message_attachment_metadata(&valid).expect("valid metadata");
+        assert_eq!(metadata.len(), 1);
+        validate_portable_attachment_content(&metadata[0], b"note")
+            .expect("UTF-8 attachment content should validate");
+
+        let duplicate_ids = format!(
+            "{prefix}{{\"content\":\"text\",\"attachments\":[{{\"id\":\"file-1\",\"name\":\"one.txt\",\"mimeType\":\"text/plain\",\"sizeBytes\":1,\"kind\":\"text\"}},{{\"id\":\"file-1\",\"name\":\"two.txt\",\"mimeType\":\"text/plain\",\"sizeBytes\":1,\"kind\":\"text\"}}]}}"
+        );
+        assert!(message_attachment_metadata(&duplicate_ids).is_err());
+
+        let control_character = format!(
+            "{prefix}{{\"content\":\"text\",\"attachments\":[{{\"id\":\"file-1\",\"name\":\"notes\\n.txt\",\"mimeType\":\"text/plain\",\"sizeBytes\":1,\"kind\":\"text\"}}]}}"
+        );
+        assert!(message_attachment_metadata(&control_character).is_err());
     }
 }
 

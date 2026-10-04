@@ -9,11 +9,13 @@ use std::{
 use rusqlite::OptionalExtension;
 use serde_json::{Value, json};
 use tokio::sync::watch as tokio_watch;
+use zeroize::Zeroizing;
 
 use crate::{
     chat_operation::ChatSendContext,
     chatgpt::ChatGptService,
-    chatgpt_store, hugging_face, instructions, local_engines, openai_api, openai_compatible,
+    chatgpt_store, conversation_archive, hugging_face, instructions, local_engines, openai_api,
+    openai_compatible,
     permissions::ToolPermissionBroker,
     protocol::{EventSink, Request, Response, ServiceError},
     storage::AppStorage,
@@ -23,7 +25,7 @@ use crate::{
 pub(crate) async fn dispatch(
     storage: &AppStorage,
     service: &Arc<ChatGptService>,
-    request: Request,
+    mut request: Request,
     mut cancellation: tokio_watch::Receiver<bool>,
     events: EventSink,
     permission_broker: ToolPermissionBroker,
@@ -31,7 +33,8 @@ pub(crate) async fn dispatch(
     shutdown_requested: Arc<AtomicBool>,
     startup_recovered: Arc<AtomicBool>,
 ) -> Result<Value, ServiceError> {
-    match request.method.as_str() {
+    let method = request.method.clone();
+    match method.as_str() {
         "system.health" => Ok(json!({
             "status": "ready",
             "database_path": storage.database_path().to_string_lossy(),
@@ -369,6 +372,23 @@ pub(crate) async fn dispatch(
                     "createdAtUnixMs": excerpt.created_at_unix_ms,
                 })).collect::<Vec<_>>(),
             }))
+        }
+        "conversation.archive.export" => {
+            let passphrase = required_secret_string(&mut request.params, "passphrase")?;
+            let conversation_ids = required_string_array(&request.params, "conversationIds")?;
+            let path = required_string(&request.params, "path")?.to_owned();
+            conversation_archive::export(storage, &conversation_ids, &path, passphrase)
+        }
+        "conversation.archive.inspect" => {
+            let passphrase = required_secret_string(&mut request.params, "passphrase")?;
+            let path = required_string(&request.params, "path")?.to_owned();
+            conversation_archive::inspect(storage, &path, passphrase)
+        }
+        "conversation.archive.restore" => {
+            let passphrase = required_secret_string(&mut request.params, "passphrase")?;
+            let path = required_string(&request.params, "path")?.to_owned();
+            let conflict_policy = required_string(&request.params, "conflictPolicy")?.to_owned();
+            conversation_archive::restore(storage, &path, passphrase, &conflict_policy)
         }
         "chat.memory.semantic.status" => Ok(json!({
             "ready": chatgpt_store::semantic_search_is_ready(storage).await,
@@ -937,6 +957,43 @@ fn required_string<'a>(params: &'a Value, name: &str) -> Result<&'a str, Service
         })
 }
 
+fn required_string_array(params: &Value, name: &str) -> Result<Vec<String>, ServiceError> {
+    params
+        .get(name)
+        .and_then(Value::as_array)
+        .filter(|values| !values.is_empty() && values.len() <= 5_000)
+        .and_then(|values| {
+            values
+                .iter()
+                .map(Value::as_str)
+                .map(|value| value.filter(|value| !value.trim().is_empty()))
+                .collect::<Option<Vec<_>>>()
+        })
+        .map(|values| values.into_iter().map(str::to_owned).collect())
+        .ok_or_else(invalid_request_params)
+}
+
+fn required_secret_string(
+    params: &mut Value,
+    name: &str,
+) -> Result<Zeroizing<String>, ServiceError> {
+    let value = params
+        .as_object_mut()
+        .and_then(|object| object.remove(name));
+    match value {
+        Some(Value::String(secret)) => Ok(Zeroizing::new(secret)),
+        _ => Err(invalid_request_params()),
+    }
+}
+
+fn invalid_request_params() -> ServiceError {
+    ServiceError::new(
+        "invalid_request_params",
+        "A required local service parameter is missing or invalid.",
+        false,
+    )
+}
+
 fn required_non_zero_u32(params: &Value, name: &str) -> Result<u32, ServiceError> {
     params
         .get(name)
@@ -1100,7 +1157,31 @@ mod tests {
         user_question_broker::UserQuestionBroker,
     };
 
-    use super::{dispatch, required_memory_conversation_id, required_memory_search_query};
+    use super::{
+        dispatch, required_memory_conversation_id, required_memory_search_query,
+        required_secret_string, required_string_array,
+    };
+
+    #[test]
+    fn archive_rpc_removes_and_bounds_sensitive_parameters() {
+        let mut params = json!({
+            "passphrase": "secret phrase never persisted",
+            "conversationIds": ["first", "second"]
+        });
+        let passphrase = required_secret_string(&mut params, "passphrase")
+            .expect("archive passphrase should be extracted");
+        assert_eq!(passphrase.as_str(), "secret phrase never persisted");
+        assert!(params.get("passphrase").is_none());
+        assert_eq!(
+            required_string_array(&params, "conversationIds")
+                .expect("conversation ids should parse"),
+            ["first", "second"]
+        );
+        assert!(required_string_array(&json!({"conversationIds": []}), "conversationIds").is_err());
+        assert!(
+            required_string_array(&json!({"conversationIds": [" "]}), "conversationIds").is_err()
+        );
+    }
 
     #[test]
     fn memory_rpc_rejects_unbounded_or_ambiguous_values() {
@@ -1148,7 +1229,8 @@ mod tests {
                     content TEXT NOT NULL,
                     status TEXT NOT NULL,
                     created_at INTEGER,
-                    tool_activities TEXT NOT NULL DEFAULT '[]'
+                    tool_activities TEXT NOT NULL DEFAULT '[]',
+                    UNIQUE (conversation_id, id)
                  );",
             )
             .expect("create desktop conversation schema");
