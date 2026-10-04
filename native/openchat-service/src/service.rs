@@ -105,7 +105,7 @@ async fn run_protocol(
             Ok(Some(line)) => line,
             Ok(None) => break,
             Err(error) => {
-                finish_service_shutdown(&active_operations).await;
+                finish_service_shutdown(&storage, &active_operations).await;
                 return Err(error);
             }
         };
@@ -170,7 +170,7 @@ async fn run_protocol(
             let response_result = output
                 .send(&Response::success(request.id, json!({"stopping": true})))
                 .await;
-            finish_service_shutdown(&active_operations).await;
+            finish_service_shutdown(&storage, &active_operations).await;
             response_result?;
             return Ok(());
         }
@@ -244,7 +244,7 @@ async fn run_protocol(
         });
     }
 
-    finish_service_shutdown(&active_operations).await;
+    finish_service_shutdown(&storage, &active_operations).await;
     Ok(())
 }
 fn request_key(id: &Value) -> String {
@@ -269,9 +269,12 @@ async fn cancel_all(operations: &Mutex<HashMap<String, tokio_watch::Sender<bool>
     }
 }
 
-async fn finish_service_shutdown(operations: &Mutex<HashMap<String, tokio_watch::Sender<bool>>>) {
+async fn finish_service_shutdown(
+    storage: &AppStorage,
+    operations: &Mutex<HashMap<String, tokio_watch::Sender<bool>>>,
+) {
     cancel_all(operations).await;
-    if let Err(error) = crate::local_engines::stop_runtime().await {
+    if let Err(error) = crate::local_engines::stop_runtime(storage).await {
         eprintln!("local_engine_shutdown_failed:{}", error.code);
     }
     if timeout(Duration::from_millis(1500), async {

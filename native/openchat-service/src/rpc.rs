@@ -445,7 +445,7 @@ pub(crate) async fn dispatch(
             let model_id = required_string(&request.params, "modelId")?;
             local_engines::start_model(storage, model_id, &mut cancellation).await
         }
-        "local.engines.stop" => local_engines::stop_runtime().await,
+        "local.engines.stop" => local_engines::stop_runtime(storage).await,
         "local.engines.install" => {
             let engine_id = required_string(&request.params, "engineId")?;
             let variant_id = required_string(&request.params, "variantId")?;

@@ -63,11 +63,12 @@ pub(crate) async fn start_model(
         return Err(cancelled_error());
     }
     if state.is_some() {
-        stop_server(&mut state).await?;
+        stop_server(storage, &mut state).await?;
     }
 
     let port = available_loopback_port().await?;
-    let child = Command::new(&installed.entrypoint)
+    let started_at = Instant::now();
+    let child = match Command::new(&installed.entrypoint)
         .arg("--model")
         .arg(&model.path)
         .arg("--host")
@@ -81,8 +82,18 @@ pub(crate) async fn start_model(
         .stderr(Stdio::null())
         .kill_on_drop(true)
         .spawn()
-        .map_err(|_| runtime_error())?;
-    let started_at = Instant::now();
+    {
+        Ok(child) => child,
+        Err(_) => {
+            log_runtime_event(
+                storage,
+                "runtime_start_failed",
+                Some("local_engine_runtime_unavailable"),
+                Some(started_at.elapsed()),
+            );
+            return Err(runtime_error());
+        }
+    };
     *state = Some(RunningServer {
         engine_id: model.engine_id.clone(),
         model_id: model.id.clone(),
@@ -98,6 +109,12 @@ pub(crate) async fn start_model(
             if let Some(exit_status) = server.child.try_wait().map_err(|_| runtime_error())? {
                 let _ = exit_status;
                 *state = None;
+                log_runtime_event(
+                    storage,
+                    "runtime_start_failed",
+                    Some("local_engine_start_failed"),
+                    Some(started_at.elapsed()),
+                );
                 return Err(runtime_start_failed_error());
             }
             server.port
@@ -105,22 +122,41 @@ pub(crate) async fn start_model(
         let ready = match health_check_or_cancel(port, cancellation).await {
             Ok(ready) => ready,
             Err(error) => {
-                stop_server(&mut state).await?;
+                stop_server(storage, &mut state).await?;
+                let event = if error.code == "operation_cancelled" {
+                    "runtime_start_cancelled"
+                } else {
+                    "runtime_start_failed"
+                };
+                log_runtime_event(storage, event, Some(error.code), Some(started_at.elapsed()));
                 return Err(error);
             }
         };
         if ready {
+            log_runtime_event(storage, "runtime_started", None, Some(started_at.elapsed()));
             return Ok(status_json(state.as_ref(), "running"));
         }
         if started_at.elapsed() >= STARTUP_TIMEOUT {
-            stop_server(&mut state).await?;
+            stop_server(storage, &mut state).await?;
+            log_runtime_event(
+                storage,
+                "runtime_start_timeout",
+                Some("local_engine_start_timeout"),
+                Some(started_at.elapsed()),
+            );
             return Err(runtime_start_timeout_error());
         }
 
         tokio::select! {
             changed = cancellation.changed() => {
                 if changed.is_err() || *cancellation.borrow() {
-                    stop_server(&mut state).await?;
+                    stop_server(storage, &mut state).await?;
+                    log_runtime_event(
+                        storage,
+                        "runtime_start_cancelled",
+                        Some("operation_cancelled"),
+                        Some(started_at.elapsed()),
+                    );
                     return Err(cancelled_error());
                 }
             }
@@ -129,13 +165,13 @@ pub(crate) async fn start_model(
     }
 }
 
-pub(crate) async fn stop() -> Result<Value, ServiceError> {
+pub(crate) async fn stop(storage: &AppStorage) -> Result<Value, ServiceError> {
     let mut state = running_state().lock().await;
-    stop_server(&mut state).await?;
+    stop_server(storage, &mut state).await?;
     Ok(status_json(None, "stopped"))
 }
 
-pub(crate) async fn status() -> Result<Value, ServiceError> {
+pub(crate) async fn status(storage: &AppStorage) -> Result<Value, ServiceError> {
     let mut state = running_state().lock().await;
     let Some(server) = state.as_mut() else {
         return Ok(status_json(None, "stopped"));
@@ -147,6 +183,12 @@ pub(crate) async fn status() -> Result<Value, ServiceError> {
         .is_some()
     {
         *state = None;
+        log_runtime_event(
+            storage,
+            "runtime_exited",
+            Some("local_engine_runtime_unavailable"),
+            None,
+        );
         return Ok(status_json(None, "stopped"));
     }
     let status = if health_check(server.port).await {
@@ -245,7 +287,10 @@ fn running_state() -> &'static Mutex<Option<RunningServer>> {
     RUNNING_SERVER.get_or_init(|| Mutex::new(None))
 }
 
-async fn stop_server(state: &mut Option<RunningServer>) -> Result<(), ServiceError> {
+async fn stop_server(
+    storage: &AppStorage,
+    state: &mut Option<RunningServer>,
+) -> Result<(), ServiceError> {
     let Some(mut server) = state.take() else {
         return Ok(());
     };
@@ -255,10 +300,32 @@ async fn stop_server(state: &mut Option<RunningServer>) -> Result<(), ServiceErr
         .map_err(|_| runtime_error())?
         .is_none()
     {
-        server.child.kill().await.map_err(|_| runtime_error())?;
-        server.child.wait().await.map_err(|_| runtime_error())?;
+        if server.child.kill().await.is_err() || server.child.wait().await.is_err() {
+            log_runtime_event(
+                storage,
+                "runtime_stop_failed",
+                Some("local_engine_runtime_unavailable"),
+                None,
+            );
+            return Err(runtime_error());
+        }
     }
+    log_runtime_event(storage, "runtime_stopped", None, None);
     Ok(())
+}
+
+fn log_runtime_event(
+    storage: &AppStorage,
+    event: &'static str,
+    code: Option<&'static str>,
+    duration: Option<Duration>,
+) {
+    if storage
+        .log_local_engine_event(event, code, duration)
+        .is_err()
+    {
+        eprintln!("local_engine_diagnostic_write_failed");
+    }
 }
 
 fn status_json(server: Option<&RunningServer>, status: &str) -> Value {

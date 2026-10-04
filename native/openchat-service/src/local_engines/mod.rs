@@ -47,7 +47,7 @@ pub(crate) fn manifests() -> Result<Vec<EngineManifest>, ServiceError> {
 pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
     models::ensure_storage_directories(storage.root())?;
     let cuda_available = nvidia_gpu_available().await;
-    let runtime = runtime::status().await?;
+    let runtime = runtime::status(storage).await?;
     let registered_models = models::list(storage)?;
     let engines = manifests()?
         .into_iter()
@@ -108,8 +108,8 @@ pub(crate) async fn start_model(
     runtime::start_model(storage, model_id, cancellation).await
 }
 
-pub(crate) async fn stop_runtime() -> Result<Value, ServiceError> {
-    runtime::stop().await
+pub(crate) async fn stop_runtime(storage: &AppStorage) -> Result<Value, ServiceError> {
+    runtime::stop(storage).await
 }
 
 pub(crate) async fn chat_url(
@@ -206,9 +206,9 @@ pub(crate) async fn remove_model(
     storage: &AppStorage,
     model_id: &str,
 ) -> Result<Value, ServiceError> {
-    let state = runtime::status().await?;
+    let state = runtime::status(storage).await?;
     if state.get("modelId").and_then(Value::as_str) == Some(model_id) {
-        runtime::stop().await?;
+        runtime::stop(storage).await?;
     }
     Ok(json!({"removed": models::remove(storage, model_id)?}))
 }

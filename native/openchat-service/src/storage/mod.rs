@@ -1,7 +1,7 @@
 use std::{
     env,
     fs::{self, OpenOptions},
-    io::{self, Write},
+    io::{self, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{
         Mutex,
@@ -11,6 +11,9 @@ use std::{
 };
 
 use rusqlite::{Connection, OpenFlags};
+
+const MAX_DIAGNOSTIC_LOG_BYTES: u64 = 1024 * 1024;
+const MAX_DIAGNOSTIC_ENTRY_BYTES: usize = 4096;
 
 mod database_guard;
 mod schema;
@@ -153,11 +156,28 @@ impl AppStorage {
         })
     }
 
+    pub(crate) fn log_local_engine_event(
+        &self,
+        event: &'static str,
+        code: Option<&'static str>,
+        duration: Option<Duration>,
+    ) -> io::Result<()> {
+        self.append_diagnostic("local_engine", event, |entry| {
+            if let Some(code) = code {
+                write!(entry, " code={code}")?;
+            }
+            if let Some(duration) = duration {
+                write!(entry, " duration_ms={}", duration.as_millis())?;
+            }
+            Ok(())
+        })
+    }
+
     fn append_diagnostic(
         &self,
         component: &'static str,
         event: &'static str,
-        write_fields: impl FnOnce(&mut std::fs::File) -> io::Result<()>,
+        write_fields: impl FnOnce(&mut Vec<u8>) -> io::Result<()>,
     ) -> io::Result<()> {
         let _guard = self
             .diagnostics_lock
@@ -167,18 +187,33 @@ impl AppStorage {
             .duration_since(UNIX_EPOCH)
             .map_err(io::Error::other)?
             .as_millis();
+        let mut entry = Vec::new();
+        write!(
+            entry,
+            "timestamp_unix_ms={timestamp} component={component} event={event}"
+        )?;
+        write_fields(&mut entry)?;
+        writeln!(entry)?;
+        if entry.len() > MAX_DIAGNOSTIC_ENTRY_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "service diagnostic entry exceeded its size limit",
+            ));
+        }
+
         let log_path = self.root.join("logs").join("openchat-service.log");
         let mut file = OpenOptions::new()
             .create(true)
-            .append(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
             .open(log_path)?;
-
-        write!(
-            file,
-            "timestamp_unix_ms={timestamp} component={component} event={event}"
-        )?;
-        write_fields(&mut file)?;
-        writeln!(file)?;
+        let entry_size = u64::try_from(entry.len()).map_err(io::Error::other)?;
+        if file.metadata()?.len().saturating_add(entry_size) > MAX_DIAGNOSTIC_LOG_BYTES {
+            file.set_len(0)?;
+        }
+        file.seek(SeekFrom::End(0))?;
+        file.write_all(&entry)?;
         file.flush()
     }
 
@@ -282,7 +317,7 @@ mod tests {
     use rusqlite::Connection;
     use uuid::Uuid;
 
-    use super::{AppStorage, database_guard};
+    use super::{AppStorage, MAX_DIAGNOSTIC_LOG_BYTES, database_guard};
 
     #[test]
     fn open_rejects_corrupt_existing_database_before_wal_or_schema_writes() {
@@ -357,6 +392,30 @@ mod tests {
         assert_eq!(user_version, 9);
         assert_eq!(value, "preserved");
         database_guard::verify_integrity(&backup).expect("backup passes integrity check");
+    }
+
+    #[test]
+    fn diagnostic_log_stays_bounded_and_records_only_safe_runtime_fields() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");
+        let log_path = directory.0.join("logs").join("openchat-service.log");
+        fs::write(&log_path, vec![b'x'; MAX_DIAGNOSTIC_LOG_BYTES as usize])
+            .expect("fill diagnostic log to its size limit");
+
+        storage
+            .log_local_engine_event(
+                "runtime_started",
+                None,
+                Some(std::time::Duration::from_millis(25)),
+            )
+            .expect("write safe runtime diagnostic");
+
+        let entry = fs::read_to_string(&log_path).expect("read diagnostic log");
+        assert!(entry.len() < 256);
+        assert!(entry.contains("component=local_engine event=runtime_started"));
+        assert!(entry.contains("duration_ms=25"));
+        assert!(!entry.contains("modelPath"));
+        assert!(!entry.contains("prompt"));
     }
 
     struct TestDirectory(PathBuf);
