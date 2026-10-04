@@ -35,6 +35,8 @@
   "localEngineBlocked": "Blocked",
   "localEngineUnsupportedPlatform": "Unsupported platform",
   "localEngineHardwareUnavailable": "Hardware unavailable",
+  "localEngineDriverUnsupported": "Update NVIDIA driver",
+  "localEngineDriverVersionUnavailable": "NVIDIA driver version could not be verified",
   "localEngineVllmBlockedReason": "The vLLM package depends on PyTorch and a full Python runtime that OpenChat does not yet install from a complete, hash-verified dependency lock. Native Windows is unsupported upstream; managed WSL2 setup is not available yet.",
   "localEngineExllamaBlockedReason": "The ExLlamaV3 runtime is not ready for installation yet. OpenChat must pin and verify the complete TabbyAPI, PyTorch, Triton, Flash Linear Attention, and Python dependency set before offering it.",
   "localEngineRuntimeRequirements": "Requirements: {requirements}",

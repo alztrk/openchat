@@ -119,6 +119,13 @@ class AppLocalizationsEs extends AppLocalizations {
   String get localEngineHardwareUnavailable => 'Hardware no disponible';
 
   @override
+  String get localEngineDriverUnsupported => 'Actualiza el controlador NVIDIA';
+
+  @override
+  String get localEngineDriverVersionUnavailable =>
+      'No se pudo verificar la versión del controlador NVIDIA';
+
+  @override
   String get localEngineVllmBlockedReason =>
       'El paquete de vLLM depende de PyTorch y de un runtime completo de Python que OpenChat todavía no instala mediante un bloqueo de dependencias completo verificado con hashes. Windows nativo no es compatible oficialmente; la configuración administrada de WSL2 aún no está disponible.';
 

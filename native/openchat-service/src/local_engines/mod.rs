@@ -13,7 +13,14 @@ use tokio::{process::Command, time::timeout};
 
 use crate::{protocol::ServiceError, storage::AppStorage};
 
-use catalog::{CatalogError, EngineManifest, EngineVariant, parse_manifest};
+use catalog::{CatalogError, DriverVersion, EngineManifest, EngineVariant, parse_manifest};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NvidiaDriverStatus {
+    NotDetected,
+    VersionUnavailable,
+    Detected(DriverVersion),
+}
 
 const CATALOGS: &[(&str, &[u8])] = &[
     (
@@ -47,7 +54,8 @@ pub(crate) fn manifests() -> Result<Vec<EngineManifest>, ServiceError> {
 
 pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
     models::ensure_storage_directories(storage.root())?;
-    let cuda_available = nvidia_gpu_available().await;
+    let nvidia_driver = nvidia_driver_status().await;
+    let cuda_available = matches!(nvidia_driver, NvidiaDriverStatus::Detected(_));
     let runtime = runtime::status(storage).await?;
     let registered_models = models::list(storage)?;
     let engines = manifests()?
@@ -64,10 +72,20 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
                         )
                     })?
                     .to_owned();
+            let recommended_variant =
+                recommended_variant_id(&manifest, nvidia_driver, host_os(), host_architecture());
             let variants = manifest
                 .variants
                 .iter()
-                .map(|variant| variant_json(storage, &manifest, variant, cuda_available))
+                .map(|variant| {
+                    variant_json(
+                        storage,
+                        &manifest,
+                        variant,
+                        nvidia_driver,
+                        recommended_variant.as_deref(),
+                    )
+                })
                 .collect::<Result<Vec<_>, _>>()?;
             Ok(json!({
                 "engineId": manifest.engine_id,
@@ -248,26 +266,31 @@ pub(crate) fn find_variant(
 }
 
 pub(crate) async fn can_install(manifest: &EngineManifest, variant: &EngineVariant) -> bool {
-    manifest.catalog_status == "installable"
-        && cfg!(windows)
-        && variant.os == host_os()
-        && variant.architecture == host_architecture()
-        && (variant.accelerator != "cuda" || nvidia_gpu_available().await)
+    if manifest.catalog_status != "installable"
+        || !cfg!(windows)
+        || variant.os != host_os()
+        || variant.architecture != host_architecture()
+    {
+        return false;
+    }
+    variant.accelerator != "cuda"
+        || variant_hardware_status(variant, nvidia_driver_status().await).is_none()
 }
 
 fn variant_json(
     storage: &AppStorage,
     manifest: &EngineManifest,
     variant: &EngineVariant,
-    cuda_available: bool,
+    nvidia_driver: NvidiaDriverStatus,
+    recommended_variant: Option<&str>,
 ) -> Result<Value, ServiceError> {
     let installed = installer::installed_engine(storage, manifest, variant)?.is_some();
     let platform_matches =
         cfg!(windows) && variant.os == host_os() && variant.architecture == host_architecture();
-    let hardware_matches = variant.accelerator != "cuda" || cuda_available;
+    let hardware_status = variant_hardware_status(variant, nvidia_driver);
     let can_install = manifest.catalog_status == "installable"
         && platform_matches
-        && hardware_matches
+        && hardware_status.is_none()
         && !installed;
     let status = if installed {
         "installed"
@@ -275,24 +298,10 @@ fn variant_json(
         "blocked"
     } else if !platform_matches {
         "unsupported_platform"
-    } else if !hardware_matches {
-        "hardware_unavailable"
+    } else if let Some(status) = hardware_status {
+        status
     } else {
         "available"
-    };
-    let matching_accelerator_variants = manifest
-        .variants
-        .iter()
-        .filter(|candidate| {
-            candidate.os == variant.os
-                && candidate.architecture == variant.architecture
-                && candidate.accelerator == variant.accelerator
-        })
-        .count();
-    let accelerator_recommended = match variant.accelerator.as_str() {
-        "cuda" => cuda_available && matching_accelerator_variants == 1,
-        "cpu" => !cuda_available,
-        _ => false,
     };
     Ok(json!({
         "variantId": variant.variant_id,
@@ -301,28 +310,119 @@ fn variant_json(
         "accelerator": variant.accelerator,
         "runtimeRequirements": variant.runtime_requirements,
         "canInstall": can_install,
-        "recommended": accelerator_recommended,
+        "recommended": platform_matches
+            && recommended_variant == Some(variant.variant_id.as_str()),
         "installed": installed,
         "status": status,
     }))
 }
 
-async fn nvidia_gpu_available() -> bool {
-    let Some(executable) = nvidia_driver_executable() else {
-        return false;
+fn variant_hardware_status(
+    variant: &EngineVariant,
+    driver_status: NvidiaDriverStatus,
+) -> Option<&'static str> {
+    if variant.accelerator != "cuda" {
+        return None;
+    }
+    match driver_status {
+        NvidiaDriverStatus::NotDetected => Some("hardware_unavailable"),
+        NvidiaDriverStatus::VersionUnavailable => Some("driver_version_unavailable"),
+        NvidiaDriverStatus::Detected(driver_version) => {
+            let minimum = variant
+                .minimum_driver_version
+                .as_deref()
+                .and_then(DriverVersion::parse);
+            match minimum {
+                Some(minimum) if driver_version >= minimum => None,
+                Some(_) => Some("driver_unsupported"),
+                None => Some("driver_version_unavailable"),
+            }
+        }
+    }
+}
+
+fn recommended_variant_id(
+    manifest: &EngineManifest,
+    driver_status: NvidiaDriverStatus,
+    os: &str,
+    architecture: &str,
+) -> Option<String> {
+    if manifest.catalog_status != "installable" {
+        return None;
+    }
+
+    let driver_version = match driver_status {
+        NvidiaDriverStatus::Detected(version) => Some(version),
+        NvidiaDriverStatus::NotDetected | NvidiaDriverStatus::VersionUnavailable => None,
     };
-    timeout(
-        Duration::from_secs(2),
+    let recommended_cuda = manifest
+        .variants
+        .iter()
+        .filter(|variant| {
+            variant.os == os
+                && variant.architecture == architecture
+                && variant.accelerator == "cuda"
+        })
+        .filter_map(|variant| {
+            let actual = driver_version?;
+            let minimum = DriverVersion::parse(variant.minimum_driver_version.as_deref()?)?;
+            let recommended = DriverVersion::parse(variant.recommended_driver_version.as_deref()?)?;
+            (actual >= minimum && actual >= recommended).then_some((recommended, variant))
+        })
+        .max_by_key(|(recommended_driver, _)| *recommended_driver)
+        .map(|(_, variant)| variant.variant_id.clone());
+    if recommended_cuda.is_some() {
+        return recommended_cuda;
+    }
+
+    manifest
+        .variants
+        .iter()
+        .find(|variant| {
+            variant.os == os && variant.architecture == architecture && variant.accelerator == "cpu"
+        })
+        .map(|variant| variant.variant_id.clone())
+}
+
+async fn nvidia_driver_status() -> NvidiaDriverStatus {
+    let Some(executable) = nvidia_driver_executable() else {
+        return NvidiaDriverStatus::NotDetected;
+    };
+    let result = timeout(Duration::from_secs(2), async {
         Command::new(executable)
-            .args(["--query-gpu=name", "--format=csv,noheader"])
-            .output(),
-    )
-    .await
-    .ok()
-    .and_then(Result::ok)
-    .is_some_and(|output| {
-        output.status.success() && !String::from_utf8_lossy(&output.stdout).trim().is_empty()
+            .args([
+                "--query-gpu=driver_version",
+                "--format=csv,noheader,nounits",
+            ])
+            .kill_on_drop(true)
+            .output()
+            .await
     })
+    .await;
+    let output = match result {
+        Ok(Ok(output)) if output.status.success() => output,
+        Ok(Ok(_)) | Ok(Err(_)) | Err(_) => return NvidiaDriverStatus::VersionUnavailable,
+    };
+    let Ok(stdout) = std::str::from_utf8(&output.stdout) else {
+        return NvidiaDriverStatus::VersionUnavailable;
+    };
+    match parse_nvidia_driver_output(stdout) {
+        Ok(Some(version)) => NvidiaDriverStatus::Detected(version),
+        Ok(None) => NvidiaDriverStatus::NotDetected,
+        Err(()) => NvidiaDriverStatus::VersionUnavailable,
+    }
+}
+
+fn parse_nvidia_driver_output(value: &str) -> Result<Option<DriverVersion>, ()> {
+    let mut versions = value.lines().map(str::trim).filter(|line| !line.is_empty());
+    let Some(first) = versions.next() else {
+        return Ok(None);
+    };
+    let version = DriverVersion::parse(first).ok_or(())?;
+    if versions.any(|line| DriverVersion::parse(line) != Some(version)) {
+        return Err(());
+    }
+    Ok(Some(version))
 }
 
 #[cfg(windows)]
@@ -388,7 +488,10 @@ fn unsupported_engine_variant_error() -> ServiceError {
 
 #[cfg(test)]
 mod tests {
-    use super::{CATALOGS, catalog::parse_manifest};
+    use super::{
+        CATALOGS, NvidiaDriverStatus, catalog::DriverVersion, catalog::parse_manifest,
+        parse_nvidia_driver_output, recommended_variant_id, variant_hardware_status,
+    };
 
     #[test]
     fn every_embedded_engine_catalog_is_valid() {
@@ -407,5 +510,152 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(engine_ids, ["llama_cpp", "vllm", "exllama"]);
+    }
+
+    fn llama_cpp_manifest() -> super::catalog::EngineManifest {
+        parse_manifest(CATALOGS[0].1).expect("llama.cpp catalog should validate")
+    }
+
+    #[test]
+    fn recommends_the_newest_cuda_variant_supported_by_the_driver_branch() {
+        let manifest = llama_cpp_manifest();
+        let driver = NvidiaDriverStatus::Detected(
+            DriverVersion::parse("615.0").expect("valid synthetic driver version"),
+        );
+
+        assert_eq!(
+            recommended_variant_id(&manifest, driver, "windows", "x86_64").as_deref(),
+            Some("win-x86_64-cuda-13.4")
+        );
+    }
+
+    #[test]
+    fn recommends_cuda_12_when_the_13_4_driver_branch_is_not_met() {
+        let manifest = llama_cpp_manifest();
+        let driver = NvidiaDriverStatus::Detected(
+            DriverVersion::parse("580.65").expect("valid synthetic driver version"),
+        );
+
+        assert_eq!(
+            recommended_variant_id(&manifest, driver, "windows", "x86_64").as_deref(),
+            Some("win-x86_64-cuda-12.4")
+        );
+    }
+
+    #[test]
+    fn compatibility_floor_does_not_automatically_mark_a_cuda_variant_recommended() {
+        let manifest = llama_cpp_manifest();
+        let cuda_12 = manifest
+            .variants
+            .iter()
+            .find(|variant| variant.variant_id == "win-x86_64-cuda-12.4")
+            .expect("CUDA 12.4 variant should exist");
+        let cuda_13 = manifest
+            .variants
+            .iter()
+            .find(|variant| variant.variant_id == "win-x86_64-cuda-13.4")
+            .expect("CUDA 13.4 variant should exist");
+
+        let driver = NvidiaDriverStatus::Detected(
+            DriverVersion::parse("551.60").expect("valid synthetic driver version"),
+        );
+        assert_eq!(variant_hardware_status(cuda_12, driver), None);
+        assert_eq!(
+            recommended_variant_id(&manifest, driver, "windows", "x86_64").as_deref(),
+            Some("win-x86_64-cpu")
+        );
+
+        let driver = NvidiaDriverStatus::Detected(
+            DriverVersion::parse("551.61").expect("valid synthetic driver version"),
+        );
+        assert_eq!(
+            recommended_variant_id(&manifest, driver, "windows", "x86_64").as_deref(),
+            Some("win-x86_64-cuda-12.4")
+        );
+
+        let driver = NvidiaDriverStatus::Detected(
+            DriverVersion::parse("580.0").expect("valid synthetic driver version"),
+        );
+        assert_eq!(variant_hardware_status(cuda_13, driver), None);
+        assert_eq!(
+            recommended_variant_id(&manifest, driver, "windows", "x86_64").as_deref(),
+            Some("win-x86_64-cuda-12.4")
+        );
+    }
+
+    #[test]
+    fn recommends_cpu_when_cuda_is_too_old_or_driver_version_is_unknown() {
+        let manifest = llama_cpp_manifest();
+        let old_driver = NvidiaDriverStatus::Detected(
+            DriverVersion::parse("527.0").expect("valid synthetic driver version"),
+        );
+        assert_eq!(
+            recommended_variant_id(&manifest, old_driver, "windows", "x86_64").as_deref(),
+            Some("win-x86_64-cpu")
+        );
+        assert_eq!(
+            recommended_variant_id(
+                &manifest,
+                NvidiaDriverStatus::VersionUnavailable,
+                "windows",
+                "x86_64"
+            )
+            .as_deref(),
+            Some("win-x86_64-cpu")
+        );
+    }
+
+    #[test]
+    fn cuda_installability_requires_a_verified_supported_driver() {
+        let manifest = llama_cpp_manifest();
+        let cuda_variant = manifest
+            .variants
+            .iter()
+            .find(|variant| variant.variant_id == "win-x86_64-cuda-12.4")
+            .expect("CUDA variant should exist");
+
+        assert_eq!(
+            variant_hardware_status(cuda_variant, NvidiaDriverStatus::NotDetected),
+            Some("hardware_unavailable")
+        );
+        assert_eq!(
+            variant_hardware_status(cuda_variant, NvidiaDriverStatus::VersionUnavailable),
+            Some("driver_version_unavailable")
+        );
+        assert_eq!(
+            variant_hardware_status(
+                cuda_variant,
+                NvidiaDriverStatus::Detected(
+                    DriverVersion::parse("528.32").expect("valid synthetic driver version")
+                )
+            ),
+            Some("driver_unsupported")
+        );
+        assert_eq!(
+            variant_hardware_status(
+                cuda_variant,
+                NvidiaDriverStatus::Detected(
+                    DriverVersion::parse("528.33").expect("valid synthetic driver version")
+                )
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn parses_one_driver_version_shared_by_all_nvidia_devices() {
+        assert_eq!(
+            parse_nvidia_driver_output(" 551.61\r\n551.61\r\n"),
+            Ok(Some(
+                DriverVersion::parse("551.61").expect("valid synthetic driver version")
+            ))
+        );
+    }
+
+    #[test]
+    fn rejects_missing_or_conflicting_nvidia_driver_versions() {
+        assert_eq!(parse_nvidia_driver_output(" \r\n"), Ok(None));
+        assert_eq!(parse_nvidia_driver_output("551.61\nnot-a-version"), Err(()));
+        assert_eq!(parse_nvidia_driver_output("551.61\n552.1"), Err(()));
     }
 }

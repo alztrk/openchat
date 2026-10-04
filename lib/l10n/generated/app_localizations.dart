@@ -308,6 +308,18 @@ abstract class AppLocalizations {
   /// **'Hardware unavailable'**
   String get localEngineHardwareUnavailable;
 
+  /// No description provided for @localEngineDriverUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'Update NVIDIA driver'**
+  String get localEngineDriverUnsupported;
+
+  /// No description provided for @localEngineDriverVersionUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'NVIDIA driver version could not be verified'**
+  String get localEngineDriverVersionUnavailable;
+
   /// No description provided for @localEngineVllmBlockedReason.
   ///
   /// In en, this message translates to:

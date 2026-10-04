@@ -44,9 +44,11 @@
       "os": "windows",
       "architecture": "x86_64",
       "accelerator": "cuda",
+      "minimumDriverVersion": "528.33",
+      "recommendedDriverVersion": "551.61",
       "runtimeRequirements": [
         "Windows x86_64",
-        "NVIDIA GPU with a driver compatible with the CUDA 12.4 runtime libraries",
+        "NVIDIA driver 528.33 or newer is required for CUDA 12.x minor-version compatibility; NVIDIA lists 551.61 for CUDA 12.4. Compatibility mode can have feature and PTX limitations",
         "The companion CUDA DLL archive must be extracted beside the primary binaries"
       ],
       "entrypoint": "llama-server.exe",
@@ -83,9 +85,11 @@
       "os": "windows",
       "architecture": "x86_64",
       "accelerator": "cuda",
+      "minimumDriverVersion": "580.0",
+      "recommendedDriverVersion": "615.0",
       "runtimeRequirements": [
         "Windows x86_64",
-        "NVIDIA GPU with a driver compatible with the CUDA 13.4 runtime libraries",
+        "NVIDIA driver 580 or newer is required for CUDA 13.x minor-version compatibility; NVIDIA lists driver branch R615 for CUDA 13.4. Compatibility mode can have feature and PTX limitations",
         "The companion CUDA DLL archive must be extracted beside the primary binaries"
       ],
       "entrypoint": "llama-server.exe",
@@ -151,9 +155,11 @@
       "os": "linux",
       "architecture": "x86_64",
       "accelerator": "cuda",
+      "minimumDriverVersion": "525.60.13",
+      "recommendedDriverVersion": "570.26",
       "runtimeRequirements": [
         "Linux x86_64 userspace compatible with the Ubuntu x64 build",
-        "NVIDIA GPU with a driver compatible with the CUDA 12.8 runtime libraries",
+        "NVIDIA driver 525.60.13 or newer is required for CUDA 12.x minor-version compatibility; NVIDIA lists 570.26 for CUDA 12.8. Compatibility mode can have feature and PTX limitations",
         "The companion CUDA runtime archive must be extracted beside the primary binaries"
       ],
       "entrypoint": "llama-server",
@@ -190,9 +196,11 @@
       "os": "linux",
       "architecture": "x86_64",
       "accelerator": "cuda",
+      "minimumDriverVersion": "580.0",
+      "recommendedDriverVersion": "615.0",
       "runtimeRequirements": [
         "Linux x86_64 userspace compatible with the Ubuntu x64 build",
-        "NVIDIA GPU with a driver compatible with the CUDA 13.4 runtime libraries",
+        "NVIDIA driver 580 or newer is required for CUDA 13.x minor-version compatibility; NVIDIA lists driver branch R615 for CUDA 13.4. Compatibility mode can have feature and PTX limitations",
         "The companion CUDA runtime archive must be extracted beside the primary binaries"
       ],
       "entrypoint": "llama-server",
@@ -287,6 +295,8 @@
     }
   ],
   "sources": [
+    "https://docs.nvidia.com/deploy/cuda-compatibility/minor-version-compatibility.html",
+    "https://docs.nvidia.com/cuda/cuda-toolkit-release-notes/index.html",
     "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/b11349",
     "https://github.com/ggml-org/llama.cpp/releases/tag/b11349",
     "https://github.com/ggml-org/llama.cpp/blob/master/.github/workflows/release.yml",

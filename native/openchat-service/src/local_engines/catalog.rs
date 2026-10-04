@@ -48,11 +48,49 @@ pub struct EngineVariant {
     pub os: String,
     pub architecture: String,
     pub accelerator: String,
+    #[serde(default)]
+    pub minimum_driver_version: Option<String>,
+    #[serde(default)]
+    pub recommended_driver_version: Option<String>,
     pub runtime_requirements: Vec<String>,
     pub entrypoint: String,
     pub required_files: Vec<String>,
     pub assets: Vec<EngineAsset>,
     pub capabilities: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) struct DriverVersion {
+    pub major: u32,
+    pub minor: u32,
+    pub patch: u32,
+}
+
+impl DriverVersion {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        let mut parts = value.trim().split('.');
+        let major = parse_version_part(parts.next()?)?;
+        let minor = parse_version_part(parts.next()?)?;
+        let patch = match parts.next() {
+            Some(part) => parse_version_part(part)?,
+            None => 0,
+        };
+        if parts.next().is_some() {
+            return None;
+        }
+        Some(Self {
+            major,
+            minor,
+            patch,
+        })
+    }
+}
+
+fn parse_version_part(value: &str) -> Option<u32> {
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    value.parse().ok()
 }
 
 /// A release asset with an integrity pin.
@@ -193,6 +231,7 @@ fn validate_variant(
     validate_allowed(&variant.os, "os", ALLOWED_OS)?;
     validate_allowed(&variant.architecture, "architecture", ALLOWED_ARCHITECTURES)?;
     validate_allowed(&variant.accelerator, "accelerator", ALLOWED_ACCELERATORS)?;
+    validate_driver_requirements(variant, catalog_status)?;
     validate_nonempty_unique(&variant.runtime_requirements, "runtimeRequirements")?;
 
     if catalog_status == "installable" {
@@ -218,6 +257,53 @@ fn validate_variant(
         validate_asset(asset, &variant.variant_id, &mut asset_names)?;
     }
 
+    Ok(())
+}
+
+fn validate_driver_requirements(
+    variant: &EngineVariant,
+    catalog_status: &str,
+) -> Result<(), CatalogError> {
+    match (
+        variant.accelerator.as_str(),
+        variant.minimum_driver_version.as_deref(),
+        variant.recommended_driver_version.as_deref(),
+    ) {
+        ("cuda", Some(minimum), Some(recommended)) => {
+            let minimum = DriverVersion::parse(minimum).ok_or_else(|| {
+                invalid(format!(
+                    "variant {:?} has an invalid minimumDriverVersion",
+                    variant.variant_id
+                ))
+            })?;
+            let recommended = DriverVersion::parse(recommended).ok_or_else(|| {
+                invalid(format!(
+                    "variant {:?} has an invalid recommendedDriverVersion",
+                    variant.variant_id
+                ))
+            })?;
+            if minimum > recommended {
+                return Err(invalid(format!(
+                    "variant {:?} recommends a driver older than its minimum",
+                    variant.variant_id
+                )));
+            }
+        }
+        ("cuda", None, None) if catalog_status != "installable" => {}
+        ("cuda", _, _) => {
+            return Err(invalid(format!(
+                "CUDA variant {:?} must declare minimumDriverVersion and recommendedDriverVersion",
+                variant.variant_id
+            )));
+        }
+        (_, None, None) => {}
+        _ => {
+            return Err(invalid(format!(
+                "non-CUDA variant {:?} must not declare CUDA driver requirements",
+                variant.variant_id
+            )));
+        }
+    }
     Ok(())
 }
 
@@ -495,6 +581,50 @@ mod tests {
     fn rejects_unknown_schema_version() {
         let mut value = llama_value();
         value["schemaVersion"] = Value::Number(2.into());
+
+        let bytes = serde_json::to_vec(&value).expect("test value should serialize");
+        assert!(parse_manifest(&bytes).is_err());
+    }
+
+    #[test]
+    fn parses_two_and_three_part_driver_versions_and_orders_them() {
+        assert_eq!(
+            DriverVersion::parse("528.33"),
+            Some(DriverVersion {
+                major: 528,
+                minor: 33,
+                patch: 0,
+            })
+        );
+        assert!(
+            DriverVersion::parse("580.0").expect("valid version")
+                < DriverVersion::parse("580.65.6").expect("valid version")
+        );
+        assert_eq!(
+            DriverVersion::parse("615.1.2"),
+            Some(DriverVersion {
+                major: 615,
+                minor: 1,
+                patch: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn rejects_driver_version_values_with_non_numeric_parts() {
+        for value in ["", "580", "580.x", "580.1.2.3", "-1.0", "580. 1"] {
+            assert_eq!(DriverVersion::parse(value), None, "accepted {value:?}");
+        }
+    }
+
+    #[test]
+    fn rejects_installable_cuda_variants_without_driver_requirements() {
+        let mut value = llama_value();
+        let cuda = value["variants"][1]
+            .as_object_mut()
+            .expect("CUDA variant should be an object");
+        cuda.remove("minimumDriverVersion");
+        cuda.remove("recommendedDriverVersion");
 
         let bytes = serde_json::to_vec(&value).expect("test value should serialize");
         assert!(parse_manifest(&bytes).is_err());

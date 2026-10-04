@@ -120,6 +120,13 @@ class AppLocalizationsDe extends AppLocalizations {
   String get localEngineHardwareUnavailable => 'Hardware nicht verfügbar';
 
   @override
+  String get localEngineDriverUnsupported => 'NVIDIA-Treiber aktualisieren';
+
+  @override
+  String get localEngineDriverVersionUnavailable =>
+      'NVIDIA-Treiberversion konnte nicht überprüft werden';
+
+  @override
   String get localEngineVllmBlockedReason =>
       'Das vLLM-Paket benötigt PyTorch und eine vollständige Python-Laufzeit, die OpenChat derzeit nicht über eine vollständige, per Hash verifizierte Lockdatei für Abhängigkeiten installiert. Native Windows-Unterstützung ist upstream nicht verfügbar; eine verwaltete WSL2-Einrichtung gibt es noch nicht.';
 

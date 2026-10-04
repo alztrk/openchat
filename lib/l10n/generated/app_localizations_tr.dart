@@ -117,6 +117,13 @@ class AppLocalizationsTr extends AppLocalizations {
   String get localEngineHardwareUnavailable => 'Donanım kullanılamıyor';
 
   @override
+  String get localEngineDriverUnsupported => 'NVIDIA sürücüsünü güncelleyin';
+
+  @override
+  String get localEngineDriverVersionUnavailable =>
+      'NVIDIA sürücü sürümü doğrulanamadı';
+
+  @override
   String get localEngineVllmBlockedReason =>
       'vLLM paketi, OpenChat\'in henüz eksiksiz ve hash doğrulamalı bir bağımlılık kilidiyle kurmadığı PyTorch ve Python çalışma zamanına ihtiyaç duyuyor. Yerel Windows desteği yok; yönetilen WSL2 kurulumu da henüz kullanılamıyor.';
 

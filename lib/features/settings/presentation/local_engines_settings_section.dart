@@ -1374,6 +1374,9 @@ class _LocalEnginesSettingsSectionState
         'blocked' => l10n.localEngineBlocked,
         'unsupported_platform' => l10n.localEngineUnsupportedPlatform,
         'hardware_unavailable' => l10n.localEngineHardwareUnavailable,
+        'driver_unsupported' => l10n.localEngineDriverUnsupported,
+        'driver_version_unavailable' =>
+          l10n.localEngineDriverVersionUnavailable,
         _ => status,
       };
 
