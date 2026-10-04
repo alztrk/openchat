@@ -1340,6 +1340,213 @@ class AppLocalizationsEs extends AppLocalizations {
   String get localData => 'Datos locales';
 
   @override
+  String get conversationArchiveTitle => 'Archivos de conversaciones';
+
+  @override
+  String get conversationArchiveDescription =>
+      'Crea o restaura un archivo cifrado con las conversaciones seleccionadas de este dispositivo.';
+
+  @override
+  String get conversationArchiveIncludesNotice =>
+      'El archivo conserva los mensajes seleccionados, las entradas y salidas de las herramientas, los resúmenes de razonamiento, los ajustes de memoria por conversación y los archivos adjuntos. El texto de los chats puede contener información sensible o rutas locales. Se excluyen las credenciales, las cuentas vinculadas, los vínculos a proyectos y los ajustes globales.';
+
+  @override
+  String get conversationArchiveUnavailable =>
+      'El servicio de archivos local o el historial de chats no está disponible.';
+
+  @override
+  String get exportConversations => 'Exportar conversaciones';
+
+  @override
+  String get importConversations => 'Importar archivo';
+
+  @override
+  String get conversationArchiveNoConversations =>
+      'No hay conversaciones para exportar.';
+
+  @override
+  String get conversationArchiveSelectTitle =>
+      'Elige las conversaciones que quieres exportar';
+
+  @override
+  String get conversationArchiveSearch => 'Buscar conversaciones';
+
+  @override
+  String conversationArchiveSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# conversaciones seleccionadas',
+      one: '# conversación seleccionada',
+      zero: 'No hay conversaciones seleccionadas',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get conversationArchiveSelectAll => 'Seleccionar todas las visibles';
+
+  @override
+  String get conversationArchiveDeselectAll =>
+      'Deseleccionar todas las visibles';
+
+  @override
+  String get conversationArchiveNoMatches =>
+      'No hay conversaciones coincidentes.';
+
+  @override
+  String get conversationArchivePassphrase => 'Frase de contraseña del archivo';
+
+  @override
+  String get conversationArchiveConfirmPassphrase =>
+      'Confirmar frase de contraseña';
+
+  @override
+  String get conversationArchivePassphraseHint => 'Al menos 12 caracteres';
+
+  @override
+  String get conversationArchivePassphraseTooShort =>
+      'Usa al menos 12 caracteres.';
+
+  @override
+  String get conversationArchivePassphraseTooLong =>
+      'La frase de contraseña no puede superar los 512 bytes.';
+
+  @override
+  String get conversationArchivePassphraseMismatch =>
+      'Las frases de contraseña no coinciden.';
+
+  @override
+  String get conversationArchivePassphraseRecovery =>
+      'Guarda la frase en un lugar seguro. OpenChat no puede recuperarla.';
+
+  @override
+  String get conversationArchiveChooseFolder =>
+      'Elige dónde guardar el archivo cifrado';
+
+  @override
+  String get conversationArchiveChooseFile =>
+      'Elige un archivo de conversaciones de OpenChat';
+
+  @override
+  String conversationArchiveExportSuccess(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Se creó un archivo cifrado para # conversaciones.',
+      one: 'Se creó un archivo cifrado para # conversación.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String conversationArchiveImportSuccess(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Se importaron # conversaciones.',
+      one: 'Se importó # conversación.',
+      zero: 'No se importaron conversaciones.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get conversationArchivePickerFailed =>
+      'No se pudo abrir el selector de archivos o carpetas.';
+
+  @override
+  String get conversationArchiveInvalidFile =>
+      'El archivo seleccionado no tiene una ruta válida.';
+
+  @override
+  String get conversationArchiveInvalidResponse =>
+      'El servicio de archivos devolvió datos no válidos.';
+
+  @override
+  String get conversationArchiveExportFailed =>
+      'No se pudo crear el archivo de conversaciones.';
+
+  @override
+  String get conversationArchiveImportFailed =>
+      'No se pudo importar el archivo de conversaciones.';
+
+  @override
+  String get conversationArchivePassphraseTitle => 'Desbloquear archivo';
+
+  @override
+  String get conversationArchivePreviewTitle =>
+      'Revisar el contenido del archivo';
+
+  @override
+  String get conversationArchiveCreatedAt => 'Creado';
+
+  @override
+  String get conversationArchiveConversationCount => 'Conversaciones';
+
+  @override
+  String get conversationArchiveMessageCount => 'Mensajes';
+
+  @override
+  String get conversationArchiveAttachmentCount => 'Adjuntos';
+
+  @override
+  String get conversationArchiveDuplicateCount =>
+      'Conversaciones que ya están en este dispositivo';
+
+  @override
+  String get conversationArchiveSkipDuplicates =>
+      'Omitir las conversaciones que ya están en este dispositivo';
+
+  @override
+  String get conversationArchiveImportCopies =>
+      'Importar los duplicados como copias separadas';
+
+  @override
+  String get conversationArchiveRestoreNotice =>
+      'Las conversaciones restauradas no quedarán vinculadas a cuentas de proveedores ni a proyectos. Selecciona un modelo de nuevo para continuar esos chats.';
+
+  @override
+  String get conversationArchiveInvalidPassphraseOrFile =>
+      'La frase de contraseña es incorrecta o el archivo no es válido.';
+
+  @override
+  String get conversationArchivePassphraseInvalid =>
+      'La longitud de la frase de contraseña no es compatible.';
+
+  @override
+  String get conversationArchiveNotFound =>
+      'No se encontró el archivo o la conversación seleccionados.';
+
+  @override
+  String get conversationArchiveConflict =>
+      'El archivo de destino ya existe. Elige otra carpeta o resuelve primero el archivo existente.';
+
+  @override
+  String get conversationArchiveBusy =>
+      'Detén las ejecuciones activas del asistente en los chats seleccionados antes de exportarlos.';
+
+  @override
+  String get conversationArchiveStorageFailed =>
+      'No se pudo leer, escribir o restaurar el archivo de forma segura.';
+
+  @override
+  String get conversationArchiveLimitExceeded =>
+      'El archivo supera el tamaño máximo admitido.';
+
+  @override
+  String get conversationArchiveTakingLong =>
+      'La operación tarda más de lo previsto y puede seguir ejecutándose. Comprueba la lista de chats antes de volver a intentarlo.';
+
+  @override
+  String get conversationArchiveOperationFailed =>
+      'La operación del archivo falló. Comprueba el archivo seleccionado y el espacio disponible e inténtalo de nuevo.';
+
+  @override
+  String get conversationArchiveProcessing =>
+      'Cifrando o verificando el archivo. Los archivos grandes pueden tardar varios minutos.';
+
+  @override
   String get conversationHistory => 'Historial de chats';
 
   @override
@@ -1402,6 +1609,9 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get cancel => 'Cancelar';
+
+  @override
+  String get continueLabel => 'Continuar';
 
   @override
   String get deleteAll => 'Eliminar todo';

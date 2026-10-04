@@ -1324,6 +1324,208 @@ class AppLocalizationsEn extends AppLocalizations {
   String get localData => 'Local data';
 
   @override
+  String get conversationArchiveTitle => 'Conversation archives';
+
+  @override
+  String get conversationArchiveDescription =>
+      'Create or restore an encrypted archive of selected conversations on this device.';
+
+  @override
+  String get conversationArchiveIncludesNotice =>
+      'Archives preserve selected messages, tool inputs and outputs, reasoning summaries, per-chat memory settings and attached files. Chat text may contain sensitive information or local paths. Provider credentials, linked accounts, project links and global settings are excluded.';
+
+  @override
+  String get conversationArchiveUnavailable =>
+      'The local archive service or chat history is unavailable.';
+
+  @override
+  String get exportConversations => 'Export conversations';
+
+  @override
+  String get importConversations => 'Import archive';
+
+  @override
+  String get conversationArchiveNoConversations =>
+      'There are no conversations to export.';
+
+  @override
+  String get conversationArchiveSelectTitle => 'Choose conversations to export';
+
+  @override
+  String get conversationArchiveSearch => 'Search conversations';
+
+  @override
+  String conversationArchiveSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# conversations selected',
+      one: '# conversation selected',
+      zero: 'No conversations selected',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get conversationArchiveSelectAll => 'Select all shown';
+
+  @override
+  String get conversationArchiveDeselectAll => 'Deselect all shown';
+
+  @override
+  String get conversationArchiveNoMatches => 'No matching conversations.';
+
+  @override
+  String get conversationArchivePassphrase => 'Archive passphrase';
+
+  @override
+  String get conversationArchiveConfirmPassphrase => 'Confirm passphrase';
+
+  @override
+  String get conversationArchivePassphraseHint => 'At least 12 characters';
+
+  @override
+  String get conversationArchivePassphraseTooShort =>
+      'Use at least 12 characters.';
+
+  @override
+  String get conversationArchivePassphraseTooLong =>
+      'The passphrase must be no more than 512 bytes.';
+
+  @override
+  String get conversationArchivePassphraseMismatch =>
+      'The passphrases do not match.';
+
+  @override
+  String get conversationArchivePassphraseRecovery =>
+      'Keep this passphrase somewhere safe. OpenChat cannot recover it.';
+
+  @override
+  String get conversationArchiveChooseFolder =>
+      'Choose where to save the encrypted archive';
+
+  @override
+  String get conversationArchiveChooseFile =>
+      'Choose an OpenChat conversation archive';
+
+  @override
+  String conversationArchiveExportSuccess(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Encrypted archive created for # conversations.',
+      one: 'Encrypted archive created for # conversation.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String conversationArchiveImportSuccess(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# conversations imported.',
+      one: '# conversation imported.',
+      zero: 'No conversations were imported.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get conversationArchivePickerFailed =>
+      'The file or folder picker could not be opened.';
+
+  @override
+  String get conversationArchiveInvalidFile =>
+      'The selected archive has no usable file path.';
+
+  @override
+  String get conversationArchiveInvalidResponse =>
+      'The archive service returned invalid data.';
+
+  @override
+  String get conversationArchiveExportFailed =>
+      'The conversation archive could not be created.';
+
+  @override
+  String get conversationArchiveImportFailed =>
+      'The conversation archive could not be imported.';
+
+  @override
+  String get conversationArchivePassphraseTitle => 'Unlock archive';
+
+  @override
+  String get conversationArchivePreviewTitle => 'Review archive contents';
+
+  @override
+  String get conversationArchiveCreatedAt => 'Created';
+
+  @override
+  String get conversationArchiveConversationCount => 'Conversations';
+
+  @override
+  String get conversationArchiveMessageCount => 'Messages';
+
+  @override
+  String get conversationArchiveAttachmentCount => 'Attachments';
+
+  @override
+  String get conversationArchiveDuplicateCount =>
+      'Conversations already on this device';
+
+  @override
+  String get conversationArchiveSkipDuplicates =>
+      'Skip conversations already on this device';
+
+  @override
+  String get conversationArchiveImportCopies =>
+      'Import duplicates as separate copies';
+
+  @override
+  String get conversationArchiveRestoreNotice =>
+      'Restored conversations are disconnected from provider accounts and projects. Select a model again before continuing those chats.';
+
+  @override
+  String get conversationArchiveInvalidPassphraseOrFile =>
+      'The passphrase is incorrect or the archive is invalid.';
+
+  @override
+  String get conversationArchivePassphraseInvalid =>
+      'The passphrase length is not supported.';
+
+  @override
+  String get conversationArchiveNotFound =>
+      'The selected archive or conversation could not be found.';
+
+  @override
+  String get conversationArchiveConflict =>
+      'A destination file already exists. Choose another folder or resolve the existing file first.';
+
+  @override
+  String get conversationArchiveBusy =>
+      'Stop active assistant runs in the selected chats before exporting them.';
+
+  @override
+  String get conversationArchiveStorageFailed =>
+      'The archive could not be read, written or restored safely.';
+
+  @override
+  String get conversationArchiveLimitExceeded =>
+      'The archive is larger than the supported limit.';
+
+  @override
+  String get conversationArchiveTakingLong =>
+      'The archive operation is taking longer than expected. It may still be running; check the chat list before retrying.';
+
+  @override
+  String get conversationArchiveOperationFailed =>
+      'The archive operation failed. Check the selected file and available disk space, then try again.';
+
+  @override
+  String get conversationArchiveProcessing =>
+      'Encrypting or verifying the archive. Larger archives can take several minutes.';
+
+  @override
   String get conversationHistory => 'Chat history';
 
   @override
@@ -1384,6 +1586,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get cancel => 'Cancel';
+
+  @override
+  String get continueLabel => 'Continue';
 
   @override
   String get deleteAll => 'Delete all';

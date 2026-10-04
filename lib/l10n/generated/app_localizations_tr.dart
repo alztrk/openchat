@@ -1317,6 +1317,207 @@ class AppLocalizationsTr extends AppLocalizations {
   String get localData => 'Yerel veriler';
 
   @override
+  String get conversationArchiveTitle => 'Sohbet arşivleri';
+
+  @override
+  String get conversationArchiveDescription =>
+      'Bu cihazdaki seçili sohbetleri şifreli arşiv olarak dışa aktarın veya geri yükleyin.';
+
+  @override
+  String get conversationArchiveIncludesNotice =>
+      'Seçili mesajlar, araç girdileri ve çıktıları, akıl yürütme özetleri, sohbet başına bellek ayarları ve ekli dosyalar arşivlenir. Sohbet metinlerinde hassas bilgiler veya yerel dosya yolları bulunabilir. Sağlayıcı kimlik bilgileri, bağlı hesaplar, proje bağlantıları ve genel ayarlar arşivlenmez.';
+
+  @override
+  String get conversationArchiveUnavailable =>
+      'Yerel arşiv servisi veya sohbet geçmişi kullanılamıyor.';
+
+  @override
+  String get exportConversations => 'Sohbetleri dışa aktar';
+
+  @override
+  String get importConversations => 'Arşivi içe aktar';
+
+  @override
+  String get conversationArchiveNoConversations =>
+      'Dışa aktarılacak sohbet yok.';
+
+  @override
+  String get conversationArchiveSelectTitle =>
+      'Dışa aktarılacak sohbetleri seç';
+
+  @override
+  String get conversationArchiveSearch => 'Sohbetlerde ara';
+
+  @override
+  String conversationArchiveSelectedCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# sohbet seçildi',
+      one: '# sohbet seçildi',
+      zero: 'Sohbet seçilmedi',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get conversationArchiveSelectAll => 'Görünenlerin tümünü seç';
+
+  @override
+  String get conversationArchiveDeselectAll => 'Görünenlerin seçimini kaldır';
+
+  @override
+  String get conversationArchiveNoMatches => 'Eşleşen sohbet yok.';
+
+  @override
+  String get conversationArchivePassphrase => 'Arşiv parolası';
+
+  @override
+  String get conversationArchiveConfirmPassphrase => 'Parolayı doğrula';
+
+  @override
+  String get conversationArchivePassphraseHint => 'En az 12 karakter';
+
+  @override
+  String get conversationArchivePassphraseTooShort =>
+      'En az 12 karakter kullanın.';
+
+  @override
+  String get conversationArchivePassphraseTooLong =>
+      'Parola en fazla 512 bayt olmalıdır.';
+
+  @override
+  String get conversationArchivePassphraseMismatch => 'Parolalar eşleşmiyor.';
+
+  @override
+  String get conversationArchivePassphraseRecovery =>
+      'Bu parolayı güvenli bir yerde saklayın. OpenChat parolayı kurtaramaz.';
+
+  @override
+  String get conversationArchiveChooseFolder =>
+      'Şifreli arşivin kaydedileceği klasörü seçin';
+
+  @override
+  String get conversationArchiveChooseFile =>
+      'Bir OpenChat sohbet arşivi seçin';
+
+  @override
+  String conversationArchiveExportSuccess(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# sohbet için şifreli arşiv oluşturuldu.',
+      one: '# sohbet için şifreli arşiv oluşturuldu.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String conversationArchiveImportSuccess(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# sohbet içe aktarıldı.',
+      one: '# sohbet içe aktarıldı.',
+      zero: 'Sohbet içe aktarılmadı.',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get conversationArchivePickerFailed =>
+      'Dosya veya klasör seçici açılamadı.';
+
+  @override
+  String get conversationArchiveInvalidFile =>
+      'Seçilen arşiv dosyası için geçerli bir yol alınamadı.';
+
+  @override
+  String get conversationArchiveInvalidResponse =>
+      'Arşiv servisi geçersiz veri döndürdü.';
+
+  @override
+  String get conversationArchiveExportFailed => 'Sohbet arşivi oluşturulamadı.';
+
+  @override
+  String get conversationArchiveImportFailed =>
+      'Sohbet arşivi içe aktarılamadı.';
+
+  @override
+  String get conversationArchivePassphraseTitle => 'Arşivin kilidini aç';
+
+  @override
+  String get conversationArchivePreviewTitle => 'Arşiv içeriğini gözden geçir';
+
+  @override
+  String get conversationArchiveCreatedAt => 'Oluşturulma';
+
+  @override
+  String get conversationArchiveConversationCount => 'Sohbetler';
+
+  @override
+  String get conversationArchiveMessageCount => 'Mesajlar';
+
+  @override
+  String get conversationArchiveAttachmentCount => 'Ekler';
+
+  @override
+  String get conversationArchiveDuplicateCount =>
+      'Bu cihazda zaten bulunan sohbetler';
+
+  @override
+  String get conversationArchiveSkipDuplicates =>
+      'Bu cihazda zaten bulunan sohbetleri atla';
+
+  @override
+  String get conversationArchiveImportCopies =>
+      'Yinelenenleri ayrı kopyalar olarak içe aktar';
+
+  @override
+  String get conversationArchiveRestoreNotice =>
+      'Geri yüklenen sohbetlerin sağlayıcı hesapları ve projelerle bağlantısı olmaz. Devam etmeden önce yeniden model seçin.';
+
+  @override
+  String get conversationArchiveInvalidPassphraseOrFile =>
+      'Parola yanlış veya arşiv geçersiz.';
+
+  @override
+  String get conversationArchivePassphraseInvalid =>
+      'Parola uzunluğu desteklenmiyor.';
+
+  @override
+  String get conversationArchiveNotFound =>
+      'Seçilen arşiv veya sohbet bulunamadı.';
+
+  @override
+  String get conversationArchiveConflict =>
+      'Hedef dosya zaten var. Başka bir klasör seçin veya mevcut dosyayı önce çözümleyin.';
+
+  @override
+  String get conversationArchiveBusy =>
+      'Sohbetleri dışa aktarmadan önce etkin asistan işlemlerini durdurun.';
+
+  @override
+  String get conversationArchiveStorageFailed =>
+      'Arşiv güvenli biçimde okunamadı, yazılamadı veya geri yüklenemedi.';
+
+  @override
+  String get conversationArchiveLimitExceeded =>
+      'Arşiv desteklenen boyut sınırını aşıyor.';
+
+  @override
+  String get conversationArchiveTakingLong =>
+      'Arşiv işlemi beklenenden uzun sürüyor. İşlem sürüyor olabilir; yeniden denemeden önce sohbet listesini kontrol edin.';
+
+  @override
+  String get conversationArchiveOperationFailed =>
+      'Arşiv işlemi başarısız oldu. Seçilen dosyayı ve boş disk alanını kontrol edip yeniden deneyin.';
+
+  @override
+  String get conversationArchiveProcessing =>
+      'Arşiv şifreleniyor veya doğrulanıyor. Büyük arşivler birkaç dakika sürebilir.';
+
+  @override
   String get conversationHistory => 'Sohbet geçmişi';
 
   @override
@@ -1375,6 +1576,9 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get cancel => 'Vazgeç';
+
+  @override
+  String get continueLabel => 'Devam et';
 
   @override
   String get deleteAll => 'Tümünü sil';

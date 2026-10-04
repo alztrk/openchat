@@ -2342,6 +2342,300 @@ abstract class AppLocalizations {
   /// **'Local data'**
   String get localData;
 
+  /// No description provided for @conversationArchiveTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation archives'**
+  String get conversationArchiveTitle;
+
+  /// No description provided for @conversationArchiveDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Create or restore an encrypted archive of selected conversations on this device.'**
+  String get conversationArchiveDescription;
+
+  /// No description provided for @conversationArchiveIncludesNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Archives preserve selected messages, tool inputs and outputs, reasoning summaries, per-chat memory settings and attached files. Chat text may contain sensitive information or local paths. Provider credentials, linked accounts, project links and global settings are excluded.'**
+  String get conversationArchiveIncludesNotice;
+
+  /// No description provided for @conversationArchiveUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The local archive service or chat history is unavailable.'**
+  String get conversationArchiveUnavailable;
+
+  /// No description provided for @exportConversations.
+  ///
+  /// In en, this message translates to:
+  /// **'Export conversations'**
+  String get exportConversations;
+
+  /// No description provided for @importConversations.
+  ///
+  /// In en, this message translates to:
+  /// **'Import archive'**
+  String get importConversations;
+
+  /// No description provided for @conversationArchiveNoConversations.
+  ///
+  /// In en, this message translates to:
+  /// **'There are no conversations to export.'**
+  String get conversationArchiveNoConversations;
+
+  /// No description provided for @conversationArchiveSelectTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose conversations to export'**
+  String get conversationArchiveSelectTitle;
+
+  /// No description provided for @conversationArchiveSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Search conversations'**
+  String get conversationArchiveSearch;
+
+  /// No description provided for @conversationArchiveSelectedCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No conversations selected} one{# conversation selected} other{# conversations selected}}'**
+  String conversationArchiveSelectedCount(int count);
+
+  /// No description provided for @conversationArchiveSelectAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Select all shown'**
+  String get conversationArchiveSelectAll;
+
+  /// No description provided for @conversationArchiveDeselectAll.
+  ///
+  /// In en, this message translates to:
+  /// **'Deselect all shown'**
+  String get conversationArchiveDeselectAll;
+
+  /// No description provided for @conversationArchiveNoMatches.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching conversations.'**
+  String get conversationArchiveNoMatches;
+
+  /// No description provided for @conversationArchivePassphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Archive passphrase'**
+  String get conversationArchivePassphrase;
+
+  /// No description provided for @conversationArchiveConfirmPassphrase.
+  ///
+  /// In en, this message translates to:
+  /// **'Confirm passphrase'**
+  String get conversationArchiveConfirmPassphrase;
+
+  /// No description provided for @conversationArchivePassphraseHint.
+  ///
+  /// In en, this message translates to:
+  /// **'At least 12 characters'**
+  String get conversationArchivePassphraseHint;
+
+  /// No description provided for @conversationArchivePassphraseTooShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Use at least 12 characters.'**
+  String get conversationArchivePassphraseTooShort;
+
+  /// No description provided for @conversationArchivePassphraseTooLong.
+  ///
+  /// In en, this message translates to:
+  /// **'The passphrase must be no more than 512 bytes.'**
+  String get conversationArchivePassphraseTooLong;
+
+  /// No description provided for @conversationArchivePassphraseMismatch.
+  ///
+  /// In en, this message translates to:
+  /// **'The passphrases do not match.'**
+  String get conversationArchivePassphraseMismatch;
+
+  /// No description provided for @conversationArchivePassphraseRecovery.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep this passphrase somewhere safe. OpenChat cannot recover it.'**
+  String get conversationArchivePassphraseRecovery;
+
+  /// No description provided for @conversationArchiveChooseFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose where to save the encrypted archive'**
+  String get conversationArchiveChooseFolder;
+
+  /// No description provided for @conversationArchiveChooseFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose an OpenChat conversation archive'**
+  String get conversationArchiveChooseFile;
+
+  /// No description provided for @conversationArchiveExportSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{Encrypted archive created for # conversation.} other{Encrypted archive created for # conversations.}}'**
+  String conversationArchiveExportSuccess(int count);
+
+  /// No description provided for @conversationArchiveImportSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No conversations were imported.} one{# conversation imported.} other{# conversations imported.}}'**
+  String conversationArchiveImportSuccess(int count);
+
+  /// No description provided for @conversationArchivePickerFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The file or folder picker could not be opened.'**
+  String get conversationArchivePickerFailed;
+
+  /// No description provided for @conversationArchiveInvalidFile.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected archive has no usable file path.'**
+  String get conversationArchiveInvalidFile;
+
+  /// No description provided for @conversationArchiveInvalidResponse.
+  ///
+  /// In en, this message translates to:
+  /// **'The archive service returned invalid data.'**
+  String get conversationArchiveInvalidResponse;
+
+  /// No description provided for @conversationArchiveExportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The conversation archive could not be created.'**
+  String get conversationArchiveExportFailed;
+
+  /// No description provided for @conversationArchiveImportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The conversation archive could not be imported.'**
+  String get conversationArchiveImportFailed;
+
+  /// No description provided for @conversationArchivePassphraseTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Unlock archive'**
+  String get conversationArchivePassphraseTitle;
+
+  /// No description provided for @conversationArchivePreviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Review archive contents'**
+  String get conversationArchivePreviewTitle;
+
+  /// No description provided for @conversationArchiveCreatedAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Created'**
+  String get conversationArchiveCreatedAt;
+
+  /// No description provided for @conversationArchiveConversationCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversations'**
+  String get conversationArchiveConversationCount;
+
+  /// No description provided for @conversationArchiveMessageCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages'**
+  String get conversationArchiveMessageCount;
+
+  /// No description provided for @conversationArchiveAttachmentCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Attachments'**
+  String get conversationArchiveAttachmentCount;
+
+  /// No description provided for @conversationArchiveDuplicateCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversations already on this device'**
+  String get conversationArchiveDuplicateCount;
+
+  /// No description provided for @conversationArchiveSkipDuplicates.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip conversations already on this device'**
+  String get conversationArchiveSkipDuplicates;
+
+  /// No description provided for @conversationArchiveImportCopies.
+  ///
+  /// In en, this message translates to:
+  /// **'Import duplicates as separate copies'**
+  String get conversationArchiveImportCopies;
+
+  /// No description provided for @conversationArchiveRestoreNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Restored conversations are disconnected from provider accounts and projects. Select a model again before continuing those chats.'**
+  String get conversationArchiveRestoreNotice;
+
+  /// No description provided for @conversationArchiveInvalidPassphraseOrFile.
+  ///
+  /// In en, this message translates to:
+  /// **'The passphrase is incorrect or the archive is invalid.'**
+  String get conversationArchiveInvalidPassphraseOrFile;
+
+  /// No description provided for @conversationArchivePassphraseInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'The passphrase length is not supported.'**
+  String get conversationArchivePassphraseInvalid;
+
+  /// No description provided for @conversationArchiveNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected archive or conversation could not be found.'**
+  String get conversationArchiveNotFound;
+
+  /// No description provided for @conversationArchiveConflict.
+  ///
+  /// In en, this message translates to:
+  /// **'A destination file already exists. Choose another folder or resolve the existing file first.'**
+  String get conversationArchiveConflict;
+
+  /// No description provided for @conversationArchiveBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop active assistant runs in the selected chats before exporting them.'**
+  String get conversationArchiveBusy;
+
+  /// No description provided for @conversationArchiveStorageFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The archive could not be read, written or restored safely.'**
+  String get conversationArchiveStorageFailed;
+
+  /// No description provided for @conversationArchiveLimitExceeded.
+  ///
+  /// In en, this message translates to:
+  /// **'The archive is larger than the supported limit.'**
+  String get conversationArchiveLimitExceeded;
+
+  /// No description provided for @conversationArchiveTakingLong.
+  ///
+  /// In en, this message translates to:
+  /// **'The archive operation is taking longer than expected. It may still be running; check the chat list before retrying.'**
+  String get conversationArchiveTakingLong;
+
+  /// No description provided for @conversationArchiveOperationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The archive operation failed. Check the selected file and available disk space, then try again.'**
+  String get conversationArchiveOperationFailed;
+
+  /// No description provided for @conversationArchiveProcessing.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypting or verifying the archive. Larger archives can take several minutes.'**
+  String get conversationArchiveProcessing;
+
   /// No description provided for @conversationHistory.
   ///
   /// In en, this message translates to:
@@ -2449,6 +2743,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Cancel'**
   String get cancel;
+
+  /// No description provided for @continueLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Continue'**
+  String get continueLabel;
 
   /// No description provided for @deleteAll.
   ///
