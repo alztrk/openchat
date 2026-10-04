@@ -28,6 +28,40 @@ pub(crate) fn command(executable: &Path, use_wsl: bool) -> Result<Command, ()> {
     Ok(command)
 }
 
+pub(crate) fn command_with_python_install_dir(
+    executable: &Path,
+    use_wsl: bool,
+    install_dir: &Path,
+) -> Result<Command, ()> {
+    if use_wsl {
+        #[cfg(windows)]
+        {
+            let install_dir = install_dir.to_str().ok_or(())?;
+            if !install_dir.starts_with('/') || install_dir.contains('\0') {
+                return Err(());
+            }
+            let mut command = Command::new(wsl_executable()?);
+            // uv needs this scoped value on later calls to discover the runtime-local Python install.
+            command
+                .args([OsStr::new("--exec"), OsStr::new("env")])
+                .arg(format!("UV_PYTHON_INSTALL_DIR={install_dir}"))
+                .arg(executable)
+                .kill_on_drop(true);
+            return Ok(command);
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (executable, install_dir);
+            return Err(());
+        }
+    }
+
+    let mut command = Command::new(executable);
+    command.env("UV_PYTHON_INSTALL_DIR", install_dir);
+    command.kill_on_drop(true);
+    Ok(command)
+}
+
 pub(crate) async fn path(path: &Path, use_wsl: bool) -> Result<PathBuf, ()> {
     if !use_wsl {
         return Ok(path.to_path_buf());

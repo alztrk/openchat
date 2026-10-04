@@ -37,6 +37,7 @@ pub(crate) async fn install_vllm(
     let uv_windows = runtime_root.join(UV_RELATIVE_PATH);
     let wheel_windows = runtime_root.join(WHEEL_RELATIVE_PATH);
     let project_windows = runtime_root.join(PROJECT_RELATIVE_PATH);
+    let python_install_dir_windows = runtime_root.join("python/managed-python");
     let uv = wsl::path(&uv_windows, use_wsl)
         .await
         .map_err(|_| runtime_install_error())?;
@@ -44,6 +45,9 @@ pub(crate) async fn install_vllm(
         .await
         .map_err(|_| runtime_install_error())?;
     let project = wsl::path(&project_windows, use_wsl)
+        .await
+        .map_err(|_| runtime_install_error())?;
+    let python_install_dir = wsl::path(&python_install_dir_windows, use_wsl)
         .await
         .map_err(|_| runtime_install_error())?;
     let python = wsl::path(
@@ -78,10 +82,13 @@ pub(crate) async fn install_vllm(
     run_uv(
         &uv,
         use_wsl,
+        &python_install_dir,
         [
             OsString::from("--no-cache"),
             OsString::from("python"),
             OsString::from("install"),
+            OsString::from("--install-dir"),
+            python_install_dir.as_os_str().to_owned(),
             OsString::from("--no-bin"),
             OsString::from(PYTHON_VERSION),
         ],
@@ -89,22 +96,10 @@ pub(crate) async fn install_vllm(
     )
     .await?;
 
-    let python_install_dir = run_uv_for_output(
-        &uv,
-        use_wsl,
-        [
-            OsString::from("--no-config"),
-            OsString::from("python"),
-            OsString::from("dir"),
-        ],
-        cancellation,
-    )
-    .await?;
-    let python_install_dir = wsl::linux_path_from_output(python_install_dir.as_bytes())
-        .map_err(|_| runtime_install_error())?;
     let interpreter = run_uv_for_output(
         &uv,
         use_wsl,
+        &python_install_dir,
         [
             OsString::from("--no-config"),
             OsString::from("--managed-python"),
@@ -118,13 +113,17 @@ pub(crate) async fn install_vllm(
     .await?;
     let interpreter =
         wsl::linux_path_from_output(interpreter.as_bytes()).map_err(|_| runtime_install_error())?;
-    if !wsl::linux_path_is_within(&interpreter, &python_install_dir) {
+    let python_install_dir_text = python_install_dir
+        .to_str()
+        .ok_or_else(runtime_install_error)?;
+    if !wsl::linux_path_is_within(&interpreter, python_install_dir_text) {
         return Err(runtime_install_error());
     }
 
     run_uv(
         &uv,
         use_wsl,
+        &python_install_dir,
         [
             OsString::from("--no-cache"),
             OsString::from("sync"),
@@ -145,6 +144,7 @@ pub(crate) async fn install_vllm(
     run_uv(
         &uv,
         use_wsl,
+        &python_install_dir,
         [
             OsString::from("--no-cache"),
             OsString::from("pip"),
@@ -201,6 +201,7 @@ async fn verify_vllm_imports(
 async fn run_uv<I, S>(
     uv: &Path,
     use_wsl: bool,
+    python_install_dir: &Path,
     arguments: I,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<(), ServiceError>
@@ -208,7 +209,8 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let mut command = wsl::command(uv, use_wsl).map_err(|_| runtime_install_error())?;
+    let mut command = wsl::command_with_python_install_dir(uv, use_wsl, python_install_dir)
+        .map_err(|_| runtime_install_error())?;
     command
         .args(arguments)
         .stdin(Stdio::null())
@@ -220,6 +222,7 @@ where
 async fn run_uv_for_output<I, S>(
     uv: &Path,
     use_wsl: bool,
+    python_install_dir: &Path,
     arguments: I,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<String, ServiceError>
@@ -228,7 +231,8 @@ where
     S: AsRef<OsStr>,
 {
     check_cancelled(cancellation)?;
-    let mut command = wsl::command(uv, use_wsl).map_err(|_| runtime_install_error())?;
+    let mut command = wsl::command_with_python_install_dir(uv, use_wsl, python_install_dir)
+        .map_err(|_| runtime_install_error())?;
     command
         .args(arguments)
         .stdin(Stdio::null())
