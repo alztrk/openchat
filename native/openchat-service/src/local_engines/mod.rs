@@ -104,6 +104,7 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
             let variants = manifest
                 .variants
                 .iter()
+                .filter(|variant| variant_visible_for_host(&manifest.engine_id, variant, host_os()))
                 .map(|variant| {
                     variant_json(
                         storage,
@@ -490,6 +491,10 @@ fn variant_host_os(variant: &EngineVariant) -> &str {
     variant.host_os.as_deref().unwrap_or(&variant.os)
 }
 
+fn variant_visible_for_host(engine_id: &str, variant: &EngineVariant, os: &str) -> bool {
+    engine_id != "llama_cpp" || os != "windows" || variant_host_os(variant) == "windows"
+}
+
 fn catalog_status_for_host<'a>(engine_id: &str, catalog_status: &'a str, os: &str) -> &'a str {
     if os == "windows" && WINDOWS_DEPRECATED_ENGINE_IDS.contains(&engine_id) {
         "deprecated"
@@ -700,6 +705,35 @@ mod tests {
             "windows",
             "x86_64"
         ));
+    }
+
+    #[test]
+    fn windows_llama_cpp_catalog_hides_non_windows_builds() {
+        let manifest = CATALOGS
+            .iter()
+            .find(|(candidate_id, _)| *candidate_id == "llama_cpp")
+            .and_then(|(_, bytes)| parse_manifest(bytes).ok())
+            .expect("llama.cpp catalog should validate");
+        let visible_variants = manifest
+            .variants
+            .iter()
+            .filter(|variant| super::variant_visible_for_host("llama_cpp", variant, "windows"))
+            .collect::<Vec<_>>();
+
+        assert!(!visible_variants.is_empty());
+        assert!(
+            visible_variants
+                .iter()
+                .all(|variant| super::variant_host_os(variant) == "windows")
+        );
+        assert!(manifest.variants.iter().any(|variant| {
+            super::variant_host_os(variant) == "linux"
+                && !super::variant_visible_for_host("llama_cpp", variant, "windows")
+        }));
+        assert!(manifest.variants.iter().any(|variant| {
+            super::variant_host_os(variant) == "macos"
+                && !super::variant_visible_for_host("llama_cpp", variant, "windows")
+        }));
     }
 
     #[test]
