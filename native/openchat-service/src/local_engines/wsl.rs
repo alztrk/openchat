@@ -123,7 +123,7 @@ pub(crate) async fn nvidia_driver_output() -> Result<Vec<u8>, ()> {
         ])
         .stdin(Stdio::null())
         .kill_on_drop(true);
-    let output = timeout(Duration::from_secs(3), command.output())
+    let output = timeout(Duration::from_secs(15), command.output())
         .await
         .map_err(|_| ())?
         .map_err(|_| ())?;
