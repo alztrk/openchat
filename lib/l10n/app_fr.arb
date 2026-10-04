@@ -120,6 +120,8 @@
   "localModelStorageError": "L'enregistrement du modèle n'a pas pu être écrit dans la base de données.",
   "localModelStartError": "Le modèle n'a pas pu être démarré. Vérifiez l'installation du runtime et le fichier de modèle.",
   "localModelStartTimeout": "Le modèle n’était pas prêt à temps. Essayez un modèle plus petit ou vérifiez votre matériel.",
+  "localModelRuntimeUnavailable": "Le modèle local ne répond plus. Redémarrez-le dans Paramètres > Moteurs locaux, puis réessayez.",
+  "localModelInferenceFailed": "Le modèle local n’a pas pu traiter cette demande. Vérifiez son modèle de conversation et la mémoire disponible.",
   "localModelSaved": "Modèle local enregistré.",
   "localModelRemoved": "Enregistrement du modèle local supprimé.",
   "localEngineStageDownloading": "Téléchargement",

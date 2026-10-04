@@ -356,6 +356,14 @@ class AppLocalizationsDe extends AppLocalizations {
       'Das Modell wurde nicht rechtzeitig bereit. Versuchen Sie ein kleineres Modell oder prüfen Sie Ihre Hardware.';
 
   @override
+  String get localModelRuntimeUnavailable =>
+      'Das lokale Modell reagiert nicht mehr. Starten Sie es unter Einstellungen > Lokale Engines neu und versuchen Sie es erneut.';
+
+  @override
+  String get localModelInferenceFailed =>
+      'Das lokale Modell konnte die Anfrage nicht verarbeiten. Prüfen Sie das Chat-Template und den verfügbaren Arbeitsspeicher.';
+
+  @override
   String get localModelSaved => 'Lokales Modell registriert.';
 
   @override

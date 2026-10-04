@@ -34,6 +34,9 @@ pub(crate) async fn start_model(
     model_id: &str,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<Value, ServiceError> {
+    if *cancellation.borrow() {
+        return Err(cancelled_error());
+    }
     let model = models::find(storage, model_id)?.ok_or_else(model_unavailable_error)?;
     if model.engine_id != "llama_cpp" || model.path_kind != "file" || !model.path.is_file() {
         return Err(model_unavailable_error());
@@ -43,17 +46,23 @@ pub(crate) async fn start_model(
     let mut state = state.lock().await;
 
     if let Some(server) = state.as_mut() {
-        if server
+        let is_running = server
             .child
             .try_wait()
             .map_err(|_| runtime_error())?
-            .is_none()
+            .is_none();
+        if is_running
             && server.engine_id == model.engine_id
             && server.model_id == model.id
-            && health_check(server.port).await
+            && health_check_or_cancel(server.port, cancellation).await?
         {
             return Ok(status_json(Some(server), "running"));
         }
+    }
+    if *cancellation.borrow() {
+        return Err(cancelled_error());
+    }
+    if state.is_some() {
         stop_server(&mut state).await?;
     }
 
@@ -82,16 +91,26 @@ pub(crate) async fn start_model(
     });
 
     loop {
-        let Some(server) = state.as_mut() else {
-            return Err(runtime_error());
+        let port = {
+            let Some(server) = state.as_mut() else {
+                return Err(runtime_error());
+            };
+            if let Some(exit_status) = server.child.try_wait().map_err(|_| runtime_error())? {
+                let _ = exit_status;
+                *state = None;
+                return Err(runtime_start_failed_error());
+            }
+            server.port
         };
-        if let Some(exit_status) = server.child.try_wait().map_err(|_| runtime_error())? {
-            let _ = exit_status;
-            *state = None;
-            return Err(runtime_start_failed_error());
-        }
-        if health_check(server.port).await {
-            return Ok(status_json(Some(server), "running"));
+        let ready = match health_check_or_cancel(port, cancellation).await {
+            Ok(ready) => ready,
+            Err(error) => {
+                stop_server(&mut state).await?;
+                return Err(error);
+            }
+        };
+        if ready {
+            return Ok(status_json(state.as_ref(), "running"));
         }
         if started_at.elapsed() >= STARTUP_TIMEOUT {
             stop_server(&mut state).await?;
@@ -100,8 +119,7 @@ pub(crate) async fn start_model(
 
         tokio::select! {
             changed = cancellation.changed() => {
-                let _ = changed;
-                if *cancellation.borrow() {
+                if changed.is_err() || *cancellation.borrow() {
                     stop_server(&mut state).await?;
                     return Err(cancelled_error());
                 }
@@ -178,6 +196,25 @@ async fn health_check(port: u16) -> bool {
         .send()
         .await
         .is_ok_and(|response| response.status().is_success())
+}
+
+async fn health_check_or_cancel(
+    port: u16,
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<bool, ServiceError> {
+    if *cancellation.borrow() || cancellation.has_changed().is_err() {
+        return Err(cancelled_error());
+    }
+    tokio::select! {
+        changed = cancellation.changed() => {
+            if changed.is_err() || *cancellation.borrow() {
+                Err(cancelled_error())
+            } else {
+                Ok(false)
+            }
+        }
+        ready = health_check(port) => Ok(ready),
+    }
 }
 
 async fn available_loopback_port() -> Result<u16, ServiceError> {
@@ -279,4 +316,65 @@ fn cancelled_error() -> ServiceError {
         "Starting the local model was cancelled.",
         false,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, path::PathBuf};
+
+    use tokio::sync::watch;
+    use uuid::Uuid;
+
+    use crate::storage::AppStorage;
+
+    use super::{health_check_or_cancel, start_model};
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("openchat-local-runtime-test-{}", Uuid::new_v4()));
+            fs::create_dir_all(&path).expect("test directory should be created");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[tokio::test]
+    async fn honors_cancellation_before_looking_up_or_starting_a_model() {
+        let temporary = TestDirectory::new();
+        let storage = AppStorage::open_at(temporary.0.clone()).expect("storage should open");
+        let (_sender, mut cancellation) = watch::channel(true);
+
+        let error = start_model(&storage, "missing-model", &mut cancellation)
+            .await
+            .expect_err("a cancelled start should not continue");
+
+        assert_eq!(error.code, "operation_cancelled");
+    }
+
+    #[tokio::test]
+    async fn readiness_wait_is_interrupted_by_cancel_or_operation_shutdown() {
+        let (sender, mut cancellation) = watch::channel(false);
+        sender
+            .send(true)
+            .expect("the active readiness request should receive cancellation");
+        let error = health_check_or_cancel(0, &mut cancellation)
+            .await
+            .expect_err("a cancelled readiness wait should stop");
+        assert_eq!(error.code, "operation_cancelled");
+
+        let (sender, mut cancellation) = watch::channel(false);
+        drop(sender);
+        let error = health_check_or_cancel(0, &mut cancellation)
+            .await
+            .expect_err("a closed operation should stop its readiness wait");
+        assert_eq!(error.code, "operation_cancelled");
+    }
 }

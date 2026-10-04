@@ -102,6 +102,8 @@
   "localModelStorageError": "Model kaydı veritabanına yazılamadı.",
   "localModelStartError": "Model başlatılamadı. Motorun kurulumunu ve model dosyasını kontrol edin.",
   "localModelStartTimeout": "Model belirtilen süre içinde hazır olmadı. Daha küçük bir model deneyin veya donanımınızı kontrol edin.",
+  "localModelRuntimeUnavailable": "Yerel model yanıt vermeyi durdurdu. Ayarlar > Yerel motorlar bölümünden yeniden başlatıp tekrar deneyin.",
+  "localModelInferenceFailed": "Yerel model bu isteği işleyemedi. Sohbet şablonunu ve kullanılabilir belleği kontrol edin.",
   "localModelSaved": "Yerel model kaydedildi.",
   "localModelRemoved": "Yerel model kaydı kaldırıldı.",
   "localEngineStageDownloading": "İndiriliyor",

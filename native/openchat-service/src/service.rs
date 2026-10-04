@@ -100,7 +100,15 @@ async fn run_protocol(
     let shutdown_requested = Arc::new(AtomicBool::new(false));
     let startup_recovered = Arc::new(AtomicBool::new(false));
 
-    while let Some(line) = input.next_line().await? {
+    loop {
+        let line = match input.next_line().await {
+            Ok(Some(line)) => line,
+            Ok(None) => break,
+            Err(error) => {
+                finish_service_shutdown(&active_operations).await;
+                return Err(error);
+            }
+        };
         if line.len() > MAX_REQUEST_BYTES {
             output
                 .send(&Response::failure(
@@ -159,23 +167,11 @@ async fn run_protocol(
 
         if request.method == "system.shutdown" {
             shutdown_requested.store(true, Ordering::SeqCst);
-            output
+            let response_result = output
                 .send(&Response::success(request.id, json!({"stopping": true})))
-                .await?;
-            cancel_all(&active_operations).await;
-            if timeout(Duration::from_millis(1500), async {
-                loop {
-                    if active_operations.lock().await.is_empty() {
-                        break;
-                    }
-                    sleep(Duration::from_millis(10)).await;
-                }
-            })
-            .await
-            .is_err()
-            {
-                eprintln!("local_service_shutdown_timed_out");
-            }
+                .await;
+            finish_service_shutdown(&active_operations).await;
+            response_result?;
             return Ok(());
         }
         if request.method == "system.cancel" {
@@ -248,7 +244,7 @@ async fn run_protocol(
         });
     }
 
-    cancel_all(&active_operations).await;
+    finish_service_shutdown(&active_operations).await;
     Ok(())
 }
 fn request_key(id: &Value) -> String {
@@ -270,6 +266,26 @@ async fn cancel_all(operations: &Mutex<HashMap<String, tokio_watch::Sender<bool>
     let operations = operations.lock().await;
     for cancellation in operations.values() {
         let _ = cancellation.send(true);
+    }
+}
+
+async fn finish_service_shutdown(operations: &Mutex<HashMap<String, tokio_watch::Sender<bool>>>) {
+    cancel_all(operations).await;
+    if let Err(error) = crate::local_engines::stop_runtime().await {
+        eprintln!("local_engine_shutdown_failed:{}", error.code);
+    }
+    if timeout(Duration::from_millis(1500), async {
+        loop {
+            if operations.lock().await.is_empty() {
+                break;
+            }
+            sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .is_err()
+    {
+        eprintln!("local_service_shutdown_timed_out");
     }
 }
 

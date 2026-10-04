@@ -355,6 +355,14 @@ class AppLocalizationsFr extends AppLocalizations {
       'Le modèle n’était pas prêt à temps. Essayez un modèle plus petit ou vérifiez votre matériel.';
 
   @override
+  String get localModelRuntimeUnavailable =>
+      'Le modèle local ne répond plus. Redémarrez-le dans Paramètres > Moteurs locaux, puis réessayez.';
+
+  @override
+  String get localModelInferenceFailed =>
+      'Le modèle local n’a pas pu traiter cette demande. Vérifiez son modèle de conversation et la mémoire disponible.';
+
+  @override
   String get localModelSaved => 'Modèle local enregistré.';
 
   @override

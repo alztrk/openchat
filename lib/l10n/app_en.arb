@@ -102,6 +102,8 @@
   "localModelStorageError": "The model registration could not be written to the database.",
   "localModelStartError": "The model could not be started. Check the runtime installation and model file.",
   "localModelStartTimeout": "The model did not become ready in time. Try a smaller model or check your hardware.",
+  "localModelRuntimeUnavailable": "The local model stopped responding. Restart it from Settings > Local engines and try again.",
+  "localModelInferenceFailed": "The local model could not handle this request. Check its chat template and available memory.",
   "localModelSaved": "Local model registered.",
   "localModelRemoved": "Local model registration removed.",
   "localEngineStageDownloading": "Downloading",

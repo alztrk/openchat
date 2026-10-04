@@ -6,6 +6,63 @@ import 'package:openchat/features/chat/presentation/widgets/assistant_message.da
 import 'package:openchat/l10n/generated/app_localizations.dart';
 
 void main() {
+  testWidgets('explains local engine failures in the assistant card', (
+    tester,
+  ) async {
+    const locale = Locale('tr');
+    final l10n = await AppLocalizations.delegate.load(locale);
+    final failures = <({String code, String description})>[
+      (
+        code: 'local_engine_start_failed',
+        description: l10n.localModelStartError,
+      ),
+      (
+        code: 'local_engine_start_timeout',
+        description: l10n.localModelStartTimeout,
+      ),
+      (
+        code: 'local_engine_runtime_unavailable',
+        description: l10n.localModelRuntimeUnavailable,
+      ),
+      (
+        code: 'local_model_inference_failed',
+        description: l10n.localModelInferenceFailed,
+      ),
+    ];
+
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    for (final failure in failures) {
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: locale,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          theme: OpenChatTheme.light,
+          home: Scaffold(
+            body: AssistantMessage(
+              message: ChatMessage(
+                id: 'msg-${failure.code}',
+                role: ChatMessageRole.assistant,
+                content: '',
+                createdAt: DateTime.utc(2026, 10, 1, 12),
+                status: ChatMessageStatus.failed,
+                failureCode: failure.code,
+              ),
+              modelLabel: 'Local test model',
+              providerId: 'llama_cpp',
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text(failure.description), findsOneWidget);
+    }
+  });
+
   testWidgets('explains context window failures in the assistant card', (
     tester,
   ) async {

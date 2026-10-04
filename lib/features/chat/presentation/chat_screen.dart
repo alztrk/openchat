@@ -2004,6 +2004,34 @@ class _ChatScreenState extends State<ChatScreen> {
       return true;
     }
 
+    Future<bool> preserveStoppedResponse() async {
+      if (responseToReplace != null) {
+        final replacementId = assistantMessageId;
+        return replacementId == null
+            ? true
+            : _discardReplacementAttempt(
+                repository,
+                conversationId,
+                replacementId,
+              );
+      }
+
+      final stoppedMessageId = assistantMessageId ?? _newLocalId();
+      await repository.saveMessage(
+        conversationId: conversationId,
+        message: chat.ChatMessage(
+          id: stoppedMessageId,
+          role: chat.ChatMessageRole.assistant,
+          content: assistantContent,
+          createdAt: assistantCreatedAt ?? DateTime.now().toUtc(),
+          reasoningSummaries: assistantReasoningSummaries,
+          toolActivities: assistantToolActivities,
+          status: chat.ChatMessageStatus.stopped,
+        ),
+      );
+      return true;
+    }
+
     void updateReasoningSummaries(Object? value) {
       if (value == null) return;
       try {
@@ -2298,14 +2326,15 @@ class _ChatScreenState extends State<ChatScreen> {
         await activeOperation.eventsDone;
       }
       await flushFailedStreamPersistence();
-      final retryCleanupSucceeded = await preserveFailedResponse(
-        failureCode: error.code,
-      );
+      final wasCancelled = error.code == 'operation_cancelled';
+      final retryCleanupSucceeded = wasCancelled
+          ? await preserveStoppedResponse()
+          : await preserveFailedResponse(failureCode: error.code);
       if (mounted) {
-        if (retryCleanupSucceeded && responseToReplace != null) {
-          _showServiceFailure(error);
-        } else if (!retryCleanupSucceeded) {
+        if (!retryCleanupSucceeded) {
           _showMessage(context.openchatL10n.responseRetryCleanupFailed);
+        } else if (!wasCancelled && responseToReplace != null) {
+          _showServiceFailure(error);
         }
       }
     } on Object catch (error, stackTrace) {
@@ -2497,6 +2526,13 @@ class _ChatScreenState extends State<ChatScreen> {
       'provider_endpoint_unavailable' ||
       'invalid_provider_response' => l10n.providerRequestFailed,
       'model_unavailable' => l10n.selectedModelUnavailable,
+      'local_engine_not_installed' ||
+      'local_engine_unavailable' => l10n.localModelEngineNotReady,
+      'local_model_unavailable' => l10n.localModelInvalid,
+      'local_engine_start_failed' => l10n.localModelStartError,
+      'local_engine_start_timeout' => l10n.localModelStartTimeout,
+      'local_engine_runtime_unavailable' => l10n.localModelRuntimeUnavailable,
+      'local_model_inference_failed' => l10n.localModelInferenceFailed,
       'context_window_exceeded' ||
       'context_compaction_input_too_large' => l10n.contextWindowExceeded,
       'conversation_not_routed' => l10n.modelRequired,

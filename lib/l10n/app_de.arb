@@ -120,6 +120,8 @@
   "localModelStorageError": "Die Modellregistrierung konnte nicht in der Datenbank gespeichert werden.",
   "localModelStartError": "Das Modell konnte nicht gestartet werden. Prüfen Sie die Laufzeitinstallation und die Modelldatei.",
   "localModelStartTimeout": "Das Modell wurde nicht rechtzeitig bereit. Versuchen Sie ein kleineres Modell oder prüfen Sie Ihre Hardware.",
+  "localModelRuntimeUnavailable": "Das lokale Modell reagiert nicht mehr. Starten Sie es unter Einstellungen > Lokale Engines neu und versuchen Sie es erneut.",
+  "localModelInferenceFailed": "Das lokale Modell konnte die Anfrage nicht verarbeiten. Prüfen Sie das Chat-Template und den verfügbaren Arbeitsspeicher.",
   "localModelSaved": "Lokales Modell registriert.",
   "localModelRemoved": "Registrierung des lokalen Modells entfernt.",
   "localEngineStageDownloading": "Wird heruntergeladen",

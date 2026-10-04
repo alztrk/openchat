@@ -55,7 +55,7 @@ pub(super) async fn receive(
         response = provider_request
             .header(ACCEPT, "text/event-stream")
             .json(request.body)
-            .send() => response.map_err(|_| network_error())?,
+            .send() => response.map_err(|_| connection_error(request.route))?,
     };
     if !response.status().is_success() {
         let status = response.status();
@@ -69,6 +69,9 @@ pub(super) async fn receive(
                 "OpenCode free models can only be used within OpenCode.",
                 false,
             ));
+        }
+        if request.route.provider_id.as_deref() == Some("llama_cpp") {
+            return Err(local_inference_error());
         }
         return Err(http_error(status, request.route.provider_id.as_deref()));
     }
@@ -90,7 +93,7 @@ pub(super) async fn receive(
             chunk = stream.next() => chunk,
         };
         if let Some(chunk) = chunk {
-            pending.extend_from_slice(&chunk.map_err(|_| network_error())?);
+            pending.extend_from_slice(&chunk.map_err(|_| connection_error(request.route))?);
             if pending.len() > MAX_EVENT_BYTES {
                 return Err(invalid_response_error());
             }
@@ -280,6 +283,26 @@ pub(super) async fn receive(
     })
 }
 
+fn connection_error(route: &super::super::route::ChatRoute) -> ServiceError {
+    if route.provider_id.as_deref() == Some("llama_cpp") {
+        ServiceError::new(
+            "local_engine_runtime_unavailable",
+            "The local inference server stopped responding. Restart the model and try again.",
+            true,
+        )
+    } else {
+        network_error()
+    }
+}
+
+fn local_inference_error() -> ServiceError {
+    ServiceError::new(
+        "local_model_inference_failed",
+        "The local model could not handle this request. Check its chat template and available memory.",
+        false,
+    )
+}
+
 struct MistralContentDelta {
     text: String,
     reasoning: String,
@@ -333,7 +356,41 @@ fn append_text_field(value: &Value, output: &mut String) {
 mod tests {
     use serde_json::json;
 
-    use super::mistral_content_delta;
+    use super::{connection_error, local_inference_error, mistral_content_delta};
+    use crate::openai_compatible::route::ChatRoute;
+
+    fn route(provider_id: &str) -> ChatRoute {
+        ChatRoute {
+            model_id: "test-model".to_owned(),
+            provider_id: Some(provider_id.to_owned()),
+            chat_url: String::new(),
+            is_free: true,
+            is_opencode: false,
+            uses_responses_api: false,
+            context_window: None,
+            input_token_limit: None,
+            supports_images: false,
+            supports_tool_calls: None,
+            connection_id: None,
+        }
+    }
+
+    #[test]
+    fn identifies_local_runtime_disconnects_separately_from_provider_network_errors() {
+        assert_eq!(
+            connection_error(&route("llama_cpp")).code,
+            "local_engine_runtime_unavailable"
+        );
+        assert_eq!(
+            connection_error(&route("opencode")).code,
+            "network_unavailable"
+        );
+    }
+
+    #[test]
+    fn reports_local_server_request_rejections_as_model_inference_errors() {
+        assert_eq!(local_inference_error().code, "local_model_inference_failed");
+    }
 
     #[test]
     fn parses_mistral_thinking_and_text_content_parts() {

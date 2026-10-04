@@ -348,6 +348,14 @@ class AppLocalizationsEn extends AppLocalizations {
       'The model did not become ready in time. Try a smaller model or check your hardware.';
 
   @override
+  String get localModelRuntimeUnavailable =>
+      'The local model stopped responding. Restart it from Settings > Local engines and try again.';
+
+  @override
+  String get localModelInferenceFailed =>
+      'The local model could not handle this request. Check its chat template and available memory.';
+
+  @override
   String get localModelSaved => 'Local model registered.';
 
   @override

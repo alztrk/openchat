@@ -352,6 +352,14 @@ class AppLocalizationsEs extends AppLocalizations {
       'El modelo no estuvo listo a tiempo. Prueba con un modelo más pequeño o comprueba el hardware.';
 
   @override
+  String get localModelRuntimeUnavailable =>
+      'El modelo local dejó de responder. Reinícialo en Ajustes > Motores locales y vuelve a intentarlo.';
+
+  @override
+  String get localModelInferenceFailed =>
+      'El modelo local no pudo procesar esta solicitud. Comprueba su plantilla de chat y la memoria disponible.';
+
+  @override
   String get localModelSaved => 'Modelo local registrado.';
 
   @override

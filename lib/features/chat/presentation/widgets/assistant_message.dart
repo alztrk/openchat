@@ -179,6 +179,13 @@ class AssistantMessage extends StatelessWidget {
         'authentication_required' => l10n.providerAuthenticationRequired,
         'rate_limited' => l10n.providerRateLimited,
         'model_unavailable' => l10n.selectedModelUnavailable,
+        'local_engine_not_installed' ||
+        'local_engine_unavailable' => l10n.localModelEngineNotReady,
+        'local_model_unavailable' => l10n.localModelInvalid,
+        'local_engine_start_failed' => l10n.localModelStartError,
+        'local_engine_start_timeout' => l10n.localModelStartTimeout,
+        'local_engine_runtime_unavailable' => l10n.localModelRuntimeUnavailable,
+        'local_model_inference_failed' => l10n.localModelInferenceFailed,
         'context_window_exceeded' ||
         'context_compaction_input_too_large' => l10n.contextWindowExceeded,
         'attachment_unavailable' => l10n.attachmentUnavailable,

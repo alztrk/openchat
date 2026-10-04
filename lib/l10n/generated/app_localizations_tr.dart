@@ -345,6 +345,14 @@ class AppLocalizationsTr extends AppLocalizations {
       'Model belirtilen süre içinde hazır olmadı. Daha küçük bir model deneyin veya donanımınızı kontrol edin.';
 
   @override
+  String get localModelRuntimeUnavailable =>
+      'Yerel model yanıt vermeyi durdurdu. Ayarlar > Yerel motorlar bölümünden yeniden başlatıp tekrar deneyin.';
+
+  @override
+  String get localModelInferenceFailed =>
+      'Yerel model bu isteği işleyemedi. Sohbet şablonunu ve kullanılabilir belleği kontrol edin.';
+
+  @override
   String get localModelSaved => 'Yerel model kaydedildi.';
 
   @override

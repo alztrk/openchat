@@ -680,6 +680,18 @@ abstract class AppLocalizations {
   /// **'The model did not become ready in time. Try a smaller model or check your hardware.'**
   String get localModelStartTimeout;
 
+  /// No description provided for @localModelRuntimeUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The local model stopped responding. Restart it from Settings > Local engines and try again.'**
+  String get localModelRuntimeUnavailable;
+
+  /// No description provided for @localModelInferenceFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The local model could not handle this request. Check its chat template and available memory.'**
+  String get localModelInferenceFailed;
+
   /// No description provided for @localModelSaved.
   ///
   /// In en, this message translates to:
