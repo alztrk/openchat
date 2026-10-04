@@ -1511,6 +1511,7 @@ fn tool_executor_prepares_web_search_and_read_url() {
 }
 
 #[tokio::test]
+#[ignore = "manual live web smoke test requires public network access"]
 async fn live_manual_benchmark_web_search_and_read_url() {
     use super::web_search::{execute_read_url, execute_web_search};
     use std::time::Instant;
