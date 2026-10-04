@@ -802,6 +802,10 @@ class AppLocalizationsEs extends AppLocalizations {
       'El proveedor rechazó una solicitud que incluía herramientas. Comprueba si el modelo admite herramientas o elige uno que lo indique.';
 
   @override
+  String get providerNetworkUnavailable =>
+      'No se pudo conectar con el proveedor. Comprueba tu conexión e inténtalo de nuevo.';
+
+  @override
   String get contextWindowExceeded =>
       'La conversación es demasiado grande para la ventana de contexto de este modelo. Acorta el último mensaje o elige un modelo con una ventana de contexto mayor. Tu historial de chat está guardado.';
 

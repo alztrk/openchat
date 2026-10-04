@@ -302,6 +302,7 @@
   "providerAuthenticationRequired": "Der Anbieter hat die Anfrage abgelehnt. Prüfen Sie die Verbindung und den Modellzugriff.",
   "providerRequestFailed": "Der Anbieter konnte die Antwort nicht erstellen. Ihre gespeicherten Nachrichten sind weiterhin verfügbar.",
   "providerToolRequestRejected": "Der Anbieter hat eine Anfrage mit Tools abgelehnt. Prüfen Sie die Tool-Unterstützung des Modells oder wählen Sie ein Modell mit ausgewiesener Tool-Unterstützung.",
+  "providerNetworkUnavailable": "Der Anbieter ist nicht erreichbar. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.",
   "contextWindowExceeded": "Die Unterhaltung ist zu groß für das Kontextfenster dieses Modells. Kürzen Sie die letzte Nachricht oder wählen Sie ein Modell mit einem größeren Kontextfenster. Ihr Chatverlauf ist gespeichert.",
   "openCodeFreeTierRestricted": "Kostenlose OpenCode-Modelle sind nur innerhalb der OpenCode-App verfügbar.",
   "apiKey": "API-Schlüssel",

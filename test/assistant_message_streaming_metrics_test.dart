@@ -106,6 +106,42 @@ void main() {
     expect(find.text(l10n.contextWindowExceeded), findsOneWidget);
   });
 
+  testWidgets('explains provider network failures in the assistant card', (
+    tester,
+  ) async {
+    const locale = Locale('tr');
+    final l10n = await AppLocalizations.delegate.load(locale);
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: locale,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.light,
+        home: Scaffold(
+          body: AssistantMessage(
+            message: ChatMessage(
+              id: 'provider-network-failure',
+              role: ChatMessageRole.assistant,
+              content: '',
+              createdAt: DateTime.utc(2026, 10, 1, 12),
+              status: ChatMessageStatus.failed,
+              failureCode: 'network_unavailable',
+            ),
+            modelLabel: 'Provider test model',
+            providerId: 'opencode',
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text(l10n.providerNetworkUnavailable), findsOneWidget);
+  });
+
   testWidgets(
     'renders live tokens per second and output tokens during streaming',
     (tester) async {

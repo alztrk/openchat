@@ -1460,6 +1460,12 @@ abstract class AppLocalizations {
   /// **'The provider rejected a request containing tools. Check the model\'s tool support or choose a model that advertises tool use.'**
   String get providerToolRequestRejected;
 
+  /// No description provided for @providerNetworkUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The provider could not be reached. Check your connection and try again.'**
+  String get providerNetworkUnavailable;
+
   /// No description provided for @contextWindowExceeded.
   ///
   /// In en, this message translates to:

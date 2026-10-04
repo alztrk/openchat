@@ -2524,6 +2524,7 @@ class _ChatScreenState extends State<ChatScreen> {
       'authentication_required' ||
       'refresh_rejected' => l10n.providerAuthenticationRequired,
       'provider_tool_request_rejected' => l10n.providerToolRequestRejected,
+      'network_unavailable' => l10n.providerNetworkUnavailable,
       'provider_endpoint_unavailable' ||
       'invalid_provider_response' => l10n.providerRequestFailed,
       'model_unavailable' => l10n.selectedModelUnavailable,

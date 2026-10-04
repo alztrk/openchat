@@ -796,6 +796,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'The provider rejected a request containing tools. Check the model\'s tool support or choose a model that advertises tool use.';
 
   @override
+  String get providerNetworkUnavailable =>
+      'The provider could not be reached. Check your connection and try again.';
+
+  @override
   String get contextWindowExceeded =>
       'The conversation is too large for this model\'s context window. Shorten the latest message or choose a model with a larger context window. Your chat history is saved.';
 

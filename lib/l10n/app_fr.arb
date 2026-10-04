@@ -302,6 +302,7 @@
   "providerAuthenticationRequired": "Le fournisseur a rejeté la demande. Vérifiez la connexion et l'accès au modèle.",
   "providerRequestFailed": "Le fournisseur n’a pas pu terminer la réponse. Vos messages enregistrés sont toujours disponibles.",
   "providerToolRequestRejected": "Le fournisseur a rejeté une requête contenant des outils. Vérifiez la prise en charge des outils par le modèle ou choisissez un modèle qui l’indique.",
+  "providerNetworkUnavailable": "Le fournisseur est injoignable. Vérifiez votre connexion et réessayez.",
   "contextWindowExceeded": "La conversation est trop volumineuse pour la fenêtre contextuelle de ce modèle. Raccourcissez le dernier message ou choisissez un modèle avec une fenêtre contextuelle plus grande. Votre historique de discussion est enregistré.",
   "openCodeFreeTierRestricted": "Les modèles gratuits OpenCode ne sont disponibles que dans l'application OpenCode.",
   "apiKey": "Clé API",

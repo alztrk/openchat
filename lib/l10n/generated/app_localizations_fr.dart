@@ -806,6 +806,10 @@ class AppLocalizationsFr extends AppLocalizations {
       'Le fournisseur a rejeté une requête contenant des outils. Vérifiez la prise en charge des outils par le modèle ou choisissez un modèle qui l’indique.';
 
   @override
+  String get providerNetworkUnavailable =>
+      'Le fournisseur est injoignable. Vérifiez votre connexion et réessayez.';
+
+  @override
   String get contextWindowExceeded =>
       'La conversation est trop volumineuse pour la fenêtre contextuelle de ce modèle. Raccourcissez le dernier message ou choisissez un modèle avec une fenêtre contextuelle plus grande. Votre historique de discussion est enregistré.';
 

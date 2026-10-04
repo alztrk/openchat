@@ -793,6 +793,10 @@ class AppLocalizationsTr extends AppLocalizations {
       'Sağlayıcı, araç içeren isteği reddetti. Modelin araç desteğini kontrol et veya araç kullanabildiği belirtilen bir model seç.';
 
   @override
+  String get providerNetworkUnavailable =>
+      'Sağlayıcıya ulaşılamadı. Bağlantını kontrol edip yeniden dene.';
+
+  @override
   String get contextWindowExceeded =>
       'Sohbet bu modelin bağlam sınırı için fazla büyük. Son mesajı kısalt veya daha geniş bağlamlı bir model seç. Sohbet geçmişin kayıtlı.';
 

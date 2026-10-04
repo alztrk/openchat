@@ -806,6 +806,10 @@ class AppLocalizationsDe extends AppLocalizations {
       'Der Anbieter hat eine Anfrage mit Tools abgelehnt. Prüfen Sie die Tool-Unterstützung des Modells oder wählen Sie ein Modell mit ausgewiesener Tool-Unterstützung.';
 
   @override
+  String get providerNetworkUnavailable =>
+      'Der Anbieter ist nicht erreichbar. Prüfen Sie Ihre Verbindung und versuchen Sie es erneut.';
+
+  @override
   String get contextWindowExceeded =>
       'Die Unterhaltung ist zu groß für das Kontextfenster dieses Modells. Kürzen Sie die letzte Nachricht oder wählen Sie ein Modell mit einem größeren Kontextfenster. Ihr Chatverlauf ist gespeichert.';
 

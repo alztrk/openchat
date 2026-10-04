@@ -302,6 +302,7 @@
   "providerAuthenticationRequired": "El proveedor rechazó la solicitud. Comprueba la conexión y el acceso al modelo.",
   "providerRequestFailed": "El proveedor no pudo completar la respuesta. Tus mensajes guardados siguen disponibles.",
   "providerToolRequestRejected": "El proveedor rechazó una solicitud que incluía herramientas. Comprueba si el modelo admite herramientas o elige uno que lo indique.",
+  "providerNetworkUnavailable": "No se pudo conectar con el proveedor. Comprueba tu conexión e inténtalo de nuevo.",
   "contextWindowExceeded": "La conversación es demasiado grande para la ventana de contexto de este modelo. Acorta el último mensaje o elige un modelo con una ventana de contexto mayor. Tu historial de chat está guardado.",
   "openCodeFreeTierRestricted": "Los modelos gratuitos de OpenCode solo están disponibles dentro de la aplicación OpenCode.",
   "apiKey": "Clave de API",
