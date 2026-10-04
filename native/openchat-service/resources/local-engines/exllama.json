@@ -8,28 +8,26 @@
   "sourceCommit": "12414d0af7b3beeabdda5990f6b554b996fa1416",
   "channel": "stable",
   "license": "MIT (ExLlamaV3); AGPL-3.0 (TabbyAPI)",
-  "catalogStatus": "blocked",
-  "statusReason": "This catalog is aligned with TabbyAPI commit be74bf0a00bcb3a518e6feb7606f150c189be637, which pins ExLlamaV3 1.5.2 and PyTorch 2.9.0 with CUDA 12.8. Installation remains blocked until OpenChat pins and installs the complete TabbyAPI, PyTorch, Triton, Flash Linear Attention, and transitive dependency set from verified artifacts.",
+  "catalogStatus": "installable",
   "variants": [
     {
       "variantId": "windows-x86_64-cuda12.8-python3.12-torch2.9",
       "os": "windows",
       "architecture": "x86_64",
       "accelerator": "cuda",
+      "minimumDriverVersion": "528.33",
+      "recommendedDriverVersion": "570.65",
       "runtimeRequirements": [
         "Python 3.12",
-        "NVIDIA CUDA 12.8 or newer compatible with the selected PyTorch build",
+        "NVIDIA driver with CUDA 12.x minor-version compatibility",
         "PyTorch 2.9.0 with CUDA 12.8",
         "triton-windows is required on Windows",
-        "TabbyAPI source must be pinned to an integrity-verified revision before installation",
         "ExLlamaV3 supports EXL3 and FP16/BF16 model formats; selected model files must be downloaded separately"
       ],
-      "entrypoint": "TabbyAPI start.py (requires a pinned source checkout; unavailable in this catalog)",
+      "entrypoint": "python/environment/.venv/Scripts/python.exe",
       "requiredFiles": [
-        "The TabbyAPI source tree at a pinned commit",
-        "PyTorch 2.9.0 CUDA 12.8 and its verified dependencies",
-        "triton-windows and flash-linear-attention with verified compatible versions",
-        "The selected EXL3, FP16, or BF16 model"
+        "tabbyAPI/main.py",
+        "python/environment/.venv/Scripts/python.exe"
       ],
       "assets": [
         {
@@ -38,6 +36,23 @@
           "sizeBytes": 467957953,
           "sha256": "sha256:08431208effacecda8cf852678a248ce142d14cd2a326533d319cb4cc25cb5a2",
           "role": "primary"
+        },
+        {
+          "name": "uv-x86_64-pc-windows-msvc.zip",
+          "url": "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-pc-windows-msvc.zip",
+          "sizeBytes": 18813141,
+          "sha256": "sha256:68200e25de594df92387186bbfb9d9df606ec1d87efaa0ae0c7f690970e53db6",
+          "role": "companion",
+          "companionFor": "windows-x86_64-cuda12.8-python3.12-torch2.9"
+        },
+        {
+          "name": "tabbyAPI-be74bf0a00bcb3a518e6feb7606f150c189be637.zip",
+          "url": "https://github.com/theroyallab/tabbyAPI/archive/be74bf0a00bcb3a518e6feb7606f150c189be637.zip",
+          "sizeBytes": 293444,
+          "sha256": "sha256:16b65d01b5e74f97571a7100a8c0c8e2a4ec9ce050624739b08f09b71a1377a7",
+          "role": "source",
+          "sourceRepository": "theroyallab/tabbyAPI",
+          "sourceCommit": "be74bf0a00bcb3a518e6feb7606f150c189be637"
         }
       ],
       "capabilities": [
@@ -54,20 +69,19 @@
       "os": "linux",
       "architecture": "x86_64",
       "accelerator": "cuda",
+      "minimumDriverVersion": "525.60.13",
+      "recommendedDriverVersion": "570.26",
       "runtimeRequirements": [
         "Python 3.12",
-        "NVIDIA CUDA 12.8 or newer compatible with the selected PyTorch build",
+        "NVIDIA driver with CUDA 12.x minor-version compatibility",
         "PyTorch 2.9.0 with CUDA 12.8",
         "Triton is required on Linux",
-        "TabbyAPI source must be pinned to an integrity-verified revision before installation",
         "ExLlamaV3 supports EXL3 and FP16/BF16 model formats; selected model files must be downloaded separately"
       ],
-      "entrypoint": "TabbyAPI start.py (requires a pinned source checkout; unavailable in this catalog)",
+      "entrypoint": "python/environment/.venv/bin/python",
       "requiredFiles": [
-        "The TabbyAPI source tree at a pinned commit",
-        "PyTorch 2.9.0 CUDA 12.8 and its verified dependencies",
-        "Triton and flash-linear-attention with verified compatible versions",
-        "The selected EXL3, FP16, or BF16 model"
+        "tabbyAPI/main.py",
+        "python/environment/.venv/bin/python"
       ],
       "assets": [
         {
@@ -76,6 +90,23 @@
           "sizeBytes": 504426976,
           "sha256": "sha256:e4e2af239e4db71f090cfaf6698b3c3100ee8f31a0b575013f6cd6ca4822c5e5",
           "role": "primary"
+        },
+        {
+          "name": "uv-x86_64-unknown-linux-gnu.tar.gz",
+          "url": "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-unknown-linux-gnu.tar.gz",
+          "sizeBytes": 21373358,
+          "sha256": "sha256:eaf842262aa1c418d8ecc5605f02ee1ebfd369124fa48548e85f9481a47831a9",
+          "role": "companion",
+          "companionFor": "linux-x86_64-cuda12.8-python3.12-torch2.9"
+        },
+        {
+          "name": "tabbyAPI-be74bf0a00bcb3a518e6feb7606f150c189be637.zip",
+          "url": "https://github.com/theroyallab/tabbyAPI/archive/be74bf0a00bcb3a518e6feb7606f150c189be637.zip",
+          "sizeBytes": 293444,
+          "sha256": "sha256:16b65d01b5e74f97571a7100a8c0c8e2a4ec9ce050624739b08f09b71a1377a7",
+          "role": "source",
+          "sourceRepository": "theroyallab/tabbyAPI",
+          "sourceCommit": "be74bf0a00bcb3a518e6feb7606f150c189be637"
         }
       ],
       "capabilities": [
@@ -95,6 +126,8 @@
     "https://github.com/theroyallab/tabbyAPI/tree/be74bf0a00bcb3a518e6feb7606f150c189be637",
     "https://github.com/theroyallab/tabbyAPI/blob/be74bf0a00bcb3a518e6feb7606f150c189be637/README.md",
     "https://github.com/theroyallab/tabbyAPI/blob/be74bf0a00bcb3a518e6feb7606f150c189be637/pyproject.toml",
+    "https://github.com/astral-sh/uv/releases/tag/0.12.0",
+    "https://docs.astral.sh/uv/guides/install-python/",
     "https://github.com/theroyallab/tabbyAPI/wiki/01.-Getting-Started",
     "https://github.com/theroyallab/tabbyAPI/blob/main/LICENSE"
   ]

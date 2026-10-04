@@ -1,4 +1,5 @@
 use rusqlite::OptionalExtension;
+use zeroize::Zeroizing;
 
 use crate::{protocol::ServiceError, storage::AppStorage};
 
@@ -12,6 +13,7 @@ use super::{
 
 pub(super) struct ChatRoute {
     pub(super) model_id: String,
+    pub(super) provider_model_id: String,
     pub(super) provider_id: Option<String>,
     pub(super) chat_url: String,
     pub(super) is_free: bool,
@@ -22,6 +24,7 @@ pub(super) struct ChatRoute {
     pub(super) supports_images: bool,
     pub(super) supports_tool_calls: Option<bool>,
     pub(super) connection_id: Option<String>,
+    pub(super) local_api_key: Option<Zeroizing<String>>,
 }
 
 impl ChatRoute {
@@ -59,6 +62,7 @@ pub(super) async fn resolve_chat_route(
         .ok_or_else(model_error)?;
 
     let (
+        provider_model_id,
         chat_url,
         is_free,
         uses_responses_api,
@@ -67,6 +71,7 @@ pub(super) async fn resolve_chat_route(
         supports_images,
         supports_tool_calls,
         connection_id,
+        local_api_key,
     ) = match provider_id.as_deref() {
         Some("opencode") => {
             if requested_api_key_connection_id.is_some() {
@@ -88,6 +93,7 @@ pub(super) async fn resolve_chat_route(
                 CHAT_URL.to_owned()
             };
             (
+                model_id.clone(),
                 chat_url,
                 is_free,
                 uses_responses_api,
@@ -96,9 +102,10 @@ pub(super) async fn resolve_chat_route(
                 supports_images,
                 supports_tool_calls,
                 None,
+                None,
             )
         }
-        Some("llama_cpp") => {
+        Some("llama_cpp" | "exllama") => {
             if requested_api_key_connection_id.is_some()
                 || stored_api_key_connection_id.is_some()
                 || api_key.is_some()
@@ -107,6 +114,7 @@ pub(super) async fn resolve_chat_route(
             }
             let endpoint = crate::local_engines::chat_url(storage, &model_id, cancellation).await?;
             (
+                endpoint.model_id,
                 endpoint.chat_url,
                 true,
                 false,
@@ -115,9 +123,10 @@ pub(super) async fn resolve_chat_route(
                 endpoint.capabilities.supports_images,
                 endpoint.capabilities.supports_tool_calls,
                 None,
+                endpoint.api_key,
             )
         }
-        Some("vllm" | "exllama") => return Err(local_engine_unavailable_error()),
+        Some("vllm") => return Err(local_engine_unavailable_error()),
         Some("chatgpt_api") => {
             if requested_api_key_connection_id != stored_api_key_connection_id {
                 return Err(route_error());
@@ -126,6 +135,7 @@ pub(super) async fn resolve_chat_route(
                 return Err(openai_authentication_required_error());
             }
             (
+                model_id.clone(),
                 OPENAI_CHAT_URL.to_owned(),
                 false,
                 false,
@@ -134,6 +144,7 @@ pub(super) async fn resolve_chat_route(
                 crate::openai_api::supports_image_input(&model_id),
                 None,
                 stored_api_key_connection_id.map(str::to_owned),
+                None,
             )
         }
         Some(id) => {
@@ -153,6 +164,7 @@ pub(super) async fn resolve_chat_route(
             let supports_tool_calls =
                 super::provider_models::supports_tool_calls(storage, id, api_key, &model_id)?;
             (
+                model_id.clone(),
                 format!("{}/chat/completions", provider.base_url),
                 false,
                 false,
@@ -161,6 +173,7 @@ pub(super) async fn resolve_chat_route(
                 supports_images,
                 supports_tool_calls,
                 Some(id.to_owned()),
+                None,
             )
         }
         None => return Err(route_error()),
@@ -172,6 +185,7 @@ pub(super) async fn resolve_chat_route(
 
     Ok(ChatRoute {
         model_id,
+        provider_model_id,
         is_opencode: provider_id.as_deref() == Some("opencode"),
         provider_id,
         chat_url,
@@ -182,6 +196,7 @@ pub(super) async fn resolve_chat_route(
         supports_images,
         supports_tool_calls,
         connection_id,
+        local_api_key,
     })
 }
 
@@ -200,6 +215,7 @@ mod tests {
     fn route(context_window: Option<i64>, input_token_limit: Option<i64>) -> ChatRoute {
         ChatRoute {
             model_id: "model".to_owned(),
+            provider_model_id: "model".to_owned(),
             provider_id: None,
             chat_url: String::new(),
             is_free: false,
@@ -210,6 +226,7 @@ mod tests {
             supports_images: false,
             supports_tool_calls: None,
             connection_id: None,
+            local_api_key: None,
         }
     }
 

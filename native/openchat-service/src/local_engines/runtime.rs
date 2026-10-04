@@ -1,4 +1,6 @@
-use std::{ffi::OsString, net::SocketAddr, process::Stdio, sync::OnceLock, time::Duration};
+use std::{
+    ffi::OsString, net::SocketAddr, path::PathBuf, process::Stdio, sync::OnceLock, time::Duration,
+};
 
 use reqwest::Client;
 use serde_json::{Value, json};
@@ -8,6 +10,7 @@ use tokio::{
     sync::{Mutex, watch},
     time::{Instant, sleep},
 };
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::{protocol::ServiceError, storage::AppStorage};
 
@@ -33,15 +36,28 @@ pub(crate) struct RuntimeCapabilities {
 
 pub(crate) struct RuntimeChatEndpoint {
     pub(crate) chat_url: String,
+    pub(crate) model_id: String,
     pub(crate) capabilities: RuntimeCapabilities,
+    pub(crate) api_key: Option<Zeroizing<String>>,
 }
 
 struct RunningServer {
     engine_id: String,
     model_id: String,
+    provider_model_id: String,
     port: u16,
     child: Child,
     capabilities: Option<RuntimeCapabilities>,
+    api_key: Option<Zeroizing<String>>,
+    session_directory: Option<PathBuf>,
+}
+
+struct RuntimeLaunch {
+    arguments: Vec<OsString>,
+    current_directory: PathBuf,
+    provider_model_id: String,
+    api_key: Option<Zeroizing<String>>,
+    session_directory: Option<PathBuf>,
 }
 
 pub(crate) async fn start_model(
@@ -53,10 +69,11 @@ pub(crate) async fn start_model(
         return Err(cancelled_error());
     }
     let model = models::find(storage, model_id)?.ok_or_else(model_unavailable_error)?;
-    if model.engine_id != "llama_cpp" || model.path_kind != "file" || !model.path.is_file() {
+    if !model_path_matches_engine(&model) {
         return Err(model_unavailable_error());
     }
-    let installed = installed_llama_cpp(storage)?.ok_or_else(engine_not_installed_error)?;
+    let installed =
+        installed_engine_for(storage, &model.engine_id)?.ok_or_else(engine_not_installed_error)?;
     let state = running_state();
     let mut state = state.lock().await;
 
@@ -69,7 +86,12 @@ pub(crate) async fn start_model(
         if is_running
             && server.engine_id == model.engine_id
             && server.model_id == model.id
-            && health_check_or_cancel(server.port, cancellation).await?
+            && health_check_or_cancel(
+                server.port,
+                server.api_key.as_deref().map(String::as_str),
+                cancellation,
+            )
+            .await?
         {
             return Ok(status_json(Some(server), "running"));
         }
@@ -83,9 +105,20 @@ pub(crate) async fn start_model(
 
     let port = available_loopback_port().await?;
     let started_at = Instant::now();
-    let arguments = llama_server_arguments(&model, port)?;
+    let launch = match model.engine_id.as_str() {
+        "llama_cpp" => RuntimeLaunch {
+            arguments: llama_server_arguments(&model, port)?,
+            current_directory: installed.root.clone(),
+            provider_model_id: model.id.clone(),
+            api_key: None,
+            session_directory: None,
+        },
+        "exllama" => prepare_tabby_session(&model, &installed, port)?,
+        _ => return Err(model_unavailable_error()),
+    };
     let child = match Command::new(&installed.entrypoint)
-        .args(arguments)
+        .args(&launch.arguments)
+        .current_dir(&launch.current_directory)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -94,6 +127,7 @@ pub(crate) async fn start_model(
     {
         Ok(child) => child,
         Err(_) => {
+            cleanup_session_directory(launch.session_directory.as_deref()).await?;
             log_runtime_event(
                 storage,
                 "runtime_start_failed",
@@ -106,30 +140,47 @@ pub(crate) async fn start_model(
     *state = Some(RunningServer {
         engine_id: model.engine_id.clone(),
         model_id: model.id.clone(),
+        provider_model_id: launch.provider_model_id,
         port,
         child,
         capabilities: None,
+        api_key: launch.api_key,
+        session_directory: launch.session_directory,
     });
 
     loop {
-        let port = {
+        let (port, has_exited, exited_session) = {
             let Some(server) = state.as_mut() else {
                 return Err(runtime_error());
             };
-            if let Some(exit_status) = server.child.try_wait().map_err(|_| runtime_error())? {
-                let _ = exit_status;
-                *state = None;
-                log_runtime_event(
-                    storage,
-                    "runtime_start_failed",
-                    Some("local_engine_start_failed"),
-                    Some(started_at.elapsed()),
-                );
-                return Err(runtime_start_failed_error());
-            }
-            server.port
+            let has_exited = server
+                .child
+                .try_wait()
+                .map_err(|_| runtime_error())?
+                .is_some();
+            let session = if has_exited {
+                server.session_directory.take()
+            } else {
+                None
+            };
+            (server.port, has_exited, session)
         };
-        let ready = match health_check_or_cancel(port, cancellation).await {
+        if has_exited {
+            *state = None;
+            cleanup_session_directory(exited_session.as_deref()).await?;
+            log_runtime_event(
+                storage,
+                "runtime_start_failed",
+                Some("local_engine_start_failed"),
+                Some(started_at.elapsed()),
+            );
+            return Err(runtime_start_failed_error());
+        }
+        let api_key = state
+            .as_ref()
+            .and_then(|server| server.api_key.as_deref())
+            .map(String::as_str);
+        let ready = match health_check_or_cancel(port, api_key, cancellation).await {
             Ok(ready) => ready,
             Err(error) => {
                 stop_server(storage, &mut state).await?;
@@ -143,7 +194,9 @@ pub(crate) async fn start_model(
             }
         };
         if ready {
-            let capabilities = match runtime_capabilities_or_cancel(port, cancellation).await {
+            let capabilities = match runtime_capabilities_or_cancel(port, api_key, cancellation)
+                .await
+            {
                 Ok(capabilities) => capabilities,
                 Err(error) => {
                     stop_server(storage, &mut state).await?;
@@ -203,13 +256,15 @@ pub(crate) async fn status(storage: &AppStorage) -> Result<Value, ServiceError> 
     let Some(server) = state.as_mut() else {
         return Ok(status_json(None, "stopped"));
     };
-    if server
+    let has_exited = server
         .child
         .try_wait()
         .map_err(|_| runtime_error())?
-        .is_some()
-    {
+        .is_some();
+    if has_exited {
+        let session_directory = server.session_directory.take();
         *state = None;
+        cleanup_session_directory(session_directory.as_deref()).await?;
         log_runtime_event(
             storage,
             "runtime_exited",
@@ -218,7 +273,7 @@ pub(crate) async fn status(storage: &AppStorage) -> Result<Value, ServiceError> 
         );
         return Ok(status_json(None, "stopped"));
     }
-    let status = if health_check(server.port).await {
+    let status = if health_check(server.port, server.api_key.as_deref().map(String::as_str)).await {
         "running"
     } else {
         "unhealthy"
@@ -245,7 +300,9 @@ pub(crate) async fn chat_url(
     let capabilities = server.capabilities.ok_or_else(runtime_capability_error)?;
     Ok(RuntimeChatEndpoint {
         chat_url: format!("http://127.0.0.1:{port}/v1/chat/completions"),
+        model_id: server.provider_model_id.clone(),
         capabilities,
+        api_key: server.api_key.clone(),
     })
 }
 
@@ -253,13 +310,13 @@ pub(crate) fn is_model_available(
     storage: &AppStorage,
     model: &models::RegisteredModel,
 ) -> Result<bool, ServiceError> {
-    if model.engine_id != "llama_cpp" || model.path_kind != "file" || !model.path.is_file() {
+    if !model_path_matches_engine(model) {
         return Ok(false);
     }
-    Ok(installed_llama_cpp(storage)?.is_some())
+    Ok(installed_engine_for(storage, &model.engine_id)?.is_some())
 }
 
-async fn health_check(port: u16) -> bool {
+async fn health_check(port: u16, api_key: Option<&str>) -> bool {
     let client = HEALTH_CLIENT.get_or_init(|| {
         Client::builder()
             .no_proxy()
@@ -269,8 +326,11 @@ async fn health_check(port: u16) -> bool {
     let Ok(client) = client else {
         return false;
     };
-    client
-        .get(format!("http://127.0.0.1:{port}/health"))
+    let mut request = client.get(format!("http://127.0.0.1:{port}/health"));
+    if let Some(api_key) = api_key {
+        request = request.bearer_auth(api_key);
+    }
+    request
         .send()
         .await
         .is_ok_and(|response| response.status().is_success())
@@ -278,6 +338,7 @@ async fn health_check(port: u16) -> bool {
 
 async fn health_check_or_cancel(
     port: u16,
+    api_key: Option<&str>,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<bool, ServiceError> {
     if *cancellation.borrow() || cancellation.has_changed().is_err() {
@@ -291,12 +352,13 @@ async fn health_check_or_cancel(
                 Ok(false)
             }
         }
-        ready = health_check(port) => Ok(ready),
+        ready = health_check(port, api_key) => Ok(ready),
     }
 }
 
 async fn runtime_capabilities_or_cancel(
     port: u16,
+    api_key: Option<&str>,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<RuntimeCapabilities, ServiceError> {
     if *cancellation.borrow() || cancellation.has_changed().is_err() {
@@ -310,11 +372,14 @@ async fn runtime_capabilities_or_cancel(
                 Err(runtime_capability_error())
             }
         }
-        capabilities = read_runtime_capabilities(port) => capabilities,
+        capabilities = read_runtime_capabilities(port, api_key) => capabilities,
     }
 }
 
-async fn read_runtime_capabilities(port: u16) -> Result<RuntimeCapabilities, ServiceError> {
+async fn read_runtime_capabilities(
+    port: u16,
+    api_key: Option<&str>,
+) -> Result<RuntimeCapabilities, ServiceError> {
     let client = PROPERTIES_CLIENT.get_or_init(|| {
         Client::builder()
             .no_proxy()
@@ -324,8 +389,11 @@ async fn read_runtime_capabilities(port: u16) -> Result<RuntimeCapabilities, Ser
             .build()
     });
     let client = client.as_ref().map_err(|_| runtime_capability_error())?;
-    let mut response = client
-        .get(format!("http://127.0.0.1:{port}/props"))
+    let mut request = client.get(format!("http://127.0.0.1:{port}/props"));
+    if let Some(api_key) = api_key {
+        request = request.bearer_auth(api_key);
+    }
+    let mut response = request
         .send()
         .await
         .map_err(|_| runtime_capability_error())?;
@@ -413,10 +481,29 @@ fn llama_server_arguments(
     Ok(arguments)
 }
 
-fn installed_llama_cpp(storage: &AppStorage) -> Result<Option<InstalledEngine>, ServiceError> {
+fn model_path_matches_engine(model: &models::RegisteredModel) -> bool {
+    match model.engine_id.as_str() {
+        "llama_cpp" => {
+            model.path_kind == "file"
+                && model.path.is_file()
+                && model
+                    .path
+                    .extension()
+                    .and_then(|extension| extension.to_str())
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
+        }
+        "exllama" => model.path_kind == "directory" && model.path.is_dir(),
+        _ => false,
+    }
+}
+
+fn installed_engine_for(
+    storage: &AppStorage,
+    engine_id: &str,
+) -> Result<Option<InstalledEngine>, ServiceError> {
     let manifest = manifests()?
         .into_iter()
-        .find(|manifest| manifest.engine_id == "llama_cpp")
+        .find(|manifest| manifest.engine_id == engine_id)
         .ok_or_else(engine_not_installed_error)?;
     let variants = manifest.variants.iter().filter(|variant| {
         variant.os == std::env::consts::OS && variant.architecture == std::env::consts::ARCH
@@ -429,6 +516,141 @@ fn installed_llama_cpp(storage: &AppStorage) -> Result<Option<InstalledEngine>, 
     Ok(None)
 }
 
+fn prepare_tabby_session(
+    model: &models::RegisteredModel,
+    installed: &InstalledEngine,
+    port: u16,
+) -> Result<RuntimeLaunch, ServiceError> {
+    let model_directory = model.path.parent().ok_or_else(model_unavailable_error)?;
+    let model_name = model
+        .path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .ok_or_else(model_unavailable_error)?;
+    let model_directory = model_directory
+        .to_str()
+        .ok_or_else(model_unavailable_error)?;
+    let session_directory = installed
+        .root
+        .join("sessions")
+        .join(uuid::Uuid::new_v4().simple().to_string());
+    let api_key = Zeroizing::new(uuid::Uuid::new_v4().simple().to_string());
+    let admin_key = Zeroizing::new(uuid::Uuid::new_v4().simple().to_string());
+    let configuration = json!({
+        "network": {
+            "host": "127.0.0.1",
+            "port": port,
+            "disable_auth": false,
+            "allowed_origins": [],
+            "disable_fetch_requests": true,
+            "send_tracebacks": false,
+            "api_servers": ["OAI"],
+            "access_log": false,
+        },
+        "logging": {
+            "log_prompt": false,
+            "log_generation_parameters": false,
+            "log_chat_completion_requests": false,
+        },
+        "model": {
+            "model_dir": model_directory,
+            "model_name": model_name,
+            "backend": "exllamav3",
+            "max_seq_len": -1,
+        },
+    });
+    create_private_runtime_session(&session_directory)?;
+    let write_result = (|| {
+        write_private_runtime_file(
+            &session_directory.join("config.yml"),
+            &serde_json::to_vec(&configuration).map_err(|_| runtime_error())?,
+        )?;
+        let mut auth_file = serde_json::to_vec(&TabbyAuthFile {
+            api_key: api_key.as_str(),
+            admin_key: admin_key.as_str(),
+        })
+        .map_err(|_| runtime_error())?;
+        let auth_result =
+            write_private_runtime_file(&session_directory.join("api_tokens.yml"), &auth_file);
+        auth_file.zeroize();
+        auth_result?;
+        Ok::<(), ServiceError>(())
+    })();
+    if let Err(error) = write_result {
+        std::fs::remove_dir_all(&session_directory).map_err(|_| runtime_error())?;
+        return Err(error);
+    }
+
+    let main_script = installed.root.join("tabbyAPI").join("main.py");
+    let config_path = session_directory.join("config.yml");
+    Ok(RuntimeLaunch {
+        arguments: vec![
+            main_script.into_os_string(),
+            OsString::from("--config"),
+            config_path.into_os_string(),
+        ],
+        current_directory: session_directory.clone(),
+        provider_model_id: model_name.to_owned(),
+        api_key: Some(api_key),
+        session_directory: Some(session_directory),
+    })
+}
+
+fn create_private_runtime_session(path: &std::path::Path) -> Result<(), ServiceError> {
+    let parent = path.parent().ok_or_else(runtime_error)?;
+    std::fs::create_dir_all(parent).map_err(|_| runtime_error())?;
+    let parent_metadata = std::fs::symlink_metadata(parent).map_err(|_| runtime_error())?;
+    if parent_metadata.file_type().is_symlink() || !parent_metadata.is_dir() {
+        return Err(runtime_error());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        let mut builder = std::fs::DirBuilder::new();
+        builder.mode(0o700);
+        builder.create(path).map_err(|_| runtime_error())?;
+    }
+    #[cfg(not(unix))]
+    std::fs::create_dir(path).map_err(|_| runtime_error())?;
+    Ok(())
+}
+
+fn write_private_runtime_file(path: &std::path::Path, content: &[u8]) -> Result<(), ServiceError> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut file = options.open(path).map_err(|_| runtime_error())?;
+    use std::io::Write;
+    file.write_all(content).map_err(|_| runtime_error())?;
+    file.sync_all().map_err(|_| runtime_error())
+}
+
+async fn cleanup_session_directory(
+    session_directory: Option<&std::path::Path>,
+) -> Result<(), ServiceError> {
+    if let Some(session_directory) = session_directory {
+        let metadata = std::fs::symlink_metadata(session_directory).map_err(|_| runtime_error())?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err(runtime_error());
+        }
+        tokio::fs::remove_dir_all(session_directory)
+            .await
+            .map_err(|_| runtime_error())?;
+    }
+    Ok(())
+}
+
+#[derive(serde::Serialize)]
+struct TabbyAuthFile<'a> {
+    api_key: &'a str,
+    admin_key: &'a str,
+}
+
 fn running_state() -> &'static Mutex<Option<RunningServer>> {
     RUNNING_SERVER.get_or_init(|| Mutex::new(None))
 }
@@ -437,7 +659,7 @@ async fn stop_server(
     storage: &AppStorage,
     state: &mut Option<RunningServer>,
 ) -> Result<(), ServiceError> {
-    let Some(mut server) = state.take() else {
+    let Some(server) = state.as_mut() else {
         return Ok(());
     };
     if server
@@ -455,6 +677,10 @@ async fn stop_server(
         );
         return Err(runtime_error());
     }
+    let Some(server) = state.take() else {
+        return Err(runtime_error());
+    };
+    cleanup_session_directory(server.session_directory.as_deref()).await?;
     log_runtime_event(storage, "runtime_stopped", None, None);
     Ok(())
 }
@@ -553,8 +779,9 @@ mod tests {
     use crate::storage::AppStorage;
 
     use super::{
-        MAX_RUNTIME_PROPERTIES_BYTES, RuntimeCapabilities, health_check_or_cancel,
-        llama_server_arguments, parse_runtime_capabilities, read_runtime_capabilities, start_model,
+        InstalledEngine, MAX_RUNTIME_PROPERTIES_BYTES, RuntimeCapabilities, health_check_or_cancel,
+        llama_server_arguments, parse_runtime_capabilities, prepare_tabby_session,
+        read_runtime_capabilities, start_model,
     };
 
     struct TestDirectory(PathBuf);
@@ -572,6 +799,110 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn tabby_session_is_authenticated_loopback_only_and_uses_model_folder_name() {
+        let temporary = TestDirectory::new();
+        let model_directory = temporary.0.join("models").join("exllama-model");
+        let models_root = model_directory
+            .parent()
+            .expect("model directory should have a parent");
+        fs::create_dir_all(models_root).expect("model parent should be created");
+        fs::create_dir_all(&model_directory).expect("model directory should be created");
+        let installed_root = temporary.0.join("engine");
+        fs::create_dir_all(&installed_root).expect("engine directory should be created");
+
+        let model = crate::local_engines::models::RegisteredModel {
+            id: "local-model-id".to_owned(),
+            engine_id: "exllama".to_owned(),
+            display_name: "ExLlama model".to_owned(),
+            path: model_directory.clone(),
+            path_kind: "directory".to_owned(),
+            created_at_unix_ms: 0,
+        };
+        let installed = InstalledEngine {
+            engine_id: "exllama".to_owned(),
+            variant_id: "windows-x86_64-cuda12.8-python3.12-torch2.9".to_owned(),
+            release_tag: "v1.5.2".to_owned(),
+            root: installed_root.clone(),
+            entrypoint: installed_root.join("python/environment/.venv/Scripts/python.exe"),
+        };
+
+        let launch = prepare_tabby_session(&model, &installed, 49183)
+            .expect("the TabbyAPI session should be created");
+        let session_directory = launch
+            .session_directory
+            .as_ref()
+            .expect("the session directory should be retained for cleanup");
+        let configuration: serde_json::Value = serde_json::from_slice(
+            &fs::read(session_directory.join("config.yml"))
+                .expect("the private TabbyAPI configuration should exist"),
+        )
+        .expect("JSON configuration should also parse as YAML");
+        assert_eq!(configuration["network"]["host"], "127.0.0.1");
+        assert_eq!(configuration["network"]["port"], 49183);
+        assert_eq!(configuration["network"]["disable_auth"], false);
+        assert_eq!(
+            configuration["network"]["allowed_origins"],
+            serde_json::json!([])
+        );
+        assert_eq!(configuration["network"]["disable_fetch_requests"], true);
+        assert_eq!(configuration["logging"]["log_prompt"], false);
+        assert_eq!(configuration["model"]["model_name"], "exllama-model");
+        assert_eq!(
+            configuration["model"]["model_dir"],
+            models_root.to_string_lossy().as_ref()
+        );
+        assert!(configuration.get("api_key").is_none());
+
+        let auth: serde_json::Value = serde_json::from_slice(
+            &fs::read(session_directory.join("api_tokens.yml"))
+                .expect("the TabbyAPI auth file should exist"),
+        )
+        .expect("the TabbyAPI auth file should parse");
+        let api_key = launch
+            .api_key
+            .as_deref()
+            .map(String::as_str)
+            .expect("the runtime should retain the generated API key");
+        let file_api_key = auth["api_key"]
+            .as_str()
+            .expect("the auth file should include an API key");
+        let admin_key = auth["admin_key"]
+            .as_str()
+            .expect("the auth file should include an admin key");
+        assert!(file_api_key == api_key);
+        assert!(!file_api_key.is_empty());
+        assert!(!admin_key.is_empty());
+        assert!(file_api_key != admin_key);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(session_directory)
+                    .expect("the session metadata should be readable")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o700
+            );
+            assert_eq!(
+                fs::metadata(session_directory.join("api_tokens.yml"))
+                    .expect("the auth file metadata should be readable")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
+
+        assert_eq!(launch.provider_model_id, "exllama-model");
+        assert_eq!(
+            launch.current_directory.as_path(),
+            session_directory.as_path()
+        );
     }
 
     #[test]
@@ -641,14 +972,14 @@ mod tests {
         sender
             .send(true)
             .expect("the active readiness request should receive cancellation");
-        let error = health_check_or_cancel(0, &mut cancellation)
+        let error = health_check_or_cancel(0, None, &mut cancellation)
             .await
             .expect_err("a cancelled readiness wait should stop");
         assert_eq!(error.code, "operation_cancelled");
 
         let (sender, mut cancellation) = watch::channel(false);
         drop(sender);
-        let error = health_check_or_cancel(0, &mut cancellation)
+        let error = health_check_or_cancel(0, None, &mut cancellation)
             .await
             .expect_err("a closed operation should stop its readiness wait");
         assert_eq!(error.code, "operation_cancelled");
@@ -665,7 +996,9 @@ mod tests {
             .port();
         let (sender, mut cancellation) = watch::channel(false);
         let readiness =
-            tokio::spawn(async move { health_check_or_cancel(port, &mut cancellation).await });
+            tokio::spawn(
+                async move { health_check_or_cancel(port, None, &mut cancellation).await },
+            );
         let (_connection, _) = listener
             .accept()
             .await
@@ -714,7 +1047,7 @@ mod tests {
         });
 
         assert_eq!(
-            read_runtime_capabilities(port)
+            read_runtime_capabilities(port, None)
                 .await
                 .expect("reported properties should be read"),
             RuntimeCapabilities {
@@ -758,7 +1091,7 @@ mod tests {
         });
 
         assert_eq!(
-            read_runtime_capabilities(port)
+            read_runtime_capabilities(port, None)
                 .await
                 .expect_err("an oversized response must be rejected")
                 .code,

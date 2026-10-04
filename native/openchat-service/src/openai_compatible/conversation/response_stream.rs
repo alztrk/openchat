@@ -74,6 +74,8 @@ pub(super) async fn receive(
         } else if let Some(api_key) = request.api_key {
             provider_request = provider_request.bearer_auth(api_key);
         }
+    } else if let Some(api_key) = request.route.local_api_key.as_deref() {
+        provider_request = provider_request.bearer_auth(api_key.as_str());
     } else if !request.route.is_free
         && let Some(api_key) = request.api_key
     {
@@ -102,7 +104,7 @@ pub(super) async fn receive(
                 false,
             ));
         }
-        if request.route.provider_id.as_deref() == Some("llama_cpp") {
+        if is_local_runtime(request.route.provider_id.as_deref()) {
             return Err(local_inference_error());
         }
         return Err(chat_request_http_error(
@@ -320,7 +322,7 @@ pub(super) async fn receive(
 }
 
 fn connection_error(route: &super::super::route::ChatRoute) -> ServiceError {
-    if route.provider_id.as_deref() == Some("llama_cpp") {
+    if is_local_runtime(route.provider_id.as_deref()) {
         ServiceError::new(
             "local_engine_runtime_unavailable",
             "The local inference server stopped responding. Restart the model and try again.",
@@ -329,6 +331,10 @@ fn connection_error(route: &super::super::route::ChatRoute) -> ServiceError {
     } else {
         network_error()
     }
+}
+
+fn is_local_runtime(provider_id: Option<&str>) -> bool {
+    matches!(provider_id, Some("llama_cpp" | "exllama"))
 }
 
 fn local_inference_error() -> ServiceError {
@@ -422,6 +428,7 @@ mod tests {
     fn route(provider_id: &str) -> ChatRoute {
         ChatRoute {
             model_id: "test-model".to_owned(),
+            provider_model_id: "test-model".to_owned(),
             provider_id: Some(provider_id.to_owned()),
             chat_url: String::new(),
             is_free: true,
@@ -432,6 +439,7 @@ mod tests {
             supports_images: false,
             supports_tool_calls: None,
             connection_id: None,
+            local_api_key: None,
         }
     }
 
@@ -444,6 +452,10 @@ mod tests {
         assert_eq!(
             connection_error(&route("opencode")).code,
             "network_unavailable"
+        );
+        assert_eq!(
+            connection_error(&route("exllama")).code,
+            "local_engine_runtime_unavailable"
         );
     }
 

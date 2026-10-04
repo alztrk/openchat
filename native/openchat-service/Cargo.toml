@@ -23,8 +23,10 @@ fastembed = { version = "7.1.0", default-features = false, features = ["ort-down
 usearch = "2.26.2"
 tokenizers = { version = "0.23.2", default-features = false, features = ["onig"] }
 zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+tar = "0.4"
+zeroize = "=1.8.1"
 
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "=3.6.3", default-features = false, features = ["windows-native"] }
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["copy-dylibs"] }
-zeroize = "=1.8.1"

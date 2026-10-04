@@ -98,7 +98,7 @@ pub async fn send_message(
         storage,
         &stored_messages,
         request::ProviderRequestOptions {
-            model_id: route.model_id.clone(),
+            model_id: route.provider_model_id.clone(),
             provider_id: route.provider_id.as_deref().unwrap_or(""),
             excluded_assistant_message_id,
             custom_instructions,

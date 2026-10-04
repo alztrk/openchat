@@ -17,7 +17,7 @@ const ALLOWED_ARCHITECTURES: &[&str] = &["x86_64", "aarch64"];
 const ALLOWED_ACCELERATORS: &[&str] = &["cpu", "cuda", "vulkan", "metal", "xpu"];
 const ALLOWED_CHANNELS: &[&str] = &["stable", "preview", "nightly"];
 const ALLOWED_CATALOG_STATUSES: &[&str] = &["installable", "blocked"];
-const ALLOWED_ASSET_ROLES: &[&str] = &["primary", "companion"];
+const ALLOWED_ASSET_ROLES: &[&str] = &["primary", "companion", "source"];
 
 /// A release catalog entry for one local inference engine.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,6 +104,10 @@ pub struct EngineAsset {
     pub role: String,
     #[serde(default)]
     pub companion_for: Option<String>,
+    #[serde(default)]
+    pub source_repository: Option<String>,
+    #[serde(default)]
+    pub source_commit: Option<String>,
 }
 
 /// Errors returned while reading or validating a catalog manifest.
@@ -167,16 +171,15 @@ fn validate_manifest(manifest: &EngineManifest) -> Result<(), CatalogError> {
         &manifest.source_repository,
         &manifest.release_tag,
     )?;
-    if let Some(source_commit) = &manifest.source_commit {
-        if !source_commit.is_empty()
-            && (!source_commit.bytes().all(|byte| byte.is_ascii_hexdigit())
-                || source_commit.bytes().any(|byte| byte.is_ascii_uppercase())
-                || !(7..=64).contains(&source_commit.len()))
-        {
-            return Err(invalid(
-                "sourceCommit must be 7 to 64 lowercase hexadecimal characters".to_owned(),
-            ));
-        }
+    if let Some(source_commit) = &manifest.source_commit
+        && !source_commit.is_empty()
+        && (!source_commit.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || source_commit.bytes().any(|byte| byte.is_ascii_uppercase())
+            || !(7..=64).contains(&source_commit.len()))
+    {
+        return Err(invalid(
+            "sourceCommit must be 7 to 64 lowercase hexadecimal characters".to_owned(),
+        ));
     }
     validate_allowed(&manifest.channel, "channel", ALLOWED_CHANNELS)?;
     require_nonempty(&manifest.license, "license")?;
@@ -352,10 +355,54 @@ fn validate_asset(
                 asset.name
             )));
         }
+        ("source", Some(_)) => {
+            return Err(invalid(format!(
+                "pinned source asset {:?} must not have companionFor",
+                asset.name
+            )));
+        }
         _ => {}
     }
     if let Some(companion_for) = &asset.companion_for {
         require_nonempty(companion_for, "companionFor")?;
+    }
+    match (
+        asset.role.as_str(),
+        asset.source_repository.as_deref(),
+        asset.source_commit.as_deref(),
+    ) {
+        ("source", Some(repository), Some(commit)) => {
+            validate_source_repository(repository)?;
+            if commit.len() != 40
+                || !commit.bytes().all(|byte| byte.is_ascii_hexdigit())
+                || commit.bytes().any(|byte| byte.is_ascii_uppercase())
+            {
+                return Err(invalid(format!(
+                    "source asset {:?} must pin a 40-character lowercase commit",
+                    asset.name
+                )));
+            }
+            let expected = format!("https://github.com/{repository}/archive/{commit}.zip");
+            if asset.url != expected {
+                return Err(invalid(format!(
+                    "source asset {:?} URL must point to its pinned repository commit",
+                    asset.name
+                )));
+            }
+        }
+        ("source", _, _) => {
+            return Err(invalid(format!(
+                "source asset {:?} must declare sourceRepository and sourceCommit",
+                asset.name
+            )));
+        }
+        (_, None, None) => {}
+        _ => {
+            return Err(invalid(format!(
+                "non-source asset {:?} must not declare source repository metadata",
+                asset.name
+            )));
+        }
     }
     Ok(())
 }

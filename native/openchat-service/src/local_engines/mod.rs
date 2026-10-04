@@ -4,6 +4,7 @@ mod catalog;
 mod gguf;
 pub(crate) mod installer;
 pub(crate) mod models;
+mod python_runtime;
 mod runtime;
 
 use std::time::Duration;
@@ -108,7 +109,8 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
     Ok(json!({
         "engines": engines,
         "models": registered_models.iter().map(|model| {
-            Ok(models::to_json(model, runtime::is_model_available(storage, model)?)?)
+            let available = runtime::is_model_available(storage, model)?;
+            models::to_json(model, available)
         }).collect::<Result<Vec<_>, ServiceError>>()?,
         "runtime": runtime,
         "host": {
@@ -193,7 +195,7 @@ pub(crate) async fn register_model(
         )
     })??;
     let available = runtime::is_model_available(storage, &model)?;
-    Ok(models::to_json(&model, available)?)
+    models::to_json(&model, available)
 }
 
 pub(crate) async fn discover_models(
@@ -267,7 +269,6 @@ pub(crate) fn find_variant(
 
 pub(crate) async fn can_install(manifest: &EngineManifest, variant: &EngineVariant) -> bool {
     if manifest.catalog_status != "installable"
-        || !cfg!(windows)
         || variant.os != host_os()
         || variant.architecture != host_architecture()
     {
@@ -285,8 +286,7 @@ fn variant_json(
     recommended_variant: Option<&str>,
 ) -> Result<Value, ServiceError> {
     let installed = installer::installed_engine(storage, manifest, variant)?.is_some();
-    let platform_matches =
-        cfg!(windows) && variant.os == host_os() && variant.architecture == host_architecture();
+    let platform_matches = variant.os == host_os() && variant.architecture == host_architecture();
     let hardware_status = variant_hardware_status(variant, nvidia_driver);
     let can_install = manifest.catalog_status == "installable"
         && platform_matches
@@ -298,10 +298,8 @@ fn variant_json(
         "blocked"
     } else if !platform_matches {
         "unsupported_platform"
-    } else if let Some(status) = hardware_status {
-        status
     } else {
-        "available"
+        hardware_status.unwrap_or("available")
     };
     Ok(json!({
         "variantId": variant.variant_id,
@@ -442,6 +440,21 @@ fn nvidia_driver_executable() -> Option<std::path::PathBuf> {
 
 #[cfg(not(windows))]
 fn nvidia_driver_executable() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::unix::fs::PermissionsExt;
+
+        return std::env::var_os("PATH").and_then(|path| {
+            std::env::split_paths(&path).find_map(|directory| {
+                let executable = directory.join("nvidia-smi");
+                let metadata = std::fs::metadata(&executable).ok()?;
+                (metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+                    .then_some(executable)
+            })
+        });
+    }
+
+    #[cfg(not(target_os = "linux"))]
     None
 }
 
@@ -528,7 +541,7 @@ mod tests {
             manifest.source_commit.as_deref(),
             Some("12414d0af7b3beeabdda5990f6b554b996fa1416")
         );
-        assert_eq!(manifest.catalog_status, "blocked");
+        assert_eq!(manifest.catalog_status, "installable");
 
         for (variant_id, asset_name, expected_size, expected_sha256) in [
             (
@@ -562,6 +575,32 @@ mod tests {
                 .expect("matching ExLlama wheel should exist");
             assert_eq!(asset.size_bytes, expected_size);
             assert_eq!(asset.sha256, expected_sha256);
+            assert!(
+                variant
+                    .required_files
+                    .iter()
+                    .any(|path| path == "tabbyAPI/main.py")
+            );
+            let uv_asset = variant
+                .assets
+                .iter()
+                .find(|asset| asset.role == "companion")
+                .expect("pinned uv runtime asset should exist");
+            assert!(uv_asset.name.starts_with("uv-"));
+            assert!(uv_asset.sha256.starts_with("sha256:"));
+            let source_asset = variant
+                .assets
+                .iter()
+                .find(|asset| asset.role == "source")
+                .expect("pinned TabbyAPI source should exist");
+            assert_eq!(
+                source_asset.source_repository.as_deref(),
+                Some("theroyallab/tabbyAPI")
+            );
+            assert_eq!(
+                source_asset.source_commit.as_deref(),
+                Some("be74bf0a00bcb3a518e6feb7606f150c189be637")
+            );
         }
     }
 

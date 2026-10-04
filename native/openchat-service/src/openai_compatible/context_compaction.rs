@@ -121,7 +121,7 @@ async fn summarize_transcript(
     let summary_instructions = summary_instructions();
     let body = if route.uses_responses_api {
         json!({
-            "model": route.model_id.as_str(),
+            "model": route.provider_model_id.as_str(),
             "input": [
                 {"role": "developer", "content": [{"type": "input_text", "text": summary_instructions}]},
                 {"role": "user", "content": [{"type": "input_text", "text": transcript}]}
@@ -131,7 +131,7 @@ async fn summarize_transcript(
         })
     } else {
         json!({
-            "model": route.model_id.as_str(),
+            "model": route.provider_model_id.as_str(),
             "messages": [
                 {"role": "system", "content": summary_instructions},
                 {"role": "user", "content": transcript}
@@ -150,7 +150,9 @@ async fn summarize_transcript(
             .header("x-opencode-session", session_id)
             .header("x-opencode-project", "global");
     }
-    if route.is_free {
+    if let Some(local_api_key) = route.local_api_key.as_deref() {
+        request = request.bearer_auth(local_api_key.as_str());
+    } else if route.is_free {
         request = request.bearer_auth("public");
     } else if let Some(api_key) = api_key {
         request = request.bearer_auth(api_key);
@@ -483,6 +485,7 @@ mod tests {
 
         let route = ChatRoute {
             model_id: "gemini-test-model".to_owned(),
+            provider_model_id: "gemini-test-model".to_owned(),
             provider_id: Some("gemini".to_owned()),
             chat_url: format!("http://{address}/chat/completions"),
             is_free: false,
@@ -493,6 +496,7 @@ mod tests {
             supports_images: false,
             supports_tool_calls: None,
             connection_id: Some("gemini".to_owned()),
+            local_api_key: None,
         };
         let (_cancel_sender, mut cancellation) = watch::channel(false);
         let summary = summarize_transcript(
@@ -593,6 +597,7 @@ mod tests {
 
         let route = ChatRoute {
             model_id: "big-pickle".to_owned(),
+            provider_model_id: "big-pickle".to_owned(),
             provider_id: Some("opencode".to_owned()),
             chat_url: format!("http://{address}/chat/completions"),
             is_free: false,
@@ -603,6 +608,7 @@ mod tests {
             supports_images: false,
             supports_tool_calls: None,
             connection_id: None,
+            local_api_key: None,
         };
         let (_cancel_sender, mut cancellation) = watch::channel(false);
         let summary = summarize_history(
@@ -644,6 +650,7 @@ mod tests {
     async fn opencode_free_tier_compacts_locally_within_the_summary_budget() {
         let route = ChatRoute {
             model_id: "big-pickle".to_owned(),
+            provider_model_id: "big-pickle".to_owned(),
             provider_id: Some("opencode".to_owned()),
             chat_url: "not a valid provider URL".to_owned(),
             is_free: true,
@@ -654,6 +661,7 @@ mod tests {
             supports_images: false,
             supports_tool_calls: None,
             connection_id: None,
+            local_api_key: None,
         };
         let mut latest = message("latest", &format!("{} LATEST-END", "ö界🙂".repeat(100)));
         latest.role = "assistant".to_owned();
@@ -681,6 +689,7 @@ mod tests {
     async fn opencode_free_tier_local_compaction_honors_cancellation() {
         let route = ChatRoute {
             model_id: "big-pickle".to_owned(),
+            provider_model_id: "big-pickle".to_owned(),
             provider_id: Some("opencode".to_owned()),
             chat_url: "not a valid provider URL".to_owned(),
             is_free: true,
@@ -691,6 +700,7 @@ mod tests {
             supports_images: false,
             supports_tool_calls: None,
             connection_id: None,
+            local_api_key: None,
         };
         let messages = [message("history", "historical detail")];
         let (_cancel_sender, mut cancellation) = watch::channel(true);
@@ -725,6 +735,7 @@ mod tests {
         });
         let route = ChatRoute {
             model_id: "big-pickle".to_owned(),
+            provider_model_id: "big-pickle".to_owned(),
             provider_id: Some("opencode".to_owned()),
             chat_url: format!("http://{address}/chat/completions"),
             is_free: true,
@@ -735,6 +746,7 @@ mod tests {
             supports_images: false,
             supports_tool_calls: None,
             connection_id: None,
+            local_api_key: None,
         };
         let (_cancel_sender, mut cancellation) = watch::channel(false);
 

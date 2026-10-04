@@ -33,6 +33,7 @@ use crate::{
 
 const INSTALL_PROGRESS_EVENT: &str = "local.engines.install.progress";
 const INSTALL_MARKER: &str = ".openchat-engine.json";
+const PENDING_INSTALL_MARKER: &str = ".openchat-installing.json";
 const INSTALL_MARKER_VERSION: u32 = 1;
 const MAX_ARCHIVE_ENTRIES: usize = 100_000;
 const MAX_ARCHIVE_ENTRY_BYTES: u64 = 4 * 1024 * 1024 * 1024;
@@ -62,6 +63,15 @@ struct InstalledMarker {
     entrypoint: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PendingInstallMarker {
+    marker_version: u32,
+    engine_id: String,
+    variant_id: String,
+    release_tag: String,
+}
+
 /// Install one validated catalog variant and publish it atomically.
 pub async fn install_engine_variant(
     storage: &AppStorage,
@@ -81,6 +91,9 @@ pub async fn install_engine_variant(
     check_cancelled(cancellation)?;
 
     let target = installed_engine_path(storage, manifest, variant)?;
+    if manifest.engine_id == "exllama" && target.exists() {
+        remove_interrupted_exllama_installation(&target, manifest, variant)?;
+    }
     let runtimes_root = storage.root().join("runtimes");
     let staging_root = runtimes_root
         .join(".staging")
@@ -101,7 +114,6 @@ pub async fn install_engine_variant(
             manifest,
             variant,
             &target,
-            &staging_root,
             &payload_root,
             &downloads_root,
             request_id,
@@ -112,10 +124,30 @@ pub async fn install_engine_variant(
     }
     .await;
 
-    if result.is_err() {
-        let _ = async_fs::remove_dir_all(&staging_root).await;
+    match result {
+        Ok(installed) => {
+            remove_directory_if_present(&staging_root).await?;
+            for asset in &variant.assets {
+                send_progress(
+                    request_id,
+                    events,
+                    manifest,
+                    variant,
+                    asset,
+                    variant.assets.len().saturating_sub(1),
+                    variant.assets.len(),
+                    "ready",
+                    asset.size_bytes,
+                )
+                .await?;
+            }
+            Ok(installed)
+        }
+        Err(error) => {
+            remove_directory_if_present(&staging_root).await?;
+            Err(error)
+        }
     }
-    result
 }
 
 /// Return the deterministic publication path for a catalog variant.
@@ -197,7 +229,6 @@ async fn install_staged(
     manifest: &EngineManifest,
     variant: &EngineVariant,
     target: &Path,
-    staging_root: &Path,
     payload_root: &Path,
     downloads_root: &Path,
     request_id: &Value,
@@ -226,7 +257,7 @@ async fn install_staged(
         )
         .await?;
 
-        let archive_path = downloads_root.join(format!("asset-{index}.zip"));
+        let archive_path = downloads_root.join(format!("asset-{index}.download"));
         download_asset(
             &client,
             asset,
@@ -254,15 +285,58 @@ async fn install_staged(
             asset.size_bytes,
         )
         .await?;
-        extract_zip_archive(&archive_path, payload_root)?;
-        async_fs::remove_file(&archive_path)
-            .await
-            .map_err(|_| storage_error())?;
+        extract_downloaded_asset(&archive_path, payload_root, manifest, asset)?;
+        if asset.name.to_ascii_lowercase().ends_with(".whl") {
+            let wheel_directory = payload_root.join("wheels");
+            async_fs::create_dir_all(&wheel_directory)
+                .await
+                .map_err(|_| storage_error())?;
+            async_fs::rename(&archive_path, wheel_directory.join(&asset.name))
+                .await
+                .map_err(|_| storage_error())?;
+        } else {
+            async_fs::remove_file(&archive_path)
+                .await
+                .map_err(|_| storage_error())?;
+        }
     }
 
     check_cancelled(cancellation)?;
-    verify_required_files(payload_root, manifest, variant)?;
-    write_install_marker(payload_root, manifest, variant).await?;
+
+    let published_root = if manifest.engine_id == "exllama" {
+        normalize_exllama_source_tree(payload_root, variant)?;
+        write_pending_install_marker(payload_root, manifest, variant).await?;
+        let target_parent = target.parent().ok_or_else(storage_error)?;
+        async_fs::create_dir_all(target_parent)
+            .await
+            .map_err(|_| storage_error())?;
+        if target.exists() {
+            return Err(installation_exists_error());
+        }
+        async_fs::rename(payload_root, &target)
+            .await
+            .map_err(|_| publish_error())?;
+        if let Err(error) =
+            super::python_runtime::install_exllama(target, variant, cancellation).await
+        {
+            async_fs::remove_dir_all(&target)
+                .await
+                .map_err(|_| storage_error())?;
+            return Err(error);
+        }
+        target
+    } else {
+        payload_root
+    };
+
+    check_cancelled(cancellation)?;
+    verify_required_files(published_root, manifest, variant)?;
+    write_install_marker(published_root, manifest, variant).await?;
+    if manifest.engine_id == "exllama" {
+        async_fs::remove_file(published_root.join(PENDING_INSTALL_MARKER))
+            .await
+            .map_err(|_| storage_error())?;
+    }
     check_cancelled(cancellation)?;
 
     if let Some(asset) = variant.assets.last() {
@@ -280,34 +354,195 @@ async fn install_staged(
         .await?;
     }
 
-    let target_parent = target.parent().ok_or_else(storage_error)?;
-    async_fs::create_dir_all(target_parent)
-        .await
-        .map_err(|_| storage_error())?;
-    if target.exists() {
+    if manifest.engine_id != "exllama" {
+        let target_parent = target.parent().ok_or_else(storage_error)?;
+        async_fs::create_dir_all(target_parent)
+            .await
+            .map_err(|_| storage_error())?;
+        if target.exists() {
+            return Err(installation_exists_error());
+        }
+        async_fs::rename(payload_root, &target)
+            .await
+            .map_err(|_| publish_error())?;
+    }
+
+    let installed = installed_engine(storage, manifest, variant)?.ok_or_else(publish_error)?;
+    Ok(installed)
+}
+
+async fn remove_directory_if_present(path: &Path) -> Result<(), ServiceError> {
+    match async_fs::try_exists(path).await {
+        Ok(false) => Ok(()),
+        Ok(true) => async_fs::remove_dir_all(path)
+            .await
+            .map_err(|_| storage_error()),
+        Err(_) => Err(storage_error()),
+    }
+}
+
+fn remove_interrupted_exllama_installation(
+    target: &Path,
+    manifest: &EngineManifest,
+    variant: &EngineVariant,
+) -> Result<(), ServiceError> {
+    let metadata = fs::symlink_metadata(target).map_err(|_| storage_error())?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
         return Err(installation_exists_error());
     }
-    async_fs::rename(payload_root, target)
-        .await
-        .map_err(|_| publish_error())?;
-
-    let installed = installed_engine(storage, manifest, variant)?.ok_or_else(|| publish_error())?;
-    for asset in &variant.assets {
-        send_progress(
-            request_id,
-            events,
-            manifest,
-            variant,
-            asset,
-            asset_count.saturating_sub(1),
-            asset_count,
-            "ready",
-            asset.size_bytes,
-        )
-        .await?;
+    let pending_path = target.join(PENDING_INSTALL_MARKER);
+    let pending = fs::read(&pending_path)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<PendingInstallMarker>(&bytes).ok());
+    let Some(pending) = pending else {
+        return Err(installation_exists_error());
+    };
+    if pending.marker_version != INSTALL_MARKER_VERSION
+        || pending.engine_id != manifest.engine_id
+        || pending.variant_id != variant.variant_id
+        || pending.release_tag != manifest.release_tag
+    {
+        return Err(installation_exists_error());
     }
-    let _ = async_fs::remove_dir_all(staging_root).await;
-    Ok(installed)
+    fs::remove_dir_all(target).map_err(|_| storage_error())
+}
+
+fn extract_downloaded_asset(
+    archive_path: &Path,
+    destination: &Path,
+    manifest: &EngineManifest,
+    asset: &EngineAsset,
+) -> Result<(), ServiceError> {
+    let name = asset.name.to_ascii_lowercase();
+    if name.ends_with(".whl") {
+        if manifest.engine_id != "exllama" || asset.role != "primary" {
+            return Err(unsupported_archive_error());
+        }
+        return Ok(());
+    }
+    if name.ends_with(".zip") {
+        return extract_zip_archive(archive_path, destination);
+    }
+    if name.ends_with(".tar.gz") {
+        return extract_tar_gz_archive(archive_path, destination);
+    }
+    Err(unsupported_archive_error())
+}
+
+fn extract_tar_gz_archive(archive_path: &Path, destination: &Path) -> Result<(), ServiceError> {
+    use flate2::read::GzDecoder;
+    use tar::Archive;
+
+    let archive_file = File::open(archive_path).map_err(|_| archive_error())?;
+    let decoder = GzDecoder::new(archive_file);
+    let mut archive = Archive::new(decoder);
+    let entries = archive.entries().map_err(|_| archive_error())?;
+    let mut paths = HashSet::new();
+    let mut extracted_bytes = 0_u64;
+    let mut entry_count = 0_usize;
+
+    for entry in entries {
+        entry_count = entry_count.checked_add(1).ok_or_else(archive_error)?;
+        if entry_count > MAX_ARCHIVE_ENTRIES {
+            return Err(archive_error());
+        }
+        let mut entry = entry.map_err(|_| archive_error())?;
+        let entry_type = entry.header().entry_type();
+        if !(entry_type.is_file() || entry_type.is_dir()) {
+            return Err(archive_error());
+        }
+        let is_directory = entry_type.is_dir();
+        let raw_path = entry
+            .path()
+            .map_err(|_| archive_error())?
+            .into_owned()
+            .into_os_string()
+            .into_string()
+            .map_err(|_| archive_error())?;
+        let relative_path = archive_relative_path(&raw_path, is_directory)?;
+        if !paths.insert(relative_path.clone()) {
+            return Err(archive_error());
+        }
+        let entry_size = entry.header().size().map_err(|_| archive_error())?;
+        if entry_size > MAX_ARCHIVE_ENTRY_BYTES {
+            return Err(archive_error());
+        }
+        extracted_bytes = extracted_bytes
+            .checked_add(entry_size)
+            .ok_or_else(archive_error)?;
+        if extracted_bytes > MAX_EXTRACTED_BYTES {
+            return Err(archive_error());
+        }
+
+        let output_path = destination.join(relative_path);
+        if entry_type.is_dir() {
+            fs::create_dir_all(&output_path).map_err(|_| storage_error())?;
+            continue;
+        }
+        let parent = output_path.parent().ok_or_else(archive_error)?;
+        fs::create_dir_all(parent).map_err(|_| storage_error())?;
+        let mut output = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&output_path)
+            .map_err(|_| storage_error())?;
+        let copied = io::copy(&mut entry, &mut output).map_err(|_| storage_error())?;
+        if copied != entry_size {
+            return Err(archive_error());
+        }
+        output.sync_all().map_err(|_| storage_error())?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = entry.header().mode().map_err(|_| archive_error())?;
+            fs::set_permissions(&output_path, fs::Permissions::from_mode(mode & 0o777))
+                .map_err(|_| storage_error())?;
+        }
+    }
+    if entry_count == 0 {
+        return Err(archive_error());
+    }
+    Ok(())
+}
+
+fn normalize_exllama_source_tree(
+    payload_root: &Path,
+    variant: &EngineVariant,
+) -> Result<(), ServiceError> {
+    let commit = variant
+        .assets
+        .iter()
+        .find(|asset| asset.role == "source")
+        .and_then(|asset| asset.source_commit.as_deref())
+        .ok_or_else(invalid_install_error)?;
+    let source_root = payload_root.join(format!("tabbyAPI-{commit}"));
+    let expected_start = source_root.join("start.py");
+    if !expected_start.is_file() || payload_root.join("tabbyAPI").exists() {
+        return Err(required_file_error());
+    }
+    fs::rename(source_root, payload_root.join("tabbyAPI")).map_err(|_| storage_error())
+}
+
+async fn write_pending_install_marker(
+    destination: &Path,
+    manifest: &EngineManifest,
+    variant: &EngineVariant,
+) -> Result<(), ServiceError> {
+    let marker = PendingInstallMarker {
+        marker_version: INSTALL_MARKER_VERSION,
+        engine_id: manifest.engine_id.clone(),
+        variant_id: variant.variant_id.clone(),
+        release_tag: manifest.release_tag.clone(),
+    };
+    let encoded = serde_json::to_vec(&marker).map_err(|_| storage_error())?;
+    let marker_path = destination.join(PENDING_INSTALL_MARKER);
+    let mut file = async_fs::File::create(marker_path)
+        .await
+        .map_err(|_| storage_error())?;
+    file.write_all(&encoded)
+        .await
+        .map_err(|_| storage_error())?;
+    file.sync_all().await.map_err(|_| storage_error())
 }
 
 async fn download_asset(
@@ -357,9 +592,7 @@ async fn download_asset(
         };
         check_cancelled(cancellation)?;
         let chunk_len = u64::try_from(chunk.len()).map_err(|_| download_error())?;
-        received = received
-            .checked_add(chunk_len)
-            .ok_or_else(|| download_error())?;
+        received = received.checked_add(chunk_len).ok_or_else(download_error)?;
         if received > asset.size_bytes {
             return Err(integrity_error());
         }
@@ -426,7 +659,7 @@ fn extract_zip_archive(archive_path: &Path, destination: &Path) -> Result<(), Se
         if entry.is_symlink() {
             return Err(archive_error());
         }
-        let relative_path = archive_relative_path(entry.name())?;
+        let relative_path = archive_relative_path(entry.name(), entry.is_dir())?;
         if !paths.insert(relative_path.clone()) {
             return Err(archive_error());
         }
@@ -580,16 +813,37 @@ fn validate_install_request(
             {
                 return Err(invalid_install_error());
             }
+        } else if asset.role == "source" {
+            if asset.companion_for.is_some() {
+                return Err(invalid_install_error());
+            }
         } else {
             return Err(invalid_install_error());
         }
-        if !asset.url.starts_with("https://github.com/")
-            || !asset.url.contains("/releases/download/")
-        {
+        let is_release_asset = asset.url.starts_with("https://github.com/")
+            && asset.url.contains("/releases/download/");
+        let is_pinned_source_archive = if asset.role == "source" {
+            asset
+                .source_repository
+                .as_deref()
+                .zip(asset.source_commit.as_deref())
+                .is_some_and(|(repository, commit)| {
+                    asset.url == format!("https://github.com/{repository}/archive/{commit}.zip")
+                })
+        } else {
+            false
+        };
+        if !is_release_asset && !is_pinned_source_archive {
             return Err(invalid_install_error());
         }
         validate_digest_text(&asset.sha256)?;
-        if !asset.name.to_ascii_lowercase().ends_with(".zip") {
+        let name = asset.name.to_ascii_lowercase();
+        let supported_asset = name.ends_with(".zip")
+            || name.ends_with(".tar.gz")
+            || (manifest.engine_id == "exllama"
+                && asset.role == "primary"
+                && name.ends_with(".whl"));
+        if !supported_asset {
             return Err(unsupported_archive_error());
         }
     }
@@ -622,13 +876,18 @@ fn digest_matches(expected: &str, actual: &[u8]) -> bool {
     actual_hex == expected
 }
 
-fn archive_relative_path(name: &str) -> Result<PathBuf, ServiceError> {
+fn archive_relative_path(name: &str, is_directory: bool) -> Result<PathBuf, ServiceError> {
+    let name = if is_directory {
+        name.strip_suffix('/').unwrap_or(name)
+    } else {
+        name
+    };
     if name.is_empty()
         || name.contains('\\')
         || name.contains('\0')
-        || name
-            .split('/')
-            .any(|part| part.is_empty() || part == "." || part == "..")
+        || name.split('/').enumerate().any(|(index, part)| {
+            part.is_empty() || part == "." || part == ".." || (index == 0 && part.contains(':'))
+        })
     {
         return Err(archive_error());
     }
@@ -824,13 +1083,14 @@ fn progress_error() -> ServiceError {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::fs;
 
+    use flate2::{Compression, write::GzEncoder};
     use uuid::Uuid;
 
     use super::{
         INSTALL_MARKER, INSTALL_MARKER_VERSION, InstalledMarker, archive_relative_path,
-        installed_engine, installed_engine_path,
+        extract_tar_gz_archive, installed_engine, installed_engine_path,
     };
     use crate::{local_engines::catalog::parse_manifest, storage::AppStorage};
 
@@ -839,12 +1099,48 @@ mod tests {
 
     #[test]
     fn rejects_unsafe_archive_paths() {
-        assert!(archive_relative_path("../payload.exe").is_err());
-        assert!(archive_relative_path("/absolute/payload.exe").is_err());
-        assert!(archive_relative_path("C:/payload.exe").is_err());
-        assert!(archive_relative_path("folder\\payload.exe").is_err());
-        assert!(archive_relative_path("folder/./payload.exe").is_err());
-        assert!(archive_relative_path("folder/payload.exe").is_ok());
+        assert!(archive_relative_path("../payload.exe", false).is_err());
+        assert!(archive_relative_path("/absolute/payload.exe", false).is_err());
+        assert!(archive_relative_path("C:/payload.exe", false).is_err());
+        assert!(archive_relative_path("folder\\payload.exe", false).is_err());
+        assert!(archive_relative_path("folder/./payload.exe", false).is_err());
+        assert!(archive_relative_path("folder/payload.exe", false).is_ok());
+        assert!(archive_relative_path("folder/", true).is_ok());
+        assert!(archive_relative_path("folder//", true).is_err());
+    }
+
+    #[test]
+    fn extracts_regular_files_from_a_gzip_tar_archive() {
+        let root = std::env::temp_dir().join(format!("openchat-tar-test-{}", Uuid::new_v4()));
+        fs::create_dir_all(&root).expect("test directory should be created");
+        let archive_path = root.join("uv.tar.gz");
+        let archive_file = fs::File::create(&archive_path).expect("archive file should be created");
+        let encoder = GzEncoder::new(archive_file, Compression::default());
+        let mut archive = tar::Builder::new(encoder);
+        let contents = b"verified test executable";
+        let mut header = tar::Header::new_gnu();
+        header.set_size(contents.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        archive
+            .append_data(&mut header, "uv-x86_64-unknown-linux-gnu/uv", &contents[..])
+            .expect("archive entry should be written");
+        archive
+            .into_inner()
+            .expect("tar archive should finish")
+            .finish()
+            .expect("gzip archive should finish");
+
+        let destination = root.join("extracted");
+        fs::create_dir_all(&destination).expect("extraction directory should be created");
+        extract_tar_gz_archive(&archive_path, &destination)
+            .expect("the regular archive entry should extract");
+        assert_eq!(
+            fs::read(destination.join("uv-x86_64-unknown-linux-gnu/uv"))
+                .expect("the extracted file should be readable"),
+            contents
+        );
+        fs::remove_dir_all(root).expect("test directory should be removed");
     }
 
     #[test]
@@ -878,7 +1174,7 @@ mod tests {
         assert_eq!(installed.entrypoint, entrypoint);
 
         drop(storage);
-        fs::remove_dir_all(PathBuf::from(root)).expect("test storage should be removed");
+        fs::remove_dir_all(root).expect("test storage should be removed");
     }
 
     #[test]
