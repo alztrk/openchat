@@ -430,15 +430,24 @@ pub(crate) fn to_json(model: &RegisteredModel, available: bool) -> Value {
             metadata.is_dir()
         }
     });
+    let context_window = if model.engine_id == "llama_cpp" && model.path_kind == "file" {
+        super::gguf::context_window(&model.path)
+            .ok()
+            .flatten()
+            .map_or(Value::Null, |context_window| json!(context_window))
+    } else {
+        Value::Null
+    };
     json!({
         "id": model.id,
         "engineId": model.engine_id,
         "displayName": model.display_name,
         "description": Value::Null,
-        "contextWindow": Value::Null,
+        "contextWindow": context_window,
         "reasoningLevels": [],
         "supportsReasoning": false,
         "supportsImages": false,
+        "supportsTools": Value::Null,
         "defaultReasoningLevel": Value::Null,
         "path": model.path,
         "pathKind": model.path_kind,

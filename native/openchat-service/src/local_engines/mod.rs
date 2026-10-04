@@ -1,6 +1,7 @@
 //! App-managed local inference engine releases.
 
 mod catalog;
+mod gguf;
 pub(crate) mod installer;
 pub(crate) mod models;
 mod runtime;
@@ -116,7 +117,7 @@ pub(crate) async fn chat_url(
     storage: &AppStorage,
     model_id: &str,
     cancellation: &mut tokio::sync::watch::Receiver<bool>,
-) -> Result<String, ServiceError> {
+) -> Result<runtime::RuntimeChatEndpoint, ServiceError> {
     runtime::chat_url(storage, model_id, cancellation).await
 }
 

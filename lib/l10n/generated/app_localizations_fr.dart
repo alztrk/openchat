@@ -359,6 +359,10 @@ class AppLocalizationsFr extends AppLocalizations {
       'Le modèle local ne répond plus. Redémarrez-le dans Paramètres > Moteurs locaux, puis réessayez.';
 
   @override
+  String get localModelContextUnavailable =>
+      'Le moteur local n\'a pas indiqué sa fenêtre de contexte active. Mettez à jour ou réinstallez llama.cpp, puis réessayez.';
+
+  @override
   String get localModelInferenceFailed =>
       'Le modèle local n’a pas pu traiter cette demande. Vérifiez son modèle de conversation et la mémoire disponible.';
 

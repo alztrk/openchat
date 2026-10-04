@@ -105,8 +105,17 @@ pub(super) async fn resolve_chat_route(
             {
                 return Err(route_error());
             }
-            let chat_url = crate::local_engines::chat_url(storage, &model_id, cancellation).await?;
-            (chat_url, true, false, None, None, false, None, None)
+            let endpoint = crate::local_engines::chat_url(storage, &model_id, cancellation).await?;
+            (
+                endpoint.chat_url,
+                true,
+                false,
+                Some(endpoint.capabilities.context_window),
+                None,
+                endpoint.capabilities.supports_images,
+                endpoint.capabilities.supports_tool_calls,
+                None,
+            )
         }
         Some("vllm" | "exllama") => return Err(local_engine_unavailable_error()),
         Some("chatgpt_api") => {

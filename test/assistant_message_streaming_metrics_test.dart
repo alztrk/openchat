@@ -25,6 +25,10 @@ void main() {
         description: l10n.localModelRuntimeUnavailable,
       ),
       (
+        code: 'local_engine_capability_unavailable',
+        description: l10n.localModelContextUnavailable,
+      ),
+      (
         code: 'local_model_inference_failed',
         description: l10n.localModelInferenceFailed,
       ),

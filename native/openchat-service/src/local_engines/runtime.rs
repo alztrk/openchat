@@ -18,15 +18,30 @@ use super::{
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(300);
 const HEALTH_POLL_INTERVAL: Duration = Duration::from_millis(500);
+const MAX_RUNTIME_PROPERTIES_BYTES: usize = 4 * 1024 * 1024;
 
 static RUNNING_SERVER: OnceLock<Mutex<Option<RunningServer>>> = OnceLock::new();
 static HEALTH_CLIENT: OnceLock<Result<Client, reqwest::Error>> = OnceLock::new();
+static PROPERTIES_CLIENT: OnceLock<Result<Client, reqwest::Error>> = OnceLock::new();
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct RuntimeCapabilities {
+    pub(crate) context_window: i64,
+    pub(crate) supports_images: bool,
+    pub(crate) supports_tool_calls: Option<bool>,
+}
+
+pub(crate) struct RuntimeChatEndpoint {
+    pub(crate) chat_url: String,
+    pub(crate) capabilities: RuntimeCapabilities,
+}
 
 struct RunningServer {
     engine_id: String,
     model_id: String,
     port: u16,
     child: Child,
+    capabilities: Option<RuntimeCapabilities>,
 }
 
 pub(crate) async fn start_model(
@@ -99,6 +114,7 @@ pub(crate) async fn start_model(
         model_id: model.id.clone(),
         port,
         child,
+        capabilities: None,
     });
 
     loop {
@@ -133,6 +149,23 @@ pub(crate) async fn start_model(
             }
         };
         if ready {
+            let capabilities = match runtime_capabilities_or_cancel(port, cancellation).await {
+                Ok(capabilities) => capabilities,
+                Err(error) => {
+                    stop_server(storage, &mut state).await?;
+                    let event = if error.code == "operation_cancelled" {
+                        "runtime_capability_check_cancelled"
+                    } else {
+                        "runtime_capability_check_failed"
+                    };
+                    log_runtime_event(storage, event, Some(error.code), Some(started_at.elapsed()));
+                    return Err(error);
+                }
+            };
+            let Some(server) = state.as_mut() else {
+                return Err(runtime_error());
+            };
+            server.capabilities = Some(capabilities);
             log_runtime_event(storage, "runtime_started", None, Some(started_at.elapsed()));
             return Ok(status_json(state.as_ref(), "running"));
         }
@@ -203,14 +236,23 @@ pub(crate) async fn chat_url(
     storage: &AppStorage,
     model_id: &str,
     cancellation: &mut watch::Receiver<bool>,
-) -> Result<String, ServiceError> {
+) -> Result<RuntimeChatEndpoint, ServiceError> {
     let status = start_model(storage, model_id, cancellation).await?;
     let port = status
         .get("port")
         .and_then(Value::as_u64)
         .and_then(|value| u16::try_from(value).ok())
         .ok_or_else(runtime_error)?;
-    Ok(format!("http://127.0.0.1:{port}/v1/chat/completions"))
+    let state = running_state().lock().await;
+    let server = state
+        .as_ref()
+        .filter(|server| server.model_id == model_id && server.port == port)
+        .ok_or_else(runtime_error)?;
+    let capabilities = server.capabilities.ok_or_else(runtime_capability_error)?;
+    Ok(RuntimeChatEndpoint {
+        chat_url: format!("http://127.0.0.1:{port}/v1/chat/completions"),
+        capabilities,
+    })
 }
 
 pub(crate) fn is_model_available(
@@ -259,6 +301,95 @@ async fn health_check_or_cancel(
     }
 }
 
+async fn runtime_capabilities_or_cancel(
+    port: u16,
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<RuntimeCapabilities, ServiceError> {
+    if *cancellation.borrow() || cancellation.has_changed().is_err() {
+        return Err(cancelled_error());
+    }
+    tokio::select! {
+        changed = cancellation.changed() => {
+            if changed.is_err() || *cancellation.borrow() {
+                Err(cancelled_error())
+            } else {
+                Err(runtime_capability_error())
+            }
+        }
+        capabilities = read_runtime_capabilities(port) => capabilities,
+    }
+}
+
+async fn read_runtime_capabilities(port: u16) -> Result<RuntimeCapabilities, ServiceError> {
+    let client = PROPERTIES_CLIENT.get_or_init(|| {
+        Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(Duration::from_secs(2))
+            .timeout(Duration::from_secs(10))
+            .build()
+    });
+    let client = client.as_ref().map_err(|_| runtime_capability_error())?;
+    let mut response = client
+        .get(format!("http://127.0.0.1:{port}/props"))
+        .send()
+        .await
+        .map_err(|_| runtime_capability_error())?;
+    if !response.status().is_success()
+        || response
+            .content_length()
+            .is_some_and(|length| length > MAX_RUNTIME_PROPERTIES_BYTES as u64)
+    {
+        return Err(runtime_capability_error());
+    }
+
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| runtime_capability_error())?
+    {
+        if body.len().saturating_add(chunk.len()) > MAX_RUNTIME_PROPERTIES_BYTES {
+            return Err(runtime_capability_error());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let properties =
+        serde_json::from_slice::<Value>(&body).map_err(|_| runtime_capability_error())?;
+    parse_runtime_capabilities(&properties)
+}
+
+fn parse_runtime_capabilities(properties: &Value) -> Result<RuntimeCapabilities, ServiceError> {
+    let context_window = properties
+        .pointer("/default_generation_settings/n_ctx")
+        .and_then(Value::as_i64)
+        .filter(|context_window| *context_window > 0)
+        .ok_or_else(runtime_capability_error)?;
+    let supports_images = properties
+        .pointer("/modalities/vision")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let supports_tool_calls = match (
+        properties
+            .pointer("/chat_template_caps/supports_tools")
+            .and_then(Value::as_bool),
+        properties
+            .pointer("/chat_template_caps/supports_tool_calls")
+            .and_then(Value::as_bool),
+    ) {
+        (Some(supports_tools), Some(supports_tool_calls)) => {
+            Some(supports_tools && supports_tool_calls)
+        }
+        _ => None,
+    };
+
+    Ok(RuntimeCapabilities {
+        context_window,
+        supports_images,
+        supports_tool_calls,
+    })
+}
+
 async fn available_loopback_port() -> Result<u16, ServiceError> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
@@ -299,16 +430,15 @@ async fn stop_server(
         .try_wait()
         .map_err(|_| runtime_error())?
         .is_none()
+        && (server.child.kill().await.is_err() || server.child.wait().await.is_err())
     {
-        if server.child.kill().await.is_err() || server.child.wait().await.is_err() {
-            log_runtime_event(
-                storage,
-                "runtime_stop_failed",
-                Some("local_engine_runtime_unavailable"),
-                None,
-            );
-            return Err(runtime_error());
-        }
+        log_runtime_event(
+            storage,
+            "runtime_stop_failed",
+            Some("local_engine_runtime_unavailable"),
+            None,
+        );
+        return Err(runtime_error());
     }
     log_runtime_event(storage, "runtime_stopped", None, None);
     Ok(())
@@ -377,6 +507,14 @@ fn runtime_error() -> ServiceError {
     )
 }
 
+fn runtime_capability_error() -> ServiceError {
+    ServiceError::new(
+        "local_engine_capability_unavailable",
+        "The local inference server did not report a valid context window and capability status.",
+        true,
+    )
+}
+
 fn cancelled_error() -> ServiceError {
     ServiceError::new(
         "operation_cancelled",
@@ -390,6 +528,7 @@ mod tests {
     use std::{fs, path::PathBuf};
 
     use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
         net::TcpListener,
         sync::watch,
         time::{Duration, timeout},
@@ -398,7 +537,10 @@ mod tests {
 
     use crate::storage::AppStorage;
 
-    use super::{health_check_or_cancel, start_model};
+    use super::{
+        MAX_RUNTIME_PROPERTIES_BYTES, RuntimeCapabilities, health_check_or_cancel,
+        parse_runtime_capabilities, read_runtime_capabilities, start_model,
+    };
 
     struct TestDirectory(PathBuf);
 
@@ -476,5 +618,168 @@ mod tests {
         let error = result.expect_err("a cancelled readiness wait should stop");
 
         assert_eq!(error.code, "operation_cancelled");
+    }
+
+    #[tokio::test]
+    async fn reads_reported_capabilities_from_the_local_props_endpoint() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("the test properties endpoint should bind");
+        let port = listener
+            .local_addr()
+            .expect("the test properties endpoint should have an address")
+            .port();
+        let responder = tokio::spawn(async move {
+            let (mut stream, _) = listener
+                .accept()
+                .await
+                .expect("the properties request should reach the test endpoint");
+            let mut request = [0; 1024];
+            let _ = stream
+                .read(&mut request)
+                .await
+                .expect("the HTTP request should be readable");
+            let body = r#"{"default_generation_settings":{"n_ctx":32768},"modalities":{"vision":true},"chat_template_caps":{"supports_tools":true,"supports_tool_calls":true},"model_path":"private"}"#;
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream
+                .write_all(response.as_bytes())
+                .await
+                .expect("the properties response should be written");
+        });
+
+        assert_eq!(
+            read_runtime_capabilities(port)
+                .await
+                .expect("reported properties should be read"),
+            RuntimeCapabilities {
+                context_window: 32_768,
+                supports_images: true,
+                supports_tool_calls: Some(true),
+            }
+        );
+        responder
+            .await
+            .expect("the properties server should finish");
+    }
+
+    #[tokio::test]
+    async fn rejects_a_props_response_over_the_body_limit() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("the test properties endpoint should bind");
+        let port = listener
+            .local_addr()
+            .expect("the test properties endpoint should have an address")
+            .port();
+        let responder = tokio::spawn(async move {
+            let (mut stream, _) = listener
+                .accept()
+                .await
+                .expect("the properties request should reach the test endpoint");
+            let mut request = [0; 1024];
+            let _ = stream
+                .read(&mut request)
+                .await
+                .expect("the HTTP request should be readable");
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                MAX_RUNTIME_PROPERTIES_BYTES + 1
+            );
+            stream
+                .write_all(response.as_bytes())
+                .await
+                .expect("the oversized response header should be written");
+        });
+
+        assert_eq!(
+            read_runtime_capabilities(port)
+                .await
+                .expect_err("an oversized response must be rejected")
+                .code,
+            "local_engine_capability_unavailable"
+        );
+        responder
+            .await
+            .expect("the properties server should finish");
+    }
+
+    #[test]
+    fn parses_only_reported_runtime_capabilities() {
+        let properties = serde_json::json!({
+            "default_generation_settings": {"n_ctx": 32_768},
+            "modalities": {"vision": true},
+            "chat_template_caps": {
+                "supports_tools": true,
+                "supports_tool_calls": true
+            },
+            "model_path": "private path must not be returned"
+        });
+
+        assert_eq!(
+            parse_runtime_capabilities(&properties).expect("capabilities should parse"),
+            RuntimeCapabilities {
+                context_window: 32_768,
+                supports_images: true,
+                supports_tool_calls: Some(true),
+            }
+        );
+    }
+
+    #[test]
+    fn refuses_missing_or_invalid_effective_context() {
+        for properties in [
+            serde_json::json!({"modalities": {"vision": true}}),
+            serde_json::json!({"default_generation_settings": {"n_ctx": 0}}),
+            serde_json::json!({"default_generation_settings": {"n_ctx": "32768"}}),
+        ] {
+            assert_eq!(
+                parse_runtime_capabilities(&properties)
+                    .expect_err("invalid context metadata should fail")
+                    .code,
+                "local_engine_capability_unavailable"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_tool_and_vision_capabilities_are_not_inferred() {
+        let properties = serde_json::json!({
+            "default_generation_settings": {"n_ctx": 4_096},
+            "chat_template_caps": {"supports_tools": true}
+        });
+
+        assert_eq!(
+            parse_runtime_capabilities(&properties).expect("context should parse"),
+            RuntimeCapabilities {
+                context_window: 4_096,
+                supports_images: false,
+                supports_tool_calls: None,
+            }
+        );
+
+        for chat_template_caps in [
+            serde_json::json!({
+                "supports_tools": false,
+                "supports_tool_calls": true
+            }),
+            serde_json::json!({
+                "supports_tools": true,
+                "supports_tool_calls": false
+            }),
+        ] {
+            let properties = serde_json::json!({
+                "default_generation_settings": {"n_ctx": 4_096},
+                "chat_template_caps": chat_template_caps
+            });
+            assert_eq!(
+                parse_runtime_capabilities(&properties)
+                    .expect("known context should parse")
+                    .supports_tool_calls,
+                Some(false)
+            );
+        }
     }
 }

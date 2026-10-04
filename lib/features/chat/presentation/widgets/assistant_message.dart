@@ -185,6 +185,8 @@ class AssistantMessage extends StatelessWidget {
         'local_engine_start_failed' => l10n.localModelStartError,
         'local_engine_start_timeout' => l10n.localModelStartTimeout,
         'local_engine_runtime_unavailable' => l10n.localModelRuntimeUnavailable,
+        'local_engine_capability_unavailable' =>
+          l10n.localModelContextUnavailable,
         'local_model_inference_failed' => l10n.localModelInferenceFailed,
         'context_window_exceeded' ||
         'context_compaction_input_too_large' => l10n.contextWindowExceeded,

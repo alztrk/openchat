@@ -360,6 +360,10 @@ class AppLocalizationsDe extends AppLocalizations {
       'Das lokale Modell reagiert nicht mehr. Starten Sie es unter Einstellungen > Lokale Engines neu und versuchen Sie es erneut.';
 
   @override
+  String get localModelContextUnavailable =>
+      'Die lokale Laufzeit hat ihr aktives Kontextfenster nicht gemeldet. Aktualisieren oder installieren Sie llama.cpp erneut und versuchen Sie es noch einmal.';
+
+  @override
   String get localModelInferenceFailed =>
       'Das lokale Modell konnte die Anfrage nicht verarbeiten. Prüfen Sie das Chat-Template und den verfügbaren Arbeitsspeicher.';
 

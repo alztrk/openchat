@@ -686,6 +686,12 @@ abstract class AppLocalizations {
   /// **'The local model stopped responding. Restart it from Settings > Local engines and try again.'**
   String get localModelRuntimeUnavailable;
 
+  /// No description provided for @localModelContextUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The local runtime did not report its active context window. Update or reinstall llama.cpp, then try again.'**
+  String get localModelContextUnavailable;
+
   /// No description provided for @localModelInferenceFailed.
   ///
   /// In en, this message translates to:

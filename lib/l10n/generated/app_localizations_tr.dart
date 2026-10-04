@@ -349,6 +349,10 @@ class AppLocalizationsTr extends AppLocalizations {
       'Yerel model yanıt vermeyi durdurdu. Ayarlar > Yerel motorlar bölümünden yeniden başlatıp tekrar deneyin.';
 
   @override
+  String get localModelContextUnavailable =>
+      'Yerel motor etkin bağlam sınırını bildirmedi. llama.cpp\'yi güncelleyip veya yeniden kurup tekrar deneyin.';
+
+  @override
   String get localModelInferenceFailed =>
       'Yerel model bu isteği işleyemedi. Sohbet şablonunu ve kullanılabilir belleği kontrol edin.';
 

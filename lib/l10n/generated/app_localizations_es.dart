@@ -356,6 +356,10 @@ class AppLocalizationsEs extends AppLocalizations {
       'El modelo local dejó de responder. Reinícialo en Ajustes > Motores locales y vuelve a intentarlo.';
 
   @override
+  String get localModelContextUnavailable =>
+      'El motor local no indicó su ventana de contexto activa. Actualiza o reinstala llama.cpp y vuelve a intentarlo.';
+
+  @override
   String get localModelInferenceFailed =>
       'El modelo local no pudo procesar esta solicitud. Comprueba su plantilla de chat y la memoria disponible.';
 

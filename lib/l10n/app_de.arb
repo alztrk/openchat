@@ -121,6 +121,7 @@
   "localModelStartError": "Das Modell konnte nicht gestartet werden. Prüfen Sie die Laufzeitinstallation und die Modelldatei.",
   "localModelStartTimeout": "Das Modell wurde nicht rechtzeitig bereit. Versuchen Sie ein kleineres Modell oder prüfen Sie Ihre Hardware.",
   "localModelRuntimeUnavailable": "Das lokale Modell reagiert nicht mehr. Starten Sie es unter Einstellungen > Lokale Engines neu und versuchen Sie es erneut.",
+  "localModelContextUnavailable": "Die lokale Laufzeit hat ihr aktives Kontextfenster nicht gemeldet. Aktualisieren oder installieren Sie llama.cpp erneut und versuchen Sie es noch einmal.",
   "localModelInferenceFailed": "Das lokale Modell konnte die Anfrage nicht verarbeiten. Prüfen Sie das Chat-Template und den verfügbaren Arbeitsspeicher.",
   "localModelSaved": "Lokales Modell registriert.",
   "localModelRemoved": "Registrierung des lokalen Modells entfernt.",

@@ -103,6 +103,7 @@
   "localModelStartError": "Model başlatılamadı. Motorun kurulumunu ve model dosyasını kontrol edin.",
   "localModelStartTimeout": "Model belirtilen süre içinde hazır olmadı. Daha küçük bir model deneyin veya donanımınızı kontrol edin.",
   "localModelRuntimeUnavailable": "Yerel model yanıt vermeyi durdurdu. Ayarlar > Yerel motorlar bölümünden yeniden başlatıp tekrar deneyin.",
+  "localModelContextUnavailable": "Yerel motor etkin bağlam sınırını bildirmedi. llama.cpp'yi güncelleyip veya yeniden kurup tekrar deneyin.",
   "localModelInferenceFailed": "Yerel model bu isteği işleyemedi. Sohbet şablonunu ve kullanılabilir belleği kontrol edin.",
   "localModelSaved": "Yerel model kaydedildi.",
   "localModelRemoved": "Yerel model kaydı kaldırıldı.",
