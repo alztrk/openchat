@@ -129,7 +129,13 @@ class _OpenChatAppState extends State<OpenChatApp> {
           final preflightDatabasePath =
               '$localAppData${Platform.pathSeparator}OpenChat'
               '${Platform.pathSeparator}db${Platform.pathSeparator}openchat.sqlite3';
-          await OpenChatDatabase.verifyExistingFile(preflightDatabasePath);
+          final pendingProfileRestorePath =
+              '$localAppData${Platform.pathSeparator}OpenChat'
+              '${Platform.pathSeparator}cache${Platform.pathSeparator}'
+              'profile-restore${Platform.pathSeparator}restore.pending';
+          if (!await File(pendingProfileRestorePath).exists()) {
+            await OpenChatDatabase.verifyExistingFile(preflightDatabasePath);
+          }
 
           await _serviceClient.start();
           phase = 'service_health';

@@ -12,6 +12,7 @@ mod oauth;
 mod openai_api;
 mod openai_compatible;
 mod permissions;
+mod profile_archive;
 mod protocol;
 mod provider_schema;
 mod rpc;

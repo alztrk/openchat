@@ -1480,6 +1480,140 @@ class AppLocalizationsFr extends AppLocalizations {
       'L’archive des conversations n’a pas pu être importée.';
 
   @override
+  String get profileArchiveTitle => 'Sauvegarde des données de l’application';
+
+  @override
+  String get profileArchiveDescription =>
+      'Créez ou restaurez une copie chiffrée de la base de données des conversations et des pièces jointes associées.';
+
+  @override
+  String get profileArchiveIncludesNotice =>
+      'Les identifiants des fournisseurs, les préférences globales et les fichiers des modèles ou des moteurs ne sont pas inclus. Lors d’une restauration, la base de données et les pièces jointes actuelles sont conservées dans un dossier de récupération.';
+
+  @override
+  String get profileArchiveUnavailable =>
+      'Le service local de sauvegarde du profil n’est pas disponible.';
+
+  @override
+  String get profileArchiveExport => 'Sauvegarder les données';
+
+  @override
+  String get profileArchiveRestore => 'Restaurer les données';
+
+  @override
+  String get profileArchiveChooseFolder =>
+      'Choisissez le dossier où enregistrer la sauvegarde chiffrée';
+
+  @override
+  String get profileArchiveChooseFile =>
+      'Choisissez une sauvegarde de profil OpenChat';
+
+  @override
+  String profileArchiveExportSuccess(
+    String conversationCount,
+    String messageCount,
+    String attachmentCount,
+  ) {
+    return 'Sauvegarde chiffrée créée : $conversationCount conversations, $messageCount messages et $attachmentCount pièces jointes.';
+  }
+
+  @override
+  String get profileArchiveRestoreConfirmTitle =>
+      'Remplacer les données de l’application ?';
+
+  @override
+  String get profileArchiveRestoreConfirmBody =>
+      'La sauvegarde choisie remplacera la base de données des conversations et les pièces jointes associées au prochain démarrage d’OpenChat. La base de données et les pièces jointes actuelles seront conservées dans un dossier de récupération. Les identifiants, préférences globales et fichiers de modèles ou de moteurs ne sont pas inclus.';
+
+  @override
+  String get profileArchiveRestoreConfirmButton =>
+      'Restaurer et fermer OpenChat';
+
+  @override
+  String get profileArchiveRestartTitle =>
+      'Fermez OpenChat pour appliquer la sauvegarde';
+
+  @override
+  String profileArchiveRestoreReady(
+    int conversationCount,
+    int messageCount,
+    int attachmentCount,
+  ) {
+    return 'La sauvegarde contient $conversationCount conversations, $messageCount messages et $attachmentCount pièces jointes. Fermez OpenChat maintenant. Les données restaurées seront vérifiées au démarrage et le profil actuel sera conservé pour récupération.';
+  }
+
+  @override
+  String get profileArchiveCloseApp => 'Fermer OpenChat';
+
+  @override
+  String get profileArchiveCloseFailed =>
+      'OpenChat n’a pas pu être fermé. Fermez la fenêtre pour appliquer la sauvegarde.';
+
+  @override
+  String get profileArchiveProcessing =>
+      'La sauvegarde du profil est chiffrée ou vérifiée. Les sauvegardes volumineuses peuvent prendre plusieurs minutes.';
+
+  @override
+  String get profileArchivePickerFailed =>
+      'Le sélecteur de fichiers ou de dossiers n’a pas pu s’ouvrir.';
+
+  @override
+  String get profileArchiveInvalidFile =>
+      'Le fichier sélectionné ne fournit pas de chemin exploitable.';
+
+  @override
+  String get profileArchiveInvalidResponse =>
+      'Le service de sauvegarde du profil a renvoyé des données invalides.';
+
+  @override
+  String get profileArchiveExportFailed =>
+      'La sauvegarde chiffrée du profil n’a pas pu être créée.';
+
+  @override
+  String get profileArchiveRestoreFailed =>
+      'La sauvegarde du profil n’a pas pu être préparée pour restauration.';
+
+  @override
+  String get profileArchiveInvalidArchive =>
+      'La sauvegarde est invalide ou le mot de passe est incorrect.';
+
+  @override
+  String get profileArchivePassphraseInvalid =>
+      'Utilisez un mot de passe d’au moins 12 caractères et de 512 octets maximum.';
+
+  @override
+  String get profileArchiveNotFound =>
+      'La sauvegarde de profil sélectionnée est introuvable.';
+
+  @override
+  String get profileArchiveConflict =>
+      'Une restauration est déjà en attente ou le fichier de destination existe déjà.';
+
+  @override
+  String get profileArchiveBusy =>
+      'Une autre opération de sauvegarde du profil est en cours.';
+
+  @override
+  String get profileArchiveStorageFailed =>
+      'La sauvegarde du profil n’a pas pu être lue, écrite ou restaurée en toute sécurité.';
+
+  @override
+  String get profileArchiveLimitExceeded =>
+      'La sauvegarde du profil dépasse une limite de taille ou de nombre d’éléments.';
+
+  @override
+  String get profileArchiveSchemaUnsupported =>
+      'Cette sauvegarde a été créée avec une version plus récente du schéma OpenChat.';
+
+  @override
+  String get profileArchiveTakingLong =>
+      'La sauvegarde du profil prend plus de temps que prévu. Attendez la fin de l’opération avant de réessayer.';
+
+  @override
+  String get profileArchiveOperationFailed =>
+      'L’opération de sauvegarde du profil n’a pas pu aboutir.';
+
+  @override
   String get conversationArchivePassphraseTitle => 'Déverrouiller l’archive';
 
   @override

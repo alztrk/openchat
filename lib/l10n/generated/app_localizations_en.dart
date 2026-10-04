@@ -1452,6 +1452,136 @@ class AppLocalizationsEn extends AppLocalizations {
       'The conversation archive could not be imported.';
 
   @override
+  String get profileArchiveTitle => 'Application data backup';
+
+  @override
+  String get profileArchiveDescription =>
+      'Create or restore an encrypted copy of the conversation database and its referenced attachments.';
+
+  @override
+  String get profileArchiveIncludesNotice =>
+      'Provider credentials, global preferences and model or runtime files are not included. The current database and attachments are preserved in a recovery folder during restore.';
+
+  @override
+  String get profileArchiveUnavailable =>
+      'The local profile backup service is unavailable.';
+
+  @override
+  String get profileArchiveExport => 'Back up application data';
+
+  @override
+  String get profileArchiveRestore => 'Restore application data';
+
+  @override
+  String get profileArchiveChooseFolder =>
+      'Choose where to save the encrypted profile backup';
+
+  @override
+  String get profileArchiveChooseFile => 'Choose an OpenChat profile backup';
+
+  @override
+  String profileArchiveExportSuccess(
+    String conversationCount,
+    String messageCount,
+    String attachmentCount,
+  ) {
+    return 'Encrypted backup created: $conversationCount conversations, $messageCount messages, $attachmentCount attachments.';
+  }
+
+  @override
+  String get profileArchiveRestoreConfirmTitle => 'Replace application data?';
+
+  @override
+  String get profileArchiveRestoreConfirmBody =>
+      'The selected backup will replace the conversation database and referenced attachments the next time OpenChat starts. The current database and attachments will be kept in a recovery folder. Provider credentials, global preferences and model or runtime files are not part of the backup.';
+
+  @override
+  String get profileArchiveRestoreConfirmButton => 'Restore and close OpenChat';
+
+  @override
+  String get profileArchiveRestartTitle => 'Close OpenChat to apply the backup';
+
+  @override
+  String profileArchiveRestoreReady(
+    int conversationCount,
+    int messageCount,
+    int attachmentCount,
+  ) {
+    return 'The backup contains $conversationCount conversations, $messageCount messages and $attachmentCount attachments. Close OpenChat now. The restored data will be checked during startup, and your current profile will remain available for recovery.';
+  }
+
+  @override
+  String get profileArchiveCloseApp => 'Close OpenChat';
+
+  @override
+  String get profileArchiveCloseFailed =>
+      'OpenChat could not be closed. Close the window to apply the backup.';
+
+  @override
+  String get profileArchiveProcessing =>
+      'Encrypting or validating the profile backup. Large backups can take several minutes.';
+
+  @override
+  String get profileArchivePickerFailed =>
+      'The file or folder picker could not be opened.';
+
+  @override
+  String get profileArchiveInvalidFile =>
+      'The selected backup has no usable file path.';
+
+  @override
+  String get profileArchiveInvalidResponse =>
+      'The profile backup service returned invalid data.';
+
+  @override
+  String get profileArchiveExportFailed =>
+      'The encrypted profile backup could not be created.';
+
+  @override
+  String get profileArchiveRestoreFailed =>
+      'The profile backup could not be prepared for restore.';
+
+  @override
+  String get profileArchiveInvalidArchive =>
+      'The backup is invalid or the passphrase is incorrect.';
+
+  @override
+  String get profileArchivePassphraseInvalid =>
+      'Use a passphrase with at least 12 characters and no more than 512 bytes.';
+
+  @override
+  String get profileArchiveNotFound =>
+      'The selected profile backup could not be found.';
+
+  @override
+  String get profileArchiveConflict =>
+      'A profile restore is already pending, or the selected output file already exists.';
+
+  @override
+  String get profileArchiveBusy =>
+      'Another profile backup operation is in progress.';
+
+  @override
+  String get profileArchiveStorageFailed =>
+      'The profile backup could not be read, written or safely restored.';
+
+  @override
+  String get profileArchiveLimitExceeded =>
+      'The profile backup exceeds a supported size or item limit.';
+
+  @override
+  String get profileArchiveSchemaUnsupported =>
+      'This backup was created by a newer OpenChat database schema.';
+
+  @override
+  String get profileArchiveTakingLong =>
+      'The profile backup is taking longer than expected. Wait for the operation to finish before trying again.';
+
+  @override
+  String get profileArchiveOperationFailed =>
+      'The profile backup operation could not be completed.';
+
+  @override
   String get conversationArchivePassphraseTitle => 'Unlock archive';
 
   @override

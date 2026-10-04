@@ -24,4 +24,4 @@ Conversation rows and messages are written in one SQLite transaction. Attachment
 
 The current limits are 5,000 conversations, 250,000 messages, 4 GiB of attachments, and an 8 GiB encrypted archive. Inspect and restore can take several minutes for large archives. Keep the app open while an operation runs. If the app reports that an operation timed out, check the conversation list before retrying.
 
-Archive format v1 is implemented for selected-conversation transfer. Full-profile database backup, global non-secret settings, schema-upgrading restore, and JSON/Markdown interchange remain separate roadmap work.
+Archive format v1 is implemented for selected-conversation transfer. Full-profile database-and-attachment backup is documented separately in [profile archives](profile-archives.md). Global preferences outside SQLite, schema-upgrading restore, and JSON/Markdown interchange remain separate roadmap work.

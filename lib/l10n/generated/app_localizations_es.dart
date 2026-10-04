@@ -1472,6 +1472,141 @@ class AppLocalizationsEs extends AppLocalizations {
       'No se pudo importar el archivo de conversaciones.';
 
   @override
+  String get profileArchiveTitle =>
+      'Copia de seguridad de los datos de la aplicación';
+
+  @override
+  String get profileArchiveDescription =>
+      'Crea o restaura una copia cifrada de la base de datos de conversaciones y los archivos adjuntos asociados.';
+
+  @override
+  String get profileArchiveIncludesNotice =>
+      'No incluye credenciales de proveedores, preferencias globales ni archivos de modelos o motores. Al restaurar, la base de datos y los adjuntos actuales se conservan en una carpeta de recuperación.';
+
+  @override
+  String get profileArchiveUnavailable =>
+      'El servicio local de copias del perfil no está disponible.';
+
+  @override
+  String get profileArchiveExport => 'Hacer copia de los datos';
+
+  @override
+  String get profileArchiveRestore => 'Restaurar los datos';
+
+  @override
+  String get profileArchiveChooseFolder =>
+      'Elige dónde guardar la copia cifrada del perfil';
+
+  @override
+  String get profileArchiveChooseFile =>
+      'Elige una copia del perfil de OpenChat';
+
+  @override
+  String profileArchiveExportSuccess(
+    String conversationCount,
+    String messageCount,
+    String attachmentCount,
+  ) {
+    return 'Copia cifrada creada: $conversationCount conversaciones, $messageCount mensajes y $attachmentCount archivos adjuntos.';
+  }
+
+  @override
+  String get profileArchiveRestoreConfirmTitle =>
+      '¿Reemplazar los datos de la aplicación?';
+
+  @override
+  String get profileArchiveRestoreConfirmBody =>
+      'La copia seleccionada reemplazará la base de datos de conversaciones y sus archivos adjuntos la próxima vez que se inicie OpenChat. La base de datos y los adjuntos actuales se conservarán en una carpeta de recuperación. No se incluyen las credenciales, preferencias globales ni archivos de modelos o motores.';
+
+  @override
+  String get profileArchiveRestoreConfirmButton =>
+      'Restaurar y cerrar OpenChat';
+
+  @override
+  String get profileArchiveRestartTitle =>
+      'Cierra OpenChat para aplicar la copia';
+
+  @override
+  String profileArchiveRestoreReady(
+    int conversationCount,
+    int messageCount,
+    int attachmentCount,
+  ) {
+    return 'La copia contiene $conversationCount conversaciones, $messageCount mensajes y $attachmentCount archivos adjuntos. Cierra OpenChat ahora. Los datos restaurados se comprobarán al iniciar y el perfil actual se conservará para recuperarlo.';
+  }
+
+  @override
+  String get profileArchiveCloseApp => 'Cerrar OpenChat';
+
+  @override
+  String get profileArchiveCloseFailed =>
+      'No se pudo cerrar OpenChat. Cierra la ventana para aplicar la copia.';
+
+  @override
+  String get profileArchiveProcessing =>
+      'Se está cifrando o validando la copia del perfil. Las copias grandes pueden tardar varios minutos.';
+
+  @override
+  String get profileArchivePickerFailed =>
+      'No se pudo abrir el selector de archivos o carpetas.';
+
+  @override
+  String get profileArchiveInvalidFile =>
+      'El archivo seleccionado no tiene una ruta válida.';
+
+  @override
+  String get profileArchiveInvalidResponse =>
+      'El servicio de copias del perfil devolvió datos no válidos.';
+
+  @override
+  String get profileArchiveExportFailed =>
+      'No se pudo crear la copia cifrada del perfil.';
+
+  @override
+  String get profileArchiveRestoreFailed =>
+      'No se pudo preparar la copia del perfil para restaurarla.';
+
+  @override
+  String get profileArchiveInvalidArchive =>
+      'La copia no es válida o la contraseña es incorrecta.';
+
+  @override
+  String get profileArchivePassphraseInvalid =>
+      'Usa una contraseña de al menos 12 caracteres y no más de 512 bytes.';
+
+  @override
+  String get profileArchiveNotFound =>
+      'No se encontró la copia del perfil seleccionada.';
+
+  @override
+  String get profileArchiveConflict =>
+      'Ya hay una restauración pendiente o el archivo de destino ya existe.';
+
+  @override
+  String get profileArchiveBusy =>
+      'Hay otra operación de copia del perfil en curso.';
+
+  @override
+  String get profileArchiveStorageFailed =>
+      'No se pudo leer, escribir o restaurar la copia del perfil de forma segura.';
+
+  @override
+  String get profileArchiveLimitExceeded =>
+      'La copia del perfil supera un límite de tamaño o elementos admitido.';
+
+  @override
+  String get profileArchiveSchemaUnsupported =>
+      'Esta copia se creó con una versión más reciente del esquema de OpenChat.';
+
+  @override
+  String get profileArchiveTakingLong =>
+      'La copia del perfil está tardando más de lo esperado. Espera a que termine antes de volver a intentarlo.';
+
+  @override
+  String get profileArchiveOperationFailed =>
+      'No se pudo completar la operación de copia del perfil.';
+
+  @override
   String get conversationArchivePassphraseTitle => 'Desbloquear archivo';
 
   @override

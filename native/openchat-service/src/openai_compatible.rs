@@ -401,6 +401,60 @@ mod tests {
         assert_eq!(rate_limited.code, "rate_limited");
     }
 
+    #[test]
+    fn built_in_providers_share_stable_safe_http_error_contracts() {
+        use reqwest::StatusCode;
+
+        let providers = [
+            ("chatgpt_api", "OpenAI"),
+            ("opencode", "OpenCode"),
+            ("gemini", "Gemini"),
+            ("groq", "Groq"),
+            ("cerebras", "Cerebras"),
+            ("openrouter", "OpenRouter"),
+            ("mistral", "Mistral"),
+        ];
+        let cases = [
+            (StatusCode::UNAUTHORIZED, "authentication_required", false),
+            (StatusCode::FORBIDDEN, "authentication_required", false),
+            (StatusCode::TOO_MANY_REQUESTS, "rate_limited", true),
+            (StatusCode::BAD_REQUEST, "provider_request_failed", false),
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "provider_request_failed",
+                true,
+            ),
+        ];
+
+        for (provider_id, display_name) in providers {
+            for (status, expected_code, expected_retryable) in cases {
+                let error = super::chat_request_http_error(status, Some(provider_id), false);
+                assert_eq!(
+                    error.code, expected_code,
+                    "{provider_id} should map HTTP {status} to a stable error code"
+                );
+                assert_eq!(
+                    error.retryable, expected_retryable,
+                    "{provider_id} should expose retryability for HTTP {status}"
+                );
+                assert!(
+                    error.message.contains(display_name),
+                    "{provider_id} should identify the provider in a safe message"
+                );
+            }
+
+            for status in [StatusCode::BAD_REQUEST, StatusCode::UNPROCESSABLE_ENTITY] {
+                let error = super::chat_request_http_error(status, Some(provider_id), true);
+                assert_eq!(
+                    error.code, "provider_tool_request_rejected",
+                    "{provider_id} should explain unsupported or rejected tool requests"
+                );
+                assert!(!error.retryable);
+                assert!(error.message.contains(display_name));
+            }
+        }
+    }
+
     use super::stream::{
         SseLine, StreamedToolCall, append_tool_call_deltas, finish_reason, parse_sse_line,
         parse_streamed_tool_calls, pop_sse_line, stream_is_complete,

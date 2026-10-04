@@ -23,6 +23,7 @@ import 'package:openchat/platform/windows/window_controls.dart';
 import 'package:openchat/features/settings/presentation/chat_gpt_connection_section.dart';
 import 'package:openchat/features/settings/presentation/compatible_provider_connection_section.dart';
 import 'package:openchat/features/settings/presentation/conversation_archive_section.dart';
+import 'package:openchat/features/settings/presentation/profile_archive_section.dart';
 import 'package:openchat/features/settings/presentation/local_engines_settings_section.dart';
 import 'package:openchat/features/settings/presentation/models_settings_section.dart';
 import 'package:openchat/features/settings/presentation/open_code_connection_section.dart';
@@ -616,6 +617,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           serviceClient: widget.serviceClient,
           chatRepository: widget.chatRepository,
         ),
+        const SizedBox(height: 16),
+        ProfileArchiveSection(serviceClient: widget.serviceClient),
         const SizedBox(height: 22),
         _SettingsRow(
           title: l10n.clearConversationHistory,

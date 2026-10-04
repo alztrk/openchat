@@ -2516,6 +2516,206 @@ abstract class AppLocalizations {
   /// **'The conversation archive could not be imported.'**
   String get conversationArchiveImportFailed;
 
+  /// No description provided for @profileArchiveTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Application data backup'**
+  String get profileArchiveTitle;
+
+  /// No description provided for @profileArchiveDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Create or restore an encrypted copy of the conversation database and its referenced attachments.'**
+  String get profileArchiveDescription;
+
+  /// No description provided for @profileArchiveIncludesNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Provider credentials, global preferences and model or runtime files are not included. The current database and attachments are preserved in a recovery folder during restore.'**
+  String get profileArchiveIncludesNotice;
+
+  /// No description provided for @profileArchiveUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The local profile backup service is unavailable.'**
+  String get profileArchiveUnavailable;
+
+  /// No description provided for @profileArchiveExport.
+  ///
+  /// In en, this message translates to:
+  /// **'Back up application data'**
+  String get profileArchiveExport;
+
+  /// No description provided for @profileArchiveRestore.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore application data'**
+  String get profileArchiveRestore;
+
+  /// No description provided for @profileArchiveChooseFolder.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose where to save the encrypted profile backup'**
+  String get profileArchiveChooseFolder;
+
+  /// No description provided for @profileArchiveChooseFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose an OpenChat profile backup'**
+  String get profileArchiveChooseFile;
+
+  /// No description provided for @profileArchiveExportSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypted backup created: {conversationCount} conversations, {messageCount} messages, {attachmentCount} attachments.'**
+  String profileArchiveExportSuccess(
+    String conversationCount,
+    String messageCount,
+    String attachmentCount,
+  );
+
+  /// No description provided for @profileArchiveRestoreConfirmTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Replace application data?'**
+  String get profileArchiveRestoreConfirmTitle;
+
+  /// No description provided for @profileArchiveRestoreConfirmBody.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected backup will replace the conversation database and referenced attachments the next time OpenChat starts. The current database and attachments will be kept in a recovery folder. Provider credentials, global preferences and model or runtime files are not part of the backup.'**
+  String get profileArchiveRestoreConfirmBody;
+
+  /// No description provided for @profileArchiveRestoreConfirmButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore and close OpenChat'**
+  String get profileArchiveRestoreConfirmButton;
+
+  /// No description provided for @profileArchiveRestartTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Close OpenChat to apply the backup'**
+  String get profileArchiveRestartTitle;
+
+  /// No description provided for @profileArchiveRestoreReady.
+  ///
+  /// In en, this message translates to:
+  /// **'The backup contains {conversationCount} conversations, {messageCount} messages and {attachmentCount} attachments. Close OpenChat now. The restored data will be checked during startup, and your current profile will remain available for recovery.'**
+  String profileArchiveRestoreReady(
+    int conversationCount,
+    int messageCount,
+    int attachmentCount,
+  );
+
+  /// No description provided for @profileArchiveCloseApp.
+  ///
+  /// In en, this message translates to:
+  /// **'Close OpenChat'**
+  String get profileArchiveCloseApp;
+
+  /// No description provided for @profileArchiveCloseFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenChat could not be closed. Close the window to apply the backup.'**
+  String get profileArchiveCloseFailed;
+
+  /// No description provided for @profileArchiveProcessing.
+  ///
+  /// In en, this message translates to:
+  /// **'Encrypting or validating the profile backup. Large backups can take several minutes.'**
+  String get profileArchiveProcessing;
+
+  /// No description provided for @profileArchivePickerFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The file or folder picker could not be opened.'**
+  String get profileArchivePickerFailed;
+
+  /// No description provided for @profileArchiveInvalidFile.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected backup has no usable file path.'**
+  String get profileArchiveInvalidFile;
+
+  /// No description provided for @profileArchiveInvalidResponse.
+  ///
+  /// In en, this message translates to:
+  /// **'The profile backup service returned invalid data.'**
+  String get profileArchiveInvalidResponse;
+
+  /// No description provided for @profileArchiveExportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The encrypted profile backup could not be created.'**
+  String get profileArchiveExportFailed;
+
+  /// No description provided for @profileArchiveRestoreFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The profile backup could not be prepared for restore.'**
+  String get profileArchiveRestoreFailed;
+
+  /// No description provided for @profileArchiveInvalidArchive.
+  ///
+  /// In en, this message translates to:
+  /// **'The backup is invalid or the passphrase is incorrect.'**
+  String get profileArchiveInvalidArchive;
+
+  /// No description provided for @profileArchivePassphraseInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Use a passphrase with at least 12 characters and no more than 512 bytes.'**
+  String get profileArchivePassphraseInvalid;
+
+  /// No description provided for @profileArchiveNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected profile backup could not be found.'**
+  String get profileArchiveNotFound;
+
+  /// No description provided for @profileArchiveConflict.
+  ///
+  /// In en, this message translates to:
+  /// **'A profile restore is already pending, or the selected output file already exists.'**
+  String get profileArchiveConflict;
+
+  /// No description provided for @profileArchiveBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Another profile backup operation is in progress.'**
+  String get profileArchiveBusy;
+
+  /// No description provided for @profileArchiveStorageFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The profile backup could not be read, written or safely restored.'**
+  String get profileArchiveStorageFailed;
+
+  /// No description provided for @profileArchiveLimitExceeded.
+  ///
+  /// In en, this message translates to:
+  /// **'The profile backup exceeds a supported size or item limit.'**
+  String get profileArchiveLimitExceeded;
+
+  /// No description provided for @profileArchiveSchemaUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'This backup was created by a newer OpenChat database schema.'**
+  String get profileArchiveSchemaUnsupported;
+
+  /// No description provided for @profileArchiveTakingLong.
+  ///
+  /// In en, this message translates to:
+  /// **'The profile backup is taking longer than expected. Wait for the operation to finish before trying again.'**
+  String get profileArchiveTakingLong;
+
+  /// No description provided for @profileArchiveOperationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The profile backup operation could not be completed.'**
+  String get profileArchiveOperationFailed;
+
   /// No description provided for @conversationArchivePassphraseTitle.
   ///
   /// In en, this message translates to:

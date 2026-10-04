@@ -29,6 +29,7 @@ pub struct AppStorage {
     migration_backup_created: AtomicBool,
     migration_backup_lock: Mutex<()>,
     diagnostics_lock: Mutex<()>,
+    profile_restore_pending_validation: bool,
 }
 
 impl AppStorage {
@@ -38,6 +39,23 @@ impl AppStorage {
     }
 
     pub fn open_at(root: PathBuf) -> rusqlite::Result<Self> {
+        let profile_restore_pending_validation =
+            crate::profile_archive::activate_pending_restore(&root)?;
+        match Self::open_active_root(root.clone()) {
+            Ok(mut storage) => {
+                storage.profile_restore_pending_validation = profile_restore_pending_validation;
+                Ok(storage)
+            }
+            Err(error) => {
+                if profile_restore_pending_validation {
+                    crate::profile_archive::recover_unconfirmed_restore(&root)?;
+                }
+                Err(error)
+            }
+        }
+    }
+
+    fn open_active_root(root: PathBuf) -> rusqlite::Result<Self> {
         let database_directory = root.join("db");
         let logs_directory = root.join("logs");
         let cache_directory = root.join("cache");
@@ -86,6 +104,7 @@ impl AppStorage {
             migration_backup_created: AtomicBool::new(migration_backup_created),
             migration_backup_lock: Mutex::new(()),
             diagnostics_lock: Mutex::new(()),
+            profile_restore_pending_validation: false,
         })
     }
 
@@ -240,6 +259,13 @@ impl AppStorage {
         Ok(schema_version)
     }
 
+    pub fn commit_pending_profile_restore(&self) -> rusqlite::Result<()> {
+        if self.profile_restore_pending_validation {
+            crate::profile_archive::commit_pending_restore(&self.root)?;
+        }
+        Ok(())
+    }
+
     pub fn prepare_chat_schema_migration(&self, target_version: i64) -> rusqlite::Result<bool> {
         if !(1..=100).contains(&target_version) {
             return Err(rusqlite::Error::InvalidQuery);
@@ -290,6 +316,21 @@ impl AppStorage {
         self.migration_backup_created.store(true, Ordering::Release);
         Ok(true)
     }
+}
+
+pub(crate) fn verify_database_integrity(connection: &Connection) -> rusqlite::Result<()> {
+    database_guard::verify_integrity(connection)
+}
+
+pub(crate) fn create_verified_database_snapshot(
+    source: &Connection,
+    destination: &Path,
+) -> rusqlite::Result<()> {
+    database_guard::create_verified_snapshot(source, destination)
+}
+
+pub(crate) fn backend_schema_version() -> i64 {
+    SCHEMA_VERSION
 }
 
 fn local_app_data_root() -> rusqlite::Result<PathBuf> {

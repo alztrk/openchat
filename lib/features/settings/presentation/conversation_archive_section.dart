@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -12,7 +11,7 @@ import 'package:openchat/app/openchat_toast.dart';
 import 'package:openchat/features/chat/data/chat_repository.dart';
 import 'package:openchat/features/chat/domain/chat_conversation.dart';
 import 'package:openchat/features/settings/data/conversation_archive_repository.dart';
-import 'package:openchat/l10n/generated/app_localizations.dart';
+import 'package:openchat/features/settings/presentation/archive_passphrase_dialog.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/platform/windows/openchat_service_client.dart';
 
@@ -210,11 +209,7 @@ class _ConversationArchiveSectionState
         return;
       }
 
-      final passphrase = await showDialog<String>(
-        context: context,
-        builder: (dialogContext) =>
-            const _ConversationArchivePassphraseDialog(),
-      );
+      final passphrase = await showArchivePassphraseDialog(context);
       if (!mounted || passphrase == null) return;
 
       final repository = ConversationArchiveRepository(service);
@@ -425,7 +420,7 @@ class _ConversationArchiveExportDialogState
                 obscureText: true,
                 enableSuggestions: false,
                 autocorrect: false,
-                validator: (value) => _validatePassphrase(value, l10n),
+                validator: (value) => validateArchivePassphrase(value, context),
                 decoration: InputDecoration(
                   labelText: l10n.conversationArchivePassphrase,
                   hintText: l10n.conversationArchivePassphraseHint,
@@ -438,7 +433,7 @@ class _ConversationArchiveExportDialogState
                 enableSuggestions: false,
                 autocorrect: false,
                 validator: (value) {
-                  final baseError = _validatePassphrase(value, l10n);
+                  final baseError = validateArchivePassphrase(value, context);
                   if (baseError != null) return baseError;
                   if (value != _passphraseController.text) {
                     return l10n.conversationArchivePassphraseMismatch;
@@ -481,68 +476,6 @@ class _ConversationArchiveExportDialogState
         ),
       ],
     );
-  }
-}
-
-class _ConversationArchivePassphraseDialog extends StatefulWidget {
-  const _ConversationArchivePassphraseDialog();
-
-  @override
-  State<_ConversationArchivePassphraseDialog> createState() =>
-      _ConversationArchivePassphraseDialogState();
-}
-
-class _ConversationArchivePassphraseDialogState
-    extends State<_ConversationArchivePassphraseDialog> {
-  final _formKey = GlobalKey<FormState>();
-  final _passphraseController = TextEditingController();
-
-  @override
-  void dispose() {
-    _passphraseController.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.openchatL10n;
-    return AlertDialog(
-      title: Text(l10n.conversationArchivePassphraseTitle),
-      content: SizedBox(
-        width: 420,
-        child: Form(
-          key: _formKey,
-          child: TextFormField(
-            controller: _passphraseController,
-            obscureText: true,
-            enableSuggestions: false,
-            autocorrect: false,
-            autofocus: true,
-            validator: (value) => _validatePassphrase(value, l10n),
-            onFieldSubmitted: (_) => _submit(context),
-            decoration: InputDecoration(
-              labelText: l10n.conversationArchivePassphrase,
-              hintText: l10n.conversationArchivePassphraseHint,
-            ),
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(l10n.cancel),
-        ),
-        FilledButton(
-          onPressed: () => _submit(context),
-          child: Text(l10n.continueLabel),
-        ),
-      ],
-    );
-  }
-
-  void _submit(BuildContext context) {
-    if (!_formKey.currentState!.validate()) return;
-    Navigator.of(context).pop(_passphraseController.text);
   }
 }
 
@@ -691,16 +624,6 @@ class _ArchiveSummaryRow extends StatelessWidget {
       ),
     );
   }
-}
-
-String? _validatePassphrase(String? value, AppLocalizations l10n) {
-  if (value == null || value.runes.length < 12) {
-    return l10n.conversationArchivePassphraseTooShort;
-  }
-  if (utf8.encode(value).length > 512 || value.contains('\u0000')) {
-    return l10n.conversationArchivePassphraseTooLong;
-  }
-  return null;
 }
 
 String _archiveErrorMessage(BuildContext context, String code) {

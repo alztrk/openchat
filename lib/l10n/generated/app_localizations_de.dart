@@ -1475,6 +1475,139 @@ class AppLocalizationsDe extends AppLocalizations {
       'Das Unterhaltungsarchiv konnte nicht importiert werden.';
 
   @override
+  String get profileArchiveTitle => 'Sicherung der Anwendungsdaten';
+
+  @override
+  String get profileArchiveDescription =>
+      'Erstellen oder laden Sie eine verschlüsselte Sicherung der Chat-Datenbank und der darin referenzierten Anhänge wiederher.';
+
+  @override
+  String get profileArchiveIncludesNotice =>
+      'Anbieterzugangsdaten, globale Einstellungen sowie Modell- und Laufzeitdateien sind nicht enthalten. Bei einer Wiederherstellung bleiben die aktuelle Datenbank und Anhänge in einem Wiederherstellungsordner erhalten.';
+
+  @override
+  String get profileArchiveUnavailable =>
+      'Der lokale Dienst für Profilsicherungen ist nicht verfügbar.';
+
+  @override
+  String get profileArchiveExport => 'Anwendungsdaten sichern';
+
+  @override
+  String get profileArchiveRestore => 'Anwendungsdaten wiederherstellen';
+
+  @override
+  String get profileArchiveChooseFolder =>
+      'Speicherort für die verschlüsselte Profilsicherung auswählen';
+
+  @override
+  String get profileArchiveChooseFile =>
+      'Eine OpenChat-Profilsicherung auswählen';
+
+  @override
+  String profileArchiveExportSuccess(
+    String conversationCount,
+    String messageCount,
+    String attachmentCount,
+  ) {
+    return 'Verschlüsselte Sicherung erstellt: $conversationCount Unterhaltungen, $messageCount Nachrichten, $attachmentCount Anhänge.';
+  }
+
+  @override
+  String get profileArchiveRestoreConfirmTitle => 'Anwendungsdaten ersetzen?';
+
+  @override
+  String get profileArchiveRestoreConfirmBody =>
+      'Die ausgewählte Sicherung ersetzt beim nächsten Start von OpenChat die Chat-Datenbank und die dazugehörigen Anhänge. Die aktuelle Datenbank und Anhänge bleiben in einem Wiederherstellungsordner erhalten. Anbieterzugangsdaten, globale Einstellungen sowie Modell- und Laufzeitdateien sind nicht enthalten.';
+
+  @override
+  String get profileArchiveRestoreConfirmButton =>
+      'Wiederherstellen und OpenChat schließen';
+
+  @override
+  String get profileArchiveRestartTitle =>
+      'OpenChat schließen, um die Sicherung anzuwenden';
+
+  @override
+  String profileArchiveRestoreReady(
+    int conversationCount,
+    int messageCount,
+    int attachmentCount,
+  ) {
+    return 'Die Sicherung enthält $conversationCount Unterhaltungen, $messageCount Nachrichten und $attachmentCount Anhänge. Schließen Sie OpenChat jetzt. Die wiederhergestellten Daten werden beim Start geprüft; Ihr aktuelles Profil bleibt zur Wiederherstellung erhalten.';
+  }
+
+  @override
+  String get profileArchiveCloseApp => 'OpenChat schließen';
+
+  @override
+  String get profileArchiveCloseFailed =>
+      'OpenChat konnte nicht geschlossen werden. Schließen Sie das Fenster, um die Sicherung anzuwenden.';
+
+  @override
+  String get profileArchiveProcessing =>
+      'Die Profilsicherung wird verschlüsselt oder geprüft. Große Sicherungen können mehrere Minuten dauern.';
+
+  @override
+  String get profileArchivePickerFailed =>
+      'Der Datei- oder Ordnerauswahldialog konnte nicht geöffnet werden.';
+
+  @override
+  String get profileArchiveInvalidFile =>
+      'Für die ausgewählte Sicherung wurde kein gültiger Dateipfad bereitgestellt.';
+
+  @override
+  String get profileArchiveInvalidResponse =>
+      'Der Profilsicherungsdienst hat ungültige Daten zurückgegeben.';
+
+  @override
+  String get profileArchiveExportFailed =>
+      'Die verschlüsselte Profilsicherung konnte nicht erstellt werden.';
+
+  @override
+  String get profileArchiveRestoreFailed =>
+      'Die Profilsicherung konnte nicht für die Wiederherstellung vorbereitet werden.';
+
+  @override
+  String get profileArchiveInvalidArchive =>
+      'Die Sicherung ist ungültig oder das Passwort stimmt nicht.';
+
+  @override
+  String get profileArchivePassphraseInvalid =>
+      'Verwenden Sie ein Passwort mit mindestens 12 Zeichen und höchstens 512 Byte.';
+
+  @override
+  String get profileArchiveNotFound =>
+      'Die ausgewählte Profilsicherung wurde nicht gefunden.';
+
+  @override
+  String get profileArchiveConflict =>
+      'Es ist bereits eine Profilwiederherstellung ausstehend oder die Zieldatei ist schon vorhanden.';
+
+  @override
+  String get profileArchiveBusy =>
+      'Ein anderer Vorgang zur Profilsicherung läuft bereits.';
+
+  @override
+  String get profileArchiveStorageFailed =>
+      'Die Profilsicherung konnte nicht gelesen, geschrieben oder sicher wiederhergestellt werden.';
+
+  @override
+  String get profileArchiveLimitExceeded =>
+      'Die Profilsicherung überschreitet eine unterstützte Größen- oder Elementgrenze.';
+
+  @override
+  String get profileArchiveSchemaUnsupported =>
+      'Diese Sicherung wurde mit einer neueren OpenChat-Datenbankschema-Version erstellt.';
+
+  @override
+  String get profileArchiveTakingLong =>
+      'Die Profilsicherung dauert länger als erwartet. Warten Sie, bis der Vorgang abgeschlossen ist, bevor Sie es erneut versuchen.';
+
+  @override
+  String get profileArchiveOperationFailed =>
+      'Der Vorgang zur Profilsicherung konnte nicht abgeschlossen werden.';
+
+  @override
   String get conversationArchivePassphraseTitle => 'Archiv entsperren';
 
   @override

@@ -206,6 +206,8 @@ async fn run_protocol(
             "conversation.archive.export"
                 | "conversation.archive.inspect"
                 | "conversation.archive.restore"
+                | "profile.archive.export"
+                | "profile.archive.prepare_restore"
         ) {
             zeroize_passphrase(&mut request.params);
         }

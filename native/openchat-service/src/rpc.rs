@@ -17,6 +17,7 @@ use crate::{
     chatgpt_store, conversation_archive, hugging_face, instructions, local_engines, openai_api,
     openai_compatible,
     permissions::ToolPermissionBroker,
+    profile_archive,
     protocol::{EventSink, Request, Response, ServiceError},
     storage::AppStorage,
     tools::{self, ToolPermissionMode},
@@ -95,6 +96,13 @@ pub(crate) async fn dispatch(
                     ));
                 }
             }
+            storage.commit_pending_profile_restore().map_err(|_| {
+                ServiceError::new(
+                    "profile_archive_storage_failed",
+                    "The restored profile could not be finalized safely.",
+                    false,
+                )
+            })?;
             Ok(json!({"status": "ready", "schema_version": schema_version}))
         }
         "chatgpt.oauth.start" => service.oauth_sign_in(&mut cancellation).await,
@@ -389,6 +397,27 @@ pub(crate) async fn dispatch(
             let path = required_string(&request.params, "path")?.to_owned();
             let conflict_policy = required_string(&request.params, "conflictPolicy")?.to_owned();
             conversation_archive::restore(storage, &path, passphrase, &conflict_policy)
+        }
+        "profile.archive.export" => {
+            let passphrase = required_secret_string(&mut request.params, "passphrase")?;
+            let path = required_string(&request.params, "path")?.to_owned();
+            profile_archive::export(storage, &path, passphrase)
+        }
+        "profile.archive.prepare_restore" => {
+            let passphrase = required_secret_string(&mut request.params, "passphrase")?;
+            let path = required_string(&request.params, "path")?.to_owned();
+            let chat_schema_version = request
+                .params
+                .get("chatSchemaVersion")
+                .and_then(Value::as_i64)
+                .ok_or_else(|| {
+                    ServiceError::new(
+                        "invalid_request_params",
+                        "The current chat database schema version is invalid.",
+                        false,
+                    )
+                })?;
+            profile_archive::prepare_restore(storage, &path, passphrase, chat_schema_version)
         }
         "chat.memory.semantic.status" => Ok(json!({
             "ready": chatgpt_store::semantic_search_is_ready(storage).await,

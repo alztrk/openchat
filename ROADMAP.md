@@ -9,7 +9,7 @@ This roadmap reflects the repository's current implementation. It has no calenda
 - OpenCode Console through its OpenAI Chat Completions endpoint. Other OpenCode protocol families are not supported.
 - Gemini, Groq, Cerebras, OpenRouter, and Mistral through their official OpenAI-compatible Chat Completions APIs, with API keys in platform secure storage and six-hour per-key model catalogs. Mistral exposes context, vision, and documented reasoning capabilities; OpenRouter models are filtered to current zero-price text-chat entries that advertise tool support.
 - Shared provider request, tool, and stream event types across ChatGPT, OpenCode, Gemini, Groq, Cerebras, OpenRouter, and Mistral, plus local shared instructions.
-- Embedded release catalogs and a verified, cancellable installer for llama.cpp on Windows x64. vLLM and ExLlama are catalogued but installation stays blocked until their full runtime dependencies can be pinned and verified. Settings supports a model folder per engine and bounded discovery of unregistered GGUF and Transformers model files, with explicit confirmation before registration. Windows x64 llama.cpp can start a selected GGUF on demand, wait for health readiness, stream chat through the shared route, stop on cancellation or service shutdown, and show localized startup/runtime failures. The full service path has been exercised with a real GGUF in an isolated profile, including response persistence and process shutdown; CUDA offload and the CPU-specific package remain unverified. Runtime diagnostics now record only bounded, safe lifecycle fields. GGUF-declared and runtime-active context windows plus reported image and tool-template capabilities are implemented. Local image input still needs projector discovery and launch support; accelerator recommendation remains open.
+- Embedded release catalogs and a verified, cancellable installer for llama.cpp on Windows x64. Windows x64 Settings supports a model folder per engine and bounded discovery of unregistered GGUF and Transformers model files, with explicit confirmation before registration. The managed llama.cpp path starts selected GGUF models on demand, waits for health readiness, streams chat through the shared route, and stops individual processes on cancellation or service shutdown. Manual Windows CPU and NVIDIA CUDA checks used real GGUF files; CUDA verification reported the RTX 3060, generated a text answer, and handled an attached PNG with its matching vision projector. These were manual runtime checks, not automated release tests. CUDA offload is recommended only when the detected driver meets the pinned catalog floor. vLLM and ExLlama installation is disabled on Windows while their Linux runtimes remain separately catalogued and await live validation on supported CUDA hosts. Runtime diagnostics record bounded, safe lifecycle fields. GGUF-declared and runtime-active context windows, projector pairing, and reported image and tool-template capabilities are implemented.
 - Local workspace tools for file listing, search, reading, metadata, writing, and editing, plus web search, URL reading, and terminal command/session tools. Tool calls, arguments, progress, and results are stored with assistant messages and shown in the conversation UI.
 - Global `Ask for approval` and `Full access` settings govern local file and terminal calls. Approval is per call; canonical path checks apply to filesystem tools and do not sandbox terminal processes.
 - Conversation history, project grouping, model favorites, rename/delete/pin actions, retry, and Markdown export. Tool activity is included in Markdown exports.
@@ -29,7 +29,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ## 2. Stabilize the provider contract
 
-**Status: in progress.** Keep provider-specific wire formats inside their adapters and make unsupported capabilities explicit to the user.
+**Status: implemented in source and covered by deterministic cross-provider tests.** Keep provider-specific wire formats inside their adapters and make unsupported capabilities explicit to the user. Live API-key account validation remains deferred to stage 3.
 
 - Define which shared capabilities a provider/model can use, including streaming, reasoning summaries, and tools.
 - Avoid sending tools to models that do not support them; show a clear reason when capability information is unavailable or a provider rejects the request.
@@ -37,7 +37,7 @@ These bullets describe code present in the repository. They do not mean that eve
 - Keep cancellation, partial responses, tool errors, quota limits, and stale model catalogs consistent across providers.
 - Recheck ChatGPT's private endpoints when they change; they are compatibility-sensitive and are not a stable public API contract.
 
-**Exit criteria:** both existing providers report or handle capabilities and failures through the shared OpenChat contract without leaking provider payloads into Flutter.
+**Exit criteria:** all current shared-route adapters use the same explicit capability and safe-error contract; provider bodies and credentials do not leak into Flutter or logs. Met by source behavior and offline contract tests. Live provider-account checks remain in stage 3.
 
 ## 3. Validate API-key providers
 
@@ -51,17 +51,17 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ## 4. Build managed local inference
 
-**Status: in progress.** OpenChat owns the engine release catalog, installation, model files, process lifecycle, and local request route. Users do not need to install a separate engine or configure a third-party inference service.
+**Status: Windows llama.cpp first-target implementation and manual CPU/CUDA verification are complete.** OpenChat owns the engine release catalog, installation, model files, process lifecycle, and local request route. Linux/macOS support and live validation of the pinned Linux vLLM and ExLlama paths remain open.
 
 - Keep release metadata tied to immutable upstream versions. Verify each downloadable engine and model asset by exact size and SHA-256 before publishing it into OpenChat's managed runtime or model directory.
-- Finish llama.cpp runtime selection for NVIDIA CUDA and CPU. Detect enough GPU and driver information to recommend only compatible variants; keep unsupported packages visible with a clear reason.
-- Keep vLLM and ExLlama unavailable until every runtime dependency, including accelerator-specific libraries and transitive packages, is pinned to verifiable artifacts. Do not install from mutable package indexes or run an unpinned setup script.
+- Keep Windows llama.cpp runtime selection for NVIDIA CUDA and CPU tied to detected driver compatibility. The Windows CPU package and CUDA path have passed manual runtime checks; repeat them only when a release-catalog or runtime change affects those paths.
+- Keep vLLM and ExLlama disabled for new Windows installs. Their Linux runtime dependencies are pinned to verified artifacts; live inference validation on supported CUDA hosts remains open. Do not install from mutable package indexes or run an unpinned setup script.
 - Add model catalogs and model downloads separately from engine binaries. Show file size, destination, progress, cancellation, integrity verification, and recovery after interrupted downloads.
-- Validate managed llama.cpp startup, model loading, streamed chat, cancellation, model switching, and shutdown with real CPU and NVIDIA CUDA GGUF models on Windows x64. The isolated app-service flow has passed with a real GGUF, including saved response and shutdown; verify CPU package behavior and actual CUDA offload separately. Bounded, sanitized lifecycle diagnostics are implemented without model paths or prompt content.
+- Keep the existing real-GGUF CPU/CUDA and vision-projector smoke checks as release regression validation when their inputs change. They are manual checks and are not repeated for unrelated provider or UI work. Bounded, sanitized lifecycle diagnostics are implemented without model paths or prompt content.
 - Add local context-window metadata and only expose image, reasoning, and tool capabilities when the selected model/runtime supports them. Keep provider payloads and local process details inside the Rust service.
 - Extend package selection, secure storage, process supervision, and data directories to Linux and macOS. Treat WSL2 as a separate managed Linux runtime for vLLM rather than claiming native Windows support.
 
-**Exit criteria:** a user can select a hardware-compatible engine and model, install and verify both through OpenChat, start and stop the local runtime, send and cancel a streamed chat request, and reopen its conversation without a separate CLI or external inference API.
+**Windows llama.cpp exit criteria:** met for the current CPU/CUDA release catalog, GGUF registration, streamed chat, cancellation, projector-backed image input, persistence, per-model process control, and shutdown. **Remaining scope:** live Linux vLLM/ExLlama inference validation and Linux/macOS packaging.
 
 ## 5. Broaden API-key provider access
 
@@ -178,15 +178,20 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ## 15. Add portable backup, import, and restore
 
-**Status: selected-conversation archive v1 implemented.** Users can export selected conversations with attachments, inspect and validate archives, and restore with duplicate handling and rollback. Full-profile database backup and broader interchange formats remain planned.
+**Status: selected-conversation archive v1 and encrypted full-profile database/attachment backup are implemented in source.** Profile restore validates before scheduling, activates on the next launch, preserves the replaced profile, and rolls back if startup validation does not complete.
 
-- Create a versioned archive for selected conversations and their attachments; full-profile database backup and global settings are not included.
-- Encrypt archives with a passphrase and an age v1 stream. Never include provider API keys, OAuth tokens, linked account/workspace identifiers, projects, or global settings.
+- Create a versioned archive for selected conversations and their attachments; full-profile database backup and global settings are not included in this selected-conversation format.
+- Encrypt archives with a passphrase and an age v1 stream. Both formats omit API keys, OAuth tokens, and global preferences outside SQLite; selected-conversation archives also omit linked account/workspace identifiers and projects.
 - Inspect and validate archive contents and integrity before restore. Detect duplicate conversation IDs and offer skip-existing or import-as-copy behavior.
 - Restore database rows in one transaction and create attachments exclusively with rollback cleanup so failed imports leave the current profile usable.
-- Keep Markdown export separate. JSON/ZIP interchange, schema-upgrading restore, and full-profile backup remain future work.
+- Create an age-encrypted, versioned full-profile archive using SQLite's online backup so committed WAL data is included; archive only attachment files referenced by the snapshot. Validate hashes, database integrity, foreign keys, schema versions, and attachment metadata before scheduling restore.
+- Apply full-profile restore during service startup before the database is opened. Keep the old database and attachments under %LOCALAPPDATA%/OpenChat/backups/profile-restores; roll back an unconfirmed restore on a subsequent launch.
+- Exclude platform-stored provider credentials, global preferences outside the database, and external model or runtime binaries. Require the user to confirm replacement and close OpenChat before activation.
+- Keep Markdown export separate. JSON/ZIP interchange and schema-upgrading restore remain future work.
 
-**Exit criteria for selected-conversation v1:** a user can inspect, export, and restore selected conversations and attachments into another local profile; failed restore is recoverable; and linked credentials remain in platform secure storage. Full-profile migration is not part of this stage's delivered scope.
+**Exit criteria for selected-conversation v1:** a user can inspect, export, and restore selected conversations and attachments into another local profile; failed restore is recoverable; and linked credentials remain in platform secure storage.
+
+**Full-profile archive exit criteria:** a user can create a passphrase-protected database-and-attachment backup, validate it before restore, replace the active profile only after explicit confirmation, and recover the previous profile if startup validation fails. This archive does not include provider secrets, global preferences outside SQLite, or local model/runtime files.
 
 ## 16. Build a searchable conversation library
 

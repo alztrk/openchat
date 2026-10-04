@@ -1444,6 +1444,139 @@ class AppLocalizationsTr extends AppLocalizations {
       'Sohbet arşivi içe aktarılamadı.';
 
   @override
+  String get profileArchiveTitle => 'Uygulama verilerinin yedeği';
+
+  @override
+  String get profileArchiveDescription =>
+      'Sohbet veritabanını ve bu sohbetlerde kullanılan ekleri şifreli olarak yedekleyin veya geri yükleyin.';
+
+  @override
+  String get profileArchiveIncludesNotice =>
+      'Sağlayıcı kimlik bilgileri, genel tercihler, model ve motor dosyaları yedeğe dahil değildir. Geri yükleme sırasında mevcut veritabanı ve ekler kurtarma klasöründe korunur.';
+
+  @override
+  String get profileArchiveUnavailable =>
+      'Yerel uygulama verisi yedekleme servisi kullanılamıyor.';
+
+  @override
+  String get profileArchiveExport => 'Uygulama verilerini yedekle';
+
+  @override
+  String get profileArchiveRestore => 'Uygulama verilerini geri yükle';
+
+  @override
+  String get profileArchiveChooseFolder =>
+      'Şifreli yedeğin kaydedileceği klasörü seçin';
+
+  @override
+  String get profileArchiveChooseFile =>
+      'Bir OpenChat uygulama verisi yedeği seçin';
+
+  @override
+  String profileArchiveExportSuccess(
+    String conversationCount,
+    String messageCount,
+    String attachmentCount,
+  ) {
+    return 'Şifreli yedek oluşturuldu: $conversationCount sohbet, $messageCount mesaj, $attachmentCount ek.';
+  }
+
+  @override
+  String get profileArchiveRestoreConfirmTitle =>
+      'Uygulama verileri değiştirilsin mi?';
+
+  @override
+  String get profileArchiveRestoreConfirmBody =>
+      'Seçilen yedek, OpenChat bir sonraki açıldığında sohbet veritabanını ve bu sohbetlerde kullanılan ekleri değiştirir. Mevcut veritabanı ve ekler kurtarma klasöründe saklanır. Sağlayıcı kimlik bilgileri, genel tercihler, model ve motor dosyaları yedekte bulunmaz.';
+
+  @override
+  String get profileArchiveRestoreConfirmButton =>
+      'Geri yükle ve OpenChat\'i kapat';
+
+  @override
+  String get profileArchiveRestartTitle =>
+      'Yedeği uygulamak için OpenChat\'i kapatın';
+
+  @override
+  String profileArchiveRestoreReady(
+    int conversationCount,
+    int messageCount,
+    int attachmentCount,
+  ) {
+    return 'Yedek $conversationCount sohbet, $messageCount mesaj ve $attachmentCount ek içeriyor. OpenChat\'i şimdi kapatın. Geri yüklenen veriler açılışta doğrulanacak; mevcut profiliniz kurtarma için saklanacak.';
+  }
+
+  @override
+  String get profileArchiveCloseApp => 'OpenChat\'i kapat';
+
+  @override
+  String get profileArchiveCloseFailed =>
+      'Yedek uygulanamadı. OpenChat\'i kapatmak için pencereyi kapatın.';
+
+  @override
+  String get profileArchiveProcessing =>
+      'Profil yedeği şifreleniyor veya doğrulanıyor. Büyük yedekler birkaç dakika sürebilir.';
+
+  @override
+  String get profileArchivePickerFailed =>
+      'Dosya veya klasör seçici açılamadı.';
+
+  @override
+  String get profileArchiveInvalidFile =>
+      'Seçilen yedek için geçerli bir dosya yolu alınamadı.';
+
+  @override
+  String get profileArchiveInvalidResponse =>
+      'Profil yedekleme servisi geçersiz veri döndürdü.';
+
+  @override
+  String get profileArchiveExportFailed =>
+      'Şifreli profil yedeği oluşturulamadı.';
+
+  @override
+  String get profileArchiveRestoreFailed =>
+      'Profil yedeği geri yükleme için hazırlanamadı.';
+
+  @override
+  String get profileArchiveInvalidArchive =>
+      'Yedek geçersiz veya parola yanlış.';
+
+  @override
+  String get profileArchivePassphraseInvalid =>
+      'En az 12, en fazla 512 bayt uzunluğunda parola kullanın.';
+
+  @override
+  String get profileArchiveNotFound =>
+      'Seçilen uygulama verisi yedeği bulunamadı.';
+
+  @override
+  String get profileArchiveConflict =>
+      'Bekleyen bir profil geri yüklemesi var veya seçilen hedef dosya zaten mevcut.';
+
+  @override
+  String get profileArchiveBusy => 'Başka bir profil yedekleme işlemi sürüyor.';
+
+  @override
+  String get profileArchiveStorageFailed =>
+      'Profil yedeği okunamadı, yazılamadı veya güvenli biçimde geri yüklenemedi.';
+
+  @override
+  String get profileArchiveLimitExceeded =>
+      'Profil yedeği desteklenen boyut veya öğe sınırını aşıyor.';
+
+  @override
+  String get profileArchiveSchemaUnsupported =>
+      'Bu yedek daha yeni bir OpenChat veritabanı şemasıyla oluşturulmuş.';
+
+  @override
+  String get profileArchiveTakingLong =>
+      'Profil yedeği beklenenden uzun sürüyor. Yeniden denemeden önce işlemin bitmesini bekleyin.';
+
+  @override
+  String get profileArchiveOperationFailed =>
+      'Profil yedekleme işlemi tamamlanamadı.';
+
+  @override
   String get conversationArchivePassphraseTitle => 'Arşivin kilidini aç';
 
   @override

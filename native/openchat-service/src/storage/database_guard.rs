@@ -81,6 +81,19 @@ pub(super) fn create_verified_backup(
         Uuid::new_v4()
     );
     let final_path = backup_directory.join(name);
+    create_verified_snapshot(source, &final_path)?;
+    Ok(final_path)
+}
+
+pub(super) fn create_verified_snapshot(
+    source: &Connection,
+    final_path: &Path,
+) -> rusqlite::Result<()> {
+    verify_integrity(source)?;
+    let parent = final_path
+        .parent()
+        .ok_or_else(|| Error::InvalidPath(final_path.to_path_buf()))?;
+    fs::create_dir_all(parent).map_err(io_error)?;
     let temporary_path = final_path.with_extension("backup.partial");
 
     OpenOptions::new()
@@ -100,7 +113,7 @@ pub(super) fn create_verified_backup(
         }
     }
 
-    if let Err(error) = fs::rename(&temporary_path, &final_path) {
+    if let Err(error) = fs::rename(&temporary_path, final_path) {
         match fs::remove_file(&temporary_path) {
             Ok(()) => return Err(io_error(error)),
             Err(cleanup_error) if cleanup_error.kind() == io::ErrorKind::NotFound => {
@@ -109,7 +122,7 @@ pub(super) fn create_verified_backup(
             Err(cleanup_error) => return Err(io_error(cleanup_error)),
         }
     }
-    Ok(final_path)
+    Ok(())
 }
 
 fn build_backup(source: &Connection, temporary_path: &Path) -> rusqlite::Result<()> {
