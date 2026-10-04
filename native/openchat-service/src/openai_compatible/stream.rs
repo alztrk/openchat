@@ -169,15 +169,8 @@ pub(super) fn handle_responses_api_event(
             if let Some(item) = value.get("item")
                 && item.get("type").and_then(Value::as_str) == Some("function_call")
             {
-                let index = value
-                    .get("output_index")
-                    .and_then(Value::as_u64)
-                    .and_then(|v| usize::try_from(v).ok())
-                    .unwrap_or(calls.len());
-                if !calls.contains_key(&index) && calls.len() >= tools::MAX_TOOL_CALLS_PER_TURN {
-                    return Err(tools::tool_call_limit_error());
-                }
-                let call = calls.entry(index).or_default();
+                let index = response_output_index(value)?;
+                let call = response_tool_call(calls, index)?;
                 if let Some(id) = item.get("call_id").and_then(Value::as_str) {
                     call.id = id.to_owned();
                 }
@@ -187,38 +180,33 @@ pub(super) fn handle_responses_api_event(
                 if let Some(arguments) = item.get("arguments").and_then(Value::as_str)
                     && !arguments.is_empty()
                 {
+                    validate_tool_arguments(arguments)?;
                     call.arguments = arguments.to_owned();
                 }
             }
         }
         "response.function_call_arguments.delta" => {
-            let index = value
-                .get("output_index")
-                .and_then(Value::as_u64)
-                .and_then(|v| usize::try_from(v).ok())
-                .unwrap_or(0);
-            if let Some(delta) = value.get("delta").and_then(Value::as_str) {
-                let call = calls.entry(index).or_default();
-                if call.arguments.len().saturating_add(delta.len()) > tools::MAX_TOOL_ARGUMENT_BYTES
-                {
-                    return Err(invalid_response_error());
-                }
-                call.arguments.push_str(delta);
+            let index = response_output_index(value)?;
+            let delta = value
+                .get("delta")
+                .and_then(Value::as_str)
+                .ok_or_else(invalid_response_error)?;
+            let call = existing_response_tool_call(calls, index)?;
+            if call.arguments.len().saturating_add(delta.len()) > tools::MAX_TOOL_ARGUMENT_BYTES {
+                return Err(invalid_response_error());
             }
+            call.arguments.push_str(delta);
         }
         "response.function_call_arguments.done" => {
-            let index = value
-                .get("output_index")
-                .and_then(Value::as_u64)
-                .and_then(|v| usize::try_from(v).ok())
-                .unwrap_or(0);
-            let call = calls.entry(index).or_default();
+            let index = response_output_index(value)?;
+            let call = existing_response_tool_call(calls, index)?;
             if let Some(name) = value.get("name").and_then(Value::as_str)
                 && call.name.is_empty()
             {
                 call.name = name.to_owned();
             }
             if let Some(arguments) = value.get("arguments").and_then(Value::as_str) {
+                validate_tool_arguments(arguments)?;
                 call.arguments = arguments.to_owned();
             }
         }
@@ -226,12 +214,8 @@ pub(super) fn handle_responses_api_event(
             if let Some(item) = value.get("item")
                 && item.get("type").and_then(Value::as_str) == Some("function_call")
             {
-                let index = value
-                    .get("output_index")
-                    .and_then(Value::as_u64)
-                    .and_then(|v| usize::try_from(v).ok())
-                    .unwrap_or(0);
-                let call = calls.entry(index).or_default();
+                let index = response_output_index(value)?;
+                let call = existing_response_tool_call(calls, index)?;
                 if let Some(id) = item.get("call_id").and_then(Value::as_str)
                     && call.id.is_empty()
                 {
@@ -245,6 +229,7 @@ pub(super) fn handle_responses_api_event(
                 if let Some(arguments) = item.get("arguments").and_then(Value::as_str)
                     && call.arguments.is_empty()
                 {
+                    validate_tool_arguments(arguments)?;
                     call.arguments = arguments.to_owned();
                 }
             }
@@ -256,7 +241,7 @@ pub(super) fn handle_responses_api_event(
             if let Some(output) = value.pointer("/response/output").and_then(Value::as_array) {
                 for (idx, item) in output.iter().enumerate() {
                     if item.get("type").and_then(Value::as_str) == Some("function_call") {
-                        let call = calls.entry(idx).or_default();
+                        let call = response_tool_call(calls, idx)?;
                         if let Some(id) = item.get("call_id").and_then(Value::as_str)
                             && call.id.is_empty()
                         {
@@ -270,6 +255,7 @@ pub(super) fn handle_responses_api_event(
                         if let Some(arguments) = item.get("arguments").and_then(Value::as_str)
                             && call.arguments.is_empty()
                         {
+                            validate_tool_arguments(arguments)?;
                             call.arguments = arguments.to_owned();
                         }
                     }
@@ -290,6 +276,38 @@ pub(super) fn handle_responses_api_event(
         _ => {}
     }
     Ok(ResponsesStreamEffect::None)
+}
+
+fn response_output_index(value: &Value) -> Result<usize, ServiceError> {
+    value
+        .get("output_index")
+        .and_then(Value::as_u64)
+        .and_then(|index| usize::try_from(index).ok())
+        .ok_or_else(invalid_response_error)
+}
+
+fn response_tool_call(
+    calls: &mut BTreeMap<usize, StreamedToolCall>,
+    index: usize,
+) -> Result<&mut StreamedToolCall, ServiceError> {
+    if !calls.contains_key(&index) && calls.len() >= tools::MAX_TOOL_CALLS_PER_TURN {
+        return Err(tools::tool_call_limit_error());
+    }
+    Ok(calls.entry(index).or_default())
+}
+
+fn existing_response_tool_call(
+    calls: &mut BTreeMap<usize, StreamedToolCall>,
+    index: usize,
+) -> Result<&mut StreamedToolCall, ServiceError> {
+    calls.get_mut(&index).ok_or_else(invalid_response_error)
+}
+
+fn validate_tool_arguments(arguments: &str) -> Result<(), ServiceError> {
+    if arguments.len() > tools::MAX_TOOL_ARGUMENT_BYTES {
+        return Err(invalid_response_error());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -335,5 +353,83 @@ mod tests {
         update_chat_completion_usage(&next_event, &mut input_tokens, &mut output_tokens);
 
         assert_eq!(output_tokens, Some(12));
+    }
+
+    #[test]
+    fn responses_tool_events_require_valid_indices_and_started_calls() {
+        let mut calls = BTreeMap::new();
+
+        for event in [
+            json!({"type": "response.output_item.added", "item": {"type": "function_call", "name": "search"}}),
+            json!({"type": "response.output_item.added", "output_index": -1, "item": {"type": "function_call", "name": "search"}}),
+            json!({"type": "response.output_item.added", "output_index": "0", "item": {"type": "function_call", "name": "search"}}),
+            json!({"type": "response.function_call_arguments.delta", "delta": "{}"}),
+            json!({"type": "response.function_call_arguments.delta", "output_index": 4, "delta": "{}"}),
+            json!({"type": "response.function_call_arguments.done", "output_index": 4, "arguments": "{}"}),
+            json!({"type": "response.output_item.done", "output_index": 4, "item": {"type": "function_call", "name": "search"}}),
+        ] {
+            assert!(
+                handle_responses_api_event(&event, &mut calls).is_err(),
+                "event should be rejected: {event}"
+            );
+        }
+        assert!(calls.is_empty());
+    }
+
+    #[test]
+    fn responses_tool_events_reassemble_arguments_by_output_index() {
+        let mut calls = BTreeMap::new();
+        handle_responses_api_event(
+            &json!({
+                "type": "response.output_item.added",
+                "output_index": 2,
+                "item": {"type": "function_call", "call_id": "call_1", "name": "search"}
+            }),
+            &mut calls,
+        )
+        .expect("add tool call");
+        handle_responses_api_event(
+            &json!({
+                "type": "response.function_call_arguments.delta",
+                "output_index": 2,
+                "delta": "{\"query\":"
+            }),
+            &mut calls,
+        )
+        .expect("append first argument chunk");
+        handle_responses_api_event(
+            &json!({
+                "type": "response.function_call_arguments.done",
+                "output_index": 2,
+                "arguments": "{\"query\":\"rust\"}"
+            }),
+            &mut calls,
+        )
+        .expect("finish tool arguments");
+
+        assert_eq!(calls.len(), 1);
+        let call = calls.get(&2).expect("call at output index two");
+        assert_eq!(call.id, "call_1");
+        assert_eq!(call.name, "search");
+        assert_eq!(call.arguments, "{\"query\":\"rust\"}");
+    }
+
+    #[test]
+    fn responses_completed_event_enforces_tool_count_limit() {
+        let mut calls = (0..tools::MAX_TOOL_CALLS_PER_TURN)
+            .map(|index| (index, StreamedToolCall::default()))
+            .collect::<BTreeMap<_, _>>();
+        let output = (0..=tools::MAX_TOOL_CALLS_PER_TURN)
+            .map(|_| json!({"type": "function_call", "call_id": "call", "name": "search", "arguments": "{}"}))
+            .collect::<Vec<_>>();
+        let event = json!({"type": "response.completed", "response": {"output": output}});
+
+        let result = handle_responses_api_event(&event, &mut calls);
+
+        assert!(matches!(
+            result,
+            Err(error) if error.code == "tool_iteration_limit"
+        ));
+        assert_eq!(calls.len(), tools::MAX_TOOL_CALLS_PER_TURN);
     }
 }
