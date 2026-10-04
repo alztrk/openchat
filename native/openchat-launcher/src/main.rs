@@ -64,7 +64,12 @@ fn launch() -> Result<(), LaunchError> {
     }
 
     let bundle_directory = cache_root.join(format!("bundle-{bundle_id}"));
-    prepare_bundle(&cache_root, &bundle_directory, &bundle_id)?;
+    prepare_bundle(
+        &cache_root,
+        &bundle_directory,
+        &bundle_id,
+        EMBEDDED_BUNDLE,
+    )?;
 
     let application = bundle_directory.join("openchat.exe");
     let mut command = Command::new(application);
@@ -78,6 +83,7 @@ fn prepare_bundle(
     cache_root: &Path,
     bundle_directory: &Path,
     bundle_id: &str,
+    payload: &[u8],
 ) -> Result<(), LaunchError> {
     if is_complete_bundle(bundle_directory, bundle_id) {
         return Ok(());
@@ -90,7 +96,7 @@ fn prepare_bundle(
         cache_root.join(format!(".extract-{}-{}", &bundle_id[..16], Uuid::new_v4()));
     fs::create_dir(&staging_directory).map_err(LaunchError::CacheAccess)?;
 
-    if let Err(error) = extract_bundle(&staging_directory, bundle_id) {
+    if let Err(error) = extract_bundle(&staging_directory, bundle_id, payload) {
         return Err(cleanup_staging_directory(&staging_directory, error));
     }
 
@@ -116,8 +122,8 @@ fn cleanup_staging_directory(staging_directory: &Path, original_error: LaunchErr
     }
 }
 
-fn extract_bundle(destination: &Path, bundle_id: &str) -> Result<(), LaunchError> {
-    let mut archive = ZipArchive::new(Cursor::new(EMBEDDED_BUNDLE))
+fn extract_bundle(destination: &Path, bundle_id: &str, payload: &[u8]) -> Result<(), LaunchError> {
+    let mut archive = ZipArchive::new(Cursor::new(payload))
         .map_err(|_| LaunchError::EmbeddedBundleInvalid)?;
     if archive.is_empty() {
         return Err(LaunchError::EmbeddedBundleInvalid);
@@ -204,6 +210,7 @@ fn show_error(error: &LaunchError) {
     }
 }
 
+#[derive(Debug)]
 enum LaunchError {
     LocalDataUnavailable,
     CacheAccess(io::Error),
@@ -300,5 +307,126 @@ impl LaunchError {
                 format!("application start failed ({:?})", error.kind())
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs,
+        io::Write,
+        path::{Path, PathBuf},
+    };
+
+    use sha2::{Digest, Sha256};
+    use uuid::Uuid;
+    use zip::{ZipWriter, write::SimpleFileOptions};
+
+    use super::{REQUIRED_FILES, prepare_bundle};
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!("openchat-launcher-{}", Uuid::new_v4()));
+            fs::create_dir(&path).expect("create launcher test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).expect("remove launcher test directory");
+        }
+    }
+
+    fn valid_payload() -> Vec<u8> {
+        let mut archive = ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = SimpleFileOptions::default();
+        for file in REQUIRED_FILES {
+            archive
+                .start_file(file, options)
+                .expect("start required archive file");
+            archive.write_all(file.as_bytes()).expect("write archive file");
+        }
+        archive
+            .finish()
+            .expect("finish payload archive")
+            .into_inner()
+    }
+
+    fn bundle_id(payload: &[u8]) -> String {
+        Sha256::digest(payload)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+
+    #[test]
+    fn portable_payload_extracts_required_files_and_valid_marker() {
+        let directory = TestDirectory::new();
+        let cache_root = &directory.0;
+        let payload = valid_payload();
+        let id = bundle_id(&payload);
+        let bundle_directory = cache_root.join(format!("bundle-{id}"));
+
+        prepare_bundle(cache_root, &bundle_directory, &id, &payload)
+            .expect("prepare extracted bundle");
+
+        for required_file in REQUIRED_FILES {
+            assert!(bundle_directory.join(required_file).is_file());
+            assert_eq!(
+                fs::read(bundle_directory.join(required_file)).expect("read extracted file"),
+                required_file.as_bytes()
+            );
+        }
+        assert_eq!(
+            fs::read_to_string(bundle_directory.join(".openchat-bundle-id"))
+                .expect("read bundle marker"),
+            id
+        );
+    }
+
+    #[test]
+    fn invalid_payload_is_removed_from_staging_and_can_be_retried() {
+        let directory = TestDirectory::new();
+        let cache_root = &directory.0;
+        let payload = b"not a zip archive";
+        let id = bundle_id(payload);
+        let bundle_directory = cache_root.join(format!("bundle-{id}"));
+
+        assert!(prepare_bundle(cache_root, &bundle_directory, &id, payload).is_err());
+        assert!(!bundle_directory.exists());
+        assert_eq!(
+            fs::read_dir(cache_root)
+                .expect("read cache root")
+                .count(),
+            0
+        );
+
+        let valid = valid_payload();
+        let valid_id = bundle_id(&valid);
+        let valid_directory = cache_root.join(format!("bundle-{valid_id}"));
+        prepare_bundle(cache_root, &valid_directory, &valid_id, &valid)
+            .expect("retry with a valid archive");
+        assert!(Path::new(&valid_directory).join(".openchat-bundle-id").is_file());
+    }
+
+    #[test]
+    fn incomplete_archive_does_not_publish_a_bundle() {
+        let directory = TestDirectory::new();
+        let cache_root = &directory.0;
+        let mut archive = ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        archive
+            .start_file("openchat.exe", SimpleFileOptions::default())
+            .expect("start incomplete archive file");
+        archive.write_all(b"app").expect("write app file");
+        let payload = archive.finish().expect("finish incomplete archive").into_inner();
+        let id = bundle_id(&payload);
+        let bundle_directory = cache_root.join(format!("bundle-{id}"));
+
+        assert!(prepare_bundle(cache_root, &bundle_directory, &id, &payload).is_err());
+        assert!(!bundle_directory.exists());
+        assert_eq!(fs::read_dir(cache_root).expect("read cache root").count(), 0);
     }
 }
