@@ -737,6 +737,14 @@ class AppLocalizationsTr extends AppLocalizations {
   String get conversationDeleted => 'Sohbet silindi.';
 
   @override
+  String get conversationDeletedFileChangesCleanupFailed =>
+      'Sohbet silindi ancak dosya değişikliği yedekleri temizlenemedi.';
+
+  @override
+  String get conversationHistoryClearedFileChangesCleanupFailed =>
+      'Sohbet geçmişi temizlendi ancak dosya değişikliği yedekleri silinemedi.';
+
+  @override
   String get conversationDeleteFailed => 'Sohbet silinemedi. Tekrar dene.';
 
   @override
@@ -2860,4 +2868,80 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get userQuestionNotificationBody => 'Yapay zekâ yanıtını bekliyor.';
+
+  @override
+  String fileChangesSummary(int count) {
+    return '$count dosya değiştirildi';
+  }
+
+  @override
+  String fileChangesLineCounts(int added, int removed) {
+    return '+$added / -$removed';
+  }
+
+  @override
+  String get fileChangesSomeCountsUnavailable => 'Satır sayısı hesaplanamadı';
+
+  @override
+  String get fileChangesView => 'Değişiklikleri görüntüle';
+
+  @override
+  String get fileChangesTrackingFailed =>
+      'Bazı dosya değişiklikleri izlenemedi. Liste eksik olabilir.';
+
+  @override
+  String get fileChangesTitle => 'Bu sohbetteki değişiklikler';
+
+  @override
+  String get fileChangesOpenButton => 'Değişiklikler';
+
+  @override
+  String get fileChangesLoadFailed => 'Sohbet değişiklikleri yüklenemedi.';
+
+  @override
+  String get fileChangesDiffFailed => 'Dosya farkı yüklenemedi.';
+
+  @override
+  String get fileChangesConflict =>
+      'Dosya, yapay zekâ düzenlemesinden sonra değişmiş. Dosyaya dokunulmadı.';
+
+  @override
+  String get fileChangesRevertFailed => 'Değişiklik geri alınamadı.';
+
+  @override
+  String get fileChangesEmpty =>
+      'Bu sohbet için kaydedilmiş dosya değişikliği yok.';
+
+  @override
+  String get fileChangesDiffTitle => 'Farkını görmek için bir dosya seç';
+
+  @override
+  String get fileChangesBinary =>
+      'İkili dosya değişiklikleri metin olarak gösterilemiyor.';
+
+  @override
+  String get fileChangesDiffUnavailable =>
+      'Bu dosya için metin farkı gösterilemiyor.';
+
+  @override
+  String get fileChangesDiffTruncated =>
+      'Fark uzun olduğu için yalnızca ilk bölümü gösteriliyor.';
+
+  @override
+  String get fileChangesActive => 'Değişti';
+
+  @override
+  String get fileChangesReverted => 'Geri alındı';
+
+  @override
+  String get fileChangesRevert => 'Geri al';
+
+  @override
+  String fileChangesMoreFiles(int count) {
+    return '$count dosya daha';
+  }
+
+  @override
+  String get fileChangesUnavailableTitle =>
+      'Dosya değişiklikleri kullanılamıyor';
 }

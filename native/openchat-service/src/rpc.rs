@@ -105,6 +105,52 @@ pub(crate) async fn dispatch(
             })?;
             Ok(json!({"status": "ready", "schema_version": schema_version}))
         }
+        "chat.file_changes.list" => {
+            let conversation_id = required_string(&request.params, "conversationId")?;
+            let changes = crate::file_changes::list_changes(storage.root(), conversation_id)
+                .map_err(file_changes_unavailable)?;
+            Ok(json!({"changes": changes}))
+        }
+        "chat.file_changes.diff" => {
+            let conversation_id = required_string(&request.params, "conversationId")?;
+            let change_id = required_string(&request.params, "changeId")?;
+            crate::file_changes::read_diff(storage.root(), conversation_id, change_id)
+                .map_err(file_changes_unavailable)
+        }
+        "chat.file_changes.revert" => {
+            let conversation_id = required_string(&request.params, "conversationId")?;
+            let change_id = required_string(&request.params, "changeId")?;
+            let changes = crate::file_changes::revert_change(
+                storage.root(),
+                conversation_id,
+                change_id,
+            )
+            .map_err(|error| match error {
+                crate::file_changes::RevertError::Conflict => ServiceError::new(
+                    "file_change_conflict",
+                    "This file changed after the assistant edited it. The current file was kept intact.",
+                    false,
+                ),
+                crate::file_changes::RevertError::AlreadyReverted => ServiceError::new(
+                    "file_change_already_reverted",
+                    "This file change has already been reverted.",
+                    false,
+                ),
+                crate::file_changes::RevertError::Unavailable => file_changes_unavailable(()),
+            })?;
+            Ok(json!({"changes": changes}))
+        }
+        "chat.file_changes.delete" => {
+            let conversation_id = required_string(&request.params, "conversationId")?;
+            crate::file_changes::delete_conversation_changes(storage.root(), conversation_id)
+                .map_err(file_changes_unavailable)?;
+            Ok(json!({"deleted": true}))
+        }
+        "chat.file_changes.delete_all" => {
+            crate::file_changes::delete_all_changes(storage.root())
+                .map_err(file_changes_unavailable)?;
+            Ok(json!({"deleted": true}))
+        }
         "chatgpt.oauth.start" => service.oauth_sign_in(&mut cancellation).await,
         "chatgpt.connections.list" => service.list_connections(),
         "chatgpt.connections.delete" => {
@@ -1020,6 +1066,14 @@ fn invalid_request_params() -> ServiceError {
         "invalid_request_params",
         "A required local service parameter is missing or invalid.",
         false,
+    )
+}
+
+fn file_changes_unavailable<T>(_: T) -> ServiceError {
+    ServiceError::new(
+        "file_changes_unavailable",
+        "Conversation file changes could not be loaded or updated.",
+        true,
     )
 }
 

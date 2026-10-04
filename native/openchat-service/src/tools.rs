@@ -1130,7 +1130,7 @@ fn entry_is_hidden(name: &str, entry: &fs::DirEntry) -> Result<bool, ()> {
     }
 }
 
-fn is_default_ignored_directory(name: &str) -> bool {
+pub(crate) fn is_default_ignored_directory(name: &str) -> bool {
     [
         ".git",
         ".dart_tool",

@@ -416,6 +416,8 @@ mod tests {
                 assistant_text_before_byte_offset: None,
                 target_path: Some("private/path".to_owned()),
                 output: Some(serde_json::json!({"content": "toolhistorydetail"})),
+                file_changes: Vec::new(),
+                file_changes_error: None,
                 status: crate::provider_schema::ToolActivityStatus::Completed,
             }],
             attachments: Vec::new(),

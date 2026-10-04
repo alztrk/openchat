@@ -737,6 +737,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get conversationDeleted => 'Conversation deleted.';
 
   @override
+  String get conversationDeletedFileChangesCleanupFailed =>
+      'The conversation was deleted, but its file-change backups could not be removed.';
+
+  @override
+  String get conversationHistoryClearedFileChangesCleanupFailed =>
+      'Conversation history was cleared, but file-change backups could not be removed.';
+
+  @override
   String get conversationDeleteFailed =>
       'The conversation could not be deleted. Try again.';
 
@@ -2874,4 +2882,92 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get userQuestionNotificationBody =>
       'The AI is waiting for your response.';
+
+  @override
+  String fileChangesSummary(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# files changed',
+      one: '# file changed',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String fileChangesLineCounts(int added, int removed) {
+    return '+$added / -$removed';
+  }
+
+  @override
+  String get fileChangesSomeCountsUnavailable => 'Line counts unavailable';
+
+  @override
+  String get fileChangesView => 'View changes';
+
+  @override
+  String get fileChangesTrackingFailed =>
+      'Some file changes could not be tracked. The list may be incomplete.';
+
+  @override
+  String get fileChangesTitle => 'Changes in this conversation';
+
+  @override
+  String get fileChangesOpenButton => 'Changes';
+
+  @override
+  String get fileChangesLoadFailed =>
+      'Conversation changes could not be loaded.';
+
+  @override
+  String get fileChangesDiffFailed => 'The file diff could not be loaded.';
+
+  @override
+  String get fileChangesConflict =>
+      'This file changed after the AI edit. It was left untouched.';
+
+  @override
+  String get fileChangesRevertFailed => 'The change could not be reverted.';
+
+  @override
+  String get fileChangesEmpty =>
+      'No file changes were captured for this conversation.';
+
+  @override
+  String get fileChangesDiffTitle => 'Select a file to inspect its diff';
+
+  @override
+  String get fileChangesBinary =>
+      'Binary file changes cannot be shown as text.';
+
+  @override
+  String get fileChangesDiffUnavailable =>
+      'A text diff is unavailable for this file.';
+
+  @override
+  String get fileChangesDiffTruncated =>
+      'The diff is long. Only its first part is shown.';
+
+  @override
+  String get fileChangesActive => 'Changed';
+
+  @override
+  String get fileChangesReverted => 'Reverted';
+
+  @override
+  String get fileChangesRevert => 'Revert';
+
+  @override
+  String fileChangesMoreFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# more files',
+      one: '# more file',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get fileChangesUnavailableTitle => 'File changes unavailable';
 }

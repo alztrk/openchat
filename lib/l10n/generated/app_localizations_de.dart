@@ -750,6 +750,14 @@ class AppLocalizationsDe extends AppLocalizations {
   String get conversationDeleted => 'Unterhaltung gelöscht.';
 
   @override
+  String get conversationDeletedFileChangesCleanupFailed =>
+      'Die Unterhaltung wurde gelöscht, aber die Sicherungen der Dateiänderungen konnten nicht entfernt werden.';
+
+  @override
+  String get conversationHistoryClearedFileChangesCleanupFailed =>
+      'Der Unterhaltungsverlauf wurde gelöscht, aber die Sicherungen der Dateiänderungen konnten nicht entfernt werden.';
+
+  @override
   String get conversationDeleteFailed =>
       'Die Unterhaltung konnte nicht gelöscht werden. Versuchen Sie es erneut.';
 
@@ -2921,4 +2929,95 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get userQuestionNotificationBody => 'Die KI wartet auf deine Antwort.';
+
+  @override
+  String fileChangesSummary(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# Dateien geändert',
+      one: '# Datei geändert',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String fileChangesLineCounts(int added, int removed) {
+    return '+$added / -$removed';
+  }
+
+  @override
+  String get fileChangesSomeCountsUnavailable => 'Zeilenzahl nicht verfügbar';
+
+  @override
+  String get fileChangesView => 'Änderungen ansehen';
+
+  @override
+  String get fileChangesTrackingFailed =>
+      'Einige Dateiänderungen konnten nicht erfasst werden. Die Liste ist möglicherweise unvollständig.';
+
+  @override
+  String get fileChangesTitle => 'Änderungen in dieser Unterhaltung';
+
+  @override
+  String get fileChangesOpenButton => 'Änderungen';
+
+  @override
+  String get fileChangesLoadFailed =>
+      'Unterhaltungsänderungen konnten nicht geladen werden.';
+
+  @override
+  String get fileChangesDiffFailed =>
+      'Der Dateiunterschied konnte nicht geladen werden.';
+
+  @override
+  String get fileChangesConflict =>
+      'Diese Datei wurde nach der KI-Änderung bearbeitet. Sie blieb unverändert.';
+
+  @override
+  String get fileChangesRevertFailed =>
+      'Die Änderung konnte nicht rückgängig gemacht werden.';
+
+  @override
+  String get fileChangesEmpty =>
+      'Für diese Unterhaltung wurden keine Dateiänderungen erfasst.';
+
+  @override
+  String get fileChangesDiffTitle =>
+      'Datei auswählen, um den Unterschied anzusehen';
+
+  @override
+  String get fileChangesBinary =>
+      'Änderungen an Binärdateien können nicht als Text angezeigt werden.';
+
+  @override
+  String get fileChangesDiffUnavailable =>
+      'Für diese Datei ist kein Textunterschied verfügbar.';
+
+  @override
+  String get fileChangesDiffTruncated =>
+      'Der Unterschied ist lang. Es wird nur der Anfang angezeigt.';
+
+  @override
+  String get fileChangesActive => 'Geändert';
+
+  @override
+  String get fileChangesReverted => 'Rückgängig';
+
+  @override
+  String get fileChangesRevert => 'Rückgängig machen';
+
+  @override
+  String fileChangesMoreFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# weitere Dateien',
+      one: '# weitere Datei',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get fileChangesUnavailableTitle => 'Dateiänderungen nicht verfügbar';
 }

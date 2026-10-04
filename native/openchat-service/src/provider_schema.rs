@@ -112,6 +112,10 @@ pub struct ToolActivity {
     pub target_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output: Option<Value>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub file_changes: Vec<crate::file_changes::FileChangeSummary>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_changes_error: Option<String>,
     pub status: ToolActivityStatus,
 }
 
@@ -125,6 +129,8 @@ impl ToolActivity {
             assistant_text_before_byte_offset: None,
             target_path: Some(target_path),
             output: None,
+            file_changes: Vec::new(),
+            file_changes_error: None,
             status: ToolActivityStatus::AwaitingApproval,
         }
     }
@@ -138,6 +144,8 @@ impl ToolActivity {
             assistant_text_before_byte_offset: None,
             target_path,
             output: None,
+            file_changes: Vec::new(),
+            file_changes_error: None,
             status: ToolActivityStatus::Running,
         }
     }
@@ -151,6 +159,8 @@ impl ToolActivity {
             assistant_text_before_byte_offset: None,
             target_path: None,
             output: None,
+            file_changes: Vec::new(),
+            file_changes_error: None,
             status: ToolActivityStatus::WaitingForUser,
         }
     }
@@ -169,6 +179,8 @@ impl ToolActivity {
             assistant_text_before_byte_offset: None,
             target_path,
             output: Some(output),
+            file_changes: Vec::new(),
+            file_changes_error: None,
             status,
         }
     }
@@ -182,6 +194,8 @@ impl ToolActivity {
             assistant_text_before_byte_offset: None,
             target_path: Some(target_path),
             output: Some(output),
+            file_changes: Vec::new(),
+            file_changes_error: None,
             status: ToolActivityStatus::Denied,
         }
     }
@@ -195,6 +209,8 @@ impl ToolActivity {
             assistant_text_before_byte_offset: None,
             target_path: Some(target_path),
             output: Some(output),
+            file_changes: Vec::new(),
+            file_changes_error: None,
             status: ToolActivityStatus::Cancelled,
         }
     }

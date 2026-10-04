@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -9,7 +10,9 @@ import 'package:intl/intl.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/openchat_toast.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
+import 'package:openchat/features/chat/data/chat_file_changes_repository.dart';
 import 'package:openchat/features/chat/domain/agent_question.dart';
+import 'package:openchat/features/chat/domain/chat_file_change.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/domain/chat_attachment.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
@@ -22,7 +25,9 @@ import 'package:openchat/platform/windows/window_controls.dart';
 import 'package:openchat/features/chat/presentation/widgets/assistant_message.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_attachment_gallery.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_composer.dart';
+import 'package:openchat/features/chat/presentation/widgets/chat_file_changes_panel.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_surface_card.dart';
+import 'package:openchat/features/chat/presentation/widgets/file_changes_summary_card.dart';
 import 'package:openchat/features/chat/presentation/widgets/tool_permission_card.dart';
 import 'package:openchat/features/chat/presentation/widgets/user_question_card.dart';
 import 'package:openchat/features/chat/presentation/widgets/window_control_bar.dart';
@@ -67,6 +72,13 @@ class ConversationPane extends StatelessWidget {
     this.contextConnectionId,
     this.contextWorkspaceId,
     this.conversationMemoryRepository,
+    this.fileChangesRepository,
+    this.conversationFileChanges = const <ChatFileChange>[],
+    this.fileChangesRevision = 0,
+    this.isFileChangesPanelOpen = false,
+    this.onOpenFileChanges,
+    this.onCloseFileChanges,
+    this.onFileChangesUpdated,
     this.settingsPreferences,
     this.pendingAttachments = const <ChatAttachment>[],
     this.onAddAttachments,
@@ -143,6 +155,13 @@ class ConversationPane extends StatelessWidget {
   final String? contextConnectionId;
   final String? contextWorkspaceId;
   final ConversationMemoryRepository? conversationMemoryRepository;
+  final ChatFileChangesRepository? fileChangesRepository;
+  final List<ChatFileChange> conversationFileChanges;
+  final int fileChangesRevision;
+  final bool isFileChangesPanelOpen;
+  final VoidCallback? onOpenFileChanges;
+  final VoidCallback? onCloseFileChanges;
+  final ValueChanged<List<ChatFileChange>>? onFileChangesUpdated;
   final SettingsPreferences? settingsPreferences;
   final List<ChatAttachment> pendingAttachments;
   final VoidCallback? onAddAttachments;
@@ -186,156 +205,205 @@ class ConversationPane extends StatelessWidget {
             ? OpenChatSpacing.compactPageHorizontal
             : OpenChatSpacing.pageHorizontal;
 
-        return Column(
-          children: [
-            _ConversationHeader(
-              showHistoryButton: showHistoryButton,
-              title: conversationTitle ?? l10n.conversationTitle,
-              conversationId: conversationId,
-              titleEditRequestId: titleEditRequestId,
-              onRenameConversation: onRenameConversation,
-              onTitleEditFinished: onConversationTitleEditFinished,
-              onOpenHistory: onOpenHistory,
-              historyButtonTooltip: historyButtonTooltip,
-              showWindowControls:
-                  showWindowControls ?? OpenChatWindowControls.isSupported,
-            ),
-            Expanded(
-              child: messagesErrorDescription != null
-                  ? _ConversationMessageError(
-                      description: messagesErrorDescription!,
-                    )
-                  : messagesLoading
-                  ? Center(
-                      child: Semantics(
-                        label: l10n.messageHistoryLoading,
-                        child: SizedBox.square(
-                          dimension: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
+        final latestFileChanges = _mergeConversationFileChanges(
+          messages,
+          conversationFileChanges,
+        );
+        final header = _ConversationHeader(
+          showHistoryButton: showHistoryButton,
+          title: conversationTitle ?? l10n.conversationTitle,
+          conversationId: conversationId,
+          titleEditRequestId: titleEditRequestId,
+          onRenameConversation: onRenameConversation,
+          onTitleEditFinished: onConversationTitleEditFinished,
+          onOpenHistory: onOpenHistory,
+          historyButtonTooltip: historyButtonTooltip,
+          showWindowControls:
+              showWindowControls ?? OpenChatWindowControls.isSupported,
+        );
+        final history = messagesErrorDescription != null
+            ? _ConversationMessageError(description: messagesErrorDescription!)
+            : messagesLoading
+            ? Center(
+                child: Semantics(
+                  label: l10n.messageHistoryLoading,
+                  child: SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              )
+            : messages.isEmpty &&
+                  !showAssistantLoading
+            ? _NewConversationEmptyState(
+                title: l10n.emptyChatWelcomeTitle,
+                description: l10n.emptyChatWelcomeBody,
+              )
+            : _ConversationHistory(
+                messages: messages,
+                showAssistantLoading: showAssistantLoading,
+                assistantModelLabel: assistantModelLabel,
+                onRetryResponse: onRetryResponse,
+                onOpenFileChanges: onOpenFileChanges,
+                latestFileChanges: latestFileChanges,
+                controller: messageScrollController,
+                providerId: providerId,
+              );
+        final composerArea = Padding(
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            0,
+            horizontalPadding,
+            24,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (latestFileChanges.isNotEmpty &&
+                  conversationId != null &&
+                  fileChangesRepository != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Center(
+                    child: _FileChangesButton(
+                      changes: latestFileChanges,
+                      onPressed: onOpenFileChanges,
+                    ),
+                  ),
+                ),
+              if (pendingQuestionError case final error?) ...[
+                ChatSurfaceCard(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.error_outline_rounded,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Semantics(
+                          liveRegion: true,
+                          child: Text(
+                            error,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
                         ),
                       ),
-                    )
-                  : messages.isEmpty && !showAssistantLoading
-                  ? _NewConversationEmptyState(
-                      title: l10n.emptyChatWelcomeTitle,
-                      description: l10n.emptyChatWelcomeBody,
-                    )
-                  : _ConversationHistory(
-                      messages: messages,
-                      showAssistantLoading: showAssistantLoading,
-                      assistantModelLabel: assistantModelLabel,
-                      onRetryResponse: onRetryResponse,
-                      controller: messageScrollController,
-                      providerId: providerId,
-                    ),
-            ),
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                horizontalPadding,
-                0,
-                horizontalPadding,
-                24,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (pendingQuestionError case final error?) ...[
-                    ChatSurfaceCard(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
+                      TextButton(
+                        onPressed: onRetryPendingQuestions,
+                        child: Text(l10n.retry),
                       ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.error_outline_rounded,
-                            size: 16,
-                            color: Theme.of(context).colorScheme.error,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Semantics(
-                              liveRegion: true,
-                              child: Text(
-                                error,
-                                style: Theme.of(context).textTheme.bodySmall,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: onRetryPendingQuestions,
-                            child: Text(l10n.retry),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-                  for (final group in pendingQuestionGroups) ...[
-                    UserQuestionCard(
-                      group: group,
-                      focusOnBuild: group.id == focusedQuestionGroupId,
-                      isResuming: isResumingQuestion,
-                      onSubmit: (answers) =>
-                          onSubmitQuestionAnswers?.call(group, answers) ??
-                          Future<String?>.value(l10n.userQuestionUnavailable),
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-                  if (toolPermissionRequest case final request?) ...[
-                    ToolPermissionCard(
-                      request: request,
-                      isResponding: isRespondingToToolPermission,
-                      errorMessage: toolPermissionError,
-                      onApprove: onApproveToolPermission,
-                      onDeny: onDenyToolPermission,
-                    ),
-                    const SizedBox(height: 10),
-                  ],
-                  ChatComposer(
-                    controller: messageController,
-                    onSendMessage: onSendMessage,
-                    canSendMessage: canSendMessage,
-                    isLoadingModels: isLoadingModels,
-                    isSending: isSending,
-                    onStopMessage: onStopMessage,
-                    modelLabel: selectedModelLabel,
-                    models: models,
-                    favoriteModels: favoriteModels,
-                    providerId: providerId,
-                    isChatGptConnected: isChatGptConnected,
-                    availableProviderIds: availableProviderIds,
-                    onProviderSelected: onProviderSelected,
-                    modelsEmptyLabel: modelsEmptyLabel,
-                    hiddenModelKeys: hiddenModelKeys,
-                    selectedModelId: selectedModelId,
-                    selectedModelRouteKey: selectedModelRouteKey,
-                    onModelSelected: onModelSelected,
-                    onModelFavoriteChanged: onModelFavoriteChanged,
-                    onFavoriteModelSelected: onFavoriteModelSelected,
-                    reasoningLevel: reasoningLevel,
-                    reasoningOptions: reasoningOptions,
-                    onReasoningSelected: onReasoningSelected,
-                    showReasoningSelector: showReasoningSelector,
-                    toolPermissionMode: toolPermissionMode,
-                    onToolPermissionModeChanged: onToolPermissionModeChanged,
-                    messages: messages,
-                    conversationId: conversationId,
-                    contextProviderId: contextProviderId,
-                    contextModelId: contextModelId,
-                    contextSupportsTools: contextSupportsTools,
-                    contextWindow: contextWindow,
-                    contextConnectionId: contextConnectionId,
-                    contextWorkspaceId: contextWorkspaceId,
-                    conversationMemoryRepository: conversationMemoryRepository,
-                    settingsPreferences: settingsPreferences,
-                    pendingAttachments: pendingAttachments,
-                    onAddAttachments: onAddAttachments,
-                    onRemoveAttachment: onRemoveAttachment,
-                    attachmentsEnabled: attachmentsEnabled,
+                    ],
                   ),
-                ],
+                ),
+                const SizedBox(height: 10),
+              ],
+              for (final group in pendingQuestionGroups) ...[
+                UserQuestionCard(
+                  group: group,
+                  focusOnBuild: group.id == focusedQuestionGroupId,
+                  isResuming: isResumingQuestion,
+                  onSubmit: (answers) =>
+                      onSubmitQuestionAnswers?.call(group, answers) ??
+                      Future<String?>.value(l10n.userQuestionUnavailable),
+                ),
+                const SizedBox(height: 10),
+              ],
+              if (toolPermissionRequest case final request?) ...[
+                ToolPermissionCard(
+                  request: request,
+                  isResponding: isRespondingToToolPermission,
+                  errorMessage: toolPermissionError,
+                  onApprove: onApproveToolPermission,
+                  onDeny: onDenyToolPermission,
+                ),
+                const SizedBox(height: 10),
+              ],
+              ChatComposer(
+                controller: messageController,
+                onSendMessage: onSendMessage,
+                canSendMessage: canSendMessage,
+                isLoadingModels: isLoadingModels,
+                isSending: isSending,
+                onStopMessage: onStopMessage,
+                modelLabel: selectedModelLabel,
+                models: models,
+                favoriteModels: favoriteModels,
+                providerId: providerId,
+                isChatGptConnected: isChatGptConnected,
+                availableProviderIds: availableProviderIds,
+                onProviderSelected: onProviderSelected,
+                modelsEmptyLabel: modelsEmptyLabel,
+                hiddenModelKeys: hiddenModelKeys,
+                selectedModelId: selectedModelId,
+                selectedModelRouteKey: selectedModelRouteKey,
+                onModelSelected: onModelSelected,
+                onModelFavoriteChanged: onModelFavoriteChanged,
+                onFavoriteModelSelected: onFavoriteModelSelected,
+                reasoningLevel: reasoningLevel,
+                reasoningOptions: reasoningOptions,
+                onReasoningSelected: onReasoningSelected,
+                showReasoningSelector: showReasoningSelector,
+                toolPermissionMode: toolPermissionMode,
+                onToolPermissionModeChanged: onToolPermissionModeChanged,
+                messages: messages,
+                conversationId: conversationId,
+                contextProviderId: contextProviderId,
+                contextModelId: contextModelId,
+                contextSupportsTools: contextSupportsTools,
+                contextWindow: contextWindow,
+                contextConnectionId: contextConnectionId,
+                contextWorkspaceId: contextWorkspaceId,
+                conversationMemoryRepository: conversationMemoryRepository,
+                settingsPreferences: settingsPreferences,
+                pendingAttachments: pendingAttachments,
+                onAddAttachments: onAddAttachments,
+                onRemoveAttachment: onRemoveAttachment,
+                attachmentsEnabled: attachmentsEnabled,
               ),
+            ],
+          ),
+        );
+        final showSidePanel =
+            isFileChangesPanelOpen &&
+            conversationId != null &&
+            fileChangesRepository != null;
+        final fileChangesPanel = showSidePanel
+            ? ChatFileChangesPanel(
+                key: ValueKey<String>('file-changes-$conversationId'),
+                repository: fileChangesRepository!,
+                conversationId: conversationId!,
+                refreshRevision: fileChangesRevision,
+                onClose: onCloseFileChanges ?? () {},
+                onChangesUpdated: onFileChangesUpdated ?? (_) {},
+              )
+            : null;
+        final mainContent = Column(
+          children: [
+            header,
+            Expanded(
+              child: showSidePanel && constraints.maxWidth < 1120
+                  ? fileChangesPanel!
+                  : history,
+            ),
+            composerArea,
+          ],
+        );
+
+        if (fileChangesPanel == null || constraints.maxWidth < 1120) {
+          return mainContent;
+        }
+        return Row(
+          children: [
+            Expanded(child: mainContent),
+            SizedBox(
+              width: math.min(440.0, constraints.maxWidth * 0.38),
+              child: fileChangesPanel,
             ),
           ],
         );
@@ -376,6 +444,8 @@ class _ConversationHistory extends StatefulWidget {
     required this.onRetryResponse,
     required this.controller,
     required this.providerId,
+    required this.onOpenFileChanges,
+    required this.latestFileChanges,
   });
 
   final List<ChatMessage> messages;
@@ -384,6 +454,8 @@ class _ConversationHistory extends StatefulWidget {
   final ValueChanged<ChatMessage>? onRetryResponse;
   final ScrollController? controller;
   final String providerId;
+  final VoidCallback? onOpenFileChanges;
+  final List<ChatFileChange> latestFileChanges;
 
   @override
   State<_ConversationHistory> createState() => _ConversationHistoryState();
@@ -680,6 +752,13 @@ class _ConversationHistoryState extends State<_ConversationHistory> {
                             ),
                           },
                         ),
+                        if (message.role == ChatMessageRole.assistant &&
+                            message.status != ChatMessageStatus.streaming)
+                          FileChangesSummaryCard(
+                            message: message,
+                            latestChanges: widget.latestFileChanges,
+                            onViewChanges: widget.onOpenFileChanges,
+                          ),
                       ],
                     ),
                   ),
@@ -708,6 +787,98 @@ class _ConversationHistoryState extends State<_ConversationHistory> {
     return message.role == ChatMessageRole.assistant &&
         message.status != ChatMessageStatus.streaming &&
         messages[index - 1].role == ChatMessageRole.user;
+  }
+}
+
+List<ChatFileChange> _mergeConversationFileChanges(
+  List<ChatMessage> messages,
+  List<ChatFileChange> latestChanges,
+) {
+  final changesById = <String, ChatFileChange>{};
+  for (final message in messages) {
+    if (message.role != ChatMessageRole.assistant) continue;
+    for (final activity in message.toolActivities) {
+      for (final change in activity.fileChanges) {
+        changesById[change.id] = change;
+      }
+    }
+  }
+  for (final change in latestChanges) {
+    if (changesById.containsKey(change.id)) changesById[change.id] = change;
+  }
+  return changesById.values.toList(growable: false);
+}
+
+class _FileChangesButton extends StatelessWidget {
+  const _FileChangesButton({required this.changes, required this.onPressed});
+
+  final List<ChatFileChange> changes;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final active = changes
+        .where((change) => change.status == ChatFileChangeState.active)
+        .toList(growable: false);
+    final added = active.fold<int>(
+      0,
+      (total, change) => total + (change.addedLines ?? 0),
+    );
+    final removed = active.fold<int>(
+      0,
+      (total, change) => total + (change.removedLines ?? 0),
+    );
+    final countsUnavailable = active.any(
+      (change) => change.addedLines == null || change.removedLines == null,
+    );
+    final palette = OpenChatPalette.of(context);
+    final l10n = context.openchatL10n;
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: const Icon(Icons.difference_outlined, size: 16),
+      label: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            l10n.fileChangesOpenButton,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const SizedBox(width: 8),
+          if (countsUnavailable)
+            Text(
+              l10n.fileChangesSomeCountsUnavailable,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: palette.secondaryText),
+            )
+          else ...[
+            Text(
+              '+$added',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.tertiary,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '-$removed',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.error,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: palette.text,
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        side: BorderSide(color: palette.border),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+      ),
+    );
   }
 }
 

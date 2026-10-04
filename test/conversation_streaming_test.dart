@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/features/chat/domain/chat_file_change.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/presentation/widgets/assistant_message.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
@@ -71,6 +72,76 @@ void main() {
           .any((widget) => widget.text.toPlainText().contains('**bold text**')),
       isFalse,
     );
+  });
+
+  testWidgets('shows file changes only after the assistant response ends', (
+    tester,
+  ) async {
+    _setViewport(tester);
+    final controller = ScrollController();
+    final messageController = TextEditingController();
+    addTearDown(controller.dispose);
+    addTearDown(messageController.dispose);
+    addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
+    const activity = ChatToolActivity(
+      callId: 'write-1',
+      name: 'write_file',
+      arguments: <String, Object?>{'path': 'src/example.dart'},
+      output: 'File written.',
+      status: ChatToolActivityStatus.completed,
+      fileChanges: <ChatFileChange>[
+        ChatFileChange(
+          id: 'change-1',
+          path: 'src/example.dart',
+          kind: ChatFileChangeKind.modified,
+          status: ChatFileChangeState.active,
+          addedLines: 2,
+          removedLines: 1,
+          isBinary: false,
+          diffAvailable: true,
+          canRevert: true,
+        ),
+      ],
+    );
+    final streamingMessage = ChatMessage(
+      id: 'assistant-message',
+      role: ChatMessageRole.assistant,
+      content: 'Updating the file.',
+      status: ChatMessageStatus.streaming,
+      toolActivities: const <ChatToolActivity>[activity],
+    );
+    await tester.pumpWidget(
+      _testApp(
+        _conversationPane(
+          <ChatMessage>[streamingMessage],
+          controller,
+          messageController,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('1 dosya değiştirildi'), findsNothing);
+
+    final completedMessage = ChatMessage(
+      id: streamingMessage.id,
+      role: streamingMessage.role,
+      content: streamingMessage.content,
+      status: ChatMessageStatus.completed,
+      toolActivities: streamingMessage.toolActivities,
+    );
+    await tester.pumpWidget(
+      _testApp(
+        _conversationPane(
+          <ChatMessage>[completedMessage],
+          controller,
+          messageController,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('1 dosya değiştirildi'), findsOneWidget);
+    expect(find.text('+2 / -1'), findsOneWidget);
+    expect(find.text('src/example.dart'), findsOneWidget);
   });
 
   testWidgets('follows streamed output unless the reader scrolls up', (

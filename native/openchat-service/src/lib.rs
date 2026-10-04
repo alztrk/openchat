@@ -4,6 +4,7 @@ mod chatgpt;
 mod chatgpt_store;
 mod context_compaction;
 mod conversation_archive;
+mod file_changes;
 mod history;
 mod hugging_face;
 mod instructions;

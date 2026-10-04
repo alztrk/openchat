@@ -749,6 +749,14 @@ class AppLocalizationsFr extends AppLocalizations {
   String get conversationDeleted => 'Conversation supprimée.';
 
   @override
+  String get conversationDeletedFileChangesCleanupFailed =>
+      'La conversation a été supprimée, mais les sauvegardes des modifications de fichiers n’ont pas pu être effacées.';
+
+  @override
+  String get conversationHistoryClearedFileChangesCleanupFailed =>
+      'L’historique des conversations a été supprimé, mais les sauvegardes des modifications de fichiers n’ont pas pu être effacées.';
+
+  @override
   String get conversationDeleteFailed =>
       'Impossible de supprimer la conversation. Réessayez.';
 
@@ -2937,4 +2945,95 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get userQuestionNotificationBody => 'L’IA attend votre réponse.';
+
+  @override
+  String fileChangesSummary(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# fichiers modifiés',
+      one: '# fichier modifié',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String fileChangesLineCounts(int added, int removed) {
+    return '+$added / -$removed';
+  }
+
+  @override
+  String get fileChangesSomeCountsUnavailable =>
+      'Nombre de lignes indisponible';
+
+  @override
+  String get fileChangesView => 'Voir les modifications';
+
+  @override
+  String get fileChangesTrackingFailed =>
+      'Certaines modifications n’ont pas pu être suivies. La liste est peut-être incomplète.';
+
+  @override
+  String get fileChangesTitle => 'Modifications de cette conversation';
+
+  @override
+  String get fileChangesOpenButton => 'Modifications';
+
+  @override
+  String get fileChangesLoadFailed =>
+      'Impossible de charger les modifications de la conversation.';
+
+  @override
+  String get fileChangesDiffFailed =>
+      'Impossible de charger le diff du fichier.';
+
+  @override
+  String get fileChangesConflict =>
+      'Ce fichier a changé après la modification de l’IA. Il n’a pas été touché.';
+
+  @override
+  String get fileChangesRevertFailed => 'Impossible d’annuler la modification.';
+
+  @override
+  String get fileChangesEmpty =>
+      'Aucune modification de fichier n’a été enregistrée pour cette conversation.';
+
+  @override
+  String get fileChangesDiffTitle =>
+      'Sélectionnez un fichier pour voir son diff';
+
+  @override
+  String get fileChangesBinary =>
+      'Les modifications des fichiers binaires ne peuvent pas être affichées en texte.';
+
+  @override
+  String get fileChangesDiffUnavailable =>
+      'Aucun diff texte n’est disponible pour ce fichier.';
+
+  @override
+  String get fileChangesDiffTruncated =>
+      'Le diff est long. Seul le début est affiché.';
+
+  @override
+  String get fileChangesActive => 'Modifié';
+
+  @override
+  String get fileChangesReverted => 'Annulé';
+
+  @override
+  String get fileChangesRevert => 'Annuler';
+
+  @override
+  String fileChangesMoreFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# fichiers supplémentaires',
+      one: '# fichier supplémentaire',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get fileChangesUnavailableTitle => 'Modifications indisponibles';
 }

@@ -383,6 +383,8 @@ mod tests {
                 round_id: Some("round-1".to_owned()),
                 assistant_text_before_byte_offset: Some(0),
                 output: Some(json!({"content": "theme = warm"})),
+                file_changes: Vec::new(),
+                file_changes_error: None,
                 status: ToolActivityStatus::Completed,
                 target_path: Some("private/local/path".to_owned()),
             }],
@@ -438,6 +440,8 @@ mod tests {
             assistant_text_before_byte_offset: Some("Inspecting. Reading.".len()),
             target_path: None,
             output: Some(json!({"content": "second result"})),
+            file_changes: Vec::new(),
+            file_changes_error: None,
             status: ToolActivityStatus::Completed,
         };
         message.tool_activities.push(second_activity);

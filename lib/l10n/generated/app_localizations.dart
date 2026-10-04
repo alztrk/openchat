@@ -1328,6 +1328,18 @@ abstract class AppLocalizations {
   /// **'Conversation deleted.'**
   String get conversationDeleted;
 
+  /// No description provided for @conversationDeletedFileChangesCleanupFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The conversation was deleted, but its file-change backups could not be removed.'**
+  String get conversationDeletedFileChangesCleanupFailed;
+
+  /// No description provided for @conversationHistoryClearedFileChangesCleanupFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation history was cleared, but file-change backups could not be removed.'**
+  String get conversationHistoryClearedFileChangesCleanupFailed;
+
   /// No description provided for @conversationDeleteFailed.
   ///
   /// In en, this message translates to:
@@ -4867,6 +4879,132 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The AI is waiting for your response.'**
   String get userQuestionNotificationBody;
+
+  /// No description provided for @fileChangesSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{# file changed} other{# files changed}}'**
+  String fileChangesSummary(int count);
+
+  /// No description provided for @fileChangesLineCounts.
+  ///
+  /// In en, this message translates to:
+  /// **'+{added} / -{removed}'**
+  String fileChangesLineCounts(int added, int removed);
+
+  /// No description provided for @fileChangesSomeCountsUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Line counts unavailable'**
+  String get fileChangesSomeCountsUnavailable;
+
+  /// No description provided for @fileChangesView.
+  ///
+  /// In en, this message translates to:
+  /// **'View changes'**
+  String get fileChangesView;
+
+  /// No description provided for @fileChangesTrackingFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Some file changes could not be tracked. The list may be incomplete.'**
+  String get fileChangesTrackingFailed;
+
+  /// No description provided for @fileChangesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Changes in this conversation'**
+  String get fileChangesTitle;
+
+  /// No description provided for @fileChangesOpenButton.
+  ///
+  /// In en, this message translates to:
+  /// **'Changes'**
+  String get fileChangesOpenButton;
+
+  /// No description provided for @fileChangesLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation changes could not be loaded.'**
+  String get fileChangesLoadFailed;
+
+  /// No description provided for @fileChangesDiffFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The file diff could not be loaded.'**
+  String get fileChangesDiffFailed;
+
+  /// No description provided for @fileChangesConflict.
+  ///
+  /// In en, this message translates to:
+  /// **'This file changed after the AI edit. It was left untouched.'**
+  String get fileChangesConflict;
+
+  /// No description provided for @fileChangesRevertFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The change could not be reverted.'**
+  String get fileChangesRevertFailed;
+
+  /// No description provided for @fileChangesEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No file changes were captured for this conversation.'**
+  String get fileChangesEmpty;
+
+  /// No description provided for @fileChangesDiffTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Select a file to inspect its diff'**
+  String get fileChangesDiffTitle;
+
+  /// No description provided for @fileChangesBinary.
+  ///
+  /// In en, this message translates to:
+  /// **'Binary file changes cannot be shown as text.'**
+  String get fileChangesBinary;
+
+  /// No description provided for @fileChangesDiffUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'A text diff is unavailable for this file.'**
+  String get fileChangesDiffUnavailable;
+
+  /// No description provided for @fileChangesDiffTruncated.
+  ///
+  /// In en, this message translates to:
+  /// **'The diff is long. Only its first part is shown.'**
+  String get fileChangesDiffTruncated;
+
+  /// No description provided for @fileChangesActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Changed'**
+  String get fileChangesActive;
+
+  /// No description provided for @fileChangesReverted.
+  ///
+  /// In en, this message translates to:
+  /// **'Reverted'**
+  String get fileChangesReverted;
+
+  /// No description provided for @fileChangesRevert.
+  ///
+  /// In en, this message translates to:
+  /// **'Revert'**
+  String get fileChangesRevert;
+
+  /// No description provided for @fileChangesMoreFiles.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, one{# more file} other{# more files}}'**
+  String fileChangesMoreFiles(int count);
+
+  /// No description provided for @fileChangesUnavailableTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'File changes unavailable'**
+  String get fileChangesUnavailableTitle;
 }
 
 class _AppLocalizationsDelegate

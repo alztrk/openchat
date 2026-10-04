@@ -66,6 +66,18 @@ pub struct ToolExecutor {
     allowed_tool_names: HashSet<String>,
 }
 
+enum PendingFileChangeCapture {
+    File {
+        path: String,
+        before:
+            Result<Option<crate::file_changes::FileSnapshot>, crate::file_changes::TrackingError>,
+    },
+    Workspace {
+        before: Result<crate::file_changes::WorkspaceSnapshot, crate::file_changes::TrackingError>,
+    },
+    None,
+}
+
 pub(crate) fn tool_call_limit_error() -> ServiceError {
     ServiceError::new(
         "tool_iteration_limit",
@@ -465,20 +477,24 @@ impl ToolExecutor {
             .await?;
             return Err(crate::permissions::operation_cancelled_error());
         }
+        let file_change_capture = capture_file_change_before(&prepared);
         let mut output = execute_model_tool(&prepared).await;
         qualify_output_paths(&mut output, &prepared);
-        self.emit_activity(
-            storage,
-            ToolActivity::finished(
-                call,
-                Some(prepared.target_path.to_string_lossy().into_owned()),
-                output.clone(),
-            ),
-            request_id,
-            snapshot,
-            events,
-        )
-        .await?;
+        let (file_changes, file_changes_error) = finish_file_change_capture(
+            storage.root(),
+            &snapshot.conversation_id,
+            &prepared,
+            file_change_capture,
+        );
+        let mut activity = ToolActivity::finished(
+            call,
+            Some(prepared.target_path.to_string_lossy().into_owned()),
+            output.clone(),
+        );
+        activity.file_changes = file_changes;
+        activity.file_changes_error = file_changes_error;
+        self.emit_activity(storage, activity, request_id, snapshot, events)
+            .await?;
         Ok(ToolResult {
             call_id: call.id.clone(),
             output,
@@ -771,6 +787,83 @@ impl ToolExecutor {
         }
         .into_rpc(request_id.clone());
         events.send(&event).await.map_err(|_| protocol_error())
+    }
+}
+
+fn capture_file_change_before(prepared: &PreparedToolCall) -> PendingFileChangeCapture {
+    match &prepared.operation {
+        ToolOperation::Write { .. } | ToolOperation::Edit { .. } => {
+            PendingFileChangeCapture::File {
+                path: prepared.relative_path.clone(),
+                before: crate::file_changes::capture_file(&prepared.root, &prepared.relative_path),
+            }
+        }
+        ToolOperation::Bash { .. } | ToolOperation::SendTerminalInput { .. } => {
+            PendingFileChangeCapture::Workspace {
+                before: crate::file_changes::capture_workspace(&prepared.root),
+            }
+        }
+        _ => PendingFileChangeCapture::None,
+    }
+}
+
+fn finish_file_change_capture(
+    data_root: &Path,
+    conversation_id: &str,
+    prepared: &PreparedToolCall,
+    capture: PendingFileChangeCapture,
+) -> (Vec<crate::file_changes::FileChangeSummary>, Option<String>) {
+    let deltas = match capture {
+        PendingFileChangeCapture::None => return (Vec::new(), None),
+        PendingFileChangeCapture::File { path, before } => {
+            let Ok(before) = before else {
+                return (Vec::new(), Some("snapshot_unavailable".to_owned()));
+            };
+            let after = match crate::file_changes::capture_file(&prepared.root, &path) {
+                Ok(after) => after,
+                Err(error) => return (Vec::new(), Some(tracking_error_code(error).to_owned())),
+            };
+            let before_hash = before.as_ref().map(|file| file.hash.as_str());
+            let after_hash = after.as_ref().map(|file| file.hash.as_str());
+            if before_hash == after_hash {
+                Vec::new()
+            } else {
+                vec![crate::file_changes::FileChangeDelta {
+                    path,
+                    before,
+                    after,
+                }]
+            }
+        }
+        PendingFileChangeCapture::Workspace { before } => {
+            let Ok(before) = before else {
+                return (
+                    Vec::new(),
+                    Some("workspace_snapshot_unavailable".to_owned()),
+                );
+            };
+            let after = match crate::file_changes::capture_workspace(&prepared.root) {
+                Ok(after) => after,
+                Err(error) => return (Vec::new(), Some(tracking_error_code(error).to_owned())),
+            };
+            match crate::file_changes::workspace_deltas(&before, &after) {
+                Ok(deltas) => deltas,
+                Err(error) => return (Vec::new(), Some(tracking_error_code(error).to_owned())),
+            }
+        }
+    };
+    match crate::file_changes::record_deltas(data_root, conversation_id, &prepared.root, deltas) {
+        Ok(changes) => (changes, None),
+        Err(error) => (Vec::new(), Some(tracking_error_code(error).to_owned())),
+    }
+}
+
+fn tracking_error_code(error: crate::file_changes::TrackingError) -> &'static str {
+    match error {
+        crate::file_changes::TrackingError::WorkspaceUnavailable => "workspace_unavailable",
+        crate::file_changes::TrackingError::WorkspaceTooLarge => "workspace_too_large",
+        crate::file_changes::TrackingError::SnapshotUnavailable => "snapshot_unavailable",
+        crate::file_changes::TrackingError::StorageUnavailable => "storage_unavailable",
     }
 }
 

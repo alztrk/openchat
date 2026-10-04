@@ -745,6 +745,14 @@ class AppLocalizationsEs extends AppLocalizations {
   String get conversationDeleted => 'Conversación eliminada.';
 
   @override
+  String get conversationDeletedFileChangesCleanupFailed =>
+      'Se eliminó la conversación, pero no se pudieron borrar las copias de los cambios en los archivos.';
+
+  @override
+  String get conversationHistoryClearedFileChangesCleanupFailed =>
+      'Se borró el historial de conversaciones, pero no se pudieron eliminar las copias de los cambios en los archivos.';
+
+  @override
   String get conversationDeleteFailed =>
       'No se pudo eliminar la conversación. Vuelve a intentarlo.';
 
@@ -2919,4 +2927,95 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get userQuestionNotificationBody =>
       'La IA está esperando tu respuesta.';
+
+  @override
+  String fileChangesSummary(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# archivos cambiados',
+      one: '# archivo cambiado',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String fileChangesLineCounts(int added, int removed) {
+    return '+$added / -$removed';
+  }
+
+  @override
+  String get fileChangesSomeCountsUnavailable =>
+      'No se pudo calcular el número de líneas';
+
+  @override
+  String get fileChangesView => 'Ver cambios';
+
+  @override
+  String get fileChangesTrackingFailed =>
+      'No se pudieron registrar algunos cambios. La lista podría estar incompleta.';
+
+  @override
+  String get fileChangesTitle => 'Cambios en esta conversación';
+
+  @override
+  String get fileChangesOpenButton => 'Cambios';
+
+  @override
+  String get fileChangesLoadFailed =>
+      'No se pudieron cargar los cambios de la conversación.';
+
+  @override
+  String get fileChangesDiffFailed =>
+      'No se pudo cargar la diferencia del archivo.';
+
+  @override
+  String get fileChangesConflict =>
+      'El archivo cambió después de la edición de la IA. No se modificó.';
+
+  @override
+  String get fileChangesRevertFailed => 'No se pudo revertir el cambio.';
+
+  @override
+  String get fileChangesEmpty =>
+      'No se registraron cambios de archivos en esta conversación.';
+
+  @override
+  String get fileChangesDiffTitle =>
+      'Selecciona un archivo para ver su diferencia';
+
+  @override
+  String get fileChangesBinary =>
+      'Los cambios en archivos binarios no se pueden mostrar como texto.';
+
+  @override
+  String get fileChangesDiffUnavailable =>
+      'No hay una diferencia de texto disponible para este archivo.';
+
+  @override
+  String get fileChangesDiffTruncated =>
+      'La diferencia es larga. Solo se muestra el comienzo.';
+
+  @override
+  String get fileChangesActive => 'Modificado';
+
+  @override
+  String get fileChangesReverted => 'Revertido';
+
+  @override
+  String get fileChangesRevert => 'Revertir';
+
+  @override
+  String fileChangesMoreFiles(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# archivos más',
+      one: '# archivo más',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get fileChangesUnavailableTitle => 'Cambios no disponibles';
 }

@@ -772,6 +772,8 @@ mod tests {
                 assistant_text_before_byte_offset: None,
                 target_path: None,
                 output: Some(json!({"content": "enabled"})),
+                file_changes: Vec::new(),
+                file_changes_error: None,
                 status: crate::provider_schema::ToolActivityStatus::Completed,
             });
 
@@ -803,6 +805,8 @@ mod tests {
                 assistant_text_before_byte_offset: None,
                 target_path: Some("settings.json".to_owned()),
                 output: Some(json!({"content": full_tool_output})),
+                file_changes: Vec::new(),
+                file_changes_error: None,
                 status: crate::provider_schema::ToolActivityStatus::Completed,
             });
         let messages = [assistant];

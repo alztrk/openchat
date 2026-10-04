@@ -648,6 +648,8 @@ mod tests {
                 assistant_text_before_byte_offset: None,
                 target_path: None,
                 output: Some(serde_json::json!({"content": "x".repeat(500)})),
+                file_changes: Vec::new(),
+                file_changes_error: None,
                 status: crate::provider_schema::ToolActivityStatus::Completed,
             });
 

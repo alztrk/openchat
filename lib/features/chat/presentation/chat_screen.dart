@@ -13,9 +13,11 @@ import 'package:openchat/app/openchat_toast.dart';
 import 'package:openchat/features/chat/data/chat_repository.dart';
 import 'package:openchat/features/chat/data/chat_stream_message_persister.dart';
 import 'package:openchat/features/chat/data/chat_attachment_store.dart';
+import 'package:openchat/features/chat/data/chat_file_changes_repository.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
 import 'package:openchat/features/chat/domain/chat_conversation.dart';
 import 'package:openchat/features/chat/domain/agent_question.dart';
+import 'package:openchat/features/chat/domain/chat_file_change.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart' as chat;
 import 'package:openchat/features/chat/domain/chat_attachment.dart';
 import 'package:openchat/features/chat/domain/chat_project.dart';
@@ -173,6 +175,12 @@ class _ChatScreenState extends State<ChatScreen> {
   Stream<List<chat.ChatMessage>>? _messageStream;
   Stream<List<FavoriteModel>>? _favoriteModelsStream;
   ConversationMemoryRepository? _conversationMemoryRepository;
+  ChatFileChangesRepository? _chatFileChangesRepository;
+  List<ChatFileChange> _conversationFileChanges = const <ChatFileChange>[];
+  String? _fileChangesConversationId;
+  int _fileChangesRevision = 0;
+  int _fileChangesLoadGeneration = 0;
+  bool _isFileChangesPanelOpen = false;
   HuggingFaceDownloadController? _modelDownloadController;
 
   @override
@@ -182,6 +190,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _conversationMemoryRepository = serviceClient == null
         ? null
         : ConversationMemoryRepository(serviceClient);
+    _chatFileChangesRepository = serviceClient == null
+        ? null
+        : ChatFileChangesRepository(serviceClient);
     _modelDownloadController = serviceClient == null
         ? null
         : HuggingFaceDownloadController(
@@ -202,6 +213,10 @@ class _ChatScreenState extends State<ChatScreen> {
   void didUpdateWidget(covariant ChatScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.serviceClient != widget.serviceClient) {
+      _fileChangesLoadGeneration++;
+      _isFileChangesPanelOpen = false;
+      _fileChangesConversationId = null;
+      _conversationFileChanges = const <ChatFileChange>[];
       unawaited(_questionServiceEvents?.cancel());
       _questionServiceEvents = null;
       _bindQuestionServiceEvents();
@@ -209,6 +224,9 @@ class _ChatScreenState extends State<ChatScreen> {
       _conversationMemoryRepository = serviceClient == null
           ? null
           : ConversationMemoryRepository(serviceClient);
+      _chatFileChangesRepository = serviceClient == null
+          ? null
+          : ChatFileChangesRepository(serviceClient);
       final oldController = _modelDownloadController;
       oldController?.removeListener(_handleModelDownloadChanged);
       oldController?.dispose();
@@ -254,9 +272,13 @@ class _ChatScreenState extends State<ChatScreen> {
   void _selectConversation(String conversationId) {
     _modelSelectionGeneration++;
     _questionListGeneration++;
+    _fileChangesLoadGeneration++;
     _resetMessageScroll();
     setState(() {
       _selectedConversationId = conversationId;
+      _isFileChangesPanelOpen = false;
+      _fileChangesConversationId = null;
+      _conversationFileChanges = const <ChatFileChange>[];
       _settingsOpen = false;
       _modelsPageOpen = false;
       _localModelsPageOpen = false;
@@ -271,6 +293,66 @@ class _ChatScreenState extends State<ChatScreen> {
     });
     unawaited(_loadConversationModels(conversationId));
     unawaited(_loadPendingQuestionGroups(conversationId));
+    unawaited(_loadConversationFileChanges(conversationId));
+  }
+
+  Future<void> _loadConversationFileChanges(String conversationId) async {
+    final repository = _chatFileChangesRepository;
+    if (repository == null) return;
+    final generation = ++_fileChangesLoadGeneration;
+    try {
+      final changes = await repository.list(conversationId);
+      if (!mounted ||
+          generation != _fileChangesLoadGeneration ||
+          _selectedConversationId != conversationId) {
+        return;
+      }
+      setState(() {
+        _fileChangesConversationId = conversationId;
+        _conversationFileChanges = changes;
+      });
+    } on OpenChatServiceException catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_file_changes',
+          context: ErrorDescription('while loading conversation changes'),
+        ),
+      );
+    } on FormatException catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_file_changes',
+          context: ErrorDescription('while parsing conversation changes'),
+        ),
+      );
+    }
+  }
+
+  void _updateConversationFileChanges(
+    String conversationId,
+    List<ChatFileChange> changes,
+  ) {
+    if (!mounted || _selectedConversationId != conversationId) return;
+    setState(() {
+      _fileChangesConversationId = conversationId;
+      _conversationFileChanges = List<ChatFileChange>.unmodifiable(changes);
+    });
+  }
+
+  void _openConversationFileChanges() {
+    if (_selectedConversationId == null || _chatFileChangesRepository == null) {
+      return;
+    }
+    setState(() => _isFileChangesPanelOpen = true);
+  }
+
+  void _closeConversationFileChanges() {
+    if (!_isFileChangesPanelOpen) return;
+    setState(() => _isFileChangesPanelOpen = false);
   }
 
   void _bindQuestionServiceEvents() {
@@ -1617,11 +1699,15 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _startNewConversation() {
     _modelSelectionGeneration++;
+    _fileChangesLoadGeneration++;
     _resetMessageScroll();
     _hasUserSelectedProvider = false;
     final defaultModel = _defaultModelPreference;
     setState(() {
       _selectedConversationId = null;
+      _isFileChangesPanelOpen = false;
+      _fileChangesConversationId = null;
+      _conversationFileChanges = const <ChatFileChange>[];
       _selectedProviderId = defaultModel != null
           ? defaultModel.providerId
           : _preferredProviderId();
@@ -1675,6 +1761,10 @@ class _ChatScreenState extends State<ChatScreen> {
       throw StateError('Chat history storage is unavailable.');
     }
     await repository.deleteAllConversations();
+    final fileChangesRemoved = await _deleteFileChangesWithReporting(
+      () => _chatFileChangesRepository?.deleteAll() ?? Future<void>.value(),
+      contextDescription: 'while clearing all conversations file changes',
+    );
     if (!mounted) return;
     _modelSelectionGeneration++;
     _resetMessageScroll();
@@ -1685,9 +1775,17 @@ class _ChatScreenState extends State<ChatScreen> {
       _pendingQuestionGroups = const <AgentQuestionGroup>[];
       _isLoadingPendingQuestions = false;
       _questionLoadFailed = false;
+      _isFileChangesPanelOpen = false;
+      _fileChangesConversationId = null;
+      _conversationFileChanges = const <ChatFileChange>[];
       _isUpdatingConversationModel = false;
       _titleEditRequestId = null;
     });
+    if (!fileChangesRemoved) {
+      _showMessage(
+        context.openchatL10n.conversationHistoryClearedFileChangesCleanupFailed,
+      );
+    }
   }
 
   Future<void> _sendMessage(
@@ -2070,6 +2168,20 @@ class _ChatScreenState extends State<ChatScreen> {
         assistantToolActivities = List<chat.ChatToolActivity>.unmodifiable(
           updated,
         );
+        if (activity.fileChanges.isNotEmpty &&
+            _selectedConversationId == conversationId) {
+          final changesById = <String, ChatFileChange>{
+            for (final change in _conversationFileChanges) change.id: change,
+            for (final change in activity.fileChanges) change.id: change,
+          };
+          setState(() {
+            _fileChangesConversationId = conversationId;
+            _conversationFileChanges = List<ChatFileChange>.unmodifiable(
+              changesById.values,
+            );
+            _fileChangesRevision++;
+          });
+        }
       } on FormatException catch (error, stackTrace) {
         FlutterError.reportError(
           FlutterErrorDetails(
@@ -2842,12 +2954,22 @@ class _ChatScreenState extends State<ChatScreen> {
       }
 
       await repository.deleteConversation(conversationId);
+      final fileChangesRemoved = await _deleteFileChangesWithReporting(
+        () =>
+            _chatFileChangesRepository?.deleteConversation(conversationId) ??
+            Future<void>.value(),
+        contextDescription: 'while deleting conversation file changes',
+      );
       if (!mounted) return;
       if (_selectedConversationId == conversationId) _startNewConversation();
       showOpenChatToast(
         context,
-        context.openchatL10n.conversationDeleted,
-        type: OpenChatToastType.success,
+        fileChangesRemoved
+            ? context.openchatL10n.conversationDeleted
+            : context.openchatL10n.conversationDeletedFileChangesCleanupFailed,
+        type: fileChangesRemoved
+            ? OpenChatToastType.success
+            : OpenChatToastType.warning,
       );
     } on Object catch (error, stackTrace) {
       FlutterError.reportError(
@@ -2859,6 +2981,26 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
       if (mounted) _showMessage(context.openchatL10n.conversationDeleteFailed);
+    }
+  }
+
+  Future<bool> _deleteFileChangesWithReporting(
+    Future<void> Function() delete, {
+    required String contextDescription,
+  }) async {
+    try {
+      await delete();
+      return true;
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_file_changes',
+          context: ErrorDescription(contextDescription),
+        ),
+      );
+      return false;
     }
   }
 
@@ -3032,6 +3174,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _fileChangesLoadGeneration++;
     unawaited(_questionServiceEvents?.cancel());
     _pendingAttachments.clear();
     _searchController.dispose();
@@ -3574,6 +3717,21 @@ class _ChatScreenState extends State<ChatScreen> {
               contextConnectionId: routeConnectionId ?? routeApiKeyConnectionId,
               contextWorkspaceId: routeWorkspaceId,
               conversationMemoryRepository: _conversationMemoryRepository,
+              fileChangesRepository: _chatFileChangesRepository,
+              conversationFileChanges:
+                  selectedConversation?.id == _fileChangesConversationId
+                  ? _conversationFileChanges
+                  : const <ChatFileChange>[],
+              fileChangesRevision: _fileChangesRevision,
+              isFileChangesPanelOpen: _isFileChangesPanelOpen,
+              onOpenFileChanges: _openConversationFileChanges,
+              onCloseFileChanges: _closeConversationFileChanges,
+              onFileChangesUpdated: selectedConversation == null
+                  ? null
+                  : (changes) => _updateConversationFileChanges(
+                      selectedConversation.id,
+                      changes,
+                    ),
               settingsPreferences: _settingsPreferences,
               titleEditRequestId: _titleEditRequestId,
               onRenameConversation: _renameConversation,

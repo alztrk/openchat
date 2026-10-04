@@ -1,4 +1,5 @@
 import 'package:openchat/features/chat/domain/chat_attachment.dart';
+import 'package:openchat/features/chat/domain/chat_file_change.dart';
 
 enum ChatMessageRole { user, assistant }
 
@@ -24,6 +25,8 @@ class ChatToolActivity {
     this.assistantTextBeforeByteOffset,
     this.output,
     this.targetPath,
+    this.fileChanges = const <ChatFileChange>[],
+    this.fileChangesError,
   });
 
   final String callId;
@@ -33,6 +36,8 @@ class ChatToolActivity {
   final int? assistantTextBeforeByteOffset;
   final Object? output;
   final String? targetPath;
+  final List<ChatFileChange> fileChanges;
+  final String? fileChangesError;
   final ChatToolActivityStatus status;
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -44,6 +49,11 @@ class ChatToolActivity {
       'assistantTextBeforeByteOffset': assistantTextBeforeByteOffset,
     if (output != null) 'output': output,
     if (targetPath != null) 'targetPath': targetPath,
+    if (fileChanges.isNotEmpty)
+      'fileChanges': fileChanges
+          .map((change) => change.toJson())
+          .toList(growable: false),
+    if (fileChangesError != null) 'fileChangesError': fileChangesError,
     'status': status.name,
   };
 
@@ -58,6 +68,7 @@ class ChatToolActivity {
     final assistantTextBeforeByteOffset =
         value['assistantTextBeforeByteOffset'];
     final targetPath = value['targetPath'];
+    final fileChangesError = value['fileChangesError'];
     if (callId is! String ||
         callId.isEmpty ||
         name is! String ||
@@ -70,6 +81,11 @@ class ChatToolActivity {
                 assistantTextBeforeByteOffset < 0)) ||
         (targetPath != null && targetPath is! String)) {
       throw const FormatException('A tool activity was invalid.');
+    }
+    if (fileChangesError != null && fileChangesError is! String) {
+      throw const FormatException(
+        'A tool file change tracking error was invalid.',
+      );
     }
     final status = switch (statusValue) {
       'awaitingApproval' => ChatToolActivityStatus.awaitingApproval,
@@ -100,6 +116,8 @@ class ChatToolActivity {
           : null,
       output: value['output'],
       targetPath: targetPath is String ? targetPath : null,
+      fileChanges: ChatFileChange.listFromActivityJson(value['fileChanges']),
+      fileChangesError: fileChangesError is String ? fileChangesError : null,
       status: status,
     );
   }
