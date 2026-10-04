@@ -529,9 +529,13 @@ impl SemanticRuntime {
             && index_path.is_file()
             && let Ok(index) = Index::restore(&path_string(&index_path))
         {
+            let directory = index_path.parent().ok_or_else(|| {
+                SemanticMemoryError::Index("semantic index cache path is invalid".to_owned())
+            })?;
+            prune_cached_indexes(directory, Some(&index_path))?;
+            set_indexed_generation(connection, generation)?;
             self.index = Some(index);
             self.index_generation = Some(generation);
-            set_indexed_generation(connection, generation)?;
             return Ok(());
         }
 
@@ -668,27 +672,7 @@ impl SemanticRuntime {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
             Err(error) => return Err(SemanticMemoryError::Io(error.to_string())),
         }
-        for entry in fs::read_dir(directory)? {
-            let path = entry?.path();
-            let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
-                continue;
-            };
-            if file_name.starts_with("index-")
-                && (path
-                    .extension()
-                    .is_some_and(|extension| extension == "usearch")
-                    || file_name.ends_with(".usearch.partial"))
-            {
-                let metadata = fs::symlink_metadata(&path)?;
-                if metadata.file_type().is_symlink() || !metadata.is_file() {
-                    return Err(SemanticMemoryError::Index(
-                        "semantic index cache file is invalid".to_owned(),
-                    ));
-                }
-                fs::remove_file(path)?;
-            }
-        }
-        Ok(())
+        prune_cached_indexes(&directory, None)
     }
 
     fn embed_messages(
@@ -1307,21 +1291,51 @@ fn save_index(
     }
     fs::rename(&temporary, &destination)?;
     set_indexed_generation(connection, generation)?;
-    for entry in fs::read_dir(&index_directory)? {
-        let path = entry?.path();
-        if path.file_name() != destination.file_name()
-            && path
-                .extension()
-                .is_some_and(|extension| extension == "usearch")
-        {
-            fs::remove_file(path)?;
-        }
-    }
-    Ok(())
+    prune_cached_indexes(&index_directory, Some(&destination))
 }
 
 fn index_path(cache_directory: &Path, generation: i64) -> PathBuf {
     model_directory(cache_directory).join(format!("index-{generation}.usearch"))
+}
+
+fn prune_cached_indexes(
+    directory: &Path,
+    preserved_index: Option<&Path>,
+) -> Result<(), SemanticMemoryError> {
+    match fs::symlink_metadata(directory) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            return Err(SemanticMemoryError::Index(
+                "semantic index cache path is invalid".to_owned(),
+            ));
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(error) => return Err(SemanticMemoryError::Io(error.to_string())),
+    }
+    for entry in fs::read_dir(directory)? {
+        let path = entry?.path();
+        if preserved_index.is_some_and(|preserved| path == preserved) {
+            continue;
+        }
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if file_name.starts_with("index-")
+            && (path
+                .extension()
+                .is_some_and(|extension| extension == "usearch")
+                || file_name.ends_with(".usearch.partial"))
+        {
+            let metadata = fs::symlink_metadata(&path)?;
+            if metadata.file_type().is_symlink() || !metadata.is_file() {
+                return Err(SemanticMemoryError::Index(
+                    "semantic index cache file is invalid".to_owned(),
+                ));
+            }
+            fs::remove_file(path)?;
+        }
+    }
+    Ok(())
 }
 
 fn model_directory(cache_directory: &Path) -> PathBuf {
@@ -2144,5 +2158,32 @@ mod tests {
         assert_eq!(first >> INDEX_KEY_ID_BITS, 1);
         assert!(index_key(16_777_216, 9).is_err());
         assert!(index_key(1, 0).is_err());
+    }
+
+    #[test]
+    fn prunes_obsolete_semantic_index_files_after_rebuild() {
+        let temporary_directory = TemporaryDirectory::new();
+        let index_directory = temporary_directory.0.join("semantic-memory");
+        fs::create_dir_all(&index_directory).expect("create semantic index directory");
+        let old_index = index_directory.join("index-3.usearch");
+        let current_index = index_directory.join("index-4.usearch");
+        let interrupted_index = index_directory.join("index-5.usearch.partial");
+        let unrelated_file = index_directory.join("model.bin");
+        for path in [
+            &old_index,
+            &current_index,
+            &interrupted_index,
+            &unrelated_file,
+        ] {
+            fs::write(path, b"cache").expect("create semantic cache fixture");
+        }
+
+        super::prune_cached_indexes(&index_directory, Some(&current_index))
+            .expect("prune obsolete indexes");
+
+        assert!(!old_index.exists());
+        assert!(current_index.exists());
+        assert!(!interrupted_index.exists());
+        assert!(unrelated_file.exists());
     }
 }

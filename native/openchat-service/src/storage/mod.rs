@@ -17,6 +17,7 @@ const MAX_DIAGNOSTIC_ENTRY_BYTES: usize = 4096;
 
 mod database_guard;
 mod schema;
+pub(crate) mod tool_index_redaction;
 pub(crate) mod user_questions;
 use schema::{INITIAL_SCHEMA_VERSION, SCHEMA_VERSION, initialize_schema};
 
@@ -266,6 +267,7 @@ impl AppStorage {
             OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_CREATE,
         )?;
         connection.busy_timeout(Duration::from_secs(5))?;
+        tool_index_redaction::register_sqlite_function(&connection)?;
         connection.execute_batch("PRAGMA foreign_keys = ON;")?;
         Ok(connection)
     }

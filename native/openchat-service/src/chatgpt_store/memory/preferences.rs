@@ -224,6 +224,7 @@ fn require_conversation(connection: &Connection, conversation_id: &str) -> rusql
 }
 
 fn rebuild_tool_index(connection: &Connection, conversation_id: &str) -> rusqlite::Result<()> {
+    crate::storage::tool_index_redaction::register_sqlite_function(connection)?;
     connection.execute(
         "DELETE FROM conversation_memory_tools_fts WHERE conversation_id = ?1",
         [conversation_id],
@@ -234,7 +235,7 @@ fn rebuild_tool_index(connection: &Connection, conversation_id: &str) -> rusqlit
          )
          SELECT message.rowid, message.conversation_id, message.id, message.role,
                 'scope' || lower(hex(CAST(message.conversation_id AS BLOB))),
-                (
+                openchat_redact_credentials((
                     SELECT group_concat(
                         COALESCE(json_extract(activity.value, '$.name'), '') || ' ' ||
                         COALESCE(json_extract(activity.value, '$.arguments'), '') || ' ' ||
@@ -255,7 +256,7 @@ fn rebuild_tool_index(connection: &Connection, conversation_id: &str) -> rusqlit
                                 json_extract(activity.value, '$.name'), ''
                             )
                       )
-                )
+                ))
          FROM messages AS message
          WHERE message.conversation_id = ?1
            AND message.role = 'assistant' AND message.status = 'completed'

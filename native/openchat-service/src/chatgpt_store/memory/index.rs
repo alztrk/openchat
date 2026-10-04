@@ -6,6 +6,7 @@ pub(super) fn ensure_archived_memory_indexes(
     connection: &Connection,
     conversation_id: &str,
 ) -> rusqlite::Result<()> {
+    crate::storage::tool_index_redaction::register_sqlite_function(connection)?;
     if !archive_indexing_enabled(connection, conversation_id)? {
         return Ok(());
     }
@@ -61,7 +62,7 @@ pub(super) fn ensure_archived_memory_indexes(
              )
              SELECT message.rowid, message.conversation_id, message.id, message.role,
                     'scope' || lower(hex(CAST(message.conversation_id AS BLOB))),
-                    (
+                    openchat_redact_credentials((
                         SELECT group_concat(
                             COALESCE(json_extract(activity.value, '$.name'), '') || ' ' ||
                             COALESCE(json_extract(activity.value, '$.arguments'), '') || ' ' ||
@@ -82,7 +83,7 @@ pub(super) fn ensure_archived_memory_indexes(
                                     json_extract(activity.value, '$.name'), ''
                                 )
                           )
-                    )
+                    ))
              FROM messages AS message
              WHERE message.conversation_id = ?1
                AND message.role = 'assistant'

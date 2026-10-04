@@ -1478,15 +1478,11 @@ mod tests {
                     created_at INTEGER,
                     tool_activities TEXT NOT NULL DEFAULT '[]',
                     PRIMARY KEY (conversation_id, id)
-                 );
-                 CREATE TABLE openchat_backend_migrations (
-                    version INTEGER PRIMARY KEY,
-                    applied_at_unix_ms INTEGER NOT NULL
-                 );
-                 INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms)
-                    VALUES (15, 0);",
+                 );",
             )
             .expect("create question storage fixture");
+        super::super::schema::initialize_schema(connection, 15)
+            .expect("apply schema through question storage baseline");
         super::super::schema::initialize_schema(connection, super::super::schema::SCHEMA_VERSION)
             .expect("apply question storage schema");
         connection

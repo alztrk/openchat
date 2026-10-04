@@ -2,12 +2,218 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
-pub(super) const SCHEMA_VERSION: i64 = 19;
+pub(super) const SCHEMA_VERSION: i64 = 20;
 pub(super) const INITIAL_SCHEMA_VERSION: i64 = 2;
+
+const REDACTED_TOOL_INDEX_TRIGGERS: &str = r#"
+    DROP TRIGGER IF EXISTS conversation_memory_tool_insert;
+    DROP TRIGGER IF EXISTS conversation_memory_tool_update;
+    CREATE TRIGGER conversation_memory_tool_insert
+    AFTER INSERT ON messages
+    WHEN NEW.role = 'assistant'
+        AND NEW.status = 'completed'
+        AND COALESCE((
+            SELECT included FROM conversation_memory_archive_settings
+            WHERE conversation_id = NEW.conversation_id
+        ), 1) = 1
+        AND json_type(
+            CASE WHEN json_valid(NEW.tool_activities)
+                 THEN NEW.tool_activities ELSE '[]' END
+        ) = 'array'
+        AND EXISTS (
+            SELECT 1 FROM json_each(
+                CASE WHEN json_valid(NEW.tool_activities)
+                     THEN NEW.tool_activities ELSE '[]' END
+            ) AS activity
+            WHERE json_type(activity.value, '$.output') IS NOT NULL
+              AND json_extract(activity.value, '$.status')
+                  IN ('completed', 'failed', 'denied', 'cancelled')
+              AND NOT EXISTS (
+                  SELECT 1 FROM conversation_memory_excluded_tools AS excluded
+                  WHERE excluded.conversation_id = NEW.conversation_id
+                    AND excluded.tool_name = COALESCE(
+                        json_extract(activity.value, '$.name'), ''
+                    )
+              )
+        )
+    BEGIN
+        INSERT INTO conversation_memory_tools_fts (
+            rowid, conversation_id, message_id, role, scope_token, content
+        ) VALUES (
+            NEW.rowid, NEW.conversation_id, NEW.id, NEW.role,
+            'scope' || lower(hex(CAST(NEW.conversation_id AS BLOB))),
+            openchat_redact_credentials((
+                SELECT group_concat(
+                    COALESCE(json_extract(activity.value, '$.name'), '') || ' ' ||
+                    COALESCE(json_extract(activity.value, '$.arguments'), '') || ' ' ||
+                    COALESCE(json_extract(activity.value, '$.output'), ''),
+                    char(10)
+                )
+                FROM json_each(
+                    CASE WHEN json_valid(NEW.tool_activities)
+                         THEN NEW.tool_activities ELSE '[]' END
+                ) AS activity
+                WHERE json_type(activity.value, '$.output') IS NOT NULL
+                  AND json_extract(activity.value, '$.status')
+                      IN ('completed', 'failed', 'denied', 'cancelled')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM conversation_memory_excluded_tools AS excluded
+                      WHERE excluded.conversation_id = NEW.conversation_id
+                        AND excluded.tool_name = COALESCE(
+                            json_extract(activity.value, '$.name'), ''
+                        )
+                  )
+            ))
+        );
+    END;
+
+    CREATE TRIGGER conversation_memory_tool_update
+    AFTER UPDATE OF conversation_id, id, role, status, tool_activities ON messages
+    BEGIN
+        DELETE FROM conversation_memory_tools_fts WHERE rowid = OLD.rowid;
+        INSERT INTO conversation_memory_tools_fts (
+            rowid, conversation_id, message_id, role, scope_token, content
+        )
+        SELECT
+            NEW.rowid, NEW.conversation_id, NEW.id, NEW.role,
+            'scope' || lower(hex(CAST(NEW.conversation_id AS BLOB))),
+            openchat_redact_credentials((
+                SELECT group_concat(
+                    COALESCE(json_extract(activity.value, '$.name'), '') || ' ' ||
+                    COALESCE(json_extract(activity.value, '$.arguments'), '') || ' ' ||
+                    COALESCE(json_extract(activity.value, '$.output'), ''),
+                    char(10)
+                )
+                FROM json_each(
+                    CASE WHEN json_valid(NEW.tool_activities)
+                         THEN NEW.tool_activities ELSE '[]' END
+                ) AS activity
+                WHERE json_type(activity.value, '$.output') IS NOT NULL
+                  AND json_extract(activity.value, '$.status')
+                      IN ('completed', 'failed', 'denied', 'cancelled')
+                  AND NOT EXISTS (
+                      SELECT 1 FROM conversation_memory_excluded_tools AS excluded
+                      WHERE excluded.conversation_id = NEW.conversation_id
+                        AND excluded.tool_name = COALESCE(
+                            json_extract(activity.value, '$.name'), ''
+                        )
+                  )
+            ))
+        WHERE NEW.role = 'assistant'
+          AND NEW.status = 'completed'
+          AND COALESCE((
+              SELECT included FROM conversation_memory_archive_settings
+              WHERE conversation_id = NEW.conversation_id
+          ), 1) = 1
+          AND json_type(
+              CASE WHEN json_valid(NEW.tool_activities)
+                   THEN NEW.tool_activities ELSE '[]' END
+          ) = 'array'
+          AND EXISTS (
+              SELECT 1 FROM json_each(
+                  CASE WHEN json_valid(NEW.tool_activities)
+                       THEN NEW.tool_activities ELSE '[]' END
+              ) AS activity
+              WHERE json_type(activity.value, '$.output') IS NOT NULL
+                AND json_extract(activity.value, '$.status')
+                    IN ('completed', 'failed', 'denied', 'cancelled')
+                AND NOT EXISTS (
+                    SELECT 1 FROM conversation_memory_excluded_tools AS excluded
+                    WHERE excluded.conversation_id = NEW.conversation_id
+                      AND excluded.tool_name = COALESCE(
+                          json_extract(activity.value, '$.name'), ''
+                      )
+                )
+          );
+    END;
+"#;
+
+const REDACT_AND_REBUILD_TOOL_INDEX: &str = r#"
+    CREATE TEMP TABLE conversation_memory_redaction_affected AS
+        SELECT conversation_id, message_id FROM conversation_memory_tools_fts;
+
+    DELETE FROM conversation_memory_embeddings
+    WHERE EXISTS (
+        SELECT 1 FROM conversation_memory_redaction_affected AS affected
+        WHERE affected.conversation_id = conversation_memory_embeddings.conversation_id
+          AND affected.message_id = conversation_memory_embeddings.message_id
+    );
+    DELETE FROM conversation_memory_embedding_state
+    WHERE EXISTS (
+        SELECT 1 FROM conversation_memory_redaction_affected AS affected
+        WHERE affected.conversation_id = conversation_memory_embedding_state.conversation_id
+          AND affected.message_id = conversation_memory_embedding_state.message_id
+    );
+
+    DELETE FROM conversation_memory_tools_fts;
+    INSERT INTO conversation_memory_tools_fts (
+        rowid, conversation_id, message_id, role, scope_token, content
+    )
+    SELECT message.rowid, message.conversation_id, message.id, message.role,
+           'scope' || lower(hex(CAST(message.conversation_id AS BLOB))),
+           openchat_redact_credentials((
+               SELECT group_concat(
+                   COALESCE(json_extract(activity.value, '$.name'), '') || ' ' ||
+                   COALESCE(json_extract(activity.value, '$.arguments'), '') || ' ' ||
+                   COALESCE(json_extract(activity.value, '$.output'), ''),
+                   char(10)
+               )
+               FROM json_each(
+                   CASE WHEN json_valid(message.tool_activities)
+                        THEN message.tool_activities ELSE '[]' END
+               ) AS activity
+               WHERE json_type(activity.value, '$.output') IS NOT NULL
+                 AND json_extract(activity.value, '$.status')
+                     IN ('completed', 'failed', 'denied', 'cancelled')
+                 AND NOT EXISTS (
+                     SELECT 1 FROM conversation_memory_excluded_tools AS excluded
+                     WHERE excluded.conversation_id = message.conversation_id
+                       AND excluded.tool_name = COALESCE(
+                           json_extract(activity.value, '$.name'), ''
+                       )
+                 )
+           ))
+    FROM messages AS message
+    WHERE message.role = 'assistant'
+      AND message.status = 'completed'
+      AND COALESCE((
+          SELECT included FROM conversation_memory_archive_settings
+          WHERE conversation_id = message.conversation_id
+      ), 1) = 1
+      AND json_type(
+          CASE WHEN json_valid(message.tool_activities)
+               THEN message.tool_activities ELSE '[]' END
+      ) = 'array'
+      AND EXISTS (
+          SELECT 1 FROM json_each(
+              CASE WHEN json_valid(message.tool_activities)
+                   THEN message.tool_activities ELSE '[]' END
+          ) AS activity
+          WHERE json_type(activity.value, '$.output') IS NOT NULL
+            AND json_extract(activity.value, '$.status')
+                IN ('completed', 'failed', 'denied', 'cancelled')
+            AND NOT EXISTS (
+                SELECT 1 FROM conversation_memory_excluded_tools AS excluded
+                WHERE excluded.conversation_id = message.conversation_id
+                  AND excluded.tool_name = COALESCE(
+                      json_extract(activity.value, '$.name'), ''
+                  )
+            )
+      );
+
+    INSERT OR IGNORE INTO conversation_memory_embedding_pending (conversation_id, message_id)
+        SELECT conversation_id, message_id FROM conversation_memory_tools_fts;
+    DROP TABLE conversation_memory_redaction_affected;
+    INSERT INTO conversation_memory_tools_fts(conversation_memory_tools_fts) VALUES ('optimize');
+    UPDATE conversation_memory_semantic_index_state
+       SET generation = generation + 1, indexed_generation = NULL
+     WHERE id = 1;
+"#;
 pub(super) fn initialize_schema(
     connection: &Connection,
     target_version: i64,
 ) -> rusqlite::Result<i64> {
+    super::tool_index_redaction::register_sqlite_function(connection)?;
     if !(1..=SCHEMA_VERSION).contains(&target_version) {
         return Err(rusqlite::Error::InvalidQuery);
     }
@@ -1248,6 +1454,18 @@ pub(super) fn initialize_schema(
         current_version = 19;
     }
 
+    if current_version < 20 && target_version >= 20 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(REDACTED_TOOL_INDEX_TRIGGERS)?;
+        transaction.execute_batch(REDACT_AND_REBUILD_TOOL_INDEX)?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (20, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 20;
+    }
+
     Ok(current_version)
 }
 
@@ -1305,11 +1523,7 @@ mod tests {
         connection
             .execute_batch(
                 "PRAGMA foreign_keys = ON;
-                CREATE TABLE openchat_backend_migrations (
-                    version INTEGER PRIMARY KEY,
-                    applied_at_unix_ms INTEGER NOT NULL
-                );
-                CREATE TABLE pending_question_groups (id TEXT PRIMARY KEY NOT NULL);
+                CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
                 CREATE TABLE messages (
                     conversation_id TEXT NOT NULL,
                     id TEXT NOT NULL,
@@ -1319,30 +1533,37 @@ mod tests {
                     created_at INTEGER,
                     tool_activities TEXT NOT NULL DEFAULT '[]',
                     PRIMARY KEY (conversation_id, id)
-                );
-                CREATE TABLE pending_question_items (
-                    group_id TEXT NOT NULL REFERENCES pending_question_groups(id) ON DELETE CASCADE,
-                    item_id TEXT PRIMARY KEY NOT NULL,
-                    position INTEGER NOT NULL CHECK (position >= 0),
-                    question_json TEXT NOT NULL CHECK (json_valid(question_json) = 1),
-                    UNIQUE (group_id, position)
-                );
-                CREATE INDEX pending_question_items_group_idx
-                    ON pending_question_items(group_id, position);
-                INSERT INTO pending_question_groups (id) VALUES ('first'), ('second');
-                INSERT INTO pending_question_items (group_id, item_id, position, question_json)
-                    VALUES ('first', 'mode', 0, '{\"id\":\"mode\"}');",
+                );",
             )
-            .expect("create version seventeen question schema");
-        for version in 1..=17 {
-            connection
-                .execute(
-                    "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms)
-                     VALUES (?1, 0)",
-                    [version],
-                )
-                .expect("record prior schema version");
-        }
+            .expect("create host conversation schema");
+        initialize_schema(&connection, 17).expect("apply schema through question item migration");
+        connection
+            .execute("INSERT INTO conversations (id) VALUES ('conversation')", [])
+            .expect("insert question fixture conversation");
+        connection
+            .execute(
+                "INSERT INTO agent_runs (
+                    id, conversation_id, status, created_at_unix_ms, updated_at_unix_ms
+                 ) VALUES ('run', 'conversation', 'paused', 0, 0)",
+                [],
+            )
+            .expect("insert paused question fixture run");
+        connection
+            .execute(
+                "INSERT INTO pending_question_groups (
+                    id, run_id, sequence, status, created_at_unix_ms, updated_at_unix_ms
+                 ) VALUES ('first', 'run', 1, 'pending', 0, 0),
+                          ('second', 'run', 2, 'pending', 0, 0)",
+                [],
+            )
+            .expect("insert question fixture groups");
+        connection
+            .execute(
+                "INSERT INTO pending_question_items (group_id, item_id, position, question_json)
+                 VALUES ('first', 'mode', 0, '{\"id\":\"mode\"}')",
+                [],
+            )
+            .expect("insert legacy question item");
 
         assert_eq!(
             initialize_schema(&connection, SCHEMA_VERSION)
@@ -1873,7 +2094,7 @@ mod tests {
                 |row| row.get::<_, i64>(0),
             )
             .expect("read derived index generation");
-        assert_eq!(generation, 1);
+        assert_eq!(generation, 2);
 
         connection
             .execute(
@@ -2059,5 +2280,154 @@ mod tests {
             .expect("search included tool output");
         assert_eq!(excluded_tool_hits, 0);
         assert_eq!(included_tool_hits, 1);
+    }
+
+    #[test]
+    fn credential_redaction_migration_rebuilds_derived_indexes_only() {
+        let connection = Connection::open_in_memory().expect("open in-memory database");
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys = ON;
+                CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                CREATE TABLE messages (
+                    id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL REFERENCES conversations(id),
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at INTEGER,
+                    output_tokens INTEGER,
+                    tool_activities TEXT NOT NULL DEFAULT '[]',
+                    PRIMARY KEY (conversation_id, id)
+                );
+                INSERT INTO conversations (id) VALUES ('archive-a');",
+            )
+            .expect("create host schema");
+        assert_eq!(
+            initialize_schema(&connection, 18).expect("apply schema through version 18"),
+            18
+        );
+        assert_eq!(
+            initialize_schema(&connection, 19).expect("apply schema through version 19"),
+            19
+        );
+
+        let activities = r#"[{"name":"read","arguments":{"api_key":"argument-secret"},"output":{"content":"visiblearchiveword sk-proj-abcdefghijklmnopqrstuvwxyz1234567890"},"status":"completed"}]"#;
+        connection
+            .execute(
+                "INSERT INTO messages
+                    (id, conversation_id, role, content, status, created_at, tool_activities)
+                 VALUES ('message-a', 'archive-a', 'assistant', 'assistant text', 'completed', 1, ?1)",
+                [activities],
+            )
+            .expect("insert a message indexed by the pre-redaction trigger");
+        connection
+            .execute(
+                "INSERT INTO conversation_memory_embedding_namespaces (conversation_id)
+                 VALUES ('archive-a')",
+                [],
+            )
+            .expect("create semantic namespace");
+        connection
+            .execute(
+                "INSERT INTO conversation_memory_embeddings (
+                    conversation_id, message_id, chunk_index, start_byte, end_byte,
+                    model_id, content_hash, vector
+                 ) VALUES ('archive-a', 'message-a', 0, 0, 12, 'model', 'hash', zeroblob(384))",
+                [],
+            )
+            .expect("create a vector that was derived from the raw tool activity");
+        connection
+            .execute(
+                "INSERT INTO conversation_memory_embedding_state (
+                    conversation_id, message_id, model_id, content_hash, chunk_count
+                 ) VALUES ('archive-a', 'message-a', 'model', 'hash', 1)",
+                [],
+            )
+            .expect("record the old semantic source");
+
+        assert_eq!(
+            initialize_schema(&connection, SCHEMA_VERSION)
+                .expect("apply credential redaction migration"),
+            SCHEMA_VERSION
+        );
+        let indexed_content: String = connection
+            .query_row(
+                "SELECT content FROM conversation_memory_tools_fts WHERE message_id = 'message-a'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read rebuilt tool index");
+        assert!(indexed_content.contains("visiblearchiveword"));
+        assert!(indexed_content.contains("[REDACTED]"));
+        assert!(!indexed_content.contains("argument-secret"));
+        assert!(!indexed_content.contains("sk-proj-abcdefghijklmnopqrstuvwxyz1234567890"));
+
+        let source_activities: String = connection
+            .query_row(
+                "SELECT tool_activities FROM messages WHERE id = 'message-a'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read original source activity");
+        assert!(source_activities.contains("argument-secret"));
+        assert!(source_activities.contains("sk-proj-abcdefghijklmnopqrstuvwxyz1234567890"));
+
+        let derived_embeddings: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_memory_embeddings
+                 WHERE conversation_id = 'archive-a' AND message_id = 'message-a'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count cleared stale vectors");
+        assert_eq!(derived_embeddings, 0);
+        let queued: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_memory_embedding_pending
+                 WHERE conversation_id = 'archive-a' AND message_id = 'message-a'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count requeued sanitized vectors");
+        assert_eq!(queued, 1);
+
+        let updated_activities = r#"[{"name":"read","arguments":{},"output":{"client_secret":"new-secret","content":"newvisibleword"},"status":"completed"}]"#;
+        connection
+            .execute(
+                "UPDATE messages SET tool_activities = ?1 WHERE id = 'message-a'",
+                [updated_activities],
+            )
+            .expect("exercise redacted update trigger");
+        let updated_index: String = connection
+            .query_row(
+                "SELECT content FROM conversation_memory_tools_fts WHERE message_id = 'message-a'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read updated tool index");
+        assert!(updated_index.contains("newvisibleword"));
+        assert!(updated_index.contains("[REDACTED]"));
+        assert!(!updated_index.contains("new-secret"));
+
+        let inserted_activities = r#"[{"name":"read","arguments":{},"output":{"content":"insertedvisibleword","api_key":"inserted-secret"},"status":"completed"}]"#;
+        connection
+            .execute(
+                "INSERT INTO messages
+                    (id, conversation_id, role, content, status, created_at, tool_activities)
+                 VALUES ('message-b', 'archive-a', 'assistant', 'assistant text', 'completed', 2, ?1)",
+                [inserted_activities],
+            )
+            .expect("exercise redacted insert trigger");
+        let inserted_index: String = connection
+            .query_row(
+                "SELECT content FROM conversation_memory_tools_fts WHERE message_id = 'message-b'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read inserted tool index");
+        assert!(inserted_index.contains("insertedvisibleword"));
+        assert!(inserted_index.contains("[REDACTED]"));
+        assert!(!inserted_index.contains("inserted-secret"));
     }
 }

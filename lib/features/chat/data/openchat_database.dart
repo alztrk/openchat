@@ -5,6 +5,8 @@ import 'package:drift/drift.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
+import 'tool_index_redaction.dart';
+
 part 'openchat_database.g.dart';
 
 class Projects extends Table {
@@ -75,7 +77,7 @@ class ModelFavorites extends Table {
 @DriftDatabase(tables: [Projects, Conversations, Messages, ModelFavorites])
 class OpenChatDatabase extends _$OpenChatDatabase {
   OpenChatDatabase([QueryExecutor? executor])
-    : super(executor ?? driftDatabase(name: 'openchat_chat'));
+    : super(executor ?? _defaultDatabase());
 
   OpenChatDatabase.atPath(String databasePath)
     : super(_databaseAtPath(databasePath));
@@ -264,9 +266,28 @@ final class DatabaseIntegrityFailure implements Exception {
 QueryExecutor _databaseAtPath(String path) {
   return driftDatabase(
     name: 'openchat_local',
-    native: DriftNativeOptions(
-      databasePath: () async => path,
-      setup: (database) => database.execute('PRAGMA busy_timeout = 5000;'),
-    ),
+    native: _nativeDatabaseOptions(databasePath: () async => path),
+  );
+}
+
+QueryExecutor _defaultDatabase() {
+  return driftDatabase(name: 'openchat_chat', native: _nativeDatabaseOptions());
+}
+
+DriftNativeOptions _nativeDatabaseOptions({
+  Future<String> Function()? databasePath,
+}) {
+  return DriftNativeOptions(
+    databasePath: databasePath,
+    setup: (database) {
+      database.execute('PRAGMA busy_timeout = 5000;');
+      database.createFunction(
+        functionName: 'openchat_redact_credentials',
+        argumentCount: const sqlite.AllowedArgumentCount(1),
+        deterministic: true,
+        directOnly: false,
+        function: redactToolIndexSqlFunction,
+      );
+    },
   );
 }
