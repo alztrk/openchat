@@ -400,7 +400,7 @@ pub(crate) async fn connect_external_server(
     let models = model_ids
         .into_iter()
         .map(|provider_model_id| ExternalLlamaModel {
-            route_id: external_model_route_id(&provider_model_id),
+            route_id: external_model_route_id(process_id, port, &provider_model_id),
             provider_model_id,
             capabilities,
         })
@@ -435,7 +435,11 @@ pub(crate) async fn chat_model_catalog(
         .filter(|model| model.engine_id == engine_id)
         .map(|model| {
             let available = is_model_available(storage, &model)?;
-            models::to_json(&model, available)
+            let mut model_json = models::to_json(&model, available)?;
+            if engine_id == "llama_cpp" {
+                model_json["groupId"] = Value::String("managed".to_owned());
+            }
+            Ok(model_json)
         })
         .collect::<Result<Vec<_>, ServiceError>>()?;
     if engine_id == "llama_cpp" {
@@ -485,7 +489,11 @@ async fn external_chat_models() -> Result<Vec<Value>, ServiceError> {
         return Ok(Vec::new());
     }
 
-    Ok(server.models.iter().map(external_model_json).collect())
+    Ok(server
+        .models
+        .iter()
+        .map(|model| external_model_json(model, server.process_id, server.port))
+        .collect())
 }
 
 async fn external_chat_endpoint(
@@ -542,10 +550,11 @@ async fn clear_external_server_if_current(candidate: ExternalLlamaServerCandidat
     }
 }
 
-fn external_model_json(model: &ExternalLlamaModel) -> Value {
+fn external_model_json(model: &ExternalLlamaModel, process_id: u32, port: u16) -> Value {
     json!({
         "id": model.route_id,
         "engineId": "llama_cpp",
+        "groupId": external_server_group_id(process_id, port),
         "displayName": model.provider_model_id,
         "description": Value::Null,
         "contextWindow": model.capabilities.context_window,
@@ -559,8 +568,13 @@ fn external_model_json(model: &ExternalLlamaModel) -> Value {
     })
 }
 
-fn external_model_route_id(provider_model_id: &str) -> String {
-    let digest = Sha256::digest(provider_model_id.as_bytes());
+fn external_server_group_id(process_id: u32, port: u16) -> String {
+    format!("external-llama-server:{process_id}:{port}")
+}
+
+fn external_model_route_id(process_id: u32, port: u16, provider_model_id: &str) -> String {
+    let identity = format!("{process_id}:{port}:{provider_model_id}");
+    let digest = Sha256::digest(identity.as_bytes());
     let digest = digest
         .iter()
         .map(|byte| format!("{byte:02x}"))
@@ -1341,10 +1355,10 @@ mod tests {
     use super::{
         ExternalLlamaModel, ExternalLlamaServerCandidate, InstalledEngine,
         MAX_RUNTIME_PROPERTIES_BYTES, RuntimeCapabilities, excluding_managed_server_process,
-        external_model_json, external_model_route_id, health_check_or_cancel, installed_engine_for,
-        llama_server_arguments, parse_external_capabilities, parse_external_model_ids,
-        parse_runtime_capabilities, prepare_tabby_session, read_runtime_capabilities, start_model,
-        vllm_server_arguments,
+        external_model_json, external_model_route_id, external_server_group_id,
+        health_check_or_cancel, installed_engine_for, llama_server_arguments,
+        parse_external_capabilities, parse_external_model_ids, parse_runtime_capabilities,
+        prepare_tabby_session, read_runtime_capabilities, start_model, vllm_server_arguments,
     };
 
     struct TestDirectory(PathBuf);
@@ -1465,10 +1479,14 @@ mod tests {
     #[test]
     fn external_model_route_ids_are_stable_and_do_not_expose_model_text() {
         let model_id = "private/model-id";
-        let route_id = external_model_route_id(model_id);
+        let route_id = external_model_route_id(4216, 8080, model_id);
 
-        assert_eq!(route_id, external_model_route_id(model_id));
-        assert_ne!(route_id, external_model_route_id("different-model"));
+        assert_eq!(route_id, external_model_route_id(4216, 8080, model_id));
+        assert_ne!(route_id, external_model_route_id(5732, 8081, model_id));
+        assert_ne!(
+            route_id,
+            external_model_route_id(4216, 8080, "different-model")
+        );
         assert!(route_id.starts_with("external-llama-"));
         assert!(!route_id.contains("private"));
     }
@@ -1476,7 +1494,7 @@ mod tests {
     #[test]
     fn external_model_catalog_does_not_invent_unknown_capabilities() {
         let model = ExternalLlamaModel {
-            route_id: external_model_route_id("qwen3-8b"),
+            route_id: external_model_route_id(4216, 8080, "qwen3-8b"),
             provider_model_id: "qwen3-8b".to_owned(),
             capabilities: RuntimeCapabilities {
                 context_window: None,
@@ -1484,12 +1502,13 @@ mod tests {
                 supports_tool_calls: None,
             },
         };
-        let json = external_model_json(&model);
+        let json = external_model_json(&model, 4216, 8080);
 
         assert_eq!(json["isAvailable"], true);
         assert_eq!(json["contextWindow"], serde_json::Value::Null);
         assert_eq!(json["supportsTools"], serde_json::Value::Null);
         assert_eq!(json["supportsImages"], false);
+        assert_eq!(json["groupId"], external_server_group_id(4216, 8080));
     }
 
     #[test]

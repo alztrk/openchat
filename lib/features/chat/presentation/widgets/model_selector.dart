@@ -560,23 +560,40 @@ List<_ModelEntry> _modelEntries(
   for (final model in models) {
     sections.putIfAbsent(model.groupId ?? 'models', () => []).add(model);
   }
+  final externalLlamaSections =
+      sections.keys
+          .where((section) => section.startsWith('external-llama-server:'))
+          .toList()
+        ..sort();
   final order = switch (providerId) {
     'opencode' => const ['free', 'paid', 'models'],
     'openrouter' => const ['free', 'models'],
     'chatgpt' => const ['api', 'oauth', 'models'],
+    'llama_cpp' => ['managed', ...externalLlamaSections, 'models'],
     _ => const ['models'],
   };
   final entries = <_ModelEntry>[];
   for (final section in order) {
     final sectionModels = sections[section];
     if (sectionModels == null || sectionModels.isEmpty) continue;
-    final label = switch (section) {
-      'api' => l10n.modelSourceApi,
-      'oauth' => l10n.modelSourceOAuth,
-      'free' => l10n.openCodeFreeModels,
-      'paid' => l10n.openCodeApiModels,
-      _ => null,
-    };
+    String? label;
+    if (providerId == 'llama_cpp' && section == 'managed') {
+      label = l10n.localEngineManagedModelSection;
+    } else if (providerId == 'llama_cpp' &&
+        section.startsWith('external-llama-server:')) {
+      final port = int.tryParse(section.split(':').last);
+      if (port != null) {
+        label = l10n.localEngineExternalModelSection(port);
+      }
+    } else {
+      label = switch (section) {
+        'api' => l10n.modelSourceApi,
+        'oauth' => l10n.modelSourceOAuth,
+        'free' => l10n.openCodeFreeModels,
+        'paid' => l10n.openCodeApiModels,
+        _ => null,
+      };
+    }
     if (label != null) entries.add(_ModelSectionEntry(label));
     entries.addAll(sectionModels.map(_ModelRowEntry.new));
   }

@@ -210,6 +210,88 @@ void main() {
     expect(find.text('Free model'), findsOneWidget);
   });
 
+  testWidgets('llama.cpp separates OpenChat and user-server models', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final models = [
+      const ChatGptModel(
+        id: 'managed-model',
+        displayName: 'Managed model',
+        isAvailable: true,
+        reasoningLevels: [],
+        providerId: 'llama_cpp',
+        groupId: 'managed',
+      ),
+      const ChatGptModel(
+        id: 'external-model',
+        displayName: 'External model',
+        isAvailable: true,
+        reasoningLevels: [],
+        providerId: 'llama_cpp',
+        groupId: 'external-llama-server:4216:8080',
+      ),
+    ];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('tr'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.light,
+        home: Scaffold(
+          body: Center(
+            child: ModelSelector(
+              label: 'Model seç',
+              iconRoot: 'assets/icons',
+              palette: OpenChatPalette.light,
+              compact: false,
+              models: models,
+              favoriteModels: const [],
+              selectedModelId: null,
+              selectedModelRouteKey: null,
+              providerId: 'llama_cpp',
+              isChatGptConnected: false,
+              availableProviderIds: const {'llama_cpp'},
+              onProviderSelected: (_) {},
+              isLoadingModels: false,
+              emptyModelsLabel: 'Model yok',
+              onSelected: (_) {},
+              onFavoriteChanged: (_, _, _, _, _) {},
+              onFavoriteSelected: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Model seç'));
+    await tester.pumpAndSettle();
+
+    final managedHeader = find.text("OpenChat'in yönettiği modeller");
+    final externalHeader = find.text('Kullanıcı sunucusu · 127.0.0.1:8080');
+    expect(managedHeader, findsOneWidget);
+    expect(externalHeader, findsOneWidget);
+    expect(find.text('Managed model'), findsOneWidget);
+    expect(find.text('External model'), findsOneWidget);
+    expect(
+      tester.getTopLeft(managedHeader).dy,
+      lessThan(tester.getTopLeft(find.text('Managed model')).dy),
+    );
+    expect(
+      tester.getTopLeft(find.text('Managed model')).dy,
+      lessThan(tester.getTopLeft(externalHeader).dy),
+    );
+    expect(
+      tester.getTopLeft(externalHeader).dy,
+      lessThan(tester.getTopLeft(find.text('External model')).dy),
+    );
+  });
+
   testWidgets('hidden models are excluded from model selector list', (
     tester,
   ) async {

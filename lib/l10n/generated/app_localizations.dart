@@ -488,6 +488,18 @@ abstract class AppLocalizations {
   /// **'Connected on port {port}. {count, plural, =1{1 model available} other{{count} models available}}.'**
   String localEngineExternalServerConnected(int port, int count);
 
+  /// No description provided for @localEngineManagedModelSection.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenChat-managed models'**
+  String get localEngineManagedModelSection;
+
+  /// No description provided for @localEngineExternalModelSection.
+  ///
+  /// In en, this message translates to:
+  /// **'User server · 127.0.0.1:{port}'**
+  String localEngineExternalModelSection(int port);
+
   /// No description provided for @localEngineExternalServerDisconnect.
   ///
   /// In en, this message translates to:
