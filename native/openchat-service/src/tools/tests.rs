@@ -721,6 +721,7 @@ fn write_file_and_edit_file_flow_and_guards() {
 }
 
 #[test]
+#[ignore = "manual filesystem latency benchmark; run with --ignored --nocapture"]
 fn benchmark_write_and_edit_performance_simulation() {
     use std::time::Instant;
 
