@@ -4,7 +4,7 @@ use std::{
     net::SocketAddr,
     path::PathBuf,
     process::Stdio,
-    sync::OnceLock,
+    sync::{Arc, OnceLock, Weak},
     time::Duration,
 };
 
@@ -15,7 +15,7 @@ use sha2::{Digest, Sha256};
 use tokio::{
     net::TcpListener,
     process::{Child, Command},
-    sync::{Mutex, watch},
+    sync::{Mutex, RwLock, watch},
     time::{Instant, sleep},
 };
 use zeroize::{Zeroize, Zeroizing};
@@ -35,7 +35,10 @@ const MAX_EXTERNAL_MODEL_CATALOG_BYTES: usize = 1024 * 1024;
 const MAX_EXTERNAL_MODEL_COUNT: usize = 128;
 
 static RUNNING_SERVER: OnceLock<Mutex<Option<RunningServer>>> = OnceLock::new();
+static RUNNING_SERVER_OPERATION: OnceLock<Mutex<()>> = OnceLock::new();
 static RUNNING_LLAMA_SERVERS: OnceLock<Mutex<HashMap<String, RunningServer>>> = OnceLock::new();
+static RUNTIME_OPERATION_GATE: OnceLock<RwLock<()>> = OnceLock::new();
+static MODEL_LIFECYCLES: OnceLock<Mutex<HashMap<String, Weak<ModelLifecycle>>>> = OnceLock::new();
 static EXTERNAL_LLAMA_SERVERS: OnceLock<Mutex<HashMap<(u32, u16), ConnectedExternalLlamaServer>>> =
     OnceLock::new();
 static EXTERNAL_SERVER_MUTATION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -82,6 +85,11 @@ struct RunningServer {
     session_directory: Option<PathBuf>,
 }
 
+struct ModelLifecycle {
+    operation: Mutex<()>,
+    stop_generation: watch::Sender<u64>,
+}
+
 struct RuntimeLaunch {
     arguments: Vec<OsString>,
     current_directory: PathBuf,
@@ -106,25 +114,65 @@ pub(crate) async fn start_model(
     }
     let installed =
         installed_engine_for(storage, &model.engine_id)?.ok_or_else(engine_not_installed_error)?;
-    if model.engine_id == "llama_cpp" {
-        let mut servers = running_llama_state().lock().await;
-        let mut selected_server = servers.remove(model_id);
+    let lifecycle = model_lifecycle(model_id).await;
+    let stop_generation = lifecycle.stop_generation.subscribe();
+    let expected_generation = *stop_generation.borrow();
+    let (mut operation_cancellation, cancellation_bridge) =
+        bridge_cancellation_sources(cancellation, &stop_generation, expected_generation);
+    let result = async {
+        let _runtime_guard = tokio::select! {
+            guard = runtime_operation_gate().read() => guard,
+            _ = operation_cancellation.changed() => return Err(cancelled_error()),
+        };
+        if *operation_cancellation.borrow() {
+            return Err(cancelled_error());
+        }
+
+        let _model_guard = tokio::select! {
+            guard = lifecycle.operation.lock() => guard,
+            _ = operation_cancellation.changed() => return Err(cancelled_error()),
+        };
+        if *operation_cancellation.borrow()
+            || *lifecycle.stop_generation.subscribe().borrow() != expected_generation
+        {
+            return Err(cancelled_error());
+        }
+
+        if model.engine_id == "llama_cpp" {
+            let mut selected_server = running_llama_state().lock().await.remove(model_id);
+            let result = start_model_in_slot(
+                storage,
+                &model,
+                installed,
+                &mut selected_server,
+                &mut operation_cancellation,
+            )
+            .await;
+            if let Some(server) = selected_server {
+                running_llama_state()
+                    .lock()
+                    .await
+                    .insert(model_id.to_owned(), server);
+            }
+            return result;
+        }
+
+        let _slot_guard = running_server_operation().lock().await;
+        let mut state = running_state().lock().await.take();
         let result = start_model_in_slot(
             storage,
             &model,
             installed,
-            &mut selected_server,
-            cancellation,
+            &mut state,
+            &mut operation_cancellation,
         )
         .await;
-        if let Some(server) = selected_server {
-            servers.insert(model_id.to_owned(), server);
-        }
-        return result;
+        *running_state().lock().await = state;
+        result
     }
-
-    let mut state = running_state().lock().await;
-    start_model_in_slot(storage, &model, installed, &mut state, cancellation).await
+    .await;
+    cancellation_bridge.abort();
+    result
 }
 
 async fn start_model_in_slot(
@@ -318,29 +366,40 @@ async fn start_model_in_slot(
 }
 
 pub(crate) async fn stop(storage: &AppStorage) -> Result<Value, ServiceError> {
+    let lifecycles = model_lifecycles().lock().await;
+    for lifecycle in lifecycles.values().filter_map(Weak::upgrade) {
+        advance_stop_generation(&lifecycle.stop_generation);
+    }
+    let runtime_guard = runtime_operation_gate().write().await;
+    drop(lifecycles);
+
     let mut first_error = None;
     {
+        let _slot_guard = running_server_operation().lock().await;
         let mut state = running_state().lock().await;
         if let Err(error) = stop_server(storage, &mut state).await {
             first_error = Some(error);
         }
     }
-    {
-        let mut servers = running_llama_state().lock().await;
-        let model_ids = servers.keys().cloned().collect::<Vec<_>>();
-        for model_id in model_ids {
-            let Some(server) = servers.remove(&model_id) else {
-                continue;
-            };
-            let mut slot = Some(server);
-            if let Err(error) = stop_server(storage, &mut slot).await {
-                first_error.get_or_insert(error);
-            }
-            if let Some(server) = slot {
-                servers.insert(model_id, server);
-            }
+    let model_ids = running_llama_state()
+        .lock()
+        .await
+        .keys()
+        .cloned()
+        .collect::<Vec<_>>();
+    for model_id in model_ids {
+        let Some(server) = running_llama_state().lock().await.remove(&model_id) else {
+            continue;
+        };
+        let mut slot = Some(server);
+        if let Err(error) = stop_server(storage, &mut slot).await {
+            first_error.get_or_insert(error);
+        }
+        if let Some(server) = slot {
+            running_llama_state().lock().await.insert(model_id, server);
         }
     }
+    drop(runtime_guard);
     if let Some(error) = first_error {
         return Err(error);
     }
@@ -351,27 +410,36 @@ pub(crate) async fn stop_model(
     storage: &AppStorage,
     model_id: &str,
 ) -> Result<Value, ServiceError> {
-    let mut managed = running_llama_state().lock().await;
-    if let Some(server) = managed.remove(model_id) {
+    let mut lifecycles = model_lifecycles().lock().await;
+    let lifecycle = model_lifecycle_locked(model_id, &mut lifecycles);
+    advance_stop_generation(&lifecycle.stop_generation);
+    let runtime_guard = runtime_operation_gate().write().await;
+    drop(lifecycles);
+    let _model_guard = lifecycle.operation.lock().await;
+
+    let managed_server = running_llama_state().lock().await.remove(model_id);
+    if let Some(server) = managed_server {
         let mut slot = Some(server);
         let result = stop_server(storage, &mut slot).await;
         if let Some(server) = slot {
-            managed.insert(model_id.to_owned(), server);
+            running_llama_state()
+                .lock()
+                .await
+                .insert(model_id.to_owned(), server);
         }
         result?;
-        drop(managed);
-        return status(storage).await;
     }
-    drop(managed);
-
-    let mut state = running_state().lock().await;
-    if state
-        .as_ref()
-        .is_some_and(|server| server.model_id == model_id)
     {
-        stop_server(storage, &mut state).await?;
+        let _slot_guard = running_server_operation().lock().await;
+        let mut state = running_state().lock().await;
+        if state
+            .as_ref()
+            .is_some_and(|server| server.model_id == model_id)
+        {
+            stop_server(storage, &mut state).await?;
+        }
     }
-    drop(state);
+    drop(runtime_guard);
     status(storage).await
 }
 
@@ -1455,8 +1523,83 @@ fn running_state() -> &'static Mutex<Option<RunningServer>> {
     RUNNING_SERVER.get_or_init(|| Mutex::new(None))
 }
 
+fn running_server_operation() -> &'static Mutex<()> {
+    RUNNING_SERVER_OPERATION.get_or_init(|| Mutex::new(()))
+}
+
 fn running_llama_state() -> &'static Mutex<HashMap<String, RunningServer>> {
     RUNNING_LLAMA_SERVERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn runtime_operation_gate() -> &'static RwLock<()> {
+    RUNTIME_OPERATION_GATE.get_or_init(|| RwLock::new(()))
+}
+
+fn model_lifecycles() -> &'static Mutex<HashMap<String, Weak<ModelLifecycle>>> {
+    MODEL_LIFECYCLES.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+async fn model_lifecycle(model_id: &str) -> Arc<ModelLifecycle> {
+    let mut lifecycles = model_lifecycles().lock().await;
+    model_lifecycle_locked(model_id, &mut lifecycles)
+}
+
+fn model_lifecycle_locked(
+    model_id: &str,
+    lifecycles: &mut HashMap<String, Weak<ModelLifecycle>>,
+) -> Arc<ModelLifecycle> {
+    if lifecycles.len() > 128 {
+        lifecycles.retain(|_, lifecycle| lifecycle.strong_count() > 0);
+    }
+    if let Some(lifecycle) = lifecycles.get(model_id).and_then(Weak::upgrade) {
+        return lifecycle;
+    }
+    let (stop_generation, _receiver) = watch::channel(0_u64);
+    let lifecycle = Arc::new(ModelLifecycle {
+        operation: Mutex::new(()),
+        stop_generation,
+    });
+    lifecycles.insert(model_id.to_owned(), Arc::downgrade(&lifecycle));
+    lifecycle
+}
+
+fn advance_stop_generation(stop_generation: &watch::Sender<u64>) {
+    stop_generation.send_modify(|generation| {
+        *generation = generation.wrapping_add(1);
+    });
+}
+
+fn bridge_cancellation_sources(
+    caller_cancellation: &watch::Receiver<bool>,
+    stop_generation: &watch::Receiver<u64>,
+    expected_generation: u64,
+) -> (watch::Receiver<bool>, tokio::task::JoinHandle<()>) {
+    let mut caller_cancellation = caller_cancellation.clone();
+    let mut stop_generation = stop_generation.clone();
+    let (cancellation_sender, cancellation_receiver) = watch::channel(false);
+    let bridge = tokio::spawn(async move {
+        loop {
+            if *caller_cancellation.borrow() || *stop_generation.borrow() != expected_generation {
+                cancellation_sender.send_replace(true);
+                return;
+            }
+            tokio::select! {
+                changed = caller_cancellation.changed() => {
+                    if changed.is_err() || *caller_cancellation.borrow() {
+                        cancellation_sender.send_replace(true);
+                        return;
+                    }
+                }
+                changed = stop_generation.changed() => {
+                    if changed.is_err() || *stop_generation.borrow() != expected_generation {
+                        cancellation_sender.send_replace(true);
+                        return;
+                    }
+                }
+            }
+        }
+    });
+    (cancellation_receiver, bridge)
 }
 
 async fn stop_server(
@@ -1648,12 +1791,13 @@ mod tests {
     use super::{
         ConnectedExternalLlamaServer, ExternalLlamaModel, ExternalLlamaServerCandidate,
         InstalledEngine, MAX_RUNTIME_PROPERTIES_BYTES, RuntimeCapabilities,
-        excluding_managed_server_processes, external_model_json, external_model_route_id,
-        external_server_for_route, external_server_group_id, health_check_or_cancel,
-        installed_engine_for, llama_server_arguments, managed_server_group_id,
-        parse_external_capabilities, parse_external_model_ids, parse_runtime_capabilities,
-        prepare_tabby_session, read_runtime_capabilities, remove_external_server,
-        retain_detected_external_servers, runtime_status_json, start_model, vllm_server_arguments,
+        bridge_cancellation_sources, excluding_managed_server_processes, external_model_json,
+        external_model_route_id, external_server_for_route, external_server_group_id,
+        health_check_or_cancel, installed_engine_for, llama_server_arguments,
+        managed_server_group_id, model_lifecycle, parse_external_capabilities,
+        parse_external_model_ids, parse_runtime_capabilities, prepare_tabby_session,
+        read_runtime_capabilities, remove_external_server, retain_detected_external_servers,
+        runtime_status_json, start_model, vllm_server_arguments,
     };
 
     struct TestDirectory(PathBuf);
@@ -2108,6 +2252,46 @@ mod tests {
             .await
             .expect_err("a closed operation should stop its readiness wait");
         assert_eq!(error.code, "operation_cancelled");
+    }
+
+    #[tokio::test]
+    async fn stop_generation_interrupts_an_active_start_cancellation_bridge() {
+        let (caller_sender, caller_cancellation) = watch::channel(false);
+        let (stop_sender, stop_generation) = watch::channel(7_u64);
+        let (mut operation_cancellation, bridge) =
+            bridge_cancellation_sources(&caller_cancellation, &stop_generation, 7);
+
+        stop_sender.send_replace(8);
+        timeout(Duration::from_millis(250), operation_cancellation.changed())
+            .await
+            .expect("stopping the model should interrupt its start operation")
+            .expect("the cancellation bridge should remain available");
+        assert!(*operation_cancellation.borrow());
+        bridge.abort();
+        drop(caller_sender);
+    }
+
+    #[tokio::test]
+    async fn model_lifecycle_locks_are_shared_per_model_only() {
+        let model_id = format!("test-model-{}", Uuid::new_v4());
+        let other_model_id = format!("test-model-{}", Uuid::new_v4());
+        let first = model_lifecycle(&model_id).await;
+        let same_model = model_lifecycle(&model_id).await;
+        let other_model = model_lifecycle(&other_model_id).await;
+
+        assert!(std::sync::Arc::ptr_eq(&first, &same_model));
+        assert!(!std::sync::Arc::ptr_eq(&first, &other_model));
+
+        let _first_guard = first.operation.lock().await;
+        let other_guard = timeout(Duration::from_millis(250), other_model.operation.lock())
+            .await
+            .expect("different model starts should not wait on this model");
+        drop(other_guard);
+        assert!(
+            timeout(Duration::from_millis(25), same_model.operation.lock())
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]

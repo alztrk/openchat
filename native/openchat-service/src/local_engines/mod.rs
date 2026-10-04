@@ -323,18 +323,7 @@ pub(crate) async fn remove_model(
     storage: &AppStorage,
     model_id: &str,
 ) -> Result<Value, ServiceError> {
-    let state = runtime::status(storage).await?;
-    let is_running = state
-        .get("servers")
-        .and_then(Value::as_array)
-        .is_some_and(|servers| {
-            servers
-                .iter()
-                .any(|server| server.get("modelId").and_then(Value::as_str) == Some(model_id))
-        });
-    if is_running {
-        runtime::stop_model(storage, model_id).await?;
-    }
+    runtime::stop_model(storage, model_id).await?;
     Ok(json!({"removed": models::remove(storage, model_id)?}))
 }
 
