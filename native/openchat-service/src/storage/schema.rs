@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
-pub(super) const SCHEMA_VERSION: i64 = 21;
+pub(super) const SCHEMA_VERSION: i64 = 22;
 pub(super) const INITIAL_SCHEMA_VERSION: i64 = 2;
 
 const REDACTED_TOOL_INDEX_TRIGGERS: &str = r#"
@@ -209,6 +209,59 @@ const REDACT_AND_REBUILD_TOOL_INDEX: &str = r#"
        SET generation = generation + 1, indexed_generation = NULL
      WHERE id = 1;
 "#;
+
+const MEMORY_INDEX_TRIGGERS: &str = r#"
+    DROP TRIGGER IF EXISTS conversation_memory_message_insert;
+    DROP TRIGGER IF EXISTS conversation_memory_message_update;
+    DROP TRIGGER IF EXISTS conversation_memory_message_delete;
+    CREATE TRIGGER conversation_memory_message_insert
+    AFTER INSERT ON messages
+    WHEN NEW.role IN ('user', 'assistant')
+        AND NEW.status = 'completed'
+        AND COALESCE((
+            SELECT included FROM conversation_memory_archive_settings
+            WHERE conversation_id = NEW.conversation_id
+        ), 1) = 1
+    BEGIN
+        INSERT INTO conversation_memory_fts (
+            rowid, conversation_id, message_id, role, scope_token, content
+        ) VALUES (
+            NEW.rowid, NEW.conversation_id, NEW.id, NEW.role,
+            'scope' || lower(hex(CAST(NEW.conversation_id AS BLOB))), NEW.content
+        );
+    END;
+
+    CREATE TRIGGER conversation_memory_message_update
+    AFTER UPDATE OF conversation_id, id, role, content, status ON messages
+    WHEN OLD.status = 'completed' OR NEW.status = 'completed'
+    BEGIN
+        DELETE FROM conversation_memory_fts WHERE rowid = OLD.rowid;
+        INSERT INTO conversation_memory_fts (
+            rowid, conversation_id, message_id, role, scope_token, content
+        ) SELECT
+            NEW.rowid, NEW.conversation_id, NEW.id, NEW.role,
+            'scope' || lower(hex(CAST(NEW.conversation_id AS BLOB))), NEW.content
+        WHERE NEW.role IN ('user', 'assistant') AND NEW.status = 'completed'
+          AND COALESCE((
+              SELECT included FROM conversation_memory_archive_settings
+              WHERE conversation_id = NEW.conversation_id
+          ), 1) = 1;
+    END;
+
+    CREATE TRIGGER conversation_memory_message_delete
+    AFTER DELETE ON messages
+    BEGIN
+        DELETE FROM conversation_memory_fts WHERE rowid = OLD.rowid;
+    END;
+
+    DROP TRIGGER IF EXISTS conversation_memory_tool_delete;
+    CREATE TRIGGER conversation_memory_tool_delete
+    AFTER DELETE ON messages
+    BEGIN
+        DELETE FROM conversation_memory_tools_fts WHERE rowid = OLD.rowid;
+    END;
+"#;
+
 pub(super) fn initialize_schema(
     connection: &Connection,
     target_version: i64,
@@ -217,24 +270,42 @@ pub(super) fn initialize_schema(
     if !(1..=SCHEMA_VERSION).contains(&target_version) {
         return Err(rusqlite::Error::InvalidQuery);
     }
+    let migrations_table_exists = schema_table_exists(connection, "openchat_backend_migrations")?;
+    let mut current_version = if migrations_table_exists {
+        connection.query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM openchat_backend_migrations",
+            [],
+            |row| row.get::<_, i64>(0),
+        )?
+    } else {
+        0
+    };
+    if current_version > SCHEMA_VERSION {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    if current_version >= target_version {
+        if target_version >= SCHEMA_VERSION && current_version >= 13 {
+            let indexes_repaired = repair_missing_memory_indexes(connection, current_version)?;
+            if indexes_repaired {
+                let transaction = connection.unchecked_transaction()?;
+                transaction.execute_batch(REDACTED_TOOL_INDEX_TRIGGERS)?;
+                transaction.execute_batch(MEMORY_INDEX_TRIGGERS)?;
+                transaction.commit()?;
+            }
+        }
+        return Ok(current_version);
+    }
+
+    if current_version >= 13 {
+        repair_missing_memory_indexes(connection, current_version)?;
+    }
+
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS openchat_backend_migrations (
             version INTEGER PRIMARY KEY,
             applied_at_unix_ms INTEGER NOT NULL
         );",
     )?;
-
-    let mut current_version = connection.query_row(
-        "SELECT COALESCE(MAX(version), 0) FROM openchat_backend_migrations",
-        [],
-        |row| row.get::<_, i64>(0),
-    )?;
-    if current_version > SCHEMA_VERSION {
-        return Err(rusqlite::Error::InvalidQuery);
-    }
-    if current_version >= target_version {
-        return Ok(current_version);
-    }
 
     if current_version == 0 {
         let transaction = connection.unchecked_transaction()?;
@@ -1456,6 +1527,18 @@ pub(super) fn initialize_schema(
 
     if current_version < 20 && target_version >= 20 {
         let transaction = connection.unchecked_transaction()?;
+        if !schema_table_exists(&transaction, "conversation_memory_tools_fts")? {
+            transaction.execute_batch(
+                "CREATE VIRTUAL TABLE conversation_memory_tools_fts USING fts5(
+                    conversation_id UNINDEXED,
+                    message_id UNINDEXED,
+                    role UNINDEXED,
+                    scope_token,
+                    content,
+                    tokenize = 'unicode61 remove_diacritics 2'
+                );",
+            )?;
+        }
         transaction.execute_batch(REDACTED_TOOL_INDEX_TRIGGERS)?;
         transaction.execute_batch(REDACT_AND_REBUILD_TOOL_INDEX)?;
         transaction.execute(
@@ -1554,7 +1637,191 @@ pub(super) fn initialize_schema(
         current_version = 21;
     }
 
+    if current_version < 22 && target_version >= 22 {
+        let transaction = connection.unchecked_transaction()?;
+        let missing_message_index = !schema_table_exists(&transaction, "conversation_memory_fts")?;
+        let missing_tool_index =
+            !schema_table_exists(&transaction, "conversation_memory_tools_fts")?;
+
+        if missing_message_index {
+            transaction.execute_batch(
+                "CREATE VIRTUAL TABLE conversation_memory_fts USING fts5(
+                    conversation_id UNINDEXED,
+                    message_id UNINDEXED,
+                    role UNINDEXED,
+                    scope_token,
+                    content,
+                    tokenize = 'unicode61 remove_diacritics 2'
+                );
+
+                INSERT INTO conversation_memory_fts (
+                    rowid, conversation_id, message_id, role, scope_token, content
+                )
+                SELECT message.rowid, message.conversation_id, message.id, message.role,
+                       'scope' || lower(hex(CAST(message.conversation_id AS BLOB))),
+                       message.content
+                  FROM messages AS message
+                 WHERE message.role IN ('user', 'assistant')
+                   AND message.status = 'completed'
+                   AND COALESCE((
+                       SELECT included FROM conversation_memory_archive_settings
+                        WHERE conversation_id = message.conversation_id
+                   ), 1) = 1;",
+            )?;
+        }
+
+        if missing_tool_index {
+            transaction.execute_batch(
+                "CREATE VIRTUAL TABLE conversation_memory_tools_fts USING fts5(
+                    conversation_id UNINDEXED,
+                    message_id UNINDEXED,
+                    role UNINDEXED,
+                    scope_token,
+                    content,
+                    tokenize = 'unicode61 remove_diacritics 2'
+                );",
+            )?;
+        }
+
+        transaction.execute_batch(REDACTED_TOOL_INDEX_TRIGGERS)?;
+        if missing_tool_index {
+            transaction.execute_batch(REDACT_AND_REBUILD_TOOL_INDEX)?;
+        }
+        transaction.execute_batch(MEMORY_INDEX_TRIGGERS)?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (22, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 22;
+    }
+
     Ok(current_version)
+}
+
+fn schema_table_exists(connection: &Connection, name: &str) -> rusqlite::Result<bool> {
+    connection.query_row(
+        "SELECT EXISTS (
+            SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?1
+        )",
+        [name],
+        |row| row.get(0),
+    )
+}
+
+fn repair_missing_memory_indexes(
+    connection: &Connection,
+    backend_version: i64,
+) -> rusqlite::Result<bool> {
+    if backend_version < 13 || !schema_table_exists(connection, "messages")? {
+        return Ok(false);
+    }
+    let missing_message_index = !schema_table_exists(connection, "conversation_memory_fts")?;
+    let missing_tool_index =
+        backend_version >= 14 && !schema_table_exists(connection, "conversation_memory_tools_fts")?;
+    if !missing_message_index && !missing_tool_index {
+        return Ok(false);
+    }
+
+    let has_archive_settings =
+        schema_table_exists(connection, "conversation_memory_archive_settings")?;
+    let has_excluded_tools = schema_table_exists(connection, "conversation_memory_excluded_tools")?;
+    let archive_filter = if has_archive_settings {
+        "AND COALESCE((SELECT included FROM conversation_memory_archive_settings WHERE conversation_id = message.conversation_id), 1) = 1"
+    } else {
+        ""
+    };
+    let excluded_tool_filter = if has_excluded_tools {
+        "AND NOT EXISTS (SELECT 1 FROM conversation_memory_excluded_tools AS excluded WHERE excluded.conversation_id = message.conversation_id AND excluded.tool_name = COALESCE(json_extract(activity.value, '$.name'), ''))"
+    } else {
+        ""
+    };
+
+    let transaction = connection.unchecked_transaction()?;
+    if missing_tool_index {
+        transaction.execute_batch(
+            "CREATE VIRTUAL TABLE conversation_memory_tools_fts USING fts5(
+                conversation_id UNINDEXED,
+                message_id UNINDEXED,
+                role UNINDEXED,
+                scope_token,
+                content,
+                tokenize = 'unicode61 remove_diacritics 2'
+            );",
+        )?;
+    }
+    if missing_message_index {
+        transaction.execute_batch(
+            "CREATE VIRTUAL TABLE conversation_memory_fts USING fts5(
+                conversation_id UNINDEXED,
+                message_id UNINDEXED,
+                role UNINDEXED,
+                scope_token,
+                content,
+                tokenize = 'unicode61 remove_diacritics 2'
+            );",
+        )?;
+    }
+
+    if missing_message_index {
+        let rebuild_message_index = format!(
+            "INSERT INTO conversation_memory_fts (
+                rowid, conversation_id, message_id, role, scope_token, content
+            )
+            SELECT message.rowid, message.conversation_id, message.id, message.role,
+                   'scope' || lower(hex(CAST(message.conversation_id AS BLOB))),
+                   message.content
+              FROM messages AS message
+             WHERE message.role IN ('user', 'assistant')
+               AND message.status = 'completed'
+               {archive_filter};"
+        );
+        transaction.execute_batch(&rebuild_message_index)?;
+    }
+
+    if missing_tool_index {
+        let rebuild_tool_index = format!(
+            "INSERT INTO conversation_memory_tools_fts (
+                rowid, conversation_id, message_id, role, scope_token, content
+            )
+            SELECT message.rowid, message.conversation_id, message.id, message.role,
+                   'scope' || lower(hex(CAST(message.conversation_id AS BLOB))),
+                   openchat_redact_credentials((
+                       SELECT group_concat(
+                           COALESCE(json_extract(activity.value, '$.name'), '') || ' ' ||
+                           COALESCE(json_extract(activity.value, '$.arguments'), '') || ' ' ||
+                           COALESCE(json_extract(activity.value, '$.output'), ''),
+                           char(10)
+                       )
+                       FROM json_each(
+                           CASE WHEN json_valid(message.tool_activities)
+                                THEN message.tool_activities ELSE '[]' END
+                       ) AS activity
+                       WHERE json_type(activity.value, '$.output') IS NOT NULL
+                         AND json_extract(activity.value, '$.status')
+                             IN ('completed', 'failed', 'denied', 'cancelled')
+                         {excluded_tool_filter}
+                   ))
+              FROM messages AS message
+             WHERE message.role = 'assistant'
+               AND message.status = 'completed'
+               AND EXISTS (
+                   SELECT 1
+                     FROM json_each(
+                         CASE WHEN json_valid(message.tool_activities)
+                              THEN message.tool_activities ELSE '[]' END
+                     ) AS activity
+                    WHERE json_type(activity.value, '$.output') IS NOT NULL
+                      AND json_extract(activity.value, '$.status')
+                          IN ('completed', 'failed', 'denied', 'cancelled')
+                      {excluded_tool_filter}
+               )
+               {archive_filter};"
+        );
+        transaction.execute_batch(&rebuild_tool_index)?;
+    }
+    transaction.commit()?;
+    Ok(true)
 }
 
 fn unix_time_millis() -> rusqlite::Result<i64> {
@@ -1570,6 +1837,123 @@ mod tests {
     use rusqlite::Connection;
 
     use super::{SCHEMA_VERSION, initialize_schema};
+
+    fn memory_index_repair_fixture(version: i64) -> Connection {
+        let connection = Connection::open_in_memory().expect("open in-memory database");
+        connection
+            .execute_batch(
+                "PRAGMA foreign_keys = ON;
+                CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                CREATE TABLE messages (
+                    id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at INTEGER,
+                    tool_activities TEXT NOT NULL DEFAULT '[]',
+                    PRIMARY KEY (conversation_id, id)
+                );",
+            )
+            .expect("create host conversation schema");
+        initialize_schema(&connection, version).expect("initialize fixture schema");
+        connection
+            .execute("INSERT INTO conversations (id) VALUES ('conversation')", [])
+            .expect("insert fixture conversation");
+        connection
+            .execute(
+                "INSERT INTO messages
+                    (id, conversation_id, role, content, status, created_at, tool_activities)
+                 VALUES
+                    ('user-message', 'conversation', 'user', 'repairmessageindexmarker', 'completed', 1, '[]'),
+                    ('assistant-message', 'conversation', 'assistant', 'Completed tool call.', 'completed', 2,
+                     '[{\"name\":\"read_file\",\"status\":\"completed\",\"arguments\":\"repairtoolindexmarker\",\"output\":\"done\"}]')",
+                [],
+            )
+            .expect("insert fixture messages");
+        connection
+    }
+
+    fn drop_memory_indexes_and_triggers(connection: &Connection) {
+        connection
+            .execute_batch(
+                "DROP TRIGGER IF EXISTS conversation_memory_message_insert;
+                DROP TRIGGER IF EXISTS conversation_memory_message_update;
+                DROP TRIGGER IF EXISTS conversation_memory_message_delete;
+                DROP TRIGGER IF EXISTS conversation_memory_tool_insert;
+                DROP TRIGGER IF EXISTS conversation_memory_tool_update;
+                DROP TRIGGER IF EXISTS conversation_memory_tool_delete;
+                DROP TABLE conversation_memory_fts;
+                DROP TABLE conversation_memory_tools_fts;",
+            )
+            .expect("remove derived memory indexes and triggers");
+    }
+
+    fn assert_memory_indexes_rebuilt(connection: &Connection) {
+        let message_count = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_memory_fts
+                 WHERE conversation_memory_fts MATCH 'content : \"repairmessageindexmarker\"'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("find rebuilt message index entry");
+        assert_eq!(message_count, 1);
+
+        let tool_count = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_memory_tools_fts
+                 WHERE conversation_memory_tools_fts MATCH 'content : \"repairtoolindexmarker\"'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("find rebuilt tool index entry");
+        assert_eq!(tool_count, 1);
+
+        connection
+            .execute(
+                "INSERT INTO messages
+                    (id, conversation_id, role, content, status, created_at)
+                 VALUES ('new-message', 'conversation', 'user', 'postmigrationindexmarker', 'completed', 3)",
+                [],
+            )
+            .expect("insert message after index repair");
+        let new_message_count = connection
+            .query_row(
+                "SELECT COUNT(*) FROM conversation_memory_fts
+                 WHERE conversation_memory_fts MATCH 'content : \"postmigrationindexmarker\"'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("check the restored message trigger");
+        assert_eq!(new_message_count, 1);
+    }
+
+    #[test]
+    fn upgrades_version_seventeen_when_derived_memory_indexes_are_missing() {
+        let connection = memory_index_repair_fixture(17);
+        drop_memory_indexes_and_triggers(&connection);
+
+        assert_eq!(
+            initialize_schema(&connection, SCHEMA_VERSION)
+                .expect("upgrade and rebuild missing memory indexes"),
+            SCHEMA_VERSION
+        );
+        assert_memory_indexes_rebuilt(&connection);
+    }
+
+    #[test]
+    fn repairs_missing_memory_indexes_from_version_twenty_one() {
+        let connection = memory_index_repair_fixture(21);
+        drop_memory_indexes_and_triggers(&connection);
+
+        assert_eq!(
+            initialize_schema(&connection, SCHEMA_VERSION)
+                .expect("repair missing indexes in an otherwise current schema"),
+            SCHEMA_VERSION
+        );
+        assert_memory_indexes_rebuilt(&connection);
+    }
 
     #[test]
     fn schema_initialization_stops_at_each_requested_target() {
