@@ -34,7 +34,9 @@
           "url": "https://github.com/vllm-project/vllm/releases/download/v0.30.0/vllm-0.30.0-cp38-abi3-manylinux_2_28_x86_64.whl",
           "sizeBytes": 314883777,
           "sha256": "sha256:ef52ee58c410ead0b8afb190838fa4cbcb52075596f67862a03859d984966ac4",
-          "role": "primary"
+          "role": "primary",
+          "releaseRepository": "vllm-project/vllm",
+          "releaseTag": "v0.30.0"
         },
         {
           "name": "uv-x86_64-unknown-linux-gnu.tar.gz",
@@ -42,7 +44,9 @@
           "sizeBytes": 21373358,
           "sha256": "sha256:eaf842262aa1c418d8ecc5605f02ee1ebfd369124fa48548e85f9481a47831a9",
           "role": "companion",
-          "companionFor": "linux-x86_64-cuda13"
+          "companionFor": "linux-x86_64-cuda13",
+          "releaseRepository": "astral-sh/uv",
+          "releaseTag": "0.12.0"
         }
       ],
       "capabilities": [
@@ -78,7 +82,9 @@
           "url": "https://github.com/vllm-project/vllm/releases/download/v0.30.0/vllm-0.30.0-cp38-abi3-manylinux_2_28_x86_64.whl",
           "sizeBytes": 314883777,
           "sha256": "sha256:ef52ee58c410ead0b8afb190838fa4cbcb52075596f67862a03859d984966ac4",
-          "role": "primary"
+          "role": "primary",
+          "releaseRepository": "vllm-project/vllm",
+          "releaseTag": "v0.30.0"
         },
         {
           "name": "uv-x86_64-unknown-linux-gnu.tar.gz",
@@ -86,7 +92,9 @@
           "sizeBytes": 21373358,
           "sha256": "sha256:eaf842262aa1c418d8ecc5605f02ee1ebfd369124fa48548e85f9481a47831a9",
           "role": "companion",
-          "companionFor": "windows-wsl2-linux-x86_64-cuda13"
+          "companionFor": "windows-wsl2-linux-x86_64-cuda13",
+          "releaseRepository": "astral-sh/uv",
+          "releaseTag": "0.12.0"
         }
       ],
       "capabilities": [

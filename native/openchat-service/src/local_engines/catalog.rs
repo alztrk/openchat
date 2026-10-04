@@ -101,6 +101,10 @@ fn parse_version_part(value: &str) -> Option<u32> {
 pub struct EngineAsset {
     pub name: String,
     pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_repository: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub release_tag: Option<String>,
     pub size_bytes: u64,
     pub sha256: String,
     pub role: String,
@@ -357,6 +361,28 @@ fn validate_asset(
     }
     validate_sha256(&asset.sha256, &asset.name)?;
     validate_allowed(&asset.role, "asset role", ALLOWED_ASSET_ROLES)?;
+    match (
+        asset.role.as_str(),
+        asset.release_repository.as_deref(),
+        asset.release_tag.as_deref(),
+    ) {
+        ("source", None, None) => {}
+        ("source", _, _) => {
+            return Err(invalid(format!(
+                "source asset {:?} must use sourceRepository and sourceCommit metadata",
+                asset.name
+            )));
+        }
+        (_, Some(repository), Some(release_tag)) => {
+            validate_release_asset_url(&asset.url, repository, release_tag, &asset.name)?;
+        }
+        _ => {
+            return Err(invalid(format!(
+                "release asset {:?} must declare releaseRepository and releaseTag",
+                asset.name
+            )));
+        }
+    }
     match (asset.role.as_str(), asset.companion_for.as_deref()) {
         ("primary", Some(_)) => {
             return Err(invalid(format!(
@@ -479,6 +505,37 @@ fn validate_release_url(
     Ok(())
 }
 
+pub(super) fn validate_release_asset_url(
+    url: &str,
+    repository: &str,
+    release_tag: &str,
+    asset_name: &str,
+) -> Result<(), CatalogError> {
+    validate_source_repository(repository)?;
+    require_nonempty(release_tag, "asset releaseTag")?;
+    let encoded_name = encode_path_segment(asset_name);
+    let expected =
+        format!("https://github.com/{repository}/releases/download/{release_tag}/{encoded_name}");
+    if url != expected {
+        return Err(invalid(format!(
+            "asset {asset_name:?} URL must point to {repository}@{release_tag}"
+        )));
+    }
+    Ok(())
+}
+
+fn encode_path_segment(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
+            encoded.push(char::from(byte));
+        } else {
+            encoded.push_str(&format!("%{byte:02X}"));
+        }
+    }
+    encoded
+}
+
 fn validate_github_url(value: &str, field: &str, allow_api_host: bool) -> Result<(), CatalogError> {
     let parsed = Url::parse(value).map_err(|_| invalid(format!("{field} is not a valid URL")))?;
     if parsed.scheme() != "https" {
@@ -583,6 +640,8 @@ mod tests {
 
     const LLAMA_CPP_MANIFEST: &[u8] =
         include_bytes!("../../resources/local-engines/llama_cpp.json");
+    const VLLM_MANIFEST: &[u8] = include_bytes!("../../resources/local-engines/vllm.json");
+    const EXLLAMA_MANIFEST: &[u8] = include_bytes!("../../resources/local-engines/exllama.json");
 
     fn llama_value() -> Value {
         serde_json::from_slice(LLAMA_CPP_MANIFEST).expect("current catalog must be JSON")
@@ -599,6 +658,27 @@ mod tests {
     }
 
     #[test]
+    fn all_shipped_engine_catalogs_have_exact_release_asset_pins() {
+        for (engine_id, bytes) in [
+            ("llama_cpp", LLAMA_CPP_MANIFEST),
+            ("vllm", VLLM_MANIFEST),
+            ("exllama", EXLLAMA_MANIFEST),
+        ] {
+            let manifest = parse_manifest(bytes)
+                .unwrap_or_else(|error| panic!("{engine_id} catalog should validate: {error}"));
+            assert_eq!(manifest.engine_id, engine_id);
+            assert!(
+                manifest
+                    .variants
+                    .iter()
+                    .flat_map(|variant| &variant.assets)
+                    .all(|asset| asset.role == "source"
+                        || (asset.release_repository.is_some() && asset.release_tag.is_some()))
+            );
+        }
+    }
+
+    #[test]
     fn rejects_malformed_digest() {
         let mut value = llama_value();
         value["variants"][0]["assets"][0]["sha256"] = Value::String("sha256:not-a-digest".into());
@@ -612,6 +692,29 @@ mod tests {
         let mut value = llama_value();
         value["releaseUrl"] =
             Value::String("http://github.com/ggml-org/llama.cpp/releases/tag/b11349".into());
+
+        let bytes = serde_json::to_vec(&value).expect("test value should serialize");
+        assert!(parse_manifest(&bytes).is_err());
+    }
+
+    #[test]
+    fn release_assets_must_match_their_declared_repository_tag_and_name() {
+        let mut value = llama_value();
+        let asset = &mut value["variants"][0]["assets"][0];
+        asset["releaseRepository"] = Value::String("ggml-org/llama.cpp".into());
+        asset["releaseTag"] = Value::String("different-tag".into());
+
+        let bytes = serde_json::to_vec(&value).expect("test value should serialize");
+        assert!(parse_manifest(&bytes).is_err());
+
+        let mut value = llama_value();
+        let asset = &mut value["variants"][0]["assets"][0];
+        asset["releaseRepository"] = Value::String("ggml-org/llama.cpp".into());
+        asset["releaseTag"] = Value::String("b11349".into());
+        asset["url"] = Value::String(
+            "https://github.com/other/repo/releases/download/b11349/llama-b11349-bin-win-cpu-x64.zip"
+                .into(),
+        );
 
         let bytes = serde_json::to_vec(&value).expect("test value should serialize");
         assert!(parse_manifest(&bytes).is_err());

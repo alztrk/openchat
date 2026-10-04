@@ -28,7 +28,9 @@
           "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11349/llama-b11349-bin-win-cpu-x64.zip",
           "sizeBytes": 19275576,
           "sha256": "sha256:3f387c5877b66d078b89b52a2a59cf0f5aa10e69513f3956163edabacffa1c6e",
-          "role": "primary"
+          "role": "primary",
+          "releaseRepository": "ggml-org/llama.cpp",
+          "releaseTag": "b11349"
         }
       ],
       "capabilities": [
@@ -61,7 +63,9 @@
           "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11349/llama-b11349-bin-win-cuda-12.4-x64.zip",
           "sizeBytes": 263288146,
           "sha256": "sha256:1084a0a4c6567511c7f67d8c4db71979f837170ed22b2fcb72c0d8637a4eaf14",
-          "role": "primary"
+          "role": "primary",
+          "releaseRepository": "ggml-org/llama.cpp",
+          "releaseTag": "b11349"
         },
         {
           "name": "cudart-llama-bin-win-cuda-12.4-x64.zip",
@@ -69,7 +73,9 @@
           "sizeBytes": 391443627,
           "sha256": "sha256:8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6",
           "role": "companion",
-          "companionFor": "win-x86_64-cuda-12.4"
+          "companionFor": "win-x86_64-cuda-12.4",
+          "releaseRepository": "ggml-org/llama.cpp",
+          "releaseTag": "b11349"
         }
       ],
       "capabilities": [
@@ -102,7 +108,9 @@
           "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11349/llama-b11349-bin-win-cuda-13.4-x64.zip",
           "sizeBytes": 152792767,
           "sha256": "sha256:06f2efb5f54d845002972928fa879448491799a556741c185a1974b491d8b4f0",
-          "role": "primary"
+          "role": "primary",
+          "releaseRepository": "ggml-org/llama.cpp",
+          "releaseTag": "b11349"
         },
         {
           "name": "cudart-llama-bin-win-cuda-13.4-x64.zip",
@@ -110,7 +118,9 @@
           "sizeBytes": 423535356,
           "sha256": "sha256:738f8c251ac22b70c3ae6f83a10cf222725df0395246a2cf58f32bdb85fbe668",
           "role": "companion",
-          "companionFor": "win-x86_64-cuda-13.4"
+          "companionFor": "win-x86_64-cuda-13.4",
+          "releaseRepository": "ggml-org/llama.cpp",
+          "releaseTag": "b11349"
         }
       ],
       "capabilities": [
@@ -139,7 +149,9 @@
           "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11349/llama-b11349-bin-ubuntu-x64.tar.gz",
           "sizeBytes": 17551895,
           "sha256": "sha256:7efd2fb72db59f12b05614a709ba6d506b9859e867943955fc9bbd8ee13eccea",
-          "role": "primary"
+          "role": "primary",
+          "releaseRepository": "ggml-org/llama.cpp",
+          "releaseTag": "b11349"
         }
       ],
       "capabilities": [
@@ -172,7 +184,9 @@
           "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11349/llama-b11349-bin-ubuntu-cuda-12.8-x64.tar.gz",
           "sizeBytes": 171244020,
           "sha256": "sha256:fa9f499e892e5388ec1a2250bc12478f539f6b155cae662d72f223d81d55d04b",
-          "role": "primary"
+          "role": "primary",
+          "releaseRepository": "ggml-org/llama.cpp",
+          "releaseTag": "b11349"
         },
         {
           "name": "cudart-llama-b11349-bin-ubuntu-cuda-12.8-x64.tar.gz",
@@ -180,7 +194,9 @@
           "sizeBytes": 594377711,
           "sha256": "sha256:056b65c841f6a54a36c1af38d2d47354bb4ac060f930c0941ce3f0b34423190f",
           "role": "companion",
-          "companionFor": "linux-x86_64-cuda-12.8"
+          "companionFor": "linux-x86_64-cuda-12.8",
+          "releaseRepository": "ggml-org/llama.cpp",
+          "releaseTag": "b11349"
         }
       ],
       "capabilities": [
@@ -213,7 +229,9 @@
           "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11349/llama-b11349-bin-ubuntu-cuda-13.4-x64.tar.gz",
           "sizeBytes": 152148969,
           "sha256": "sha256:4fbe049cfc3ecdc42a7f69816f6d6527562680f24de907e0996933495bf7eac3",
-          "role": "primary"
+          "role": "primary",
+          "releaseRepository": "ggml-org/llama.cpp",
+          "releaseTag": "b11349"
         },
         {
           "name": "cudart-llama-b11349-bin-ubuntu-cuda-13.4-x64.tar.gz",
@@ -221,7 +239,9 @@
           "sizeBytes": 440236733,
           "sha256": "sha256:0b6167c50599cc33184121c5491f1a75527a4aad13f3915d261fd520f51cd2a9",
           "role": "companion",
-          "companionFor": "linux-x86_64-cuda-13.4"
+          "companionFor": "linux-x86_64-cuda-13.4",
+          "releaseRepository": "ggml-org/llama.cpp",
+          "releaseTag": "b11349"
         }
       ],
       "capabilities": [
@@ -251,7 +271,9 @@
           "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11349/llama-b11349-bin-ubuntu-vulkan-x64.tar.gz",
           "sizeBytes": 31495154,
           "sha256": "sha256:ae2a2ce4514a49e7724e5a350938a13598ba167d25570d5e0253080bfdf071f1",
-          "role": "primary"
+          "role": "primary",
+          "releaseRepository": "ggml-org/llama.cpp",
+          "releaseTag": "b11349"
         }
       ],
       "capabilities": [
@@ -282,7 +304,9 @@
           "url": "https://github.com/ggml-org/llama.cpp/releases/download/b11349/llama-b11349-bin-macos-arm64.tar.gz",
           "sizeBytes": 11828889,
           "sha256": "sha256:bd0f0411541ad468959670ddd5ca8276135a9140cb978898286085aabe3f76f1",
-          "role": "primary"
+          "role": "primary",
+          "releaseRepository": "ggml-org/llama.cpp",
+          "releaseTag": "b11349"
         }
       ],
       "capabilities": [

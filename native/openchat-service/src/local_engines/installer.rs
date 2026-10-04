@@ -26,7 +26,9 @@ use uuid::Uuid;
 use zip::ZipArchive;
 
 use crate::{
-    local_engines::catalog::{EngineAsset, EngineManifest, EngineVariant},
+    local_engines::catalog::{
+        EngineAsset, EngineManifest, EngineVariant, validate_release_asset_url,
+    },
     protocol::{EventSink, Response, ServiceError},
     storage::AppStorage,
 };
@@ -40,6 +42,7 @@ const MAX_ARCHIVE_ENTRY_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 const MAX_EXTRACTED_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 const PROGRESS_INTERVAL_BYTES: u64 = 512 * 1024;
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(250);
+const DOWNLOAD_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
 static INSTALL_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -604,7 +607,12 @@ async fn download_asset(
 
     loop {
         let next_chunk = tokio::select! {
-            chunk = response.chunk() => chunk,
+            chunk = tokio::time::timeout(DOWNLOAD_IDLE_TIMEOUT, response.chunk()) => {
+                match chunk {
+                    Ok(chunk) => chunk,
+                    Err(_) => return Err(download_timeout_error()),
+                }
+            },
             changed = cancellation.changed() => {
                 match changed {
                     Ok(()) if !*cancellation.borrow() => continue,
@@ -806,7 +814,7 @@ fn validate_install_request(
     if !manifest
         .variants
         .iter()
-        .any(|candidate| candidate.variant_id == variant.variant_id)
+        .any(|candidate| candidate == variant)
     {
         return Err(invalid_install_error());
     }
@@ -846,8 +854,6 @@ fn validate_install_request(
         } else {
             return Err(invalid_install_error());
         }
-        let is_release_asset = asset.url.starts_with("https://github.com/")
-            && asset.url.contains("/releases/download/");
         let is_pinned_source_archive = if asset.role == "source" {
             asset
                 .source_repository
@@ -859,7 +865,18 @@ fn validate_install_request(
         } else {
             false
         };
-        if !is_release_asset && !is_pinned_source_archive {
+        let is_pinned_release_asset = if asset.role != "source" {
+            asset
+                .release_repository
+                .as_deref()
+                .zip(asset.release_tag.as_deref())
+                .is_some_and(|(repository, tag)| {
+                    validate_release_asset_url(&asset.url, repository, tag, &asset.name).is_ok()
+                })
+        } else {
+            false
+        };
+        if !is_pinned_release_asset && !is_pinned_source_archive {
             return Err(invalid_install_error());
         }
         validate_digest_text(&asset.sha256)?;
@@ -1023,6 +1040,14 @@ fn download_error() -> ServiceError {
     ServiceError::new(
         "local_engine_download_failed",
         "The local engine release could not be downloaded.",
+        true,
+    )
+}
+
+fn download_timeout_error() -> ServiceError {
+    ServiceError::new(
+        "local_engine_download_stalled",
+        "The local engine download stopped receiving data for 60 seconds.",
         true,
     )
 }

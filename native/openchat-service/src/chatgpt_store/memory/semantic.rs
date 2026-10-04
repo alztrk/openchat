@@ -35,6 +35,7 @@ const MODEL_ID: &str = "multilingual-e5-small-761b726d";
 const MODEL_REPOSITORY: &str = "Xenova/multilingual-e5-small";
 const MODEL_REVISION: &str = "761b726dd34fb83930e26aab4e9ac3899aa1fa78";
 const MODEL_DOWNLOAD_BASE_URL: &str = "https://huggingface.co";
+const DOWNLOAD_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 const PROGRESS_MIN_INTERVAL: Duration = Duration::from_millis(150);
 const PARTIAL_SYNC_INTERVAL_BYTES: u64 = 8 * 1024 * 1024;
 const VECTOR_DIMENSIONS: usize = 384;
@@ -1348,7 +1349,7 @@ async fn download_file_from_url(
             return Err(SemanticMemoryError::Cancelled);
         }
         let next = tokio::select! {
-            item = stream.next() => item,
+            item = tokio::time::timeout(DOWNLOAD_IDLE_TIMEOUT, stream.next()) => item,
             changed = cancellation.changed() => {
                 if changed.is_err() || *cancellation.borrow() {
                     persist_partial_download(&mut output).await?;
@@ -1358,12 +1359,18 @@ async fn download_file_from_url(
             }
         };
         let chunk = match next {
-            Some(Ok(chunk)) => chunk,
-            Some(Err(error)) => {
+            Ok(Some(Ok(chunk))) => chunk,
+            Ok(Some(Err(error))) => {
                 persist_partial_download(&mut output).await?;
                 return Err(SemanticMemoryError::Http(error.to_string()));
             }
-            None => break,
+            Ok(None) => break,
+            Err(_) => {
+                persist_partial_download(&mut output).await?;
+                return Err(SemanticMemoryError::Http(
+                    "download stopped receiving data for 60 seconds".into(),
+                ));
+            }
         };
         received_bytes = received_bytes
             .checked_add(chunk.len() as u64)
