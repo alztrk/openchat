@@ -22,6 +22,18 @@ class LocalEnginesRepository {
     return LocalEngineCatalog.fromJson(response);
   }
 
+  Future<void> setLlamaServerExecutablePath(String? path) async {
+    final response = await _serviceClient.call(
+      'local.engines.llama_server_path.set',
+      params: <String, Object?>{'path': path},
+    );
+    if (response['available'] != (path != null)) {
+      throw const FormatException(
+        'The llama-server executable setting was not saved.',
+      );
+    }
+  }
+
   Future<LocalModelCatalog> loadModels() async {
     final response = await _serviceClient.call('local.models.list');
     return LocalModelCatalog.fromJson(response);

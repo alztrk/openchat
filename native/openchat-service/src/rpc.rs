@@ -365,6 +365,10 @@ pub(crate) async fn dispatch(
             Ok(json!({"ready": true}))
         }
         "local.engines.list" => local_engines::list(storage).await,
+        "local.engines.llama_server_path.set" => local_engines::set_llama_server_executable_path(
+            storage,
+            optional_string(&request.params, "path")?,
+        ),
         "local.models.list" => local_engines::model_catalog(storage),
         "local.models.discover" => {
             local_engines::discover_models(

@@ -16,7 +16,7 @@ use crate::{protocol::ServiceError, storage::AppStorage};
 
 use super::{
     installer::{InstalledEngine, installed_engine},
-    manifests, models, wsl,
+    manifests, models, settings, wsl,
 };
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(300);
@@ -519,6 +519,25 @@ fn installed_engine_for(
     storage: &AppStorage,
     engine_id: &str,
 ) -> Result<Option<InstalledEngine>, ServiceError> {
+    if engine_id == "llama_cpp"
+        && let Some(configured_path) = settings::llama_server_executable_path(storage.root())?
+    {
+        let Some(entrypoint) = settings::validate_saved_executable_path(&configured_path) else {
+            return Ok(None);
+        };
+        let root = entrypoint
+            .parent()
+            .ok_or_else(engine_not_installed_error)?
+            .to_path_buf();
+        return Ok(Some(InstalledEngine {
+            engine_id: engine_id.to_owned(),
+            variant_id: "user-configured".to_owned(),
+            release_tag: "user-configured".to_owned(),
+            root,
+            entrypoint,
+        }));
+    }
+
     let manifest = manifests()?
         .into_iter()
         .find(|manifest| manifest.engine_id == engine_id)
@@ -844,8 +863,8 @@ mod tests {
 
     use super::{
         InstalledEngine, MAX_RUNTIME_PROPERTIES_BYTES, RuntimeCapabilities, health_check_or_cancel,
-        llama_server_arguments, parse_runtime_capabilities, prepare_tabby_session,
-        read_runtime_capabilities, start_model, vllm_server_arguments,
+        installed_engine_for, llama_server_arguments, parse_runtime_capabilities,
+        prepare_tabby_session, read_runtime_capabilities, start_model, vllm_server_arguments,
     };
 
     struct TestDirectory(PathBuf);
@@ -863,6 +882,33 @@ mod tests {
         fn drop(&mut self) {
             let _ = fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn configured_llama_server_binary_is_used_without_a_managed_install() {
+        let temporary = TestDirectory::new();
+        let executable = temporary.0.join(if cfg!(windows) {
+            "llama-server.exe"
+        } else {
+            "llama-server"
+        });
+        fs::write(&executable, b"test executable").expect("fixture should be written");
+        let storage = AppStorage::open_at(temporary.0.clone()).expect("storage should open");
+        crate::local_engines::settings::set_llama_server_executable_path(
+            storage.root(),
+            executable.to_str(),
+        )
+        .expect("the executable setting should be saved");
+
+        let installed = installed_engine_for(&storage, "llama_cpp")
+            .expect("engine lookup should succeed")
+            .expect("the configured executable should be available");
+
+        assert_eq!(installed.variant_id, "user-configured");
+        assert_eq!(
+            installed.entrypoint,
+            executable.canonicalize().expect("path should canonicalize")
+        );
     }
 
     #[test]

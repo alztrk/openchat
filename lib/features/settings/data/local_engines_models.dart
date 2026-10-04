@@ -5,11 +5,15 @@ class LocalEngineCatalog {
     required this.engines,
     required this.models,
     required this.runtime,
+    this.llamaServerExecutablePath,
+    this.llamaServerExecutableAvailable = false,
   });
 
   final List<LocalEngine> engines;
   final List<LocalRegisteredModel> models;
   final LocalEngineRuntimeState runtime;
+  final String? llamaServerExecutablePath;
+  final bool llamaServerExecutableAvailable;
 
   factory LocalEngineCatalog.fromJson(Map<String, Object?> json) {
     final rawEngines = json['engines'];
@@ -24,6 +28,14 @@ class LocalEngineCatalog {
         'Local engine catalog did not contain registered models.',
       );
     }
+    final llamaServerExecutableAvailable =
+        json['llamaServerExecutableAvailable'];
+    if (llamaServerExecutableAvailable != null &&
+        llamaServerExecutableAvailable is! bool) {
+      throw const FormatException(
+        'Local engine executable status was invalid.',
+      );
+    }
 
     return LocalEngineCatalog(
       engines: rawEngines
@@ -33,6 +45,12 @@ class LocalEngineCatalog {
           .map((value) => LocalRegisteredModel.fromJson(_objectMap(value)))
           .toList(growable: false),
       runtime: LocalEngineRuntimeState.fromJson(_objectMap(json['runtime'])),
+      llamaServerExecutablePath: _optionalString(
+        json,
+        'llamaServerExecutablePath',
+      ),
+      llamaServerExecutableAvailable:
+          llamaServerExecutableAvailable == true,
     );
   }
 }

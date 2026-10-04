@@ -166,6 +166,35 @@ class AppLocalizationsTr extends AppLocalizations {
   String get localEngineHealth => 'Çalışma durumu';
 
   @override
+  String get localEngineExecutable => 'llama-server çalıştırılabilir dosyası';
+
+  @override
+  String get localEngineExecutableDescription =>
+      'Kayıtlı GGUF modellerini OpenChat\'in başlatması için bir llama-server dosyası seçin. Bu seçenek, kendiniz başlattığınız bir sunucuya bağlanmaktan ayrıdır.';
+
+  @override
+  String get localEngineExecutableChoose => 'Çalıştırılabilir dosya seç';
+
+  @override
+  String get localEngineExecutableClear => 'Seçimi temizle';
+
+  @override
+  String get localEngineExecutableNotConfigured =>
+      'Bir dosya seçilmedi. OpenChat, kurulu bir paketi kullanabilir.';
+
+  @override
+  String get localEngineExecutableMissing =>
+      'Kaydedilen çalıştırılabilir dosya bulunamadı. Dosyayı yeniden seçin.';
+
+  @override
+  String get localEngineExecutableInvalid =>
+      'Var olan bir llama-server çalıştırılabilir dosyası seçin.';
+
+  @override
+  String get localEngineSettingsFailed =>
+      'llama-server dosyası ayarı kaydedilemedi.';
+
+  @override
   String get localEngineRunning => 'Çalışıyor';
 
   @override

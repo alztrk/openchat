@@ -392,6 +392,54 @@ abstract class AppLocalizations {
   /// **'Runtime status'**
   String get localEngineHealth;
 
+  /// No description provided for @localEngineExecutable.
+  ///
+  /// In en, this message translates to:
+  /// **'llama-server executable'**
+  String get localEngineExecutable;
+
+  /// No description provided for @localEngineExecutableDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a llama-server binary for OpenChat to launch registered GGUF models. This is separate from connecting to a server you started yourself.'**
+  String get localEngineExecutableDescription;
+
+  /// No description provided for @localEngineExecutableChoose.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose executable'**
+  String get localEngineExecutableChoose;
+
+  /// No description provided for @localEngineExecutableClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear selection'**
+  String get localEngineExecutableClear;
+
+  /// No description provided for @localEngineExecutableNotConfigured.
+  ///
+  /// In en, this message translates to:
+  /// **'No executable selected. OpenChat can use an installed package.'**
+  String get localEngineExecutableNotConfigured;
+
+  /// No description provided for @localEngineExecutableMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'The saved executable was not found. Choose it again.'**
+  String get localEngineExecutableMissing;
+
+  /// No description provided for @localEngineExecutableInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose an existing llama-server executable.'**
+  String get localEngineExecutableInvalid;
+
+  /// No description provided for @localEngineSettingsFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The llama-server executable setting could not be saved.'**
+  String get localEngineSettingsFailed;
+
   /// No description provided for @localEngineRunning.
   ///
   /// In en, this message translates to:

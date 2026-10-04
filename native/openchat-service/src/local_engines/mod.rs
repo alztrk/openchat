@@ -6,6 +6,7 @@ pub(crate) mod installer;
 pub(crate) mod models;
 mod python_runtime;
 mod runtime;
+mod settings;
 mod vllm_runtime;
 mod wsl;
 
@@ -69,6 +70,11 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
     };
     let cuda_available = matches!(nvidia_driver, NvidiaDriverStatus::Detected(_));
     let runtime = runtime::status(storage).await?;
+    let llama_server_executable_path = settings::llama_server_executable_path(storage.root())?;
+    let llama_server_executable_available = llama_server_executable_path
+        .as_deref()
+        .and_then(settings::validate_saved_executable_path)
+        .is_some();
     let registered_models = models::list(storage)?;
     let engines = manifests()?
         .into_iter()
@@ -141,6 +147,10 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
             models::to_json(model, available)
         }).collect::<Result<Vec<_>, ServiceError>>()?,
         "runtime": runtime,
+        "llamaServerExecutablePath": llama_server_executable_path
+            .as_ref()
+            .and_then(|path| path.to_str()),
+        "llamaServerExecutableAvailable": llama_server_executable_available,
         "host": {
             "os": host_os(),
             "architecture": host_architecture(),
@@ -170,20 +180,21 @@ pub(crate) async fn chat_url(
 }
 
 pub(crate) fn model_catalog(storage: &AppStorage) -> Result<Value, ServiceError> {
-    let installed = installed_engine_ids(storage)?;
     let models = models::list(storage)?;
     Ok(json!({
         "freshness": "current",
         "models": models.iter().map(|model| {
-            let path_available = if model.path_kind == "file" {
-                model.path.is_file()
-            } else {
-                model.path.is_dir()
-            };
-            let available = path_available && installed.contains(&model.engine_id);
+            let available = runtime::is_model_available(storage, model)?;
             models::to_json(model, available)
         }).collect::<Result<Vec<_>, ServiceError>>()?,
     }))
+}
+
+pub(crate) fn set_llama_server_executable_path(
+    storage: &AppStorage,
+    path: Option<&str>,
+) -> Result<Value, ServiceError> {
+    settings::set_llama_server_executable_path(storage.root(), path)
 }
 
 pub(crate) fn model_is_available(
@@ -260,22 +271,6 @@ pub(crate) async fn remove_model(
         runtime::stop(storage).await?;
     }
     Ok(json!({"removed": models::remove(storage, model_id)?}))
-}
-
-fn installed_engine_ids(storage: &AppStorage) -> Result<Vec<String>, ServiceError> {
-    let mut engine_ids = Vec::new();
-    for manifest in manifests()? {
-        if manifest.catalog_status != "installable" {
-            continue;
-        }
-        for variant in &manifest.variants {
-            if installer::installed_engine(storage, &manifest, variant)?.is_some() {
-                engine_ids.push(manifest.engine_id.clone());
-                break;
-            }
-        }
-    }
-    Ok(engine_ids)
 }
 
 pub(crate) fn find_variant(

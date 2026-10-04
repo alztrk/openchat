@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -55,6 +56,7 @@ class _LocalEnginesSettingsSectionState
   String? _removingModelId;
   LocalEngineRuntimeOperation? _runtimeOperation;
   bool _isCancellingRuntime = false;
+  bool _isSavingExecutablePath = false;
   int _loadGeneration = 0;
 
   @override
@@ -782,6 +784,10 @@ class _LocalEnginesSettingsSectionState
               const SizedBox(height: 14),
               _buildReasonBanner(context, _statusReasonLabel(l10n, engine)),
             ],
+            if (engine.engineId == 'llama_cpp') ...[
+              const SizedBox(height: 16),
+              _buildLlamaServerExecutable(context),
+            ],
             const SizedBox(height: 14),
             Text(
               l10n.localEngineVariants,
@@ -809,7 +815,10 @@ class _LocalEnginesSettingsSectionState
   Widget _buildRuntimeStatus(BuildContext context, LocalEngine engine) {
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
-    final installed = engine.variants.any((variant) => variant.installed);
+    final installed =
+        engine.variants.any((variant) => variant.installed) ||
+        (engine.engineId == 'llama_cpp' &&
+            (_catalog?.llamaServerExecutableAvailable ?? false));
     final statusLabel = engine.catalogStatus == 'blocked'
         ? l10n.localEngineUnavailable
         : !installed
@@ -837,6 +846,130 @@ class _LocalEnginesSettingsSectionState
         _buildBadge(context, statusLabel, emphasized: statusEmphasized),
       ],
     );
+  }
+
+  Widget _buildLlamaServerExecutable(BuildContext context) {
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
+    final catalog = _catalog;
+    final path = catalog?.llamaServerExecutablePath;
+    final available = catalog?.llamaServerExecutableAvailable ?? false;
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: palette.composer,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: palette.border),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              l10n.localEngineExecutable,
+              style: Theme.of(context).textTheme.titleSmall,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              l10n.localEngineExecutableDescription,
+              style: TextStyle(color: palette.secondaryText, fontSize: 12),
+            ),
+            const SizedBox(height: 10),
+            if (path == null)
+              Text(
+                l10n.localEngineExecutableNotConfigured,
+                style: TextStyle(color: palette.secondaryText, fontSize: 12),
+              )
+            else ...[
+              Tooltip(
+                message: path,
+                child: Text(
+                  available
+                      ? path
+                      : l10n.localEngineExecutableMissing,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: available ? palette.text : palette.secondaryText,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _isSavingExecutablePath
+                      ? null
+                      : () => unawaited(_chooseLlamaServerExecutable()),
+                  icon: _isSavingExecutablePath
+                      ? const SizedBox.square(
+                          dimension: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.folder_open_outlined, size: 16),
+                  label: Text(l10n.localEngineExecutableChoose),
+                ),
+                if (path != null)
+                  TextButton.icon(
+                    onPressed: _isSavingExecutablePath
+                        ? null
+                        : () => unawaited(_saveLlamaServerExecutable(null)),
+                    icon: const Icon(Icons.clear_rounded, size: 16),
+                    label: Text(l10n.localEngineExecutableClear),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _chooseLlamaServerExecutable() async {
+    try {
+      final files = await FilePicker.pickFiles(
+        dialogTitle: context.openchatL10n.localEngineExecutableChoose,
+        type: defaultTargetPlatform == TargetPlatform.windows
+            ? FileType.custom
+            : FileType.any,
+        allowedExtensions: defaultTargetPlatform == TargetPlatform.windows
+            ? const <String>['exe']
+            : null,
+      );
+      if (files.isEmpty || files.first.path == null) return;
+      await _saveLlamaServerExecutable(files.first.path);
+    } on PlatformException {
+      if (mounted) setState(() => _modelActionError = 'picker');
+    }
+  }
+
+  Future<void> _saveLlamaServerExecutable(String? path) async {
+    final service = widget.serviceClient;
+    if (service == null || _isSavingExecutablePath) return;
+    setState(() {
+      _isSavingExecutablePath = true;
+      _modelActionError = null;
+    });
+    try {
+      await LocalEnginesRepository(
+        service,
+      ).setLlamaServerExecutablePath(path);
+      await _loadCatalog();
+    } on OpenChatServiceException catch (error) {
+      if (mounted) setState(() => _modelActionError = error.code);
+    } on FormatException {
+      if (mounted) setState(() => _modelActionError = 'invalid_response');
+    } on PlatformException {
+      if (mounted) setState(() => _modelActionError = 'settings');
+    } finally {
+      if (mounted) setState(() => _isSavingExecutablePath = false);
+    }
   }
 
   Widget _buildRegisteredModels(BuildContext context, LocalEngine engine) {
@@ -1045,6 +1178,10 @@ class _LocalEnginesSettingsSectionState
         'local_engine_install_unavailable' ||
         'local_model_unavailable' => l10n.localModelEngineNotReady,
         'local_engine_start_timeout' => l10n.localModelStartTimeout,
+        'local_engine_executable_path_invalid' =>
+          l10n.localEngineExecutableInvalid,
+        'local_engine_settings_unavailable' || 'settings' =>
+          l10n.localEngineSettingsFailed,
         'start_failed' ||
         'local_engine_start_failed' ||
         'local_engine_runtime_unavailable' => l10n.localModelStartError,

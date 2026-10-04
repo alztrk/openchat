@@ -167,6 +167,35 @@ class AppLocalizationsEn extends AppLocalizations {
   String get localEngineHealth => 'Runtime status';
 
   @override
+  String get localEngineExecutable => 'llama-server executable';
+
+  @override
+  String get localEngineExecutableDescription =>
+      'Choose a llama-server binary for OpenChat to launch registered GGUF models. This is separate from connecting to a server you started yourself.';
+
+  @override
+  String get localEngineExecutableChoose => 'Choose executable';
+
+  @override
+  String get localEngineExecutableClear => 'Clear selection';
+
+  @override
+  String get localEngineExecutableNotConfigured =>
+      'No executable selected. OpenChat can use an installed package.';
+
+  @override
+  String get localEngineExecutableMissing =>
+      'The saved executable was not found. Choose it again.';
+
+  @override
+  String get localEngineExecutableInvalid =>
+      'Choose an existing llama-server executable.';
+
+  @override
+  String get localEngineSettingsFailed =>
+      'The llama-server executable setting could not be saved.';
+
+  @override
   String get localEngineRunning => 'Running';
 
   @override

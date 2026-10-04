@@ -5,6 +5,8 @@ void main() {
   group('LocalEngineCatalog', () {
     test('parses catalog metadata and installable variants', () {
       final catalog = LocalEngineCatalog.fromJson(<String, Object?>{
+        'llamaServerExecutablePath': r'C:\llama\llama-server.exe',
+        'llamaServerExecutableAvailable': true,
         'engines': <Object?>[
           <String, Object?>{
             'engineId': 'llama_cpp',
@@ -38,6 +40,23 @@ void main() {
       expect(catalog.engines.single.engineId, 'llama_cpp');
       expect(catalog.engines.single.variants.single.canInstall, isTrue);
       expect(catalog.engines.single.variants.single.accelerator, 'cpu');
+      expect(
+        catalog.llamaServerExecutablePath,
+        r'C:\llama\llama-server.exe',
+      );
+      expect(catalog.llamaServerExecutableAvailable, isTrue);
+    });
+
+    test('rejects an invalid configured llama-server status', () {
+      expect(
+        () => LocalEngineCatalog.fromJson(<String, Object?>{
+          'engines': <Object?>[],
+          'models': <Object?>[],
+          'runtime': <String, Object?>{'status': 'stopped'},
+          'llamaServerExecutableAvailable': 'yes',
+        }),
+        throwsFormatException,
+      );
     });
 
     test('reads native phase progress and calculates bounded fraction', () {
