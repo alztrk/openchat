@@ -427,6 +427,10 @@ fn models_response(models: &[Value], freshness: &str) -> Value {
     json!({"models": models, "freshness": freshness})
 }
 
+fn stale_catalog_fallback_allowed(error: &ServiceError) -> bool {
+    error.code == "network_unavailable" || error.retryable
+}
+
 pub async fn models(
     storage: &AppStorage,
     api_key: Option<&str>,
@@ -494,13 +498,14 @@ pub async fn models(
             freshness,
         )),
         Err(error) if error.code == "request_cancelled" => Err(error),
-        Err(error) => match cached {
+        Err(error) if stale_catalog_fallback_allowed(&error) => match cached {
             Some((models, _)) => Ok(models_response(
                 &visible_models(&canonicalize_cached_models(&models), api_key),
                 "stale",
             )),
             None => Err(error),
         },
+        Err(error) => Err(error),
     }
 }
 
@@ -516,7 +521,7 @@ pub(super) fn is_supported_paid_chat_model(id: &str) -> bool {
 mod tests {
     use serde_json::json;
 
-    use super::{has_model_groups, supported_models};
+    use super::{has_model_groups, stale_catalog_fallback_allowed, supported_models};
 
     #[test]
     fn open_code_catalog_preserves_context_and_prompt_limits_separately() {
@@ -573,5 +578,26 @@ mod tests {
         assert!(!has_model_groups(std::slice::from_ref(&model)));
         model["inputTokenLimit"] = json!(null);
         assert!(has_model_groups(&[model]));
+    }
+
+    #[test]
+    fn stale_catalog_fallback_does_not_hide_authentication_or_request_errors() {
+        let network = super::super::network_error();
+        let rate_limited =
+            super::super::http_error(reqwest::StatusCode::TOO_MANY_REQUESTS, Some("opencode"));
+        let temporary =
+            super::super::http_error(reqwest::StatusCode::SERVICE_UNAVAILABLE, Some("opencode"));
+        let unauthorized =
+            super::super::http_error(reqwest::StatusCode::UNAUTHORIZED, Some("opencode"));
+        let forbidden = super::super::http_error(reqwest::StatusCode::FORBIDDEN, Some("opencode"));
+        let invalid_request =
+            super::super::http_error(reqwest::StatusCode::BAD_REQUEST, Some("opencode"));
+
+        assert!(stale_catalog_fallback_allowed(&network));
+        assert!(stale_catalog_fallback_allowed(&rate_limited));
+        assert!(stale_catalog_fallback_allowed(&temporary));
+        assert!(!stale_catalog_fallback_allowed(&unauthorized));
+        assert!(!stale_catalog_fallback_allowed(&forbidden));
+        assert!(!stale_catalog_fallback_allowed(&invalid_request));
     }
 }
