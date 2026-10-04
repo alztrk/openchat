@@ -38,6 +38,10 @@ pub(crate) async fn install_vllm(
     let wheel_windows = runtime_root.join(WHEEL_RELATIVE_PATH);
     let project_windows = runtime_root.join(PROJECT_RELATIVE_PATH);
     let python_install_dir_windows = runtime_root.join("python/managed-python");
+    let temp_dir_windows = runtime_root.join("uv-temp");
+    fs::create_dir_all(&temp_dir_windows)
+        .await
+        .map_err(|_| runtime_install_error())?;
     let uv = wsl::path(&uv_windows, use_wsl)
         .await
         .map_err(|_| runtime_install_error())?;
@@ -48,6 +52,9 @@ pub(crate) async fn install_vllm(
         .await
         .map_err(|_| runtime_install_error())?;
     let python_install_dir = wsl::path(&python_install_dir_windows, use_wsl)
+        .await
+        .map_err(|_| runtime_install_error())?;
+    let temp_dir = wsl::path(&temp_dir_windows, use_wsl)
         .await
         .map_err(|_| runtime_install_error())?;
     let python = wsl::path(
@@ -83,6 +90,7 @@ pub(crate) async fn install_vllm(
         &uv,
         use_wsl,
         &python_install_dir,
+        &temp_dir,
         [
             OsString::from("--no-cache"),
             OsString::from("python"),
@@ -100,6 +108,7 @@ pub(crate) async fn install_vllm(
         &uv,
         use_wsl,
         &python_install_dir,
+        &temp_dir,
         [
             OsString::from("--no-config"),
             OsString::from("--managed-python"),
@@ -124,6 +133,7 @@ pub(crate) async fn install_vllm(
         &uv,
         use_wsl,
         &python_install_dir,
+        &temp_dir,
         [
             OsString::from("--no-cache"),
             OsString::from("sync"),
@@ -145,6 +155,7 @@ pub(crate) async fn install_vllm(
         &uv,
         use_wsl,
         &python_install_dir,
+        &temp_dir,
         [
             OsString::from("--no-cache"),
             OsString::from("pip"),
@@ -175,6 +186,9 @@ pub(crate) async fn install_vllm(
     }
     verify_vllm_imports(&python, use_wsl, cancellation).await?;
 
+    fs::remove_dir_all(&temp_dir_windows)
+        .await
+        .map_err(|_| runtime_install_error())?;
     fs::remove_file(&wheel_windows)
         .await
         .map_err(|_| runtime_install_error())?;
@@ -202,6 +216,7 @@ async fn run_uv<I, S>(
     uv: &Path,
     use_wsl: bool,
     python_install_dir: &Path,
+    temp_dir: &Path,
     arguments: I,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<(), ServiceError>
@@ -209,8 +224,9 @@ where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
 {
-    let mut command = wsl::command_with_python_install_dir(uv, use_wsl, python_install_dir)
-        .map_err(|_| runtime_install_error())?;
+    let mut command =
+        wsl::command_with_python_install_dir(uv, use_wsl, python_install_dir, temp_dir)
+            .map_err(|_| runtime_install_error())?;
     command
         .args(arguments)
         .stdin(Stdio::null())
@@ -223,6 +239,7 @@ async fn run_uv_for_output<I, S>(
     uv: &Path,
     use_wsl: bool,
     python_install_dir: &Path,
+    temp_dir: &Path,
     arguments: I,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<String, ServiceError>
@@ -231,8 +248,9 @@ where
     S: AsRef<OsStr>,
 {
     check_cancelled(cancellation)?;
-    let mut command = wsl::command_with_python_install_dir(uv, use_wsl, python_install_dir)
-        .map_err(|_| runtime_install_error())?;
+    let mut command =
+        wsl::command_with_python_install_dir(uv, use_wsl, python_install_dir, temp_dir)
+            .map_err(|_| runtime_install_error())?;
     command
         .args(arguments)
         .stdin(Stdio::null())

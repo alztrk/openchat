@@ -32,34 +32,41 @@ pub(crate) fn command_with_python_install_dir(
     executable: &Path,
     use_wsl: bool,
     install_dir: &Path,
+    temp_dir: &Path,
 ) -> Result<Command, ()> {
+    let install_dir = linux_directory(install_dir)?;
+    let temp_dir = linux_directory(temp_dir)?;
     if use_wsl {
         #[cfg(windows)]
         {
-            let install_dir = install_dir.to_str().ok_or(())?;
-            if !install_dir.starts_with('/') || install_dir.contains('\0') {
-                return Err(());
-            }
             let mut command = Command::new(wsl_executable()?);
-            // uv needs this scoped value on later calls to discover the runtime-local Python install.
+            // uv needs these scoped paths to find Python and avoid the small WSL /tmp filesystem.
             command
                 .args([OsStr::new("--exec"), OsStr::new("env")])
                 .arg(format!("UV_PYTHON_INSTALL_DIR={install_dir}"))
+                .arg(format!("TMPDIR={temp_dir}"))
                 .arg(executable)
                 .kill_on_drop(true);
             return Ok(command);
         }
         #[cfg(not(windows))]
         {
-            let _ = (executable, install_dir);
+            let _ = (executable, install_dir, temp_dir);
             return Err(());
         }
     }
 
     let mut command = Command::new(executable);
     command.env("UV_PYTHON_INSTALL_DIR", install_dir);
+    command.env("TMPDIR", temp_dir);
     command.kill_on_drop(true);
     Ok(command)
+}
+
+fn linux_directory(path: &Path) -> Result<&str, ()> {
+    let path = path.to_str().ok_or(())?;
+    linux_path_from_output(path.as_bytes())?;
+    Ok(path)
 }
 
 pub(crate) async fn path(path: &Path, use_wsl: bool) -> Result<PathBuf, ()> {
@@ -168,7 +175,7 @@ fn wsl_executable() -> Result<PathBuf, ()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{linux_path_from_output, linux_path_is_within};
+    use super::{linux_directory, linux_path_from_output, linux_path_is_within};
     use std::path::PathBuf;
 
     #[test]
@@ -199,5 +206,16 @@ mod tests {
             "/root/.local/share/uv/python-malicious/python3.12",
             "/root/.local/share/uv/python"
         ));
+    }
+
+    #[test]
+    fn accepts_only_safe_absolute_linux_environment_directories() {
+        assert_eq!(
+            linux_directory(PathBuf::from("/mnt/c/OpenChat/runtime/tmp").as_path()),
+            Ok("/mnt/c/OpenChat/runtime/tmp")
+        );
+        assert!(linux_directory(PathBuf::from("relative/tmp").as_path()).is_err());
+        assert!(linux_directory(PathBuf::from("/mnt/c/OpenChat/../tmp").as_path()).is_err());
+        assert!(linux_directory(PathBuf::from("/mnt/c/OpenChat\\tmp").as_path()).is_err());
     }
 }
