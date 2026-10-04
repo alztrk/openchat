@@ -47,9 +47,8 @@ class LocalEnginesRepository {
     }
     return rawServers
         .map(
-          (server) => LocalExternalLlamaServerCandidate.fromJson(
-            _objectMap(server),
-          ),
+          (server) =>
+              LocalExternalLlamaServerCandidate.fromJson(_objectMap(server)),
         )
         .toList(growable: false);
   }
@@ -67,11 +66,19 @@ class LocalEnginesRepository {
     return LocalExternalLlamaServerState.fromJson(response);
   }
 
-  Future<void> disconnectExternalLlamaServer() async {
+  Future<void> disconnectExternalLlamaServer(
+    LocalExternalLlamaServerState server,
+  ) async {
     final response = await _serviceClient.call(
       'local.engines.external_llama_server.disconnect',
+      params: <String, Object?>{
+        'processId': server.processId,
+        'port': server.port,
+      },
     );
-    if (response['disconnected'] != true) {
+    if (response['disconnected'] != true ||
+        response['processId'] != server.processId ||
+        response['port'] != server.port) {
       throw const FormatException(
         'The external llama-server connection was not cleared.',
       );
@@ -138,6 +145,14 @@ class LocalEnginesRepository {
 
   Future<LocalEngineRuntimeState> stopRuntime() async {
     final response = await _serviceClient.call('local.engines.stop');
+    return LocalEngineRuntimeState.fromJson(response);
+  }
+
+  Future<LocalEngineRuntimeState> stopModel(String modelId) async {
+    final response = await _serviceClient.call(
+      'local.engines.stop_model',
+      params: <String, Object?>{'modelId': modelId},
+    );
     return LocalEngineRuntimeState.fromJson(response);
   }
 

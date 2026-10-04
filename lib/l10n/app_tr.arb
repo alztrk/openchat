@@ -69,6 +69,8 @@
   "localEngineExternalServerConnected": "{port} portuna bağlandı. {count, plural, =1{1 model kullanılabilir} other{{count} model kullanılabilir}}.",
   "@localEngineExternalServerConnected": { "placeholders": { "port": { "type": "int" }, "count": { "type": "int" } } },
   "localEngineManagedModelSection": "OpenChat'in yönettiği modeller",
+  "localEngineManagedServerModelSection": "OpenChat sunucusu · 127.0.0.1:{port}",
+  "@localEngineManagedServerModelSection": { "placeholders": { "port": { "type": "int" } } },
   "localEngineExternalModelSection": "Kullanıcı sunucusu · 127.0.0.1:{port}",
   "@localEngineExternalModelSection": { "placeholders": { "port": { "type": "int" } } },
   "localEngineExternalServerDisconnect": "Bağlantıyı kes",

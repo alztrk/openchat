@@ -53,6 +53,7 @@ class _LocalEnginesSettingsSectionState
   final Map<String, String> _modelDirectories = {};
   final Set<String> _customModelDirectoryIds = {};
   String? _startingModelId;
+  String? _stoppingModelId;
   String? _removingModelId;
   LocalEngineRuntimeOperation? _runtimeOperation;
   bool _isCancellingRuntime = false;
@@ -164,9 +165,8 @@ class _LocalEnginesSettingsSectionState
 
     List<LocalExternalLlamaServerCandidate> servers;
     try {
-      servers = await LocalEnginesRepository(
-        service,
-      ).detectExternalLlamaServers();
+      servers = await LocalEnginesRepository(service)
+          .detectExternalLlamaServers();
     } on OpenChatServiceException catch (error) {
       if (mounted) setState(() => _modelActionError = error.code);
       return;
@@ -181,13 +181,11 @@ class _LocalEnginesSettingsSectionState
     }
 
     if (!mounted) return;
-    final connected = _catalog?.externalLlamaServer;
-    if (connected?.connected == true &&
-        !servers.any(
-          (server) =>
-              server.processId == connected?.processId &&
-              server.port == connected?.port,
-        )) {
+    final connected = _catalog?.externalLlamaServers ?? const [];
+    if (connected.any(
+      (connectedServer) =>
+          !servers.any((server) => server.key == connectedServer.key),
+    )) {
       await _loadCatalog();
       if (!mounted) return;
     }
@@ -204,14 +202,13 @@ class _LocalEnginesSettingsSectionState
 
     for (final server in servers) {
       if (!mounted) return;
-      final connected = _catalog?.externalLlamaServer;
-      if (connected?.connected == true &&
-          connected?.processId == server.processId &&
-          connected?.port == server.port) {
+      final connected = _catalog?.externalLlamaServers.any(
+        (connectedServer) => connectedServer.key == server.key,
+      );
+      if (connected == true) {
         continue;
       }
-      if (!allowRepeat &&
-          !_handledExternalServerCandidates.add(server.key)) {
+      if (!allowRepeat && !_handledExternalServerCandidates.add(server.key)) {
         continue;
       }
       _handledExternalServerCandidates.add(server.key);
@@ -246,14 +243,8 @@ class _LocalEnginesSettingsSectionState
 
       setState(() => _isConnectingExternalServer = true);
       try {
-        final state = await LocalEnginesRepository(
-          service,
-        ).connectExternalLlamaServer(server);
-        if (!state.connected) {
-          throw const FormatException(
-            'The external llama-server was not connected.',
-          );
-        }
+        final state = await LocalEnginesRepository(service)
+            .connectExternalLlamaServer(server);
         await _loadCatalog();
         if (mounted) {
           showOpenChatToast(
@@ -265,7 +256,6 @@ class _LocalEnginesSettingsSectionState
             type: OpenChatToastType.success,
           );
         }
-        break;
       } on OpenChatServiceException catch (error) {
         if (mounted) setState(() => _modelActionError = error.code);
       } on FormatException {
@@ -278,7 +268,9 @@ class _LocalEnginesSettingsSectionState
     }
   }
 
-  Future<void> _disconnectExternalLlamaServer() async {
+  Future<void> _disconnectExternalLlamaServer(
+    LocalExternalLlamaServerState server,
+  ) async {
     final service = widget.serviceClient;
     if (service == null || _isDisconnectingExternalServer) return;
     setState(() {
@@ -286,7 +278,8 @@ class _LocalEnginesSettingsSectionState
       _modelActionError = null;
     });
     try {
-      await LocalEnginesRepository(service).disconnectExternalLlamaServer();
+      await LocalEnginesRepository(service)
+          .disconnectExternalLlamaServer(server);
       await _loadCatalog();
     } on OpenChatServiceException catch (error) {
       if (mounted) setState(() => _modelActionError = error.code);
@@ -751,21 +744,21 @@ class _LocalEnginesSettingsSectionState
     }
   }
 
-  Future<void> _stopRuntime() async {
+  Future<void> _stopModel(String modelId) async {
     final service = widget.serviceClient;
     if (service == null || _startingModelId != null) return;
     setState(() {
       _modelActionError = null;
-      _startingModelId = 'stopping';
+      _stoppingModelId = modelId;
     });
     try {
-      await LocalEnginesRepository(service).stopRuntime();
+      await LocalEnginesRepository(service).stopModel(modelId);
     } on OpenChatServiceException catch (error) {
       if (mounted) setState(() => _modelActionError = error.code);
     } on FormatException {
       if (mounted) setState(() => _modelActionError = 'start_failed');
     } finally {
-      if (mounted) setState(() => _startingModelId = null);
+      if (mounted) setState(() => _stoppingModelId = null);
       await _loadCatalog();
     }
   }
@@ -1009,10 +1002,7 @@ class _LocalEnginesSettingsSectionState
     final catalog = _catalog;
     final path = catalog?.llamaServerExecutablePath;
     final available = catalog?.llamaServerExecutableAvailable ?? false;
-    final externalServer = catalog?.externalLlamaServer;
-    final externalServerConnected = externalServer?.connected ?? false;
-    final externalServerPort = externalServer?.port;
-    final externalServerModelCount = externalServer?.modelIds.length ?? 0;
+    final externalServers = catalog?.externalLlamaServers ?? const [];
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -1035,53 +1025,53 @@ class _LocalEnginesSettingsSectionState
               style: TextStyle(color: palette.secondaryText, fontSize: 12),
             ),
             const SizedBox(height: 10),
-            if (externalServerConnected && externalServerPort != null) ...[
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(7),
-                  border: Border.all(color: palette.border),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.link_rounded,
-                        size: 16,
-                        color: palette.accentIcon,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          l10n.localEngineExternalServerConnected(
-                            externalServerPort,
-                            externalServerModelCount,
-                          ),
-                          style: TextStyle(
-                            color: palette.text,
-                            fontSize: 12,
+            if (externalServers.isNotEmpty) ...[
+              for (final server in externalServers) ...[
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(7),
+                    border: Border.all(color: palette.border),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 6, 4, 6),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.link_rounded,
+                          size: 16,
+                          color: palette.accentIcon,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            l10n.localEngineExternalServerConnected(
+                              server.port,
+                              server.modelIds.length,
+                            ),
+                            style: TextStyle(color: palette.text, fontSize: 12),
                           ),
                         ),
-                      ),
-                      TextButton(
-                        onPressed: _isDisconnectingExternalServer
-                            ? null
-                            : () => unawaited(
-                                _disconnectExternalLlamaServer(),
-                              ),
-                        child: _isDisconnectingExternalServer
-                            ? const SizedBox.square(
-                                dimension: 16,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
+                        TextButton(
+                          onPressed: _isDisconnectingExternalServer
+                              ? null
+                              : () => unawaited(
+                                  _disconnectExternalLlamaServer(server),
                                 ),
-                              )
-                            : Text(l10n.localEngineExternalServerDisconnect),
-                      ),
-                    ],
+                          child: _isDisconnectingExternalServer
+                              ? const SizedBox.square(
+                                  dimension: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : Text(l10n.localEngineExternalServerDisconnect),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
+                if (server != externalServers.last) const SizedBox(height: 6),
+              ],
             ] else if (_isConnectingExternalServer) ...[
               const LinearProgressIndicator(),
               const SizedBox(height: 8),
@@ -1104,9 +1094,7 @@ class _LocalEnginesSettingsSectionState
               Tooltip(
                 message: path,
                 child: Text(
-                  available
-                      ? path
-                      : l10n.localEngineExecutableMissing,
+                  available ? path : l10n.localEngineExecutableMissing,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
@@ -1191,9 +1179,7 @@ class _LocalEnginesSettingsSectionState
       _modelActionError = null;
     });
     try {
-      await LocalEnginesRepository(
-        service,
-      ).setLlamaServerExecutablePath(path);
+      await LocalEnginesRepository(service).setLlamaServerExecutablePath(path);
       await _loadCatalog();
     } on OpenChatServiceException catch (error) {
       if (mounted) setState(() => _modelActionError = error.code);
@@ -1285,14 +1271,20 @@ class _LocalEnginesSettingsSectionState
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
     final runtime = _catalog?.runtime;
-    final isRunning =
-        runtime?.status == 'running' && runtime?.modelId == model.id;
+    final runtimeServers = runtime?.servers ?? const [];
+    final isRunning = runtimeServers.isNotEmpty
+        ? runtimeServers.any(
+            (server) =>
+                server.modelId == model.id && server.status == 'running',
+          )
+        : runtime?.status == 'running' && runtime?.modelId == model.id;
     final isStarting = _startingModelId == model.id;
-    final isStopping = _startingModelId == 'stopping' && isRunning;
+    final isStopping = _stoppingModelId == model.id;
     final isRemoving = _removingModelId == model.id;
     final isBusy =
         _runtimeOperation != null ||
         _startingModelId != null ||
+        _stoppingModelId != null ||
         _removingModelId != null;
     final modelState = !model.pathExists
         ? l10n.localModelPathMissing
@@ -1364,8 +1356,15 @@ class _LocalEnginesSettingsSectionState
             else if (isRunning)
               IconButton(
                 tooltip: l10n.localEngineStopModel,
-                onPressed: isBusy ? null : () => unawaited(_stopRuntime()),
-                icon: const Icon(Icons.stop_circle_outlined),
+                onPressed: isBusy
+                    ? null
+                    : () => unawaited(_stopModel(model.id)),
+                icon: isStopping
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.stop_circle_outlined),
               )
             else
               IconButton(
@@ -1414,10 +1413,10 @@ class _LocalEnginesSettingsSectionState
         'local_engine_start_timeout' => l10n.localModelStartTimeout,
         'local_engine_executable_path_invalid' =>
           l10n.localEngineExecutableInvalid,
-        'local_engine_settings_unavailable' || 'settings' =>
-          l10n.localEngineSettingsFailed,
-        'local_engine_process_scan_failed' || 'scan_failed' =>
-          l10n.localEngineExternalServerScanFailed,
+        'local_engine_settings_unavailable' ||
+        'settings' => l10n.localEngineSettingsFailed,
+        'local_engine_process_scan_failed' ||
+        'scan_failed' => l10n.localEngineExternalServerScanFailed,
         'local_engine_external_server_auth_required' =>
           l10n.localEngineExternalServerAuthRequired,
         'local_engine_external_server_not_found' ||

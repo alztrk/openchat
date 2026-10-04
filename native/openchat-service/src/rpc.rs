@@ -380,7 +380,11 @@ pub(crate) async fn dispatch(
             .await
         }
         "local.engines.external_llama_server.disconnect" => {
-            Ok(local_engines::disconnect_external_llama_server().await)
+            Ok(local_engines::disconnect_external_llama_server(
+                required_non_zero_u32(&request.params, "processId")?,
+                required_port(&request.params, "port")?,
+            )
+            .await)
         }
         "local.engines.chat_models.list" => {
             local_engines::chat_model_catalog(
@@ -470,6 +474,9 @@ pub(crate) async fn dispatch(
             local_engines::start_model(storage, model_id, &mut cancellation).await
         }
         "local.engines.stop" => local_engines::stop_runtime(storage).await,
+        "local.engines.stop_model" => {
+            local_engines::stop_model(storage, required_string(&request.params, "modelId")?).await
+        }
         "local.engines.install" => {
             let engine_id = required_string(&request.params, "engineId")?;
             let variant_id = required_string(&request.params, "variantId")?;

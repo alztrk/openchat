@@ -556,6 +556,13 @@ List<_ModelEntry> _modelEntries(
   String providerId,
   AppLocalizations l10n,
 ) {
+  int compareServerSections(String left, String right) {
+    final leftPort = int.tryParse(left.split(':').last) ?? 0;
+    final rightPort = int.tryParse(right.split(':').last) ?? 0;
+    final portComparison = leftPort.compareTo(rightPort);
+    return portComparison == 0 ? left.compareTo(right) : portComparison;
+  }
+
   final sections = <String, List<ChatGptModel>>{};
   for (final model in models) {
     sections.putIfAbsent(model.groupId ?? 'models', () => []).add(model);
@@ -564,12 +571,22 @@ List<_ModelEntry> _modelEntries(
       sections.keys
           .where((section) => section.startsWith('external-llama-server:'))
           .toList()
-        ..sort();
+        ..sort(compareServerSections);
+  final managedLlamaSections =
+      sections.keys
+          .where((section) => section.startsWith('managed-llama-server:'))
+          .toList()
+        ..sort(compareServerSections);
   final order = switch (providerId) {
     'opencode' => const ['free', 'paid', 'models'],
     'openrouter' => const ['free', 'models'],
     'chatgpt' => const ['api', 'oauth', 'models'],
-    'llama_cpp' => ['managed', ...externalLlamaSections, 'models'],
+    'llama_cpp' => [
+      'managed',
+      ...managedLlamaSections,
+      ...externalLlamaSections,
+      'models',
+    ],
     _ => const ['models'],
   };
   final entries = <_ModelEntry>[];
@@ -579,6 +596,12 @@ List<_ModelEntry> _modelEntries(
     String? label;
     if (providerId == 'llama_cpp' && section == 'managed') {
       label = l10n.localEngineManagedModelSection;
+    } else if (providerId == 'llama_cpp' &&
+        section.startsWith('managed-llama-server:')) {
+      final port = int.tryParse(section.split(':').last);
+      if (port != null) {
+        label = l10n.localEngineManagedServerModelSection(port);
+      }
     } else if (providerId == 'llama_cpp' &&
         section.startsWith('external-llama-server:')) {
       final port = int.tryParse(section.split(':').last);

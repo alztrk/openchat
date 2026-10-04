@@ -236,6 +236,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get localEngineManagedModelSection => 'OpenChat-managed models';
 
   @override
+  String localEngineManagedServerModelSection(int port) {
+    return 'OpenChat server · 127.0.0.1:$port';
+  }
+
+  @override
   String localEngineExternalModelSection(int port) {
     return 'User server · 127.0.0.1:$port';
   }

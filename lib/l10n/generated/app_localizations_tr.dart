@@ -236,6 +236,11 @@ class AppLocalizationsTr extends AppLocalizations {
       'OpenChat\'in yönettiği modeller';
 
   @override
+  String localEngineManagedServerModelSection(int port) {
+    return 'OpenChat sunucusu · 127.0.0.1:$port';
+  }
+
+  @override
   String localEngineExternalModelSection(int port) {
     return 'Kullanıcı sunucusu · 127.0.0.1:$port';
   }

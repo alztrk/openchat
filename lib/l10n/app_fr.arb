@@ -81,6 +81,8 @@
   "localEngineExternalServerConnected": "Connecté au port {port}. {count, plural, =1{1 modèle disponible} other{{count} modèles disponibles}}.",
   "@localEngineExternalServerConnected": { "placeholders": { "port": { "type": "int" }, "count": { "type": "int" } } },
   "localEngineManagedModelSection": "Modèles gérés par OpenChat",
+  "localEngineManagedServerModelSection": "Serveur OpenChat · 127.0.0.1:{port}",
+  "@localEngineManagedServerModelSection": { "placeholders": { "port": { "type": "int" } } },
   "localEngineExternalModelSection": "Serveur de l’utilisateur · 127.0.0.1:{port}",
   "@localEngineExternalModelSection": { "placeholders": { "port": { "type": "int" } } },
   "localEngineExternalServerDisconnect": "Déconnecter",

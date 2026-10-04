@@ -71,7 +71,7 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
     };
     let cuda_available = matches!(nvidia_driver, NvidiaDriverStatus::Detected(_));
     let runtime = runtime::status(storage).await?;
-    let external_llama_server = runtime::external_server_status().await;
+    let external_llama_servers = runtime::external_server_status().await;
     let llama_server_executable_path = settings::llama_server_executable_path(storage.root())?;
     let llama_server_executable_available = llama_server_executable_path
         .as_deref()
@@ -133,9 +133,9 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
                 "statusReason": status_reason,
                 "modelDirectory": model_directory,
                 "runtimeStatus": if manifest.engine_id == "llama_cpp" {
-                    runtime.get("status").cloned().unwrap_or(Value::Null)
+                    runtime_status_for_engine(&runtime, "llama_cpp")
                 } else {
-                    json!("unavailable")
+                    "unavailable"
                 },
                 "variants": variants,
             }))
@@ -149,7 +149,7 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
             models::to_json(model, available)
         }).collect::<Result<Vec<_>, ServiceError>>()?,
         "runtime": runtime,
-        "externalLlamaServer": external_llama_server,
+        "externalLlamaServers": external_llama_servers,
         "llamaServerExecutablePath": llama_server_executable_path
             .as_ref()
             .and_then(|path| path.to_str()),
@@ -162,6 +162,25 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
     }))
 }
 
+fn runtime_status_for_engine(runtime: &Value, engine_id: &str) -> &'static str {
+    let servers = runtime.get("servers").and_then(Value::as_array);
+    let Some(servers) = servers else {
+        return "stopped";
+    };
+    let mut unhealthy = false;
+    for server in servers {
+        if server["engineId"].as_str() != Some(engine_id) {
+            continue;
+        }
+        match server["status"].as_str() {
+            Some("running") => return "running",
+            Some("unhealthy") => unhealthy = true,
+            _ => {}
+        }
+    }
+    if unhealthy { "unhealthy" } else { "stopped" }
+}
+
 pub(crate) async fn start_model(
     storage: &AppStorage,
     model_id: &str,
@@ -172,6 +191,13 @@ pub(crate) async fn start_model(
 
 pub(crate) async fn stop_runtime(storage: &AppStorage) -> Result<Value, ServiceError> {
     runtime::stop(storage).await
+}
+
+pub(crate) async fn stop_model(
+    storage: &AppStorage,
+    model_id: &str,
+) -> Result<Value, ServiceError> {
+    runtime::stop_model(storage, model_id).await
 }
 
 pub(crate) async fn chat_url(
@@ -217,8 +243,8 @@ pub(crate) async fn connect_external_llama_server(
     runtime::connect_external_server(process_id, port).await
 }
 
-pub(crate) async fn disconnect_external_llama_server() -> Value {
-    runtime::disconnect_external_server().await
+pub(crate) async fn disconnect_external_llama_server(process_id: u32, port: u16) -> Value {
+    runtime::disconnect_external_server(process_id, port).await
 }
 
 pub(crate) async fn chat_model_catalog(
@@ -298,8 +324,16 @@ pub(crate) async fn remove_model(
     model_id: &str,
 ) -> Result<Value, ServiceError> {
     let state = runtime::status(storage).await?;
-    if state.get("modelId").and_then(Value::as_str) == Some(model_id) {
-        runtime::stop(storage).await?;
+    let is_running = state
+        .get("servers")
+        .and_then(Value::as_array)
+        .is_some_and(|servers| {
+            servers
+                .iter()
+                .any(|server| server.get("modelId").and_then(Value::as_str) == Some(model_id))
+        });
+    if is_running {
+        runtime::stop_model(storage, model_id).await?;
     }
     Ok(json!({"removed": models::remove(storage, model_id)?}))
 }
@@ -637,7 +671,8 @@ fn unsupported_engine_variant_error() -> ServiceError {
 mod tests {
     use super::{
         CATALOGS, NvidiaDriverStatus, catalog::DriverVersion, catalog::parse_manifest,
-        parse_nvidia_driver_output, recommended_variant_id, variant_hardware_status,
+        parse_nvidia_driver_output, recommended_variant_id, runtime_status_for_engine,
+        variant_hardware_status,
     };
 
     #[test]
@@ -657,6 +692,25 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert_eq!(engine_ids, ["llama_cpp", "vllm", "exllama"]);
+    }
+
+    #[test]
+    fn llama_engine_status_ignores_other_runtime_processes() {
+        let runtime = serde_json::json!({
+            "status": "running",
+            "servers": [
+                {"engineId": "vllm", "modelId": "transformers", "status": "running"}
+            ]
+        });
+        assert_eq!(runtime_status_for_engine(&runtime, "llama_cpp"), "stopped");
+
+        let runtime = serde_json::json!({
+            "servers": [
+                {"engineId": "llama_cpp", "modelId": "one", "status": "unhealthy"},
+                {"engineId": "llama_cpp", "modelId": "two", "status": "running"}
+            ]
+        });
+        assert_eq!(runtime_status_for_engine(&runtime, "llama_cpp"), "running");
     }
 
     #[test]

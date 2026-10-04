@@ -494,6 +494,12 @@ abstract class AppLocalizations {
   /// **'OpenChat-managed models'**
   String get localEngineManagedModelSection;
 
+  /// No description provided for @localEngineManagedServerModelSection.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenChat server · 127.0.0.1:{port}'**
+  String localEngineManagedServerModelSection(int port);
+
   /// No description provided for @localEngineExternalModelSection.
   ///
   /// In en, this message translates to:

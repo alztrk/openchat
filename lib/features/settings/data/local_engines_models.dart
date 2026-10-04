@@ -5,7 +5,7 @@ class LocalEngineCatalog {
     required this.engines,
     required this.models,
     required this.runtime,
-    required this.externalLlamaServer,
+    required this.externalLlamaServers,
     this.llamaServerExecutablePath,
     this.llamaServerExecutableAvailable = false,
   });
@@ -13,7 +13,7 @@ class LocalEngineCatalog {
   final List<LocalEngine> engines;
   final List<LocalRegisteredModel> models;
   final LocalEngineRuntimeState runtime;
-  final LocalExternalLlamaServerState externalLlamaServer;
+  final List<LocalExternalLlamaServerState> externalLlamaServers;
   final String? llamaServerExecutablePath;
   final bool llamaServerExecutableAvailable;
 
@@ -28,6 +28,12 @@ class LocalEngineCatalog {
     if (rawModels is! List<Object?>) {
       throw const FormatException(
         'Local engine catalog did not contain registered models.',
+      );
+    }
+    final rawExternalServers = json['externalLlamaServers'];
+    if (rawExternalServers is! List<Object?>) {
+      throw const FormatException(
+        'Local engine catalog did not contain external llama-server connections.',
       );
     }
     final llamaServerExecutableAvailable =
@@ -47,15 +53,17 @@ class LocalEngineCatalog {
           .map((value) => LocalRegisteredModel.fromJson(_objectMap(value)))
           .toList(growable: false),
       runtime: LocalEngineRuntimeState.fromJson(_objectMap(json['runtime'])),
-      externalLlamaServer: LocalExternalLlamaServerState.fromJson(
-        _objectMap(json['externalLlamaServer']),
-      ),
+      externalLlamaServers: rawExternalServers
+          .map(
+            (value) =>
+                LocalExternalLlamaServerState.fromJson(_objectMap(value)),
+          )
+          .toList(growable: false),
       llamaServerExecutablePath: _optionalString(
         json,
         'llamaServerExecutablePath',
       ),
-      llamaServerExecutableAvailable:
-          llamaServerExecutableAvailable == true,
+      llamaServerExecutableAvailable: llamaServerExecutableAvailable == true,
     );
   }
 }
@@ -83,27 +91,18 @@ class LocalExternalLlamaServerCandidate {
 
 class LocalExternalLlamaServerState {
   const LocalExternalLlamaServerState({
-    required this.connected,
-    this.processId,
-    this.port,
-    this.modelIds = const <String>[],
+    required this.processId,
+    required this.port,
+    required this.modelIds,
   });
 
-  final bool connected;
-  final int? processId;
-  final int? port;
+  final int processId;
+  final int port;
   final List<String> modelIds;
 
-  factory LocalExternalLlamaServerState.fromJson(
-    Map<String, Object?> json,
-  ) {
-    final connected = json['connected'];
-    if (connected is! bool) {
-      throw const FormatException(
-        'External llama-server connection status was invalid.',
-      );
-    }
-    if (!connected) return const LocalExternalLlamaServerState(connected: false);
+  String get key => '$processId:$port';
+
+  factory LocalExternalLlamaServerState.fromJson(Map<String, Object?> json) {
     final modelIds = _requiredStringList(json, 'modelIds');
     if (modelIds.isEmpty) {
       throw const FormatException(
@@ -111,7 +110,6 @@ class LocalExternalLlamaServerState {
       );
     }
     return LocalExternalLlamaServerState(
-      connected: true,
       processId: _requiredPositiveInt(json, 'processId'),
       port: _requiredPort(json, 'port'),
       modelIds: modelIds,
@@ -286,12 +284,14 @@ class LocalDiscoveredModel {
 class LocalEngineRuntimeState {
   const LocalEngineRuntimeState({
     required this.status,
+    required this.servers,
     this.engineId,
     this.modelId,
     this.port,
   });
 
   final String status;
+  final List<LocalManagedServerState> servers;
   final String? engineId;
   final String? modelId;
   final int? port;
@@ -299,9 +299,39 @@ class LocalEngineRuntimeState {
   factory LocalEngineRuntimeState.fromJson(Map<String, Object?> json) {
     return LocalEngineRuntimeState(
       status: _requiredString(json, 'status'),
+      servers: _requiredObjectList(
+        json,
+        'servers',
+      ).map(LocalManagedServerState.fromJson).toList(growable: false),
       engineId: _optionalString(json, 'engineId'),
       modelId: _optionalString(json, 'modelId'),
       port: _optionalNonNegativeInt(json, 'port'),
+    );
+  }
+}
+
+class LocalManagedServerState {
+  const LocalManagedServerState({
+    required this.engineId,
+    required this.modelId,
+    required this.port,
+    required this.status,
+    this.processId,
+  });
+
+  final String engineId;
+  final String modelId;
+  final int port;
+  final String status;
+  final int? processId;
+
+  factory LocalManagedServerState.fromJson(Map<String, Object?> json) {
+    return LocalManagedServerState(
+      engineId: _requiredString(json, 'engineId'),
+      modelId: _requiredString(json, 'modelId'),
+      port: _requiredPort(json, 'port'),
+      status: _requiredString(json, 'status'),
+      processId: _optionalPositiveInt(json, 'processId'),
     );
   }
 }
@@ -484,6 +514,11 @@ int? _optionalNonNegativeInt(Map<String, Object?> json, String key) {
   return _requiredNonNegativeInt(json, key);
 }
 
+int? _optionalPositiveInt(Map<String, Object?> json, String key) {
+  if (!json.containsKey(key) || json[key] == null) return null;
+  return _requiredPositiveInt(json, key);
+}
+
 int _requiredPositiveInt(Map<String, Object?> json, String key) {
   final value = _requiredNonNegativeInt(json, key);
   if (value > 0) return value;
@@ -507,4 +542,15 @@ List<String> _requiredStringList(Map<String, Object?> json, String key) {
         throw FormatException('Local engine response field $key was invalid.');
       })
       .toList(growable: false);
+}
+
+List<Map<String, Object?>> _requiredObjectList(
+  Map<String, Object?> json,
+  String key,
+) {
+  final value = json[key];
+  if (value is! List<Object?>) {
+    throw FormatException('Local engine response field $key was invalid.');
+  }
+  return value.map(_objectMap).toList(growable: false);
 }

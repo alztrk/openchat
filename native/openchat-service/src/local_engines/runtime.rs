@@ -1,8 +1,14 @@
 use std::{
-    collections::HashSet, ffi::OsString, net::SocketAddr, path::PathBuf, process::Stdio,
-    sync::OnceLock, time::Duration,
+    collections::{HashMap, HashSet},
+    ffi::OsString,
+    net::SocketAddr,
+    path::PathBuf,
+    process::Stdio,
+    sync::OnceLock,
+    time::Duration,
 };
 
+use futures_util::future::join_all;
 use reqwest::Client;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -29,8 +35,10 @@ const MAX_EXTERNAL_MODEL_CATALOG_BYTES: usize = 1024 * 1024;
 const MAX_EXTERNAL_MODEL_COUNT: usize = 128;
 
 static RUNNING_SERVER: OnceLock<Mutex<Option<RunningServer>>> = OnceLock::new();
-static EXTERNAL_LLAMA_SERVER: OnceLock<Mutex<Option<ConnectedExternalLlamaServer>>> =
+static RUNNING_LLAMA_SERVERS: OnceLock<Mutex<HashMap<String, RunningServer>>> = OnceLock::new();
+static EXTERNAL_LLAMA_SERVERS: OnceLock<Mutex<HashMap<(u32, u16), ConnectedExternalLlamaServer>>> =
     OnceLock::new();
+static EXTERNAL_SERVER_MUTATION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 static HEALTH_CLIENT: OnceLock<Result<Client, reqwest::Error>> = OnceLock::new();
 static PROPERTIES_CLIENT: OnceLock<Result<Client, reqwest::Error>> = OnceLock::new();
 static EXTERNAL_CLIENT: OnceLock<Result<Client, reqwest::Error>> = OnceLock::new();
@@ -98,8 +106,37 @@ pub(crate) async fn start_model(
     }
     let installed =
         installed_engine_for(storage, &model.engine_id)?.ok_or_else(engine_not_installed_error)?;
-    let state = running_state();
-    let mut state = state.lock().await;
+    if model.engine_id == "llama_cpp" {
+        let mut servers = running_llama_state().lock().await;
+        let mut selected_server = servers.remove(model_id);
+        let result = start_model_in_slot(
+            storage,
+            &model,
+            installed,
+            &mut selected_server,
+            cancellation,
+        )
+        .await;
+        if let Some(server) = selected_server {
+            servers.insert(model_id.to_owned(), server);
+        }
+        return result;
+    }
+
+    let mut state = running_state().lock().await;
+    start_model_in_slot(storage, &model, installed, &mut state, cancellation).await
+}
+
+async fn start_model_in_slot(
+    storage: &AppStorage,
+    model: &models::RegisteredModel,
+    installed: InstalledEngine,
+    state: &mut Option<RunningServer>,
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<Value, ServiceError> {
+    if *cancellation.borrow() {
+        return Err(cancelled_error());
+    }
 
     if let Some(server) = state.as_mut() {
         let is_running = server
@@ -124,14 +161,14 @@ pub(crate) async fn start_model(
         return Err(cancelled_error());
     }
     if state.is_some() {
-        stop_server(storage, &mut state).await?;
+        stop_server(storage, state).await?;
     }
 
     let port = available_loopback_port().await?;
     let started_at = Instant::now();
     let launch = match model.engine_id.as_str() {
         "llama_cpp" => RuntimeLaunch {
-            arguments: llama_server_arguments(&model, port)?,
+            arguments: llama_server_arguments(model, port)?,
             current_directory: installed.root.clone(),
             use_wsl: false,
             initial_capabilities: None,
@@ -139,8 +176,8 @@ pub(crate) async fn start_model(
             api_key: None,
             session_directory: None,
         },
-        "exllama" => prepare_tabby_session(&model, &installed, port)?,
-        "vllm" => prepare_vllm_session(&model, &installed, port).await?,
+        "exllama" => prepare_tabby_session(model, &installed, port)?,
+        "vllm" => prepare_vllm_session(model, &installed, port).await?,
         _ => return Err(model_unavailable_error()),
     };
     let mut command = if launch.use_wsl {
@@ -215,7 +252,7 @@ pub(crate) async fn start_model(
         let ready = match health_check_or_cancel(port, api_key, cancellation).await {
             Ok(ready) => ready,
             Err(error) => {
-                stop_server(storage, &mut state).await?;
+                stop_server(storage, state).await?;
                 let event = if error.code == "operation_cancelled" {
                     "runtime_start_cancelled"
                 } else {
@@ -234,7 +271,7 @@ pub(crate) async fn start_model(
             let capabilities = match capabilities_result {
                 Ok(capabilities) => capabilities,
                 Err(error) => {
-                    stop_server(storage, &mut state).await?;
+                    stop_server(storage, state).await?;
                     let event = if error.code == "operation_cancelled" {
                         "runtime_capability_check_cancelled"
                     } else {
@@ -252,7 +289,7 @@ pub(crate) async fn start_model(
             return Ok(status_json(state.as_ref(), "running"));
         }
         if started_at.elapsed() >= STARTUP_TIMEOUT {
-            stop_server(storage, &mut state).await?;
+            stop_server(storage, state).await?;
             log_runtime_event(
                 storage,
                 "runtime_start_timeout",
@@ -265,7 +302,7 @@ pub(crate) async fn start_model(
         tokio::select! {
             changed = cancellation.changed() => {
                 if changed.is_err() || *cancellation.borrow() {
-                    stop_server(storage, &mut state).await?;
+                    stop_server(storage, state).await?;
                     log_runtime_event(
                         storage,
                         "runtime_start_cancelled",
@@ -281,85 +318,220 @@ pub(crate) async fn start_model(
 }
 
 pub(crate) async fn stop(storage: &AppStorage) -> Result<Value, ServiceError> {
+    let mut first_error = None;
+    {
+        let mut state = running_state().lock().await;
+        if let Err(error) = stop_server(storage, &mut state).await {
+            first_error = Some(error);
+        }
+    }
+    {
+        let mut servers = running_llama_state().lock().await;
+        let model_ids = servers.keys().cloned().collect::<Vec<_>>();
+        for model_id in model_ids {
+            let Some(server) = servers.remove(&model_id) else {
+                continue;
+            };
+            let mut slot = Some(server);
+            if let Err(error) = stop_server(storage, &mut slot).await {
+                first_error.get_or_insert(error);
+            }
+            if let Some(server) = slot {
+                servers.insert(model_id, server);
+            }
+        }
+    }
+    if let Some(error) = first_error {
+        return Err(error);
+    }
+    status(storage).await
+}
+
+pub(crate) async fn stop_model(
+    storage: &AppStorage,
+    model_id: &str,
+) -> Result<Value, ServiceError> {
+    let mut managed = running_llama_state().lock().await;
+    if let Some(server) = managed.remove(model_id) {
+        let mut slot = Some(server);
+        let result = stop_server(storage, &mut slot).await;
+        if let Some(server) = slot {
+            managed.insert(model_id.to_owned(), server);
+        }
+        result?;
+        drop(managed);
+        return status(storage).await;
+    }
+    drop(managed);
+
     let mut state = running_state().lock().await;
-    stop_server(storage, &mut state).await?;
-    Ok(status_json(None, "stopped"))
+    if state
+        .as_ref()
+        .is_some_and(|server| server.model_id == model_id)
+    {
+        stop_server(storage, &mut state).await?;
+    }
+    drop(state);
+    status(storage).await
 }
 
 pub(crate) async fn status(storage: &AppStorage) -> Result<Value, ServiceError> {
-    let mut state = running_state().lock().await;
-    let Some(server) = state.as_mut() else {
-        return Ok(status_json(None, "stopped"));
-    };
-    let has_exited = server
-        .child
-        .try_wait()
-        .map_err(|_| runtime_error())?
-        .is_some();
-    if has_exited {
-        let session_directory = server.session_directory.take();
-        *state = None;
-        cleanup_session_directory(session_directory.as_deref()).await?;
-        log_runtime_event(
-            storage,
-            "runtime_exited",
-            Some("local_engine_runtime_unavailable"),
-            None,
-        );
-        return Ok(status_json(None, "stopped"));
+    let mut servers = Vec::new();
+    let mut legacy_status = None;
+    {
+        let mut state = running_state().lock().await;
+        if let Some(server) = state.as_mut() {
+            let has_exited = server
+                .child
+                .try_wait()
+                .map_err(|_| runtime_error())?
+                .is_some();
+            if has_exited {
+                let session_directory = server.session_directory.take();
+                *state = None;
+                cleanup_session_directory(session_directory.as_deref()).await?;
+                log_runtime_event(
+                    storage,
+                    "runtime_exited",
+                    Some("local_engine_runtime_unavailable"),
+                    None,
+                );
+            } else if let Some(server) = state.as_ref() {
+                let status =
+                    if health_check(server.port, server.api_key.as_deref().map(String::as_str))
+                        .await
+                    {
+                        "running"
+                    } else {
+                        "unhealthy"
+                    };
+                legacy_status = Some(status);
+                servers.push(server_status_json(server, status));
+            }
+        }
     }
-    let status = if health_check(server.port, server.api_key.as_deref().map(String::as_str)).await {
-        "running"
-    } else {
-        "unhealthy"
+    let managed_snapshots = {
+        let mut managed = running_llama_state().lock().await;
+        let model_ids = managed.keys().cloned().collect::<Vec<_>>();
+        let mut snapshots = Vec::new();
+        for model_id in model_ids {
+            let has_exited = managed
+                .get_mut(&model_id)
+                .ok_or_else(runtime_error)?
+                .child
+                .try_wait()
+                .map_err(|_| runtime_error())?
+                .is_some();
+            if has_exited {
+                let mut server = managed.remove(&model_id).ok_or_else(runtime_error)?;
+                let session_directory = server.session_directory.take();
+                cleanup_session_directory(session_directory.as_deref()).await?;
+                log_runtime_event(
+                    storage,
+                    "runtime_exited",
+                    Some("local_engine_runtime_unavailable"),
+                    None,
+                );
+                continue;
+            }
+            let server = managed.get(&model_id).ok_or_else(runtime_error)?;
+            if let Some(process_id) = server.child.id() {
+                snapshots.push((model_id, process_id, server.port));
+            }
+        }
+        snapshots
     };
-    Ok(status_json(state.as_ref(), status))
+    let health = join_all(
+        managed_snapshots
+            .iter()
+            .map(|(_, _, port)| async move { health_check(*port, None).await }),
+    )
+    .await;
+    {
+        let managed = running_llama_state().lock().await;
+        for ((model_id, process_id, port), healthy) in managed_snapshots.iter().zip(health) {
+            let Some(server) = managed
+                .get(model_id)
+                .filter(|server| server.child.id() == Some(*process_id) && server.port == *port)
+            else {
+                continue;
+            };
+            servers.push(server_status_json(
+                server,
+                if healthy { "running" } else { "unhealthy" },
+            ));
+        }
+    }
+    servers.sort_by(|left, right| left["modelId"].as_str().cmp(&right["modelId"].as_str()));
+    let status = if servers.iter().any(|server| server["status"] == "running") {
+        "running"
+    } else if !servers.is_empty() {
+        "unhealthy"
+    } else {
+        legacy_status.unwrap_or("stopped")
+    };
+    Ok(runtime_status_json(servers, status))
 }
 
 pub(crate) async fn external_server_status() -> Value {
-    let state = external_llama_server_state().lock().await;
-    match state.as_ref() {
-        Some(server) => json!({
-            "connected": true,
-            "processId": server.process_id,
-            "port": server.port,
-            "modelIds": server.models.iter().map(|model| model.provider_model_id.as_str()).collect::<Vec<_>>(),
-        }),
-        None => json!({"connected": false}),
-    }
+    let state = external_llama_servers_state().lock().await;
+    let mut connected = state.iter().collect::<Vec<_>>();
+    connected.sort_by_key(|(identity, _)| (identity.1, identity.0));
+    Value::Array(
+        connected
+            .into_iter()
+            .map(|(_, server)| external_server_status_json(server))
+            .collect(),
+    )
 }
 
 pub(crate) async fn find_external_server_candidates()
 -> Result<Vec<ExternalLlamaServerCandidate>, ServiceError> {
     let candidates = external_server::find_running_servers().await?;
-    let managed_process_id = managed_server_process_id().await;
-    let candidates = excluding_managed_server_process(candidates, managed_process_id);
+    let managed_process_ids = managed_server_process_ids().await;
+    let candidates = excluding_managed_server_processes(candidates, &managed_process_ids);
     reconcile_external_server_candidates(&candidates).await;
     Ok(candidates)
 }
 
-fn excluding_managed_server_process(
+fn excluding_managed_server_processes(
     candidates: Vec<ExternalLlamaServerCandidate>,
-    managed_process_id: Option<u32>,
+    managed_process_ids: &HashSet<u32>,
 ) -> Vec<ExternalLlamaServerCandidate> {
     candidates
         .into_iter()
-        .filter(|candidate| Some(candidate.process_id) != managed_process_id)
+        .filter(|candidate| !managed_process_ids.contains(&candidate.process_id))
         .collect()
 }
 
-async fn managed_server_process_id() -> Option<u32> {
-    running_state()
+async fn managed_server_process_ids() -> HashSet<u32> {
+    let mut process_ids = HashSet::new();
+    if let Some(process_id) = running_state()
         .lock()
         .await
         .as_ref()
+        .filter(|server| server.engine_id == "llama_cpp")
         .and_then(|server| server.child.id())
+    {
+        process_ids.insert(process_id);
+    }
+    process_ids.extend(
+        running_llama_state()
+            .lock()
+            .await
+            .values()
+            .filter_map(|server| server.child.id()),
+    );
+    process_ids
 }
 
 async fn candidate_is_external(
     candidate: ExternalLlamaServerCandidate,
 ) -> Result<bool, ServiceError> {
-    if managed_server_process_id().await == Some(candidate.process_id) {
+    if managed_server_process_ids()
+        .await
+        .contains(&candidate.process_id)
+    {
         return Ok(false);
     }
     external_server::candidate_is_running(candidate).await
@@ -368,21 +540,16 @@ async fn candidate_is_external(
 pub(crate) async fn reconcile_external_server_candidates(
     candidates: &[ExternalLlamaServerCandidate],
 ) {
-    let mut state = external_llama_server_state().lock().await;
-    if state.as_ref().is_some_and(|server| {
-        !candidates.contains(&ExternalLlamaServerCandidate {
-            process_id: server.process_id,
-            port: server.port,
-        })
-    }) {
-        *state = None;
-    }
+    let _mutation = external_server_mutation_lock().lock().await;
+    let mut state = external_llama_servers_state().lock().await;
+    retain_detected_external_servers(&mut state, candidates);
 }
 
 pub(crate) async fn connect_external_server(
     process_id: u32,
     port: u16,
 ) -> Result<Value, ServiceError> {
+    let _mutation = external_server_mutation_lock().lock().await;
     let candidate = ExternalLlamaServerCandidate { process_id, port };
     if !candidate_is_external(candidate).await? {
         return Err(external_server_not_found_error());
@@ -405,17 +572,24 @@ pub(crate) async fn connect_external_server(
             capabilities,
         })
         .collect();
-    *external_llama_server_state().lock().await = Some(ConnectedExternalLlamaServer {
+    let server = ConnectedExternalLlamaServer {
         process_id,
         port,
         models,
-    });
-    Ok(external_server_status().await)
+    };
+    let response = external_server_status_json(&server);
+    external_llama_servers_state()
+        .lock()
+        .await
+        .insert((process_id, port), server);
+    Ok(response)
 }
 
-pub(crate) async fn disconnect_external_server() -> Value {
-    *external_llama_server_state().lock().await = None;
-    json!({"disconnected": true})
+pub(crate) async fn disconnect_external_server(process_id: u32, port: u16) -> Value {
+    let _mutation = external_server_mutation_lock().lock().await;
+    let mut servers = external_llama_servers_state().lock().await;
+    remove_external_server(&mut servers, process_id, port);
+    json!({"disconnected": true, "processId": process_id, "port": port})
 }
 
 pub(crate) async fn chat_model_catalog(
@@ -430,6 +604,24 @@ pub(crate) async fn chat_model_catalog(
         ));
     }
 
+    let managed_model_groups = if engine_id == "llama_cpp" {
+        status(storage)
+            .await?
+            .get("servers")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter(|server| server["engineId"] == "llama_cpp" && server["status"] == "running")
+            .filter_map(|server| {
+                let model_id = server["modelId"].as_str()?.to_owned();
+                let process_id = u32::try_from(server["processId"].as_u64()?).ok()?;
+                let port = u16::try_from(server["port"].as_u64()?).ok()?;
+                Some((model_id, managed_server_group_id(process_id, port)))
+            })
+            .collect::<HashMap<_, _>>()
+    } else {
+        HashMap::new()
+    };
     let mut catalog_models = models::list(storage)?
         .into_iter()
         .filter(|model| model.engine_id == engine_id)
@@ -437,7 +629,11 @@ pub(crate) async fn chat_model_catalog(
             let available = is_model_available(storage, &model)?;
             let mut model_json = models::to_json(&model, available)?;
             if engine_id == "llama_cpp" {
-                model_json["groupId"] = Value::String("managed".to_owned());
+                let group_id = managed_model_groups
+                    .get(&model.id)
+                    .cloned()
+                    .unwrap_or_else(|| "managed".to_owned());
+                model_json["groupId"] = Value::String(group_id);
             }
             Ok(model_json)
         })
@@ -462,7 +658,23 @@ pub(crate) async fn chat_url(
         .and_then(Value::as_u64)
         .and_then(|value| u16::try_from(value).ok())
         .ok_or_else(runtime_error)?;
-    let state = running_state().lock().await;
+    let model = models::find(storage, model_id)?.ok_or_else(model_unavailable_error)?;
+    let state = if model.engine_id == "llama_cpp" {
+        let state = running_llama_state().lock().await;
+        let server = state
+            .get(model_id)
+            .filter(|server| server.port == port)
+            .ok_or_else(runtime_error)?;
+        let capabilities = server.capabilities.ok_or_else(runtime_capability_error)?;
+        return Ok(RuntimeChatEndpoint {
+            chat_url: format!("http://127.0.0.1:{port}/v1/chat/completions"),
+            model_id: server.provider_model_id.clone(),
+            capabilities,
+            api_key: server.api_key.clone(),
+        });
+    } else {
+        running_state().lock().await
+    };
     let server = state
         .as_ref()
         .filter(|server| server.model_id == model_id && server.port == port)
@@ -477,53 +689,58 @@ pub(crate) async fn chat_url(
 }
 
 async fn external_chat_models() -> Result<Vec<Value>, ServiceError> {
-    let Some(server) = external_llama_server_state().lock().await.clone() else {
-        return Ok(Vec::new());
-    };
-    let candidate = ExternalLlamaServerCandidate {
-        process_id: server.process_id,
-        port: server.port,
-    };
-    if !candidate_is_external(candidate).await? {
-        clear_external_server_if_current(candidate).await;
-        return Ok(Vec::new());
+    let servers = external_llama_servers_state()
+        .lock()
+        .await
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut models = Vec::new();
+    for server in servers {
+        let candidate = ExternalLlamaServerCandidate {
+            process_id: server.process_id,
+            port: server.port,
+        };
+        if !candidate_is_external(candidate).await? {
+            clear_external_server_if_current(candidate).await?;
+            continue;
+        }
+        models.extend(
+            server
+                .models
+                .iter()
+                .map(|model| external_model_json(model, server.process_id, server.port)),
+        );
     }
-
-    Ok(server
-        .models
-        .iter()
-        .map(|model| external_model_json(model, server.process_id, server.port))
-        .collect())
+    Ok(models)
 }
 
 async fn external_chat_endpoint(
     route_id: &str,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<Option<RuntimeChatEndpoint>, ServiceError> {
-    let Some(server) = external_llama_server_state().lock().await.clone() else {
+    let server = {
+        let servers = external_llama_servers_state().lock().await;
+        external_server_for_route(&servers, route_id).cloned()
+    };
+    let Some(server) = server else {
         return Ok(None);
     };
-    if !server.models.iter().any(|model| model.route_id == route_id) {
-        return Ok(None);
-    }
     let candidate = ExternalLlamaServerCandidate {
         process_id: server.process_id,
         port: server.port,
     };
     if !candidate_is_external(candidate).await? {
-        clear_external_server_if_current(candidate).await;
+        clear_external_server_if_current(candidate).await?;
         return Err(external_server_not_found_error());
     }
     if !external_health_check_or_cancel(server.port, cancellation).await? {
-        clear_external_server_if_current(candidate).await;
+        clear_external_server_if_current(candidate).await?;
         return Err(external_server_not_ready_error());
     }
 
-    let current = external_llama_server_state().lock().await;
-    let Some(current) = current
-        .as_ref()
-        .filter(|current| current.process_id == server.process_id && current.port == server.port)
-    else {
+    let current = external_llama_servers_state().lock().await;
+    let Some(current) = current.get(&(server.process_id, server.port)) else {
         return Err(external_server_not_found_error());
     };
     let Some(model) = current
@@ -541,13 +758,16 @@ async fn external_chat_endpoint(
     }))
 }
 
-async fn clear_external_server_if_current(candidate: ExternalLlamaServerCandidate) {
-    let mut state = external_llama_server_state().lock().await;
-    if state.as_ref().is_some_and(|server| {
-        server.process_id == candidate.process_id && server.port == candidate.port
-    }) {
-        *state = None;
+async fn clear_external_server_if_current(
+    candidate: ExternalLlamaServerCandidate,
+) -> Result<(), ServiceError> {
+    let _mutation = external_server_mutation_lock().lock().await;
+    if candidate_is_external(candidate).await? {
+        return Ok(());
     }
+    let mut servers = external_llama_servers_state().lock().await;
+    remove_external_server(&mut servers, candidate.process_id, candidate.port);
+    Ok(())
 }
 
 fn external_model_json(model: &ExternalLlamaModel, process_id: u32, port: u16) -> Value {
@@ -764,8 +984,54 @@ fn external_http_client() -> Result<&'static Client, ServiceError> {
         .map_err(|_| external_server_not_ready_error())
 }
 
-fn external_llama_server_state() -> &'static Mutex<Option<ConnectedExternalLlamaServer>> {
-    EXTERNAL_LLAMA_SERVER.get_or_init(|| Mutex::new(None))
+fn external_llama_servers_state()
+-> &'static Mutex<HashMap<(u32, u16), ConnectedExternalLlamaServer>> {
+    EXTERNAL_LLAMA_SERVERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn external_server_mutation_lock() -> &'static Mutex<()> {
+    EXTERNAL_SERVER_MUTATION_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+fn external_server_status_json(server: &ConnectedExternalLlamaServer) -> Value {
+    json!({
+        "processId": server.process_id,
+        "port": server.port,
+        "modelIds": server.models.iter().map(|model| model.provider_model_id.as_str()).collect::<Vec<_>>(),
+    })
+}
+
+fn external_server_for_route<'a>(
+    servers: &'a HashMap<(u32, u16), ConnectedExternalLlamaServer>,
+    route_id: &str,
+) -> Option<&'a ConnectedExternalLlamaServer> {
+    servers
+        .values()
+        .find(|server| server.models.iter().any(|model| model.route_id == route_id))
+}
+
+fn retain_detected_external_servers(
+    servers: &mut HashMap<(u32, u16), ConnectedExternalLlamaServer>,
+    candidates: &[ExternalLlamaServerCandidate],
+) {
+    servers.retain(|_, server| {
+        candidates.contains(&ExternalLlamaServerCandidate {
+            process_id: server.process_id,
+            port: server.port,
+        })
+    });
+}
+
+fn remove_external_server(
+    servers: &mut HashMap<(u32, u16), ConnectedExternalLlamaServer>,
+    process_id: u32,
+    port: u16,
+) -> bool {
+    servers.remove(&(process_id, port)).is_some()
+}
+
+fn managed_server_group_id(process_id: u32, port: u16) -> String {
+    format!("managed-llama-server:{process_id}:{port}")
 }
 
 pub(crate) fn is_model_available(
@@ -1189,6 +1455,10 @@ fn running_state() -> &'static Mutex<Option<RunningServer>> {
     RUNNING_SERVER.get_or_init(|| Mutex::new(None))
 }
 
+fn running_llama_state() -> &'static Mutex<HashMap<String, RunningServer>> {
+    RUNNING_LLAMA_SERVERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 async fn stop_server(
     storage: &AppStorage,
     state: &mut Option<RunningServer>,
@@ -1234,11 +1504,30 @@ fn log_runtime_event(
 }
 
 fn status_json(server: Option<&RunningServer>, status: &str) -> Value {
+    let servers = server
+        .map(|server| vec![server_status_json(server, status)])
+        .unwrap_or_default();
+    runtime_status_json(servers, status)
+}
+
+fn server_status_json(server: &RunningServer, status: &str) -> Value {
+    json!({
+        "engineId": server.engine_id,
+        "modelId": server.model_id,
+        "processId": server.child.id(),
+        "port": server.port,
+        "status": status,
+    })
+}
+
+fn runtime_status_json(servers: Vec<Value>, status: &str) -> Value {
+    let primary = servers.first();
     json!({
         "status": status,
-        "engineId": server.map(|server| server.engine_id.as_str()),
-        "modelId": server.map(|server| server.model_id.as_str()),
-        "port": server.map(|server| server.port),
+        "engineId": primary.and_then(|server| server["engineId"].as_str()),
+        "modelId": primary.and_then(|server| server["modelId"].as_str()),
+        "port": primary.and_then(|server| server["port"].as_u64()),
+        "servers": servers,
     })
 }
 
@@ -1340,7 +1629,11 @@ fn cancelled_error() -> ServiceError {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{
+        collections::{HashMap, HashSet},
+        fs,
+        path::PathBuf,
+    };
 
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
@@ -1353,12 +1646,14 @@ mod tests {
     use crate::storage::AppStorage;
 
     use super::{
-        ExternalLlamaModel, ExternalLlamaServerCandidate, InstalledEngine,
-        MAX_RUNTIME_PROPERTIES_BYTES, RuntimeCapabilities, excluding_managed_server_process,
-        external_model_json, external_model_route_id, external_server_group_id,
-        health_check_or_cancel, installed_engine_for, llama_server_arguments,
+        ConnectedExternalLlamaServer, ExternalLlamaModel, ExternalLlamaServerCandidate,
+        InstalledEngine, MAX_RUNTIME_PROPERTIES_BYTES, RuntimeCapabilities,
+        excluding_managed_server_processes, external_model_json, external_model_route_id,
+        external_server_for_route, external_server_group_id, health_check_or_cancel,
+        installed_engine_for, llama_server_arguments, managed_server_group_id,
         parse_external_capabilities, parse_external_model_ids, parse_runtime_capabilities,
-        prepare_tabby_session, read_runtime_capabilities, start_model, vllm_server_arguments,
+        prepare_tabby_session, read_runtime_capabilities, remove_external_server,
+        retain_detected_external_servers, runtime_status_json, start_model, vllm_server_arguments,
     };
 
     struct TestDirectory(PathBuf);
@@ -1416,10 +1711,15 @@ mod tests {
                 process_id: 5732,
                 port: 8081,
             },
+            ExternalLlamaServerCandidate {
+                process_id: 9212,
+                port: 8082,
+            },
         ];
+        let managed_process_ids = HashSet::from([4216, 9212]);
 
         assert_eq!(
-            excluding_managed_server_process(candidates, Some(4216)),
+            excluding_managed_server_processes(candidates, &managed_process_ids),
             vec![ExternalLlamaServerCandidate {
                 process_id: 5732,
                 port: 8081,
@@ -1509,6 +1809,103 @@ mod tests {
         assert_eq!(json["supportsTools"], serde_json::Value::Null);
         assert_eq!(json["supportsImages"], false);
         assert_eq!(json["groupId"], external_server_group_id(4216, 8080));
+    }
+
+    #[test]
+    fn external_routes_resolve_to_their_own_connected_server() {
+        let model = |process_id, port, model_id: &str| ExternalLlamaModel {
+            route_id: external_model_route_id(process_id, port, model_id),
+            provider_model_id: model_id.to_owned(),
+            capabilities: RuntimeCapabilities {
+                context_window: None,
+                supports_images: false,
+                supports_tool_calls: None,
+            },
+        };
+        let servers = HashMap::from([
+            (
+                (4216, 8080),
+                ConnectedExternalLlamaServer {
+                    process_id: 4216,
+                    port: 8080,
+                    models: vec![model(4216, 8080, "same-model")],
+                },
+            ),
+            (
+                (5732, 8081),
+                ConnectedExternalLlamaServer {
+                    process_id: 5732,
+                    port: 8081,
+                    models: vec![model(5732, 8081, "same-model")],
+                },
+            ),
+        ]);
+        let second_route = external_model_route_id(5732, 8081, "same-model");
+
+        let selected = external_server_for_route(&servers, &second_route)
+            .expect("a route should resolve to its own server");
+
+        assert_eq!(selected.process_id, 5732);
+        assert_eq!(selected.port, 8081);
+        assert_eq!(
+            managed_server_group_id(5001, 51234),
+            "managed-llama-server:5001:51234"
+        );
+    }
+
+    #[test]
+    fn disconnect_and_detection_reconciliation_preserve_other_user_servers() {
+        let model = |process_id, port, model_id: &str| ExternalLlamaModel {
+            route_id: external_model_route_id(process_id, port, model_id),
+            provider_model_id: model_id.to_owned(),
+            capabilities: RuntimeCapabilities {
+                context_window: None,
+                supports_images: false,
+                supports_tool_calls: None,
+            },
+        };
+        let first = ConnectedExternalLlamaServer {
+            process_id: 4216,
+            port: 8080,
+            models: vec![model(4216, 8080, "model-a")],
+        };
+        let second = ConnectedExternalLlamaServer {
+            process_id: 5732,
+            port: 8081,
+            models: vec![model(5732, 8081, "model-b")],
+        };
+        let mut servers = HashMap::from([((4216, 8080), first), ((5732, 8081), second)]);
+
+        assert!(remove_external_server(&mut servers, 4216, 8080));
+        assert!(!remove_external_server(&mut servers, 4216, 8080));
+        retain_detected_external_servers(
+            &mut servers,
+            &[ExternalLlamaServerCandidate {
+                process_id: 5732,
+                port: 8081,
+            }],
+        );
+
+        assert_eq!(servers.len(), 1);
+        assert!(
+            external_server_for_route(&servers, &external_model_route_id(5732, 8081, "model-b"))
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn runtime_status_lists_multiple_managed_servers() {
+        let status = runtime_status_json(
+            vec![
+                serde_json::json!({"modelId": "model-a", "port": 51234, "status": "running"}),
+                serde_json::json!({"modelId": "model-b", "port": 51235, "status": "running"}),
+            ],
+            "running",
+        );
+
+        assert_eq!(status["status"], "running");
+        assert_eq!(status["servers"].as_array().map(Vec::len), Some(2));
+        assert_eq!(status["servers"][1]["modelId"], "model-b");
     }
 
     #[test]

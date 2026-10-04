@@ -33,20 +33,49 @@ void main() {
           },
         ],
         'models': <Object?>[],
-        'runtime': <String, Object?>{'status': 'stopped'},
-        'externalLlamaServer': <String, Object?>{'connected': false},
+        'runtime': <String, Object?>{
+          'status': 'running',
+          'servers': <Object?>[
+            <String, Object?>{
+              'engineId': 'llama_cpp',
+              'modelId': 'managed-qwen',
+              'processId': 5001,
+              'port': 51234,
+              'status': 'running',
+            },
+            <String, Object?>{
+              'engineId': 'llama_cpp',
+              'modelId': 'managed-llama',
+              'processId': 5002,
+              'port': 51235,
+              'status': 'running',
+            },
+          ],
+        },
+        'externalLlamaServers': <Object?>[
+          <String, Object?>{
+            'processId': 4216,
+            'port': 8080,
+            'modelIds': <Object?>['qwen3-8b'],
+          },
+          <String, Object?>{
+            'processId': 5732,
+            'port': 8081,
+            'modelIds': <Object?>['llama-3.1-8b'],
+          },
+        ],
       });
 
       expect(catalog.engines, hasLength(1));
       expect(catalog.engines.single.engineId, 'llama_cpp');
       expect(catalog.engines.single.variants.single.canInstall, isTrue);
       expect(catalog.engines.single.variants.single.accelerator, 'cpu');
-      expect(
-        catalog.llamaServerExecutablePath,
-        r'C:\llama\llama-server.exe',
-      );
+      expect(catalog.llamaServerExecutablePath, r'C:\llama\llama-server.exe');
       expect(catalog.llamaServerExecutableAvailable, isTrue);
-      expect(catalog.externalLlamaServer.connected, isFalse);
+      expect(catalog.runtime.servers, hasLength(2));
+      expect(catalog.runtime.servers.first.modelId, 'managed-qwen');
+      expect(catalog.externalLlamaServers, hasLength(2));
+      expect(catalog.externalLlamaServers.last.port, 8081);
     });
 
     test('rejects an invalid configured llama-server status', () {
@@ -54,8 +83,11 @@ void main() {
         () => LocalEngineCatalog.fromJson(<String, Object?>{
           'engines': <Object?>[],
           'models': <Object?>[],
-          'runtime': <String, Object?>{'status': 'stopped'},
-          'externalLlamaServer': <String, Object?>{'connected': false},
+          'runtime': <String, Object?>{
+            'status': 'stopped',
+            'servers': <Object?>[],
+          },
+          'externalLlamaServers': <Object?>[],
           'llamaServerExecutableAvailable': 'yes',
         }),
         throwsFormatException,
@@ -63,19 +95,31 @@ void main() {
     });
 
     test('parses a validated external llama-server connection', () {
-      final state = LocalExternalLlamaServerState.fromJson(
-        <String, Object?>{
-          'connected': true,
-          'processId': 4216,
-          'port': 8080,
-          'modelIds': <Object?>['qwen3-8b'],
-        },
-      );
+      final state = LocalExternalLlamaServerState.fromJson(<String, Object?>{
+        'processId': 4216,
+        'port': 8080,
+        'modelIds': <Object?>['qwen3-8b'],
+      });
 
-      expect(state.connected, isTrue);
       expect(state.processId, 4216);
       expect(state.port, 8080);
       expect(state.modelIds, <String>['qwen3-8b']);
+    });
+
+    test('rejects a runtime server with an invalid port', () {
+      expect(
+        () => LocalEngineRuntimeState.fromJson(<String, Object?>{
+          'status': 'running',
+          'servers': <Object?>[
+            <String, Object?>{
+              'engineId': 'llama_cpp',
+              'modelId': 'model',
+              'port': 70000,
+            },
+          ],
+        }),
+        throwsFormatException,
+      );
     });
 
     test('rejects invalid external llama-server endpoints', () {

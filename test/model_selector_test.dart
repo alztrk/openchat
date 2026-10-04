@@ -228,12 +228,28 @@ void main() {
         groupId: 'managed',
       ),
       const ChatGptModel(
+        id: 'running-managed-model',
+        displayName: 'Running managed model',
+        isAvailable: true,
+        reasoningLevels: [],
+        providerId: 'llama_cpp',
+        groupId: 'managed-llama-server:5001:51234',
+      ),
+      const ChatGptModel(
         id: 'external-model',
         displayName: 'External model',
         isAvailable: true,
         reasoningLevels: [],
         providerId: 'llama_cpp',
         groupId: 'external-llama-server:4216:8080',
+      ),
+      const ChatGptModel(
+        id: 'second-external-model',
+        displayName: 'Second external model',
+        isAvailable: true,
+        reasoningLevels: [],
+        providerId: 'llama_cpp',
+        groupId: 'external-llama-server:5732:8081',
       ),
     ];
 
@@ -273,22 +289,48 @@ void main() {
     await tester.pumpAndSettle();
 
     final managedHeader = find.text("OpenChat'in yönettiği modeller");
+    final runningManagedHeader = find.text(
+      'OpenChat sunucusu · 127.0.0.1:51234',
+    );
     final externalHeader = find.text('Kullanıcı sunucusu · 127.0.0.1:8080');
+    final secondExternalHeader = find.text(
+      'Kullanıcı sunucusu · 127.0.0.1:8081',
+    );
     expect(managedHeader, findsOneWidget);
+    expect(runningManagedHeader, findsOneWidget);
     expect(externalHeader, findsOneWidget);
+    expect(secondExternalHeader, findsOneWidget);
     expect(find.text('Managed model'), findsOneWidget);
+    expect(find.text('Running managed model'), findsOneWidget);
     expect(find.text('External model'), findsOneWidget);
+    expect(find.text('Second external model'), findsOneWidget);
     expect(
       tester.getTopLeft(managedHeader).dy,
       lessThan(tester.getTopLeft(find.text('Managed model')).dy),
     );
     expect(
       tester.getTopLeft(find.text('Managed model')).dy,
+      lessThan(tester.getTopLeft(runningManagedHeader).dy),
+    );
+    expect(
+      tester.getTopLeft(runningManagedHeader).dy,
+      lessThan(tester.getTopLeft(find.text('Running managed model')).dy),
+    );
+    expect(
+      tester.getTopLeft(find.text('Running managed model')).dy,
       lessThan(tester.getTopLeft(externalHeader).dy),
     );
     expect(
       tester.getTopLeft(externalHeader).dy,
       lessThan(tester.getTopLeft(find.text('External model')).dy),
+    );
+    expect(
+      tester.getTopLeft(find.text('External model')).dy,
+      lessThan(tester.getTopLeft(secondExternalHeader).dy),
+    );
+    expect(
+      tester.getTopLeft(secondExternalHeader).dy,
+      lessThan(tester.getTopLeft(find.text('Second external model')).dy),
     );
   });
 

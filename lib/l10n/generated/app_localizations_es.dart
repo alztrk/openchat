@@ -240,6 +240,11 @@ class AppLocalizationsEs extends AppLocalizations {
       'Modelos gestionados por OpenChat';
 
   @override
+  String localEngineManagedServerModelSection(int port) {
+    return 'Servidor de OpenChat · 127.0.0.1:$port';
+  }
+
+  @override
   String localEngineExternalModelSection(int port) {
     return 'Servidor del usuario · 127.0.0.1:$port';
   }
