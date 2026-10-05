@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import 'package:openchat/app/openchat_brand_mark.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 
@@ -10,6 +11,7 @@ class ChatNavigationRail extends StatelessWidget {
     required this.settingsSelected,
     this.modelsSelected = false,
     this.localModelsSelected = false,
+    this.showBrand = true,
     required this.onOpenChat,
     this.onOpenModels,
     this.onOpenLocalModels,
@@ -24,6 +26,7 @@ class ChatNavigationRail extends StatelessWidget {
   final bool settingsSelected;
   final bool modelsSelected;
   final bool localModelsSelected;
+  final bool showBrand;
   final VoidCallback onOpenChat;
   final VoidCallback? onOpenModels;
   final VoidCallback? onOpenLocalModels;
@@ -45,147 +48,162 @@ class ChatNavigationRail extends StatelessWidget {
           : OpenChatSpacing.compactRailWidth,
       decoration: BoxDecoration(
         color: palette.navigation,
-        border: Border(right: BorderSide(color: palette.border)),
+        border: Border(
+          right: BorderSide(color: palette.border.withValues(alpha: 0.48)),
+        ),
       ),
       child: SafeArea(
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: expanded ? 16 : 13),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SizedBox(height: 20),
-              if (expanded)
-                _Brand(dark: dark, palette: palette)
-              else ...[
-                _CompactBrand(dark: dark),
-                const SizedBox(height: 40),
-              ],
-              const SizedBox(height: 10),
-              Align(
-                alignment: Alignment.center,
-                child: SizedBox(
-                  width: railContentWidth,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _RailNavigationButton(
-                        expanded: expanded,
-                        label: l10n.home,
-                        selected:
-                            !settingsSelected &&
-                            !modelsSelected &&
-                            !localModelsSelected,
-                        icon: _RailIcon(
-                          assetPath: 'assets/icons/home.svg',
-                          color:
-                              settingsSelected ||
-                                  modelsSelected ||
-                                  localModelsSelected
-                              ? palette.secondaryIcon
-                              : palette.accentIcon,
-                        ),
-                        palette: palette,
-                        onPressed: onOpenChat,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final content = Padding(
+              padding: EdgeInsets.symmetric(horizontal: expanded ? 16 : 1.5),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 20),
+                  if (expanded)
+                    _Brand(palette: palette)
+                  else if (showBrand) ...[
+                    const _CompactBrand(),
+                    const SizedBox(height: 40),
+                  ] else
+                    const SizedBox(height: 10),
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.center,
+                    child: SizedBox(
+                      width: railContentWidth,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _RailNavigationButton(
+                            expanded: expanded,
+                            label: l10n.home,
+                            selected:
+                                !settingsSelected &&
+                                !modelsSelected &&
+                                !localModelsSelected,
+                            icon: _RailIcon(
+                              assetPath: 'assets/icons/home.svg',
+                              color:
+                                  settingsSelected ||
+                                      modelsSelected ||
+                                      localModelsSelected
+                                  ? palette.secondaryIcon
+                                  : palette.accentIcon,
+                            ),
+                            palette: palette,
+                            onPressed: onOpenChat,
+                          ),
+                          if (onOpenModels case final openModels?) ...[
+                            const SizedBox(height: 8),
+                            _RailNavigationButton(
+                              expanded: expanded,
+                              label: l10n.models,
+                              selected: modelsSelected,
+                              icon: Icon(
+                                Icons.view_list_rounded,
+                                color: modelsSelected
+                                    ? palette.accentIcon
+                                    : palette.secondaryIcon,
+                                size: 19,
+                              ),
+                              palette: palette,
+                              onPressed: openModels,
+                            ),
+                          ],
+                          if (onOpenLocalModels
+                              case final openLocalModels?) ...[
+                            const SizedBox(height: 8),
+                            _RailNavigationButton(
+                              expanded: expanded,
+                              label: l10n.localModelsPageTitle,
+                              selected: localModelsSelected,
+                              icon: Icon(
+                                Icons.folder_copy_outlined,
+                                color: localModelsSelected
+                                    ? palette.accentIcon
+                                    : palette.secondaryIcon,
+                                size: 19,
+                              ),
+                              palette: palette,
+                              onPressed: openLocalModels,
+                            ),
+                          ],
+                        ],
                       ),
-                      if (onOpenModels case final openModels?) ...[
-                        const SizedBox(height: 8),
-                        _RailNavigationButton(
-                          expanded: expanded,
-                          label: l10n.models,
-                          selected: modelsSelected,
-                          icon: Icon(
-                            Icons.view_list_rounded,
-                            color: modelsSelected
-                                ? palette.accentIcon
-                                : palette.secondaryIcon,
-                            size: 19,
-                          ),
-                          palette: palette,
-                          onPressed: openModels,
-                        ),
-                      ],
-                      if (onOpenLocalModels case final openLocalModels?) ...[
-                        const SizedBox(height: 8),
-                        _RailNavigationButton(
-                          expanded: expanded,
-                          label: l10n.localModelsPageTitle,
-                          selected: localModelsSelected,
-                          icon: Icon(
-                            Icons.folder_copy_outlined,
-                            color: localModelsSelected
-                                ? palette.accentIcon
-                                : palette.secondaryIcon,
-                            size: 19,
-                          ),
-                          palette: palette,
-                          onPressed: openLocalModels,
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
-                ),
-              ),
-              const Spacer(),
-              Align(
-                alignment: Alignment.center,
-                child: SizedBox(
-                  width: railContentWidth,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Divider(height: 1, color: palette.border),
-                      const SizedBox(height: 8),
-                      Tooltip(
-                        message: dark
-                            ? l10n.switchToLightMode
-                            : l10n.switchToDarkMode,
-                        child: _ThemeButton(
-                          expanded: expanded,
-                          label: l10n.theme,
-                          palette: palette,
-                          onPressed: onToggleTheme,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      _RailNavigationButton(
-                        expanded: expanded,
-                        label: l10n.settings,
-                        selected: settingsSelected,
-                        icon: _RailIcon(
-                          assetPath: 'assets/icons/settings.svg',
-                          color: settingsSelected
-                              ? palette.accentIcon
-                              : palette.secondaryIcon,
-                        ),
-                        palette: palette,
-                        onPressed: onOpenSettings,
-                      ),
-                      if (onToggleSidebars case final toggleSidebars?) ...[
-                        const SizedBox(height: 8),
-                        _RailNavigationButton(
-                          expanded: expanded,
-                          label: sidebarsCompact
-                              ? l10n.showSidebars
-                              : l10n.collapseSidebars,
-                          selected: false,
-                          icon: Icon(
-                            sidebarsCompact
-                                ? Icons.chevron_right_rounded
-                                : Icons.chevron_left_rounded,
-                            color: palette.secondaryIcon,
-                            size: 20,
+                  const Spacer(),
+                  Align(
+                    alignment: Alignment.center,
+                    child: SizedBox(
+                      width: railContentWidth,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Divider(
+                            height: 1,
+                            color: palette.border.withValues(alpha: 0.48),
                           ),
-                          palette: palette,
-                          onPressed: toggleSidebars,
-                        ),
-                      ],
-                    ],
+                          const SizedBox(height: 8),
+                          Tooltip(
+                            message: dark
+                                ? l10n.switchToLightMode
+                                : l10n.switchToDarkMode,
+                            child: _ThemeButton(
+                              expanded: expanded,
+                              label: l10n.theme,
+                              palette: palette,
+                              onPressed: onToggleTheme,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          _RailNavigationButton(
+                            expanded: expanded,
+                            label: l10n.settings,
+                            selected: settingsSelected,
+                            icon: _RailIcon(
+                              assetPath: 'assets/icons/settings.svg',
+                              color: settingsSelected
+                                  ? palette.accentIcon
+                                  : palette.secondaryIcon,
+                            ),
+                            palette: palette,
+                            onPressed: onOpenSettings,
+                          ),
+                          if (onToggleSidebars case final toggleSidebars?) ...[
+                            const SizedBox(height: 8),
+                            _RailNavigationButton(
+                              expanded: expanded,
+                              label: sidebarsCompact
+                                  ? l10n.showSidebars
+                                  : l10n.collapseSidebars,
+                              selected: false,
+                              icon: Icon(
+                                sidebarsCompact
+                                    ? Icons.chevron_right_rounded
+                                    : Icons.chevron_left_rounded,
+                                color: palette.secondaryIcon,
+                                size: 20,
+                              ),
+                              palette: palette,
+                              onPressed: toggleSidebars,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(height: 16),
+                ],
               ),
-              const SizedBox(height: 16),
-            ],
-          ),
+            );
+            if (constraints.maxHeight >= 480) return content;
+            return SingleChildScrollView(
+              child: SizedBox(height: 480, child: content),
+            );
+          },
         ),
       ),
     );
@@ -193,14 +211,13 @@ class ChatNavigationRail extends StatelessWidget {
 }
 
 class _Brand extends StatelessWidget {
-  const _Brand({required this.dark, required this.palette});
+  const _Brand({required this.palette});
 
-  final bool dark;
   final OpenChatPalette palette;
 
   @override
   Widget build(BuildContext context) {
-    final mark = _BrandMark(dark: dark, size: 58.8);
+    const mark = OpenChatBrandMark(size: 58.8);
 
     return Semantics(
       label: 'OpenChat',
@@ -234,93 +251,14 @@ class _Brand extends StatelessWidget {
 }
 
 class _CompactBrand extends StatelessWidget {
-  const _CompactBrand({required this.dark});
-
-  final bool dark;
+  const _CompactBrand();
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
       key: const ValueKey<String>('compact-brand'),
       borderRadius: BorderRadius.circular(8),
-      child: _BrandMark(dark: dark, size: 44),
-    );
-  }
-}
-
-class _BrandMark extends StatelessWidget {
-  const _BrandMark({required this.dark, required this.size});
-
-  final bool dark;
-  final double size;
-
-  static const _sourceSize = 58.8;
-
-  @override
-  Widget build(BuildContext context) {
-    final layerRoot = dark ? 'assets/brand/dark' : 'assets/brand/light';
-
-    return SizedBox(
-      width: size,
-      height: size,
-      child: FittedBox(
-        fit: BoxFit.contain,
-        child: ClipRect(
-          child: SizedBox(
-            width: _sourceSize,
-            height: _sourceSize,
-            child: Stack(
-              children: [
-                Positioned(
-                  left: -11.76,
-                  top: -11.76,
-                  width: 81.87,
-                  height: 81.87,
-                  child: SvgPicture.asset('$layerRoot/base.svg'),
-                ),
-                const Positioned(
-                  left: 5.08,
-                  top: 8.74,
-                  width: 22.67,
-                  height: 42.91,
-                  child: _BrandLayer(fileName: 'left.svg'),
-                ),
-                const Positioned(
-                  left: 31.02,
-                  top: 8.74,
-                  width: 22.67,
-                  height: 42.91,
-                  child: _BrandLayer(fileName: 'right.svg'),
-                ),
-                const Positioned(
-                  left: 22.95,
-                  top: 3.98,
-                  width: 12.86,
-                  height: 36.6,
-                  child: _BrandLayer(fileName: 'copper-core.svg'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BrandLayer extends StatelessWidget {
-  const _BrandLayer({required this.fileName});
-
-  final String fileName;
-
-  @override
-  Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final layerRoot = dark ? 'assets/brand/dark' : 'assets/brand/light';
-    return SvgPicture.asset(
-      '$layerRoot/$fileName',
-      fit: BoxFit.fill,
-      excludeFromSemantics: true,
+      child: const OpenChatBrandMark(size: 44),
     );
   }
 }

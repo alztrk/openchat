@@ -29,8 +29,9 @@ pub use conversations::{
 };
 pub use memory::{
     ArchiveIndexSettings, ArchiveIndexTool, ArchivedMemoryExcerpt, archive_index_settings,
-    prepare_semantic_search, retrieve_archived_memories, search_conversation_archive,
-    semantic_search_is_ready, set_archive_tool_included, set_conversation_archive_included,
+    prepare_semantic_search, retrieve_archived_memories, search_chat_history,
+    search_conversation_archive, semantic_search_is_ready, set_archive_tool_included,
+    set_conversation_archive_included,
 };
 pub use models::{list_fresh_models, list_models, save_models, selected_model};
 pub use usage::{latest_usage_snapshot, save_usage_snapshot};

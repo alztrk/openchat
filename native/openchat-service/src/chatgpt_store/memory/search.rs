@@ -2,13 +2,14 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::{Connection, params};
 
-use super::{ArchivedMemoryExcerpt, index};
+use super::{ArchivedMemoryExcerpt, HistorySearchResult, index};
 
 const MAX_SEARCH_TERMS: usize = 12;
 const MAX_SEARCH_TERM_CHARS: usize = 128;
 const MAX_RESULTS: i64 = 16;
 const MAX_SNIPPET_WORDS: i64 = 256;
 pub(super) const MAX_ARCHIVE_SEARCH_RESULTS: i64 = 20;
+pub(super) const MAX_HISTORY_SEARCH_RESULTS: i64 = 30;
 pub(super) const ARCHIVE_SEARCH_SNIPPET_WORDS: i64 = 48;
 pub(super) const MAX_ARCHIVE_SEARCH_QUERY_CHARS: usize = 512;
 pub(super) const MAX_ARCHIVE_EXCERPT_CHARS: usize = 4096;
@@ -173,6 +174,78 @@ pub(super) fn search_archived_memories_from_connection(
     rows.collect()
 }
 
+pub(super) fn search_chat_history_from_connection(
+    connection: &Connection,
+    search_expression: &str,
+    result_limit: i64,
+) -> rusqlite::Result<Vec<HistorySearchResult>> {
+    index::ensure_all_archived_memory_indexes(connection)?;
+    let mut statement = connection.prepare(
+        "WITH matches AS (
+             SELECT message.conversation_id, message.id AS message_id, message.role,
+                    snippet(conversation_memory_fts, 4, '[match]', '[/match]', ' … ', 48) AS excerpt,
+                    bm25(conversation_memory_fts, 0.0, 0.0, 0.0, 0.0, 1.0) AS score,
+                    0 AS source,
+                    COALESCE(message.created_at, 0) AS created_at
+             FROM conversation_memory_fts
+             JOIN messages AS message ON message.rowid = conversation_memory_fts.rowid
+             WHERE conversation_memory_fts MATCH ?1
+               AND COALESCE((
+                    SELECT included FROM conversation_memory_archive_settings
+                    WHERE conversation_id = message.conversation_id
+               ), 1) = 1
+             UNION ALL
+             SELECT message.conversation_id, message.id AS message_id, message.role,
+                    snippet(conversation_memory_tools_fts, 4, '[match]', '[/match]', ' … ', 48) AS excerpt,
+                    bm25(conversation_memory_tools_fts, 0.0, 0.0, 0.0, 0.0, 1.0) AS score,
+                    1 AS source,
+                    COALESCE(message.created_at, 0) AS created_at
+             FROM conversation_memory_tools_fts
+             JOIN messages AS message ON message.rowid = conversation_memory_tools_fts.rowid
+             WHERE conversation_memory_tools_fts MATCH ?1
+               AND COALESCE((
+                    SELECT included FROM conversation_memory_archive_settings
+                    WHERE conversation_id = message.conversation_id
+               ), 1) = 1
+         ), ranked AS (
+             SELECT conversation_id, message_id, role, excerpt, created_at,
+                    row_number() OVER (
+                        PARTITION BY source
+                        ORDER BY score, created_at DESC, message_id DESC
+                    ) AS source_rank
+             FROM matches
+         ), deduplicated AS (
+             SELECT conversation_id, message_id, role,
+                    group_concat(excerpt, ' … ') AS excerpt,
+                    MAX(created_at) AS created_at,
+                    SUM(1.0 / (60 + source_rank)) AS relevance
+             FROM ranked
+             GROUP BY conversation_id, message_id, role
+         )
+         SELECT deduplicated.conversation_id, conversation.title,
+                deduplicated.message_id, deduplicated.role,
+                deduplicated.excerpt, deduplicated.created_at
+         FROM deduplicated
+         JOIN conversations AS conversation
+           ON conversation.id = deduplicated.conversation_id
+         ORDER BY deduplicated.relevance DESC,
+                  deduplicated.created_at DESC,
+                  deduplicated.message_id DESC
+         LIMIT ?2",
+    )?;
+    let rows = statement.query_map(params![search_expression, result_limit], |row| {
+        Ok(HistorySearchResult {
+            conversation_id: row.get(0)?,
+            conversation_title: row.get(1)?,
+            message_id: row.get(2)?,
+            role: row.get(3)?,
+            excerpt: bounded_archive_excerpt(row.get(4)?),
+            created_at_unix_ms: row.get(5)?,
+        })
+    })?;
+    rows.collect()
+}
+
 pub(super) fn bounded_archive_excerpt(content: String) -> String {
     let mut characters = content.chars();
     let mut excerpt = characters
@@ -211,6 +284,21 @@ pub(super) fn retrieval_limits(context_window: Option<i64>) -> Option<(i64, i64)
 }
 
 pub(super) fn search_expression(conversation_id: &str, query: &str) -> Option<String> {
+    let content_expression = content_search_expression(query)?;
+    let mut scope_token = String::with_capacity(5 + conversation_id.len() * 2);
+    scope_token.push_str("scope");
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    for byte in conversation_id.as_bytes() {
+        scope_token.push(HEX[(byte >> 4) as usize] as char);
+        scope_token.push(HEX[(byte & 0x0f) as usize] as char);
+    }
+
+    Some(format!(
+        "scope_token : {scope_token} AND {content_expression}"
+    ))
+}
+
+pub(super) fn content_search_expression(query: &str) -> Option<String> {
     let mut terms = Vec::<String>::with_capacity(MAX_SEARCH_TERMS);
     let mut seen = HashSet::with_capacity(MAX_SEARCH_TERMS);
     for term in query.split(|character: char| !character.is_alphanumeric()) {
@@ -243,20 +331,10 @@ pub(super) fn search_expression(conversation_id: &str, query: &str) -> Option<St
         return None;
     }
 
-    let mut scope_token = String::with_capacity(5 + conversation_id.len() * 2);
-    scope_token.push_str("scope");
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    for byte in conversation_id.as_bytes() {
-        scope_token.push(HEX[(byte >> 4) as usize] as char);
-        scope_token.push(HEX[(byte & 0x0f) as usize] as char);
-    }
-
     let content_terms = terms
         .iter()
         .map(|term| format!("\"{term}\""))
         .collect::<Vec<_>>()
         .join(" OR ");
-    Some(format!(
-        "scope_token : {scope_token} AND content : ({content_terms})"
-    ))
+    Some(format!("content : ({content_terms})"))
 }

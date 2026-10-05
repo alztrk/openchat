@@ -10,11 +10,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/openchat_toast.dart';
+import 'package:openchat/app/openchat_window_title_bar.dart';
 import 'package:openchat/features/chat/data/chat_repository.dart';
 import 'package:openchat/features/chat/data/chat_stream_message_persister.dart';
 import 'package:openchat/features/chat/data/chat_attachment_store.dart';
 import 'package:openchat/features/chat/data/chat_file_changes_repository.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
+import 'package:openchat/features/chat/data/history_search_repository.dart';
 import 'package:openchat/features/chat/domain/chat_conversation.dart';
 import 'package:openchat/features/chat/domain/agent_question.dart';
 import 'package:openchat/features/chat/domain/chat_file_change.dart';
@@ -25,6 +27,7 @@ import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
 import 'package:openchat/features/chat/domain/default_model_preference.dart';
 import 'package:openchat/features/chat/domain/history_storage_status.dart';
+import 'package:openchat/features/chat/domain/history_search_result.dart';
 import 'package:openchat/features/chat/domain/model_favorite.dart';
 import 'package:openchat/features/chat/domain/tool_permission_request.dart';
 import 'package:openchat/features/models/data/hugging_face_models_repository.dart';
@@ -39,6 +42,7 @@ import 'package:openchat/features/settings/presentation/settings_screen.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/platform/windows/openchat_service_client.dart';
 import 'package:openchat/platform/windows/user_question_notifications.dart';
+import 'package:openchat/platform/windows/window_controls.dart';
 
 import 'package:openchat/features/chat/presentation/conversation_markdown_export.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_navigation_rail.dart';
@@ -181,6 +185,18 @@ class _ChatScreenState extends State<ChatScreen> {
   int _fileChangesRevision = 0;
   int _fileChangesLoadGeneration = 0;
   bool _isFileChangesPanelOpen = false;
+  HistorySearchRepository? _historySearchRepository;
+  String? _historySearchQuery;
+  List<HistorySearchResult> _historySearchResults =
+      const <HistorySearchResult>[];
+  String? _historySearchErrorCode;
+  bool _isSearchingHistory = false;
+  int _historySearchGeneration = 0;
+  Timer? _historySearchDebounceTimer;
+  bool _isHistorySearchOpen = false;
+  String? _historyTargetConversationId;
+  String? _historyTargetMessageId;
+  int _historyTargetRequestId = 0;
   HuggingFaceDownloadController? _modelDownloadController;
 
   @override
@@ -193,6 +209,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _chatFileChangesRepository = serviceClient == null
         ? null
         : ChatFileChangesRepository(serviceClient);
+    _historySearchRepository = serviceClient == null
+        ? null
+        : HistorySearchRepository(serviceClient);
     _modelDownloadController = serviceClient == null
         ? null
         : HuggingFaceDownloadController(
@@ -221,12 +240,20 @@ class _ChatScreenState extends State<ChatScreen> {
       _questionServiceEvents = null;
       _bindQuestionServiceEvents();
       final serviceClient = widget.serviceClient;
+      _historySearchDebounceTimer?.cancel();
+      _historySearchDebounceTimer = null;
+      _historySearchGeneration++;
       _conversationMemoryRepository = serviceClient == null
           ? null
           : ConversationMemoryRepository(serviceClient);
       _chatFileChangesRepository = serviceClient == null
           ? null
           : ChatFileChangesRepository(serviceClient);
+      _historySearchRepository = serviceClient == null
+          ? null
+          : HistorySearchRepository(serviceClient);
+      _isSearchingHistory = false;
+      _historySearchErrorCode = _historySearchQuery == null ? null : 'failed';
       final oldController = _modelDownloadController;
       oldController?.removeListener(_handleModelDownloadChanged);
       oldController?.dispose();
@@ -269,16 +296,21 @@ class _ChatScreenState extends State<ChatScreen> {
         : repository.watchMessages(selectedId);
   }
 
-  void _selectConversation(String conversationId) {
+  void _selectConversation(String conversationId, {String? historyMessageId}) {
     _modelSelectionGeneration++;
     _questionListGeneration++;
     _fileChangesLoadGeneration++;
     _resetMessageScroll();
+    _historyTargetRequestId++;
     setState(() {
       _selectedConversationId = conversationId;
       _isFileChangesPanelOpen = false;
       _fileChangesConversationId = null;
       _conversationFileChanges = const <ChatFileChange>[];
+      _historyTargetConversationId = historyMessageId == null
+          ? null
+          : conversationId;
+      _historyTargetMessageId = historyMessageId;
       _settingsOpen = false;
       _modelsPageOpen = false;
       _localModelsPageOpen = false;
@@ -353,6 +385,146 @@ class _ChatScreenState extends State<ChatScreen> {
   void _closeConversationFileChanges() {
     if (!_isFileChangesPanelOpen) return;
     setState(() => _isFileChangesPanelOpen = false);
+  }
+
+  void _openHistorySearch() {
+    if (_isHistorySearchOpen) return;
+    setState(() => _isHistorySearchOpen = true);
+  }
+
+  void _closeHistorySearch() {
+    _historySearchDebounceTimer?.cancel();
+    _historySearchDebounceTimer = null;
+    _historySearchGeneration++;
+    _searchController.clear();
+    setState(() {
+      _isHistorySearchOpen = false;
+      _historySearchQuery = null;
+      _historySearchResults = const <HistorySearchResult>[];
+      _historySearchErrorCode = null;
+      _isSearchingHistory = false;
+    });
+  }
+
+  void _handleHistorySearchChanged(String rawQuery) {
+    final query = rawQuery.trim();
+    final queryLength = query.runes.length;
+    _historySearchDebounceTimer?.cancel();
+    _historySearchDebounceTimer = null;
+    if (query.isEmpty || queryLength < 2 || queryLength > 512) {
+      _submitHistorySearch(query);
+      return;
+    }
+
+    final repository = _historySearchRepository;
+    if (repository == null) {
+      _submitHistorySearch(query);
+      return;
+    }
+
+    final generation = ++_historySearchGeneration;
+    setState(() {
+      _historySearchQuery = query;
+      _historySearchResults = const <HistorySearchResult>[];
+      _historySearchErrorCode = null;
+      _isSearchingHistory = true;
+    });
+    _historySearchDebounceTimer = Timer(const Duration(milliseconds: 240), () {
+      _historySearchDebounceTimer = null;
+      unawaited(_loadHistorySearchResults(repository, query, generation));
+    });
+  }
+
+  void _submitHistorySearch(String rawQuery) {
+    _historySearchDebounceTimer?.cancel();
+    _historySearchDebounceTimer = null;
+    final query = rawQuery.trim();
+    final generation = ++_historySearchGeneration;
+    final queryLength = query.runes.length;
+    if (query.isEmpty) {
+      setState(() {
+        _historySearchQuery = null;
+        _historySearchResults = const <HistorySearchResult>[];
+        _historySearchErrorCode = null;
+        _isSearchingHistory = false;
+      });
+      return;
+    }
+    if (queryLength < 2 || queryLength > 512) {
+      setState(() {
+        _historySearchQuery = query;
+        _historySearchResults = const <HistorySearchResult>[];
+        _historySearchErrorCode = queryLength < 2 ? 'too_short' : 'too_long';
+        _isSearchingHistory = false;
+      });
+      return;
+    }
+    final repository = _historySearchRepository;
+    if (repository == null) {
+      setState(() {
+        _historySearchQuery = query;
+        _historySearchResults = const <HistorySearchResult>[];
+        _historySearchErrorCode = 'failed';
+        _isSearchingHistory = false;
+      });
+      return;
+    }
+    setState(() {
+      _historySearchQuery = query;
+      _historySearchResults = const <HistorySearchResult>[];
+      _historySearchErrorCode = null;
+      _isSearchingHistory = true;
+    });
+    unawaited(_loadHistorySearchResults(repository, query, generation));
+  }
+
+  Future<void> _loadHistorySearchResults(
+    HistorySearchRepository repository,
+    String query,
+    int generation,
+  ) async {
+    try {
+      final results = await repository.search(query);
+      if (!mounted || generation != _historySearchGeneration) return;
+      setState(() {
+        _historySearchResults = results;
+        _historySearchErrorCode = null;
+        _isSearchingHistory = false;
+      });
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_history_search',
+          context: ErrorDescription('while searching saved chat messages'),
+        ),
+      );
+      if (!mounted || generation != _historySearchGeneration) return;
+      setState(() {
+        _historySearchResults = const <HistorySearchResult>[];
+        _historySearchErrorCode = 'failed';
+        _isSearchingHistory = false;
+      });
+    }
+  }
+
+  void _selectHistorySearchResult(HistorySearchResult result) {
+    _closeHistorySearch();
+    _selectConversation(
+      result.conversationId,
+      historyMessageId: result.messageId,
+    );
+    _scaffoldKey.currentState?.closeDrawer();
+  }
+
+  void _handleHistorySearchTarget(String messageId, bool found) {
+    if (!mounted || _historyTargetMessageId != messageId) return;
+    setState(() {
+      _historyTargetConversationId = null;
+      _historyTargetMessageId = null;
+    });
+    if (!found) _showMessage(context.openchatL10n.searchMessageUnavailable);
   }
 
   void _bindQuestionServiceEvents() {
@@ -1700,6 +1872,7 @@ class _ChatScreenState extends State<ChatScreen> {
   void _startNewConversation() {
     _modelSelectionGeneration++;
     _fileChangesLoadGeneration++;
+    _historyTargetRequestId++;
     _resetMessageScroll();
     _hasUserSelectedProvider = false;
     final defaultModel = _defaultModelPreference;
@@ -1708,6 +1881,8 @@ class _ChatScreenState extends State<ChatScreen> {
       _isFileChangesPanelOpen = false;
       _fileChangesConversationId = null;
       _conversationFileChanges = const <ChatFileChange>[];
+      _historyTargetConversationId = null;
+      _historyTargetMessageId = null;
       _selectedProviderId = defaultModel != null
           ? defaultModel.providerId
           : _preferredProviderId();
@@ -1767,10 +1942,13 @@ class _ChatScreenState extends State<ChatScreen> {
     );
     if (!mounted) return;
     _modelSelectionGeneration++;
+    _historyTargetRequestId++;
     _resetMessageScroll();
     _messageController.clear();
     setState(() {
       _selectedConversationId = null;
+      _historyTargetConversationId = null;
+      _historyTargetMessageId = null;
       _messageStream = null;
       _pendingQuestionGroups = const <AgentQuestionGroup>[];
       _isLoadingPendingQuestions = false;
@@ -3174,6 +3352,8 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _historySearchDebounceTimer?.cancel();
+    _historySearchGeneration++;
     _fileChangesLoadGeneration++;
     unawaited(_questionServiceEvents?.cancel());
     _pendingAttachments.clear();
@@ -3228,10 +3408,9 @@ class _ChatScreenState extends State<ChatScreen> {
             final showSidebar =
                 !_settingsOpen &&
                 !_modelsPageOpen &&
-                constraints.maxWidth >= OpenChatSpacing.sidebarBreakpoint;
-            final expandedRail =
+                !_localModelsPageOpen &&
                 !_sidebarsCompact &&
-                constraints.maxWidth >= OpenChatSpacing.expandedRailBreakpoint;
+                constraints.maxWidth >= OpenChatSpacing.sidebarBreakpoint;
             final sidebarWidth = _sidebarsCompact
                 ? OpenChatSpacing.collapsedSidebarWidth
                 : constraints.maxWidth >= OpenChatSpacing.fullSidebarBreakpoint
@@ -3270,116 +3449,154 @@ class _ChatScreenState extends State<ChatScreen> {
                         ),
                       ),
                     ),
-              body: Stack(
+              body: Column(
                 children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      ChatNavigationRail(
-                        expanded: expandedRail,
-                        settingsSelected: _settingsOpen,
-                        modelsSelected: _modelsPageOpen,
-                        localModelsSelected: _localModelsPageOpen,
-                        onOpenChat: _startNewConversation,
-                        onOpenSettings: () => setState(() {
-                          _settingsOpen = true;
-                          _modelsPageOpen = false;
-                          _localModelsPageOpen = false;
-                        }),
-                        onOpenModels: () => setState(() {
-                          _modelsPageOpen = true;
-                          _settingsOpen = false;
-                          _localModelsPageOpen = false;
-                        }),
-                        onOpenLocalModels: () => setState(() {
-                          _localModelsPageOpen = true;
-                          _settingsOpen = false;
-                          _modelsPageOpen = false;
-                        }),
-                        onToggleTheme: _handleThemeToggle,
-                        sidebarsCompact: _sidebarsCompact,
-                        onToggleSidebars: () => setState(
-                          () => _sidebarsCompact = !_sidebarsCompact,
-                        ),
-                      ),
-                      if (_settingsOpen)
-                        Expanded(
-                          child: SettingsScreen(
-                            themeMode: widget.themeMode,
-                            locale: widget.locale,
-                            conversationWidth: widget.conversationWidth,
-                            conversationTextSize: widget.conversationTextSize,
-                            appFont: widget.appFont,
-                            settingsPreferences: _settingsPreferences,
-                            onThemeModeChanged: widget.onThemeModeChanged,
-                            onLocaleChanged: widget.onLocaleChanged,
-                            onConversationWidthChanged:
-                                widget.onConversationWidthChanged,
-                            onConversationTextSizeChanged:
-                                widget.onConversationTextSizeChanged,
-                            onAppFontChanged: widget.onAppFontChanged,
-                            historyStorageStatus: resolvedStorageStatus,
-                            hasConversationHistory: conversations.isNotEmpty,
-                            activeConversationId: selectedConversation?.id,
-                            activeConversationTitle:
-                                selectedConversation?.title,
-                            isActiveConversationSending:
-                                _isSending &&
-                                _activeChatConversationId ==
-                                    selectedConversation?.id,
-                            onClearConversationHistory:
-                                widget.chatRepository == null
-                                ? null
-                                : _clearConversationHistory,
-                            chatGptApiKeyStore: widget.chatGptApiKeyStore,
-                            apiCompatibleProviderKeyStore:
-                                widget.apiCompatibleProviderKeyStore,
-                            openCodeApiKeyStore: widget.openCodeApiKeyStore,
-                            serviceClient: widget.serviceClient,
-                            chatRepository: widget.chatRepository,
-                            onProviderStateChanged: _refreshProviderState,
-                            onConnectionRemoved: _handleConnectionRemoved,
-                          ),
-                        )
-                      else if (_modelsPageOpen)
-                        Expanded(
-                          child: ModelsPage(
-                            serviceClient: widget.serviceClient,
-                            downloadController: _modelDownloadController,
-                            settingsPreferences: _settingsPreferences,
-                          ),
-                        )
-                      else if (_localModelsPageOpen)
-                        Expanded(
-                          child: LocalModelsPage(
-                            serviceClient: widget.serviceClient,
-                            onOpenModelCatalog: () => setState(() {
-                              _modelsPageOpen = true;
-                              _localModelsPageOpen = false;
-                            }),
-                          ),
-                        )
-                      else ...[
-                        if (showSidebar)
-                          _buildSidebar(
-                            width: sidebarWidth,
-                            conversations: conversations,
-                            selectedConversationId: _selectedConversationId,
-                            isLoading: isLoading,
-                            errorMessage: historyError,
-                            onRetryStorage:
-                                resolvedStorageStatus ==
-                                    HistoryStorageStatus.unavailable
-                                ? widget.onRetryStorage
-                                : null,
-                          ),
-                        Expanded(
-                          child: _buildConversationPane(
-                            selectedConversation: selectedConversation,
-                          ),
+                  const OpenChatWindowTitleBar(),
+                  Expanded(
+                    child: Stack(
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            ChatNavigationRail(
+                              expanded: false,
+                              showBrand: !OpenChatWindowControls.isSupportedOn(
+                                Theme.of(context).platform,
+                              ),
+                              settingsSelected: _settingsOpen,
+                              modelsSelected: _modelsPageOpen,
+                              localModelsSelected: _localModelsPageOpen,
+                              onOpenChat: _startNewConversation,
+                              onOpenSettings: () => setState(() {
+                                _settingsOpen = true;
+                                _modelsPageOpen = false;
+                                _localModelsPageOpen = false;
+                              }),
+                              onOpenModels: () => setState(() {
+                                _modelsPageOpen = true;
+                                _settingsOpen = false;
+                                _localModelsPageOpen = false;
+                              }),
+                              onOpenLocalModels: () => setState(() {
+                                _localModelsPageOpen = true;
+                                _settingsOpen = false;
+                                _modelsPageOpen = false;
+                              }),
+                              onToggleTheme: _handleThemeToggle,
+                              sidebarsCompact: _sidebarsCompact,
+                              onToggleSidebars: () => setState(
+                                () => _sidebarsCompact = !_sidebarsCompact,
+                              ),
+                            ),
+                            if (_settingsOpen)
+                              Expanded(
+                                child: _buildMainSurface(
+                                  child: SettingsScreen(
+                                    themeMode: widget.themeMode,
+                                    locale: widget.locale,
+                                    conversationWidth: widget.conversationWidth,
+                                    conversationTextSize:
+                                        widget.conversationTextSize,
+                                    appFont: widget.appFont,
+                                    settingsPreferences: _settingsPreferences,
+                                    onThemeModeChanged:
+                                        widget.onThemeModeChanged,
+                                    onLocaleChanged: widget.onLocaleChanged,
+                                    onConversationWidthChanged:
+                                        widget.onConversationWidthChanged,
+                                    onConversationTextSizeChanged:
+                                        widget.onConversationTextSizeChanged,
+                                    onAppFontChanged: widget.onAppFontChanged,
+                                    historyStorageStatus: resolvedStorageStatus,
+                                    hasConversationHistory:
+                                        conversations.isNotEmpty,
+                                    activeConversationId:
+                                        selectedConversation?.id,
+                                    activeConversationTitle:
+                                        selectedConversation?.title,
+                                    isActiveConversationSending:
+                                        _isSending &&
+                                        _activeChatConversationId ==
+                                            selectedConversation?.id,
+                                    onClearConversationHistory:
+                                        widget.chatRepository == null
+                                        ? null
+                                        : _clearConversationHistory,
+                                    chatGptApiKeyStore:
+                                        widget.chatGptApiKeyStore,
+                                    apiCompatibleProviderKeyStore:
+                                        widget.apiCompatibleProviderKeyStore,
+                                    openCodeApiKeyStore:
+                                        widget.openCodeApiKeyStore,
+                                    serviceClient: widget.serviceClient,
+                                    chatRepository: widget.chatRepository,
+                                    onProviderStateChanged:
+                                        _refreshProviderState,
+                                    onConnectionRemoved:
+                                        _handleConnectionRemoved,
+                                  ),
+                                ),
+                              )
+                            else if (_modelsPageOpen)
+                              Expanded(
+                                child: _buildMainSurface(
+                                  child: ModelsPage(
+                                    serviceClient: widget.serviceClient,
+                                    downloadController:
+                                        _modelDownloadController,
+                                    settingsPreferences: _settingsPreferences,
+                                  ),
+                                ),
+                              )
+                            else if (_localModelsPageOpen)
+                              Expanded(
+                                child: _buildMainSurface(
+                                  child: LocalModelsPage(
+                                    serviceClient: widget.serviceClient,
+                                    onOpenModelCatalog: () => setState(() {
+                                      _modelsPageOpen = true;
+                                      _localModelsPageOpen = false;
+                                    }),
+                                  ),
+                                ),
+                              )
+                            else ...[
+                              Expanded(
+                                child: _buildMainSurface(
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      if (showSidebar)
+                                        _buildSidebar(
+                                          width: sidebarWidth,
+                                          conversations: conversations,
+                                          selectedConversationId:
+                                              _selectedConversationId,
+                                          isLoading: isLoading,
+                                          errorMessage: historyError,
+                                          onRetryStorage:
+                                              resolvedStorageStatus ==
+                                                  HistoryStorageStatus
+                                                      .unavailable
+                                              ? widget.onRetryStorage
+                                              : null,
+                                        ),
+                                      Expanded(
+                                        child: _buildConversationPane(
+                                          selectedConversation:
+                                              selectedConversation,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                       ],
-                    ],
+                    ),
                   ),
                 ],
               ),
@@ -3387,6 +3604,17 @@ class _ChatScreenState extends State<ChatScreen> {
           },
         );
       },
+    );
+  }
+
+  Widget _buildMainSurface({required Widget child}) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 10, bottom: 10),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(OpenChatRadii.card),
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      ),
     );
   }
 
@@ -3433,6 +3661,16 @@ class _ChatScreenState extends State<ChatScreen> {
           width: width,
           showDivider: showDivider,
           searchController: _searchController,
+          isHistorySearchOpen: _isHistorySearchOpen,
+          onOpenHistorySearch: _openHistorySearch,
+          onCloseHistorySearch: _closeHistorySearch,
+          onSearchChanged: _handleHistorySearchChanged,
+          onSearchSubmitted: _submitHistorySearch,
+          historySearchQuery: _historySearchQuery,
+          historySearchResults: _historySearchResults,
+          isHistorySearchLoading: _isSearchingHistory,
+          historySearchErrorCode: _historySearchErrorCode,
+          onSelectHistoryResult: _selectHistorySearchResult,
           projects: sidebarProjects,
           projectsLoading:
               _projectStream != null &&
@@ -3609,6 +3847,12 @@ class _ChatScreenState extends State<ChatScreen> {
             return ConversationPane(
               messageController: _messageController,
               messageScrollController: _messageScrollController,
+              historySearchTargetMessageId:
+                  _historyTargetConversationId == _selectedConversationId
+                  ? _historyTargetMessageId
+                  : null,
+              historySearchTargetRequestId: _historyTargetRequestId,
+              onHistorySearchTargetHandled: _handleHistorySearchTarget,
               showHistoryButton:
                   MediaQuery.sizeOf(context).width <
                   OpenChatSpacing.sidebarBreakpoint,

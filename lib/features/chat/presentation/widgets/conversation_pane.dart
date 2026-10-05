@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:intl/intl.dart';
@@ -20,7 +21,6 @@ import 'package:openchat/features/chat/domain/model_favorite.dart';
 import 'package:openchat/features/chat/domain/tool_permission_request.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
-import 'package:openchat/platform/windows/window_controls.dart';
 
 import 'package:openchat/features/chat/presentation/widgets/assistant_message.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_attachment_gallery.dart';
@@ -30,7 +30,6 @@ import 'package:openchat/features/chat/presentation/widgets/chat_surface_card.da
 import 'package:openchat/features/chat/presentation/widgets/file_changes_summary_card.dart';
 import 'package:openchat/features/chat/presentation/widgets/tool_permission_card.dart';
 import 'package:openchat/features/chat/presentation/widgets/user_question_card.dart';
-import 'package:openchat/features/chat/presentation/widgets/window_control_bar.dart';
 
 class ConversationPane extends StatelessWidget {
   const ConversationPane({
@@ -104,13 +103,19 @@ class ConversationPane extends StatelessWidget {
     this.pendingQuestionError,
     this.onRetryPendingQuestions,
     this.onSubmitQuestionAnswers,
-    this.showWindowControls,
     this.messageScrollController,
+    this.historySearchTargetMessageId,
+    this.historySearchTargetRequestId = 0,
+    this.onHistorySearchTargetHandled,
     super.key,
   });
 
   final TextEditingController messageController;
   final ScrollController? messageScrollController;
+  final String? historySearchTargetMessageId;
+  final int historySearchTargetRequestId;
+  final void Function(String messageId, bool found)?
+  onHistorySearchTargetHandled;
   final bool showHistoryButton;
   final VoidCallback onOpenHistory;
   final String? historyButtonTooltip;
@@ -192,7 +197,6 @@ class ConversationPane extends StatelessWidget {
     List<AgentQuestionAnswer> answers,
   )?
   onSubmitQuestionAnswers;
-  final bool? showWindowControls;
 
   @override
   Widget build(BuildContext context) {
@@ -204,6 +208,10 @@ class ConversationPane extends StatelessWidget {
         final horizontalPadding = compact
             ? OpenChatSpacing.compactPageHorizontal
             : OpenChatSpacing.pageHorizontal;
+        final conversationStyle = OpenChatConversationStyle.of(context);
+        final composerMaxWidth =
+            OpenChatSpacing.composerMaxWidth *
+            (conversationStyle.maxWidth / OpenChatSpacing.conversationMaxWidth);
 
         final latestFileChanges = _mergeConversationFileChanges(
           messages,
@@ -218,8 +226,6 @@ class ConversationPane extends StatelessWidget {
           onTitleEditFinished: onConversationTitleEditFinished,
           onOpenHistory: onOpenHistory,
           historyButtonTooltip: historyButtonTooltip,
-          showWindowControls:
-              showWindowControls ?? OpenChatWindowControls.isSupported,
         );
         final history = messagesErrorDescription != null
             ? _ConversationMessageError(description: messagesErrorDescription!)
@@ -234,13 +240,15 @@ class ConversationPane extends StatelessWidget {
                 ),
               )
             : messages.isEmpty &&
-                  !showAssistantLoading
+                  !showAssistantLoading &&
+                  historySearchTargetMessageId == null
             ? _NewConversationEmptyState(
                 title: l10n.emptyChatWelcomeTitle,
                 description: l10n.emptyChatWelcomeBody,
               )
             : _ConversationHistory(
                 messages: messages,
+                messagesLoaded: true,
                 showAssistantLoading: showAssistantLoading,
                 assistantModelLabel: assistantModelLabel,
                 onRetryResponse: onRetryResponse,
@@ -248,6 +256,9 @@ class ConversationPane extends StatelessWidget {
                 latestFileChanges: latestFileChanges,
                 controller: messageScrollController,
                 providerId: providerId,
+                targetMessageId: historySearchTargetMessageId,
+                targetRequestId: historySearchTargetRequestId,
+                onTargetHandled: onHistorySearchTargetHandled,
               );
         final composerArea = Padding(
           padding: EdgeInsets.fromLTRB(
@@ -256,117 +267,122 @@ class ConversationPane extends StatelessWidget {
             horizontalPadding,
             24,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (latestFileChanges.isNotEmpty &&
-                  conversationId != null &&
-                  fileChangesRepository != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Center(
-                    child: _FileChangesButton(
-                      changes: latestFileChanges,
-                      onPressed: onOpenFileChanges,
-                    ),
-                  ),
-                ),
-              if (pendingQuestionError case final error?) ...[
-                ChatSurfaceCard(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 10,
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.error_outline_rounded,
-                        size: 16,
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Semantics(
-                          liveRegion: true,
-                          child: Text(
-                            error,
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: composerMaxWidth),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (latestFileChanges.isNotEmpty &&
+                      conversationId != null &&
+                      fileChangesRepository != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Center(
+                        child: _FileChangesButton(
+                          changes: latestFileChanges,
+                          onPressed: onOpenFileChanges,
                         ),
                       ),
-                      TextButton(
-                        onPressed: onRetryPendingQuestions,
-                        child: Text(l10n.retry),
+                    ),
+                  if (pendingQuestionError case final error?) ...[
+                    ChatSurfaceCard(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
                       ),
-                    ],
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.error_outline_rounded,
+                            size: 16,
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Semantics(
+                              liveRegion: true,
+                              child: Text(
+                                error,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: onRetryPendingQuestions,
+                            child: Text(l10n.retry),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  for (final group in pendingQuestionGroups) ...[
+                    UserQuestionCard(
+                      group: group,
+                      focusOnBuild: group.id == focusedQuestionGroupId,
+                      isResuming: isResumingQuestion,
+                      onSubmit: (answers) =>
+                          onSubmitQuestionAnswers?.call(group, answers) ??
+                          Future<String?>.value(l10n.userQuestionUnavailable),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  if (toolPermissionRequest case final request?) ...[
+                    ToolPermissionCard(
+                      request: request,
+                      isResponding: isRespondingToToolPermission,
+                      errorMessage: toolPermissionError,
+                      onApprove: onApproveToolPermission,
+                      onDeny: onDenyToolPermission,
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  ChatComposer(
+                    controller: messageController,
+                    onSendMessage: onSendMessage,
+                    canSendMessage: canSendMessage,
+                    isLoadingModels: isLoadingModels,
+                    isSending: isSending,
+                    onStopMessage: onStopMessage,
+                    modelLabel: selectedModelLabel,
+                    models: models,
+                    favoriteModels: favoriteModels,
+                    providerId: providerId,
+                    isChatGptConnected: isChatGptConnected,
+                    availableProviderIds: availableProviderIds,
+                    onProviderSelected: onProviderSelected,
+                    modelsEmptyLabel: modelsEmptyLabel,
+                    hiddenModelKeys: hiddenModelKeys,
+                    selectedModelId: selectedModelId,
+                    selectedModelRouteKey: selectedModelRouteKey,
+                    onModelSelected: onModelSelected,
+                    onModelFavoriteChanged: onModelFavoriteChanged,
+                    onFavoriteModelSelected: onFavoriteModelSelected,
+                    reasoningLevel: reasoningLevel,
+                    reasoningOptions: reasoningOptions,
+                    onReasoningSelected: onReasoningSelected,
+                    showReasoningSelector: showReasoningSelector,
+                    toolPermissionMode: toolPermissionMode,
+                    onToolPermissionModeChanged: onToolPermissionModeChanged,
+                    messages: messages,
+                    conversationId: conversationId,
+                    contextProviderId: contextProviderId,
+                    contextModelId: contextModelId,
+                    contextSupportsTools: contextSupportsTools,
+                    contextWindow: contextWindow,
+                    contextConnectionId: contextConnectionId,
+                    contextWorkspaceId: contextWorkspaceId,
+                    conversationMemoryRepository: conversationMemoryRepository,
+                    settingsPreferences: settingsPreferences,
+                    pendingAttachments: pendingAttachments,
+                    onAddAttachments: onAddAttachments,
+                    onRemoveAttachment: onRemoveAttachment,
+                    attachmentsEnabled: attachmentsEnabled,
                   ),
-                ),
-                const SizedBox(height: 10),
-              ],
-              for (final group in pendingQuestionGroups) ...[
-                UserQuestionCard(
-                  group: group,
-                  focusOnBuild: group.id == focusedQuestionGroupId,
-                  isResuming: isResumingQuestion,
-                  onSubmit: (answers) =>
-                      onSubmitQuestionAnswers?.call(group, answers) ??
-                      Future<String?>.value(l10n.userQuestionUnavailable),
-                ),
-                const SizedBox(height: 10),
-              ],
-              if (toolPermissionRequest case final request?) ...[
-                ToolPermissionCard(
-                  request: request,
-                  isResponding: isRespondingToToolPermission,
-                  errorMessage: toolPermissionError,
-                  onApprove: onApproveToolPermission,
-                  onDeny: onDenyToolPermission,
-                ),
-                const SizedBox(height: 10),
-              ],
-              ChatComposer(
-                controller: messageController,
-                onSendMessage: onSendMessage,
-                canSendMessage: canSendMessage,
-                isLoadingModels: isLoadingModels,
-                isSending: isSending,
-                onStopMessage: onStopMessage,
-                modelLabel: selectedModelLabel,
-                models: models,
-                favoriteModels: favoriteModels,
-                providerId: providerId,
-                isChatGptConnected: isChatGptConnected,
-                availableProviderIds: availableProviderIds,
-                onProviderSelected: onProviderSelected,
-                modelsEmptyLabel: modelsEmptyLabel,
-                hiddenModelKeys: hiddenModelKeys,
-                selectedModelId: selectedModelId,
-                selectedModelRouteKey: selectedModelRouteKey,
-                onModelSelected: onModelSelected,
-                onModelFavoriteChanged: onModelFavoriteChanged,
-                onFavoriteModelSelected: onFavoriteModelSelected,
-                reasoningLevel: reasoningLevel,
-                reasoningOptions: reasoningOptions,
-                onReasoningSelected: onReasoningSelected,
-                showReasoningSelector: showReasoningSelector,
-                toolPermissionMode: toolPermissionMode,
-                onToolPermissionModeChanged: onToolPermissionModeChanged,
-                messages: messages,
-                conversationId: conversationId,
-                contextProviderId: contextProviderId,
-                contextModelId: contextModelId,
-                contextSupportsTools: contextSupportsTools,
-                contextWindow: contextWindow,
-                contextConnectionId: contextConnectionId,
-                contextWorkspaceId: contextWorkspaceId,
-                conversationMemoryRepository: conversationMemoryRepository,
-                settingsPreferences: settingsPreferences,
-                pendingAttachments: pendingAttachments,
-                onAddAttachments: onAddAttachments,
-                onRemoveAttachment: onRemoveAttachment,
-                attachmentsEnabled: attachmentsEnabled,
+                ],
               ),
-            ],
+            ),
           ),
         );
         final showSidePanel =
@@ -439,6 +455,7 @@ class _ConversationMessageError extends StatelessWidget {
 class _ConversationHistory extends StatefulWidget {
   const _ConversationHistory({
     required this.messages,
+    required this.messagesLoaded,
     required this.showAssistantLoading,
     required this.assistantModelLabel,
     required this.onRetryResponse,
@@ -446,9 +463,13 @@ class _ConversationHistory extends StatefulWidget {
     required this.providerId,
     required this.onOpenFileChanges,
     required this.latestFileChanges,
+    required this.targetMessageId,
+    required this.targetRequestId,
+    required this.onTargetHandled,
   });
 
   final List<ChatMessage> messages;
+  final bool messagesLoaded;
   final bool showAssistantLoading;
   final String? assistantModelLabel;
   final ValueChanged<ChatMessage>? onRetryResponse;
@@ -456,6 +477,9 @@ class _ConversationHistory extends StatefulWidget {
   final String providerId;
   final VoidCallback? onOpenFileChanges;
   final List<ChatFileChange> latestFileChanges;
+  final String? targetMessageId;
+  final int targetRequestId;
+  final void Function(String messageId, bool found)? onTargetHandled;
 
   @override
   State<_ConversationHistory> createState() => _ConversationHistoryState();
@@ -475,11 +499,21 @@ class _ConversationHistoryState extends State<_ConversationHistory> {
   double? _middleScrollPointerY;
   bool _followLatestMessage = true;
   bool _isMiddleScrolling = false;
+  final GlobalKey _historySliverKey = GlobalKey();
+  Timer? _targetHighlightTimer;
+  String? _focusedMessageId;
+  int? _handledTargetRequestId;
+  int _targetAttemptGeneration = 0;
 
   @override
   void initState() {
     super.initState();
     _attachScrollController(widget.controller);
+    if (widget.targetMessageId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_focusTargetMessage());
+      });
+    }
   }
 
   @override
@@ -496,12 +530,28 @@ class _ConversationHistoryState extends State<_ConversationHistory> {
     if (oldWidget.controller != widget.controller) {
       _attachScrollController(widget.controller);
     }
-    if (_historyAdvanced(oldWidget)) _scrollToLatestAfterLayout();
+    final targetChanged =
+        oldWidget.targetMessageId != widget.targetMessageId ||
+        oldWidget.targetRequestId != widget.targetRequestId;
+    final targetBecameAvailable =
+        widget.targetMessageId != null &&
+        !oldWidget.messages.any(
+          (message) => message.id == widget.targetMessageId,
+        ) &&
+        widget.messages.any((message) => message.id == widget.targetMessageId);
+    if (widget.targetMessageId != null &&
+        (targetChanged || targetBecameAvailable)) {
+      unawaited(_focusTargetMessage());
+    } else if (_historyAdvanced(oldWidget)) {
+      _scrollToLatestAfterLayout();
+    }
   }
 
   @override
   void dispose() {
     _stopMiddleScrolling(updateUi: false);
+    _targetHighlightTimer?.cancel();
+    _targetAttemptGeneration++;
     _attachScrollController(null);
     super.dispose();
   }
@@ -545,6 +595,152 @@ class _ConversationHistoryState extends State<_ConversationHistory> {
         position.jumpTo(position.maxScrollExtent);
       }
     });
+  }
+
+  Future<void> _focusTargetMessage() async {
+    final messageId = widget.targetMessageId;
+    final requestId = widget.targetRequestId;
+    if (messageId == null || _handledTargetRequestId == requestId) return;
+    if (!widget.messagesLoaded) return;
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted ||
+        widget.targetMessageId != messageId ||
+        widget.targetRequestId != requestId) {
+      return;
+    }
+
+    final targetIndex = widget.messages.indexWhere(
+      (message) => message.id == messageId,
+    );
+    if (targetIndex < 0) {
+      _finishTargetRequest(messageId, requestId, found: false);
+      return;
+    }
+
+    final attemptGeneration = ++_targetAttemptGeneration;
+    _followLatestMessage = false;
+    for (var attempt = 0; attempt < 24; attempt++) {
+      await WidgetsBinding.instance.endOfFrame;
+      if (!mounted ||
+          attemptGeneration != _targetAttemptGeneration ||
+          widget.targetMessageId != messageId ||
+          widget.targetRequestId != requestId) {
+        return;
+      }
+
+      final targetSliverIndex = targetIndex + 1;
+      final targetLayoutOffset = _targetLayoutOffset(targetSliverIndex);
+      final controller = _historyController;
+      if (targetLayoutOffset != null &&
+          controller != null &&
+          controller.hasClients &&
+          controller.position.hasContentDimensions) {
+        final position = controller.position;
+        final targetOffset =
+            targetLayoutOffset - position.viewportDimension * 0.42;
+        final nextOffset = targetOffset
+            .clamp(position.minScrollExtent, position.maxScrollExtent)
+            .toDouble();
+        final disableAnimations = MediaQuery.of(context).disableAnimations;
+        if (disableAnimations) {
+          controller.jumpTo(nextOffset);
+        } else {
+          await controller.animateTo(
+            nextOffset,
+            duration: const Duration(milliseconds: 260),
+            curve: Curves.easeOutCubic,
+          );
+        }
+        if (!mounted || attemptGeneration != _targetAttemptGeneration) return;
+        _targetHighlightTimer?.cancel();
+        setState(() => _focusedMessageId = messageId);
+        _targetHighlightTimer = Timer(const Duration(seconds: 3), () {
+          if (mounted && _focusedMessageId == messageId) {
+            setState(() => _focusedMessageId = null);
+          }
+        });
+        _finishTargetRequest(messageId, requestId, found: true);
+        return;
+      }
+
+      if (!_estimateScrollTowardMessage(targetIndex + 1)) break;
+    }
+    _finishTargetRequest(messageId, requestId, found: false);
+  }
+
+  double? _targetLayoutOffset(int targetSliverIndex) {
+    final renderObject = _historySliverKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderSliverMultiBoxAdaptor) return null;
+    var child = renderObject.firstChild;
+    while (child != null) {
+      if (renderObject.indexOf(child) == targetSliverIndex) {
+        final parentData = child.parentData! as SliverMultiBoxAdaptorParentData;
+        return parentData.layoutOffset;
+      }
+      child = renderObject.childAfter(child);
+    }
+    return null;
+  }
+
+  bool _estimateScrollTowardMessage(int targetSliverIndex) {
+    final controller = _historyController;
+    if (controller == null || !controller.hasClients) return false;
+    final position = controller.position;
+    if (!position.hasContentDimensions) return false;
+
+    final renderObject = _historySliverKey.currentContext?.findRenderObject();
+    if (renderObject is RenderSliverMultiBoxAdaptor &&
+        renderObject.firstChild != null) {
+      final firstChild = renderObject.firstChild!;
+      final lastChild = renderObject.lastChild ?? firstChild;
+      final firstData =
+          firstChild.parentData! as SliverMultiBoxAdaptorParentData;
+      final lastData = lastChild.parentData! as SliverMultiBoxAdaptorParentData;
+      final firstIndex = firstData.index;
+      final lastIndex = lastData.index;
+      final firstOffset = firstData.layoutOffset;
+      final lastOffset = lastData.layoutOffset;
+      if (firstIndex != null &&
+          lastIndex != null &&
+          firstOffset != null &&
+          lastOffset != null) {
+        final itemCount = lastIndex - firstIndex + 1;
+        final measuredExtent = lastOffset + lastChild.size.height - firstOffset;
+        final averageExtent = measuredExtent / itemCount;
+        if (averageExtent.isFinite && averageExtent > 0) {
+          final estimatedOffset =
+              firstOffset +
+              (targetSliverIndex - firstIndex) * averageExtent -
+              position.viewportDimension * 0.42;
+          final nextOffset = estimatedOffset
+              .clamp(position.minScrollExtent, position.maxScrollExtent)
+              .toDouble();
+          if ((nextOffset - position.pixels).abs() >= 1) {
+            controller.jumpTo(nextOffset);
+            return true;
+          }
+        }
+      }
+    }
+
+    final itemCount =
+        widget.messages.length + (widget.showAssistantLoading ? 1 : 0) + 2;
+    if (itemCount < 2) return false;
+    final fraction = targetSliverIndex / (itemCount - 1);
+    final estimatedOffset = position.maxScrollExtent * fraction;
+    if ((estimatedOffset - position.pixels).abs() < 1) return false;
+    controller.jumpTo(estimatedOffset);
+    return true;
+  }
+
+  void _finishTargetRequest(
+    String messageId,
+    int requestId, {
+    required bool found,
+  }) {
+    if (_handledTargetRequestId == requestId) return;
+    _handledTargetRequestId = requestId;
+    widget.onTargetHandled?.call(messageId, found);
   }
 
   void _handlePointerDown(PointerDownEvent event) {
@@ -672,98 +868,138 @@ class _ConversationHistoryState extends State<_ConversationHistory> {
           radius: const Radius.circular(8),
           scrollbarOrientation: ScrollbarOrientation.right,
           child: SelectionArea(
-            child: ListView.builder(
+            child: CustomScrollView(
               primary: controller == null,
               controller: controller,
-              padding: const EdgeInsets.fromLTRB(
-                OpenChatSpacing.pageHorizontal,
-                18,
-                OpenChatSpacing.pageHorizontal,
-                24,
-              ),
-              itemCount: messages.length + (appendLoadingMessage ? 1 : 0),
-              itemBuilder: (context, index) {
-                if (index == messages.length) {
-                  final previousMessage = messages.isEmpty
-                      ? null
-                      : messages.last;
-                  final messageGap = previousMessage == null
-                      ? 0.0
-                      : previousMessage.role == ChatMessageRole.user
-                      ? 2.0
-                      : 18.0;
-                  return Center(
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxWidth: conversationStyle.maxWidth,
-                      ),
-                      child: Padding(
-                        padding: EdgeInsets.only(top: messageGap),
-                        child: AssistantMessageSkeleton(
-                          modelLabel: assistantModelLabel,
-                          providerId: providerId,
-                        ),
-                      ),
-                    ),
-                  );
-                }
-                final message = messages[index];
-                final startsNewDay =
-                    index == 0 ||
-                    !_isSameDay(
-                      messages[index - 1].createdAt,
-                      message.createdAt,
-                    );
-                final previousMessage = index == 0 ? null : messages[index - 1];
-                final messageGap = previousMessage == null || startsNewDay
-                    ? 0.0
-                    : previousMessage.role == ChatMessageRole.user &&
-                          message.role == ChatMessageRole.assistant
-                    ? 2.0
-                    : 18.0;
-
-                return Center(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth: conversationStyle.maxWidth,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        if (index > 0)
-                          SizedBox(height: startsNewDay ? 18 : messageGap),
-                        if (startsNewDay) ...[
-                          _ConversationDateLabel(createdAt: message.createdAt),
-                          const SizedBox(height: 12),
-                        ],
-                        KeyedSubtree(
-                          key: ValueKey<String>(message.id),
-                          child: switch (message.role) {
-                            ChatMessageRole.user => _UserMessage(
-                              message: message,
-                            ),
-                            ChatMessageRole.assistant => AssistantMessage(
-                              message: message,
-                              modelLabel: assistantModelLabel,
-                              providerId: providerId,
-                              onRetry: _canRetryMessage(index)
-                                  ? () => onRetryResponse?.call(message)
-                                  : null,
-                            ),
-                          },
-                        ),
-                        if (message.role == ChatMessageRole.assistant &&
-                            message.status != ChatMessageStatus.streaming)
-                          FileChangesSummaryCard(
-                            message: message,
-                            latestChanges: widget.latestFileChanges,
-                            onViewChanges: widget.onOpenFileChanges,
+              slivers: [
+                SliverList(
+                  key: _historySliverKey,
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      if (index == 0) {
+                        return const SizedBox(
+                          key: ValueKey<String>(
+                            'conversation-history-top-space',
                           ),
-                      ],
-                    ),
+                          height: 18,
+                        );
+                      }
+                      final messageIndex = index - 1;
+                      if (appendLoadingMessage &&
+                          messageIndex == messages.length) {
+                        final previousMessage = messages.isEmpty
+                            ? null
+                            : messages.last;
+                        final messageGap = previousMessage == null
+                            ? 0.0
+                            : previousMessage.role == ChatMessageRole.user
+                            ? 2.0
+                            : 18.0;
+                        return Center(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: conversationStyle.maxWidth,
+                            ),
+                            child: Padding(
+                              padding: EdgeInsets.only(top: messageGap),
+                              child: AssistantMessageSkeleton(
+                                modelLabel: assistantModelLabel,
+                                providerId: providerId,
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                      if (messageIndex >= messages.length) {
+                        return const SizedBox(
+                          key: ValueKey<String>(
+                            'conversation-history-bottom-space',
+                          ),
+                          height: 24,
+                        );
+                      }
+                      final message = messages[messageIndex];
+                      final startsNewDay =
+                          messageIndex == 0 ||
+                          !_isSameDay(
+                            messages[messageIndex - 1].createdAt,
+                            message.createdAt,
+                          );
+                      final previousMessage = messageIndex == 0
+                          ? null
+                          : messages[messageIndex - 1];
+                      final messageGap = previousMessage == null || startsNewDay
+                          ? 0.0
+                          : previousMessage.role == ChatMessageRole.user &&
+                                message.role == ChatMessageRole.assistant
+                          ? 2.0
+                          : 18.0;
+
+                      final isFocusedMessage = message.id == _focusedMessageId;
+                      return Center(
+                        key: ValueKey<String>(message.id),
+                        child: AnimatedContainer(
+                          duration: MediaQuery.of(context).disableAnimations
+                              ? Duration.zero
+                              : const Duration(milliseconds: 220),
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                              color: isFocusedMessage
+                                  ? Theme.of(context).colorScheme.primary
+                                  : Colors.transparent,
+                              width: 1.5,
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: conversationStyle.maxWidth,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                if (messageIndex > 0)
+                                  SizedBox(
+                                    height: startsNewDay ? 18 : messageGap,
+                                  ),
+                                if (startsNewDay) ...[
+                                  _ConversationDateLabel(
+                                    createdAt: message.createdAt,
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
+                                switch (message.role) {
+                                  ChatMessageRole.user => _UserMessage(
+                                    message: message,
+                                  ),
+                                  ChatMessageRole.assistant => AssistantMessage(
+                                    message: message,
+                                    modelLabel: assistantModelLabel,
+                                    providerId: providerId,
+                                    onRetry: _canRetryMessage(messageIndex)
+                                        ? () => onRetryResponse?.call(message)
+                                        : null,
+                                  ),
+                                },
+                                if (message.role == ChatMessageRole.assistant &&
+                                    message.status !=
+                                        ChatMessageStatus.streaming)
+                                  FileChangesSummaryCard(
+                                    message: message,
+                                    latestChanges: widget.latestFileChanges,
+                                    onViewChanges: widget.onOpenFileChanges,
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                    childCount:
+                        messages.length + (appendLoadingMessage ? 1 : 0) + 2,
                   ),
-                );
-              },
+                ),
+              ],
             ),
           ),
         ),
@@ -1093,7 +1329,6 @@ class _ConversationHeader extends StatefulWidget {
     required this.onTitleEditFinished,
     required this.onOpenHistory,
     this.historyButtonTooltip,
-    required this.showWindowControls,
   });
 
   final bool showHistoryButton;
@@ -1105,7 +1340,6 @@ class _ConversationHeader extends StatefulWidget {
   final VoidCallback? onTitleEditFinished;
   final VoidCallback onOpenHistory;
   final String? historyButtonTooltip;
-  final bool showWindowControls;
 
   @override
   State<_ConversationHeader> createState() => _ConversationHeaderState();
@@ -1230,17 +1464,17 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
     final canRename =
         widget.conversationId != null && widget.onRenameConversation != null;
 
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onPanStart: OpenChatWindowControls.isSupported
-          ? (_) => unawaited(OpenChatWindowControls.startDragging())
-          : null,
+    return DecoratedBox(
+      key: const ValueKey<String>('conversation-header'),
+      decoration: BoxDecoration(
+        border: Border(
+          bottom: BorderSide(color: palette.border.withValues(alpha: 0.48)),
+        ),
+      ),
       child: SizedBox(
-        height: 68,
+        height: OpenChatSpacing.conversationHeaderHeight,
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: OpenChatSpacing.pageHorizontal,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             children: [
               if (widget.showHistoryButton) ...[
@@ -1361,7 +1595,6 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
                         ),
                       ),
               ),
-              if (widget.showWindowControls) const WindowControlBar(),
             ],
           ),
         ),

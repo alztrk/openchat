@@ -3,6 +3,7 @@
 #include <dwmapi.h>
 #include <flutter_windows.h>
 
+#include <algorithm>
 #include <optional>
 
 #include "resource.h"
@@ -261,6 +262,15 @@ LRESULT CALLBACK Win32Window::WndProc(HWND const window,
             monitor_info.rcWork.right - monitor_info.rcWork.left;
         min_max_info->ptMaxSize.y =
             monitor_info.rcWork.bottom - monitor_info.rcWork.top;
+        const UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
+        const double scale_factor = dpi / 96.0;
+        // Keep the navigation rail and conversation header usable after restore.
+        min_max_info->ptMinTrackSize.x = std::min(
+            static_cast<LONG>(Scale(900, scale_factor)),
+            min_max_info->ptMaxSize.x);
+        min_max_info->ptMinTrackSize.y = std::min(
+            static_cast<LONG>(Scale(560, scale_factor)),
+            min_max_info->ptMaxSize.y);
         return 0;
       }
     }

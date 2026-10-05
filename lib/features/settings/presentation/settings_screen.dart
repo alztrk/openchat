@@ -11,14 +11,12 @@ import 'package:openchat/features/chat/data/chat_repository.dart';
 import 'package:openchat/features/chat/domain/history_storage_status.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_memory_dialog.dart';
-import 'package:openchat/features/chat/presentation/widgets/window_control_bar.dart';
 import 'package:openchat/features/settings/data/api_compatible_provider_key_store.dart';
 import 'package:openchat/features/settings/data/chat_gpt_api_key_store.dart';
 import 'package:openchat/features/settings/data/open_code_api_key_store.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/platform/windows/openchat_service_client.dart';
-import 'package:openchat/platform/windows/window_controls.dart';
 
 import 'package:openchat/features/settings/presentation/chat_gpt_connection_section.dart';
 import 'package:openchat/features/settings/presentation/compatible_provider_connection_section.dart';
@@ -976,43 +974,37 @@ class _SettingsHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = OpenChatPalette.of(context);
 
-    return GestureDetector(
-      onPanStart: OpenChatWindowControls.isSupported
-          ? (_) => unawaited(OpenChatWindowControls.startDragging())
-          : null,
-      child: SizedBox(
-        height: 68,
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: horizontalInset),
-          child: Row(
-            children: [
-              SvgPicture.asset(
-                'assets/icons/settings.svg',
-                width: 18,
-                height: 18,
-                colorFilter: ColorFilter.mode(
-                  palette.secondaryIcon,
-                  BlendMode.srcIn,
-                ),
-                excludeFromSemantics: true,
+    return SizedBox(
+      height: OpenChatSpacing.conversationHeaderHeight,
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: horizontalInset),
+        child: Row(
+          children: [
+            SvgPicture.asset(
+              'assets/icons/settings.svg',
+              width: 18,
+              height: 18,
+              colorFilter: ColorFilter.mode(
+                palette.secondaryIcon,
+                BlendMode.srcIn,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.text,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    height: 24 / 16,
-                  ),
+              excludeFromSemantics: true,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: palette.text,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  height: 24 / 16,
                 ),
               ),
-              if (OpenChatWindowControls.isSupported) const WindowControlBar(),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

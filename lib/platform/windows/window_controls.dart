@@ -4,8 +4,10 @@ import 'package:flutter/services.dart';
 abstract final class OpenChatWindowControls {
   static const MethodChannel _channel = MethodChannel('openchat/window');
 
-  static bool get isSupported =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.windows;
+  static bool get isSupported => isSupportedOn(defaultTargetPlatform);
+
+  static bool isSupportedOn(TargetPlatform platform) =>
+      !kIsWeb && platform == TargetPlatform.windows;
 
   static Future<void> minimize() async {
     await _channel.invokeMethod<void>('minimize');

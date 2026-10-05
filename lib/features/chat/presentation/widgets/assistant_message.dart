@@ -56,7 +56,7 @@ class AssistantMessage extends StatelessWidget {
         constraints: BoxConstraints(
           maxWidth:
               conversationStyle.maxWidth *
-              (780 / OpenChatSpacing.conversationMaxWidth),
+              (680 / OpenChatSpacing.conversationMaxWidth),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -330,7 +330,7 @@ class AssistantMessageSkeleton extends StatelessWidget {
         constraints: BoxConstraints(
           maxWidth:
               conversationStyle.maxWidth *
-              (780 / OpenChatSpacing.conversationMaxWidth),
+              (680 / OpenChatSpacing.conversationMaxWidth),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

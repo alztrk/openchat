@@ -1742,7 +1742,33 @@ class AppLocalizationsTr extends AppLocalizations {
   String get searchChats => 'Sohbetlerde ara';
 
   @override
-  String get searchChatsHint => 'Sohbetlerde ara';
+  String get searchChatsHint => 'Sohbet ve mesajlarda ara';
+
+  @override
+  String get searchMessagesTooltip => 'Mesajları ara';
+
+  @override
+  String get searchMessagesHeader => 'Mesaj eşleşmeleri';
+
+  @override
+  String get searchMessagesLoading => 'Mesajlar aranıyor…';
+
+  @override
+  String get searchMessagesNoResults => 'Eşleşen mesaj yok.';
+
+  @override
+  String get searchMessagesTooShort =>
+      'Mesaj aramak için en az iki karakter girin.';
+
+  @override
+  String get searchMessagesTooLong =>
+      'Arama metni en fazla 512 karakter olabilir.';
+
+  @override
+  String get searchMessagesFailed => 'Mesajlar aranamadı. Yeniden deneyin.';
+
+  @override
+  String get searchMessageUnavailable => 'Bu mesaj artık kullanılamıyor.';
 
   @override
   String get projects => 'Projeler';

@@ -13,6 +13,16 @@ pub struct ArchivedMemoryExcerpt {
     pub created_at_unix_ms: i64,
 }
 
+#[derive(Clone, Debug)]
+pub struct HistorySearchResult {
+    pub conversation_id: String,
+    pub conversation_title: String,
+    pub message_id: String,
+    pub role: String,
+    pub excerpt: String,
+    pub created_at_unix_ms: i64,
+}
+
 pub use preferences::{ArchiveIndexSettings, ArchiveIndexTool};
 
 pub fn archive_index_settings(
@@ -169,6 +179,29 @@ pub async fn search_conversation_archive(
         semantic_results,
         search::MAX_ARCHIVE_SEARCH_RESULTS as usize,
     ))
+}
+
+pub async fn search_chat_history(
+    storage: &AppStorage,
+    query: &str,
+) -> rusqlite::Result<Vec<HistorySearchResult>> {
+    if query.chars().count() > search::MAX_ARCHIVE_SEARCH_QUERY_CHARS {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    let Some(search_expression) = search::content_search_expression(query) else {
+        return Ok(Vec::new());
+    };
+    let database_path = storage.database_path().to_owned();
+    tokio::task::spawn_blocking(move || {
+        let connection = rusqlite::Connection::open(database_path)?;
+        search::search_chat_history_from_connection(
+            &connection,
+            &search_expression,
+            search::MAX_HISTORY_SEARCH_RESULTS,
+        )
+    })
+    .await
+    .map_err(worker_join_error)?
 }
 
 pub async fn semantic_search_is_ready(storage: &AppStorage) -> bool {

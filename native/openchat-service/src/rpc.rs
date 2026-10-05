@@ -426,6 +426,28 @@ pub(crate) async fn dispatch(
                 })).collect::<Vec<_>>(),
             }))
         }
+        "chat.history.search" => {
+            let query = required_memory_search_query(&request.params)?;
+            let results = chatgpt_store::search_chat_history(storage, query)
+                .await
+                .map_err(|_| {
+                    ServiceError::new(
+                        "history_search_unavailable",
+                        "Conversation history could not be searched.",
+                        true,
+                    )
+                })?;
+            Ok(json!({
+                "results": results.into_iter().map(|result| json!({
+                    "conversationId": result.conversation_id,
+                    "conversationTitle": result.conversation_title,
+                    "messageId": result.message_id,
+                    "role": result.role,
+                    "excerpt": result.excerpt,
+                    "createdAtUnixMs": result.created_at_unix_ms,
+                })).collect::<Vec<_>>(),
+            }))
+        }
         "conversation.archive.export" => {
             let passphrase = required_secret_string(&mut request.params, "passphrase")?;
             let conversation_ids = required_string_array(&request.params, "conversationIds")?;

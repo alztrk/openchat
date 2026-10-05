@@ -195,9 +195,9 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ## 16. Build a searchable conversation library
 
-**Status: planned.** Make long-term chat history practical to browse and maintain.
+**Status: message and completed tool activity search implemented.** Make long-term chat history practical to browse and maintain.
 
-- Extend sidebar title search to messages and completed tool activity, with snippets, match highlighting, and navigation to the matching message.
+- Sidebar search now covers indexed messages and completed tool activity, with snippets, match highlighting, lazy indexing of opted-in conversations, and navigation to the matching message. Provider, model, project, status, and date filters remain planned.
 - Add provider, model, project, status, and date filters. Keep attachment-content indexing separately configurable.
 - Add archive/unarchive, tags, saved searches, bookmarks, multi-select, and transactional bulk move/export/archive actions.
 - Keep the existing per-conversation memory search as a focused context tool; make the broader library search a separate history workflow.

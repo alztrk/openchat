@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/app/openchat_window_title_bar.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/domain/history_storage_status.dart';
 import 'package:openchat/features/chat/presentation/chat_screen.dart';
@@ -10,6 +11,7 @@ import 'package:openchat/features/chat/presentation/widgets/chat_composer.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_navigation_rail.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_sidebar.dart';
+import 'package:openchat/features/chat/presentation/widgets/window_control_bar.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/features/settings/presentation/settings_screen.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
@@ -20,7 +22,7 @@ import 'package:shared_preferences_platform_interface/shared_preferences_async_p
 import 'fixtures/figma_chat_messages.dart';
 import 'fixtures/figma_sidebar_items.dart';
 
-const _mainSurfaceVerticalInset = 10.0;
+const _mainSurfaceBottomInset = 10.0;
 
 late GoldenFileComparator _previousGoldenComparator;
 
@@ -44,6 +46,62 @@ void main() {
   tearDownAll(() {
     goldenFileComparator = _previousGoldenComparator;
     SharedPreferencesAsyncPlatform.instance = null;
+  });
+
+  testWidgets('keeps the app title bar within a narrow restored window', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(160, 40);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('tr'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
+        home: const Scaffold(body: OpenChatWindowTitleBar()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('OpenChat'), findsNothing);
+    expect(find.byType(WindowControlBar), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('scrolls navigation controls in a short window', (tester) async {
+    tester.view.physicalSize = const Size(48, 120);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('tr'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
+        home: Scaffold(
+          body: SizedBox.expand(
+            child: ChatNavigationRail(
+              expanded: false,
+              showBrand: false,
+              settingsSelected: false,
+              onOpenChat: () {},
+              onOpenSettings: () {},
+              onToggleTheme: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('keeps the permission menu compact and without tooltips', (
@@ -167,7 +225,7 @@ void main() {
         theme: appearance.theme,
         size: const Size(1492, 900),
         expandedRail: false,
-        sidebarWidth: 320,
+        sidebarWidth: 300,
         goldenPath: 'goldens/figma-active-compact-${appearance.name}.png',
       );
     });
@@ -221,9 +279,9 @@ void main() {
   }
 
   for (final layout in [
-    (name: 'wide', width: 1680.0, height: 900.0, rail: 260.0, sidebar: 320.0),
-    (name: 'compact', width: 1492.0, height: 900.0, rail: 72.0, sidebar: 320.0),
-    (name: 'narrow', width: 1280.0, height: 720.0, rail: 72.0, sidebar: 280.0),
+    (name: 'wide', width: 1680.0, height: 900.0, rail: 48.0, sidebar: 300.0),
+    (name: 'compact', width: 1492.0, height: 900.0, rail: 48.0, sidebar: 300.0),
+    (name: 'narrow', width: 1280.0, height: 720.0, rail: 48.0, sidebar: 280.0),
   ]) {
     testWidgets('matches the ${layout.name} Figma composition geometry', (
       tester,
@@ -312,7 +370,7 @@ Future<void> _expectCompactNavigationRailMatchesFigma(
   required ThemeData theme,
   required String goldenPath,
 }) async {
-  tester.view.physicalSize = const Size(72, 900);
+  tester.view.physicalSize = const Size(48, 900);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -341,15 +399,15 @@ Future<void> _expectCompactNavigationRailMatchesFigma(
 
   expect(
     tester.getRect(find.byTooltip('Anasayfa')),
-    const Rect.fromLTWH(13.5, 114, 44, 44),
+    const Rect.fromLTWH(1.5, 114, 44, 44),
   );
   expect(
     tester.getRect(find.byType(ChatNavigationRail)),
-    const Rect.fromLTWH(0, 0, 72, 900),
+    const Rect.fromLTWH(0, 0, 48, 900),
   );
   expect(
     tester.getRect(find.byKey(const ValueKey<String>('compact-brand'))),
-    const Rect.fromLTWH(13, 20, 45, 44),
+    const Rect.fromLTWH(1.5, 20, 44, 44),
   );
   expect(find.text('OpenChat'), findsNothing);
 
@@ -388,8 +446,15 @@ Future<void> _expectCompositionGeometry(
   await tester.pumpAndSettle();
 
   final rail = tester.getRect(find.byType(ChatNavigationRail));
+  final appTitleBar = tester.getRect(find.byType(OpenChatWindowTitleBar));
   final sidebar = tester.getRect(find.byType(ConversationSidebar));
   final pane = tester.getRect(find.byType(ConversationPane));
+  final sidebarHeader = tester.getRect(
+    find.byKey(const ValueKey<String>('conversation-sidebar-header')),
+  );
+  final conversationHeader = tester.getRect(
+    find.byKey(const ValueKey<String>('conversation-header')),
+  );
   final divider = tester.getRect(
     find.descendant(
       of: find.byType(ConversationSidebar),
@@ -397,28 +462,52 @@ Future<void> _expectCompositionGeometry(
     ),
   );
 
-  expect(rail, Rect.fromLTWH(0, 0, railWidth, height));
+  expect(
+    rail,
+    Rect.fromLTWH(
+      0,
+      OpenChatSpacing.appTitleBarHeight,
+      railWidth,
+      height - OpenChatSpacing.appTitleBarHeight,
+    ),
+  );
+  expect(appTitleBar.height, OpenChatSpacing.appTitleBarHeight);
+  expect(sidebarHeader.top, appTitleBar.bottom);
+  expect(conversationHeader.top, appTitleBar.bottom);
+  expect(conversationHeader.height, OpenChatSpacing.conversationHeaderHeight);
+  expect(sidebarHeader.height, conversationHeader.height);
+  expect(find.byType(WindowControlBar), findsOneWidget);
+  expect(
+    find.descendant(
+      of: find.byType(ConversationPane),
+      matching: find.byType(WindowControlBar),
+    ),
+    findsNothing,
+  );
   expect(
     sidebar,
     Rect.fromLTWH(
       railWidth,
-      _mainSurfaceVerticalInset,
+      OpenChatSpacing.appTitleBarHeight,
       sidebarWidth,
-      height - 2 * _mainSurfaceVerticalInset,
+      height - OpenChatSpacing.appTitleBarHeight - _mainSurfaceBottomInset,
     ),
   );
   expect(
     pane,
     Rect.fromLTWH(
       railWidth + sidebarWidth,
-      _mainSurfaceVerticalInset,
-      width - railWidth - sidebarWidth - _mainSurfaceVerticalInset,
-      height - 2 * _mainSurfaceVerticalInset,
+      OpenChatSpacing.appTitleBarHeight,
+      width - railWidth - sidebarWidth - _mainSurfaceBottomInset,
+      height - OpenChatSpacing.appTitleBarHeight - _mainSurfaceBottomInset,
     ),
   );
   expect(divider.left, greaterThanOrEqualTo(sidebar.left));
   expect(divider.right, lessThanOrEqualTo(sidebar.right));
   expect(divider.height, greaterThan(0));
+  final composer = tester.getRect(find.byType(ChatComposer));
+  expect(composer.width, OpenChatSpacing.composerMaxWidth);
+  expect(composer.center.dx, pane.center.dx);
   _expectComposerControls(tester, outlinedButtonCount: 3);
 }
 
@@ -505,7 +594,7 @@ Future<void> _pumpSettingsScreen(
     ),
   );
   await tester.pumpAndSettle();
-  await tester.tap(find.text('Ayarlar').first);
+  await tester.tap(find.byTooltip('Ayarlar'));
   await tester.pumpAndSettle();
 }
 
@@ -514,7 +603,7 @@ Future<void> _expectActiveScreenMatchesFigma(
   required ThemeData theme,
   required String goldenPath,
   Size size = const Size(1680, 900),
-  bool expandedRail = true,
+  bool expandedRail = false,
   double sidebarWidth = OpenChatSpacing.sidebarWidth,
 }) async {
   tester.view.physicalSize = size;
@@ -536,43 +625,50 @@ Future<void> _expectActiveScreenMatchesFigma(
       home: RepaintBoundary(
         key: const ValueKey<String>('active-screen-screenshot'),
         child: Scaffold(
-          body: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          body: Column(
             children: [
-              ChatNavigationRail(
-                expanded: expandedRail,
-                settingsSelected: false,
-                onOpenChat: () {},
-                onOpenSettings: () {},
-                onToggleTheme: () {},
-              ),
-              ConversationSidebar(
-                searchController: searchController,
-                width: sidebarWidth,
-                projects: figmaSidebarProjects,
-                pinnedConversations: figmaPinnedConversations,
-                conversations: figmaConversations,
-                selectedProjectId: 'openchat-project',
-                selectedConversationId: 'first-chat-experience',
-                onSelectProject: (_) {},
-                onSelectConversation: (_) {},
-                onOpenProjectOptions: (_) {},
-                onCreateProjectConversation: (_) {},
-                onShowMoreProjectConversations: (_) {},
-              ),
+              const OpenChatWindowTitleBar(),
               Expanded(
-                child: ConversationPane(
-                  messageController: messageController,
-                  showHistoryButton: false,
-                  onOpenHistory: () {},
-                  onSendMessage: () {},
-                  providerId: 'chatgpt',
-                  messages: figmaChatMessages,
-                  conversationTitle: 'OpenChat sohbeti',
-                  selectedModelLabel: 'Örnek 1',
-                  assistantModelLabel: 'Örnek 1',
-                  reasoningLevel: 'Orta',
-                  showWindowControls: true,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ChatNavigationRail(
+                      expanded: expandedRail,
+                      showBrand: false,
+                      settingsSelected: false,
+                      onOpenChat: () {},
+                      onOpenSettings: () {},
+                      onToggleTheme: () {},
+                    ),
+                    ConversationSidebar(
+                      searchController: searchController,
+                      width: sidebarWidth,
+                      projects: figmaSidebarProjects,
+                      pinnedConversations: figmaPinnedConversations,
+                      conversations: figmaConversations,
+                      selectedProjectId: 'openchat-project',
+                      selectedConversationId: 'first-chat-experience',
+                      onSelectProject: (_) {},
+                      onSelectConversation: (_) {},
+                      onOpenProjectOptions: (_) {},
+                      onCreateProjectConversation: (_) {},
+                      onShowMoreProjectConversations: (_) {},
+                    ),
+                    Expanded(
+                      child: ConversationPane(
+                        messageController: messageController,
+                        showHistoryButton: false,
+                        onOpenHistory: () {},
+                        onSendMessage: () {},
+                        providerId: 'chatgpt',
+                        messages: figmaChatMessages,
+                        conversationTitle: 'OpenChat sohbeti',
+                        selectedModelLabel: 'Örnek 1',
+                        assistantModelLabel: 'Örnek 1',
+                        reasoningLevel: 'Orta',
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
@@ -608,15 +704,21 @@ Future<void> _expectActiveScreenMatchesFigma(
 void _expectNarrowFigmaSidebarGeometry(WidgetTester tester) {
   expect(
     tester.getRect(find.byType(ChatNavigationRail)),
-    const Rect.fromLTWH(0, 0, 72, 720),
-  );
-  expect(
-    tester.getRect(find.byKey(const ValueKey<String>('compact-brand'))),
-    const Rect.fromLTWH(13, 20, 45, 44),
+    Rect.fromLTWH(
+      0,
+      OpenChatSpacing.appTitleBarHeight,
+      OpenChatSpacing.compactRailWidth,
+      720 - OpenChatSpacing.appTitleBarHeight,
+    ),
   );
   expect(
     tester.getRect(find.byType(ConversationSidebar)),
-    const Rect.fromLTWH(72, 0, 280, 720),
+    Rect.fromLTWH(
+      OpenChatSpacing.compactRailWidth,
+      OpenChatSpacing.appTitleBarHeight,
+      280,
+      720 - OpenChatSpacing.appTitleBarHeight,
+    ),
   );
   _expectSidebarContentFits(tester);
 }
@@ -624,15 +726,21 @@ void _expectNarrowFigmaSidebarGeometry(WidgetTester tester) {
 void _expectCompactFigmaSidebarGeometry(WidgetTester tester) {
   expect(
     tester.getRect(find.byType(ChatNavigationRail)),
-    const Rect.fromLTWH(0, 0, 72, 900),
-  );
-  expect(
-    tester.getRect(find.byKey(const ValueKey<String>('compact-brand'))),
-    const Rect.fromLTWH(13, 20, 45, 44),
+    Rect.fromLTWH(
+      0,
+      OpenChatSpacing.appTitleBarHeight,
+      OpenChatSpacing.compactRailWidth,
+      900 - OpenChatSpacing.appTitleBarHeight,
+    ),
   );
   expect(
     tester.getRect(find.byType(ConversationSidebar)),
-    const Rect.fromLTWH(72, 0, 320, 900),
+    Rect.fromLTWH(
+      OpenChatSpacing.compactRailWidth,
+      OpenChatSpacing.appTitleBarHeight,
+      OpenChatSpacing.sidebarWidth,
+      900 - OpenChatSpacing.appTitleBarHeight,
+    ),
   );
   _expectSidebarContentFits(tester);
 }
@@ -640,7 +748,12 @@ void _expectCompactFigmaSidebarGeometry(WidgetTester tester) {
 void _expectFigmaSidebarGeometry(WidgetTester tester) {
   expect(
     tester.getRect(find.byType(ConversationSidebar)),
-    const Rect.fromLTWH(260, 0, 320, 900),
+    Rect.fromLTWH(
+      260,
+      OpenChatSpacing.appTitleBarHeight,
+      OpenChatSpacing.sidebarWidth,
+      900 - OpenChatSpacing.appTitleBarHeight,
+    ),
   );
   _expectSidebarContentFits(tester);
 }
@@ -715,7 +828,6 @@ Future<void> _expectNarrowComposerGeometry(
             selectedModelLabel: 'Örnek 1',
             assistantModelLabel: 'Örnek 1',
             reasoningLevel: 'Orta',
-            showWindowControls: true,
           ),
         ),
       ),
@@ -765,7 +877,6 @@ Future<void> _expectPaneMatchesFigma(
               selectedModelLabel: selectedModelLabel,
               assistantModelLabel: selectedModelLabel,
               reasoningLevel: reasoningLevel,
-              showWindowControls: true,
             ),
           ),
         ),

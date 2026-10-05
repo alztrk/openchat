@@ -535,7 +535,7 @@ class _ComposerActions extends StatelessWidget {
       ],
     );
 
-    if (availableWidth < 720) {
+    if (availableWidth < 680) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

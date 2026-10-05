@@ -218,7 +218,7 @@ void main() {
     expect(controller.position.maxScrollExtent, greaterThan(500));
     controller.jumpTo(0);
     await tester.pump();
-    final listRect = tester.getRect(find.byType(ListView));
+    final listRect = tester.getRect(find.byType(CustomScrollView));
     final anchor = listRect.center;
     final mouse = TestPointer(
       41,
@@ -270,7 +270,6 @@ Widget _conversationPane(
   providerId: 'opencode',
   messages: messages,
   messageScrollController: controller,
-  showWindowControls: false,
 );
 
 List<ChatMessage> _chatMessages(String assistantContent) => [

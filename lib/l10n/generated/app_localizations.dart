@@ -3001,8 +3001,56 @@ abstract class AppLocalizations {
   /// No description provided for @searchChatsHint.
   ///
   /// In en, this message translates to:
-  /// **'Search your chats'**
+  /// **'Search chats and messages'**
   String get searchChatsHint;
+
+  /// No description provided for @searchMessagesTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Search messages'**
+  String get searchMessagesTooltip;
+
+  /// No description provided for @searchMessagesHeader.
+  ///
+  /// In en, this message translates to:
+  /// **'Message matches'**
+  String get searchMessagesHeader;
+
+  /// No description provided for @searchMessagesLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching messages…'**
+  String get searchMessagesLoading;
+
+  /// No description provided for @searchMessagesNoResults.
+  ///
+  /// In en, this message translates to:
+  /// **'No message matches'**
+  String get searchMessagesNoResults;
+
+  /// No description provided for @searchMessagesTooShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter at least two characters to search messages.'**
+  String get searchMessagesTooShort;
+
+  /// No description provided for @searchMessagesTooLong.
+  ///
+  /// In en, this message translates to:
+  /// **'Search text must be 512 characters or fewer.'**
+  String get searchMessagesTooLong;
+
+  /// No description provided for @searchMessagesFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages could not be searched. Try again.'**
+  String get searchMessagesFailed;
+
+  /// No description provided for @searchMessageUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This message is no longer available.'**
+  String get searchMessageUnavailable;
 
   /// No description provided for @projects.
   ///

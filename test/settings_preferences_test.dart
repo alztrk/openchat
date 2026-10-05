@@ -425,7 +425,6 @@ void main() {
                       onOpenHistory: () {},
                       onSendMessage: () {},
                       providerId: 'chatgpt',
-                      showWindowControls: false,
                       messages: const [
                         ChatMessage(
                           id: 'appearance-user',

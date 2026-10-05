@@ -126,6 +126,31 @@ pub(super) fn ensure_archived_memory_indexes(
     Ok(())
 }
 
+pub(super) fn ensure_all_archived_memory_indexes(connection: &Connection) -> rusqlite::Result<()> {
+    let conversation_ids = {
+        let mut statement = connection.prepare(
+            "SELECT conversation.id
+             FROM conversations AS conversation
+             LEFT JOIN conversation_memory_archive_settings AS setting
+               ON setting.conversation_id = conversation.id
+             LEFT JOIN conversation_memory_index_state AS message_index
+               ON message_index.conversation_id = conversation.id
+             LEFT JOIN conversation_memory_tool_index_state AS tool_index
+               ON tool_index.conversation_id = conversation.id
+             WHERE COALESCE(setting.included, 1) = 1
+               AND (message_index.conversation_id IS NULL
+                    OR tool_index.conversation_id IS NULL)",
+        )?;
+        statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    for conversation_id in conversation_ids {
+        ensure_archived_memory_indexes(connection, &conversation_id)?;
+    }
+    Ok(())
+}
+
 pub(super) fn archive_indexing_enabled(
     connection: &Connection,
     conversation_id: &str,

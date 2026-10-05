@@ -1777,7 +1777,34 @@ class AppLocalizationsEs extends AppLocalizations {
   String get searchChats => 'Buscar chats';
 
   @override
-  String get searchChatsHint => 'Buscar en tus chats';
+  String get searchChatsHint => 'Buscar chats y mensajes';
+
+  @override
+  String get searchMessagesTooltip => 'Buscar mensajes';
+
+  @override
+  String get searchMessagesHeader => 'Coincidencias en mensajes';
+
+  @override
+  String get searchMessagesLoading => 'Buscando mensajes…';
+
+  @override
+  String get searchMessagesNoResults => 'No hay mensajes coincidentes';
+
+  @override
+  String get searchMessagesTooShort =>
+      'Escribe al menos dos caracteres para buscar mensajes.';
+
+  @override
+  String get searchMessagesTooLong =>
+      'El texto de búsqueda no puede superar los 512 caracteres.';
+
+  @override
+  String get searchMessagesFailed =>
+      'No se pudieron buscar los mensajes. Inténtalo de nuevo.';
+
+  @override
+  String get searchMessageUnavailable => 'Este mensaje ya no está disponible.';
 
   @override
   String get projects => 'Proyectos';

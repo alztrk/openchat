@@ -1749,7 +1749,34 @@ class AppLocalizationsEn extends AppLocalizations {
   String get searchChats => 'Search chats';
 
   @override
-  String get searchChatsHint => 'Search your chats';
+  String get searchChatsHint => 'Search chats and messages';
+
+  @override
+  String get searchMessagesTooltip => 'Search messages';
+
+  @override
+  String get searchMessagesHeader => 'Message matches';
+
+  @override
+  String get searchMessagesLoading => 'Searching messages…';
+
+  @override
+  String get searchMessagesNoResults => 'No message matches';
+
+  @override
+  String get searchMessagesTooShort =>
+      'Enter at least two characters to search messages.';
+
+  @override
+  String get searchMessagesTooLong =>
+      'Search text must be 512 characters or fewer.';
+
+  @override
+  String get searchMessagesFailed =>
+      'Messages could not be searched. Try again.';
+
+  @override
+  String get searchMessageUnavailable => 'This message is no longer available.';
 
   @override
   String get projects => 'Projects';

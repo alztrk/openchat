@@ -368,12 +368,15 @@ class OpenChatConversationStyle
 abstract final class OpenChatSpacing {
   static const pageHorizontal = 32.0;
   static const compactPageHorizontal = 20.0;
-  static const sidebarWidth = 320.0;
+  static const appTitleBarHeight = 32.0;
+  static const conversationHeaderHeight = 40.0;
+  static const sidebarWidth = 300.0;
   static const compactSidebarWidth = 280.0;
   static const expandedRailWidth = 260.0;
-  static const compactRailWidth = 72.0;
+  static const compactRailWidth = 48.0;
   static const collapsedSidebarWidth = 240.0;
   static const conversationMaxWidth = 920.0;
+  static const composerMaxWidth = 720.0;
   static const fullSidebarBreakpoint = 1440.0;
   static const expandedRailBreakpoint = 1600.0;
   static const sidebarBreakpoint = 900.0;
