@@ -460,9 +460,6 @@ class _ContextUsagePopover extends StatelessWidget {
         : null;
     final contextLimitLabel = window != null
         ? l10n.contextUsageModelLimit(numberFormat.format(window))
-        : '—';
-    final contextLimitSemantics = window != null
-        ? contextLimitLabel
         : l10n.contextUsageNoModelLimit;
     final usageSummary = window == null
         ? l10n.contextUsageUsed(numberFormat.format(snapshot.totalTokens))
@@ -625,7 +622,7 @@ class _ContextUsagePopover extends StatelessWidget {
           children: [
             Expanded(child: Text(l10n.contextUsageTitle, style: titleStyle)),
             Semantics(
-              label: contextLimitSemantics,
+              label: contextLimitLabel,
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
