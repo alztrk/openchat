@@ -373,7 +373,7 @@ abstract final class OpenChatSpacing {
   static const sidebarWidth = 300.0;
   static const compactSidebarWidth = 280.0;
   static const expandedRailWidth = 260.0;
-  static const compactRailWidth = 48.0;
+  static const compactRailWidth = 56.0;
   static const collapsedSidebarWidth = 240.0;
   static const conversationMaxWidth = 920.0;
   static const composerMaxWidth = 720.0;

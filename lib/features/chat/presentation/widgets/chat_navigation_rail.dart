@@ -56,19 +56,19 @@ class ChatNavigationRail extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final content = Padding(
-              padding: EdgeInsets.symmetric(horizontal: expanded ? 16 : 1.5),
+              padding: EdgeInsets.symmetric(horizontal: expanded ? 16 : 5.5),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const SizedBox(height: 20),
+                  SizedBox(height: expanded ? 20 : 12),
                   if (expanded)
                     _Brand(palette: palette)
                   else if (showBrand) ...[
                     const _CompactBrand(),
-                    const SizedBox(height: 40),
+                    const SizedBox(height: 28),
                   ] else
-                    const SizedBox(height: 10),
-                  const SizedBox(height: 10),
+                    const SizedBox(height: 6),
+                  SizedBox(height: expanded ? 10 : 8),
                   Align(
                     alignment: Alignment.center,
                     child: SizedBox(

@@ -73,7 +73,7 @@ void main() {
   });
 
   testWidgets('scrolls navigation controls in a short window', (tester) async {
-    tester.view.physicalSize = const Size(48, 120);
+    tester.view.physicalSize = const Size(56, 120);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -279,9 +279,9 @@ void main() {
   }
 
   for (final layout in [
-    (name: 'wide', width: 1680.0, height: 900.0, rail: 48.0, sidebar: 300.0),
-    (name: 'compact', width: 1492.0, height: 900.0, rail: 48.0, sidebar: 300.0),
-    (name: 'narrow', width: 1280.0, height: 720.0, rail: 48.0, sidebar: 280.0),
+    (name: 'wide', width: 1680.0, height: 900.0, rail: 56.0, sidebar: 300.0),
+    (name: 'compact', width: 1492.0, height: 900.0, rail: 56.0, sidebar: 300.0),
+    (name: 'narrow', width: 1280.0, height: 720.0, rail: 56.0, sidebar: 280.0),
   ]) {
     testWidgets('matches the ${layout.name} Figma composition geometry', (
       tester,
@@ -370,7 +370,7 @@ Future<void> _expectCompactNavigationRailMatchesFigma(
   required ThemeData theme,
   required String goldenPath,
 }) async {
-  tester.view.physicalSize = const Size(48, 900);
+  tester.view.physicalSize = const Size(56, 900);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -399,15 +399,15 @@ Future<void> _expectCompactNavigationRailMatchesFigma(
 
   expect(
     tester.getRect(find.byTooltip('Anasayfa')),
-    const Rect.fromLTWH(1.5, 114, 44, 44),
+    const Rect.fromLTWH(5.5, 92, 44, 44),
   );
   expect(
     tester.getRect(find.byType(ChatNavigationRail)),
-    const Rect.fromLTWH(0, 0, 48, 900),
+    const Rect.fromLTWH(0, 0, 56, 900),
   );
   expect(
     tester.getRect(find.byKey(const ValueKey<String>('compact-brand'))),
-    const Rect.fromLTWH(1.5, 20, 44, 44),
+    const Rect.fromLTWH(5.5, 12, 44, 44),
   );
   expect(find.text('OpenChat'), findsNothing);
 
