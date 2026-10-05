@@ -193,6 +193,17 @@ impl AppStorage {
         })
     }
 
+    pub fn log_database_runtime(&self, chat_schema_version: i64) -> io::Result<()> {
+        self.append_diagnostic("database", "runtime_initialized", |entry| {
+            write!(
+                entry,
+                " sqlite_version={} backend_schema_version={} chat_schema_version={chat_schema_version}",
+                rusqlite::version(),
+                self.schema_version(),
+            )
+        })
+    }
+
     fn append_diagnostic(
         &self,
         component: &'static str,
@@ -256,6 +267,10 @@ impl AppStorage {
 
         let schema_version = initialize_schema(&connection, SCHEMA_VERSION)?;
         self.schema_version.store(schema_version, Ordering::Release);
+        let chat_schema_version = database_guard::chat_schema_version(&connection)?;
+        if self.log_database_runtime(chat_schema_version).is_err() {
+            eprintln!("database_runtime_diagnostic_write_failed");
+        }
         Ok(schema_version)
     }
 
@@ -459,6 +474,26 @@ mod tests {
         assert!(entry.contains("duration_ms=25"));
         assert!(!entry.contains("modelPath"));
         assert!(!entry.contains("prompt"));
+    }
+
+    #[test]
+    fn database_runtime_diagnostic_records_engine_and_schema_versions_without_paths() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");
+
+        storage
+            .log_database_runtime(10)
+            .expect("write database runtime diagnostic");
+
+        let log_path = directory.0.join("logs").join("openchat-service.log");
+        let entry = fs::read_to_string(log_path).expect("read diagnostic log");
+        assert!(entry.contains("component=database event=runtime_initialized"));
+        assert!(entry.contains(&format!(
+            "sqlite_version={} backend_schema_version={} chat_schema_version=10",
+            rusqlite::version(),
+            storage.schema_version(),
+        )));
+        assert!(!entry.contains(directory.0.to_string_lossy().as_ref()));
     }
 
     struct TestDirectory(PathBuf);

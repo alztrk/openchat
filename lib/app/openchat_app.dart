@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:toastification/toastification.dart';
 
 import 'package:openchat/features/chat/data/chat_repository.dart';
@@ -112,6 +113,7 @@ class _OpenChatAppState extends State<OpenChatApp> {
     while (true) {
       attempt++;
       OpenChatDatabase? database;
+      int? chatSchemaVersion;
       var phase = 'service_start';
 
       try {
@@ -181,6 +183,10 @@ class _OpenChatAppState extends State<OpenChatApp> {
             : OpenChatDatabase.atPath(databasePath);
         database = initializedDatabase;
         await initializedDatabase.customSelect('SELECT 1').getSingle();
+        final schemaVersionRow = await initializedDatabase
+            .customSelect('PRAGMA user_version')
+            .getSingle();
+        chatSchemaVersion = schemaVersionRow.read<int>('user_version');
         if (Platform.isWindows) {
           phase = 'service_initialize';
           final initialization = await _serviceClient.call('system.initialize');
@@ -200,6 +206,9 @@ class _OpenChatAppState extends State<OpenChatApp> {
           phase: phase,
           attempt: attempt,
           code: previousFailureCode ?? 'none',
+          sqliteVersion: sqlite.sqlite3.version.libVersion,
+          sqliteVersionNumber: sqlite.sqlite3.version.versionNumber,
+          chatSchemaVersion: chatSchemaVersion,
         );
         return _AppRuntime(
           initializedDatabase,
@@ -223,6 +232,9 @@ class _OpenChatAppState extends State<OpenChatApp> {
           phase: phase,
           attempt: attempt,
           code: previousFailureCode,
+          sqliteVersion: sqlite.sqlite3.version.libVersion,
+          sqliteVersionNumber: sqlite.sqlite3.version.versionNumber,
+          chatSchemaVersion: chatSchemaVersion,
         );
         if (database != null) {
           try {
@@ -366,6 +378,9 @@ class _OpenChatAppState extends State<OpenChatApp> {
     required String phase,
     required int attempt,
     required String code,
+    String? sqliteVersion,
+    int? sqliteVersionNumber,
+    int? chatSchemaVersion,
   }) async {
     if (!Platform.isWindows) return;
 
@@ -389,9 +404,22 @@ class _OpenChatAppState extends State<OpenChatApp> {
         '${logDirectory.path}${Platform.pathSeparator}openchat-app.log',
       );
       final safeCode = code.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+      final safeSqliteVersion = sqliteVersion?.replaceAll(
+        RegExp(r'[^a-zA-Z0-9._-]'),
+        '_',
+      );
+      final sqliteVersionField = safeSqliteVersion == null
+          ? ''
+          : ' dart_sqlite_version=$safeSqliteVersion';
+      final sqliteVersionNumberField = sqliteVersionNumber == null
+          ? ''
+          : ' dart_sqlite_version_number=$sqliteVersionNumber';
+      final chatSchemaVersionField = chatSchemaVersion == null
+          ? ''
+          : ' chat_schema_version=$chatSchemaVersion';
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       await logFile.writeAsString(
-        'timestamp_unix_ms=$timestamp component=app event=$event phase=$phase attempt=$attempt code=$safeCode\n',
+        'timestamp_unix_ms=$timestamp component=app event=$event phase=$phase attempt=$attempt code=$safeCode$sqliteVersionField$sqliteVersionNumberField$chatSchemaVersionField\n',
         mode: FileMode.append,
         flush: true,
       );
