@@ -1,6 +1,6 @@
 # Contributing to OpenChat
 
-Thanks for your interest in contributing. The first release is a Windows AI chat app, beginning with ChatGPT, model selection, and conversation history. File editing is outside the first-release scope; see the [README](README.md) for the current project direction and [ChatGPT implementation plan](docs/chatgpt-integration-plan.md) for the agreed integration behavior and delivery order.
+Thanks for your interest in contributing. The first release focuses on Windows AI chat, model selection, conversation history, and local workspace tools, including file changes with review and revert support. See the [README](README.md) for the current project direction and [ChatGPT implementation plan](docs/chatgpt-integration-plan.md) for the agreed integration behavior and delivery order.
 
 ## Before starting work
 
@@ -24,6 +24,7 @@ Windows development requires Flutter, Rust with Cargo, and the Visual Studio C++
 ## Checks
 
 - GitHub Actions runs the checks below on Windows without provider credentials or live provider requests.
+- Workflow actions are pinned to commit SHAs; Dependabot checks GitHub Actions, Cargo, and Pub updates weekly.
 - `flutter pub get --enforce-lockfile`
 - `flutter gen-l10n`
 - `dart format --output=none --set-exit-if-changed lib test`
