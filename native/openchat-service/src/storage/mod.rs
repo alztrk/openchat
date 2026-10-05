@@ -10,10 +10,11 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, ffi};
 
 const MAX_DIAGNOSTIC_LOG_BYTES: u64 = 1024 * 1024;
 const MAX_DIAGNOSTIC_ENTRY_BYTES: usize = 4096;
+const MINIMUM_SQLITE_VERSION_NUMBER: i32 = 3_051_003;
 
 mod database_guard;
 mod schema;
@@ -39,6 +40,7 @@ impl AppStorage {
     }
 
     pub fn open_at(root: PathBuf) -> rusqlite::Result<Self> {
+        ensure_supported_sqlite_runtime()?;
         let profile_restore_pending_validation =
             crate::profile_archive::activate_pending_restore(&root)?;
         match Self::open_active_root(root.clone()) {
@@ -333,6 +335,23 @@ impl AppStorage {
     }
 }
 
+fn ensure_supported_sqlite_runtime() -> rusqlite::Result<()> {
+    validate_sqlite_runtime(rusqlite::version_number(), rusqlite::version())
+}
+
+fn validate_sqlite_runtime(version_number: i32, version: &str) -> rusqlite::Result<()> {
+    if version_number >= MINIMUM_SQLITE_VERSION_NUMBER {
+        return Ok(());
+    }
+
+    Err(rusqlite::Error::SqliteFailure(
+        ffi::Error::new(ffi::SQLITE_ERROR),
+        Some(format!(
+            "sqlite_runtime_unsupported: OpenChat requires SQLite 3.51.3 or newer; linked runtime is {version} ({version_number})."
+        )),
+    ))
+}
+
 pub(crate) fn verify_database_integrity(connection: &Connection) -> rusqlite::Result<()> {
     database_guard::verify_integrity(connection)
 }
@@ -375,7 +394,10 @@ mod tests {
     use rusqlite::Connection;
     use uuid::Uuid;
 
-    use super::{AppStorage, MAX_DIAGNOSTIC_LOG_BYTES, database_guard};
+    use super::{
+        AppStorage, MAX_DIAGNOSTIC_LOG_BYTES, MINIMUM_SQLITE_VERSION_NUMBER, database_guard,
+        validate_sqlite_runtime,
+    };
 
     #[test]
     fn open_rejects_corrupt_existing_database_before_wal_or_schema_writes() {
@@ -500,10 +522,23 @@ mod tests {
     fn bundled_sqlite_runtime_includes_the_wal_reset_fix() {
         let runtime_version = rusqlite::version_number();
         assert!(
-            runtime_version >= 3_051_003,
+            runtime_version >= MINIMUM_SQLITE_VERSION_NUMBER,
             "Rust SQLite runtime {} is below the required 3.51.3 minimum",
             rusqlite::version()
         );
+        validate_sqlite_runtime(runtime_version, rusqlite::version())
+            .expect("production runtime guard accepts the bundled engine");
+    }
+
+    #[test]
+    fn sqlite_runtime_guard_rejects_versions_before_opening_database() {
+        let error = validate_sqlite_runtime(3_051_002, "3.51.2")
+            .expect_err("SQLite 3.51.2 still contains the WAL-reset race");
+
+        assert!(error.to_string().contains("sqlite_runtime_unsupported"));
+        assert!(error.to_string().contains("3.51.2"));
+        validate_sqlite_runtime(MINIMUM_SQLITE_VERSION_NUMBER, "3.51.3")
+            .expect("the fixed SQLite version is supported");
     }
 
     struct TestDirectory(PathBuf);

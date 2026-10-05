@@ -83,6 +83,24 @@ class OpenChatDatabase extends _$OpenChatDatabase {
     : super(_databaseAtPath(databasePath));
 
   static const currentSchemaVersion = 10;
+  static const minimumSqliteVersionNumber = 3051003;
+
+  static bool supportsSqliteRuntime(int versionNumber) =>
+      versionNumber >= minimumSqliteVersionNumber;
+
+  static void validateSqliteRuntime({
+    required int versionNumber,
+    required String version,
+  }) {
+    if (supportsSqliteRuntime(versionNumber)) return;
+
+    throw DatabaseIntegrityFailure(
+      code: 'sqlite_runtime_unsupported',
+      isCorrupt: false,
+      retryable: false,
+      message: 'OpenChat requires SQLite 3.51.3 or newer; loaded $version.',
+    );
+  }
 
   @override
   int get schemaVersion => currentSchemaVersion;
@@ -91,6 +109,7 @@ class OpenChatDatabase extends _$OpenChatDatabase {
       Isolate.run(() => _verifyExistingFile(databasePath));
 
   static void _verifyExistingFile(String databasePath) {
+    _ensureSupportedSqliteRuntime();
     final file = File(databasePath);
     if (!file.existsSync() || file.lengthSync() == 0) return;
 
@@ -106,6 +125,7 @@ class OpenChatDatabase extends _$OpenChatDatabase {
           code: 'database_corrupt',
           isCorrupt: true,
           retryable: false,
+          message: 'SQLite quick_check rejected the existing database.',
         );
       }
     } on sqlite.SqliteException catch (error) {
@@ -121,6 +141,8 @@ class OpenChatDatabase extends _$OpenChatDatabase {
             : 'database_integrity_check_failed',
         isCorrupt: isCorrupt,
         retryable: isRetryable,
+        message:
+            'SQLite quick_check failed with result code ${error.resultCode}.',
       );
     } finally {
       database?.close();
@@ -249,6 +271,14 @@ class OpenChatDatabase extends _$OpenChatDatabase {
     if (columns.any((row) => row.read<String>('name') == column.name)) return;
     await migrator.addColumn(table, column);
   }
+
+  static void _ensureSupportedSqliteRuntime() {
+    final version = sqlite.sqlite3.version;
+    validateSqliteRuntime(
+      versionNumber: version.versionNumber,
+      version: version.libVersion,
+    );
+  }
 }
 
 final class DatabaseIntegrityFailure implements Exception {
@@ -256,14 +286,20 @@ final class DatabaseIntegrityFailure implements Exception {
     required this.code,
     required this.isCorrupt,
     required this.retryable,
+    required this.message,
   });
 
   final String code;
   final bool isCorrupt;
   final bool retryable;
+  final String message;
+
+  @override
+  String toString() => message;
 }
 
 QueryExecutor _databaseAtPath(String path) {
+  OpenChatDatabase._ensureSupportedSqliteRuntime();
   return driftDatabase(
     name: 'openchat_local',
     native: _nativeDatabaseOptions(databasePath: () async => path),
@@ -271,6 +307,7 @@ QueryExecutor _databaseAtPath(String path) {
 }
 
 QueryExecutor _defaultDatabase() {
+  OpenChatDatabase._ensureSupportedSqliteRuntime();
   return driftDatabase(name: 'openchat_chat', native: _nativeDatabaseOptions());
 }
 

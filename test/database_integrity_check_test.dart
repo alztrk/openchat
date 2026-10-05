@@ -5,8 +5,37 @@ import 'package:openchat/features/chat/data/openchat_database.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 void main() {
-  test('SQLite runtime includes the WAL-reset fix', () {
-    expect(sqlite.sqlite3.version.versionNumber, greaterThanOrEqualTo(3051003));
+  test('SQLite runtime guard requires the WAL-reset fix', () {
+    expect(OpenChatDatabase.supportsSqliteRuntime(3051002), isFalse);
+    expect(OpenChatDatabase.supportsSqliteRuntime(3051003), isTrue);
+    expect(
+      () => OpenChatDatabase.validateSqliteRuntime(
+        versionNumber: 3051002,
+        version: '3.51.2',
+      ),
+      throwsA(
+        isA<DatabaseIntegrityFailure>()
+            .having(
+              (failure) => failure.code,
+              'code',
+              'sqlite_runtime_unsupported',
+            )
+            .having((failure) => failure.retryable, 'retryable', isFalse),
+      ),
+    );
+    expect(
+      () => OpenChatDatabase.validateSqliteRuntime(
+        versionNumber: 3051003,
+        version: '3.51.3',
+      ),
+      returnsNormally,
+    );
+    expect(
+      OpenChatDatabase.supportsSqliteRuntime(
+        sqlite.sqlite3.version.versionNumber,
+      ),
+      isTrue,
+    );
   });
 
   test('read-only integrity preflight accepts a valid database', () async {
