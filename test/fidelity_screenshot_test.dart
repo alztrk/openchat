@@ -68,7 +68,111 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('OpenChat'), findsNothing);
-    expect(find.byType(WindowControlBar), findsOneWidget);
+    final titleBar = tester.getRect(find.byType(OpenChatWindowTitleBar));
+    final controls = tester.getRect(find.byType(WindowControlBar));
+    expect(titleBar.height, OpenChatSpacing.appTitleBarHeight);
+    expect(controls.top, 4);
+    expect(controls.bottom, titleBar.bottom - 4);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('project creation appears while hovering its section heading', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final searchController = TextEditingController();
+    addTearDown(searchController.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('tr'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.dark,
+        home: Scaffold(
+          body: ConversationSidebar(
+            searchController: searchController,
+            width: OpenChatSpacing.sidebarWidth,
+            projects: figmaSidebarProjects,
+            onCreateProject: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final createButton = find.byKey(
+      const ValueKey<String>('project-create-button'),
+    );
+    final opacity = find.ancestor(
+      of: createButton,
+      matching: find.byType(AnimatedOpacity),
+    );
+    expect(tester.widget<AnimatedOpacity>(opacity).opacity, 0);
+    final l10n = AppLocalizations.of(tester.element(createButton));
+    expect(l10n, isNotNull);
+    expect(
+      tester.getSize(find.byTooltip(l10n!.searchMessagesTooltip)).width,
+      32,
+    );
+    expect(tester.getSize(find.byTooltip(l10n.newConversation)).width, 32);
+
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(find.text('Projeler')));
+    await tester.pump(const Duration(milliseconds: 160));
+    expect(tester.widget<AnimatedOpacity>(opacity).opacity, 1);
+
+    await mouse.moveTo(const Offset(350, 200));
+    await tester.pump(const Duration(milliseconds: 160));
+    expect(tester.widget<AnimatedOpacity>(opacity).opacity, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('chat sidebar animates closed', (tester) async {
+    tester.view.physicalSize = const Size(1280, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('tr'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.light.copyWith(platform: TargetPlatform.windows),
+        home: const ChatScreen(
+          themeMode: ThemeMode.light,
+          onThemeModeChanged: _ignoreThemeMode,
+          onToggleTheme: _ignoreThemeToggle,
+          historyStorageStatus: HistoryStorageStatus.available,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final transition = find.byKey(
+      const ValueKey<String>('conversation-sidebar-transition'),
+    );
+    final l10n = AppLocalizations.of(tester.element(transition));
+    expect(l10n, isNotNull);
+    expect(
+      tester.getSize(transition).width,
+      OpenChatSpacing.compactSidebarWidth,
+    );
+    await tester.tap(find.byTooltip(l10n!.collapseSidebars));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 110));
+    final intermediateWidth = tester.getSize(transition).width;
+    expect(intermediateWidth, greaterThan(0));
+    expect(intermediateWidth, lessThan(OpenChatSpacing.compactSidebarWidth));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(transition).width, 0);
+    expect(find.byType(ConversationSidebar), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -212,7 +316,7 @@ void main() {
         theme: appearance.theme,
         size: const Size(1280, 720),
         expandedRail: false,
-        sidebarWidth: 280,
+        sidebarWidth: OpenChatSpacing.compactSidebarWidth,
         goldenPath: 'goldens/figma-active-narrow-${appearance.name}.png',
       );
     });
@@ -225,7 +329,7 @@ void main() {
         theme: appearance.theme,
         size: const Size(1492, 900),
         expandedRail: false,
-        sidebarWidth: 300,
+        sidebarWidth: OpenChatSpacing.sidebarWidth,
         goldenPath: 'goldens/figma-active-compact-${appearance.name}.png',
       );
     });
@@ -279,9 +383,9 @@ void main() {
   }
 
   for (final layout in [
-    (name: 'wide', width: 1680.0, height: 900.0, rail: 56.0, sidebar: 300.0),
-    (name: 'compact', width: 1492.0, height: 900.0, rail: 56.0, sidebar: 300.0),
-    (name: 'narrow', width: 1280.0, height: 720.0, rail: 56.0, sidebar: 280.0),
+    (name: 'wide', width: 1680.0, height: 900.0, rail: 56.0, sidebar: 320.0),
+    (name: 'compact', width: 1492.0, height: 900.0, rail: 56.0, sidebar: 320.0),
+    (name: 'narrow', width: 1280.0, height: 720.0, rail: 56.0, sidebar: 300.0),
   ]) {
     testWidgets('matches the ${layout.name} Figma composition geometry', (
       tester,
@@ -399,7 +503,7 @@ Future<void> _expectCompactNavigationRailMatchesFigma(
 
   expect(
     tester.getRect(find.byTooltip('Anasayfa')),
-    const Rect.fromLTWH(5.5, 92, 44, 44),
+    const Rect.fromLTWH(5.5, 82, 44, 44),
   );
   expect(
     tester.getRect(find.byType(ChatNavigationRail)),
@@ -407,7 +511,7 @@ Future<void> _expectCompactNavigationRailMatchesFigma(
   );
   expect(
     tester.getRect(find.byKey(const ValueKey<String>('compact-brand'))),
-    const Rect.fromLTWH(5.5, 12, 44, 44),
+    const Rect.fromLTWH(5.5, 8, 44, 44),
   );
   expect(find.text('OpenChat'), findsNothing);
 
@@ -455,13 +559,6 @@ Future<void> _expectCompositionGeometry(
   final conversationHeader = tester.getRect(
     find.byKey(const ValueKey<String>('conversation-header')),
   );
-  final divider = tester.getRect(
-    find.descendant(
-      of: find.byType(ConversationSidebar),
-      matching: find.byType(Divider),
-    ),
-  );
-
   expect(
     rail,
     Rect.fromLTWH(
@@ -502,9 +599,13 @@ Future<void> _expectCompositionGeometry(
       height - OpenChatSpacing.appTitleBarHeight - _mainSurfaceBottomInset,
     ),
   );
-  expect(divider.left, greaterThanOrEqualTo(sidebar.left));
-  expect(divider.right, lessThanOrEqualTo(sidebar.right));
-  expect(divider.height, greaterThan(0));
+  expect(
+    find.descendant(
+      of: find.byType(ConversationSidebar),
+      matching: find.byType(Divider),
+    ),
+    findsNothing,
+  );
   final composer = tester.getRect(find.byType(ChatComposer));
   expect(composer.width, OpenChatSpacing.composerMaxWidth);
   expect(composer.center.dx, pane.center.dx);
@@ -716,7 +817,7 @@ void _expectNarrowFigmaSidebarGeometry(WidgetTester tester) {
     Rect.fromLTWH(
       OpenChatSpacing.compactRailWidth,
       OpenChatSpacing.appTitleBarHeight,
-      280,
+      OpenChatSpacing.compactSidebarWidth,
       720 - OpenChatSpacing.appTitleBarHeight,
     ),
   );

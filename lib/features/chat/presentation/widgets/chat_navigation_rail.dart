@@ -60,15 +60,15 @@ class ChatNavigationRail extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SizedBox(height: expanded ? 20 : 12),
+                  SizedBox(height: expanded ? 20 : 8),
                   if (expanded)
                     _Brand(palette: palette)
                   else if (showBrand) ...[
                     const _CompactBrand(),
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 24),
                   ] else
-                    const SizedBox(height: 6),
-                  SizedBox(height: expanded ? 10 : 8),
+                    const SizedBox(height: 4),
+                  SizedBox(height: expanded ? 10 : 6),
                   Align(
                     alignment: Alignment.center,
                     child: SizedBox(

@@ -224,8 +224,8 @@ class ConversationSidebar extends StatelessWidget {
                           : onOpenHistorySearch,
                       visualDensity: VisualDensity.compact,
                       constraints: const BoxConstraints.tightFor(
-                        width: 28,
-                        height: 28,
+                        width: 40,
+                        height: 40,
                       ),
                       padding: EdgeInsets.zero,
                       icon: isHistorySearchOpen
@@ -252,8 +252,8 @@ class ConversationSidebar extends StatelessWidget {
                       onPressed: onCreateConversation,
                       visualDensity: VisualDensity.compact,
                       constraints: const BoxConstraints.tightFor(
-                        width: 28,
-                        height: 28,
+                        width: 40,
+                        height: 40,
                       ),
                       padding: EdgeInsets.zero,
                       icon: Icon(
@@ -265,7 +265,6 @@ class ConversationSidebar extends StatelessWidget {
                   ],
                 ),
               ),
-              Divider(height: 1, color: palette.border.withValues(alpha: 0.48)),
               const SizedBox(height: 16),
               Expanded(
                 child: Stack(

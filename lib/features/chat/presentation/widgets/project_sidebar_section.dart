@@ -62,18 +62,10 @@ class ProjectSidebarSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(child: SidebarSectionHeading(title: l10n.projects)),
-            IconButton(
-              tooltip: l10n.createProject,
-              onPressed: onCreateProject,
-              visualDensity: VisualDensity.compact,
-              constraints: const BoxConstraints.tightFor(width: 28, height: 28),
-              padding: EdgeInsets.zero,
-              icon: const Icon(Icons.add_rounded, size: 18),
-            ),
-          ],
+        _ProjectsHeading(
+          title: l10n.projects,
+          createProjectLabel: l10n.createProject,
+          onCreateProject: onCreateProject,
         ),
         if (loading)
           const Padding(
@@ -215,6 +207,73 @@ class ProjectSidebarSection extends StatelessWidget {
           if (entry != projects.last) const SizedBox(height: 16),
         ],
       ],
+    );
+  }
+}
+
+class _ProjectsHeading extends StatefulWidget {
+  const _ProjectsHeading({
+    required this.title,
+    required this.createProjectLabel,
+    required this.onCreateProject,
+  });
+
+  final String title;
+  final String createProjectLabel;
+  final VoidCallback? onCreateProject;
+
+  @override
+  State<_ProjectsHeading> createState() => _ProjectsHeadingState();
+}
+
+class _ProjectsHeadingState extends State<_ProjectsHeading> {
+  bool _hovered = false;
+  bool _focused = false;
+
+  bool get _showAction => _hovered || _focused;
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : const Duration(milliseconds: 140);
+
+    return Focus(
+      onFocusChange: (focused) => setState(() => _focused = focused),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: SizedBox(
+          height: 32,
+          child: Row(
+            children: [
+              Expanded(child: SidebarSectionHeading(title: widget.title)),
+              ExcludeSemantics(
+                excluding: !_showAction,
+                child: IgnorePointer(
+                  ignoring: !_showAction,
+                  child: AnimatedOpacity(
+                    duration: duration,
+                    opacity: _showAction ? 1 : 0,
+                    child: IconButton(
+                      key: const ValueKey<String>('project-create-button'),
+                      tooltip: widget.createProjectLabel,
+                      onPressed: widget.onCreateProject,
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 40,
+                        height: 40,
+                      ),
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.add_rounded, size: 19),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

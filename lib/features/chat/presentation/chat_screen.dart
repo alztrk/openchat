@@ -3567,21 +3567,38 @@ class _ChatScreenState extends State<ChatScreen> {
                                     crossAxisAlignment:
                                         CrossAxisAlignment.stretch,
                                     children: [
-                                      if (showSidebar)
-                                        _buildSidebar(
-                                          width: sidebarWidth,
-                                          conversations: conversations,
-                                          selectedConversationId:
-                                              _selectedConversationId,
-                                          isLoading: isLoading,
-                                          errorMessage: historyError,
-                                          onRetryStorage:
-                                              resolvedStorageStatus ==
-                                                  HistoryStorageStatus
-                                                      .unavailable
-                                              ? widget.onRetryStorage
-                                              : null,
+                                      AnimatedSize(
+                                        key: const ValueKey<String>(
+                                          'conversation-sidebar-transition',
                                         ),
+                                        alignment: Alignment.centerLeft,
+                                        duration:
+                                            MediaQuery.disableAnimationsOf(
+                                              context,
+                                            )
+                                            ? Duration.zero
+                                            : const Duration(milliseconds: 220),
+                                        curve: Curves.easeInOutCubic,
+                                        child: SizedBox(
+                                          width: showSidebar ? sidebarWidth : 0,
+                                          child: showSidebar
+                                              ? _buildSidebar(
+                                                  width: sidebarWidth,
+                                                  conversations: conversations,
+                                                  selectedConversationId:
+                                                      _selectedConversationId,
+                                                  isLoading: isLoading,
+                                                  errorMessage: historyError,
+                                                  onRetryStorage:
+                                                      resolvedStorageStatus ==
+                                                          HistoryStorageStatus
+                                                              .unavailable
+                                                      ? widget.onRetryStorage
+                                                      : null,
+                                                )
+                                              : const SizedBox.shrink(),
+                                        ),
+                                      ),
                                       Expanded(
                                         child: _buildConversationPane(
                                           selectedConversation:

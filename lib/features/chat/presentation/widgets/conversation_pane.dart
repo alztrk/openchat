@@ -1464,139 +1464,131 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
     final canRename =
         widget.conversationId != null && widget.onRenameConversation != null;
 
-    return DecoratedBox(
+    return SizedBox(
       key: const ValueKey<String>('conversation-header'),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: palette.border.withValues(alpha: 0.48)),
-        ),
-      ),
-      child: SizedBox(
-        height: OpenChatSpacing.conversationHeaderHeight,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              if (widget.showHistoryButton) ...[
-                Tooltip(
-                  message: widget.historyButtonTooltip ?? l10n.historyOpen,
-                  child: IconButton(
-                    onPressed: widget.onOpenHistory,
-                    icon: const Icon(Icons.menu_rounded),
-                  ),
+      height: OpenChatSpacing.conversationHeaderHeight,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            if (widget.showHistoryButton) ...[
+              Tooltip(
+                message: widget.historyButtonTooltip ?? l10n.historyOpen,
+                child: IconButton(
+                  onPressed: widget.onOpenHistory,
+                  icon: const Icon(Icons.menu_rounded),
                 ),
-                const SizedBox(width: 12),
-              ],
-              SvgPicture.asset(
-                Theme.of(context).brightness == Brightness.dark
-                    ? 'assets/icons/conversation/dark.svg'
-                    : 'assets/icons/conversation/light.svg',
-                width: 18,
-                height: 18,
-                excludeFromSemantics: true,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _isEditing
-                    ? Align(
-                        alignment: Alignment.centerLeft,
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 420),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Focus(
-                                  onKeyEvent: (node, event) {
-                                    if (event is KeyDownEvent &&
-                                        event.logicalKey ==
-                                            LogicalKeyboardKey.escape) {
-                                      _cancelTitleEdit();
-                                      return KeyEventResult.handled;
-                                    }
-                                    return KeyEventResult.ignored;
-                                  },
-                                  child: TextField(
-                                    controller: _titleController,
-                                    focusNode: _titleFocusNode,
-                                    enabled: !_isSaving,
-                                    maxLines: 1,
-                                    textInputAction: TextInputAction.done,
-                                    onSubmitted: (_) => unawaited(_saveTitle()),
-                                    style: TextStyle(
-                                      color: palette.text,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w500,
-                                      height: 20 / 14,
-                                    ),
-                                    decoration: InputDecoration(
-                                      isDense: true,
-                                      filled: true,
-                                      fillColor: palette.composer,
-                                      contentPadding:
-                                          const EdgeInsets.symmetric(
-                                            horizontal: 12,
-                                            vertical: 9,
-                                          ),
+              const SizedBox(width: 12),
+            ],
+            SvgPicture.asset(
+              Theme.of(context).brightness == Brightness.dark
+                  ? 'assets/icons/conversation/dark.svg'
+                  : 'assets/icons/conversation/light.svg',
+              width: 18,
+              height: 18,
+              excludeFromSemantics: true,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _isEditing
+                  ? Align(
+                      alignment: Alignment.centerLeft,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 420),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Focus(
+                                onKeyEvent: (node, event) {
+                                  if (event is KeyDownEvent &&
+                                      event.logicalKey ==
+                                          LogicalKeyboardKey.escape) {
+                                    _cancelTitleEdit();
+                                    return KeyEventResult.handled;
+                                  }
+                                  return KeyEventResult.ignored;
+                                },
+                                child: TextField(
+                                  controller: _titleController,
+                                  focusNode: _titleFocusNode,
+                                  enabled: !_isSaving,
+                                  maxLines: 1,
+                                  textInputAction: TextInputAction.done,
+                                  onSubmitted: (_) => unawaited(_saveTitle()),
+                                  style: TextStyle(
+                                    color: palette.text,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w500,
+                                    height: 20 / 14,
+                                  ),
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    filled: true,
+                                    fillColor: palette.composer,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 9,
                                     ),
                                   ),
                                 ),
                               ),
-                              IconButton(
-                                tooltip: l10n.save,
-                                visualDensity: VisualDensity.compact,
-                                constraints: const BoxConstraints.tightFor(
-                                  width: 34,
-                                  height: 36,
-                                ),
-                                padding: EdgeInsets.zero,
-                                onPressed: _isSaving
-                                    ? null
-                                    : () => unawaited(_saveTitle()),
-                                icon: _isSaving
-                                    ? const SizedBox.square(
-                                        dimension: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(Icons.check_rounded, size: 18),
-                              ),
-                              IconButton(
-                                tooltip: l10n.cancel,
-                                visualDensity: VisualDensity.compact,
-                                constraints: const BoxConstraints.tightFor(
-                                  width: 34,
-                                  height: 36,
-                                ),
-                                padding: EdgeInsets.zero,
-                                onPressed: _isSaving ? null : _cancelTitleEdit,
-                                icon: const Icon(Icons.close_rounded, size: 18),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    : InkWell(
-                        onTap: canRename ? _beginTitleEdit : null,
-                        borderRadius: BorderRadius.circular(4),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          child: Text(
-                            widget.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: palette.text,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                              height: 24 / 16,
                             ),
+                            IconButton(
+                              tooltip: l10n.save,
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 34,
+                                height: 36,
+                              ),
+                              padding: EdgeInsets.zero,
+                              onPressed: _isSaving
+                                  ? null
+                                  : () => unawaited(_saveTitle()),
+                              icon: _isSaving
+                                  ? const SizedBox.square(
+                                      dimension: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.check_rounded, size: 18),
+                            ),
+                            IconButton(
+                              tooltip: l10n.cancel,
+                              visualDensity: VisualDensity.compact,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 34,
+                                height: 36,
+                              ),
+                              padding: EdgeInsets.zero,
+                              onPressed: _isSaving ? null : _cancelTitleEdit,
+                              icon: const Icon(Icons.close_rounded, size: 18),
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : InkWell(
+                      onTap: canRename ? _beginTitleEdit : null,
+                      borderRadius: BorderRadius.circular(4),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Text(
+                          widget.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: palette.text,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            height: 24 / 16,
                           ),
                         ),
                       ),
-              ),
-            ],
-          ),
+                    ),
+            ),
+          ],
         ),
       ),
     );

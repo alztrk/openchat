@@ -28,40 +28,43 @@ class OpenChatWindowTitleBar extends StatelessWidget {
       ),
       child: SizedBox(
         height: OpenChatSpacing.appTitleBarHeight,
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final showIdentity = constraints.maxWidth >= 240;
-            final showWindowControls = constraints.maxWidth >= 128;
-            return Row(
-              children: [
-                if (showIdentity) ...[
-                  const SizedBox(width: 12),
-                  ExcludeSemantics(child: OpenChatBrandMark(size: 24)),
-                  const SizedBox(width: 9),
-                  Text(
-                    'OpenChat',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: palette.text,
-                      fontWeight: FontWeight.w600,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final showIdentity = constraints.maxWidth >= 240;
+              final showWindowControls = constraints.maxWidth >= 128;
+              return Row(
+                children: [
+                  if (showIdentity) ...[
+                    const SizedBox(width: 12),
+                    ExcludeSemantics(child: OpenChatBrandMark(size: 24)),
+                    const SizedBox(width: 9),
+                    Text(
+                      'OpenChat',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        color: palette.text,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ] else
+                    SizedBox(width: constraints.maxWidth >= 8 ? 8 : 0),
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.translucent,
+                      onPanStart: (_) =>
+                          unawaited(OpenChatWindowControls.startDragging()),
+                      child: const SizedBox.expand(),
                     ),
                   ),
-                ] else
-                  SizedBox(width: constraints.maxWidth >= 8 ? 8 : 0),
-                Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.translucent,
-                    onPanStart: (_) =>
-                        unawaited(OpenChatWindowControls.startDragging()),
-                    child: const SizedBox.expand(),
-                  ),
-                ),
-                if (showWindowControls) ...[
-                  const WindowControlBar(),
-                  if (constraints.maxWidth >= 136) const SizedBox(width: 8),
+                  if (showWindowControls) ...[
+                    const WindowControlBar(),
+                    if (constraints.maxWidth >= 136) const SizedBox(width: 8),
+                  ],
                 ],
-              ],
-            );
-          },
+              );
+            },
+          ),
         ),
       ),
     );
