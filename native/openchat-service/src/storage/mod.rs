@@ -496,6 +496,16 @@ mod tests {
         assert!(!entry.contains(directory.0.to_string_lossy().as_ref()));
     }
 
+    #[test]
+    fn bundled_sqlite_runtime_includes_the_wal_reset_fix() {
+        let runtime_version = rusqlite::version_number();
+        assert!(
+            runtime_version >= 3_051_003,
+            "Rust SQLite runtime {} is below the required 3.51.3 minimum",
+            rusqlite::version()
+        );
+    }
+
     struct TestDirectory(PathBuf);
 
     impl TestDirectory {
