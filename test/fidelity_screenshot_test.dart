@@ -20,6 +20,8 @@ import 'package:shared_preferences_platform_interface/shared_preferences_async_p
 import 'fixtures/figma_chat_messages.dart';
 import 'fixtures/figma_sidebar_items.dart';
 
+const _mainSurfaceVerticalInset = 10.0;
+
 late GoldenFileComparator _previousGoldenComparator;
 
 void main() {
@@ -236,6 +238,46 @@ void main() {
     });
   }
 
+  testWidgets('sidebar message search opens within the sidebar bounds', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 720);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('tr'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.light.copyWith(platform: TargetPlatform.windows),
+        home: const ChatScreen(
+          themeMode: ThemeMode.light,
+          onThemeModeChanged: _ignoreThemeMode,
+          onToggleTheme: _ignoreThemeToggle,
+          historyStorageStatus: HistoryStorageStatus.available,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final sidebarFinder = find.byType(ConversationSidebar);
+    final sidebar = tester.getRect(sidebarFinder);
+    final l10n = AppLocalizations.of(tester.element(sidebarFinder));
+    expect(l10n, isNotNull);
+    await tester.tap(find.byTooltip(l10n!.searchMessagesTooltip));
+    await tester.pumpAndSettle();
+
+    final search = find.byKey(const ValueKey<String>('history-search-input'));
+    expect(search, findsOneWidget);
+    final searchBounds = tester.getRect(search);
+    expect(searchBounds.left, greaterThanOrEqualTo(sidebar.left));
+    expect(searchBounds.right, lessThanOrEqualTo(sidebar.right));
+    expect(searchBounds.top, greaterThanOrEqualTo(sidebar.top));
+    expect(searchBounds.bottom, lessThanOrEqualTo(sidebar.bottom));
+  });
+
   testWidgets('settings rows grow to fit wrapped descriptions', (tester) async {
     tester.view.physicalSize = const Size(700, 720);
     tester.view.devicePixelRatio = 1;
@@ -356,14 +398,22 @@ Future<void> _expectCompositionGeometry(
   );
 
   expect(rail, Rect.fromLTWH(0, 0, railWidth, height));
-  expect(sidebar, Rect.fromLTWH(railWidth, 0, sidebarWidth, height));
+  expect(
+    sidebar,
+    Rect.fromLTWH(
+      railWidth,
+      _mainSurfaceVerticalInset,
+      sidebarWidth,
+      height - 2 * _mainSurfaceVerticalInset,
+    ),
+  );
   expect(
     pane,
     Rect.fromLTWH(
       railWidth + sidebarWidth,
-      0,
-      width - railWidth - sidebarWidth,
-      height,
+      _mainSurfaceVerticalInset,
+      width - railWidth - sidebarWidth - _mainSurfaceVerticalInset,
+      height - 2 * _mainSurfaceVerticalInset,
     ),
   );
   expect(divider.left, greaterThanOrEqualTo(sidebar.left));
@@ -615,14 +665,18 @@ void _expectSidebarContentFits(WidgetTester tester) {
     expect(rect.bottom, lessThanOrEqualTo(sidebar.bottom));
   }
 
-  final search = tester.getRect(
-    find.descendant(
-      of: find.byType(ConversationSidebar),
-      matching: find.byType(TextField),
-    ),
-  );
-  expect(search.left, greaterThanOrEqualTo(sidebar.left));
-  expect(search.right, lessThanOrEqualTo(sidebar.right));
+  final search = find.byKey(const ValueKey<String>('history-search-input'));
+  if (search.evaluate().isNotEmpty) {
+    final searchBounds = tester.getRect(search);
+    expect(searchBounds.left, greaterThanOrEqualTo(sidebar.left));
+    expect(searchBounds.right, lessThanOrEqualTo(sidebar.right));
+  } else {
+    final title = tester.getRect(
+      find.byKey(const ValueKey<String>('conversation-sidebar-title')),
+    );
+    expect(title.left, greaterThanOrEqualTo(sidebar.left));
+    expect(title.right, lessThanOrEqualTo(sidebar.right));
+  }
 }
 
 Future<void> _ignoreThemeMode(ThemeMode _) async {}

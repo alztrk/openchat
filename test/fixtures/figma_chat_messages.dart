@@ -10,10 +10,11 @@ const figmaChatMessages = <ChatMessage>[
     id: 'first-release-answer',
     role: ChatMessageRole.assistant,
     content:
-        'İlk sürümde sohbet akışını merkeze alalım: geçmişten bir konuşma açma, '
-        'mesaj yazma ve yanıt alma. Sağlayıcı ve model seçimiyle akıl yürütme '
-        'düzeyi giriş alanında yer alır.\n\n'
-        'Dosya düzenleme bu ilk kapsamın dışında.',
+        'Sohbet akışında geçmişten konuşma açma, mesaj yazma ve yanıt alma '
+        'temel akış olsun. Sağlayıcı, model ve akıl yürütme düzeyi giriş '
+        'alanında yer alır.\n\n'
+        'Dosya değişiklikleri yanıt tamamlandıktan sonra gözden geçirilebilir '
+        've gerekirse geri alınabilir.',
     elapsed: Duration(seconds: 4),
   ),
   ChatMessage(
