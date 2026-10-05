@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    process::Stdio,
+    process::{ExitStatus, Stdio},
     sync::{
         Arc, OnceLock,
         atomic::{AtomicU64, Ordering},
@@ -9,10 +9,15 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(windows)]
+use process_wrap::tokio::JobObject;
+#[cfg(unix)]
+use process_wrap::tokio::ProcessGroup;
+use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop};
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    process::{Child, ChildStdin, Command},
+    process::{ChildStdin, Command},
     sync::Mutex,
     time::sleep,
 };
@@ -32,7 +37,7 @@ pub struct TerminalSession {
     pub workdir: PathBuf,
     pub created_at: Instant,
     pub timeout: Duration,
-    child: Arc<Mutex<Child>>,
+    child: Arc<Mutex<Box<dyn ChildWrapper>>>,
     stdin: Arc<Mutex<Option<ChildStdin>>>,
     output_buffer: Arc<Mutex<Vec<u8>>>,
     last_activity: Arc<Mutex<Instant>>,
@@ -63,17 +68,15 @@ fn build_shell_command(command_str: &str) -> Command {
 }
 
 impl TerminalSession {
-    pub async fn is_running(&self) -> bool {
+    async fn process_status(&self) -> Result<Option<ExitStatus>, String> {
         let mut child = self.child.lock().await;
-        matches!(child.try_wait(), Ok(None))
+        child
+            .try_wait()
+            .map_err(|error| format!("Could not check the command process status: {error}"))
     }
 
-    pub async fn exit_code(&self) -> Option<i32> {
-        let mut child = self.child.lock().await;
-        match child.try_wait() {
-            Ok(Some(status)) => status.code(),
-            _ => None,
-        }
+    pub async fn is_running(&self) -> Result<bool, String> {
+        self.process_status().await.map(|status| status.is_none())
     }
 
     pub async fn send_input(&self, input: &str) -> Result<(), String> {
@@ -93,9 +96,19 @@ impl TerminalSession {
         Ok(())
     }
 
-    pub async fn kill(&self) {
+    pub async fn kill(&self) -> Result<(), String> {
         let mut child = self.child.lock().await;
-        let _ = child.kill().await;
+        if let Err(error) = child.start_kill() {
+            if matches!(child.try_wait(), Ok(Some(_))) {
+                return Ok(());
+            }
+            return Err(format!("Could not stop the command process: {error}"));
+        }
+        child
+            .wait()
+            .await
+            .map(|_| ())
+            .map_err(|error| format!("Could not stop the command process: {error}"))
     }
 
     pub async fn read_output_from(&self, start_offset: usize) -> (String, usize, bool) {
@@ -115,7 +128,7 @@ impl TerminalSession {
         &self,
         start_offset: usize,
         wait_duration: Duration,
-    ) -> (String, usize, bool) {
+    ) -> Result<(String, usize, bool), String> {
         let deadline = Instant::now() + wait_duration;
         let mut last_len = { self.output_buffer.lock().await.len() };
         let mut quiet_start: Option<Instant> = None;
@@ -124,7 +137,7 @@ impl TerminalSession {
             sleep(Duration::from_millis(25)).await;
 
             let current_len = { self.output_buffer.lock().await.len() };
-            let running = self.is_running().await;
+            let running = self.is_running().await?;
 
             if !running {
                 // Process finished, give it one quick moment to collect remaining output
@@ -143,7 +156,7 @@ impl TerminalSession {
             }
         }
 
-        self.read_output_from(start_offset).await
+        Ok(self.read_output_from(start_offset).await)
     }
 }
 
@@ -156,14 +169,21 @@ static MANAGER: OnceLock<TerminalSessionManager> = OnceLock::new();
 
 impl TerminalSessionManager {
     pub fn global() -> &'static Self {
-        MANAGER.get_or_init(|| {
-            let mgr = Self {
-                sessions: Arc::new(Mutex::new(HashMap::new())),
-                counter: AtomicU64::new(1),
-            };
-            mgr.start_reaper();
-            mgr
-        })
+        MANAGER.get_or_init(Self::new)
+    }
+
+    fn new() -> Self {
+        let manager = Self {
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            counter: AtomicU64::new(1),
+        };
+        manager.start_reaper();
+        manager
+    }
+
+    #[cfg(test)]
+    pub fn isolated() -> Self {
+        Self::new()
     }
 
     fn start_reaper(&self) {
@@ -175,18 +195,28 @@ impl TerminalSessionManager {
                 let mut to_remove = Vec::new();
 
                 for (id, session) in guard.iter() {
-                    let running = session.is_running().await;
                     let expired = session.created_at.elapsed() > session.timeout;
                     let idle = {
                         let last = *session.last_activity.lock().await;
                         last.elapsed() > Duration::from_secs(120)
                     };
 
-                    if !running || expired || idle {
-                        if running && (expired || idle) {
-                            session.kill().await;
+                    match session.is_running().await {
+                        Ok(false) => to_remove.push(id.clone()),
+                        Ok(true) if expired || idle => {
+                            if session.kill().await.is_err() {
+                                eprintln!("terminal_session_cleanup_failed");
+                            }
+                            to_remove.push(id.clone());
                         }
-                        to_remove.push(id.clone());
+                        Ok(true) => {}
+                        Err(_) => {
+                            eprintln!("terminal_process_state_unavailable");
+                            if session.kill().await.is_err() {
+                                eprintln!("terminal_session_cleanup_failed");
+                            }
+                            to_remove.push(id.clone());
+                        }
                     }
                 }
 
@@ -218,13 +248,25 @@ impl TerminalSessionManager {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
 
-        let mut child = cmd
+        let mut wrapped_command = CommandWrap::from(cmd);
+        #[cfg(windows)]
+        {
+            wrapped_command.wrap(KillOnDrop);
+            wrapped_command.wrap(JobObject);
+        }
+        #[cfg(unix)]
+        {
+            wrapped_command.wrap(KillOnDrop);
+            wrapped_command.wrap(ProcessGroup::leader());
+        }
+
+        let mut child = wrapped_command
             .spawn()
             .map_err(|e| format!("Failed to spawn command process: {e}"))?;
 
-        let stdin = child.stdin.take();
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
+        let stdin = child.stdin().take();
+        let stdout = child.stdout().take();
+        let stderr = child.stderr().take();
 
         let output_buffer = Arc::new(Mutex::new(Vec::new()));
         let last_activity = Arc::new(Mutex::new(Instant::now()));
@@ -320,17 +362,16 @@ impl TerminalSessionManager {
         let session = self
             .create_session(command_str, workdir, timeout_seconds)
             .await?;
-        let (output, _offset, truncated) = session.wait_for_output(0, wait_duration).await;
-        let running = session.is_running().await;
-        let exit_code = session.exit_code().await;
+        let (output, _offset, truncated) = session.wait_for_output(0, wait_duration).await?;
+        let status = session.process_status().await?;
 
-        if !running {
+        if let Some(status) = status {
             // Process completed within wait window; clean up session
             self.remove_session(&session.id).await;
             Ok(json!({
                 "command": command_str,
                 "is_running": false,
-                "exit_code": exit_code.unwrap_or(0),
+                "exit_code": status.code(),
                 "output": output,
                 "truncated": truncated
             }))
@@ -365,16 +406,15 @@ impl TerminalSessionManager {
         let wait_duration =
             Duration::from_millis(wait_ms.unwrap_or(DEFAULT_WAIT_MS).clamp(100, MAX_WAIT_MS));
         let (output, _offset, truncated) =
-            session.wait_for_output(start_offset, wait_duration).await;
-        let running = session.is_running().await;
-        let exit_code = session.exit_code().await;
+            session.wait_for_output(start_offset, wait_duration).await?;
+        let status = session.process_status().await?;
 
-        if !running {
+        if let Some(status) = status {
             self.remove_session(terminal_id).await;
             Ok(json!({
                 "terminal_id": terminal_id,
                 "is_running": false,
-                "exit_code": exit_code.unwrap_or(0),
+                "exit_code": status.code(),
                 "output": output,
                 "truncated": truncated
             }))
@@ -400,26 +440,26 @@ impl TerminalSessionManager {
         })?;
 
         let wait_duration = Duration::from_millis(wait_ms.unwrap_or(500).clamp(50, MAX_WAIT_MS));
-        let (output, _offset, truncated) = session.wait_for_output(0, wait_duration).await;
-        let running = session.is_running().await;
-        let exit_code = session.exit_code().await;
+        let (output, _offset, truncated) = session.wait_for_output(0, wait_duration).await?;
+        let status = session.process_status().await?;
 
-        if !running {
+        if status.is_some() {
             self.remove_session(terminal_id).await;
         }
 
         Ok(json!({
             "terminal_id": terminal_id,
-            "is_running": running,
-            "exit_code": exit_code,
+            "is_running": status.is_none(),
+            "exit_code": status.and_then(|status| status.code()),
             "output": output,
             "truncated": truncated
         }))
     }
 
     pub async fn kill_session(&self, terminal_id: &str) -> Result<Value, String> {
-        if let Some(session) = self.remove_session(terminal_id).await {
-            session.kill().await;
+        if let Some(session) = self.get_session(terminal_id).await {
+            session.kill().await?;
+            self.remove_session(terminal_id).await;
             Ok(json!({
                 "terminal_id": terminal_id,
                 "status": "terminated",
@@ -427,6 +467,44 @@ impl TerminalSessionManager {
             }))
         } else {
             Err(format!("Terminal session '{terminal_id}' was not found."))
+        }
+    }
+
+    pub async fn stop_all(&self) -> Result<(), String> {
+        let sessions = std::mem::take(&mut *self.sessions.lock().await);
+        let mut first_error = None;
+
+        for session in sessions.into_values() {
+            match session.is_running().await {
+                Ok(true) => {
+                    if let Err(error) = session.kill().await
+                        && first_error.is_none()
+                    {
+                        first_error = Some(error);
+                    }
+                }
+                Ok(false) => {}
+                Err(_) => {
+                    if let Err(error) = session.kill().await {
+                        if first_error.is_none() {
+                            first_error = Some(error);
+                        }
+                        eprintln!("terminal_session_cleanup_failed");
+                    }
+                }
+            }
+        }
+
+        match first_error {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+
+    pub async fn stop_all_global() -> Result<(), String> {
+        match MANAGER.get() {
+            Some(manager) => manager.stop_all().await,
+            None => Ok(()),
         }
     }
 }

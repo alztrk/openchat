@@ -3,8 +3,13 @@ use std::{
     fs::{self, File},
     io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::{Component, Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
+use ignore::WalkBuilder;
 use serde_json::{Value, json};
 
 use crate::{protocol::ServiceError, provider_schema::ToolDefinition};
@@ -58,41 +63,70 @@ fn read_directory_listing(
     let mut total_entries = 0usize;
     let mut scanned = 0usize;
     let mut incomplete = false;
-    for entry in fs::read_dir(directory)
-        .map_err(|_| unavailable("The requested directory could not be read."))?
-    {
-        let Ok(entry) = entry else {
+    let hidden_filter_failed = Arc::new(AtomicBool::new(false));
+    let hidden_filter_failed_for_walker = Arc::clone(&hidden_filter_failed);
+    let mut walker = WalkBuilder::new(directory);
+    walker
+        .max_depth(Some(1))
+        .follow_links(false)
+        .hidden(false)
+        .parents(true)
+        .ignore(false)
+        .git_ignore(true)
+        .git_global(false)
+        .git_exclude(false)
+        .require_git(false)
+        .filter_entry(move |entry| {
+            if entry.depth() == 0 {
+                return true;
+            }
+            let Some(name) = entry.file_name().to_str() else {
+                return true;
+            };
+            let is_directory = entry.file_type().is_some_and(|kind| kind.is_dir());
+            if !explicit_filter_scope && is_directory && is_default_ignored_directory(name) {
+                return false;
+            }
+            if explicit_filter_scope {
+                return true;
+            }
+            match path_entry_is_hidden(name, entry.path()) {
+                Ok(is_hidden) => !is_hidden,
+                Err(()) => {
+                    hidden_filter_failed_for_walker.store(true, Ordering::Relaxed);
+                    false
+                }
+            }
+        });
+
+    for result in walker.build() {
+        let Ok(entry) = result else {
             incomplete = true;
             continue;
         };
+        if entry.depth() == 0 {
+            continue;
+        }
+        if entry.error().is_some() {
+            incomplete = true;
+        }
         scanned += 1;
         if scanned > MAX_LIST_SCAN {
             break;
         }
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else {
+        let Some(name) = entry.file_name().to_str() else {
             incomplete = true;
             continue;
         };
-        let Ok(file_type) = entry.file_type() else {
+        let Some(file_type) = entry.file_type() else {
             incomplete = true;
             continue;
         };
-        if file_type.is_symlink() {
+        if entry.path_is_symlink() {
             continue;
         }
-        if !explicit_filter_scope {
-            if file_type.is_dir() && is_default_ignored_directory(name) {
-                continue;
-            }
-            match entry_is_hidden(name, &entry) {
-                Ok(true) => continue,
-                Ok(false) => {}
-                Err(()) => {
-                    incomplete = true;
-                    continue;
-                }
-            }
+        if !file_type.is_dir() && !file_type.is_file() {
+            continue;
         }
         total_entries += 1;
         let is_directory = file_type.is_dir();
@@ -106,6 +140,7 @@ fn read_directory_listing(
             retained.push((name.to_owned(), is_directory));
         }
     }
+    incomplete |= hidden_filter_failed.load(Ordering::Relaxed);
     let was_scan_limited = scanned > MAX_LIST_SCAN || incomplete;
     let mut entries = retained.into_vec();
     entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
@@ -1114,18 +1149,19 @@ fn is_hidden(name: &str, metadata: &fs::Metadata) -> bool {
     name.starts_with('.') || windows_hidden(metadata)
 }
 
-fn entry_is_hidden(name: &str, entry: &fs::DirEntry) -> Result<bool, ()> {
+pub(crate) fn path_entry_is_hidden(name: &str, path: &Path) -> Result<bool, ()> {
     if name.starts_with('.') {
         return Ok(true);
     }
     #[cfg(windows)]
     {
-        let metadata = entry.metadata().map_err(|_| ())?;
-        Ok(windows_hidden(&metadata))
+        fs::symlink_metadata(path)
+            .map(|metadata| windows_hidden(&metadata))
+            .map_err(|_| ())
     }
     #[cfg(not(windows))]
     {
-        let _ = entry;
+        let _ = path;
         Ok(false)
     }
 }

@@ -1,16 +1,20 @@
 use std::{
-    fs::{self, File},
+    fs::File,
     io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+    },
 };
 
+use ignore::WalkBuilder;
 use serde_json::{Value, json};
 
 use crate::protocol::ServiceError;
 
 use super::{
-    entry_is_hidden, invalid, is_default_ignored_directory, resolve_directory, unavailable,
+    invalid, is_default_ignored_directory, path_entry_is_hidden, resolve_directory, unavailable,
 };
 
 const MAX_SEARCH_RESULTS: usize = 40;
@@ -106,9 +110,8 @@ pub(super) fn search_files_direct(
     limit: usize,
 ) -> Result<Value, ServiceError> {
     let pattern = SearchPattern::new(query);
-    let mut pending = vec![directory.to_path_buf()];
     let mut file_count = 0usize;
-    let mut directory_count = 0usize;
+    let mut directory_count = 1usize;
     let mut bytes_read = 0u64;
     let mut queued_bytes = 0u64;
     let mut file_order = 0usize;
@@ -121,19 +124,77 @@ pub(super) fn search_files_direct(
     let mut candidates = Vec::new();
     let mut deferred_walk_errors = Vec::new();
     let mut line = String::new();
+    let hidden_filter_failed = Arc::new(AtomicBool::new(false));
+    let hidden_filter_failed_for_walker = Arc::clone(&hidden_filter_failed);
 
-    'walk: while let Some(directory) = pending.pop() {
-        directory_count += 1;
-        if directory_count > MAX_SEARCH_DIRS {
+    let mut walker = WalkBuilder::new(directory);
+    walker
+        .follow_links(false)
+        .hidden(false)
+        .parents(true)
+        .ignore(false)
+        .git_ignore(true)
+        .git_global(false)
+        .git_exclude(false)
+        .require_git(false)
+        .sort_by_file_name(|left, right| left.cmp(right))
+        .filter_entry(move |entry| {
+            if entry.depth() == 0 {
+                return true;
+            }
+            let Some(name) = entry.file_name().to_str() else {
+                return true;
+            };
+            let is_directory = entry.file_type().is_some_and(|kind| kind.is_dir());
+            if !explicitly_scoped && is_directory && is_default_ignored_directory(name) {
+                return false;
+            }
+            if include_hidden {
+                return true;
+            }
+            match path_entry_is_hidden(name, entry.path()) {
+                Ok(is_hidden) => !is_hidden,
+                Err(()) => {
+                    hidden_filter_failed_for_walker.store(true, Ordering::Relaxed);
+                    false
+                }
+            }
+        });
+
+    'walk: for result in walker.build() {
+        let entry = match result {
+            Ok(entry) => entry,
+            Err(_) => {
+                mark_walk_problem(
+                    file_order,
+                    serial_file_limit,
+                    &mut truncated,
+                    &mut deferred_walk_errors,
+                );
+                continue;
+            }
+        };
+        if entry.depth() == 0 {
+            continue;
+        }
+        if entry.error().is_some() {
             mark_walk_problem(
                 file_order,
                 serial_file_limit,
                 &mut truncated,
                 &mut deferred_walk_errors,
             );
-            break;
         }
-        let Ok(entries) = fs::read_dir(&directory) else {
+        if entry.file_name().to_str().is_none() {
+            mark_walk_problem(
+                file_order,
+                serial_file_limit,
+                &mut truncated,
+                &mut deferred_walk_errors,
+            );
+            continue;
+        }
+        let Some(file_type) = entry.file_type() else {
             mark_walk_problem(
                 file_order,
                 serial_file_limit,
@@ -142,136 +203,97 @@ pub(super) fn search_files_direct(
             );
             continue;
         };
-        for entry in entries {
-            let Ok(entry) = entry else {
+        let path = entry.path().to_path_buf();
+        if entry.path_is_symlink() {
+            continue;
+        }
+        if file_type.is_dir() {
+            directory_count += 1;
+            if directory_count > MAX_SEARCH_DIRS {
                 mark_walk_problem(
                     file_order,
                     serial_file_limit,
                     &mut truncated,
                     &mut deferred_walk_errors,
                 );
-                continue;
-            };
-            let name = entry.file_name();
-            let Some(name) = name.to_str() else {
-                mark_walk_problem(
-                    file_order,
-                    serial_file_limit,
-                    &mut truncated,
-                    &mut deferred_walk_errors,
-                );
-                continue;
-            };
-            let Ok(file_type) = entry.file_type() else {
-                mark_walk_problem(
-                    file_order,
-                    serial_file_limit,
-                    &mut truncated,
-                    &mut deferred_walk_errors,
-                );
-                continue;
-            };
-            let path = entry.path();
-            if file_type.is_symlink() {
-                continue;
+                break;
             }
-            if !include_hidden {
-                match entry_is_hidden(name, &entry) {
-                    Ok(true) => continue,
-                    Ok(false) => {}
-                    Err(()) => {
-                        mark_walk_problem(
-                            file_order,
-                            serial_file_limit,
-                            &mut truncated,
-                            &mut deferred_walk_errors,
-                        );
-                        continue;
-                    }
-                }
-            }
-            if file_type.is_dir() {
-                if !explicitly_scoped && is_default_ignored_directory(name) {
-                    continue;
-                }
-                if directory_count.saturating_add(pending.len()) >= MAX_SEARCH_DIRS {
-                    mark_walk_problem(
-                        file_order,
-                        serial_file_limit,
-                        &mut truncated,
-                        &mut deferred_walk_errors,
-                    );
-                    break 'walk;
-                }
-                pending.push(path);
-                continue;
-            }
-            if !file_type.is_file() {
-                continue;
-            }
-            let Ok(metadata) = entry.metadata() else {
-                mark_walk_problem(
-                    file_order,
-                    serial_file_limit,
-                    &mut truncated,
-                    &mut deferred_walk_errors,
-                );
-                continue;
-            };
-            file_count += 1;
-            if file_count > MAX_SEARCH_FILES {
-                mark_walk_problem(
-                    file_order,
-                    serial_file_limit,
-                    &mut truncated,
-                    &mut deferred_walk_errors,
-                );
+            continue;
+        }
+        if !file_type.is_file() {
+            continue;
+        }
+        let Ok(metadata) = entry.metadata() else {
+            mark_walk_problem(
+                file_order,
+                serial_file_limit,
+                &mut truncated,
+                &mut deferred_walk_errors,
+            );
+            continue;
+        };
+        file_count += 1;
+        if file_count > MAX_SEARCH_FILES {
+            mark_walk_problem(
+                file_order,
+                serial_file_limit,
+                &mut truncated,
+                &mut deferred_walk_errors,
+            );
+            break;
+        }
+
+        file_order += 1;
+        let remaining_bytes = MAX_SEARCH_BYTES.saturating_sub(bytes_read + queued_bytes);
+        let bytes_to_read = metadata.len().min(remaining_bytes);
+        let byte_limited = metadata.len() > remaining_bytes;
+        let candidate = SearchCandidate {
+            path,
+            bytes_to_read,
+            byte_limited,
+        };
+
+        if serial_file_count < serial_file_limit {
+            let window_limit = limit.saturating_add(1).saturating_sub(results.len());
+            let file_result = scan_search_file(
+                &candidate,
+                &pattern,
+                offset.saturating_sub(match_index),
+                window_limit,
+                true,
+                &mut line,
+            );
+            bytes_read = bytes_read.saturating_add(file_result.bytes_read);
+            truncated |= file_result.truncated;
+            match_index = match_index.saturating_add(file_result.match_count);
+            append_search_lines(root, &candidate.path, &file_result.matches, &mut results);
+            serial_file_count += 1;
+
+            if results.len() > limit {
+                has_more_matches = true;
+                truncated = true;
                 break 'walk;
             }
-
-            file_order += 1;
-            let remaining_bytes = MAX_SEARCH_BYTES.saturating_sub(bytes_read + queued_bytes);
-            let bytes_to_read = metadata.len().min(remaining_bytes);
-            let byte_limited = metadata.len() > remaining_bytes;
-            let candidate = SearchCandidate {
-                path,
-                bytes_to_read,
-                byte_limited,
-            };
-
-            if serial_file_count < serial_file_limit {
-                let window_limit = limit.saturating_add(1).saturating_sub(results.len());
-                let file_result = scan_search_file(
-                    &candidate,
-                    &pattern,
-                    offset.saturating_sub(match_index),
-                    window_limit,
-                    true,
-                    &mut line,
-                );
-                bytes_read = bytes_read.saturating_add(file_result.bytes_read);
-                truncated |= file_result.truncated;
-                match_index = match_index.saturating_add(file_result.match_count);
-                append_search_lines(root, &candidate.path, &file_result.matches, &mut results);
-                serial_file_count += 1;
-
-                if results.len() > limit {
-                    has_more_matches = true;
-                    truncated = true;
-                    break 'walk;
-                }
-                if byte_limited {
-                    truncated = true;
-                    break 'walk;
-                }
-            } else {
-                queued_bytes = queued_bytes.saturating_add(bytes_to_read);
-                candidates.push(candidate);
-                if byte_limited {
-                    break 'walk;
-                }
+            if byte_limited {
+                truncated = true;
+                break 'walk;
+            }
+        } else {
+            queued_bytes = queued_bytes.saturating_add(bytes_to_read);
+            candidates.push(candidate);
+            if byte_limited {
+                break 'walk;
             }
         }
+    }
+
+    if hidden_filter_failed.load(Ordering::Relaxed) {
+        mark_walk_problem(
+            file_order,
+            serial_file_limit,
+            &mut truncated,
+            &mut deferred_walk_errors,
+        );
     }
 
     let mut error_index = 0usize;

@@ -320,6 +320,12 @@ async fn finish_service_shutdown(
     {
         eprintln!("local_service_shutdown_timed_out");
     }
+    if crate::tools::terminal::TerminalSessionManager::stop_all_global()
+        .await
+        .is_err()
+    {
+        eprintln!("terminal_service_shutdown_failed");
+    }
 }
 
 #[cfg(test)]

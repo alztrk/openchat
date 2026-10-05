@@ -139,6 +139,62 @@ fn generated_directories_are_skipped_by_default_and_searchable_when_selected() {
 }
 
 #[test]
+fn gitignore_rules_filter_listing_and_search_but_explicit_scope_can_search_ignored_path() {
+    let directory = TestDirectory::new();
+    directory.write(".gitignore", "ignored.txt\nignored-dir/\n");
+    directory.write("visible.txt", "searchable marker\n");
+    directory.write("ignored.txt", "hidden marker\n");
+    directory.write("ignored-dir/nested.txt", "nested marker\n");
+    directory.write("src/.gitignore", "private.txt\n");
+    directory.write("src/public.txt", "nested searchable marker\n");
+    directory.write("src/private.txt", "nested hidden marker\n");
+
+    let listing = list_files(directory.root(), "", 0, 100).expect("list workspace root");
+    let listed_paths = listing["entries"]
+        .as_array()
+        .expect("directory entries")
+        .iter()
+        .filter_map(|entry| entry["path"].as_str())
+        .collect::<Vec<_>>();
+    assert!(listed_paths.contains(&"visible.txt"));
+    assert!(!listed_paths.contains(&"ignored.txt"));
+    assert!(!listed_paths.contains(&"ignored-dir"));
+
+    let selected_listing =
+        list_files(directory.root(), "ignored-dir", 0, 100).expect("list selected ignored path");
+    assert_eq!(
+        selected_listing["entries"][0]["path"],
+        json!("ignored-dir/nested.txt")
+    );
+    let nested_listing = list_files(directory.root(), "src", 0, 100).expect("list nested folder");
+    let nested_paths = nested_listing["entries"]
+        .as_array()
+        .expect("nested directory entries")
+        .iter()
+        .filter_map(|entry| entry["path"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(nested_paths, ["src/public.txt"]);
+
+    let default_search =
+        search_files(directory.root(), "", "marker", false, 0, 40).expect("search workspace root");
+    let default_matches = default_search["matches"]
+        .as_array()
+        .expect("search matches");
+    let default_paths = default_matches
+        .iter()
+        .filter_map(|matched| matched["path"].as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(default_paths, ["src/public.txt", "visible.txt"]);
+
+    let explicit_search = search_files(directory.root(), "ignored-dir", "marker", false, 0, 40)
+        .expect("search explicitly selected ignored directory");
+    assert_eq!(
+        explicit_search["matches"][0]["path"],
+        json!("ignored-dir/nested.txt")
+    );
+}
+
+#[test]
 fn search_reads_current_file_contents_each_time() {
     let directory = TestDirectory::new();
     directory.write("source.txt", "oldmarker value\n");
@@ -887,7 +943,7 @@ fn executor_prepares_and_handles_bash_tool() {
 async fn terminal_manager_runs_command_and_handles_input_and_kill() {
     use super::terminal::TerminalSessionManager;
     let directory = TestDirectory::new();
-    let manager = TerminalSessionManager::global();
+    let manager = TerminalSessionManager::isolated();
 
     // 1. Fast command execution test
     let exec_res = manager
@@ -908,6 +964,19 @@ async fn terminal_manager_runs_command_and_handles_input_and_kill() {
             .contains("openchat_terminal_ok")
     );
 
+    let failing_command = "exit 17";
+    let failed = manager
+        .execute(
+            failing_command,
+            Path::new(directory.root()),
+            Some(10),
+            Some(3000),
+        )
+        .await
+        .expect("execute nonzero command");
+    assert_eq!(failed["is_running"], false);
+    assert_eq!(failed["exit_code"], 17);
+
     // 2. Interactive session creation test
     #[cfg(windows)]
     let interactive_cmd = "$line = [Console]::ReadLine(); Write-Host ('INPUT_RECV:' + $line)";
@@ -920,7 +989,7 @@ async fn terminal_manager_runs_command_and_handles_input_and_kill() {
         .expect("create interactive session");
 
     let term_id = session.id.clone();
-    assert!(session.is_running().await);
+    assert!(session.is_running().await.expect("read process status"));
 
     // Send input to the waiting process
     let input_res = manager
@@ -940,6 +1009,91 @@ async fn terminal_manager_runs_command_and_handles_input_and_kill() {
     // Session may have already finished after readLine or is killed
     let _ = kill_res;
     assert!(manager.get_session(&term_id).await.is_none());
+    manager.stop_all().await.expect("stop remaining sessions");
+}
+
+#[tokio::test]
+async fn terminal_manager_shutdown_stops_running_command_sessions() {
+    use super::terminal::TerminalSessionManager;
+
+    let directory = TestDirectory::new();
+    let manager = TerminalSessionManager::isolated();
+    #[cfg(windows)]
+    let command = "Start-Sleep -Seconds 30";
+    #[cfg(not(windows))]
+    let command = "sleep 30";
+
+    let result = manager
+        .execute(command, Path::new(directory.root()), Some(60), Some(100))
+        .await
+        .expect("start a long-running command");
+    let terminal_id = result["terminal_id"]
+        .as_str()
+        .expect("running command has a terminal id")
+        .to_owned();
+    let session = manager
+        .get_session(&terminal_id)
+        .await
+        .expect("running session stays registered");
+    assert!(session.is_running().await.expect("check running session"));
+
+    manager
+        .stop_all()
+        .await
+        .expect("stop sessions during shutdown");
+
+    assert!(!session.is_running().await.expect("check stopped session"));
+    assert!(manager.get_session(&terminal_id).await.is_none());
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn terminal_manager_shutdown_stops_descendant_processes() {
+    use super::terminal::TerminalSessionManager;
+    use std::{fs, time::Duration};
+
+    let directory = TestDirectory::new();
+    let manager = TerminalSessionManager::isolated();
+    let command = "$child = Start-Process -FilePath 'powershell.exe' -ArgumentList '-NoProfile -NonInteractive -Command Start-Sleep -Seconds 30' -PassThru; Set-Content -Path 'child-pid.txt' -Value $child.Id; Start-Sleep -Seconds 30";
+    manager
+        .execute(command, Path::new(directory.root()), Some(60), Some(100))
+        .await
+        .expect("start a shell with a long-running descendant");
+
+    let pid_file = directory.0.join("child-pid.txt");
+    let child_pid = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Ok(pid) = fs::read_to_string(&pid_file) {
+                break pid.trim().parse::<u32>().expect("child pid is numeric");
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("descendant process starts");
+
+    assert!(windows_process_is_running(child_pid));
+    manager
+        .stop_all()
+        .await
+        .expect("stop shell and descendant processes");
+    assert!(!windows_process_is_running(child_pid));
+}
+
+#[cfg(windows)]
+fn windows_process_is_running(pid: u32) -> bool {
+    let Ok(output) = std::process::Command::new("tasklist.exe")
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+        .output()
+    else {
+        return false;
+    };
+    let pid = pid.to_string();
+    String::from_utf8_lossy(&output.stdout).lines().any(|line| {
+        line.split(',')
+            .nth(1)
+            .is_some_and(|field| field.trim_matches('"') == pid)
+    })
 }
 
 #[tokio::test]
