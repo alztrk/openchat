@@ -188,7 +188,9 @@ class OpenChatServiceClient {
         message: 'The local service client has been closed.',
       );
     }
-    if (method != 'system.health' && method != 'system.initialize') {
+    if (method != 'system.health' &&
+        method != 'system.database.prepare' &&
+        method != 'system.initialize') {
       final initializationError = await _databaseInitialization.future;
       if (initializationError != null) throw initializationError;
     }
