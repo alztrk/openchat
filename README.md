@@ -42,7 +42,7 @@ See [ROADMAP.md](ROADMAP.md) for the current implementation status, ordered next
 
 ## Current status
 
-Before opening the service or applying schema changes, Windows startup runs SQLite's read-only quick integrity check. A damaged database is left untouched and is not retried as a transient failure. Schema migrations require a verified SQLite online backup in `%LOCALAPPDATA%\OpenChat\db\backups\`; the backup includes committed WAL data. Conversation-memory search indexes are derived from saved messages and tool activity; migrations rebuild missing indexes and their update triggers without changing the source conversations.
+Before opening the service or applying schema changes, Windows startup runs SQLite's read-only quick integrity check. A damaged database is left untouched and is not retried as a transient failure. Schema migrations require a verified SQLite online backup in `%LOCALAPPDATA%\OpenChat\db\backups\`; the backup includes committed WAL data. Conversation-memory search indexes are derived from saved messages and tool activity; startup repairs missing index tables or triggers, and migrations rebuild missing indexes without changing source conversations.
 
 The Windows chat database is shared by the Flutter/Drift UI and the Rust service in WAL mode. Both SQLite runtimes must remain at version 3.51.3 or newer: earlier versions have an upstream WAL-reset race that can corrupt a database when separate connections write or checkpoint concurrently. Tests assert the minimum version for both bundled runtimes.
 

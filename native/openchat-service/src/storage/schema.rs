@@ -285,7 +285,8 @@ pub(super) fn initialize_schema(
     }
     if current_version >= target_version {
         if target_version >= SCHEMA_VERSION && current_version >= 13 {
-            let indexes_repaired = repair_missing_memory_indexes(connection, current_version)?;
+            let indexes_repaired =
+                repair_missing_memory_indexes_and_triggers(connection, current_version)?;
             if indexes_repaired {
                 let transaction = connection.unchecked_transaction()?;
                 transaction.execute_batch(REDACTED_TOOL_INDEX_TRIGGERS)?;
@@ -297,7 +298,7 @@ pub(super) fn initialize_schema(
     }
 
     if current_version >= 13 {
-        repair_missing_memory_indexes(connection, current_version)?;
+        repair_missing_memory_indexes_and_triggers(connection, current_version)?;
     }
 
     connection.execute_batch(
@@ -1709,7 +1710,17 @@ fn schema_table_exists(connection: &Connection, name: &str) -> rusqlite::Result<
     )
 }
 
-fn repair_missing_memory_indexes(
+fn schema_trigger_exists(connection: &Connection, name: &str) -> rusqlite::Result<bool> {
+    connection.query_row(
+        "SELECT EXISTS (
+            SELECT 1 FROM sqlite_schema WHERE type = 'trigger' AND name = ?1
+        )",
+        [name],
+        |row| row.get(0),
+    )
+}
+
+fn repair_missing_memory_indexes_and_triggers(
     connection: &Connection,
     backend_version: i64,
 ) -> rusqlite::Result<bool> {
@@ -1719,7 +1730,26 @@ fn repair_missing_memory_indexes(
     let missing_message_index = !schema_table_exists(connection, "conversation_memory_fts")?;
     let missing_tool_index =
         backend_version >= 14 && !schema_table_exists(connection, "conversation_memory_tools_fts")?;
-    if !missing_message_index && !missing_tool_index {
+    let missing_memory_triggers = if backend_version >= SCHEMA_VERSION {
+        let mut missing = false;
+        for name in [
+            "conversation_memory_message_insert",
+            "conversation_memory_message_update",
+            "conversation_memory_message_delete",
+            "conversation_memory_tool_insert",
+            "conversation_memory_tool_update",
+            "conversation_memory_tool_delete",
+        ] {
+            if !schema_trigger_exists(connection, name)? {
+                missing = true;
+                break;
+            }
+        }
+        missing
+    } else {
+        false
+    };
+    if !missing_message_index && !missing_tool_index && !missing_memory_triggers {
         return Ok(false);
     }
 
@@ -1889,6 +1919,19 @@ mod tests {
             .expect("remove derived memory indexes and triggers");
     }
 
+    fn drop_memory_triggers(connection: &Connection) {
+        connection
+            .execute_batch(
+                "DROP TRIGGER IF EXISTS conversation_memory_message_insert;
+                DROP TRIGGER IF EXISTS conversation_memory_message_update;
+                DROP TRIGGER IF EXISTS conversation_memory_message_delete;
+                DROP TRIGGER IF EXISTS conversation_memory_tool_insert;
+                DROP TRIGGER IF EXISTS conversation_memory_tool_update;
+                DROP TRIGGER IF EXISTS conversation_memory_tool_delete;",
+            )
+            .expect("remove derived memory index triggers");
+    }
+
     fn assert_memory_indexes_rebuilt(connection: &Connection) {
         let message_count = connection
             .query_row(
@@ -1950,6 +1993,19 @@ mod tests {
         assert_eq!(
             initialize_schema(&connection, SCHEMA_VERSION)
                 .expect("repair missing indexes in an otherwise current schema"),
+            SCHEMA_VERSION
+        );
+        assert_memory_indexes_rebuilt(&connection);
+    }
+
+    #[test]
+    fn repairs_missing_memory_triggers_on_current_schema_startup() {
+        let connection = memory_index_repair_fixture(SCHEMA_VERSION);
+        drop_memory_triggers(&connection);
+
+        assert_eq!(
+            initialize_schema(&connection, SCHEMA_VERSION)
+                .expect("repair missing memory index triggers"),
             SCHEMA_VERSION
         );
         assert_memory_indexes_rebuilt(&connection);
