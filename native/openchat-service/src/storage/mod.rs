@@ -206,6 +206,91 @@ impl AppStorage {
         })
     }
 
+    pub(crate) fn log_provider_request_usage(
+        &self,
+        provider_id: &str,
+        model_id: &str,
+        operation: &str,
+        prompt_tokens: Option<i64>,
+        completion_tokens: Option<i64>,
+        cached_tokens: Option<i64>,
+        cache_write_tokens: Option<i64>,
+        cache_discount: Option<f64>,
+        estimated_prompt_tokens: i64,
+        image_inputs: i64,
+    ) -> io::Result<()> {
+        if !matches!(provider_id, "cerebras" | "mistral" | "openrouter") {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "provider usage diagnostics are not enabled for this provider",
+            ));
+        }
+        let operation = match operation {
+            "chat" | "tool_follow_up" | "compaction" => operation,
+            _ => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "provider usage diagnostic operation is invalid",
+                ));
+            }
+        };
+        let provider = diagnostic_identifier(provider_id, 32);
+        let model = diagnostic_identifier(model_id, 128);
+        if provider.is_empty()
+            || model.is_empty()
+            || [
+                prompt_tokens,
+                completion_tokens,
+                cached_tokens,
+                cache_write_tokens,
+            ]
+            .into_iter()
+            .flatten()
+            .any(|tokens| tokens < 0)
+            || estimated_prompt_tokens < 0
+            || image_inputs < 0
+            || cache_discount.is_some_and(|discount| !discount.is_finite())
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "provider usage diagnostic values are invalid",
+            ));
+        }
+
+        let event = if prompt_tokens.is_some()
+            || completion_tokens.is_some()
+            || cached_tokens.is_some()
+            || cache_write_tokens.is_some()
+            || cache_discount.is_some()
+        {
+            "usage_reported"
+        } else {
+            "usage_unavailable"
+        };
+        self.append_diagnostic("provider_usage", event, |entry| {
+            write!(
+                entry,
+                " provider={provider} model={model} operation={operation} estimated_prompt_tokens={estimated_prompt_tokens} image_inputs={image_inputs}"
+            )?;
+            if let Some(prompt_tokens) = prompt_tokens {
+                write!(entry, " prompt_tokens={prompt_tokens}")?;
+            }
+            if let Some(completion_tokens) = completion_tokens {
+                write!(entry, " completion_tokens={completion_tokens}")?;
+            }
+            if let Some(cached_tokens) = cached_tokens {
+                write!(entry, " cached_tokens={cached_tokens}")?;
+            }
+            if let Some(cache_write_tokens) = cache_write_tokens {
+                write!(entry, " cache_write_tokens={cache_write_tokens}")?;
+            }
+            if let Some(cache_discount) = cache_discount {
+                write!(entry, " cache_discount={cache_discount}")?;
+            }
+            Ok(())
+        })
+    }
+
     fn append_diagnostic(
         &self,
         component: &'static str,
@@ -333,6 +418,16 @@ impl AppStorage {
         self.migration_backup_created.store(true, Ordering::Release);
         Ok(true)
     }
+}
+
+fn diagnostic_identifier(value: &str, max_length: usize) -> String {
+    value
+        .chars()
+        .filter(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '_' | '-' | '/' | ':')
+        })
+        .take(max_length)
+        .collect()
 }
 
 fn ensure_supported_sqlite_runtime() -> rusqlite::Result<()> {

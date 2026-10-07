@@ -2,6 +2,8 @@
 
 OpenChat can export selected conversations and restore them into the current local profile. The archive does not contain the entire profile or a copy of the SQLite database.
 
+Conversations can also be archived from the chat list. Archiving removes a conversation from the active sidebar and keeps its messages and attachments on the device. Open the Archived section to continue a conversation or restore it to the active list. Archiving clears its pinned state. A conversation with an active response must be stopped before it can be archived. Permanent deletion remains available as a separate action.
+
 ## Included data
 
 An archive contains the selected conversation titles and timestamps, provider and model labels, message text, reasoning summaries, tool inputs and outputs, attachment bytes, and per-conversation memory-index settings. The archive omits provider credentials, linked account and workspace identifiers, project links, and global application settings. After restore, select an available provider and model again before continuing the conversation.
@@ -18,7 +20,7 @@ The Rust `age` crate currently labels its API beta in its crate documentation. O
 
 ## Restore behavior and limits
 
-Inspect decrypts and validates the complete archive before showing the conversation, message, attachment, duplicate, and creation-date counts. Restore can skip conversations whose IDs already exist or import them as copies with new conversation IDs. New conversation records do not reconnect accounts, workspaces, or projects.
+Inspect decrypts and validates the complete archive before showing the conversation, message, attachment, duplicate, and creation-date counts. Restore can skip conversations whose IDs already exist or import them as copies with new conversation IDs. New conversation records do not reconnect accounts, workspaces, or projects. New archive files preserve each conversation's archived state; older files without that field restore conversations to the active list.
 
 Conversation rows and messages are written in one SQLite transaction. Attachments use exclusive file creation; if any copy or database write fails, the transaction rolls back and files created by that restore attempt are removed. Existing files are not overwritten. Restore uses the current application schema; it does not migrate an archive from a future format or replace the profile database.
 

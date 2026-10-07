@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
@@ -123,7 +124,7 @@ void main() {
       expect(defaultModel?.modelId, 'big-pickle');
 
       // Hide Space Bunny Free
-      final hideButtons = find.byIcon(Icons.visibility_outlined);
+      final hideButtons = find.byIcon(LucideIcons.eye);
       expect(hideButtons, findsNWidgets(2));
       await tester.tap(hideButtons.last);
       await tester.pumpAndSettle();

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:intl/intl.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
@@ -25,17 +26,17 @@ Widget? toolOperationResult(
 };
 
 IconData toolOperationIcon(String name) => switch (name) {
-  'list_files' || 'glob' || 'list_directory' => Icons.folder_copy_outlined,
-  'search_files' || 'grep' => Icons.search_rounded,
-  'read_file' || 'read' => Icons.article_outlined,
-  'get_file_info' => Icons.info_outline_rounded,
-  'write_file' || 'write' => Icons.save_outlined,
-  'edit_file' || 'edit' => Icons.edit_note_rounded,
-  'execute_command' || 'bash' => Icons.terminal_rounded,
-  'send_terminal_input' => Icons.keyboard_alt_outlined,
-  'web_search' => Icons.travel_explore_rounded,
-  'read_url_content' || 'read_url' => Icons.public_rounded,
-  _ => Icons.build_outlined,
+  'list_files' || 'glob' || 'list_directory' => LucideIcons.folders,
+  'search_files' || 'grep' => LucideIcons.search,
+  'read_file' || 'read' => LucideIcons.fileText,
+  'get_file_info' => LucideIcons.info,
+  'write_file' || 'write' => LucideIcons.save,
+  'edit_file' || 'edit' => LucideIcons.notebookPen,
+  'execute_command' || 'bash' => LucideIcons.terminal,
+  'send_terminal_input' => LucideIcons.keyboard,
+  'web_search' => LucideIcons.earth,
+  'read_url_content' || 'read_url' => LucideIcons.globe,
+  _ => LucideIcons.wrench,
 };
 
 class ToolSearchResult extends StatelessWidget {
@@ -94,7 +95,7 @@ class ToolSearchResult extends StatelessWidget {
       children: [
         Row(
           children: [
-            Icon(Icons.search_rounded, size: 15, color: palette.accentIcon),
+            Icon(LucideIcons.search, size: 15, color: palette.accentIcon),
             const SizedBox(width: 7),
             if (query is String && query.isNotEmpty)
               Expanded(
@@ -121,7 +122,7 @@ class ToolSearchResult extends StatelessWidget {
         if (matches.isEmpty) ...[
           const SizedBox(height: 8),
           _ToolResultMessage(
-            icon: Icons.search_off_rounded,
+            icon: LucideIcons.searchX,
             message: l10n.toolSearchNoMatches,
             palette: palette,
           ),
@@ -153,7 +154,7 @@ class ToolSearchResult extends StatelessWidget {
                       Row(
                         children: [
                           Icon(
-                            Icons.insert_drive_file_outlined,
+                            LucideIcons.file,
                             size: 14,
                             color: palette.secondaryIcon,
                           ),
@@ -262,13 +263,13 @@ class ToolReadResult extends StatelessWidget {
       children: [
         _PathHeading(
           path: resultPath,
-          icon: Icons.article_outlined,
+          icon: LucideIcons.fileText,
           palette: palette,
         ),
         const SizedBox(height: 7),
         if (lines.isEmpty)
           _ToolResultMessage(
-            icon: Icons.article_outlined,
+            icon: LucideIcons.fileText,
             message: l10n.toolReadNoLines,
             palette: palette,
           )
@@ -392,9 +393,7 @@ class ToolFileInfoResult extends StatelessWidget {
                   borderRadius: BorderRadius.circular(11),
                 ),
                 child: Icon(
-                  isDirectory
-                      ? Icons.folder_rounded
-                      : Icons.insert_drive_file_outlined,
+                  isDirectory ? LucideIcons.folder : LucideIcons.file,
                   size: 20,
                   color: palette.accentIcon,
                 ),
@@ -434,9 +433,7 @@ class ToolFileInfoResult extends StatelessWidget {
           runSpacing: 7,
           children: [
             _MetadataChip(
-              icon: isDirectory
-                  ? Icons.folder_outlined
-                  : Icons.description_outlined,
+              icon: isDirectory ? LucideIcons.folder : LucideIcons.fileText,
               label: isDirectory
                   ? l10n.toolFileTypeDirectory
                   : l10n.toolFileTypeFile,
@@ -444,7 +441,7 @@ class ToolFileInfoResult extends StatelessWidget {
             ),
             if (!isDirectory)
               _MetadataChip(
-                icon: Icons.data_usage_outlined,
+                icon: LucideIcons.chartNoAxesCombined,
                 label: _formatBytes(context, size),
                 palette: palette,
               ),
@@ -492,7 +489,7 @@ class ToolWriteResult extends StatelessWidget {
       palette: palette,
       children: [
         _SuccessPanel(
-          icon: Icons.save_rounded,
+          icon: LucideIcons.save,
           title: context.openchatL10n.toolWriteSuccess(
             _formatBytes(context, bytesWritten),
           ),
@@ -501,7 +498,7 @@ class ToolWriteResult extends StatelessWidget {
         const SizedBox(height: 7),
         _PathHeading(
           path: resultPath,
-          icon: Icons.insert_drive_file_outlined,
+          icon: LucideIcons.file,
           palette: palette,
         ),
         if (preview != null) ...[
@@ -555,14 +552,14 @@ class ToolEditResult extends StatelessWidget {
       palette: palette,
       children: [
         _SuccessPanel(
-          icon: Icons.edit_rounded,
+          icon: LucideIcons.pencil,
           title: context.openchatL10n.toolEditSuccess(replacements),
           palette: palette,
         ),
         const SizedBox(height: 7),
         _PathHeading(
           path: resultPath,
-          icon: Icons.insert_drive_file_outlined,
+          icon: LucideIcons.file,
           palette: palette,
         ),
         if (canPreview) ...[
@@ -642,7 +639,7 @@ class _ToolResultMessage extends StatelessWidget {
   const _ToolResultMessage({
     required this.message,
     required this.palette,
-    this.icon = Icons.info_outline_rounded,
+    this.icon = LucideIcons.info,
   });
 
   final String message;
@@ -718,9 +715,7 @@ class _ToolResultState extends StatelessWidget {
               )
             else
               Icon(
-                isError
-                    ? Icons.error_outline_rounded
-                    : Icons.info_outline_rounded,
+                isError ? LucideIcons.circleAlert : LucideIcons.info,
                 size: 16,
                 color: foreground,
               ),
@@ -790,7 +785,7 @@ class _SuccessPanel extends StatelessWidget {
             ),
           ),
         ),
-        Icon(Icons.check_rounded, size: 15, color: palette.accentIcon),
+        Icon(LucideIcons.check, size: 15, color: palette.accentIcon),
       ],
     ),
   );
@@ -962,7 +957,7 @@ class _ResultFootnote extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(
     children: [
-      Icon(Icons.info_outline_rounded, size: 13, color: palette.secondaryIcon),
+      Icon(LucideIcons.info, size: 13, color: palette.secondaryIcon),
       const SizedBox(width: 5),
       Expanded(
         child: Text(

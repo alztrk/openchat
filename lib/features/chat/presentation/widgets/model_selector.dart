@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:openchat/app/openchat_dropdown.dart';
@@ -27,6 +28,11 @@ class ModelSelector extends StatefulWidget {
     required this.selectedModelRouteKey,
     required this.providerId,
     required this.isChatGptConnected,
+    this.chatGptFastModeEnabled = false,
+    this.chatGptFastModeAvailable = false,
+    this.chatGptFastModeLoading = false,
+    this.chatGptFastModeSaving = false,
+    this.onChatGptFastModeChanged,
     this.availableProviderIds = const <String>{},
     this.hiddenModelKeys = const <String>{},
     required this.onProviderSelected,
@@ -47,6 +53,11 @@ class ModelSelector extends StatefulWidget {
   final String? selectedModelId;
   final String providerId;
   final bool isChatGptConnected;
+  final bool chatGptFastModeEnabled;
+  final bool chatGptFastModeAvailable;
+  final bool chatGptFastModeLoading;
+  final bool chatGptFastModeSaving;
+  final ValueChanged<bool>? onChatGptFastModeChanged;
   final Set<String> availableProviderIds;
   final Set<String> hiddenModelKeys;
   final ValueChanged<String>? onProviderSelected;
@@ -271,40 +282,58 @@ class _ModelSelectorState extends State<ModelSelector> {
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
                   child: Column(
                     children: [
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(minHeight: 40),
-                        child: TextField(
-                          controller: _searchController,
-                          onChanged: (value) =>
-                              setState(() => _searchQuery = value),
-                          textInputAction: TextInputAction.search,
-                          style: TextStyle(
-                            color: widget.palette.text,
-                            fontSize: 13,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ConstrainedBox(
+                              constraints: const BoxConstraints(minHeight: 40),
+                              child: TextField(
+                                controller: _searchController,
+                                onChanged: (value) =>
+                                    setState(() => _searchQuery = value),
+                                textInputAction: TextInputAction.search,
+                                style: TextStyle(
+                                  color: widget.palette.text,
+                                  fontSize: 13,
+                                ),
+                                decoration: InputDecoration(
+                                  hintText: l10n.modelSearchHint,
+                                  hintStyle: TextStyle(
+                                    color: widget.palette.secondaryText,
+                                    fontSize: 13,
+                                  ),
+                                  prefixIcon: Icon(
+                                    LucideIcons.search,
+                                    size: 18,
+                                    color: widget.palette.secondaryIcon,
+                                  ),
+                                  prefixIconConstraints: const BoxConstraints(
+                                    minWidth: 36,
+                                  ),
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 9,
+                                  ),
+                                  filled: true,
+                                  fillColor: widget.palette.navigation,
+                                ),
+                              ),
+                            ),
                           ),
-                          decoration: InputDecoration(
-                            hintText: l10n.modelSearchHint,
-                            hintStyle: TextStyle(
-                              color: widget.palette.secondaryText,
-                              fontSize: 13,
+                          if (!_showFavorites &&
+                              widget.providerId == 'chatgpt') ...[
+                            const SizedBox(width: 4),
+                            _ChatGptFastModeButton(
+                              enabled: widget.chatGptFastModeEnabled,
+                              available: widget.chatGptFastModeAvailable,
+                              loading: widget.chatGptFastModeLoading,
+                              saving: widget.chatGptFastModeSaving,
+                              palette: widget.palette,
+                              onChanged: widget.onChatGptFastModeChanged,
                             ),
-                            prefixIcon: Icon(
-                              Icons.search,
-                              size: 18,
-                              color: widget.palette.secondaryIcon,
-                            ),
-                            prefixIconConstraints: const BoxConstraints(
-                              minWidth: 36,
-                            ),
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 9,
-                            ),
-                            filled: true,
-                            fillColor: widget.palette.navigation,
-                          ),
-                        ),
+                          ],
+                        ],
                       ),
                       const SizedBox(height: 8),
                       Expanded(
@@ -822,7 +851,7 @@ class _ModelOptionState extends State<_ModelOption> {
                         if (widget.selected) ...[
                           const SizedBox(width: 4),
                           Icon(
-                            Icons.check_rounded,
+                            LucideIcons.check,
                             size: 16,
                             color: widget.palette.accent,
                           ),
@@ -914,9 +943,7 @@ class _ModelOptionState extends State<_ModelOption> {
                           ? widget.palette.disabledIcon
                           : widget.palette.secondaryIcon,
                       icon: Icon(
-                        widget.isFavorite
-                            ? Icons.star_rounded
-                            : Icons.star_border_rounded,
+                        widget.isFavorite ? LucideIcons.star : LucideIcons.star,
                       ),
                     ),
                   ),
@@ -981,6 +1008,61 @@ String _formatContextWindow(int tokens) {
     return '${formatted}K';
   }
   return tokens.toString();
+}
+
+class _ChatGptFastModeButton extends StatelessWidget {
+  const _ChatGptFastModeButton({
+    required this.enabled,
+    required this.available,
+    required this.loading,
+    required this.saving,
+    required this.palette,
+    required this.onChanged,
+  });
+
+  final bool enabled;
+  final bool available;
+  final bool loading;
+  final bool saving;
+  final OpenChatPalette palette;
+  final ValueChanged<bool>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.openchatL10n;
+    final canChange = available && !loading && !saving && onChanged != null;
+    final isActive = available && enabled;
+    final tooltip = switch ((loading, available, enabled)) {
+      (true, _, _) => l10n.chatGptFastModeLoadingTooltip,
+      (_, false, _) => l10n.chatGptFastModeUnavailableTooltip,
+      (_, _, true) => l10n.chatGptFastModeEnabledTooltip,
+      _ => l10n.chatGptFastModeDisabledTooltip,
+    };
+
+    return SizedBox.square(
+      dimension: 44,
+      child: IconButton(
+        tooltip: tooltip,
+        onPressed: canChange ? () => onChanged?.call(!enabled) : null,
+        style: IconButton.styleFrom(
+          foregroundColor: isActive
+              ? palette.accentIcon
+              : palette.secondaryIcon,
+          disabledForegroundColor: palette.disabledIcon,
+          backgroundColor: isActive
+              ? palette.accent.withValues(alpha: 0.14)
+              : Colors.transparent,
+          minimumSize: const Size.square(44),
+          padding: EdgeInsets.zero,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+        icon: const Icon(LucideIcons.zap, size: 18),
+      ),
+    );
+  }
 }
 
 class _ModelProviderTab extends StatelessWidget {

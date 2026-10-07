@@ -7,8 +7,28 @@ use crate::{
     provider_schema::{MessageRole, ProviderMessage, ToolActivity, ToolCall},
 };
 
+const OPENAI_COMPATIBLE_HISTORICAL_TOOL_OUTPUT_MAX_BYTES: usize = 4096;
+const OPENAI_COMPATIBLE_HISTORICAL_TOOL_EXCERPT_BYTES: usize = 1024;
+
+#[cfg(test)]
 pub(crate) fn provider_messages(
     message: &StoredMessage,
+) -> Result<Vec<ProviderMessage>, ServiceError> {
+    provider_messages_with_tool_output_limit(message, None)
+}
+
+pub(crate) fn provider_messages_for_provider(
+    message: &StoredMessage,
+    provider_id: &str,
+) -> Result<Vec<ProviderMessage>, ServiceError> {
+    let output_limit = matches!(provider_id, "cerebras" | "mistral" | "openrouter")
+        .then_some(OPENAI_COMPATIBLE_HISTORICAL_TOOL_OUTPUT_MAX_BYTES);
+    provider_messages_with_tool_output_limit(message, output_limit)
+}
+
+fn provider_messages_with_tool_output_limit(
+    message: &StoredMessage,
+    tool_output_limit: Option<usize>,
 ) -> Result<Vec<ProviderMessage>, ServiceError> {
     let tool_rounds = completed_tool_rounds(message);
     let mut messages = Vec::with_capacity(1 + tool_rounds.len().saturating_mul(2));
@@ -38,17 +58,14 @@ pub(crate) fn provider_messages(
                     .collect(),
                 tool_call_id: None,
             });
-            messages.extend(tool_round.iter().map(|activity| {
-                ProviderMessage {
-                    role: MessageRole::Tool,
-                    content: activity
-                        .output
-                        .as_ref()
-                        .map_or_else(String::new, Value::to_string),
-                    images: Vec::new(),
-                    tool_calls: Vec::new(),
-                    tool_call_id: Some(activity.call_id.clone()),
-                }
+            messages.extend(tool_round.iter().map(|activity| ProviderMessage {
+                role: MessageRole::Tool,
+                content: activity.output.as_ref().map_or_else(String::new, |output| {
+                    provider_tool_output(output, tool_output_limit)
+                }),
+                images: Vec::new(),
+                tool_calls: Vec::new(),
+                tool_call_id: Some(activity.call_id.clone()),
             }));
         }
         append_assistant_text(
@@ -279,6 +296,19 @@ pub(crate) fn tool_activity_summary_segments(message: &StoredMessage) -> Vec<(St
 }
 
 pub(crate) fn summary_text(message: &StoredMessage) -> String {
+    summary_text_with_tool_output_limit(message, None)
+}
+
+pub(crate) fn summary_text_for_provider(message: &StoredMessage, provider_id: &str) -> String {
+    let output_limit = matches!(provider_id, "cerebras" | "mistral" | "openrouter")
+        .then_some(OPENAI_COMPATIBLE_HISTORICAL_TOOL_OUTPUT_MAX_BYTES);
+    summary_text_with_tool_output_limit(message, output_limit)
+}
+
+fn summary_text_with_tool_output_limit(
+    message: &StoredMessage,
+    tool_output_limit: Option<usize>,
+) -> String {
     let tool_rounds = completed_tool_rounds(message);
     if tool_rounds.is_empty() {
         return message.content.clone();
@@ -298,7 +328,7 @@ pub(crate) fn summary_text(message: &StoredMessage) -> String {
             emitted_text_bytes = end;
         }
         for activity in tool_round {
-            append_summary_tool_activity(&mut text, activity);
+            append_summary_tool_activity(&mut text, activity, tool_output_limit);
         }
     }
     if let Some((segment, end)) =
@@ -313,7 +343,11 @@ pub(crate) fn summary_text(message: &StoredMessage) -> String {
     text
 }
 
-fn append_summary_tool_activity(text: &mut String, activity: &ToolActivity) {
+fn append_summary_tool_activity(
+    text: &mut String,
+    activity: &ToolActivity,
+    tool_output_limit: Option<usize>,
+) {
     if !text.is_empty() {
         text.push('\n');
     }
@@ -324,9 +358,49 @@ fn append_summary_tool_activity(text: &mut String, activity: &ToolActivity) {
     text.push_str(&activity.arguments.to_string());
     text.push_str(&format!("\n[historical tool result: {}]\n", activity.name));
     if let Some(output) = activity.output.as_ref() {
-        text.push_str(&output.to_string());
+        text.push_str(&provider_tool_output(output, tool_output_limit));
     }
     text.push('\n');
+}
+
+fn provider_tool_output(output: &Value, max_bytes: Option<usize>) -> String {
+    let serialized = output.to_string();
+    if !max_bytes.is_some_and(|limit| serialized.len() > limit) {
+        return serialized;
+    }
+
+    let excerpt = utf8_excerpt(&serialized, OPENAI_COMPATIBLE_HISTORICAL_TOOL_EXCERPT_BYTES);
+    json!({
+        "_openchat_truncated": true,
+        "original_bytes": serialized.len(),
+        "excerpt": excerpt,
+        "notice": "Earlier tool output was shortened for this request. The complete result remains in local history; rerun the tool if omitted details matter.",
+    })
+    .to_string()
+}
+
+fn utf8_excerpt(value: &str, max_bytes: usize) -> String {
+    const MARKER: &str = " … [middle omitted] … ";
+    if value.len() <= max_bytes {
+        return value.to_owned();
+    }
+
+    let excerpt_bytes = max_bytes.saturating_sub(MARKER.len());
+    let side_bytes = excerpt_bytes / 2;
+    let mut prefix_end = side_bytes.min(value.len());
+    while !value.is_char_boundary(prefix_end) {
+        prefix_end -= 1;
+    }
+    let mut suffix_start = value.len().saturating_sub(side_bytes);
+    while suffix_start < value.len() && !value.is_char_boundary(suffix_start) {
+        suffix_start += 1;
+    }
+    format!(
+        "{}{}{}",
+        &value[..prefix_end],
+        MARKER,
+        &value[suffix_start..]
+    )
 }
 
 fn completed_tool_activities(message: &StoredMessage) -> Vec<&ToolActivity> {

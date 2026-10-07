@@ -56,6 +56,13 @@ pub(crate) enum ToolOperation {
 }
 
 impl ToolOperation {
+    pub(crate) fn is_safe_for_auto_approval(&self) -> bool {
+        matches!(
+            self,
+            Self::List { .. } | Self::Search { .. } | Self::Read { .. } | Self::Info
+        )
+    }
+
     pub(crate) fn targets_directory(&self) -> bool {
         matches!(self, Self::List { .. } | Self::Search { .. })
     }

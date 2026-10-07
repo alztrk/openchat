@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/settings/data/local_engines_models.dart';
@@ -54,7 +55,7 @@ class LocalModelDirectoryControls extends StatelessWidget {
           children: [
             OutlinedButton.icon(
               onPressed: isBusy ? null : onChoose,
-              icon: const Icon(Icons.folder_open_outlined, size: 17),
+              icon: const Icon(LucideIcons.folderOpen, size: 17),
               label: Text(l10n.localModelChooseDirectory),
             ),
             OutlinedButton.icon(
@@ -64,7 +65,7 @@ class LocalModelDirectoryControls extends StatelessWidget {
                       dimension: 15,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.search_rounded, size: 17),
+                  : const Icon(LucideIcons.search, size: 17),
               label: Text(
                 isScanning
                     ? l10n.localModelScanningDirectory
@@ -74,7 +75,7 @@ class LocalModelDirectoryControls extends StatelessWidget {
             if (isCustom)
               TextButton.icon(
                 onPressed: isBusy ? null : onUseDefault,
-                icon: const Icon(Icons.restart_alt_rounded, size: 17),
+                icon: const Icon(LucideIcons.rotateCcw, size: 17),
                 label: Text(l10n.localModelUseDefaultDirectory),
               ),
           ],

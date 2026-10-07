@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:intl/intl.dart';
 
@@ -141,7 +142,7 @@ class AssistantMessage extends StatelessWidget {
                       tooltip: l10n.retry,
                       visualDensity: VisualDensity.compact,
                       onPressed: onRetry,
-                      icon: const Icon(Icons.refresh_rounded, size: 17),
+                      icon: const Icon(LucideIcons.refreshCw, size: 17),
                       color: palette.secondaryIcon,
                     ),
                   if (message.content.trim().isNotEmpty)
@@ -222,11 +223,7 @@ class _AssistantFailureCard extends StatelessWidget {
           children: [
             Padding(
               padding: const EdgeInsets.only(top: 1),
-              child: Icon(
-                Icons.error_outline_rounded,
-                size: 18,
-                color: errorColor,
-              ),
+              child: Icon(LucideIcons.circleAlert, size: 18, color: errorColor),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -482,7 +479,7 @@ class _ReasoningSummaryAccordion extends StatelessWidget {
               shape: RoundedRectangleBorder(borderRadius: cardRadius),
               collapsedShape: RoundedRectangleBorder(borderRadius: cardRadius),
               leading: Icon(
-                Icons.psychology_alt_outlined,
+                LucideIcons.brain,
                 color: palette.secondaryIcon,
                 size: 17,
               ),
@@ -635,7 +632,7 @@ class CopyMessageButton extends StatelessWidget {
       padding: EdgeInsets.zero,
       constraints: const BoxConstraints.tightFor(width: 44, height: 44),
       onPressed: () => unawaited(_copyMessage(context, content)),
-      icon: const Icon(Icons.copy_rounded, size: 16),
+      icon: const Icon(LucideIcons.copy, size: 16),
     );
   }
 }

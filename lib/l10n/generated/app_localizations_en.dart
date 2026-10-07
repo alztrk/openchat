@@ -647,6 +647,29 @@ class AppLocalizationsEn extends AppLocalizations {
   String get modelSearchHint => 'Search models...';
 
   @override
+  String get chatGptFastModeEnabledTooltip =>
+      'Fast mode is requested. It can use more subscription credits or cost more per API token.';
+
+  @override
+  String get chatGptFastModeDisabledTooltip =>
+      'Request Fast mode. It can use more subscription credits or cost more per API token; availability depends on the model.';
+
+  @override
+  String get chatGptFastModeUnavailableTooltip =>
+      'The selected model does not advertise Fast mode support.';
+
+  @override
+  String get chatGptFastModeLoadingTooltip => 'Loading Fast mode preference…';
+
+  @override
+  String get chatGptFastModeSettingsLoadFailed =>
+      'Fast mode preference could not be loaded.';
+
+  @override
+  String get chatGptFastModeSettingsSaveFailed =>
+      'Fast mode preference could not be saved.';
+
+  @override
   String get modelSearchNoResults => 'No models match your search.';
 
   @override
@@ -722,6 +745,36 @@ class AppLocalizationsEn extends AppLocalizations {
   String get deleteConversation => 'Delete conversation';
 
   @override
+  String get archiveConversation => 'Archive conversation';
+
+  @override
+  String get restoreConversation => 'Restore conversation';
+
+  @override
+  String get archivedChats => 'Archived';
+
+  @override
+  String get noArchivedChats => 'No archived conversations.';
+
+  @override
+  String get stopResponseBeforeArchive =>
+      'Stop the active response before archiving this conversation.';
+
+  @override
+  String get conversationArchived => 'Conversation archived.';
+
+  @override
+  String get conversationRestored => 'Conversation restored.';
+
+  @override
+  String get conversationArchiveFailed =>
+      'The conversation could not be archived. Try again.';
+
+  @override
+  String get conversationRestoreFailed =>
+      'The conversation could not be restored. Try again.';
+
+  @override
   String get confirmDeleteConversationTitle => 'Delete this conversation?';
 
   @override
@@ -788,14 +841,21 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolPermissionRequireApprovalDescription =>
-      'File tools ask before each call and are limited to the project folder and %LOCALAPPDATA%\\OpenChat. Command execution is unavailable.';
+      'Ask before each file, web, or terminal call. File access stays in project and OpenChat folders.';
+
+  @override
+  String get toolPermissionApproveSafeOperations => 'Approve safe operations';
+
+  @override
+  String get toolPermissionApproveSafeOperationsDescription =>
+      'Auto-run read-only file calls in project and OpenChat data. Ask before changes, web, and terminal.';
 
   @override
   String get toolPermissionFullAccess => 'Full access';
 
   @override
   String get toolPermissionFullAccessDescription =>
-      'File tools can read and change files in any folder without asking. Command execution is unavailable.';
+      'No prompts. File tools can access any folder; web and terminal tools run without approval.';
 
   @override
   String get toolPermissionSettingsLoadFailed =>
@@ -2914,6 +2974,22 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get userQuestionNotificationBody =>
       'The AI is waiting for your response.';
+
+  @override
+  String get assistantResponseNotificationReplyEmpty =>
+      'Enter a reply before sending.';
+
+  @override
+  String get assistantResponseNotificationReplyTooLong =>
+      'This reply is too long to send from a notification. Use the chat composer to send it.';
+
+  @override
+  String get assistantResponseNotificationReplyUnavailable =>
+      'This notification is out of date or the chat is unavailable. Open the chat and send a new message.';
+
+  @override
+  String get assistantResponseNotificationReplyNotSent =>
+      'The quick reply could not be sent right now. Review the chat and try again.';
 
   @override
   String fileChangesSummary(int count) {

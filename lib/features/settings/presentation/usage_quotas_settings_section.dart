@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
@@ -196,7 +197,7 @@ class _UsageQuotasSettingsSectionState
           ),
           FilledButton.icon(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            icon: const Icon(Icons.restart_alt_rounded, size: 17),
+            icon: const Icon(LucideIcons.rotateCcw, size: 17),
             label: Text(l10n.confirmResetCreditAction),
           ),
         ],
@@ -332,7 +333,7 @@ class _UsageQuotasSettingsSectionState
                       dimension: 14,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.refresh_rounded, size: 16),
+                  : const Icon(LucideIcons.refreshCw, size: 16),
               label: Text(l10n.refreshAll),
             );
             if (stacked) {
@@ -388,7 +389,7 @@ class _UsageQuotasSettingsSectionState
         child: Column(
           children: [
             Icon(
-              Icons.data_usage_rounded,
+              LucideIcons.chartNoAxesCombined,
               size: 40,
               color: palette.secondaryIcon,
             ),
@@ -418,7 +419,7 @@ class _UsageQuotasSettingsSectionState
               const SizedBox(height: 18),
               FilledButton.icon(
                 onPressed: widget.onNavigateToConnections,
-                icon: const Icon(Icons.link_rounded, size: 16),
+                icon: const Icon(LucideIcons.link, size: 16),
                 label: Text(l10n.goToConnections),
               ),
             ],
@@ -441,7 +442,7 @@ class _UsageQuotasSettingsSectionState
         child: Row(
           children: [
             Icon(
-              Icons.error_outline_rounded,
+              LucideIcons.circleAlert,
               size: 24,
               color: Theme.of(context).colorScheme.error,
             ),
@@ -454,7 +455,7 @@ class _UsageQuotasSettingsSectionState
             ),
             TextButton.icon(
               onPressed: () => unawaited(_loadAll(forceRefresh: true)),
-              icon: const Icon(Icons.refresh_rounded, size: 16),
+              icon: const Icon(LucideIcons.refreshCw, size: 16),
               label: Text(l10n.retry),
             ),
           ],
@@ -571,7 +572,7 @@ class _UsageQuotasSettingsSectionState
                       );
                     }
                   },
-                  icon: const Icon(Icons.refresh_rounded, size: 18),
+                  icon: const Icon(LucideIcons.refreshCw, size: 18),
                 ),
               ],
             ),
@@ -655,7 +656,7 @@ class _UsageQuotasSettingsSectionState
                   userInitiated: true,
                 ),
               ),
-              icon: const Icon(Icons.refresh_rounded, size: 16),
+              icon: const Icon(LucideIcons.refreshCw, size: 16),
               label: Text(l10n.retry),
             ),
           ],
@@ -786,11 +787,7 @@ class _UsageQuotasSettingsSectionState
         children: [
           Row(
             children: [
-              Icon(
-                Icons.restart_alt_rounded,
-                color: palette.accentIcon,
-                size: 18,
-              ),
+              Icon(LucideIcons.rotateCcw, color: palette.accentIcon, size: 18),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -900,7 +897,7 @@ class _UsageQuotasSettingsSectionState
                     dimension: 14,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.restart_alt_rounded, size: 15),
+                : const Icon(LucideIcons.rotateCcw, size: 15),
             label: Text(
               isRedeeming ? l10n.resetCreditRedeeming : l10n.useResetCredit,
             ),

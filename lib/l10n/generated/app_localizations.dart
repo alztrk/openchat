@@ -1172,6 +1172,42 @@ abstract class AppLocalizations {
   /// **'Search models...'**
   String get modelSearchHint;
 
+  /// No description provided for @chatGptFastModeEnabledTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Fast mode is requested. It can use more subscription credits or cost more per API token.'**
+  String get chatGptFastModeEnabledTooltip;
+
+  /// No description provided for @chatGptFastModeDisabledTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Request Fast mode. It can use more subscription credits or cost more per API token; availability depends on the model.'**
+  String get chatGptFastModeDisabledTooltip;
+
+  /// No description provided for @chatGptFastModeUnavailableTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected model does not advertise Fast mode support.'**
+  String get chatGptFastModeUnavailableTooltip;
+
+  /// No description provided for @chatGptFastModeLoadingTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading Fast mode preference…'**
+  String get chatGptFastModeLoadingTooltip;
+
+  /// No description provided for @chatGptFastModeSettingsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Fast mode preference could not be loaded.'**
+  String get chatGptFastModeSettingsLoadFailed;
+
+  /// No description provided for @chatGptFastModeSettingsSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Fast mode preference could not be saved.'**
+  String get chatGptFastModeSettingsSaveFailed;
+
   /// No description provided for @modelSearchNoResults.
   ///
   /// In en, this message translates to:
@@ -1304,6 +1340,60 @@ abstract class AppLocalizations {
   /// **'Delete conversation'**
   String get deleteConversation;
 
+  /// No description provided for @archiveConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Archive conversation'**
+  String get archiveConversation;
+
+  /// No description provided for @restoreConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore conversation'**
+  String get restoreConversation;
+
+  /// No description provided for @archivedChats.
+  ///
+  /// In en, this message translates to:
+  /// **'Archived'**
+  String get archivedChats;
+
+  /// No description provided for @noArchivedChats.
+  ///
+  /// In en, this message translates to:
+  /// **'No archived conversations.'**
+  String get noArchivedChats;
+
+  /// No description provided for @stopResponseBeforeArchive.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop the active response before archiving this conversation.'**
+  String get stopResponseBeforeArchive;
+
+  /// No description provided for @conversationArchived.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation archived.'**
+  String get conversationArchived;
+
+  /// No description provided for @conversationRestored.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation restored.'**
+  String get conversationRestored;
+
+  /// No description provided for @conversationArchiveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The conversation could not be archived. Try again.'**
+  String get conversationArchiveFailed;
+
+  /// No description provided for @conversationRestoreFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The conversation could not be restored. Try again.'**
+  String get conversationRestoreFailed;
+
   /// No description provided for @confirmDeleteConversationTitle.
   ///
   /// In en, this message translates to:
@@ -1415,8 +1505,20 @@ abstract class AppLocalizations {
   /// No description provided for @toolPermissionRequireApprovalDescription.
   ///
   /// In en, this message translates to:
-  /// **'File tools ask before each call and are limited to the project folder and %LOCALAPPDATA%\\OpenChat. Command execution is unavailable.'**
+  /// **'Ask before each file, web, or terminal call. File access stays in project and OpenChat folders.'**
   String get toolPermissionRequireApprovalDescription;
+
+  /// No description provided for @toolPermissionApproveSafeOperations.
+  ///
+  /// In en, this message translates to:
+  /// **'Approve safe operations'**
+  String get toolPermissionApproveSafeOperations;
+
+  /// No description provided for @toolPermissionApproveSafeOperationsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-run read-only file calls in project and OpenChat data. Ask before changes, web, and terminal.'**
+  String get toolPermissionApproveSafeOperationsDescription;
 
   /// No description provided for @toolPermissionFullAccess.
   ///
@@ -1427,7 +1529,7 @@ abstract class AppLocalizations {
   /// No description provided for @toolPermissionFullAccessDescription.
   ///
   /// In en, this message translates to:
-  /// **'File tools can read and change files in any folder without asking. Command execution is unavailable.'**
+  /// **'No prompts. File tools can access any folder; web and terminal tools run without approval.'**
   String get toolPermissionFullAccessDescription;
 
   /// No description provided for @toolPermissionSettingsLoadFailed.
@@ -4933,6 +5035,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The AI is waiting for your response.'**
   String get userQuestionNotificationBody;
+
+  /// No description provided for @assistantResponseNotificationReplyEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a reply before sending.'**
+  String get assistantResponseNotificationReplyEmpty;
+
+  /// No description provided for @assistantResponseNotificationReplyTooLong.
+  ///
+  /// In en, this message translates to:
+  /// **'This reply is too long to send from a notification. Use the chat composer to send it.'**
+  String get assistantResponseNotificationReplyTooLong;
+
+  /// No description provided for @assistantResponseNotificationReplyUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This notification is out of date or the chat is unavailable. Open the chat and send a new message.'**
+  String get assistantResponseNotificationReplyUnavailable;
+
+  /// No description provided for @assistantResponseNotificationReplyNotSent.
+  ///
+  /// In en, this message translates to:
+  /// **'The quick reply could not be sent right now. Review the chat and try again.'**
+  String get assistantResponseNotificationReplyNotSent;
 
   /// No description provided for @fileChangesSummary.
   ///

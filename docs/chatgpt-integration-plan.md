@@ -82,6 +82,15 @@ OAuth tokens belong in Windows Credential Manager. SQLite stores only a credenti
 - Expose read-only file tools in conversations. Bind any project root from the saved conversation-project relationship; never accept it from model arguments. Without a project, approval mode confines access to the local application data directory.
 - Treat file contents returned by tools as untrusted data. Reject absolute paths, parent traversal, symlinks, unsupported tools, oversized arguments, and tool loops above six rounds or sixteen calls.
 
+### ChatGPT Fast mode
+
+- The ChatGPT model selector keeps a persisted Fast mode toggle in its ChatGPT category. It is off by default.
+- When enabled for a ChatGPT OAuth model that advertises Fast support, Responses requests to the Codex endpoint include `service_tier: "priority"`. Unsupported OAuth models omit the field and disable the selector toggle.
+- When enabled for a ChatGPT Platform API key model, requests include `service_tier: "fast"`. Disabled requests omit the field.
+- A pending tool-question continuation retains the Fast mode choice saved with its run checkpoint.
+- OAuth Fast mode uses ChatGPT plan usage; API Fast mode has separate token pricing. Fast availability depends on model and account support, and the service may process a request at a different tier than requested.
+- OAuth Fast mode follows the first-party Codex client's private endpoint behavior, which may change independently of the public Platform API contract.
+
 ### Quota, account, and reset information
 
 - Store each quota read with account, workspace, retrieval time, and freshness state.
@@ -188,11 +197,13 @@ The initial OAuth implementation uses the public Codex client ID already present
 - [OpenAI Codex login source exports its default OAuth client ID](https://github.com/openai/codex/blob/main/codex-rs/login/src/lib.rs)
 - [OpenAI Codex login URL showing the public client ID](https://github.com/openai/codex/issues/5673)
 - [OpenAI Codex dynamic model catalog client](https://github.com/openai/codex/blob/main/codex-rs/codex-api/src/endpoint/models.rs)
+- [OpenAI Codex model Fast-mode capability detection](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/openai_models.rs)
 - [OpenAI Codex Responses client](https://github.com/openai/codex/blob/main/codex-rs/core/src/client.rs)
 - [OpenAI Codex usage and reset-credit client](https://github.com/openai/codex/blob/main/codex-rs/backend-client/src/client/rate_limit_resets.rs)
 - [OpenAI Codex account rate-limit response types](https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/src/protocol/v2/account.rs)
 - [OpenAI Codex reset-credit endpoint discussion](https://github.com/openai/codex/issues/29618)
 - [OpenAI Responses streaming documentation for the separate Platform API](https://developers.openai.com/api/docs/guides/streaming-responses)
+- [OpenAI Fast mode documentation](https://developers.openai.com/api/docs/guides/fast-mode)
 - [Rust keyring secure-store API and Windows feature](https://docs.rs/keyring/3.6.3/keyring/)
 - [Rust keyring entry operations](https://docs.rs/keyring/3.6.3/keyring/struct.Entry.html)
 - [Microsoft Windows credential blob size limit](https://learn.microsoft.com/en-us/windows/win32/api/wincred/ns-wincred-credentialw)

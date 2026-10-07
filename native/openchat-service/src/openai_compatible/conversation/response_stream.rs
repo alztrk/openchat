@@ -13,9 +13,10 @@ use super::super::{
     MAX_EVENT_BYTES, cancelled_error, chat_request_http_error, client, invalid_response_error,
     network_error, opencode_free_tier_restricted, protocol_error,
     stream::{
-        ResponsesStreamEffect, SseLine, StreamedToolCall, append_tool_call_deltas, finish_reason,
-        handle_responses_api_event, parse_sse_line, parse_streamed_tool_calls, pop_sse_line,
-        stream_is_complete, update_chat_completion_usage,
+        ProviderRequestUsage, ResponsesStreamEffect, SseLine, StreamedToolCall,
+        append_tool_call_deltas, finish_reason, handle_responses_api_event, parse_sse_line,
+        parse_streamed_tool_calls, pop_sse_line, stream_is_complete, update_chat_completion_usage,
+        update_provider_request_usage,
     },
 };
 use super::ResponseStreamRequest;
@@ -23,6 +24,7 @@ use super::ResponseStreamRequest;
 pub(super) struct StreamedTurn {
     pub(super) round_content: String,
     pub(super) tool_calls: Vec<ToolCall>,
+    pub(super) provider_request_usage: Option<ProviderRequestUsage>,
 }
 
 fn request_contains_tool_payload(body: &Value) -> bool {
@@ -129,6 +131,7 @@ async fn receive_with_client(
     let mut saw_done = false;
     let mut saw_finish_reason = false;
     let mut stream_ended = false;
+    let mut provider_request_usage: Option<ProviderRequestUsage> = None;
 
     while !stream_ended {
         let chunk = tokio::select! {
@@ -287,6 +290,7 @@ async fn receive_with_client(
                     .await;
             }
             update_chat_completion_usage(&value, request.input_tokens, request.output_tokens);
+            update_provider_request_usage(&value, &mut provider_request_usage);
             if let Some(deltas) = value
                 .pointer("/choices/0/delta/tool_calls")
                 .and_then(Value::as_array)
@@ -326,6 +330,7 @@ async fn receive_with_client(
     Ok(StreamedTurn {
         round_content,
         tool_calls: parse_streamed_tool_calls(tool_calls, request.route.is_opencode)?,
+        provider_request_usage,
     })
 }
 
@@ -693,6 +698,7 @@ mod tests {
             uses_responses_api: false,
             context_window: None,
             input_token_limit: None,
+            max_output_tokens: None,
             supports_images: false,
             supports_tool_calls: None,
             connection_id: None,

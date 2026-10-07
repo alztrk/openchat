@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/openchat_toast.dart';
@@ -485,7 +486,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                     fontSize: 13,
                   ),
                   prefixIcon: Icon(
-                    Icons.search,
+                    LucideIcons.search,
                     size: 18,
                     color: palette.secondaryIcon,
                   ),
@@ -509,7 +510,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                       dimension: 14,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.refresh_rounded, size: 16),
+                  : const Icon(LucideIcons.refreshCw, size: 16),
               label: Text(l10n.refreshModels),
             );
             if (stacked) {
@@ -822,7 +823,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                   )
                 : null,
             icon: Icon(
-              isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
+              isFavorite ? LucideIcons.star : LucideIcons.star,
               color: isFavorite ? palette.accent : palette.secondaryIcon,
               size: 18,
             ),
@@ -841,7 +842,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                 minimumSize: Size.zero,
                 tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               ),
-              icon: const Icon(Icons.check_rounded, size: 15),
+              icon: const Icon(LucideIcons.check, size: 15),
               label: Text(
                 l10n.defaultModel,
                 style: const TextStyle(fontSize: 12),
@@ -870,9 +871,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
             tooltip: isHidden ? l10n.showModel : l10n.hideModel,
             onPressed: () => _toggleHideModel(model),
             icon: Icon(
-              isHidden
-                  ? Icons.visibility_off_outlined
-                  : Icons.visibility_outlined,
+              isHidden ? LucideIcons.eyeOff : LucideIcons.eye,
               size: 18,
               color: isHidden ? palette.secondaryIcon : palette.text,
             ),

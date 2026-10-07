@@ -3,11 +3,13 @@ class ConversationSidebarConversation {
     required this.id,
     required this.title,
     this.isPinned = false,
+    this.isArchived = false,
   });
 
   final String id;
   final String title;
   final bool isPinned;
+  final bool isArchived;
 }
 
 class ConversationSidebarProject {

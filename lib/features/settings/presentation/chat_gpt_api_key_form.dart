@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
@@ -64,9 +65,7 @@ class _ChatGptApiKeyFormState extends State<ChatGptApiKeyForm> {
                     tooltip: _showApiKey ? l10n.hideApiKey : l10n.showApiKey,
                     onPressed: () => setState(() => _showApiKey = !_showApiKey),
                     icon: Icon(
-                      _showApiKey
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
+                      _showApiKey ? LucideIcons.eyeOff : LucideIcons.eye,
                     ),
                   ),
                 ),
@@ -91,7 +90,7 @@ class _ChatGptApiKeyFormState extends State<ChatGptApiKeyForm> {
                             dimension: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.save_outlined, size: 16),
+                        : const Icon(LucideIcons.save, size: 16),
                     label: Text(widget.isSaving ? l10n.saving : l10n.save),
                   ),
                 ],

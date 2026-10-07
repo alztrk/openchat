@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
@@ -513,12 +514,12 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
       children: [
         OutlinedButton.icon(
           onPressed: _isSaving ? null : _toggleApiKeyForm,
-          icon: const Icon(Icons.key_outlined, size: 16),
+          icon: const Icon(LucideIcons.keyRound, size: 16),
           label: Text(l10n.apiKey),
         ),
         OutlinedButton.icon(
           onPressed: _isSigningIn ? null : () => unawaited(_startOAuth()),
-          icon: const Icon(Icons.login_rounded, size: 16),
+          icon: const Icon(LucideIcons.logIn, size: 16),
           label: Text(_isSigningIn ? l10n.oauthSigningIn : l10n.oauth),
         ),
       ],
@@ -642,7 +643,7 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
                 ),
                 TextButton.icon(
                   onPressed: () => unawaited(_startOAuth()),
-                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  icon: const Icon(LucideIcons.refreshCw, size: 16),
                   label: Text(l10n.retry),
                 ),
               ],
@@ -669,7 +670,7 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
                 ),
                 TextButton.icon(
                   onPressed: () => unawaited(_loadOAuthConnections()),
-                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  icon: const Icon(LucideIcons.refreshCw, size: 16),
                   label: Text(l10n.retry),
                 ),
               ],
@@ -698,7 +699,7 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
                 ),
                 TextButton.icon(
                   onPressed: () => unawaited(_loadConnections()),
-                  icon: const Icon(Icons.refresh_rounded, size: 16),
+                  icon: const Icon(LucideIcons.refreshCw, size: 16),
                   label: Text(l10n.retry),
                 ),
               ],
@@ -817,7 +818,7 @@ class _ChatGptConnectionThread extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       child: Row(
         children: [
-          Icon(Icons.key_outlined, size: 18, color: palette.secondaryIcon),
+          Icon(LucideIcons.keyRound, size: 18, color: palette.secondaryIcon),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -844,7 +845,7 @@ class _ChatGptConnectionThread extends StatelessWidget {
                     dimension: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.delete_outline_rounded, size: 18),
+                : const Icon(LucideIcons.trash2, size: 18),
           ),
         ],
       ),

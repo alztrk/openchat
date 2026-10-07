@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_theme.dart';
@@ -49,7 +50,7 @@ class ChatGptOAuthConnectionRow extends StatelessWidget {
           Row(
             children: [
               Icon(
-                Icons.account_circle_outlined,
+                LucideIcons.circleUserRound,
                 size: 20,
                 color: palette.secondaryIcon,
               ),
@@ -87,7 +88,7 @@ class ChatGptOAuthConnectionRow extends StatelessWidget {
               connection.isSelected
                   ? TextButton.icon(
                       onPressed: null,
-                      icon: const Icon(Icons.check_circle_outline, size: 16),
+                      icon: const Icon(LucideIcons.circleCheck, size: 16),
                       label: Text(l10n.connectionSelected),
                     )
                   : OutlinedButton(
@@ -104,7 +105,7 @@ class ChatGptOAuthConnectionRow extends StatelessWidget {
                         dimension: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.delete_outline_rounded, size: 18),
+                    : const Icon(LucideIcons.trash2, size: 18),
               ),
             ],
           ),

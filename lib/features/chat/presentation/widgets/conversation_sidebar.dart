@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
@@ -6,6 +7,7 @@ import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
 import 'package:openchat/features/chat/domain/history_search_result.dart';
 import 'package:openchat/features/chat/presentation/widgets/project_sidebar_section.dart';
+import 'package:openchat/features/chat/presentation/widgets/sidebar_collapsible_heading.dart';
 import 'package:openchat/features/chat/presentation/widgets/sidebar_conversation_section.dart';
 
 class ConversationSidebar extends StatelessWidget {
@@ -29,6 +31,7 @@ class ConversationSidebar extends StatelessWidget {
     this.projects = const <ConversationSidebarProject>[],
     this.pinnedConversations = const <ConversationSidebarConversation>[],
     this.conversations = const <ConversationSidebarConversation>[],
+    this.archivedConversations = const <ConversationSidebarConversation>[],
     this.selectedProjectId,
     this.selectedConversationId,
     this.onSelectProject,
@@ -37,6 +40,7 @@ class ConversationSidebar extends StatelessWidget {
     this.onRenameConversation,
     this.onDeleteConversation,
     this.onExportConversation,
+    this.onArchiveConversation,
     this.onMoveConversationToProject,
     this.onCreateProject,
     this.projectsLoading = false,
@@ -47,6 +51,8 @@ class ConversationSidebar extends StatelessWidget {
     this.onCreateConversation,
     this.onMoveConversationToChats,
     this.onPinConversation,
+    this.collapsedSections = const <String>{},
+    this.onToggleSection,
     super.key,
   });
 
@@ -69,6 +75,7 @@ class ConversationSidebar extends StatelessWidget {
   final List<ConversationSidebarProject> projects;
   final List<ConversationSidebarConversation> pinnedConversations;
   final List<ConversationSidebarConversation> conversations;
+  final List<ConversationSidebarConversation> archivedConversations;
   final String? selectedProjectId;
   final String? selectedConversationId;
   final ValueChanged<String>? onSelectProject;
@@ -77,6 +84,7 @@ class ConversationSidebar extends StatelessWidget {
   final ValueChanged<String>? onRenameConversation;
   final ValueChanged<String>? onDeleteConversation;
   final ValueChanged<String>? onExportConversation;
+  final ValueChanged<String>? onArchiveConversation;
   final void Function(String conversationId, String projectId)?
   onMoveConversationToProject;
   final VoidCallback? onCreateProject;
@@ -88,6 +96,13 @@ class ConversationSidebar extends StatelessWidget {
   final VoidCallback? onCreateConversation;
   final ValueChanged<String>? onMoveConversationToChats;
   final ValueChanged<String>? onPinConversation;
+  final Set<String> collapsedSections;
+  final ValueChanged<String>? onToggleSection;
+
+  bool _isCollapsed(String section) => collapsedSections.contains(section);
+
+  VoidCallback _toggleSection(String section) =>
+      () => onToggleSection?.call(section);
 
   @override
   Widget build(BuildContext context) {
@@ -118,143 +133,147 @@ class ConversationSidebar extends StatelessWidget {
                 constraints: const BoxConstraints(
                   minHeight: OpenChatSpacing.conversationHeaderHeight,
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: AnimatedSwitcher(
-                        duration: MediaQuery.disableAnimationsOf(context)
-                            ? Duration.zero
-                            : const Duration(milliseconds: 180),
-                        transitionBuilder: (child, animation) => ClipRect(
-                          child: SizeTransition(
-                            axis: Axis.horizontal,
-                            alignment: Alignment.centerRight,
-                            sizeFactor: animation,
-                            child: FadeTransition(
-                              opacity: animation,
-                              child: child,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: AnimatedSwitcher(
+                          duration: MediaQuery.disableAnimationsOf(context)
+                              ? Duration.zero
+                              : const Duration(milliseconds: 180),
+                          transitionBuilder: (child, animation) => ClipRect(
+                            child: SizeTransition(
+                              axis: Axis.horizontal,
+                              alignment: Alignment.centerRight,
+                              sizeFactor: animation,
+                              child: FadeTransition(
+                                opacity: animation,
+                                child: child,
+                              ),
                             ),
                           ),
-                        ),
-                        child: isHistorySearchOpen
-                            ? TextField(
-                                key: const ValueKey<String>(
-                                  'history-search-input',
-                                ),
-                                autofocus: true,
-                                controller: searchController,
-                                onChanged: onSearchChanged,
-                                onSubmitted: onSearchSubmitted,
-                                textInputAction: TextInputAction.search,
-                                style: TextStyle(
-                                  color: palette.secondaryText,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w400,
-                                  height: 18 / 13,
-                                ),
-                                decoration: InputDecoration(
-                                  hintText: l10n.searchChatsHint,
-                                  hintStyle: TextStyle(
+                          child: isHistorySearchOpen
+                              ? TextField(
+                                  key: const ValueKey<String>(
+                                    'history-search-input',
+                                  ),
+                                  autofocus: true,
+                                  controller: searchController,
+                                  onChanged: onSearchChanged,
+                                  onSubmitted: onSearchSubmitted,
+                                  textInputAction: TextInputAction.search,
+                                  style: TextStyle(
                                     color: palette.secondaryText,
                                     fontSize: 13,
                                     fontWeight: FontWeight.w400,
                                     height: 18 / 13,
                                   ),
-                                  filled: true,
-                                  fillColor: palette.hover,
-                                  prefixIcon: Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      10,
-                                      10,
-                                      8,
-                                      10,
+                                  decoration: InputDecoration(
+                                    hintText: l10n.searchChatsHint,
+                                    hintStyle: TextStyle(
+                                      color: palette.secondaryText,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w400,
+                                      height: 18 / 13,
                                     ),
-                                    child: SvgPicture.asset(
-                                      dark
-                                          ? 'assets/icons/dark/search.svg'
-                                          : 'assets/icons/search.svg',
-                                      width: 16,
-                                      height: 16,
-                                      colorFilter: ColorFilter.mode(
-                                        palette.secondaryText,
-                                        BlendMode.srcIn,
+                                    filled: true,
+                                    fillColor: palette.hover,
+                                    prefixIcon: Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        10,
+                                        10,
+                                        8,
+                                        10,
                                       ),
-                                      excludeFromSemantics: true,
+                                      child: SvgPicture.asset(
+                                        dark
+                                            ? 'assets/icons/dark/search.svg'
+                                            : 'assets/icons/search.svg',
+                                        width: 16,
+                                        height: 16,
+                                        colorFilter: ColorFilter.mode(
+                                          palette.secondaryText,
+                                          BlendMode.srcIn,
+                                        ),
+                                        excludeFromSemantics: true,
+                                      ),
                                     ),
-                                  ),
-                                  prefixIconConstraints:
-                                      const BoxConstraints.tightFor(
-                                        width: 34,
-                                        height: 36,
-                                      ),
-                                  suffixIcon: isHistorySearchLoading
-                                      ? const SizedBox(
+                                    prefixIconConstraints:
+                                        const BoxConstraints.tightFor(
                                           width: 34,
                                           height: 36,
-                                          child: Center(
-                                            child: SizedBox.square(
-                                              dimension: 15,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
+                                        ),
+                                    suffixIcon: isHistorySearchLoading
+                                        ? const SizedBox(
+                                            width: 34,
+                                            height: 36,
+                                            child: Center(
+                                              child: SizedBox.square(
+                                                dimension: 15,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
                                               ),
                                             ),
-                                          ),
-                                        )
-                                      : null,
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.zero,
-                                ),
-                              )
-                            : Align(
-                                key: const ValueKey<String>(
-                                  'conversation-sidebar-title',
-                                ),
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  'OpenChat',
-                                  style: TextStyle(
-                                    color: palette.text,
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w500,
-                                    height: 20 / 15,
+                                          )
+                                        : null,
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.zero,
+                                  ),
+                                )
+                              : Align(
+                                  key: const ValueKey<String>(
+                                    'conversation-sidebar-title',
+                                  ),
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    'OpenChat',
+                                    style: TextStyle(
+                                      color: palette.text,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w400,
+                                      height: 22 / 16,
+                                    ),
                                   ),
                                 ),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: isHistorySearchOpen
+                            ? l10n.close
+                            : l10n.searchMessagesTooltip,
+                        onPressed: isHistorySearchOpen
+                            ? onCloseHistorySearch
+                            : onOpenHistorySearch,
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 40,
+                          height: 40,
+                        ),
+                        padding: EdgeInsets.zero,
+                        icon: isHistorySearchOpen
+                            ? Icon(
+                                LucideIcons.x,
+                                color: palette.secondaryIcon,
+                                size: 18,
+                              )
+                            : SvgPicture.asset(
+                                dark
+                                    ? 'assets/icons/dark/search.svg'
+                                    : 'assets/icons/search.svg',
+                                width: 17,
+                                height: 17,
+                                colorFilter: ColorFilter.mode(
+                                  palette.secondaryIcon,
+                                  BlendMode.srcIn,
+                                ),
+                                excludeFromSemantics: true,
                               ),
                       ),
-                    ),
-                    IconButton(
-                      tooltip: isHistorySearchOpen
-                          ? l10n.close
-                          : l10n.searchMessagesTooltip,
-                      onPressed: isHistorySearchOpen
-                          ? onCloseHistorySearch
-                          : onOpenHistorySearch,
-                      visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 40,
-                        height: 40,
-                      ),
-                      padding: EdgeInsets.zero,
-                      icon: isHistorySearchOpen
-                          ? Icon(
-                              Icons.close_rounded,
-                              color: palette.secondaryIcon,
-                              size: 18,
-                            )
-                          : SvgPicture.asset(
-                              dark
-                                  ? 'assets/icons/dark/search.svg'
-                                  : 'assets/icons/search.svg',
-                              width: 17,
-                              height: 17,
-                              colorFilter: ColorFilter.mode(
-                                palette.secondaryIcon,
-                                BlendMode.srcIn,
-                              ),
-                              excludeFromSemantics: true,
-                            ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               Tooltip(
@@ -262,7 +281,7 @@ class ConversationSidebar extends StatelessWidget {
                 child: TextButton.icon(
                   onPressed: onCreateConversation,
                   icon: Icon(
-                    Icons.add_comment_outlined,
+                    LucideIcons.messageSquarePlus,
                     color: palette.secondaryIcon,
                     size: 18,
                   ),
@@ -273,14 +292,14 @@ class ConversationSidebar extends StatelessWidget {
                     style: TextStyle(
                       color: palette.text,
                       fontSize: 13,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: FontWeight.w400,
                       height: 18 / 13,
                     ),
                   ),
                   style: TextButton.styleFrom(
                     alignment: Alignment.centerLeft,
                     minimumSize: const Size.fromHeight(44),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    padding: const EdgeInsets.fromLTRB(14, 0, 8, 0),
                     tapTargetSize: MaterialTapTargetSize.padded,
                     visualDensity: VisualDensity.compact,
                     foregroundColor: palette.text,
@@ -290,7 +309,7 @@ class ConversationSidebar extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               Expanded(
                 child: Stack(
                   children: [
@@ -306,6 +325,7 @@ class ConversationSidebar extends StatelessWidget {
                             return ListView(
                               padding: const EdgeInsets.only(
                                 top: 4,
+                                left: 4,
                                 right: 0,
                                 bottom: 12,
                               ),
@@ -366,15 +386,27 @@ class ConversationSidebar extends StatelessWidget {
                                     ),
                               )
                               .toList();
+                          final visibleArchivedConversations =
+                              archivedConversations
+                                  .where(
+                                    (conversation) =>
+                                        !hasQuery ||
+                                        conversation.title
+                                            .toLowerCase()
+                                            .contains(query),
+                                  )
+                                  .toList();
 
                           final hasTitleResults =
                               visibleProjects.isNotEmpty ||
                               visiblePinnedConversations.isNotEmpty ||
-                              visibleConversations.isNotEmpty;
+                              visibleConversations.isNotEmpty ||
+                              visibleArchivedConversations.isNotEmpty;
                           if (hasTitleResults) {
                             return ListView(
                               padding: const EdgeInsets.only(
                                 top: 4,
+                                left: 4,
                                 right: 0,
                                 bottom: 12,
                               ),
@@ -388,17 +420,22 @@ class ConversationSidebar extends StatelessWidget {
                                   selectedConversationId:
                                       selectedConversationId,
                                   itemHeight: 32,
-                                  dropIcon: Icons.push_pin_outlined,
+                                  dropIcon: LucideIcons.pin,
                                   onSelectConversation: onSelectConversation,
                                   onTogglePinned: onToggleConversationPinned,
                                   onRenameConversation: onRenameConversation,
                                   onDeleteConversation: onDeleteConversation,
                                   onExportConversation: onExportConversation,
+                                  onArchiveConversation: onArchiveConversation,
                                   onDropConversation: onPinConversation,
+                                  collapsed: _isCollapsed('pinned'),
+                                  onToggleCollapsed: _toggleSection('pinned'),
                                 ),
                                 const SizedBox(height: 16),
                                 ProjectSidebarSection(
                                   projects: visibleProjects,
+                                  collapsed: _isCollapsed('projects'),
+                                  onToggleCollapsed: _toggleSection('projects'),
                                   selectedProjectId: selectedProjectId,
                                   selectedConversationId:
                                       selectedConversationId,
@@ -416,6 +453,7 @@ class ConversationSidebar extends StatelessWidget {
                                   onRenameConversation: onRenameConversation,
                                   onDeleteConversation: onDeleteConversation,
                                   onExportConversation: onExportConversation,
+                                  onArchiveConversation: onArchiveConversation,
                                   onCreateProject: onCreateProject,
                                   loading: projectsLoading,
                                   errorMessage: projectLoadError,
@@ -433,13 +471,38 @@ class ConversationSidebar extends StatelessWidget {
                                   selectedConversationId:
                                       selectedConversationId,
                                   itemHeight: 32,
-                                  dropIcon: Icons.chat_bubble_outline_rounded,
+                                  dropIcon: LucideIcons.messageCircle,
                                   onSelectConversation: onSelectConversation,
                                   onTogglePinned: onToggleConversationPinned,
                                   onRenameConversation: onRenameConversation,
                                   onDeleteConversation: onDeleteConversation,
                                   onExportConversation: onExportConversation,
+                                  onArchiveConversation: onArchiveConversation,
                                   onDropConversation: onMoveConversationToChats,
+                                  collapsed: _isCollapsed('chats'),
+                                  onToggleCollapsed: _toggleSection('chats'),
+                                ),
+                                const SizedBox(height: 16),
+                                SidebarConversationSection(
+                                  title: l10n.archivedChats,
+                                  emptyMessage: hasQuery
+                                      ? l10n.noChatsSearchTitle
+                                      : l10n.noArchivedChats,
+                                  conversations: visibleArchivedConversations,
+                                  selectedConversationId:
+                                      selectedConversationId,
+                                  itemHeight: 32,
+                                  dropIcon: LucideIcons.archive,
+                                  onSelectConversation: onSelectConversation,
+                                  onTogglePinned: null,
+                                  onRenameConversation: onRenameConversation,
+                                  onDeleteConversation: onDeleteConversation,
+                                  onExportConversation: onExportConversation,
+                                  onDropConversation: null,
+                                  isArchivedSection: true,
+                                  onArchiveConversation: onArchiveConversation,
+                                  collapsed: _isCollapsed('archived'),
+                                  onToggleCollapsed: _toggleSection('archived'),
                                 ),
                               ],
                             );
@@ -448,6 +511,7 @@ class ConversationSidebar extends StatelessWidget {
                           return ListView(
                             padding: const EdgeInsets.only(
                               top: 4,
+                              left: 4,
                               right: 0,
                               bottom: 12,
                             ),
@@ -455,10 +519,14 @@ class ConversationSidebar extends StatelessWidget {
                               _SidebarSection(
                                 title: l10n.pinnedChats,
                                 emptyMessage: l10n.noPinnedChats,
+                                collapsed: _isCollapsed('pinned'),
+                                onToggleCollapsed: _toggleSection('pinned'),
                               ),
                               const SizedBox(height: 16),
                               ProjectSidebarSection(
                                 projects: const [],
+                                collapsed: _isCollapsed('projects'),
+                                onToggleCollapsed: _toggleSection('projects'),
                                 selectedProjectId: selectedProjectId,
                                 selectedConversationId: selectedConversationId,
                                 onSelectProject: onSelectProject,
@@ -488,6 +556,29 @@ class ConversationSidebar extends StatelessWidget {
                                 emptyMessage: hasQuery
                                     ? l10n.noChatsSearchTitle
                                     : l10n.noChatsTitle,
+                                collapsed: _isCollapsed('chats'),
+                                onToggleCollapsed: _toggleSection('chats'),
+                              ),
+                              const SizedBox(height: 16),
+                              SidebarConversationSection(
+                                title: l10n.archivedChats,
+                                emptyMessage: hasQuery
+                                    ? l10n.noChatsSearchTitle
+                                    : l10n.noArchivedChats,
+                                conversations: visibleArchivedConversations,
+                                selectedConversationId: selectedConversationId,
+                                itemHeight: 32,
+                                dropIcon: LucideIcons.archive,
+                                onSelectConversation: onSelectConversation,
+                                onTogglePinned: null,
+                                onRenameConversation: onRenameConversation,
+                                onDeleteConversation: onDeleteConversation,
+                                onExportConversation: onExportConversation,
+                                onDropConversation: null,
+                                isArchivedSection: true,
+                                onArchiveConversation: onArchiveConversation,
+                                collapsed: _isCollapsed('archived'),
+                                onToggleCollapsed: _toggleSection('archived'),
                               ),
                             ],
                           );
@@ -606,7 +697,7 @@ class _HistorySearchResultsSection extends StatelessWidget {
                     tooltip: l10n.retry,
                     onPressed: () => onSearch!(query),
                     visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.refresh_rounded, size: 17),
+                    icon: const Icon(LucideIcons.refreshCw, size: 17),
                   ),
               ],
             ),
@@ -723,11 +814,15 @@ class _SidebarSection extends StatelessWidget {
     required this.title,
     required this.emptyMessage,
     this.onRetry,
+    this.collapsed = false,
+    this.onToggleCollapsed,
   });
 
   final String title;
   final String emptyMessage;
   final VoidCallback? onRetry;
+  final bool collapsed;
+  final VoidCallback? onToggleCollapsed;
 
   @override
   Widget build(BuildContext context) {
@@ -735,43 +830,41 @@ class _SidebarSection extends StatelessWidget {
     final palette = OpenChatPalette.of(context);
 
     return ConstrainedBox(
-      constraints: BoxConstraints(minHeight: onRetry == null ? 56 : 104),
+      constraints: BoxConstraints(
+        minHeight: collapsed
+            ? 28
+            : onRetry == null
+            ? 56
+            : 104,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 18),
-            child: Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: textTheme.bodyMedium?.copyWith(
-                color: palette.secondaryText,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                height: 18 / 13,
+          SidebarCollapsibleHeading(
+            title: title,
+            collapsed: collapsed,
+            onPressed: onToggleCollapsed ?? () {},
+          ),
+          if (!collapsed) const SizedBox(height: 8),
+          if (!collapsed)
+            Padding(
+              padding: EdgeInsets.only(bottom: onRetry == null ? 0 : 2),
+              child: Text(
+                emptyMessage,
+                maxLines: onRetry == null ? 1 : 2,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.bodyMedium?.copyWith(
+                  color: palette.secondaryText,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                  height: 18 / 12,
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Padding(
-            padding: EdgeInsets.only(bottom: onRetry == null ? 0 : 2),
-            child: Text(
-              emptyMessage,
-              maxLines: onRetry == null ? 1 : 2,
-              overflow: TextOverflow.ellipsis,
-              style: textTheme.bodyMedium?.copyWith(
-                color: palette.secondaryText,
-                fontSize: 13,
-                fontWeight: FontWeight.w400,
-                height: 18 / 13,
-              ),
-            ),
-          ),
           if (onRetry case final retry?)
             TextButton.icon(
               onPressed: retry,
-              icon: const Icon(Icons.refresh_rounded, size: 16),
+              icon: const Icon(LucideIcons.refreshCw, size: 16),
               label: Text(context.openchatL10n.retry),
               style: TextButton.styleFrom(
                 visualDensity: VisualDensity.compact,

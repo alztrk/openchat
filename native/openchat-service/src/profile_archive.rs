@@ -1686,6 +1686,7 @@ mod tests {
                     model_id TEXT,
                     project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
                     is_pinned INTEGER NOT NULL DEFAULT 0,
+                    is_archived INTEGER NOT NULL DEFAULT 0,
                     created_at INTEGER NOT NULL,
                     updated_at INTEGER NOT NULL
                  );
@@ -1704,7 +1705,7 @@ mod tests {
                     failure_code TEXT,
                     PRIMARY KEY (conversation_id, id)
                  );
-                 PRAGMA user_version = 10;",
+                 PRAGMA user_version = 11;",
             )
             .expect("create chat schema");
         connection

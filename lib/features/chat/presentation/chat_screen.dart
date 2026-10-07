@@ -117,11 +117,15 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _modelsPageOpen = false;
   bool _localModelsPageOpen = false;
   bool _sidebarsCompact = false;
+  Set<String> _collapsedSidebarSections = const <String>{};
   bool _isSending = false;
   bool _isLoadingToolPermissionMode = true;
   bool _isSavingToolPermissionMode = false;
   bool _toolPermissionModeReady = false;
   ToolPermissionMode _toolPermissionMode = ToolPermissionMode.requireApproval;
+  bool _chatGptFastModeEnabled = false;
+  bool _isLoadingChatGptFastMode = true;
+  bool _isSavingChatGptFastMode = false;
   ToolPermissionRequest? _pendingToolPermissionRequest;
   bool _isRespondingToToolPermission = false;
   String? _toolPermissionError;
@@ -137,6 +141,7 @@ class _ChatScreenState extends State<ChatScreen> {
   late final UserQuestionNotifications _questionNotifications =
       UserQuestionNotifications();
   late final Future<void> _questionNotificationsReady;
+  final Set<String> _notificationRepliesInFlight = <String>{};
   String? _activeChatConversationId;
   String? _replacingAssistantMessageId;
   bool _isLoadingConnections = false;
@@ -222,7 +227,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _bindQuestionServiceEvents();
     _questionNotificationsReady = _initializeQuestionNotifications();
     unawaited(_questionNotificationsReady);
+    unawaited(_loadChatGptFastMode());
     unawaited(_loadToolPermissionMode());
+    unawaited(_loadCollapsedSidebarSections());
     if (widget.historyStorageStatus == HistoryStorageStatus.available) {
       unawaited(_loadProviderState());
     }
@@ -296,7 +303,12 @@ class _ChatScreenState extends State<ChatScreen> {
         : repository.watchMessages(selectedId);
   }
 
-  void _selectConversation(String conversationId, {String? historyMessageId}) {
+  void _selectConversation(
+    String conversationId, {
+    String? historyMessageId,
+    bool loadModels = true,
+    bool loadPendingQuestions = true,
+  }) {
     _modelSelectionGeneration++;
     _questionListGeneration++;
     _fileChangesLoadGeneration++;
@@ -323,8 +335,10 @@ class _ChatScreenState extends State<ChatScreen> {
       _isLoadingPendingQuestions = true;
       _questionLoadFailed = false;
     });
-    unawaited(_loadConversationModels(conversationId));
-    unawaited(_loadPendingQuestionGroups(conversationId));
+    if (loadModels) unawaited(_loadConversationModels(conversationId));
+    if (loadPendingQuestions) {
+      unawaited(_loadPendingQuestionGroups(conversationId));
+    }
     unawaited(_loadConversationFileChanges(conversationId));
   }
 
@@ -572,8 +586,12 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _openQuestionNotification(UserQuestionNotificationTarget target) {
+  void _openQuestionNotification(ConversationNotificationTarget target) {
     if (!mounted) return;
+    if (target.kind == ConversationNotificationKind.assistantResponseReply) {
+      unawaited(_replyToAssistantNotification(target));
+      return;
+    }
     if (_selectedConversationId != target.conversationId) {
       _selectConversation(target.conversationId);
     } else {
@@ -583,28 +601,246 @@ class _ChatScreenState extends State<ChatScreen> {
         _localModelsPageOpen = false;
       });
     }
-    unawaited(_focusQuestionNotification(target));
+    if (target.kind == ConversationNotificationKind.userQuestion) {
+      unawaited(_focusQuestionNotification(target));
+    }
+  }
+
+  Future<void> _replyToAssistantNotification(
+    ConversationNotificationTarget target,
+  ) async {
+    final assistantMessageId = target.assistantMessageId;
+    if (target.kind != ConversationNotificationKind.assistantResponseReply ||
+        assistantMessageId == null) {
+      return;
+    }
+    final actionKey = '${target.conversationId}:$assistantMessageId';
+    if (!_notificationRepliesInFlight.add(actionKey)) return;
+    var userMessageSaved = false;
+
+    try {
+      if (!mounted) return;
+      final l10n = context.openchatL10n;
+      final replyText = target.replyText?.trim() ?? '';
+      final repository = widget.chatRepository;
+      final service = widget.serviceClient;
+      final shouldLoadReplyState =
+          repository != null &&
+          service != null &&
+          !target.replyInputTooLong &&
+          replyText.isNotEmpty;
+      if (_selectedConversationId != target.conversationId) {
+        _selectConversation(
+          target.conversationId,
+          loadModels: !shouldLoadReplyState,
+          loadPendingQuestions: !shouldLoadReplyState,
+        );
+      } else {
+        setState(() {
+          _settingsOpen = false;
+          _modelsPageOpen = false;
+          _localModelsPageOpen = false;
+        });
+      }
+
+      if (target.replyInputTooLong) {
+        _showMessage(l10n.assistantResponseNotificationReplyTooLong);
+        return;
+      }
+      if (replyText.isEmpty) {
+        _showMessage(l10n.assistantResponseNotificationReplyEmpty);
+        return;
+      }
+
+      if (repository == null || service == null) {
+        _keepNotificationReplyInComposer(replyText);
+        _showMessage(l10n.assistantResponseNotificationReplyNotSent);
+        return;
+      }
+
+      await Future.wait<void>(<Future<void>>[
+        _loadConversationModels(target.conversationId),
+        _loadPendingQuestionGroups(target.conversationId),
+      ]);
+      if (!mounted) return;
+      if (_selectedConversationId != target.conversationId) {
+        _showMessage(l10n.assistantResponseNotificationReplyNotSent);
+        return;
+      }
+      if (_questionLoadFailed) {
+        _keepNotificationReplyInComposer(replyText);
+        return;
+      }
+      if (_pendingQuestionGroups.isNotEmpty) {
+        _keepNotificationReplyInComposer(replyText);
+        _showMessage(l10n.userQuestionRequiredValidation);
+        return;
+      }
+      if (_isSending ||
+          _isUpdatingConversationModel ||
+          !_toolPermissionModeReady ||
+          _isLoadingToolPermissionMode ||
+          _isSavingToolPermissionMode) {
+        _keepNotificationReplyInComposer(replyText);
+        _showMessage(l10n.assistantResponseNotificationReplyNotSent);
+        return;
+      }
+
+      final conversation = await repository.getConversation(
+        target.conversationId,
+      );
+      if (!mounted) return;
+      if (_selectedConversationId != target.conversationId) {
+        _showMessage(l10n.assistantResponseNotificationReplyNotSent);
+        return;
+      }
+      if (conversation == null) {
+        _keepNotificationReplyInComposer(replyText);
+        _showMessage(l10n.assistantResponseNotificationReplyUnavailable);
+        return;
+      }
+
+      final messages = await repository.getMessages(target.conversationId);
+      if (!mounted) return;
+      if (_selectedConversationId != target.conversationId) {
+        _showMessage(l10n.assistantResponseNotificationReplyNotSent);
+        return;
+      }
+      final assistantMessageIndex = messages.indexWhere(
+        (message) => message.id == assistantMessageId,
+      );
+      if (assistantMessageIndex != messages.length - 1 ||
+          assistantMessageIndex < 0 ||
+          messages[assistantMessageIndex].role !=
+              chat.ChatMessageRole.assistant ||
+          messages[assistantMessageIndex].status !=
+              chat.ChatMessageStatus.completed) {
+        _keepNotificationReplyInComposer(replyText);
+        _showMessage(l10n.assistantResponseNotificationReplyUnavailable);
+        return;
+      }
+
+      await _sendMessage(
+        conversation,
+        messageTextOverride: replyText,
+        onUserMessageSaved: () => userMessageSaved = true,
+      );
+      if (!userMessageSaved) _keepNotificationReplyInComposer(replyText);
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'notifications',
+          context: ErrorDescription(
+            'while sending a reply from an assistant response notification',
+          ),
+        ),
+      );
+      if (mounted && !userMessageSaved) {
+        if (_selectedConversationId == target.conversationId) {
+          _keepNotificationReplyInComposer(target.replyText ?? '');
+        }
+        _showMessage(
+          context.openchatL10n.assistantResponseNotificationReplyNotSent,
+        );
+      }
+    } finally {
+      _notificationRepliesInFlight.remove(actionKey);
+    }
+  }
+
+  void _keepNotificationReplyInComposer(String replyText) {
+    if (!mounted ||
+        _messageController.text.trim().isNotEmpty ||
+        replyText.isEmpty) {
+      return;
+    }
+    _messageController.value = TextEditingValue(
+      text: replyText,
+      selection: TextSelection.collapsed(offset: replyText.length),
+    );
   }
 
   Future<void> _focusQuestionNotification(
-    UserQuestionNotificationTarget target,
+    ConversationNotificationTarget target,
   ) async {
+    final groupId = target.groupId;
+    if (groupId == null) return;
     await _loadPendingQuestionGroups(target.conversationId);
     if (!mounted ||
         _selectedConversationId != target.conversationId ||
         _questionLoadFailed) {
       return;
     }
-    if (!_pendingQuestionGroups.any((group) => group.id == target.groupId)) {
+    if (!_pendingQuestionGroups.any((group) => group.id == groupId)) {
       _showMessage(context.openchatL10n.userQuestionUnavailable);
       return;
     }
-    setState(() => _focusedQuestionGroupId = target.groupId);
+    setState(() => _focusedQuestionGroupId = groupId);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _focusedQuestionGroupId == target.groupId) {
+      if (mounted && _focusedQuestionGroupId == groupId) {
         setState(() => _focusedQuestionGroupId = null);
       }
     });
+  }
+
+  Future<void> _showAssistantResponseNotification({
+    required String conversationId,
+    required String assistantMessageId,
+    required String providerId,
+    required String content,
+  }) async {
+    if (!mounted ||
+        !Platform.isWindows ||
+        !UserQuestionNotifications.isApplicationBackgrounded(
+          WidgetsBinding.instance.lifecycleState,
+        )) {
+      return;
+    }
+    final l10n = context.openchatL10n;
+    final repository = widget.chatRepository;
+    if (repository == null ||
+        UserQuestionNotifications.assistantResponsePreview(content).isEmpty) {
+      return;
+    }
+    try {
+      await _questionNotificationsReady;
+      if (!UserQuestionNotifications.isApplicationBackgrounded(
+        WidgetsBinding.instance.lifecycleState,
+      )) {
+        return;
+      }
+      final conversation = await repository.getConversation(conversationId);
+      if (conversation == null) {
+        throw StateError('The completed conversation was not found.');
+      }
+      if (!UserQuestionNotifications.isApplicationBackgrounded(
+        WidgetsBinding.instance.lifecycleState,
+      )) {
+        return;
+      }
+      await _questionNotifications.showAssistantResponse(
+        conversationId: conversationId,
+        assistantMessageId: assistantMessageId,
+        providerId: providerId,
+        title: conversation.title,
+        content: content,
+        replyLabel: l10n.messageHint,
+        sendLabel: l10n.send,
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'notifications',
+          context: ErrorDescription(
+            'while notifying about a completed assistant response',
+          ),
+        ),
+      );
+    }
   }
 
   Future<void> _loadPendingQuestionGroups(String conversationId) async {
@@ -1970,9 +2206,12 @@ class _ChatScreenState extends State<ChatScreen> {
     ChatConversation? selectedConversation, {
     chat.ChatMessage? responseToReplace,
     String? resumeRunId,
+    String? messageTextOverride,
+    VoidCallback? onUserMessageSaved,
   }) async {
     if (_isSending ||
         _isUpdatingConversationModel ||
+        _isLoadingChatGptFastMode ||
         !_toolPermissionModeReady ||
         _isLoadingToolPermissionMode ||
         _isSavingToolPermissionMode) {
@@ -1989,9 +2228,12 @@ class _ChatScreenState extends State<ChatScreen> {
     final service = widget.serviceClient;
     final l10n = context.openchatL10n;
     final text = responseToReplace == null && resumeRunId == null
-        ? _messageController.text.trim()
+        ? messageTextOverride ?? _messageController.text.trim()
         : '';
-    final attachments = responseToReplace == null && resumeRunId == null
+    final attachments =
+        responseToReplace == null &&
+            resumeRunId == null &&
+            messageTextOverride == null
         ? List<ChatAttachment>.unmodifiable(_pendingAttachments)
         : const <ChatAttachment>[];
     if (repository == null ||
@@ -2038,6 +2280,17 @@ class _ChatScreenState extends State<ChatScreen> {
       workspaceId: workspaceId,
       apiKeyConnectionId: apiKeyConnectionId,
     );
+    final oauthModelSupportsFastMode =
+        providerId == 'chatgpt' &&
+        _models.any(
+          (model) =>
+              model.routeKey == modelRouteKey &&
+              model.isAvailable &&
+              model.supportsFastMode,
+        );
+    final chatGptFastMode =
+        _chatGptFastModeEnabled &&
+        (providerId == 'chatgpt_api' || oauthModelSupportsFastMode);
     if (_loadedProviderId != _providerFamily(providerId) ||
         (providerId == 'chatgpt' &&
             (_loadedConnectionId != connectionId ||
@@ -2204,8 +2457,11 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     if (responseToReplace == null && resumeRunId == null) {
-      _messageController.clear();
-      if (mounted) setState(_pendingAttachments.clear);
+      if (messageTextOverride == null) {
+        _messageController.clear();
+        if (mounted) setState(_pendingAttachments.clear);
+      }
+      onUserMessageSaved?.call();
     }
     if (mounted) {
       setState(() {
@@ -2389,6 +2645,8 @@ class _ChatScreenState extends State<ChatScreen> {
           },
           if (_isApiKeyRouteProvider(providerId))
             'apiKeyConnectionId': apiKeyConnectionId,
+          if (providerId == 'chatgpt' || providerId == 'chatgpt_api')
+            'fastMode': chatGptFastMode,
           ...?switch (responseToReplace) {
             final replacement? => <String, Object?>{
               'excludedAssistantMessageId': replacement.id,
@@ -2603,6 +2861,14 @@ class _ChatScreenState extends State<ChatScreen> {
               );
             }
           }
+        }
+        if (status == chat.ChatMessageStatus.completed) {
+          await _showAssistantResponseNotification(
+            conversationId: conversationId,
+            assistantMessageId: savedMessageId,
+            providerId: _providerFamily(providerId),
+            content: assistantContent,
+          );
         }
       }
     } on OpenChatServiceException catch (error) {
@@ -2866,6 +3132,102 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() => _isLoadingToolPermissionMode = false);
       _showMessage(context.openchatL10n.toolPermissionSettingsLoadFailed);
     }
+  }
+
+  Future<void> _loadChatGptFastMode() async {
+    try {
+      final enabled = await _settingsPreferences.readChatGptFastMode();
+      if (!mounted) return;
+      setState(() {
+        _chatGptFastModeEnabled = enabled;
+        _isLoadingChatGptFastMode = false;
+      });
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription('while loading ChatGPT Fast mode settings'),
+        ),
+      );
+      if (!mounted) return;
+      setState(() => _isLoadingChatGptFastMode = false);
+      _showMessage(context.openchatL10n.chatGptFastModeSettingsLoadFailed);
+    }
+  }
+
+  Future<void> _setChatGptFastMode(bool enabled) async {
+    if (_isLoadingChatGptFastMode ||
+        _isSavingChatGptFastMode ||
+        enabled == _chatGptFastModeEnabled) {
+      return;
+    }
+    setState(() => _isSavingChatGptFastMode = true);
+    try {
+      await _settingsPreferences.writeChatGptFastMode(enabled);
+      if (!mounted) return;
+      setState(() {
+        _chatGptFastModeEnabled = enabled;
+        _isSavingChatGptFastMode = false;
+      });
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription('while saving ChatGPT Fast mode settings'),
+        ),
+      );
+      if (!mounted) return;
+      setState(() => _isSavingChatGptFastMode = false);
+      _showMessage(context.openchatL10n.chatGptFastModeSettingsSaveFailed);
+    }
+  }
+
+  Future<void> _loadCollapsedSidebarSections() async {
+    try {
+      final sections = await _settingsPreferences
+          .readCollapsedSidebarSections();
+      if (!mounted || _didToggleSidebarSection) return;
+      setState(() => _collapsedSidebarSections = sections);
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription('while loading sidebar section settings'),
+        ),
+      );
+    }
+  }
+
+  bool _didToggleSidebarSection = false;
+  Future<void> _sidebarPreferenceWrite = Future<void>.value();
+
+  void _toggleSidebarSection(String section) {
+    _didToggleSidebarSection = true;
+    final updated = Set<String>.of(_collapsedSidebarSections);
+    if (!updated.add(section)) updated.remove(section);
+    setState(() => _collapsedSidebarSections = updated);
+    _sidebarPreferenceWrite = _sidebarPreferenceWrite.then((_) async {
+      try {
+        await _settingsPreferences.writeCollapsedSidebarSections(
+          Set<String>.of(_collapsedSidebarSections),
+        );
+      } on Object catch (error, stackTrace) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'settings',
+            context: ErrorDescription('while saving sidebar section settings'),
+          ),
+        );
+      }
+    });
   }
 
   Future<void> _selectToolPermissionMode(ToolPermissionMode mode) async {
@@ -3159,6 +3521,54 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
       if (mounted) _showMessage(context.openchatL10n.conversationDeleteFailed);
+    }
+  }
+
+  Future<void> _setConversationArchived(
+    String conversationId, {
+    required bool isArchived,
+  }) async {
+    final repository = widget.chatRepository;
+    if (repository == null) return;
+    if (isArchived && _activeChatConversationId == conversationId) {
+      _showMessage(context.openchatL10n.stopResponseBeforeArchive);
+      return;
+    }
+
+    try {
+      await repository.setConversationArchived(
+        conversationId: conversationId,
+        isArchived: isArchived,
+      );
+      if (!mounted) return;
+      if (isArchived && _selectedConversationId == conversationId) {
+        _startNewConversation();
+      }
+      showOpenChatToast(
+        context,
+        isArchived
+            ? context.openchatL10n.conversationArchived
+            : context.openchatL10n.conversationRestored,
+        type: OpenChatToastType.success,
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_history',
+          context: ErrorDescription(
+            'while changing conversation archive state',
+          ),
+        ),
+      );
+      if (mounted) {
+        _showMessage(
+          isArchived
+              ? context.openchatL10n.conversationArchiveFailed
+              : context.openchatL10n.conversationRestoreFailed,
+        );
+      }
     }
   }
 
@@ -3491,6 +3901,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             if (_settingsOpen)
                               Expanded(
                                 child: _buildMainSurface(
+                                  surfaceKey: 'settings',
                                   child: SettingsScreen(
                                     themeMode: widget.themeMode,
                                     locale: widget.locale,
@@ -3540,6 +3951,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             else if (_modelsPageOpen)
                               Expanded(
                                 child: _buildMainSurface(
+                                  surfaceKey: 'models',
                                   child: ModelsPage(
                                     serviceClient: widget.serviceClient,
                                     downloadController:
@@ -3551,6 +3963,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             else if (_localModelsPageOpen)
                               Expanded(
                                 child: _buildMainSurface(
+                                  surfaceKey: 'local-models',
                                   child: LocalModelsPage(
                                     serviceClient: widget.serviceClient,
                                     onOpenModelCatalog: () => setState(() {
@@ -3563,6 +3976,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             else ...[
                               Expanded(
                                 child: _buildMainSurface(
+                                  surfaceKey: 'chat',
                                   child: Row(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.stretch,
@@ -3624,7 +4038,11 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildMainSurface({required Widget child}) {
+  Widget _buildMainSurface({
+    required String surfaceKey,
+    required Widget child,
+  }) {
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
     return Padding(
       padding: const EdgeInsets.only(
         right: OpenChatSpacing.mainSurfaceInset,
@@ -3633,7 +4051,26 @@ class _ChatScreenState extends State<ChatScreen> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(OpenChatRadii.control),
         clipBehavior: Clip.antiAlias,
-        child: child,
+        child: AnimatedSwitcher(
+          duration: reducedMotion
+              ? Duration.zero
+              : const Duration(milliseconds: 190),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) {
+            final position = animation.drive(
+              Tween<Offset>(
+                begin: const Offset(0, 0.012),
+                end: Offset.zero,
+              ).chain(CurveTween(curve: Curves.easeOutCubic)),
+            );
+            return FadeTransition(
+              opacity: animation,
+              child: SlideTransition(position: position, child: child),
+            );
+          },
+          child: KeyedSubtree(key: ValueKey<String>(surfaceKey), child: child),
+        ),
       ),
     );
   }
@@ -3651,12 +4088,18 @@ class _ChatScreenState extends State<ChatScreen> {
       stream: _projectStream,
       builder: (context, projectSnapshot) {
         final projectRows = projectSnapshot.data ?? const <ChatProject>[];
+        final activeConversations = conversations
+            .where((conversation) => !conversation.isArchived)
+            .toList(growable: false);
+        final archivedConversations = conversations
+            .where((conversation) => conversation.isArchived)
+            .toList(growable: false);
         final sidebarProjects = projectRows
             .map(
               (project) => ConversationSidebarProject(
                 id: project.id,
                 title: project.name,
-                conversations: conversations
+                conversations: activeConversations
                     .where(
                       (conversation) =>
                           conversation.projectId == project.id &&
@@ -3667,10 +4110,10 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             )
             .toList(growable: false);
-        final pinnedConversations = conversations
+        final pinnedConversations = activeConversations
             .where((conversation) => conversation.isPinned)
             .toList(growable: false);
-        final unassignedConversations = conversations
+        final unassignedConversations = activeConversations
             .where(
               (conversation) =>
                   conversation.projectId == null && !conversation.isPinned,
@@ -3705,17 +4148,30 @@ class _ChatScreenState extends State<ChatScreen> {
           conversations: unassignedConversations
               .map(_sidebarConversationFromModel)
               .toList(growable: false),
+          archivedConversations: archivedConversations
+              .map(_sidebarConversationFromModel)
+              .toList(growable: false),
           selectedConversationId: selectedConversationId,
           onSelectConversation: _selectConversation,
           onToggleConversationPinned: (conversationId) =>
               unawaited(_toggleConversationPinned(conversationId)),
           onPinConversation: (conversationId) =>
               unawaited(_pinConversation(conversationId)),
+          collapsedSections: _collapsedSidebarSections,
+          onToggleSection: _toggleSidebarSection,
           onRenameConversation: _requestConversationRename,
           onDeleteConversation: (conversationId) =>
               unawaited(_deleteConversation(conversationId)),
           onExportConversation: (conversationId) =>
               unawaited(_exportConversation(conversationId)),
+          onArchiveConversation: (conversationId) => unawaited(
+            _setConversationArchived(
+              conversationId,
+              isArchived: !archivedConversations.any(
+                (conversation) => conversation.id == conversationId,
+              ),
+            ),
+          ),
           onMoveConversationToProject: (conversationId, projectId) =>
               unawaited(_moveConversationToProject(conversationId, projectId)),
           onMoveConversationToChats: (conversationId) =>
@@ -3741,6 +4197,7 @@ class _ChatScreenState extends State<ChatScreen> {
       id: conversation.id,
       title: conversation.title,
       isPinned: conversation.isPinned,
+      isArchived: conversation.isArchived,
     );
   }
 
@@ -3823,6 +4280,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _toolPermissionModeReady &&
         !_isLoadingToolPermissionMode &&
         !_isSavingToolPermissionMode &&
+        !_isLoadingChatGptFastMode &&
         routeReady &&
         modelRouteReady &&
         selectedModel != null &&
@@ -3903,6 +4361,15 @@ class _ChatScreenState extends State<ChatScreen> {
               favoriteModels: favoriteSnapshot.data ?? const <FavoriteModel>[],
               providerId: _providerFamily(routeProviderId),
               isChatGptConnected: _isChatGptConnected,
+              chatGptFastModeEnabled: _chatGptFastModeEnabled,
+              chatGptFastModeAvailable:
+                  routeProviderId == 'chatgpt_api' ||
+                  (routeProviderId == 'chatgpt' &&
+                      selectedModel?.supportsFastMode == true),
+              chatGptFastModeLoading: _isLoadingChatGptFastMode,
+              chatGptFastModeSaving: _isSavingChatGptFastMode,
+              onChatGptFastModeChanged: (enabled) =>
+                  unawaited(_setChatGptFastMode(enabled)),
               availableProviderIds: {
                 'opencode',
                 ..._localEngineProviderIds,

@@ -657,6 +657,30 @@ class AppLocalizationsFr extends AppLocalizations {
   String get modelSearchHint => 'Rechercher des modèles...';
 
   @override
+  String get chatGptFastModeEnabledTooltip =>
+      'Le mode Fast est demandé. Il peut consommer plus rapidement les crédits de l’abonnement ou augmenter le coût par jeton API.';
+
+  @override
+  String get chatGptFastModeDisabledTooltip =>
+      'Demander le mode Fast. Il peut consommer plus rapidement les crédits de l’abonnement ou augmenter le coût par jeton API ; sa disponibilité dépend du modèle.';
+
+  @override
+  String get chatGptFastModeUnavailableTooltip =>
+      'Le modèle sélectionné ne déclare pas la prise en charge du mode Fast.';
+
+  @override
+  String get chatGptFastModeLoadingTooltip =>
+      'Chargement de la préférence du mode Fast…';
+
+  @override
+  String get chatGptFastModeSettingsLoadFailed =>
+      'Impossible de charger la préférence du mode Fast.';
+
+  @override
+  String get chatGptFastModeSettingsSaveFailed =>
+      'Impossible d’enregistrer la préférence du mode Fast.';
+
+  @override
   String get modelSearchNoResults =>
       'Aucun modèle ne correspond à votre recherche.';
 
@@ -734,6 +758,36 @@ class AppLocalizationsFr extends AppLocalizations {
   String get deleteConversation => 'Supprimer la conversation';
 
   @override
+  String get archiveConversation => 'Archiver la conversation';
+
+  @override
+  String get restoreConversation => 'Restaurer la conversation';
+
+  @override
+  String get archivedChats => 'Archivées';
+
+  @override
+  String get noArchivedChats => 'Aucune conversation archivée.';
+
+  @override
+  String get stopResponseBeforeArchive =>
+      'Arrêtez la réponse en cours avant d’archiver cette conversation.';
+
+  @override
+  String get conversationArchived => 'Conversation archivée.';
+
+  @override
+  String get conversationRestored => 'Conversation restaurée.';
+
+  @override
+  String get conversationArchiveFailed =>
+      'La conversation n’a pas pu être archivée. Réessayez.';
+
+  @override
+  String get conversationRestoreFailed =>
+      'La conversation n’a pas pu être restaurée. Réessayez.';
+
+  @override
   String get confirmDeleteConversationTitle => 'Supprimer cette conversation ?';
 
   @override
@@ -800,14 +854,22 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get toolPermissionRequireApprovalDescription =>
-      'Les outils de fichiers demandent une autorisation avant chaque appel et sont limités au dossier du projet et à %LOCALAPPDATA%\\OpenChat. L’exécution de commandes n’est pas disponible.';
+      'Demande avant chaque appel de fichier, du Web ou du terminal. Les fichiers restent limités au projet et à OpenChat.';
+
+  @override
+  String get toolPermissionApproveSafeOperations =>
+      'Approuver les opérations sûres';
+
+  @override
+  String get toolPermissionApproveSafeOperationsDescription =>
+      'Lit les fichiers du projet et d’OpenChat sans demander. Demande avant changements, Web et terminal.';
 
   @override
   String get toolPermissionFullAccess => 'Accès complet';
 
   @override
   String get toolPermissionFullAccessDescription =>
-      'Les outils de fichiers peuvent lire et modifier des fichiers dans n\'importe quel dossier sans rien demander. L\'exécution de la commande n\'est pas disponible.';
+      'Aucune demande : fichiers accessibles partout, Web et terminal sans autorisation.';
 
   @override
   String get toolPermissionSettingsLoadFailed =>
@@ -2978,6 +3040,22 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get userQuestionNotificationBody => 'L’IA attend votre réponse.';
+
+  @override
+  String get assistantResponseNotificationReplyEmpty =>
+      'Saisissez une réponse avant de l’envoyer.';
+
+  @override
+  String get assistantResponseNotificationReplyTooLong =>
+      'Cette réponse est trop longue pour être envoyée depuis une notification. Utilisez le champ de saisie de la conversation.';
+
+  @override
+  String get assistantResponseNotificationReplyUnavailable =>
+      'Cette notification n’est plus à jour ou la conversation est indisponible. Ouvrez la conversation et envoyez un nouveau message.';
+
+  @override
+  String get assistantResponseNotificationReplyNotSent =>
+      'La réponse rapide n’a pas pu être envoyée. Vérifiez la conversation et réessayez.';
 
   @override
   String fileChangesSummary(int count) {

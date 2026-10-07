@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chat_file_change.dart';
@@ -80,7 +81,7 @@ class FileChangesSummaryCard extends StatelessWidget {
                   ),
                   alignment: Alignment.center,
                   child: Icon(
-                    Icons.difference_outlined,
+                    LucideIcons.fileDiff,
                     size: 17,
                     color: palette.accentIcon,
                   ),
@@ -212,7 +213,7 @@ class FileChangesSummaryCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(
-                    Icons.info_outline_rounded,
+                    LucideIcons.info,
                     size: 15,
                     color: Theme.of(context).colorScheme.error,
                   ),
@@ -237,9 +238,9 @@ class FileChangesSummaryCard extends StatelessWidget {
 }
 
 IconData _fileChangeIcon(ChatFileChangeKind kind) => switch (kind) {
-  ChatFileChangeKind.added => Icons.note_add_outlined,
-  ChatFileChangeKind.modified => Icons.edit_note_rounded,
-  ChatFileChangeKind.deleted => Icons.delete_outline_rounded,
+  ChatFileChangeKind.added => LucideIcons.filePlus,
+  ChatFileChangeKind.modified => LucideIcons.notebookPen,
+  ChatFileChangeKind.deleted => LucideIcons.trash2,
 };
 
 Color _additionColor(BuildContext context) =>

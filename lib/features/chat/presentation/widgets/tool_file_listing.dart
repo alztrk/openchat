@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
@@ -78,7 +79,7 @@ class ToolFileListingResult extends StatelessWidget {
             children: [
               if (locationLabel case final label?) ...[
                 Icon(
-                  Icons.folder_open_rounded,
+                  LucideIcons.folderOpen,
                   size: 15,
                   color: palette.secondaryIcon,
                 ),
@@ -139,8 +140,8 @@ class ToolFileListingResult extends StatelessWidget {
                         children: [
                           Icon(
                             entry.isDirectory
-                                ? Icons.folder_rounded
-                                : Icons.insert_drive_file_outlined,
+                                ? LucideIcons.folder
+                                : LucideIcons.file,
                             size: 16,
                             color: entry.isDirectory
                                 ? palette.accent
@@ -199,11 +200,7 @@ class _ToolListingFootnote extends StatelessWidget {
     padding: const EdgeInsets.only(top: 3),
     child: Row(
       children: [
-        Icon(
-          Icons.info_outline_rounded,
-          size: 14,
-          color: palette.secondaryIcon,
-        ),
+        Icon(LucideIcons.info, size: 14, color: palette.secondaryIcon),
         const SizedBox(width: 6),
         Expanded(
           child: Text(
@@ -268,7 +265,7 @@ class ToolActivityNotice extends StatelessWidget {
               ),
             )
           else if (isError) ...[
-            Icon(Icons.error_outline_rounded, size: 15, color: errorColor),
+            Icon(LucideIcons.circleAlert, size: 15, color: errorColor),
           ],
           if (isLoading || isError) const SizedBox(width: 7),
           Expanded(

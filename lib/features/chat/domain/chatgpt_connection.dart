@@ -91,6 +91,7 @@ class ChatGptModel {
     required this.reasoningLevels,
     this.supportsReasoning = false,
     this.supportsImages = false,
+    this.supportsFastMode = false,
     this.supportsTools,
     this.description,
     this.contextWindow,
@@ -111,6 +112,7 @@ class ChatGptModel {
   final List<String> reasoningLevels;
   final bool supportsReasoning;
   final bool supportsImages;
+  final bool supportsFastMode;
   final bool? supportsTools;
   final bool isAvailable;
   final String providerId;
@@ -138,6 +140,7 @@ class ChatGptModel {
     reasoningLevels: reasoningLevels,
     supportsReasoning: supportsReasoning,
     supportsImages: supportsImages,
+    supportsFastMode: supportsFastMode,
     isAvailable: isAvailable,
     providerId: providerId,
     connectionId: connectionId,
@@ -164,6 +167,12 @@ class ChatGptModel {
     if (supportsImages != null && supportsImages is! bool) {
       throw const FormatException('The model image capability was invalid.');
     }
+    final supportsFastMode = json['supportsFastMode'];
+    if (supportsFastMode != null && supportsFastMode is! bool) {
+      throw const FormatException(
+        'The model Fast mode capability was invalid.',
+      );
+    }
     final supportsTools = json['supportsTools'];
     if (supportsTools != null && supportsTools is! bool) {
       throw const FormatException('The model tool capability was invalid.');
@@ -182,6 +191,7 @@ class ChatGptModel {
       supportsReasoning:
           supportsReasoning == true || reasoningLevels.isNotEmpty,
       supportsImages: supportsImages == true,
+      supportsFastMode: supportsFastMode == true,
       supportsTools: supportsTools as bool?,
       isAvailable: json['isAvailable'] == true,
       groupId: _optionalString(json, 'groupId'),

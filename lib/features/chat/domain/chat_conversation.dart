@@ -12,6 +12,7 @@ class ChatConversation {
     this.modelId,
     this.projectId,
     this.isPinned = false,
+    this.isArchived = false,
   });
 
   final String id;
@@ -26,6 +27,7 @@ class ChatConversation {
   final String? modelId;
   final String? projectId;
   final bool isPinned;
+  final bool isArchived;
 }
 
 enum ChatConversationTitleSource { automatic, manual }

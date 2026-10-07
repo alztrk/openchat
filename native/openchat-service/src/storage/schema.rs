@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
-pub(super) const SCHEMA_VERSION: i64 = 22;
+pub(super) const SCHEMA_VERSION: i64 = 24;
 pub(super) const INITIAL_SCHEMA_VERSION: i64 = 2;
 
 const REDACTED_TOOL_INDEX_TRIGGERS: &str = r#"
@@ -1695,6 +1695,97 @@ pub(super) fn initialize_schema(
         )?;
         transaction.commit()?;
         current_version = 22;
+    }
+
+    if current_version < 23 && target_version >= 23 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE chatgpt_models
+                ADD COLUMN supports_fast_mode INTEGER NOT NULL DEFAULT 0
+                CHECK (supports_fast_mode IN (0, 1));
+            UPDATE chatgpt_model_catalog_state
+               SET fetched_at_unix_ms = 0;",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (23, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 23;
+    }
+
+    if current_version < 24 && target_version >= 24 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE usage_events (
+                event_id TEXT PRIMARY KEY NOT NULL,
+                event_kind TEXT NOT NULL CHECK (event_kind IN ('request', 'legacy_output')),
+                conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                assistant_message_id TEXT,
+                provider_id TEXT,
+                model_id TEXT,
+                reasoning_effort TEXT,
+                operation TEXT NOT NULL CHECK (
+                    operation IN ('chat', 'tool_follow_up', 'compaction', 'title_generation', 'legacy')
+                ),
+                status TEXT NOT NULL CHECK (
+                    status IN ('pending', 'completed', 'failed', 'cancelled', 'interrupted')
+                ),
+                fast_requested INTEGER CHECK (fast_requested IS NULL OR fast_requested IN (0, 1)),
+                service_tier TEXT,
+                input_tokens INTEGER CHECK (input_tokens IS NULL OR input_tokens >= 0),
+                output_tokens INTEGER CHECK (output_tokens IS NULL OR output_tokens >= 0),
+                reasoning_tokens INTEGER CHECK (reasoning_tokens IS NULL OR reasoning_tokens >= 0),
+                cached_input_tokens INTEGER CHECK (
+                    cached_input_tokens IS NULL OR cached_input_tokens >= 0
+                ),
+                cache_write_tokens INTEGER CHECK (
+                    cache_write_tokens IS NULL OR cache_write_tokens >= 0
+                ),
+                reported_cost_nano_usd INTEGER CHECK (
+                    reported_cost_nano_usd IS NULL OR reported_cost_nano_usd >= 0
+                ),
+                cost_source TEXT CHECK (cost_source IS NULL OR cost_source = 'provider_reported'),
+                usage_source TEXT NOT NULL CHECK (
+                    usage_source IN ('provider_reported', 'unavailable', 'legacy_message_output')
+                ),
+                started_at_unix_ms INTEGER NOT NULL,
+                finished_at_unix_ms INTEGER
+            );
+            CREATE INDEX usage_events_started_idx
+                ON usage_events(started_at_unix_ms DESC, event_id);
+            CREATE INDEX usage_events_provider_model_idx
+                ON usage_events(provider_id, model_id, started_at_unix_ms DESC);
+            CREATE INDEX usage_events_conversation_idx
+                ON usage_events(conversation_id, started_at_unix_ms DESC);
+            INSERT INTO usage_events (
+                event_id, event_kind, conversation_id, assistant_message_id,
+                operation, status, output_tokens, usage_source,
+                started_at_unix_ms, finished_at_unix_ms
+            )
+            SELECT
+                'legacy-output:' || message.id,
+                'legacy_output',
+                message.conversation_id,
+                message.id,
+                'legacy',
+                'completed',
+                message.output_tokens,
+                'legacy_message_output',
+                COALESCE(message.created_at, 0),
+                COALESCE(message.created_at, 0)
+            FROM messages AS message
+            WHERE message.role = 'assistant'
+              AND message.output_tokens IS NOT NULL
+              AND message.output_tokens >= 0
+              AND message.status <> 'streaming';",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (24, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 24;
     }
 
     Ok(current_version)

@@ -69,6 +69,7 @@ pub struct ChatGptModel {
     pub reasoning_levels: Vec<String>,
     pub supports_reasoning_summary_parameter: bool,
     pub supports_images: bool,
+    pub supports_fast_mode: bool,
     pub is_available: bool,
 }
 

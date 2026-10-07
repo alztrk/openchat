@@ -25,6 +25,7 @@ pub(crate) use validation::{PreparedToolCall, ToolOperation};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ToolPermissionMode {
     RequireApproval,
+    ApproveSafeOperations,
     FullAccess,
 }
 
@@ -45,12 +46,21 @@ impl ToolPermissionMode {
     pub fn from_rpc(value: Option<&str>) -> Result<Self, ServiceError> {
         match value {
             None | Some("require_approval") => Ok(Self::RequireApproval),
+            Some("approve_safe_operations") => Ok(Self::ApproveSafeOperations),
             Some("full_access") => Ok(Self::FullAccess),
             Some(_) => Err(ServiceError::new(
                 "invalid_tool_permission_mode",
                 "The selected tool permission mode is invalid.",
                 false,
             )),
+        }
+    }
+
+    fn requires_approval(self, operation: &ToolOperation) -> bool {
+        match self {
+            Self::RequireApproval => true,
+            Self::ApproveSafeOperations => !operation.is_safe_for_auto_approval(),
+            Self::FullAccess => false,
         }
     }
 }
@@ -325,7 +335,7 @@ impl ToolExecutor {
             }
         };
 
-        if self.permission_mode == ToolPermissionMode::RequireApproval {
+        if self.permission_mode.requires_approval(&prepared.operation) {
             let approved_target = prepared.target_path.clone();
             let target_path = prepared.target_path.to_string_lossy().into_owned();
             self.emit_activity(

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_text_scaler.dart';
@@ -242,13 +243,13 @@ void main() {
     await tester.tap(find.text('Normal'));
     await tester.pumpAndSettle();
     expect(find.text('Wide'), findsOneWidget);
-    expect(find.byIcon(Icons.check_rounded), findsOneWidget);
+    expect(find.byIcon(LucideIcons.check), findsOneWidget);
 
     await tester.tap(find.text('Wide'));
     await tester.pumpAndSettle();
     expect(selectedValue, 'wide');
     expect(find.text('Wide'), findsOneWidget);
-    expect(find.byIcon(Icons.check_rounded), findsNothing);
+    expect(find.byIcon(LucideIcons.check), findsNothing);
   });
 
   testWidgets('appearance controls apply and persist all three choices', (

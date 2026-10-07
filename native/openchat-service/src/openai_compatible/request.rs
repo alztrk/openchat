@@ -1,4 +1,5 @@
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 
 use crate::{
     chatgpt_store, history, instructions,
@@ -75,7 +76,7 @@ pub(super) fn build_provider_request(
     let last_message_id = included_messages.last().map(|message| message.id.clone());
     let messages = included_messages
         .iter()
-        .map(|message| history::provider_messages(message))
+        .map(|message| history::provider_messages_for_provider(message, provider_id))
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .flatten()
@@ -96,6 +97,8 @@ pub(super) fn build_provider_request(
             custom_instructions,
             permission_mode,
             has_project,
+            !tools.is_empty(),
+            provider_id,
         ),
         messages,
         last_message_id,
@@ -170,7 +173,10 @@ pub(super) fn chat_completion_body(
         "messages": messages,
         "stream": true,
     });
-    if matches!(provider_id, "chatgpt_api" | "opencode" | "gemini" | "groq") {
+    if matches!(
+        provider_id,
+        "chatgpt_api" | "opencode" | "gemini" | "groq" | "mistral" | "openrouter"
+    ) {
         body["stream_options"] = json!({"include_usage": true});
     }
     if provider_id == "opencode" {
@@ -202,6 +208,58 @@ pub(super) fn chat_completion_body(
         body["parallel_tool_calls"] = json!(false);
     }
     body
+}
+
+pub(super) fn apply_fast_mode(body: &mut Value, provider_id: &str, enabled: bool) {
+    if provider_id == "chatgpt_api" && enabled {
+        body["service_tier"] = json!("fast");
+    }
+}
+
+pub(super) fn apply_model_output_limit(
+    body: &mut Value,
+    provider_id: &str,
+    uses_responses_api: bool,
+    max_output_tokens: Option<i64>,
+) {
+    let Some(max_output_tokens) = max_output_tokens.filter(|limit| *limit > 0) else {
+        return;
+    };
+    let field = if uses_responses_api {
+        "max_output_tokens"
+    } else if matches!(provider_id, "gemini" | "mistral" | "opencode") {
+        "max_tokens"
+    } else {
+        "max_completion_tokens"
+    };
+    body[field] = json!(max_output_tokens);
+}
+
+pub(super) fn apply_prompt_cache_affinity(
+    body: &mut Value,
+    provider_id: &str,
+    connection_id: Option<&str>,
+    model_id: &str,
+    conversation_id: &str,
+) {
+    let field = match provider_id {
+        "cerebras" | "mistral" => "prompt_cache_key",
+        "openrouter" => "session_id",
+        _ => return,
+    };
+
+    let mut hasher = Sha256::new();
+    hasher.update(b"openchat-prompt-cache-v1\0");
+    for part in [
+        provider_id.as_bytes(),
+        connection_id.unwrap_or_default().as_bytes(),
+        model_id.as_bytes(),
+        conversation_id.as_bytes(),
+    ] {
+        hasher.update(part);
+        hasher.update([0]);
+    }
+    body[field] = json!(format!("oc_{:x}", hasher.finalize()));
 }
 
 pub(super) fn responses_input_items(messages: &[Value]) -> Vec<Value> {
@@ -343,7 +401,14 @@ mod tests {
 
     #[test]
     fn requests_usage_for_streaming_providers_that_need_the_flag() {
-        for provider_id in ["chatgpt_api", "opencode", "gemini", "groq"] {
+        for provider_id in [
+            "chatgpt_api",
+            "opencode",
+            "gemini",
+            "groq",
+            "mistral",
+            "openrouter",
+        ] {
             let body = chat_completion_body(&request(), &[], provider_id);
 
             assert_eq!(
@@ -354,8 +419,8 @@ mod tests {
     }
 
     #[test]
-    fn leaves_usage_flags_out_when_the_provider_reports_usage_automatically() {
-        for provider_id in ["cerebras", "openrouter", "mistral"] {
+    fn leaves_usage_flags_out_for_cerebras_automatic_stream_usage() {
+        for provider_id in ["cerebras"] {
             let body = chat_completion_body(&request(), &[], provider_id);
 
             assert!(body.get("stream_options").is_none(), "{provider_id}");
@@ -395,13 +460,13 @@ mod tests {
     }
 
     #[test]
-    fn sends_mistral_reasoning_effort_without_unsupported_stream_options() {
+    fn sends_mistral_reasoning_effort_with_stream_usage() {
         let mut request = request();
         request.reasoning_effort = Some("high".to_owned());
         let body = chat_completion_body(&request, &[], "mistral");
 
         assert_eq!(body["reasoning_effort"], "high");
-        assert!(body.get("stream_options").is_none());
+        assert_eq!(body["stream_options"]["include_usage"], true);
     }
 
     #[test]

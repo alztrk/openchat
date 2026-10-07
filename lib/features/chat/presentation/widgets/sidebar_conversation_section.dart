@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
 import 'package:openchat/features/chat/presentation/widgets/sidebar_conversation_tile.dart';
-import 'package:openchat/features/chat/presentation/widgets/sidebar_section_heading.dart';
+import 'package:openchat/features/chat/presentation/widgets/sidebar_collapsible_heading.dart';
 
 class SidebarConversationSection extends StatelessWidget {
   const SidebarConversationSection({
@@ -20,6 +20,10 @@ class SidebarConversationSection extends StatelessWidget {
     required this.onDeleteConversation,
     required this.onExportConversation,
     required this.onDropConversation,
+    this.isArchivedSection = false,
+    this.onArchiveConversation,
+    this.collapsed = false,
+    this.onToggleCollapsed,
   });
 
   final String title;
@@ -34,6 +38,10 @@ class SidebarConversationSection extends StatelessWidget {
   final ValueChanged<String>? onDeleteConversation;
   final ValueChanged<String>? onExportConversation;
   final ValueChanged<String>? onDropConversation;
+  final bool isArchivedSection;
+  final ValueChanged<String>? onArchiveConversation;
+  final bool collapsed;
+  final VoidCallback? onToggleCollapsed;
 
   @override
   Widget build(BuildContext context) {
@@ -53,59 +61,99 @@ class SidebarConversationSection extends StatelessWidget {
                 color: isDropTarget ? palette.hover : Colors.transparent,
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: Row(
-                children: [
-                  Expanded(child: SidebarSectionHeading(title: title)),
-                  if (isDropTarget)
-                    Icon(dropIcon, size: 16, color: palette.accentIcon),
-                ],
+              child: SidebarCollapsibleHeading(
+                title: title,
+                collapsed: collapsed,
+                onPressed: onToggleCollapsed ?? () {},
+                trailing: isDropTarget
+                    ? Icon(dropIcon, size: 16, color: palette.accentIcon)
+                    : null,
               ),
             ),
-            const SizedBox(height: 4),
-            if (conversations.isEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-                child: Text(
-                  emptyMessage,
-                  style: TextStyle(
-                    color: palette.secondaryText,
-                    fontSize: 12,
-                    height: 18 / 12,
-                  ),
+            AnimatedSize(
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: ClipRect(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (!collapsed) ...[
+                      const SizedBox(height: 4),
+                      if (conversations.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+                          child: Text(
+                            emptyMessage,
+                            style: TextStyle(
+                              color: palette.secondaryText,
+                              fontSize: 12,
+                              height: 18 / 12,
+                            ),
+                          ),
+                        )
+                      else
+                        for (
+                          var index = 0;
+                          index < conversations.length;
+                          index++
+                        ) ...[
+                          if (index > 0) const SizedBox(height: 2),
+                          DraggableSidebarConversation(
+                            conversation: conversations[index],
+                            enabled: !isArchivedSection,
+                            child: SidebarConversationTile(
+                              conversation: conversations[index],
+                              selected:
+                                  conversations[index].id ==
+                                  selectedConversationId,
+                              height: itemHeight,
+                              inset: 8,
+                              showChatIcon: false,
+                              onPressed: onSelectConversation == null
+                                  ? null
+                                  : () => onSelectConversation!(
+                                      conversations[index].id,
+                                    ),
+                              onTogglePinned:
+                                  isArchivedSection || onTogglePinned == null
+                                  ? null
+                                  : () => onTogglePinned!(
+                                      conversations[index].id,
+                                    ),
+                              onRename: onRenameConversation == null
+                                  ? null
+                                  : () => onRenameConversation!(
+                                      conversations[index].id,
+                                    ),
+                              onDelete: onDeleteConversation == null
+                                  ? null
+                                  : () => onDeleteConversation!(
+                                      conversations[index].id,
+                                    ),
+                              onExport: onExportConversation == null
+                                  ? null
+                                  : () => onExportConversation!(
+                                      conversations[index].id,
+                                    ),
+                              onArchive: onArchiveConversation == null
+                                  ? null
+                                  : () => onArchiveConversation!(
+                                      conversations[index].id,
+                                    ),
+                              key: ValueKey<String>(
+                                'sidebar-conversation-${conversations[index].id}',
+                              ),
+                            ),
+                          ),
+                        ],
+                    ],
+                  ],
                 ),
-              )
-            else
-              for (var index = 0; index < conversations.length; index++) ...[
-                if (index > 0) const SizedBox(height: 2),
-                DraggableSidebarConversation(
-                  conversation: conversations[index],
-                  child: SidebarConversationTile(
-                    conversation: conversations[index],
-                    selected: conversations[index].id == selectedConversationId,
-                    height: itemHeight,
-                    inset: 8,
-                    showChatIcon: false,
-                    onPressed: onSelectConversation == null
-                        ? null
-                        : () => onSelectConversation!(conversations[index].id),
-                    onTogglePinned: onTogglePinned == null
-                        ? null
-                        : () => onTogglePinned!(conversations[index].id),
-                    onRename: onRenameConversation == null
-                        ? null
-                        : () => onRenameConversation!(conversations[index].id),
-                    onDelete: onDeleteConversation == null
-                        ? null
-                        : () => onDeleteConversation!(conversations[index].id),
-                    onExport: onExportConversation == null
-                        ? null
-                        : () => onExportConversation!(conversations[index].id),
-                    key: ValueKey<String>(
-                      'sidebar-conversation-${conversations[index].id}',
-                    ),
-                  ),
-                ),
-              ],
+              ),
+            ),
           ],
         );
       },

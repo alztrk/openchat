@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:openchat/app/local_engine_icon.dart';
@@ -33,9 +34,9 @@ class ProviderIcon extends StatelessWidget {
         colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
         excludeFromSemantics: true,
       ),
-      'gemini' => Icon(Icons.auto_awesome_rounded, size: size, color: color),
-      'groq' => Icon(Icons.bolt_rounded, size: size, color: color),
-      'cerebras' => Icon(Icons.memory_rounded, size: size, color: color),
+      'gemini' => Icon(LucideIcons.sparkles, size: size, color: color),
+      'groq' => Icon(LucideIcons.zap, size: size, color: color),
+      'cerebras' => Icon(LucideIcons.microchip, size: size, color: color),
       'openrouter' => SvgPicture.asset(
         'assets/icons/openrouter.svg',
         width: size,
@@ -55,8 +56,8 @@ class ProviderIcon extends StatelessWidget {
         color: color,
         size: size,
       ),
-      'favorites' => Icon(Icons.star_outline_rounded, size: size, color: color),
-      _ => Icon(Icons.hub_outlined, size: size, color: color),
+      'favorites' => Icon(LucideIcons.star, size: size, color: color),
+      _ => Icon(LucideIcons.network, size: size, color: color),
     };
 
     return SizedBox(

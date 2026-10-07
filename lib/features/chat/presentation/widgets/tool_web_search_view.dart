@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/presentation/widgets/tool_file_listing.dart';
@@ -101,11 +102,7 @@ class ToolWebSearchResult extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: 8),
           child: Row(
             children: [
-              Icon(
-                Icons.search_rounded,
-                size: 14,
-                color: palette.secondaryIcon,
-              ),
+              Icon(LucideIcons.search, size: 14, color: palette.secondaryIcon),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -217,7 +214,7 @@ class _WebSearchResultCard extends StatelessWidget {
               IconButton(
                 tooltip: context.openchatL10n.toolCopyUrl,
                 onPressed: () => _copyText(context, item.url),
-                icon: const Icon(Icons.copy_rounded),
+                icon: const Icon(LucideIcons.copy),
                 iconSize: 14,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
@@ -227,7 +224,7 @@ class _WebSearchResultCard extends StatelessWidget {
               IconButton(
                 tooltip: context.openchatL10n.toolOpenUrl,
                 onPressed: () => _openUrlOrCopy(context, item.url),
-                icon: const Icon(Icons.open_in_new_rounded),
+                icon: const Icon(LucideIcons.externalLink),
                 color: palette.accentIcon,
                 iconSize: 14,
                 visualDensity: VisualDensity.compact,
@@ -356,7 +353,7 @@ class ToolReadUrlResult extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.public_rounded, size: 14, color: palette.accentIcon),
+              Icon(LucideIcons.globe, size: 14, color: palette.accentIcon),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -428,7 +425,7 @@ class ToolReadUrlResult extends StatelessWidget {
               IconButton(
                 tooltip: l10n.toolCopyContent,
                 onPressed: () => _copyText(context, content),
-                icon: const Icon(Icons.copy_rounded),
+                icon: const Icon(LucideIcons.copy),
                 iconSize: 14,
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
@@ -438,7 +435,7 @@ class ToolReadUrlResult extends StatelessWidget {
               IconButton(
                 tooltip: l10n.toolOpenUrl,
                 onPressed: () => _openUrlOrCopy(context, targetUrl),
-                icon: const Icon(Icons.open_in_new_rounded),
+                icon: const Icon(LucideIcons.externalLink),
                 color: palette.accentIcon,
                 iconSize: 14,
                 visualDensity: VisualDensity.compact,

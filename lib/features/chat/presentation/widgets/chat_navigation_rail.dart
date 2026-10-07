@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:openchat/app/openchat_brand_mark.dart';
@@ -107,7 +108,7 @@ class ChatNavigationRail extends StatelessWidget {
                               label: l10n.models,
                               selected: modelsSelected,
                               icon: Icon(
-                                Icons.hub_outlined,
+                                LucideIcons.network,
                                 color: modelsSelected
                                     ? palette.text
                                     : palette.secondaryIcon,
@@ -125,7 +126,7 @@ class ChatNavigationRail extends StatelessWidget {
                               label: l10n.localModelsPageTitle,
                               selected: localModelsSelected,
                               icon: Icon(
-                                Icons.storage_rounded,
+                                LucideIcons.database,
                                 color: localModelsSelected
                                     ? palette.text
                                     : palette.secondaryIcon,
@@ -189,8 +190,8 @@ class ChatNavigationRail extends StatelessWidget {
                               selected: false,
                               icon: Icon(
                                 sidebarsCompact
-                                    ? Icons.chevron_right_rounded
-                                    : Icons.chevron_left_rounded,
+                                    ? LucideIcons.chevronRight
+                                    : LucideIcons.chevronLeft,
                                 color: palette.secondaryIcon,
                                 size: 20,
                               ),
@@ -318,48 +319,59 @@ class _RailNavigationButton extends StatelessWidget {
       TargetPlatform.android || TargetPlatform.iOS => true,
       _ => false,
     };
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
     final item = Semantics(
       button: true,
       enabled: enabled,
       selected: selected,
       label: label,
       child: ExcludeSemantics(
-        child: Material(
-          color: selected ? palette.selected : Colors.transparent,
-          borderRadius: BorderRadius.circular(OpenChatRadii.control),
-          child: InkWell(
-            onTap: onPressed,
+        child: AnimatedContainer(
+          duration: reducedMotion
+              ? Duration.zero
+              : const Duration(milliseconds: 150),
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            color: selected ? palette.selected : Colors.transparent,
             borderRadius: BorderRadius.circular(OpenChatRadii.control),
-            hoverColor: palette.hover,
-            focusColor: OpenChatSemanticColors.of(context).focusRing
-                .withValues(alpha: 0.24),
-            child: SizedBox(
-              height: touch || expanded ? 44 : 36,
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: expanded ? 12 : 0),
-                child: Row(
-                  mainAxisAlignment: expanded
-                      ? MainAxisAlignment.start
-                      : MainAxisAlignment.center,
-                  children: [
-                    icon,
-                    if (expanded) ...[
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(
-                                color: foreground,
-                                fontSize: 14,
-                                height: 20 / 14,
-                              ),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(OpenChatRadii.control),
+            child: InkWell(
+              onTap: onPressed,
+              borderRadius: BorderRadius.circular(OpenChatRadii.control),
+              hoverColor: palette.hover,
+              focusColor: OpenChatSemanticColors.of(context).focusRing
+                  .withValues(alpha: 0.24),
+              child: SizedBox(
+                height: touch || expanded ? 44 : 36,
+                child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: expanded ? 12 : 0),
+                  child: Row(
+                    mainAxisAlignment: expanded
+                        ? MainAxisAlignment.start
+                        : MainAxisAlignment.center,
+                    children: [
+                      icon,
+                      if (expanded) ...[
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: foreground,
+                                  fontSize: 14,
+                                  height: 20 / 14,
+                                ),
+                          ),
                         ),
-                      ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -409,8 +421,8 @@ class _ThemeButton extends StatelessWidget {
           children: [
             Icon(
               Theme.of(context).brightness == Brightness.dark
-                  ? Icons.light_mode_outlined
-                  : Icons.dark_mode_outlined,
+                  ? LucideIcons.sun
+                  : LucideIcons.moon,
               size: 20,
               color: palette.secondaryIcon,
             ),

@@ -12,6 +12,7 @@ This roadmap reflects the repository's current implementation. It has no calenda
 - Embedded release catalogs and a verified, cancellable installer for llama.cpp on Windows x64. Windows x64 Settings supports a model folder per engine and bounded discovery of unregistered GGUF and Transformers model files, with explicit confirmation before registration. The managed llama.cpp path starts selected GGUF models on demand, waits for health readiness, streams chat through the shared route, and stops individual processes on cancellation or service shutdown. Manual Windows CPU and NVIDIA CUDA checks used real GGUF files; CUDA verification reported the RTX 3060, generated a text answer, and handled an attached PNG with its matching vision projector. These were manual runtime checks, not automated release tests. CUDA offload is recommended only when the detected driver meets the pinned catalog floor. vLLM and ExLlama installation is disabled on Windows while their Linux runtimes remain separately catalogued and await live validation on supported CUDA hosts. Runtime diagnostics record bounded, safe lifecycle fields. GGUF-declared and runtime-active context windows, projector pairing, and reported image and tool-template capabilities are implemented.
 - Local workspace tools for file listing, search, reading, metadata, writing, and editing, plus web search, URL reading, and terminal command/session tools. Tool calls, arguments, progress, and results are stored with assistant messages and shown in the conversation UI.
 - Global `Ask for approval` and `Full access` settings govern local file and terminal calls. Approval is per call; canonical path checks apply to filesystem tools and do not sandbox terminal processes.
+- ChatGPT OAuth quota snapshots are stored per connection and workspace. Provider-reported input usage informs compaction where available, but there is no normalized per-request usage, cost, or prompt-cache ledger across providers; the context meter can use estimates.
 - Conversation history, project grouping, model favorites, rename/delete/pin actions, retry, and Markdown export. Tool activity is included in Markdown exports.
 - Per-conversation memory inspection, bounded hybrid FTS5 and optional local semantic archive search with dated source excerpts, best-effort credential redaction in derived tool indexes, and a confirmed reset for compacted context that preserves full history.
 - A Windows portable executable build script and local data directories for the database, logs, and cache.
@@ -81,22 +82,25 @@ These bullets describe code present in the repository. They do not mean that eve
 - Add the public OpenAI Responses API for OpenAI API-key connections, including streaming, function calling, and optional hosted tools such as web search. Keep this route distinct from ChatGPT OAuth and its private Codex endpoints.
 - Evaluate Anthropic Messages and xAI Responses as separate provider adapters, with model catalogs and capabilities obtained from their documented APIs.
 - Evaluate native Gemini and Mistral APIs for provider-hosted tools that their compatibility endpoints do not expose. Add only documented features that fit the shared request and event contract.
+- Treat prompt caching as a provider/model/runtime capability. Keep reusable instructions and tool schemas stable at the start of requests; add documented cache breakpoints or keys only in adapters that support them. Adapters can shape cache eligibility, but the provider/runtime owns cache storage and actual hits, and a marker or key does not guarantee reuse.
 - Label provider-hosted tools, the information sent to them, citations or returned sources, and any provider-side billing. Never enable these tools implicitly when a user selects a model.
-- Handle streaming, cancellation, tool-call errors, usage, context limits, and unavailable capabilities consistently across every adapter.
+- Handle streaming, cancellation, tool-call errors, usage, context limits, prompt-cache reporting, and unavailable capabilities consistently across every adapter.
 
 **Exit criteria:** each released native adapter passes the provider-specific account checks and shared streaming/tool/error contract; provider-hosted tools require explicit enablement and clearly describe their data and cost behavior.
 
-## 7. Add MCP and safer coding-agent workflows
+## 7. Add a first-party tool runtime and safer coding-agent workflows
 
-**Status: planned.** Expand beyond the current built-in tools with discoverable integrations and clearer, more reversible workspace actions.
+**Status: planned.** Establish one local execution and permission boundary for OpenChat's built-in tools and future user-configured tools. MCP remains a separate protocol for connecting external tool servers.
 
+- Define a first-party tool registry for built-in and user-configured tools, distinct from MCP. Each tool needs a stable name, validated input schema, executor, permission scope, timeout, output limit, cancellation behavior, and a persisted activity record that the UI can render.
+- Add per-tool and per-project `Ask`, `Allow`, or `Deny` rules. Introduce an actual operating-system process sandbox for terminal and other local process tools; filesystem path checks alone do not isolate processes. Establish these boundaries before arbitrary user-configured executors or subagents can run.
 - Add an MCP client for local stdio and remote Streamable HTTP servers. Provide explicit server setup, connection status, tool discovery, namespacing, and clear startup, timeout, and protocol errors. Load tool schemas only when needed to keep ordinary requests bounded.
-- Require users to enable each server and apply per-server and per-tool `Ask`, `Allow`, or `Deny` controls before a discovered tool can run. Keep server credentials in secure storage and treat tool results as untrusted input.
-- Add a reviewable patch/diff workflow with checkpoints and undo for file changes. Keep terminal permissions distinct: the current terminal runs with OpenChat's operating-system permissions, and path checks on file tools do not sandbox it. Investigate a real process sandbox before offering stronger isolation claims.
-- Evaluate project-scoped instructions and reusable Skills, plan/Todo tracking, and LSP diagnostics/navigation as follow-on coding workflows. Reuse the existing local shared-instructions behavior where it fits.
-- Defer browser/computer control and isolated subagents until tool permission boundaries and process isolation are established.
+- Require users to enable each MCP server and apply per-server and per-tool permission decisions before a discovered tool can run. Keep server credentials in secure storage and treat tool results as untrusted input.
+- Add a reviewable patch/diff workflow with checkpoints and undo for file changes.
+- Add plan mode and a durable Todo list tied to the active run. Add project-scoped instructions and reusable Skills through the project profile stage; keep LSP diagnostics/navigation as a separate code-intelligence capability.
+- Defer browser/computer control and subagent execution until the tool permission boundary, process sandbox, and durable run model are available.
 
-**Exit criteria:** MCP tools are discoverable but cannot run before explicit server enablement and the applicable permission decision; file edits can be reviewed and reversed; and the UI clearly distinguishes filesystem checks from terminal process isolation.
+**Exit criteria:** built-in, user-configured, and MCP tools use explicit permission decisions and report their activity consistently; local process tools run inside an enforced sandbox; file edits can be reviewed and reversed; and denied, failed, timed-out, and cancelled calls have clear outcomes in the UI.
 
 ## 8. Add Gemini API OAuth
 
@@ -209,6 +213,7 @@ These bullets describe code present in the repository. They do not mean that eve
 **Status: planned.** Extend project-scoped instructions into a user-configurable workspace profile.
 
 - Allow a project to select default provider/model, reasoning preference, instructions, tool policy, and working directory.
+- Support project-scoped Skills and make the effective global, project, and Skill instruction sources inspectable.
 - Add an incremental project index that respects .gitignore, reports stale or unavailable state, and can be disabled or cleared per project.
 - Keep LSP symbol navigation and diagnostics as a separate code-intelligence capability that can use the project index where useful.
 - Make profile precedence visible when global and project settings both apply.
@@ -246,20 +251,24 @@ These bullets describe code present in the repository. They do not mean that eve
 - Model generation and tool execution as durable runs with run IDs, cancellation, provider concurrency limits, and explicit retry semantics.
 - Allow users to switch conversations while a run continues, inspect pending runs, and receive completion notifications.
 - Recover or clearly mark interrupted runs after service or app restart; never retry an ambiguous provider request automatically.
+- Represent subagents as child runs with their own context, selected or inherited model, tool allowlist, permission scope, and usage attribution. Show child progress, tool activity, results, and the parent's summary in the UI.
+- Bound subagent concurrency, time, and provider usage; propagate cancellation and report partial or failed child results without treating them as completed work. Require the Stage 7 permission and process-isolation boundary before enabling local tools in child runs.
 
-**Exit criteria:** branches and response versions remain addressable; run state survives restart or is reported as interrupted; provider limits and cancellation apply per run.
+**Exit criteria:** branches and response versions remain addressable; run state survives restart or is reported as interrupted; provider limits and cancellation apply per run; child runs cannot exceed their declared tool, concurrency, or usage bounds.
 
 ## 21. Add usage and model evaluation
 
 **Status: planned.** Help users compare actual provider and local-model behavior and manage spending.
 
-- Store provider-reported input, output, and cached token counts, cost when known, first-token latency, total latency, throughput, retries, and tool outcomes.
-- Show usage by conversation, project, provider, and model with budget thresholds and limit warnings.
-- Make unknown prices and estimated costs explicit. Do not fabricate prices when a provider omits them.
+- Store per-request provider-reported input, output, reasoning, cache-read, and cache-write counts when available, plus cost when known, first-token latency, total latency, throughput, retries, and tool outcomes. Normalize provider fields while retaining their source and avoiding double-counting cache tokens in total input.
+- Attribute usage to connection/account, workspace, conversation, project, model, run, and subagent. Show plan quotas and API usage limits only when the provider supplies them; include freshness and reset information when available.
+- Show actual provider usage separately from estimated context use and cost. Keep cached-token cost separate from plan quota semantics, which vary by provider and authentication route. Represent missing usage, pricing, or quota data as unavailable rather than inferring it.
+- Calculate cache-hit ratios from provider-reported usage using that provider's documented denominator. Show the ratio's source and aggregation window, and avoid direct comparisons when providers or harnesses use different denominators or session scopes.
+- Show usage with budget thresholds and limit warnings, including cache hit/write counts and effective cost where the provider reports enough data to calculate them.
 - Add an opt-in evaluation workspace that replays local fixtures or user-selected prompts and compares response quality, latency, cost, tool success, cancellation, and context handling.
 - Add local model benchmarks and memory estimates while distinguishing measured values from estimates.
 
-**Exit criteria:** usage records identify their provider/model and whether values are reported or estimated; evaluations are separated from ordinary conversations and require clear opt-in before sending billable requests.
+**Exit criteria:** usage records identify their connection, provider/model, run, and whether values are reported or estimated; cache reads/writes are not double-counted; unavailable fields remain explicit; evaluations are separated from ordinary conversations and require clear opt-in before sending billable requests.
 
 ## 22. Add citations and request-data visibility
 
@@ -268,9 +277,10 @@ These bullets describe code present in the repository. They do not mean that eve
 - Store web and provider-returned sources as structured records linked to the response that used them.
 - Add citation anchors in assistant output and let users open the source card with title, domain, URL, and retrieval time.
 - Show which provider received the request and which messages, attachments, instructions, and tool results were included.
+- Show which tool definitions and provider-side cache controls were sent when the adapter exposes them; distinguish cache usage reported by a response from cache behavior that cannot be observed.
 - Keep provider-hosted sources distinct from local web_search and read_url_content sources.
 
-**Exit criteria:** displayed citations resolve to stored source records; the user can inspect the request route and included data for a response; missing provenance is shown as unavailable.
+**Exit criteria:** displayed citations resolve to stored source records; the user can inspect the request route, included data, and reported usage for a response; missing provenance or provider visibility is shown as unavailable.
 
 ## 23. Expand document and media input
 
@@ -297,7 +307,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ## 25. Package and distribute extensions
 
-**Status: later.** Package MCP servers, Skills, recipes, and provider presets after their schemas and permission boundaries stabilize.
+**Status: later.** Package MCP servers, first-party tool extensions, Skills, recipes, and provider presets after their schemas and permission boundaries stabilize.
 
 - Define versioned manifests with declared tools, permissions, provider requirements, and configuration needs.
 - Support local install, update, disable, and removal before creating a shared catalog.
@@ -359,11 +369,20 @@ These bullets describe code present in the repository. They do not mean that eve
 - [DeepSeek API compatibility](https://api-docs.deepseek.com/guides/codex)
 - [DeepSeek tool calls](https://api-docs.deepseek.com/guides/tool_calls)
 - [OpenAI Responses API tools](https://developers.openai.com/api/docs/guides/tools-web-search)
+- [OpenAI prompt caching and usage fields](https://developers.openai.com/api/docs/guides/prompt-caching)
 - [Anthropic Messages API](https://platform.claude.com/docs/en/api/messages/create)
+- [Anthropic prompt caching and usage fields](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
+- [Claude Code usage and prompt-cache statistics](https://code.claude.com/docs/en/costs)
 - [Gemini API tools](https://ai.google.dev/gemini-api/docs/tools)
+- [Gemini API context caching and usage metadata](https://ai.google.dev/gemini-api/docs/generate-content/caching)
+- [Gemini CLI token caching](https://geminicli.com/docs/cli/token-caching/)
+- [Codex CLI usage commands](https://learn.chatgpt.com/docs/developer-commands)
 - [Mistral Agents tools](https://docs.mistral.ai/studio/agents/agent-tools)
 - [xAI tools](https://docs.x.ai/developers/tools/overview)
 - [OpenCode providers](https://opencode.ai/docs/providers)
+- [OpenCode cache-key configuration](https://docs.opencode.ai/docs/config/)
+- [OpenCode CLI usage and cost statistics](https://dev.opencode.ai/docs/cli/)
+- [OpenCode usage normalization source](https://github.com/anomalyco/opencode/blob/dev/packages/opencode/src/session/session.ts)
 - [OpenCode tools](https://dev.opencode.ai/docs/tools/)
 - [OpenCode MCP servers](https://opencode.ai/v2/docs/mcp-servers)
 - [Claude Code features](https://code.claude.com/docs/en/features-overview)

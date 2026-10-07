@@ -27,8 +27,9 @@ pub fn save_models(
                 context_window, reasoning_levels_json, is_available, fetched_at_unix_ms,
                 default_reasoning_level,
                 supports_reasoning_summary_parameter,
+                supports_fast_mode,
                 client_version
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 connection_id,
                 workspace_id,
@@ -41,6 +42,7 @@ pub fn save_models(
                 fetched_at,
                 model.default_reasoning_level,
                 model.supports_reasoning_summary_parameter,
+                model.supports_fast_mode,
                 client_version,
             ],
         )?;
@@ -94,7 +96,7 @@ pub fn list_models(
     let mut statement = database.prepare(
         "SELECT model_id, display_name, description, context_window,
                 reasoning_levels_json, is_available, default_reasoning_level,
-                supports_reasoning_summary_parameter
+                supports_reasoning_summary_parameter, supports_fast_mode
          FROM chatgpt_models
          WHERE connection_id = ?1 AND workspace_id = ?2
          ORDER BY is_available DESC, model_id COLLATE NOCASE",
@@ -113,6 +115,7 @@ pub fn list_models(
             default_reasoning_level: row.get(6)?,
             supports_reasoning_summary_parameter: row.get(7)?,
             supports_images: super::model_supports_images(&id),
+            supports_fast_mode: row.get(8)?,
         })
     })?;
     rows.collect()
@@ -129,7 +132,7 @@ pub fn selected_model(
         .query_row(
             "SELECT model_id, display_name, description, context_window,
                 reasoning_levels_json, is_available, default_reasoning_level,
-                supports_reasoning_summary_parameter
+                supports_reasoning_summary_parameter, supports_fast_mode
          FROM chatgpt_models
          WHERE connection_id = ?1 AND workspace_id = ?2 AND model_id = ?3",
             params![connection_id, workspace_id, model_id],
@@ -146,6 +149,7 @@ pub fn selected_model(
                     default_reasoning_level: row.get(6)?,
                     supports_reasoning_summary_parameter: row.get(7)?,
                     supports_images: super::model_supports_images(&id),
+                    supports_fast_mode: row.get(8)?,
                 })
             },
         )

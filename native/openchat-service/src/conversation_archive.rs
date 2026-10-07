@@ -73,6 +73,8 @@ struct ArchivedConversation {
     provider_id: Option<String>,
     model_id: Option<String>,
     is_pinned: bool,
+    #[serde(default)]
+    is_archived: bool,
     created_at: i64,
     updated_at: i64,
     memory_settings: ArchivedMemorySettings,
@@ -579,6 +581,7 @@ fn load_conversations(
         let conversation = transaction
             .query_row(
                 "SELECT id, title, title_source, provider_id, model_id, is_pinned,
+                        is_archived,
                         created_at, updated_at
                  FROM conversations WHERE id = ?1",
                 [conversation_id],
@@ -590,8 +593,9 @@ fn load_conversations(
                         provider_id: row.get(3)?,
                         model_id: row.get(4)?,
                         is_pinned: row.get::<_, i64>(5)? != 0,
-                        created_at: row.get(6)?,
-                        updated_at: row.get(7)?,
+                        is_archived: row.get::<_, i64>(6)? != 0,
+                        created_at: row.get(7)?,
+                        updated_at: row.get(8)?,
                         memory_settings: ArchivedMemorySettings::default(),
                         messages: Vec::new(),
                     })
@@ -1228,8 +1232,9 @@ fn restore_transaction(
         transaction.execute(
             "INSERT INTO conversations (
                 id, title, title_source, connection_id, workspace_id, api_key_connection_id,
-                provider_id, model_id, project_id, is_pinned, created_at, updated_at
-             ) VALUES (?1, ?2, ?3, NULL, NULL, NULL, ?4, ?5, NULL, ?6, ?7, ?8)",
+                provider_id, model_id, project_id, is_pinned, is_archived,
+                created_at, updated_at
+             ) VALUES (?1, ?2, ?3, NULL, NULL, NULL, ?4, ?5, NULL, ?6, ?7, ?8, ?9)",
             params![
                 target_id,
                 conversation.title,
@@ -1237,6 +1242,7 @@ fn restore_transaction(
                 conversation.provider_id,
                 conversation.model_id,
                 conversation.is_pinned,
+                conversation.is_archived,
                 conversation.created_at,
                 conversation.updated_at,
             ],
@@ -1536,6 +1542,7 @@ mod tests {
                         model_id TEXT,
                         project_id TEXT REFERENCES projects(id) ON DELETE SET NULL,
                         is_pinned INTEGER NOT NULL DEFAULT 0,
+                        is_archived INTEGER NOT NULL DEFAULT 0,
                         created_at INTEGER NOT NULL,
                         updated_at INTEGER NOT NULL
                     );
@@ -1592,9 +1599,10 @@ mod tests {
             .execute(
                 "INSERT INTO conversations (
                     id, title, title_source, provider_id, model_id, is_pinned,
+                    is_archived,
                     created_at, updated_at
                  ) VALUES ('conversation-1', 'Archive test', 'manual', 'opencode',
-                           'test-model', 1, 10, 20)",
+                           'test-model', 1, 1, 10, 20)",
                 [],
             )
             .expect("conversation should be inserted");
@@ -1690,15 +1698,17 @@ mod tests {
         assert_eq!(read_conversation_ids(&destination), ["conversation-1"]);
 
         let connection = destination.connect().expect("database should connect");
-        let (provider_id, connection_id, message_content, memory_included, excluded_tool): (
-            Option<String>,
-            Option<String>,
-            String,
-            bool,
-            String,
-        ) = connection
+        let (
+            provider_id,
+            connection_id,
+            is_archived,
+            message_content,
+            memory_included,
+            excluded_tool,
+        ): (Option<String>, Option<String>, bool, String, bool, String) = connection
             .query_row(
-                "SELECT c.provider_id, c.connection_id, m.content, s.included, e.tool_name
+                "SELECT c.provider_id, c.connection_id, c.is_archived, m.content,
+                        s.included, e.tool_name
                  FROM conversations c
                  JOIN messages m ON m.conversation_id = c.id
                  JOIN conversation_memory_archive_settings s ON s.conversation_id = c.id
@@ -1709,15 +1719,17 @@ mod tests {
                     Ok((
                         row.get(0)?,
                         row.get(1)?,
-                        row.get(2)?,
+                        row.get::<_, i64>(2)? != 0,
                         row.get(3)?,
                         row.get(4)?,
+                        row.get(5)?,
                     ))
                 },
             )
             .expect("restored conversation should retain safe data");
         assert_eq!(provider_id.as_deref(), Some("opencode"));
         assert_eq!(connection_id, None);
+        assert!(is_archived);
         assert!(!memory_included);
         assert_eq!(excluded_tool, "web_search");
         assert!(message_content.starts_with("\u{1e}openchat-attachments-v1:"));

@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
 import 'package:openchat/features/chat/presentation/widgets/sidebar_conversation_tile.dart';
-import 'package:openchat/features/chat/presentation/widgets/sidebar_section_heading.dart';
+import 'package:openchat/features/chat/presentation/widgets/sidebar_collapsible_heading.dart';
 
 class ProjectSidebarSection extends StatelessWidget {
   const ProjectSidebarSection({
@@ -23,6 +24,9 @@ class ProjectSidebarSection extends StatelessWidget {
     required this.onRenameConversation,
     required this.onDeleteConversation,
     required this.onExportConversation,
+    this.onArchiveConversation,
+    this.collapsed = false,
+    this.onToggleCollapsed,
     required this.onCreateProject,
     required this.loading,
     required this.errorMessage,
@@ -49,6 +53,9 @@ class ProjectSidebarSection extends StatelessWidget {
   final ValueChanged<String>? onRenameConversation;
   final ValueChanged<String>? onDeleteConversation;
   final ValueChanged<String>? onExportConversation;
+  final ValueChanged<String>? onArchiveConversation;
+  final bool collapsed;
+  final VoidCallback? onToggleCollapsed;
   final VoidCallback? onCreateProject;
   final bool loading;
   final String? errorMessage;
@@ -66,130 +73,177 @@ class ProjectSidebarSection extends StatelessWidget {
           title: l10n.projects,
           createProjectLabel: l10n.createProject,
           onCreateProject: onCreateProject,
-          alwaysShowAction: projects.isEmpty,
+          alwaysShowAction: true,
+          collapsed: collapsed,
+          onToggleCollapsed: onToggleCollapsed,
         ),
-        if (loading)
-          const Padding(
-            padding: EdgeInsets.fromLTRB(4, 7, 4, 4),
-            child: LinearProgressIndicator(minHeight: 2),
-          )
-        else if (errorMessage != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 6, 4, 2),
-            child: Text(
-              errorMessage!,
-              style: TextStyle(color: palette.secondaryText, fontSize: 12),
-            ),
-          )
-        else if (projects.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(4, 6, 4, 2),
-            child: Text(
-              emptyMessage,
-              style: TextStyle(color: palette.secondaryText, fontSize: 12),
-            ),
-          ),
-        const SizedBox(height: 2),
-        for (final entry in projects) ...[
-          _ProjectSidebarTile(
-            project: entry.project,
-            selected: entry.project.id == selectedProjectId,
-            onSelect: onSelectProject == null
-                ? null
-                : () => onSelectProject!(entry.project.id),
-            onOpenOptions: onOpenProjectOptions == null
-                ? null
-                : () => onOpenProjectOptions!(entry.project.id),
-            onCreateConversation: onCreateProjectConversation == null
-                ? null
-                : () => onCreateProjectConversation!(entry.project.id),
-            onMoveConversationToProject: onMoveConversationToProject,
-            key: ValueKey<String>('sidebar-project-${entry.project.id}'),
-          ),
-          if (entry.conversations.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 4),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          for (
-                            var index = 0;
-                            index < entry.conversations.length;
-                            index++
-                          ) ...[
-                            if (index > 0) const SizedBox(height: 2),
-                            DraggableSidebarConversation(
-                              conversation: entry.conversations[index],
-                              child: SidebarConversationTile(
-                                conversation: entry.conversations[index],
-                                selected:
-                                    entry.conversations[index].id ==
-                                    selectedConversationId,
-                                height: 32,
-                                inset: 8,
-                                showChatIcon: false,
-                                onPressed: onSelectConversation == null
-                                    ? null
-                                    : () => onSelectConversation!(
-                                        entry.conversations[index].id,
+        AnimatedSize(
+          duration: MediaQuery.disableAnimationsOf(context)
+              ? Duration.zero
+              : const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: ClipRect(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (!collapsed) ...[
+                  if (loading)
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(4, 7, 4, 4),
+                      child: LinearProgressIndicator(minHeight: 2),
+                    )
+                  else if (errorMessage != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(0, 6, 0, 2),
+                      child: Text(
+                        errorMessage!,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: palette.secondaryText,
+                          fontSize: 12,
+                          height: 18 / 12,
+                        ),
+                      ),
+                    )
+                  else if (projects.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(0, 6, 0, 2),
+                      child: Text(
+                        emptyMessage,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: palette.secondaryText,
+                          fontSize: 12,
+                          height: 18 / 12,
+                        ),
+                      ),
+                    ),
+                  const SizedBox(height: 2),
+                  for (final entry in projects) ...[
+                    _ProjectSidebarTile(
+                      project: entry.project,
+                      selected: entry.project.id == selectedProjectId,
+                      onSelect: onSelectProject == null
+                          ? null
+                          : () => onSelectProject!(entry.project.id),
+                      onOpenOptions: onOpenProjectOptions == null
+                          ? null
+                          : () => onOpenProjectOptions!(entry.project.id),
+                      onCreateConversation: onCreateProjectConversation == null
+                          ? null
+                          : () =>
+                                onCreateProjectConversation!(entry.project.id),
+                      onMoveConversationToProject: onMoveConversationToProject,
+                      key: ValueKey<String>(
+                        'sidebar-project-${entry.project.id}',
+                      ),
+                    ),
+                    if (entry.conversations.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 4,
+                                ),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    for (
+                                      var index = 0;
+                                      index < entry.conversations.length;
+                                      index++
+                                    ) ...[
+                                      if (index > 0) const SizedBox(height: 2),
+                                      DraggableSidebarConversation(
+                                        conversation:
+                                            entry.conversations[index],
+                                        child: SidebarConversationTile(
+                                          conversation:
+                                              entry.conversations[index],
+                                          selected:
+                                              entry.conversations[index].id ==
+                                              selectedConversationId,
+                                          height: 32,
+                                          inset: 8,
+                                          showChatIcon: false,
+                                          onPressed:
+                                              onSelectConversation == null
+                                              ? null
+                                              : () => onSelectConversation!(
+                                                  entry.conversations[index].id,
+                                                ),
+                                          onTogglePinned:
+                                              onToggleConversationPinned == null
+                                              ? null
+                                              : () =>
+                                                    onToggleConversationPinned!(
+                                                      entry
+                                                          .conversations[index]
+                                                          .id,
+                                                    ),
+                                          onRename: onRenameConversation == null
+                                              ? null
+                                              : () => onRenameConversation!(
+                                                  entry.conversations[index].id,
+                                                ),
+                                          onDelete: onDeleteConversation == null
+                                              ? null
+                                              : () => onDeleteConversation!(
+                                                  entry.conversations[index].id,
+                                                ),
+                                          onExport: onExportConversation == null
+                                              ? null
+                                              : () => onExportConversation!(
+                                                  entry.conversations[index].id,
+                                                ),
+                                          onArchive:
+                                              onArchiveConversation == null
+                                              ? null
+                                              : () => onArchiveConversation!(
+                                                  entry.conversations[index].id,
+                                                ),
+                                          key: ValueKey<String>(
+                                            'sidebar-conversation-${entry.conversations[index].id}',
+                                          ),
+                                        ),
                                       ),
-                                onTogglePinned:
-                                    onToggleConversationPinned == null
-                                    ? null
-                                    : () => onToggleConversationPinned!(
-                                        entry.conversations[index].id,
+                                    ],
+                                    if (entry.project.hasMoreConversations) ...[
+                                      const SizedBox(height: 6),
+                                      _ShowMoreProjectConversations(
+                                        label: l10n.showMore,
+                                        color: palette.secondaryText,
+                                        onPressed:
+                                            onShowMoreProjectConversations ==
+                                                null
+                                            ? null
+                                            : () =>
+                                                  onShowMoreProjectConversations!(
+                                                    entry.project.id,
+                                                  ),
                                       ),
-                                onRename: onRenameConversation == null
-                                    ? null
-                                    : () => onRenameConversation!(
-                                        entry.conversations[index].id,
-                                      ),
-                                onDelete: onDeleteConversation == null
-                                    ? null
-                                    : () => onDeleteConversation!(
-                                        entry.conversations[index].id,
-                                      ),
-                                onExport: onExportConversation == null
-                                    ? null
-                                    : () => onExportConversation!(
-                                        entry.conversations[index].id,
-                                      ),
-                                key: ValueKey<String>(
-                                  'sidebar-conversation-${entry.conversations[index].id}',
+                                    ],
+                                  ],
                                 ),
                               ),
                             ),
                           ],
-                          if (entry.project.hasMoreConversations) ...[
-                            const SizedBox(height: 6),
-                            _ShowMoreProjectConversations(
-                              label: l10n.showMore,
-                              color: palette.secondaryText,
-                              onPressed: onShowMoreProjectConversations == null
-                                  ? null
-                                  : () => onShowMoreProjectConversations!(
-                                      entry.project.id,
-                                    ),
-                            ),
-                          ],
-                        ],
+                        ),
                       ),
-                    ),
-                  ),
+                    ],
+                    if (entry != projects.last) const SizedBox(height: 12),
+                  ],
                 ],
-              ),
+              ],
             ),
-          ],
-          if (entry != projects.last) const SizedBox(height: 12),
-        ],
+          ),
+        ),
       ],
     );
   }
@@ -201,12 +255,16 @@ class _ProjectsHeading extends StatefulWidget {
     required this.createProjectLabel,
     required this.onCreateProject,
     required this.alwaysShowAction,
+    required this.collapsed,
+    required this.onToggleCollapsed,
   });
 
   final String title;
   final String createProjectLabel;
   final VoidCallback? onCreateProject;
   final bool alwaysShowAction;
+  final bool collapsed;
+  final VoidCallback? onToggleCollapsed;
 
   @override
   State<_ProjectsHeading> createState() => _ProjectsHeadingState();
@@ -231,18 +289,17 @@ class _ProjectsHeadingState extends State<_ProjectsHeading> {
         : const Duration(milliseconds: 140);
 
     return Focus(
-      canRequestFocus: widget.onCreateProject != null,
       onFocusChange: (focused) => setState(() => _focused = focused),
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(minHeight: 24),
-          child: Row(
-            children: [
-              Expanded(child: SidebarSectionHeading(title: widget.title)),
-              if (widget.onCreateProject != null)
-                ExcludeSemantics(
+        child: SidebarCollapsibleHeading(
+          title: widget.title,
+          collapsed: widget.collapsed,
+          onPressed: widget.onToggleCollapsed ?? () {},
+          trailing: widget.onCreateProject == null
+              ? null
+              : ExcludeSemantics(
                   excluding: !showAction,
                   child: ExcludeFocus(
                     excluding: !showAction,
@@ -261,14 +318,12 @@ class _ProjectsHeadingState extends State<_ProjectsHeading> {
                             height: actionSize,
                           ),
                           padding: EdgeInsets.zero,
-                          icon: const Icon(Icons.add_rounded, size: 19),
+                          icon: const Icon(LucideIcons.plus, size: 19),
                         ),
                       ),
                     ),
                   ),
                 ),
-            ],
-          ),
         ),
       ),
     );
@@ -333,7 +388,7 @@ class _ProjectSidebarTile extends StatelessWidget {
                 child: Row(
                   children: [
                     Icon(
-                      Icons.folder_outlined,
+                      LucideIcons.folder,
                       color: selected || candidates.isNotEmpty
                           ? palette.text
                           : palette.secondaryIcon,
@@ -359,7 +414,7 @@ class _ProjectSidebarTile extends StatelessWidget {
                           'sidebar-project-options-${project.id}',
                         ),
                         child: Icon(
-                          Icons.more_horiz_rounded,
+                          LucideIcons.ellipsis,
                           color: palette.secondaryIcon,
                           size: 18,
                         ),

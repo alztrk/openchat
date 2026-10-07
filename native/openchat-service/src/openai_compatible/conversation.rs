@@ -30,6 +30,7 @@ pub async fn send_message(
     requested_api_key_connection_id: Option<&str>,
     stored_api_key_connection_id: Option<String>,
     reasoning_effort: Option<&str>,
+    fast_mode: bool,
 ) -> Result<Value, ServiceError> {
     let ChatSendContext {
         request_id,
@@ -164,7 +165,8 @@ pub async fn send_message(
         let session_id = route
             .is_opencode
             .then(|| opencode_session_id_for_conversation(conversation_id, created_at));
-        let summary = super::context_compaction::summarize_history(
+        let summary = super::context_compaction::summarize_history_with_storage(
+            Some(storage),
             &route,
             api_key,
             session_id.as_deref(),
@@ -201,6 +203,18 @@ pub async fn send_message(
         state.compaction_kind.as_deref() == Some("summary")
             && context_compaction::has_compaction_boundary(state, &included_messages)
     });
+    let archive_query = summary_is_active.then(|| {
+        context_state
+            .as_ref()
+            .and_then(|state| state.compacted_through_message_id.as_deref())
+            .and_then(|boundary_id| {
+                included_messages
+                    .iter()
+                    .rev()
+                    .find(|message| message.role == "user")
+                    .map(|message| (boundary_id.to_owned(), message.content.clone()))
+            })
+    });
     if summary_is_active {
         if let Some(summary) = context_state.as_ref().and_then(|state| {
             (state.compaction_kind.as_deref() == Some("summary"))
@@ -214,39 +228,62 @@ pub async fn send_message(
                     ),
                 )?);
         }
-        if let Some(state) = context_state.as_ref()
-            && let Some(boundary_id) = state.compacted_through_message_id.as_deref()
-            && let Some(query) = included_messages
-                .iter()
-                .rev()
-                .find(|message| message.role == "user")
-                .map(|message| message.content.as_str())
-        {
-            let excerpts = chatgpt_store::retrieve_archived_memories(
-                storage,
-                conversation_id,
-                boundary_id,
-                query,
-                route.request_context_limit(),
-            )
-            .await
-            .map_err(|_| storage_error())?;
-            if let Some(content) = context_compaction::archived_memory_context(&excerpts) {
-                effective_messages.push(ProviderMessage::from_history("user", &content)?);
-            }
-        }
     } else {
         history_start = 0;
     }
     effective_messages.extend(
         included_messages[history_start..]
             .iter()
-            .map(crate::history::provider_messages)
+            .map(|message| crate::history::provider_messages_for_provider(message, provider_id))
             .collect::<Result<Vec<_>, _>>()?
             .into_iter()
             .flatten(),
     );
     provider_request.messages = effective_messages;
+    if let Some(Some((boundary_id, query))) = archive_query {
+        let current_messages = request::completion_messages(&provider_request, provider_id);
+        let mut request_body = if route.uses_responses_api {
+            request::responses_api_body(&provider_request, &current_messages)
+        } else {
+            request::chat_completion_body(&provider_request, &current_messages, provider_id)
+        };
+        request::apply_model_output_limit(
+            &mut request_body,
+            provider_id,
+            route.uses_responses_api,
+            route.max_output_tokens,
+        );
+        request::apply_fast_mode(&mut request_body, provider_id, fast_mode);
+        request::apply_prompt_cache_affinity(
+            &mut request_body,
+            provider_id,
+            route.connection_id.as_deref(),
+            &route.provider_model_id,
+            conversation_id,
+        );
+        let archive_context_limit = route.request_context_limit().map(|limit| {
+            limit.saturating_sub(
+                context_compaction::request_context_token_estimate(&request_body)
+                    .saturating_add(1024),
+            )
+        });
+        let excerpts = chatgpt_store::retrieve_archived_memories(
+            storage,
+            conversation_id,
+            &boundary_id,
+            &query,
+            archive_context_limit,
+        )
+        .await
+        .map_err(|_| storage_error())?;
+        if let Some(content) = context_compaction::archived_memory_context(&excerpts) {
+            let insertion_index = usize::from(!provider_request.messages.is_empty());
+            provider_request.messages.insert(
+                insertion_index,
+                ProviderMessage::from_history("user", &content)?,
+            );
+        }
+    }
     let mut content = String::new();
     let mut reasoning_content = String::new();
     let mut output_tokens = None;
@@ -310,6 +347,7 @@ pub async fn send_message(
         &mut messages,
         &mut tool_executor,
         api_key,
+        fast_mode,
         StreamConversationContext {
             request_id: &request_id,
             conversation_id,
@@ -363,15 +401,14 @@ pub async fn send_message(
         },
     )?;
     if status == "completed"
-        && let (Some(input_tokens), Some(last_message_id)) =
-            (input_tokens, provider_request.last_message_id.as_deref())
+        && let Some(input_tokens) = input_tokens
     {
         chatgpt_store::save_prompt_usage(
             storage,
             conversation_id,
             chatgpt_store::PromptUsage {
                 input_tokens,
-                last_message_id,
+                last_message_id: &message_id,
                 provider_id,
                 model_id: &route.model_id,
                 connection_id: route.connection_id.as_deref(),
@@ -415,18 +452,34 @@ async fn stream_conversation(
     messages: &mut Vec<Value>,
     tool_executor: &mut ToolExecutor,
     api_key: Option<&str>,
+    fast_mode: bool,
     context: StreamConversationContext<'_>,
 ) -> Result<(), ServiceError> {
     let session_id = route
         .is_opencode
         .then(|| opencode_session_id_for_conversation(context.conversation_id, context.created_at));
+    let mut operation = "chat";
 
     loop {
-        let body = if route.uses_responses_api {
+        let mut body = if route.uses_responses_api {
             request::responses_api_body(provider_request, messages)
         } else {
             request::chat_completion_body(provider_request, messages, provider_id)
         };
+        request::apply_model_output_limit(
+            &mut body,
+            provider_id,
+            route.uses_responses_api,
+            route.max_output_tokens,
+        );
+        request::apply_fast_mode(&mut body, provider_id, fast_mode);
+        request::apply_prompt_cache_affinity(
+            &mut body,
+            provider_id,
+            route.connection_id.as_deref(),
+            &route.provider_model_id,
+            context.conversation_id,
+        );
         context_compaction::validate_request_context(&body, route.request_context_limit())?;
         let turn = response_stream::receive(ResponseStreamRequest {
             route,
@@ -446,6 +499,27 @@ async fn stream_conversation(
             events: context.events,
         })
         .await?;
+        if matches!(provider_id, "cerebras" | "mistral" | "openrouter") {
+            let usage = turn.provider_request_usage.unwrap_or_default();
+            if context
+                .storage
+                .log_provider_request_usage(
+                    provider_id,
+                    &route.provider_model_id,
+                    operation,
+                    usage.prompt_tokens,
+                    usage.completion_tokens,
+                    usage.cached_tokens,
+                    usage.cache_write_tokens,
+                    usage.cache_discount,
+                    context_compaction::request_context_token_estimate(&body).saturating_add(1024),
+                    context_compaction::request_image_count(&body),
+                )
+                .is_err()
+            {
+                eprintln!("provider_usage_diagnostic_log_write_failed");
+            }
+        }
         if turn.tool_calls.is_empty() {
             return Ok(());
         }
@@ -480,6 +554,7 @@ async fn stream_conversation(
             },
         )
         .await?;
+        operation = "tool_follow_up";
     }
 }
 

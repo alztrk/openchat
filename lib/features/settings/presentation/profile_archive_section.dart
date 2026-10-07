@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:intl/intl.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
@@ -46,7 +47,7 @@ class _ProfileArchiveSectionState extends State<ProfileArchiveSection> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.shield_outlined, color: palette.accent),
+              Icon(LucideIcons.shield, color: palette.accent),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -80,12 +81,12 @@ class _ProfileArchiveSectionState extends State<ProfileArchiveSection> {
             children: [
               OutlinedButton.icon(
                 onPressed: enabled ? () => unawaited(_exportProfile()) : null,
-                icon: const Icon(Icons.lock_outline_rounded, size: 18),
+                icon: const Icon(LucideIcons.lockKeyhole, size: 18),
                 label: Text(l10n.profileArchiveExport),
               ),
               OutlinedButton.icon(
                 onPressed: enabled ? () => unawaited(_restoreProfile()) : null,
-                icon: const Icon(Icons.restore_rounded, size: 18),
+                icon: const Icon(LucideIcons.history, size: 18),
                 label: Text(l10n.profileArchiveRestore),
               ),
             ],
@@ -262,7 +263,7 @@ class _ProfileRestoreConfirmationDialog extends StatelessWidget {
     final l10n = context.openchatL10n;
     return AlertDialog(
       icon: Icon(
-        Icons.warning_amber_rounded,
+        LucideIcons.triangleAlert,
         color: Theme.of(context).colorScheme.error,
       ),
       title: Text(l10n.profileArchiveRestoreConfirmTitle),
@@ -281,7 +282,7 @@ class _ProfileRestoreConfirmationDialog extends StatelessWidget {
             foregroundColor: Theme.of(context).colorScheme.onError,
           ),
           onPressed: () => Navigator.of(context).pop(true),
-          icon: const Icon(Icons.restore_rounded, size: 18),
+          icon: const Icon(LucideIcons.history, size: 18),
           label: Text(l10n.profileArchiveRestoreConfirmButton),
         ),
       ],
@@ -304,7 +305,7 @@ class _ProfileRestoreReadyDialog extends StatelessWidget {
     return PopScope(
       canPop: false,
       child: AlertDialog(
-        icon: const Icon(Icons.task_alt_rounded),
+        icon: const Icon(LucideIcons.circleCheckBig),
         title: Text(l10n.profileArchiveRestartTitle),
         content: SizedBox(
           width: 440,
@@ -319,7 +320,7 @@ class _ProfileRestoreReadyDialog extends StatelessWidget {
         actions: [
           FilledButton.icon(
             onPressed: () => unawaited(onClose()),
-            icon: const Icon(Icons.close_rounded, size: 18),
+            icon: const Icon(LucideIcons.x, size: 18),
             label: Text(l10n.profileArchiveCloseApp),
           ),
         ],

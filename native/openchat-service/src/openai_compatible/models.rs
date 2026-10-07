@@ -250,6 +250,11 @@ fn supported_models(value: &Value, metadata: Option<&Value>) -> Result<Vec<Value
                         .map(|input_limit| {
                             context_window.map_or(input_limit, |context| input_limit.min(context))
                         });
+                    let max_output_tokens = details
+                        .and_then(|details| details.get("limit"))
+                        .and_then(|limits| limits.get("output"))
+                        .and_then(Value::as_i64)
+                        .filter(|limit| *limit > 0);
                     let reasoning_supported = supports_reasoning(details);
                     let reasoning_levels = reasoning_levels(details);
                     let catalog_status = metadata_status(details);
@@ -264,6 +269,7 @@ fn supported_models(value: &Value, metadata: Option<&Value>) -> Result<Vec<Value
                         "description": description,
                         "contextWindow": context_window,
                         "inputTokenLimit": input_token_limit,
+                        "maxOutputTokens": max_output_tokens,
                         "catalogStatus": catalog_status,
                         "groupId": group_id,
                         "defaultReasoningLevel": null,
@@ -379,7 +385,7 @@ pub(super) fn is_responses_api_model(
 pub(super) fn context_limits(
     storage: &AppStorage,
     model_id: &str,
-) -> Result<(Option<i64>, Option<i64>), ServiceError> {
+) -> Result<(Option<i64>, Option<i64>, Option<i64>), ServiceError> {
     let models_json = storage
         .connect()
         .map_err(|_| storage_error())?
@@ -391,7 +397,7 @@ pub(super) fn context_limits(
         .optional()
         .map_err(|_| storage_error())?;
     let Some(models_json) = models_json else {
-        return Ok((None, None));
+        return Ok((None, None, None));
     };
     let models =
         serde_json::from_str::<Vec<Value>>(&models_json).map_err(|_| invalid_response_error())?;
@@ -399,7 +405,7 @@ pub(super) fn context_limits(
         .iter()
         .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id))
     else {
-        return Ok((None, None));
+        return Ok((None, None, None));
     };
     let context_window = model
         .get("contextWindow")
@@ -410,7 +416,11 @@ pub(super) fn context_limits(
         .and_then(Value::as_i64)
         .filter(|limit| *limit > 0)
         .map(|limit| context_window.map_or(limit, |context| limit.min(context)));
-    Ok((context_window, input_token_limit))
+    let max_output_tokens = model
+        .get("maxOutputTokens")
+        .and_then(Value::as_i64)
+        .filter(|limit| *limit > 0);
+    Ok((context_window, input_token_limit, max_output_tokens))
 }
 
 fn visible_models(models: &[Value], api_key: Option<&str>) -> Vec<Value> {

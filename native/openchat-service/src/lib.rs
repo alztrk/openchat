@@ -20,6 +20,7 @@ mod rpc;
 mod service;
 mod storage;
 mod tools;
+mod usage_statistics;
 mod user_question_broker;
 
 #[cfg(windows)]

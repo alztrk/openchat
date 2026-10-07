@@ -13,6 +13,15 @@ pub(super) struct StreamedToolCall {
     pub(super) arguments: String,
 }
 
+#[derive(Clone, Copy, Default)]
+pub(super) struct ProviderRequestUsage {
+    pub(super) prompt_tokens: Option<i64>,
+    pub(super) completion_tokens: Option<i64>,
+    pub(super) cached_tokens: Option<i64>,
+    pub(super) cache_write_tokens: Option<i64>,
+    pub(super) cache_discount: Option<f64>,
+}
+
 pub(super) enum SseLine {
     Ignore,
     Done,
@@ -83,6 +92,61 @@ pub(super) fn update_chat_completion_usage(
     {
         *output_tokens = Some(output_tokens.unwrap_or(0).saturating_add(tokens));
     }
+}
+
+pub(super) fn update_provider_request_usage(
+    value: &Value,
+    usage: &mut Option<ProviderRequestUsage>,
+) {
+    let current = ProviderRequestUsage {
+        prompt_tokens: value
+            .pointer("/usage/prompt_tokens")
+            .and_then(Value::as_i64)
+            .filter(|tokens| *tokens >= 0),
+        completion_tokens: value
+            .pointer("/usage/completion_tokens")
+            .and_then(Value::as_i64)
+            .filter(|tokens| *tokens >= 0),
+        cached_tokens: value
+            .pointer("/usage/prompt_tokens_details/cached_tokens")
+            .and_then(Value::as_i64)
+            .filter(|tokens| *tokens >= 0),
+        cache_write_tokens: value
+            .pointer("/usage/prompt_tokens_details/cache_write_tokens")
+            .and_then(Value::as_i64)
+            .filter(|tokens| *tokens >= 0),
+        cache_discount: value
+            .get("cache_discount")
+            .and_then(Value::as_f64)
+            .filter(|discount| discount.is_finite()),
+    };
+    if current.prompt_tokens.is_none()
+        && current.completion_tokens.is_none()
+        && current.cached_tokens.is_none()
+        && current.cache_write_tokens.is_none()
+        && current.cache_discount.is_none()
+    {
+        return;
+    }
+
+    let previous = *usage;
+    *usage = Some(ProviderRequestUsage {
+        prompt_tokens: current
+            .prompt_tokens
+            .or_else(|| previous.and_then(|usage| usage.prompt_tokens)),
+        completion_tokens: current
+            .completion_tokens
+            .or_else(|| previous.and_then(|usage| usage.completion_tokens)),
+        cached_tokens: current
+            .cached_tokens
+            .or_else(|| previous.and_then(|usage| usage.cached_tokens)),
+        cache_write_tokens: current
+            .cache_write_tokens
+            .or_else(|| previous.and_then(|usage| usage.cache_write_tokens)),
+        cache_discount: current
+            .cache_discount
+            .or_else(|| previous.and_then(|usage| usage.cache_discount)),
+    });
 }
 
 pub(super) fn append_tool_call_deltas(

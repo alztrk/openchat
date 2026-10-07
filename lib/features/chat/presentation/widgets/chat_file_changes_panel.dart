@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/data/chat_file_changes_repository.dart';
@@ -224,7 +225,7 @@ class _ChatFileChangesPanelState extends State<ChatFileChangesPanel> {
               child: Row(
                 children: [
                   Icon(
-                    Icons.difference_outlined,
+                    LucideIcons.fileDiff,
                     size: 17,
                     color: palette.accentIcon,
                   ),
@@ -243,7 +244,7 @@ class _ChatFileChangesPanelState extends State<ChatFileChangesPanel> {
                   IconButton(
                     tooltip: l10n.close,
                     onPressed: widget.onClose,
-                    icon: const Icon(Icons.close_rounded, size: 17),
+                    icon: const Icon(LucideIcons.x, size: 17),
                   ),
                 ],
               ),
@@ -545,16 +546,12 @@ class _FileChangeRow extends StatelessWidget {
                       : Text(l10n.fileChangesRevert),
                 )
               else if (change.status == ChatFileChangeState.reverted)
-                Icon(
-                  Icons.check_rounded,
-                  size: 16,
-                  color: palette.secondaryIcon,
-                )
+                Icon(LucideIcons.check, size: 16, color: palette.secondaryIcon)
               else if (change.status == ChatFileChangeState.conflict)
                 Tooltip(
                   message: l10n.fileChangesConflict,
                   child: Icon(
-                    Icons.warning_amber_rounded,
+                    LucideIcons.triangleAlert,
                     size: 16,
                     color: Theme.of(context).colorScheme.error,
                   ),
@@ -563,7 +560,7 @@ class _FileChangeRow extends StatelessWidget {
                 Tooltip(
                   message: l10n.fileChangesDiffUnavailable,
                   child: Icon(
-                    Icons.info_outline_rounded,
+                    LucideIcons.info,
                     size: 16,
                     color: palette.secondaryIcon,
                   ),
@@ -651,9 +648,9 @@ ChatFileChange? _firstActiveChange(List<ChatFileChange> changes) {
 }
 
 IconData _fileChangeIcon(ChatFileChangeKind kind) => switch (kind) {
-  ChatFileChangeKind.added => Icons.note_add_outlined,
-  ChatFileChangeKind.modified => Icons.edit_note_rounded,
-  ChatFileChangeKind.deleted => Icons.delete_outline_rounded,
+  ChatFileChangeKind.added => LucideIcons.filePlus,
+  ChatFileChangeKind.modified => LucideIcons.notebookPen,
+  ChatFileChangeKind.deleted => LucideIcons.trash2,
 };
 
 Color _additionColor(BuildContext context) =>

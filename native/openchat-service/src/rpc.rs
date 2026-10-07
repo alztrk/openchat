@@ -380,17 +380,20 @@ pub(crate) async fn dispatch(
                     })?,
                 None => false,
             };
-            let instructions = instructions::shared_instructions(
-                custom_instructions,
-                permission_mode,
-                has_project,
-            );
-            let tool_definitions = openai_compatible::context_usage_tool_definitions(
+            let available_tools = openai_compatible::context_usage_tool_definitions(
                 storage,
                 provider_id,
                 model_id,
                 reported_supports_tool_calls,
-            )?
+            )?;
+            let instructions = instructions::shared_instructions(
+                custom_instructions,
+                permission_mode,
+                has_project,
+                !available_tools.is_empty(),
+                provider_id,
+            );
+            let tool_definitions = available_tools
                 .into_iter()
                 .map(|(name, definition)| {
                     json!({
@@ -693,6 +696,7 @@ pub(crate) async fn dispatch(
             let api_key = optional_api_key(&request.params, "apiKey")?;
             let api_key_connection_id = optional_string(&request.params, "apiKeyConnectionId")?;
             let requested_reasoning_effort = optional_string(&request.params, "reasoningEffort")?;
+            let requested_fast_mode = optional_bool(&request.params, "fastMode")?.unwrap_or(false);
             let requested_custom_instructions =
                 optional_string(&request.params, "customInstructions")?;
             let permission_mode = ToolPermissionMode::from_rpc(optional_string(
@@ -744,8 +748,17 @@ pub(crate) async fn dispatch(
                 connection_id,
                 workspace_id,
             ) = route.unwrap_or((None, None, None, None, None, None));
+            if requested_fast_mode
+                && !matches!(provider_id.as_deref(), Some("chatgpt" | "chatgpt_api"))
+            {
+                return Err(ServiceError::new(
+                    "invalid_request_params",
+                    "Fast mode is only available for supported ChatGPT models.",
+                    false,
+                ));
+            }
             let resuming_question_run = resume_run_id.is_some();
-            let (run_id, custom_instructions, reasoning_effort) = if let Some(run_id) =
+            let (run_id, custom_instructions, reasoning_effort, fast_mode) = if let Some(run_id) =
                 resume_run_id
             {
                 let run = crate::storage::user_questions::load_run_for_conversation(
@@ -787,6 +800,24 @@ pub(crate) async fn dispatch(
                     .get("reasoningEffort")
                     .and_then(Value::as_str)
                     .map(str::to_owned);
+                let fast_mode = match checkpoint.get("fastMode") {
+                    None => false,
+                    Some(Value::Bool(enabled)) => *enabled,
+                    _ => {
+                        return Err(ServiceError::new(
+                            "question_run_checkpoint_invalid",
+                            "The saved Fast mode setting is invalid.",
+                            false,
+                        ));
+                    }
+                };
+                if fast_mode && !matches!(provider_id.as_deref(), Some("chatgpt" | "chatgpt_api")) {
+                    return Err(ServiceError::new(
+                        "question_run_checkpoint_invalid",
+                        "The saved Fast mode setting does not match the selected provider.",
+                        false,
+                    ));
+                }
                 instructions::validate_custom_instructions(custom_instructions.as_deref())
                     .map_err(|message| {
                         ServiceError::new("question_run_checkpoint_invalid", message, false)
@@ -797,7 +828,12 @@ pub(crate) async fn dispatch(
                     run_id,
                 )
                 .map_err(map_question_storage_error)?;
-                (run_id.to_owned(), custom_instructions, reasoning_effort)
+                (
+                    run_id.to_owned(),
+                    custom_instructions,
+                    reasoning_effort,
+                    fast_mode,
+                )
             } else {
                 let run_id = uuid::Uuid::new_v4().simple().to_string();
                 crate::storage::user_questions::create_run(
@@ -820,6 +856,7 @@ pub(crate) async fn dispatch(
                     "providerConnectionId": stored_api_key_connection_id,
                     "customInstructions": requested_custom_instructions,
                     "reasoningEffort": requested_reasoning_effort,
+                    "fastMode": requested_fast_mode,
                 });
                 crate::storage::user_questions::save_checkpoint(
                     &connection,
@@ -833,6 +870,7 @@ pub(crate) async fn dispatch(
                     run_id,
                     requested_custom_instructions.map(str::to_owned),
                     requested_reasoning_effort.map(str::to_owned),
+                    requested_fast_mode,
                 )
             };
             let context = ChatSendContext {
@@ -863,12 +901,13 @@ pub(crate) async fn dispatch(
                         api_key_connection_id,
                         stored_api_key_connection_id,
                         reasoning_effort.as_deref(),
+                        fast_mode,
                     )
                     .await
                 }
                 _ => {
                     service
-                        .send_message(context, reasoning_effort.as_deref())
+                        .send_message(context, reasoning_effort.as_deref(), fast_mode)
                         .await
                 }
             };
@@ -1217,6 +1256,18 @@ fn optional_string<'a>(params: &'a Value, name: &str) -> Result<Option<&'a str>,
     match params.get(name) {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) if !value.trim().is_empty() => Ok(Some(value)),
+        _ => Err(ServiceError::new(
+            "invalid_request_params",
+            "An optional local service parameter has an invalid value.",
+            false,
+        )),
+    }
+}
+
+fn optional_bool(params: &Value, name: &str) -> Result<Option<bool>, ServiceError> {
+    match params.get(name) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::Bool(value)) => Ok(Some(*value)),
         _ => Err(ServiceError::new(
             "invalid_request_params",
             "An optional local service parameter has an invalid value.",

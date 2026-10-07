@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_theme.dart';
@@ -39,14 +40,14 @@ enum _SettingsSection {
   localData;
 
   IconData get icon => switch (this) {
-    connections => Icons.link_rounded,
-    usageQuotas => Icons.data_usage_rounded,
-    models => Icons.hub_outlined,
-    localEngines => Icons.memory_rounded,
-    conversationMemory => Icons.psychology_outlined,
-    sharedInstructions => Icons.notes_rounded,
-    appearance => Icons.palette_outlined,
-    localData => Icons.storage_rounded,
+    connections => LucideIcons.link,
+    usageQuotas => LucideIcons.chartNoAxesCombined,
+    models => LucideIcons.network,
+    localEngines => LucideIcons.microchip,
+    conversationMemory => LucideIcons.brain,
+    sharedInstructions => LucideIcons.notebookPen,
+    appearance => LucideIcons.palette,
+    localData => LucideIcons.database,
   };
 }
 
@@ -347,7 +348,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
               TextButton.icon(
                 onPressed: () => unawaited(_loadSharedInstructions()),
-                icon: const Icon(Icons.refresh_rounded),
+                icon: const Icon(LucideIcons.refreshCw),
                 label: Text(l10n.retry),
               ),
             ],
@@ -408,7 +409,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           dimension: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.save_outlined),
+                      : const Icon(LucideIcons.save),
                   label: Text(_isSavingInstructions ? l10n.saving : l10n.save),
                 ),
               ],
@@ -674,7 +675,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       dimension: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.delete_outline_rounded, size: 18),
+                  : const Icon(LucideIcons.trash2, size: 18),
               label: Text(
                 _isClearingHistory ? l10n.clearingHistory : l10n.deleteAll,
                 maxLines: 1,
@@ -1079,7 +1080,7 @@ class _SettingsSidebar extends StatelessWidget {
                     height: 38,
                     child: Center(
                       child: Icon(
-                        Icons.settings_outlined,
+                        LucideIcons.settings,
                         color: palette.secondaryIcon,
                         size: 20,
                       ),

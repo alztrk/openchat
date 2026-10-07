@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/agent_question.dart';
@@ -174,7 +175,11 @@ class _UserQuestionCardState extends State<UserQuestionCard> {
         children: [
           Row(
             children: [
-              Icon(Icons.forum_outlined, size: 18, color: palette.accentIcon),
+              Icon(
+                LucideIcons.messagesSquare,
+                size: 18,
+                color: palette.accentIcon,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -228,7 +233,7 @@ class _UserQuestionCardState extends State<UserQuestionCard> {
                       dimension: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.send_rounded, size: 16),
+                  : const Icon(LucideIcons.send, size: 16),
               label: Text(
                 isBusy
                     ? l10n.userQuestionResuming

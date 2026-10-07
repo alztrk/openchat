@@ -49,6 +49,19 @@ class ChatRepository {
     );
   }
 
+  Stream<List<ChatConversation>> watchArchivedConversations() {
+    final query = _database.select(_database.conversations)
+      ..where((conversation) => conversation.isArchived.equals(true))
+      ..orderBy([
+        (conversation) => OrderingTerm.desc(conversation.updatedAt),
+        (conversation) => OrderingTerm.asc(conversation.id),
+      ]);
+
+    return query.watch().map(
+      (rows) => rows.map(_conversationFromRow).toList(growable: false),
+    );
+  }
+
   Stream<List<ChatProject>> watchProjects() {
     final query = _database.select(_database.projects)
       ..orderBy([
@@ -653,6 +666,26 @@ class ChatRepository {
     }
   }
 
+  Future<void> setConversationArchived({
+    required String conversationId,
+    required bool isArchived,
+  }) async {
+    final updatedRows =
+        await (_database.update(_database.conversations)
+              ..where((conversation) => conversation.id.equals(conversationId)))
+            .write(
+              ConversationsCompanion(
+                isArchived: Value(isArchived),
+                isPinned: isArchived
+                    ? const Value(false)
+                    : const Value.absent(),
+              ),
+            );
+    if (updatedRows == 0) {
+      throw ConversationNotFoundException(conversationId);
+    }
+  }
+
   Future<void> deleteConversation(String conversationId) async {
     final deletedRows = await _database.transaction(
       () => (_database.delete(
@@ -712,6 +745,7 @@ class ChatRepository {
       modelId: row.modelId,
       projectId: row.projectId,
       isPinned: row.isPinned,
+      isArchived: row.isArchived,
       createdAt: DateTime.fromMillisecondsSinceEpoch(
         row.createdAt,
         isUtc: true,

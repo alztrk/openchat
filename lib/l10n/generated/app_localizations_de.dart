@@ -659,6 +659,30 @@ class AppLocalizationsDe extends AppLocalizations {
   String get modelSearchHint => 'Modelle suchen …';
 
   @override
+  String get chatGptFastModeEnabledTooltip =>
+      'Fast-Modus ist angefordert. Er kann Abonnement-Credits schneller verbrauchen oder API-Token teurer machen.';
+
+  @override
+  String get chatGptFastModeDisabledTooltip =>
+      'Fast-Modus anfordern. Er kann Abonnement-Credits schneller verbrauchen oder API-Token teurer machen; die Verfügbarkeit hängt vom Modell ab.';
+
+  @override
+  String get chatGptFastModeUnavailableTooltip =>
+      'Das ausgewählte Modell meldet keine Unterstützung für den Fast-Modus.';
+
+  @override
+  String get chatGptFastModeLoadingTooltip =>
+      'Fast-Modus-Einstellung wird geladen …';
+
+  @override
+  String get chatGptFastModeSettingsLoadFailed =>
+      'Die Fast-Modus-Einstellung konnte nicht geladen werden.';
+
+  @override
+  String get chatGptFastModeSettingsSaveFailed =>
+      'Die Fast-Modus-Einstellung konnte nicht gespeichert werden.';
+
+  @override
   String get modelSearchNoResults => 'Keine Modelle passen zu Ihrer Suche.';
 
   @override
@@ -735,6 +759,36 @@ class AppLocalizationsDe extends AppLocalizations {
   String get deleteConversation => 'Unterhaltung löschen';
 
   @override
+  String get archiveConversation => 'Unterhaltung archivieren';
+
+  @override
+  String get restoreConversation => 'Unterhaltung wiederherstellen';
+
+  @override
+  String get archivedChats => 'Archiviert';
+
+  @override
+  String get noArchivedChats => 'Keine archivierten Unterhaltungen.';
+
+  @override
+  String get stopResponseBeforeArchive =>
+      'Stoppe die laufende Antwort, bevor du diese Unterhaltung archivierst.';
+
+  @override
+  String get conversationArchived => 'Unterhaltung archiviert.';
+
+  @override
+  String get conversationRestored => 'Unterhaltung wiederhergestellt.';
+
+  @override
+  String get conversationArchiveFailed =>
+      'Die Unterhaltung konnte nicht archiviert werden. Versuche es erneut.';
+
+  @override
+  String get conversationRestoreFailed =>
+      'Die Unterhaltung konnte nicht wiederhergestellt werden. Versuche es erneut.';
+
+  @override
   String get confirmDeleteConversationTitle => 'Diese Unterhaltung löschen?';
 
   @override
@@ -801,14 +855,22 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get toolPermissionRequireApprovalDescription =>
-      'Dateitools fragen vor jedem Aufruf nach und sind auf den Projektordner und %LOCALAPPDATA%\\OpenChat beschränkt. Die Befehlsausführung ist nicht verfügbar.';
+      'Fragt vor jedem Datei-, Web- und Terminalaufruf. Dateien bleiben auf Projekt und OpenChat beschränkt.';
+
+  @override
+  String get toolPermissionApproveSafeOperations =>
+      'Sichere Vorgänge automatisch bestätigen';
+
+  @override
+  String get toolPermissionApproveSafeOperationsDescription =>
+      'Liest Projekt- und OpenChat-Dateien automatisch. Änderungen, Web und Terminal erfordern Zustimmung.';
 
   @override
   String get toolPermissionFullAccess => 'Vollzugriff';
 
   @override
   String get toolPermissionFullAccessDescription =>
-      'Dateitools können Dateien in jedem Ordner lesen und ändern, ohne nachzufragen. Die Befehlsausführung ist nicht verfügbar.';
+      'Keine Rückfrage. Dateitools erreichen jeden Ordner; Web und Terminal laufen ohne Zustimmung.';
 
   @override
   String get toolPermissionSettingsLoadFailed =>
@@ -2962,6 +3024,22 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get userQuestionNotificationBody => 'Die KI wartet auf deine Antwort.';
+
+  @override
+  String get assistantResponseNotificationReplyEmpty =>
+      'Gib vor dem Senden eine Antwort ein.';
+
+  @override
+  String get assistantResponseNotificationReplyTooLong =>
+      'Diese Antwort ist zu lang, um sie über eine Benachrichtigung zu senden. Verwende dafür das Chat-Eingabefeld.';
+
+  @override
+  String get assistantResponseNotificationReplyUnavailable =>
+      'Diese Benachrichtigung ist veraltet oder der Chat ist nicht verfügbar. Öffne den Chat und sende eine neue Nachricht.';
+
+  @override
+  String get assistantResponseNotificationReplyNotSent =>
+      'Die Schnellantwort konnte gerade nicht gesendet werden. Überprüfe den Chat und versuche es erneut.';
 
   @override
   String fileChangesSummary(int count) {

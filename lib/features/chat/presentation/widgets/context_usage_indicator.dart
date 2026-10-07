@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:intl/intl.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
@@ -386,15 +387,15 @@ class _ContextUsageIndicatorState extends State<ContextUsageIndicator> {
                     : detailsUnavailable
                     ? Icon(
                         widget.repository == null
-                            ? Icons.cloud_off_outlined
-                            : Icons.error_outline_rounded,
+                            ? LucideIcons.cloudOff
+                            : LucideIcons.circleAlert,
                         size: 20,
                         color: widget.repository == null
                             ? palette.secondaryIcon
                             : Theme.of(context).colorScheme.error,
                       )
                     : percentLabel == null
-                    ? const Icon(Icons.data_usage_rounded, size: 20)
+                    ? const Icon(LucideIcons.chartNoAxesCombined, size: 20)
                     : Stack(
                         alignment: Alignment.center,
                         children: [
@@ -686,7 +687,7 @@ class _ContextUsagePopover extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.data_usage_rounded,
+                LucideIcons.chartNoAxesCombined,
                 size: 14,
                 color: palette.secondaryText,
               ),

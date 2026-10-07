@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chat_attachment.dart';
@@ -213,7 +214,7 @@ class _ChatAttachmentGalleryState extends State<ChatAttachmentGallery> {
                         backgroundColor: Colors.black.withValues(alpha: 0.62),
                         foregroundColor: Colors.white,
                       ),
-                      icon: const Icon(Icons.close_rounded, size: 17),
+                      icon: const Icon(LucideIcons.x, size: 17),
                     ),
                   ),
               ],
@@ -245,9 +246,7 @@ class _ChatAttachmentGalleryState extends State<ChatAttachmentGallery> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            attachment.isImage
-                ? Icons.image_outlined
-                : Icons.description_outlined,
+            attachment.isImage ? LucideIcons.image : LucideIcons.fileText,
             size: 19,
             color: widget.palette.secondaryIcon,
           ),
@@ -286,7 +285,7 @@ class _ChatAttachmentGalleryState extends State<ChatAttachmentGallery> {
               constraints: const BoxConstraints.tightFor(width: 28, height: 28),
               padding: EdgeInsets.zero,
               icon: Icon(
-                Icons.close_rounded,
+                LucideIcons.x,
                 size: 16,
                 color: widget.palette.secondaryIcon,
               ),
@@ -371,7 +370,7 @@ class _ChatAttachmentGalleryState extends State<ChatAttachmentGallery> {
                     ),
                     foregroundColor: widget.palette.text,
                   ),
-                  icon: const Icon(Icons.close_rounded),
+                  icon: const Icon(LucideIcons.x),
                 ),
               ),
             ],

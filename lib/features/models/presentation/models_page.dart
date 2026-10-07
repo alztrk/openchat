@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:intl/intl.dart';
 
@@ -396,7 +397,7 @@ class _ModelsPageState extends State<ModelsPage> {
                 onSubmitted: (_) => unawaited(_searchModels()),
                 decoration: InputDecoration(
                   hintText: l10n.huggingFaceModelSearchHint,
-                  prefixIcon: const Icon(Icons.search_rounded),
+                  prefixIcon: const Icon(LucideIcons.search),
                   suffixIcon: _isSearching
                       ? const Padding(
                           padding: EdgeInsets.all(12),
@@ -409,7 +410,7 @@ class _ModelsPageState extends State<ModelsPage> {
                       : IconButton(
                           tooltip: l10n.modelSearchRefresh,
                           onPressed: () => unawaited(_searchModels()),
-                          icon: const Icon(Icons.refresh_rounded),
+                          icon: const Icon(LucideIcons.refreshCw),
                         ),
                 ),
               ),
@@ -555,7 +556,7 @@ class _ModelsPageState extends State<ModelsPage> {
               unawaited(_searchModels());
             },
             palette: OpenChatPalette.of(context),
-            leadingIcon: Icons.sort_rounded,
+            leadingIcon: LucideIcons.arrowUpDown,
           ),
         ),
       ],
@@ -572,13 +573,13 @@ class _ModelsPageState extends State<ModelsPage> {
             child: pageError != null && _selectedModel == null
                 ? _emptyState(
                     pageError,
-                    Icons.error_outline_rounded,
+                    LucideIcons.circleAlert,
                     onRetry: () => unawaited(_retrySearch()),
                   )
                 : _isSearching && _models.isEmpty
                 ? const Center(child: CircularProgressIndicator())
                 : _models.isEmpty
-                ? _emptyState(l10n.modelSearchEmpty, Icons.search_off_rounded)
+                ? _emptyState(l10n.modelSearchEmpty, LucideIcons.searchX)
                 : ListView.separated(
                     padding: const EdgeInsets.all(8),
                     itemCount: _models.length,
@@ -642,7 +643,7 @@ class _ModelsPageState extends State<ModelsPage> {
                                 ),
                                 if (model.gated || model.private)
                                   Icon(
-                                    Icons.lock_outline_rounded,
+                                    LucideIcons.lockKeyhole,
                                     size: 17,
                                     color: palette.secondaryIcon,
                                   ),
@@ -650,7 +651,7 @@ class _ModelsPageState extends State<ModelsPage> {
                                   if (model.gated || model.private)
                                     const SizedBox(width: 6),
                                   Icon(
-                                    Icons.check_circle_rounded,
+                                    LucideIcons.circleCheck,
                                     size: 18,
                                     color: palette.accent,
                                   ),
@@ -722,7 +723,7 @@ class _ModelsPageState extends State<ModelsPage> {
             onPressed: !_isSearching && _pageIndex > 0
                 ? () => unawaited(_loadPreviousPage())
                 : null,
-            icon: const Icon(Icons.chevron_left_rounded, size: 18),
+            icon: const Icon(LucideIcons.chevronLeft, size: 18),
             label: Text(l10n.modelPreviousPage),
           ),
           Text(
@@ -734,7 +735,7 @@ class _ModelsPageState extends State<ModelsPage> {
                 ? () => unawaited(_loadNextPage())
                 : null,
             iconAlignment: IconAlignment.end,
-            icon: const Icon(Icons.chevron_right_rounded, size: 18),
+            icon: const Icon(LucideIcons.chevronRight, size: 18),
             label: Text(l10n.modelNextPage),
           ),
         ],
@@ -748,10 +749,7 @@ class _ModelsPageState extends State<ModelsPage> {
     final details = _details;
     if (model == null) {
       return ChatSurfaceCard(
-        child: _emptyState(
-          l10n.modelChooseForDetails,
-          Icons.smart_toy_outlined,
-        ),
+        child: _emptyState(l10n.modelChooseForDetails, LucideIcons.bot),
       );
     }
     if (_isLoadingDetails) {
@@ -763,7 +761,7 @@ class _ModelsPageState extends State<ModelsPage> {
       return ChatSurfaceCard(
         child: _emptyState(
           _pageError ?? l10n.modelSearchFailed,
-          Icons.error_outline_rounded,
+          LucideIcons.circleAlert,
           onRetry: () => unawaited(_selectModel(model)),
         ),
       );
@@ -908,10 +906,7 @@ class _ModelsPageState extends State<ModelsPage> {
                                       .clamp(0, group.$3.length)
                                       .toInt();
                             }),
-                            icon: const Icon(
-                              Icons.expand_more_rounded,
-                              size: 18,
-                            ),
+                            icon: const Icon(LucideIcons.chevronDown, size: 18),
                             label: Text(l10n.modelShowMoreComponents),
                           ),
                       ],
@@ -944,21 +939,21 @@ class _ModelsPageState extends State<ModelsPage> {
             const SizedBox(height: 8),
             _InlineNotice(
               text: l10n.modelDownloadAccessNeeded,
-              icon: Icons.lock_outline_rounded,
+              icon: LucideIcons.lockKeyhole,
               palette: palette,
             ),
           ] else if (selectedGroup?.canDownload == false) ...[
             const SizedBox(height: 8),
             _InlineNotice(
               text: l10n.modelUnknownDownloadSize,
-              icon: Icons.info_outline_rounded,
+              icon: LucideIcons.info,
               palette: palette,
             ),
           ] else if (selectedGroup == null) ...[
             const SizedBox(height: 8),
             _InlineNotice(
               text: l10n.modelNoCompatibleFiles,
-              icon: Icons.info_outline_rounded,
+              icon: LucideIcons.info,
               palette: palette,
             ),
           ],
@@ -973,7 +968,7 @@ class _ModelsPageState extends State<ModelsPage> {
                     controller.status == HuggingFaceDownloadStatus.cancelling
                     ? null
                     : () => unawaited(controller.cancel()),
-                icon: const Icon(Icons.close_rounded, size: 17),
+                icon: const Icon(LucideIcons.x, size: 17),
                 label: Text(l10n.modelCancelDownload),
               ),
             ),
@@ -985,7 +980,7 @@ class _ModelsPageState extends State<ModelsPage> {
             const SizedBox(height: 12),
             _InlineNotice(
               text: l10n.modelDownloadComplete,
-              icon: Icons.check_circle_outline_rounded,
+              icon: LucideIcons.circleCheck,
               palette: palette,
             ),
           ] else if (controller?.status ==
@@ -994,7 +989,7 @@ class _ModelsPageState extends State<ModelsPage> {
             const SizedBox(height: 12),
             _InlineNotice(
               text: l10n.modelDownloadCancelled,
-              icon: Icons.info_outline_rounded,
+              icon: LucideIcons.info,
               palette: palette,
             ),
           ] else if (controller?.status == HuggingFaceDownloadStatus.failed &&
@@ -1008,7 +1003,7 @@ class _ModelsPageState extends State<ModelsPage> {
                   l10n.localModelDirectoryUnavailable,
                 _ => l10n.modelDownloadFailed,
               },
-              icon: Icons.error_outline_rounded,
+              icon: LucideIcons.circleAlert,
               palette: palette,
             ),
           ],
@@ -1019,7 +1014,7 @@ class _ModelsPageState extends State<ModelsPage> {
               onPressed: canDownload
                   ? () => unawaited(_downloadSelectedGroup())
                   : null,
-              icon: const Icon(Icons.download_rounded),
+              icon: const Icon(LucideIcons.download),
               label: Text(l10n.modelDownloadButton),
             ),
           ),
@@ -1062,7 +1057,7 @@ class _ModelsPageState extends State<ModelsPage> {
               child: Row(
                 children: [
                   Icon(
-                    Icons.insert_drive_file_outlined,
+                    LucideIcons.file,
                     size: 16,
                     color: palette.secondaryIcon,
                   ),
@@ -1095,8 +1090,8 @@ class _ModelsPageState extends State<ModelsPage> {
                       ),
                       icon: Icon(
                         isDownloaded
-                            ? Icons.check_circle_outline_rounded
-                            : Icons.download_rounded,
+                            ? LucideIcons.circleCheck
+                            : LucideIcons.download,
                         size: 18,
                       ),
                     ),
@@ -1142,7 +1137,7 @@ class _ModelsPageState extends State<ModelsPage> {
             alignment: Alignment.centerLeft,
             child: TextButton.icon(
               onPressed: () => unawaited(_selectModel(model)),
-              icon: const Icon(Icons.refresh_rounded, size: 17),
+              icon: const Icon(LucideIcons.refreshCw, size: 17),
               label: Text(l10n.retry),
             ),
           ),
@@ -1208,7 +1203,7 @@ class _ModelsPageState extends State<ModelsPage> {
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
                   onPressed: onRetry,
-                  icon: const Icon(Icons.refresh_rounded),
+                  icon: const Icon(LucideIcons.refreshCw),
                   label: Text(context.openchatL10n.retry),
                 ),
               ],

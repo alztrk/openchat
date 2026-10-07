@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
@@ -433,7 +434,7 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
     return AlertDialog(
       title: Row(
         children: [
-          const Icon(Icons.memory_outlined, size: 20),
+          const Icon(LucideIcons.microchip, size: 20),
           const SizedBox(width: 10),
           Expanded(child: Text(l10n.conversationMemory)),
         ],
@@ -494,7 +495,7 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
                     dimension: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.restart_alt_rounded),
+                : const Icon(LucideIcons.rotateCcw),
             label: Text(l10n.conversationMemoryResetAction),
           ),
         TextButton(
@@ -580,7 +581,7 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
                         dimension: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.restart_alt_rounded),
+                    : const Icon(LucideIcons.rotateCcw),
                 label: Text(l10n.conversationMemoryResetAction),
               ),
             ),
@@ -601,7 +602,7 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
       decoration: InputDecoration(
         hintText: l10n.conversationMemorySearchHint,
         counterText: '',
-        prefixIcon: const Icon(Icons.search_rounded),
+        prefixIcon: const Icon(LucideIcons.search),
       ),
     );
     final action = FilledButton.tonal(
@@ -648,7 +649,7 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
       return Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.manage_search_rounded, size: 18, color: palette.accent),
+          Icon(LucideIcons.search, size: 18, color: palette.accent),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -688,11 +689,7 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
     final description = Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(
-          Icons.manage_search_rounded,
-          size: 18,
-          color: palette.secondaryText,
-        ),
+        Icon(LucideIcons.search, size: 18, color: palette.secondaryText),
         const SizedBox(width: 10),
         Expanded(
           child: Column(
@@ -893,14 +890,14 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
         borderRadius: BorderRadius.circular(12),
       ),
       child: ListTile(
-        leading: const Icon(Icons.manage_search_rounded),
+        leading: const Icon(LucideIcons.search),
         title: Text(l10n.conversationMemoryArchiveSettingsTitle),
         subtitle: Text(
           settings.included
               ? l10n.conversationMemoryArchiveConversationIncluded
               : l10n.conversationMemoryArchiveConversationExcluded,
         ),
-        trailing: const Icon(Icons.chevron_right_rounded),
+        trailing: const Icon(LucideIcons.chevronRight),
         onTap: _showArchiveIndexSettings,
       ),
     );

@@ -54,6 +54,21 @@ pub(super) fn parse_models(value: &Value) -> Result<Vec<ChatGptModel>, ServiceEr
             .map(|supported| supported.as_bool().ok_or_else(invalid_response_error))
             .transpose()?
             .unwrap_or(true);
+        let supports_fast_mode = model
+            .get("service_tiers")
+            .and_then(Value::as_array)
+            .is_some_and(|tiers| {
+                tiers.iter().any(|tier| {
+                    matches!(
+                        tier.get("id").and_then(Value::as_str),
+                        Some("fast" | "priority")
+                    )
+                })
+            })
+            || model
+                .get("additional_speed_tiers")
+                .and_then(Value::as_array)
+                .is_some_and(|tiers| tiers.iter().any(|tier| tier.as_str() == Some("fast")));
         let supports_images = crate::chatgpt_store::model_supports_images(&id);
         parsed.push(ChatGptModel {
             id,
@@ -67,6 +82,7 @@ pub(super) fn parse_models(value: &Value) -> Result<Vec<ChatGptModel>, ServiceEr
             reasoning_levels,
             supports_reasoning_summary_parameter,
             supports_images,
+            supports_fast_mode,
             is_available: model.get("visibility").and_then(Value::as_str) == Some("list")
                 && model.get("supported_in_api").and_then(Value::as_bool) == Some(true),
         });

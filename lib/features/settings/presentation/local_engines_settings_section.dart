@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/local_engine_icon.dart';
@@ -232,7 +233,7 @@ class _LocalEnginesSettingsSectionState
               ),
               FilledButton.icon(
                 onPressed: () => Navigator.of(dialogContext).pop(true),
-                icon: const Icon(Icons.link_rounded, size: 16),
+                icon: const Icon(LucideIcons.link, size: 16),
                 label: Text(l10n.localEngineExternalServerConnect),
               ),
             ],
@@ -615,21 +616,21 @@ class _LocalEnginesSettingsSectionState
                 _buildStorageActionButton(
                   dialogContext,
                   action: LocalModelStorageAction.move,
-                  icon: Icons.drive_file_move_rounded,
+                  icon: LucideIcons.folderInput,
                   label: l10n.localModelMoveToFolder,
                 ),
                 const SizedBox(height: 8),
                 _buildStorageActionButton(
                   dialogContext,
                   action: LocalModelStorageAction.copy,
-                  icon: Icons.copy_all_outlined,
+                  icon: LucideIcons.copy,
                   label: l10n.localModelCopyToFolder,
                 ),
                 const SizedBox(height: 8),
                 _buildStorageActionButton(
                   dialogContext,
                   action: LocalModelStorageAction.keep,
-                  icon: Icons.folder_open_outlined,
+                  icon: LucideIcons.folderOpen,
                   label: l10n.localModelKeepInPlace,
                 ),
               ],
@@ -791,13 +792,13 @@ class _LocalEnginesSettingsSectionState
         if (_installError != null) ...[
           _buildMessageCard(
             context,
-            icon: Icons.error_outline_rounded,
+            icon: LucideIcons.circleAlert,
             message: l10n.localEngineInstallFailed,
             action: OutlinedButton.icon(
               onPressed: _loadState == _LocalEnginesLoadState.loading
                   ? null
                   : () => unawaited(_loadCatalog()),
-              icon: const Icon(Icons.refresh_rounded, size: 16),
+              icon: const Icon(LucideIcons.refreshCw, size: 16),
               label: Text(l10n.localEnginesReload),
             ),
           ),
@@ -806,7 +807,7 @@ class _LocalEnginesSettingsSectionState
         if (_modelActionError != null) ...[
           _buildMessageCard(
             context,
-            icon: Icons.error_outline_rounded,
+            icon: LucideIcons.circleAlert,
             message: _modelActionErrorLabel(l10n, _modelActionError!),
             action: TextButton(
               onPressed: () => setState(() => _modelActionError = null),
@@ -819,16 +820,16 @@ class _LocalEnginesSettingsSectionState
           _LocalEnginesLoadState.loading => const LinearProgressIndicator(),
           _LocalEnginesLoadState.unavailable => _buildMessageCard(
             context,
-            icon: Icons.memory_outlined,
+            icon: LucideIcons.microchip,
             message: l10n.localEnginesUnavailable,
           ),
           _LocalEnginesLoadState.failed => _buildMessageCard(
             context,
-            icon: Icons.error_outline_rounded,
+            icon: LucideIcons.circleAlert,
             message: l10n.localEnginesLoadFailed,
             action: OutlinedButton.icon(
               onPressed: () => unawaited(_loadCatalog()),
-              icon: const Icon(Icons.refresh_rounded, size: 16),
+              icon: const Icon(LucideIcons.refreshCw, size: 16),
               label: Text(l10n.retry),
             ),
           ),
@@ -844,11 +845,11 @@ class _LocalEnginesSettingsSectionState
     if (catalog == null || catalog.engines.isEmpty) {
       return _buildMessageCard(
         context,
-        icon: Icons.memory_outlined,
+        icon: LucideIcons.microchip,
         message: l10n.localEnginesEmpty,
         action: OutlinedButton.icon(
           onPressed: () => unawaited(_loadCatalog()),
-          icon: const Icon(Icons.refresh_rounded, size: 16),
+          icon: const Icon(LucideIcons.refreshCw, size: 16),
           label: Text(l10n.localEnginesReload),
         ),
       );
@@ -1037,7 +1038,7 @@ class _LocalEnginesSettingsSectionState
                     child: Row(
                       children: [
                         Icon(
-                          Icons.link_rounded,
+                          LucideIcons.link,
                           size: 16,
                           color: palette.accentIcon,
                         ),
@@ -1122,7 +1123,7 @@ class _LocalEnginesSettingsSectionState
                             dimension: 16,
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
-                        : const Icon(Icons.radar_rounded, size: 16),
+                        : const Icon(LucideIcons.radar, size: 16),
                     label: Text(l10n.localEngineExternalServerCheck),
                   ),
                 OutlinedButton.icon(
@@ -1134,7 +1135,7 @@ class _LocalEnginesSettingsSectionState
                           dimension: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.folder_open_outlined, size: 16),
+                      : const Icon(LucideIcons.folderOpen, size: 16),
                   label: Text(l10n.localEngineExecutableChoose),
                 ),
                 if (path != null)
@@ -1142,7 +1143,7 @@ class _LocalEnginesSettingsSectionState
                     onPressed: _isSavingExecutablePath
                         ? null
                         : () => unawaited(_saveLlamaServerExecutable(null)),
-                    icon: const Icon(Icons.clear_rounded, size: 16),
+                    icon: const Icon(LucideIcons.x, size: 16),
                     label: Text(l10n.localEngineExecutableClear),
                   ),
               ],
@@ -1244,7 +1245,7 @@ class _LocalEnginesSettingsSectionState
                       dimension: 15,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.add_rounded, size: 17),
+                  : const Icon(LucideIcons.plus, size: 17),
               label: Text(isRegistering ? l10n.localModelSaving : addLabel),
             ),
           ],
@@ -1350,7 +1351,7 @@ class _LocalEnginesSettingsSectionState
                   dimension: 16,
                   child: isStopping || _isCancellingRuntime
                       ? const CircularProgressIndicator(strokeWidth: 2)
-                      : const Icon(Icons.close_rounded, size: 16),
+                      : const Icon(LucideIcons.x, size: 16),
                 ),
               )
             else if (isRunning)
@@ -1364,7 +1365,7 @@ class _LocalEnginesSettingsSectionState
                         dimension: 16,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : const Icon(Icons.stop_circle_outlined),
+                    : const Icon(LucideIcons.circleStop),
               )
             else
               IconButton(
@@ -1372,7 +1373,7 @@ class _LocalEnginesSettingsSectionState
                 onPressed: !model.isAvailable || isBusy
                     ? null
                     : () => unawaited(_startModel(model)),
-                icon: const Icon(Icons.play_circle_outline_rounded),
+                icon: const Icon(LucideIcons.circlePlay),
               ),
             IconButton(
               tooltip: l10n.localModelRemove,
@@ -1382,7 +1383,7 @@ class _LocalEnginesSettingsSectionState
                       dimension: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.delete_outline_rounded),
+                  : const Icon(LucideIcons.trash2),
             ),
           ],
         ),
@@ -1520,7 +1521,7 @@ class _LocalEnginesSettingsSectionState
                   onPressed: canStart
                       ? () => unawaited(_install(engine, variant))
                       : null,
-                  icon: const Icon(Icons.download_rounded, size: 16),
+                  icon: const Icon(LucideIcons.download, size: 16),
                   label: Text(l10n.localEngineInstall),
                 ),
               ),
@@ -1596,7 +1597,7 @@ class _LocalEnginesSettingsSectionState
                     height: 14,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.close_rounded, size: 16),
+                : const Icon(LucideIcons.x, size: 16),
             label: Text(
               _isCancelling
                   ? l10n.localEngineCancellingInstall
@@ -1680,11 +1681,7 @@ class _LocalEnginesSettingsSectionState
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(
-              Icons.info_outline_rounded,
-              color: palette.accentIcon,
-              size: 17,
-            ),
+            Icon(LucideIcons.info, color: palette.accentIcon, size: 17),
             const SizedBox(width: 8),
             Expanded(
               child: Text(

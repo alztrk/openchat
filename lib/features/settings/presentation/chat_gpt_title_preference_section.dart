@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_theme.dart';
@@ -117,7 +118,7 @@ class ChatGptTitlePreferenceSection extends StatelessWidget {
                   ),
                   TextButton.icon(
                     onPressed: onRetry,
-                    icon: const Icon(Icons.refresh_rounded, size: 16),
+                    icon: const Icon(LucideIcons.refreshCw, size: 16),
                     label: Text(l10n.retry),
                   ),
                 ],

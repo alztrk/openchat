@@ -21,6 +21,7 @@ pub(super) struct ChatRoute {
     pub(super) uses_responses_api: bool,
     pub(super) context_window: Option<i64>,
     pub(super) input_token_limit: Option<i64>,
+    pub(super) max_output_tokens: Option<i64>,
     pub(super) supports_images: bool,
     pub(super) supports_tool_calls: Option<bool>,
     pub(super) connection_id: Option<String>,
@@ -68,6 +69,7 @@ pub(super) async fn resolve_chat_route(
         uses_responses_api,
         context_window,
         input_token_limit,
+        max_output_tokens,
         supports_images,
         supports_tool_calls,
         connection_id,
@@ -84,7 +86,7 @@ pub(super) async fn resolve_chat_route(
             let is_free = is_supported_free_chat_model(&model_id);
             let uses_responses_api = super::models::is_responses_api_model(storage, &model_id)?;
             let supports_tool_calls = super::models::supports_tool_calls(storage, &model_id)?;
-            let (context_window, input_token_limit) =
+            let (context_window, input_token_limit, max_output_tokens) =
                 super::models::context_limits(storage, &model_id)?;
             let supports_images = super::models::supports_image_input(storage, &model_id)?;
             let chat_url = if uses_responses_api {
@@ -99,6 +101,7 @@ pub(super) async fn resolve_chat_route(
                 uses_responses_api,
                 context_window,
                 input_token_limit,
+                max_output_tokens,
                 supports_images,
                 supports_tool_calls,
                 None,
@@ -120,6 +123,7 @@ pub(super) async fn resolve_chat_route(
                 false,
                 endpoint.capabilities.context_window,
                 None,
+                None,
                 endpoint.capabilities.supports_images,
                 endpoint.capabilities.supports_tool_calls,
                 None,
@@ -140,6 +144,7 @@ pub(super) async fn resolve_chat_route(
                 false,
                 None,
                 None,
+                None,
                 crate::openai_api::supports_image_input(&model_id),
                 None,
                 stored_api_key_connection_id.map(str::to_owned),
@@ -156,7 +161,7 @@ pub(super) async fn resolve_chat_route(
                 return Err(route_error());
             }
             let api_key = api_key.ok_or_else(|| provider_authentication_required_error(id))?;
-            let (context_window, input_token_limit) =
+            let (context_window, input_token_limit, max_output_tokens) =
                 super::provider_models::context_limits(storage, id, api_key, &model_id)?;
             let supports_images =
                 super::provider_models::supports_image_input(storage, id, api_key, &model_id)?;
@@ -169,6 +174,7 @@ pub(super) async fn resolve_chat_route(
                 false,
                 context_window,
                 input_token_limit,
+                max_output_tokens,
                 supports_images,
                 supports_tool_calls,
                 Some(id.to_owned()),
@@ -192,6 +198,7 @@ pub(super) async fn resolve_chat_route(
         uses_responses_api,
         context_window,
         input_token_limit,
+        max_output_tokens,
         supports_images,
         supports_tool_calls,
         connection_id,
@@ -214,6 +221,7 @@ mod tests {
             uses_responses_api: false,
             context_window,
             input_token_limit,
+            max_output_tokens: None,
             supports_images: false,
             supports_tool_calls: None,
             connection_id: None,

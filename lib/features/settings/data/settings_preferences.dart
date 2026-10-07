@@ -6,10 +6,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 enum ToolPermissionMode {
   requireApproval,
+  approveSafeOperations,
   fullAccess;
 
   String get serviceValue => switch (this) {
     ToolPermissionMode.requireApproval => 'require_approval',
+    ToolPermissionMode.approveSafeOperations => 'approve_safe_operations',
     ToolPermissionMode.fullAccess => 'full_access',
   };
 }
@@ -50,12 +52,14 @@ class SettingsPreferences {
   static const _themeModeKey = 'appearance.theme_mode';
   static const _localeKey = 'appearance.locale';
   static const _sharedInstructionsKey = 'chat.shared_instructions';
+  static const _chatGptFastModeKey = 'chatgpt.fast_mode';
   static const _toolPermissionModeKey = 'tools.permission_mode';
   static const _conversationWidthKey = 'appearance.conversation_width';
   static const _conversationTextSizeKey = 'appearance.conversation_text_size';
   static const _appFontKey = 'appearance.conversation_font';
   static const _defaultModelKey = 'models.default_model';
   static const _hiddenModelKeysKey = 'models.hidden_keys';
+  static const _collapsedSidebarSectionsKey = 'chat.collapsed_sidebar_sections';
   static const _localModelDirectoryPrefix = 'models.local_engine_directory.';
   static const maxSharedInstructionsCharacters = 4096;
 
@@ -171,10 +175,19 @@ class SettingsPreferences {
     return _preferences.setString(_sharedInstructionsKey, instructions);
   }
 
+  Future<bool> readChatGptFastMode() async {
+    return await _preferences.getBool(_chatGptFastModeKey) ?? false;
+  }
+
+  Future<void> writeChatGptFastMode(bool enabled) {
+    return _preferences.setBool(_chatGptFastModeKey, enabled);
+  }
+
   Future<ToolPermissionMode> readToolPermissionMode() async {
     final value = await _preferences.getString(_toolPermissionModeKey);
     return switch (value) {
       null || 'require_approval' => ToolPermissionMode.requireApproval,
+      'approve_safe_operations' => ToolPermissionMode.approveSafeOperations,
       'full_access' => ToolPermissionMode.fullAccess,
       _ => throw const FormatException(
         'The saved tool permission mode is invalid.',
@@ -262,6 +275,30 @@ class SettingsPreferences {
       );
     }
     return _preferences.setString(key, normalizedPath);
+  }
+
+  Future<Set<String>> readCollapsedSidebarSections() async {
+    final values = await _preferences.getStringList(
+      _collapsedSidebarSectionsKey,
+    );
+    if (values == null) return const <String>{};
+    const supported = <String>{'pinned', 'projects', 'chats', 'archived'};
+    return values.where(supported.contains).toSet();
+  }
+
+  Future<void> writeCollapsedSidebarSections(Set<String> sections) {
+    const supported = <String>{'pinned', 'projects', 'chats', 'archived'};
+    if (!supported.containsAll(sections)) {
+      throw ArgumentError.value(
+        sections,
+        'sections',
+        'A sidebar section is not supported.',
+      );
+    }
+    return _preferences.setStringList(
+      _collapsedSidebarSectionsKey,
+      sections.toList(growable: false),
+    );
   }
 
   String _validatedLocalEngineId(String engineId) => switch (engineId) {

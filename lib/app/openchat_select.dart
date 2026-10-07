@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_dropdown.dart';
 import 'package:openchat/app/openchat_theme.dart';
@@ -9,16 +10,22 @@ class OpenChatSelectOption<T> {
   const OpenChatSelectOption({
     required this.value,
     required this.label,
+    this.description,
     this.icon,
     this.iconColor,
+    this.descriptionColor,
+    this.selectedColor,
     this.textStyle,
     this.enabled = true,
   });
 
   final T value;
   final String label;
+  final String? description;
   final IconData? icon;
   final Color? iconColor;
+  final Color? descriptionColor;
+  final Color? selectedColor;
   final TextStyle? textStyle;
   final bool enabled;
 }
@@ -85,7 +92,7 @@ class OpenChatSelect<T> extends StatelessWidget {
             style: OpenChatDropdown.menuItemStyle(palette),
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                minHeight: 44,
+                minHeight: option.description == null ? 44 : 58,
                 maxWidth: resolvedMenuWidth,
               ),
               child: DecoratedBox(
@@ -98,9 +105,9 @@ class OpenChatSelect<T> extends StatelessWidget {
                   borderRadius: BorderRadius.circular(7),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
+                  padding: EdgeInsets.symmetric(
                     horizontal: 12,
-                    vertical: 10,
+                    vertical: option.description == null ? 10 : 8,
                   ),
                   child: Row(
                     children: [
@@ -115,33 +122,60 @@ class OpenChatSelect<T> extends StatelessWidget {
                         const SizedBox(width: 10),
                       ],
                       Expanded(
-                        child: Text(
-                          option.label,
-                          style:
-                              option.textStyle?.copyWith(
-                                color: option.enabled
-                                    ? option.textStyle?.color ?? palette.text
-                                    : palette.disabledForeground,
-                                fontWeight: option.value == value
-                                    ? FontWeight.w600
-                                    : FontWeight.w500,
-                              ) ??
-                              TextStyle(
-                                color: option.enabled
-                                    ? palette.text
-                                    : palette.disabledForeground,
-                                fontSize: 13,
-                                fontWeight: option.value == value
-                                    ? FontWeight.w600
-                                    : FontWeight.w500,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              option.label,
+                              style:
+                                  option.textStyle?.copyWith(
+                                    color: option.enabled
+                                        ? option.textStyle?.color ??
+                                              palette.text
+                                        : palette.disabledForeground,
+                                    fontWeight: option.value == value
+                                        ? FontWeight.w600
+                                        : FontWeight.w500,
+                                  ) ??
+                                  TextStyle(
+                                    color: option.enabled
+                                        ? palette.text
+                                        : palette.disabledForeground,
+                                    fontSize: 13,
+                                    fontWeight: option.value == value
+                                        ? FontWeight.w600
+                                        : FontWeight.w500,
+                                  ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (option.description case final description?) ...[
+                              const SizedBox(height: 2),
+                              Text(
+                                description,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: option.enabled
+                                      ? option.descriptionColor ??
+                                            palette.secondaryText
+                                      : palette.disabledForeground,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w400,
+                                  height: 16 / 12,
+                                ),
                               ),
+                            ],
+                          ],
                         ),
                       ),
                       if (option.value == value)
                         Icon(
-                          Icons.check_rounded,
+                          LucideIcons.check,
                           size: 16,
-                          color: palette.accentIcon,
+                          color: option.selectedColor ?? palette.accentIcon,
                         ),
                     ],
                   ),
@@ -227,8 +261,8 @@ class OpenChatSelect<T> extends StatelessWidget {
                 const SizedBox(width: 8),
                 Icon(
                   controller.isOpen
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
+                      ? LucideIcons.chevronUp
+                      : LucideIcons.chevronDown,
                   size: 18,
                   color: isEnabled
                       ? palette.secondaryIcon

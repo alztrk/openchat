@@ -646,6 +646,29 @@ class AppLocalizationsTr extends AppLocalizations {
   String get modelSearchHint => 'Model ara...';
 
   @override
+  String get chatGptFastModeEnabledTooltip =>
+      'Fast mod isteği açık. Abonelik kredisini daha hızlı tüketebilir veya API token maliyetini artırabilir.';
+
+  @override
+  String get chatGptFastModeDisabledTooltip =>
+      'Fast modu iste. Abonelik kredisini daha hızlı tüketebilir veya API token maliyetini artırabilir; kullanılabilirlik modele bağlıdır.';
+
+  @override
+  String get chatGptFastModeUnavailableTooltip =>
+      'Seçili model Fast mod desteği bildirmiyor.';
+
+  @override
+  String get chatGptFastModeLoadingTooltip => 'Fast mod tercihi yükleniyor…';
+
+  @override
+  String get chatGptFastModeSettingsLoadFailed =>
+      'Fast mod tercihi yüklenemedi.';
+
+  @override
+  String get chatGptFastModeSettingsSaveFailed =>
+      'Fast mod tercihi kaydedilemedi.';
+
+  @override
   String get modelSearchNoResults => 'Aramayla eşleşen model yok.';
 
   @override
@@ -722,6 +745,35 @@ class AppLocalizationsTr extends AppLocalizations {
   String get deleteConversation => 'Sohbeti sil';
 
   @override
+  String get archiveConversation => 'Sohbeti arşivle';
+
+  @override
+  String get restoreConversation => 'Sohbeti arşivden çıkar';
+
+  @override
+  String get archivedChats => 'Arşivlenenler';
+
+  @override
+  String get noArchivedChats => 'Arşivlenmiş sohbet yok.';
+
+  @override
+  String get stopResponseBeforeArchive =>
+      'Bu sohbeti arşivlemeden önce devam eden yanıtı durdur.';
+
+  @override
+  String get conversationArchived => 'Sohbet arşivlendi.';
+
+  @override
+  String get conversationRestored => 'Sohbet arşivden çıkarıldı.';
+
+  @override
+  String get conversationArchiveFailed => 'Sohbet arşivlenemedi. Tekrar dene.';
+
+  @override
+  String get conversationRestoreFailed =>
+      'Sohbet arşivden çıkarılamadı. Tekrar dene.';
+
+  @override
   String get confirmDeleteConversationTitle => 'Sohbet silinsin mi?';
 
   @override
@@ -775,7 +827,7 @@ class AppLocalizationsTr extends AppLocalizations {
       'Yapay zekanın yerel dosya araçlarını hangi klasörlerde ve hangi izinle kullanacağını seç.';
 
   @override
-  String get toolPermissionRequireApproval => 'Onay İste';
+  String get toolPermissionRequireApproval => 'Onay iste';
 
   @override
   String get selectedModelDoesNotSupportToolCalls =>
@@ -787,14 +839,21 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get toolPermissionRequireApprovalDescription =>
-      'Dosya araçları her çağrıda izin ister; proje klasörü ve %LOCALAPPDATA%\\OpenChat ile sınırlıdır. Komut çalıştırma desteklenmez.';
+      'Her dosya, web ve terminal çağrısından önce onay ister. Dosya erişimi proje ve OpenChat klasörleriyle sınırlıdır.';
+
+  @override
+  String get toolPermissionApproveSafeOperations => 'Benim için onayla';
+
+  @override
+  String get toolPermissionApproveSafeOperationsDescription =>
+      'Proje ve OpenChat\'te salt okunur dosya işlemlerini otomatik yapar; değişiklik, web ve terminal için sorar.';
 
   @override
   String get toolPermissionFullAccess => 'Tam erişim';
 
   @override
   String get toolPermissionFullAccessDescription =>
-      'Dosya araçları izin sormadan her klasörde okuyabilir ve değişiklik yapabilir. Komut çalıştırma desteklenmez.';
+      'Onay sormaz; dosya araçları her klasöre erişir, web ve terminal araçları onaysız çalışır.';
 
   @override
   String get toolPermissionSettingsLoadFailed =>
@@ -2899,6 +2958,22 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get userQuestionNotificationBody => 'Yapay zekâ yanıtını bekliyor.';
+
+  @override
+  String get assistantResponseNotificationReplyEmpty =>
+      'Göndermeden önce bir yanıt yaz.';
+
+  @override
+  String get assistantResponseNotificationReplyTooLong =>
+      'Bu yanıt bildirimden gönderilemeyecek kadar uzun. Göndermek için sohbet alanını kullan.';
+
+  @override
+  String get assistantResponseNotificationReplyUnavailable =>
+      'Bu bildirim artık güncel değil veya sohbet kullanılamıyor. Sohbeti açıp yeni bir mesaj gönder.';
+
+  @override
+  String get assistantResponseNotificationReplyNotSent =>
+      'Hızlı yanıt şu anda gönderilemedi. Sohbeti kontrol edip tekrar dene.';
 
   @override
   String fileChangesSummary(int count) {

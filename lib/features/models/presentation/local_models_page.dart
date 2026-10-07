@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/local_engine_icon.dart';
 import 'package:openchat/app/openchat_theme.dart';
@@ -112,7 +113,7 @@ class _LocalModelsPageState extends State<LocalModelsPage> {
       onPressed: _pageState == _LocalModelsLoadState.loading
           ? null
           : () => unawaited(_loadModels()),
-      icon: const Icon(Icons.refresh_rounded),
+      icon: const Icon(LucideIcons.refreshCw),
       label: Text(l10n.localModelsRefresh),
     );
 
@@ -158,21 +159,21 @@ class _LocalModelsPageState extends State<LocalModelsPage> {
                     child: Center(child: CircularProgressIndicator()),
                   ),
                   _LocalModelsLoadState.unavailable => _MessageState(
-                    icon: Icons.cloud_off_outlined,
+                    icon: LucideIcons.cloudOff,
                     message: l10n.localEnginesUnavailable,
                     palette: palette,
                   ),
                   _LocalModelsLoadState.failed => _MessageState(
-                    icon: Icons.error_outline_rounded,
+                    icon: LucideIcons.circleAlert,
                     message: l10n.localModelsLoadFailed,
                     palette: palette,
                     actionLabel: l10n.localModelsRefresh,
-                    actionIcon: Icons.refresh_rounded,
+                    actionIcon: LucideIcons.refreshCw,
                     onAction: () => unawaited(_loadModels()),
                   ),
                   _LocalModelsLoadState.loaded when _models.isEmpty =>
                     _MessageState(
-                      icon: Icons.folder_open_outlined,
+                      icon: LucideIcons.folderOpen,
                       message: l10n.localModelsPageEmpty,
                       palette: palette,
                       actionLabel: l10n.localModelsDiscover,
@@ -266,9 +267,7 @@ class _ModelListTile extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              model.isAvailable
-                  ? Icons.check_circle_outline_rounded
-                  : Icons.info_outline_rounded,
+              model.isAvailable ? LucideIcons.circleCheck : LucideIcons.info,
               size: 16,
               color: model.isAvailable
                   ? palette.accentIcon
@@ -339,7 +338,7 @@ class _MessageState extends StatelessWidget {
     required this.message,
     required this.palette,
     this.actionLabel,
-    this.actionIcon = Icons.view_list_rounded,
+    this.actionIcon = LucideIcons.list,
     this.onAction,
   });
 

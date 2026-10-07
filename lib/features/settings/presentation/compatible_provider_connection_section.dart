@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/presentation/widgets/provider_icon.dart';
@@ -127,7 +128,7 @@ class _CompatibleProviderConnectionSectionState
               ? null
               : () => setState(() => _showForm = !_showForm),
           icon: Icon(
-            configured ? Icons.edit_outlined : Icons.add_rounded,
+            configured ? LucideIcons.pencil : LucideIcons.plus,
             size: 16,
           ),
           label: Text(configured ? l10n.edit : l10n.add),
@@ -135,7 +136,7 @@ class _CompatibleProviderConnectionSectionState
         if (configured)
           TextButton.icon(
             onPressed: _saving ? null : _remove,
-            icon: const Icon(Icons.delete_outline_rounded, size: 16),
+            icon: const Icon(LucideIcons.trash2, size: 16),
             label: Text(l10n.deleteAll),
           ),
       ],
@@ -189,7 +190,7 @@ class _CompatibleProviderConnectionSectionState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(
-                    Icons.info_outline_rounded,
+                    LucideIcons.info,
                     size: 16,
                     color: palette.secondaryIcon,
                   ),

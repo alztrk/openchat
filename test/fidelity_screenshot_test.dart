@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:openchat/app/openchat_theme.dart';
@@ -579,10 +580,10 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         await tester.ensureVisible(
-          find.widgetWithIcon(OutlinedButton, Icons.refresh_rounded).last,
+          find.widgetWithIcon(OutlinedButton, LucideIcons.refreshCw).last,
         );
         await tester.tap(
-          find.widgetWithIcon(OutlinedButton, Icons.refresh_rounded).last,
+          find.widgetWithIcon(OutlinedButton, LucideIcons.refreshCw).last,
         );
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_surface_card.dart';
@@ -96,11 +97,7 @@ class _PermissionIcon extends StatelessWidget {
       borderRadius: BorderRadius.circular(10),
     ),
     alignment: Alignment.center,
-    child: Icon(
-      Icons.lock_outline_rounded,
-      size: 18,
-      color: palette.accentIcon,
-    ),
+    child: Icon(LucideIcons.lockKeyhole, size: 18, color: palette.accentIcon),
   );
 }
 
@@ -144,12 +141,12 @@ class _RequestDetails extends StatelessWidget {
               request.toolName == 'web_search' ||
                       request.toolName == 'read_url_content' ||
                       request.toolName == 'read_url'
-                  ? Icons.language_rounded
+                  ? LucideIcons.globe
                   : (request.toolName == 'execute_command' ||
                             request.toolName == 'bash' ||
                             request.toolName == 'send_terminal_input'
-                        ? Icons.terminal_rounded
-                        : Icons.folder_open_outlined),
+                        ? LucideIcons.terminal
+                        : LucideIcons.folderOpen),
               size: 15,
               color: palette.secondaryIcon,
             ),

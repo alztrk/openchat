@@ -40,6 +40,7 @@ use self::response_parser::{
 
 const CHATGPT_CODEX_BASE: &str = "https://chatgpt.com/backend-api/codex";
 const CHATGPT_WHAM_BASE: &str = "https://chatgpt.com/backend-api/wham";
+const CHATGPT_FAST_SERVICE_TIER: &str = "priority";
 // The private catalog filters entries by its Codex client compatibility version, not OpenChat's product version.
 const CHATGPT_CLIENT_VERSION: &str = "0.157.0";
 const MODEL_CATALOG_CACHE_AGE: Duration = Duration::from_secs(6 * 60 * 60);
@@ -95,6 +96,7 @@ impl ChatGptService {
         self: &Arc<Self>,
         context: ChatSendContext<'_>,
         reasoning_effort: Option<&str>,
+        fast_mode: bool,
     ) -> Result<Value, ServiceError> {
         let conversation_id = context.conversation_id;
         let excluded_assistant_message_id = context.excluded_assistant_message_id;
@@ -132,6 +134,13 @@ impl ChatGptService {
                 false,
             )
         })?;
+        if fast_mode && !model.supports_fast_mode {
+            return Err(ServiceError::new(
+                "fast_mode_unsupported",
+                "Fast mode is not available for the selected ChatGPT model.",
+                false,
+            ));
+        }
         let context_state =
             chatgpt_store::load_conversation_context_state(&self.storage, conversation_id)
                 .map_err(database_error)?;
@@ -182,16 +191,19 @@ impl ChatGptService {
             .collect::<Vec<_>>();
         crate::history::validate_model_attachments(&messages, model.supports_images)?;
         let last_message_id = included_messages.last().map(|message| message.id.clone());
+        let tools = tools::definitions_for_chatgpt_model();
         let provider_request = ProviderChatRequest {
             model: model.id.clone(),
             instructions: instructions::shared_instructions(
                 custom_instructions,
                 context.permission_mode,
                 project_root.is_some(),
+                !tools.is_empty(),
+                "chatgpt",
             ),
             messages: Vec::new(),
             last_message_id,
-            tools: tools::definitions_for_chatgpt_model(),
+            tools,
             reasoning_effort: reasoning_effort
                 .filter(|effort| model.reasoning_levels.iter().any(|level| level == *effort))
                 .map(str::to_owned),
@@ -223,6 +235,9 @@ impl ChatGptService {
             "stream": true,
             "store": false,
         });
+        if fast_mode {
+            payload["service_tier"] = json!(CHATGPT_FAST_SERVICE_TIER);
+        }
         if !provider_request.tools.is_empty() {
             payload["tools"] = json!(
                 provider_request

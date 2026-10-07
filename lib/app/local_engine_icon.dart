@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 class LocalEngineIcon extends StatelessWidget {
@@ -38,7 +39,7 @@ class LocalEngineIcon extends StatelessWidget {
         fit: BoxFit.contain,
         excludeFromSemantics: true,
       ),
-      _ => Icon(Icons.memory_rounded, size: size, color: color),
+      _ => Icon(LucideIcons.microchip, size: size, color: color),
     };
 
     return SizedBox(

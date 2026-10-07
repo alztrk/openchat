@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:openchat/app/openchat_select.dart';
@@ -45,6 +46,11 @@ class ChatComposer extends StatelessWidget {
     this.favoriteModels = const <FavoriteModel>[],
     required this.providerId,
     this.isChatGptConnected = false,
+    this.chatGptFastModeEnabled = false,
+    this.chatGptFastModeAvailable = false,
+    this.chatGptFastModeLoading = false,
+    this.chatGptFastModeSaving = false,
+    this.onChatGptFastModeChanged,
     this.availableProviderIds = const <String>{},
     this.onProviderSelected,
     this.modelsEmptyLabel,
@@ -88,6 +94,11 @@ class ChatComposer extends StatelessWidget {
   final List<FavoriteModel> favoriteModels;
   final String providerId;
   final bool isChatGptConnected;
+  final bool chatGptFastModeEnabled;
+  final bool chatGptFastModeAvailable;
+  final bool chatGptFastModeLoading;
+  final bool chatGptFastModeSaving;
+  final ValueChanged<bool>? onChatGptFastModeChanged;
   final Set<String> availableProviderIds;
   final ValueChanged<String>? onProviderSelected;
   final String? modelsEmptyLabel;
@@ -241,6 +252,11 @@ class ChatComposer extends StatelessWidget {
                         favoriteModels: favoriteModels,
                         providerId: providerId,
                         isChatGptConnected: isChatGptConnected,
+                        chatGptFastModeEnabled: chatGptFastModeEnabled,
+                        chatGptFastModeAvailable: chatGptFastModeAvailable,
+                        chatGptFastModeLoading: chatGptFastModeLoading,
+                        chatGptFastModeSaving: chatGptFastModeSaving,
+                        onChatGptFastModeChanged: onChatGptFastModeChanged,
                         availableProviderIds: availableProviderIds,
                         onProviderSelected: onProviderSelected,
                         modelsEmptyLabel: modelsEmptyLabel,
@@ -299,6 +315,11 @@ class _ComposerActions extends StatelessWidget {
     required this.favoriteModels,
     required this.providerId,
     required this.isChatGptConnected,
+    required this.chatGptFastModeEnabled,
+    required this.chatGptFastModeAvailable,
+    required this.chatGptFastModeLoading,
+    required this.chatGptFastModeSaving,
+    required this.onChatGptFastModeChanged,
     required this.availableProviderIds,
     required this.onProviderSelected,
     required this.modelsEmptyLabel,
@@ -343,6 +364,11 @@ class _ComposerActions extends StatelessWidget {
   final List<FavoriteModel> favoriteModels;
   final String providerId;
   final bool isChatGptConnected;
+  final bool chatGptFastModeEnabled;
+  final bool chatGptFastModeAvailable;
+  final bool chatGptFastModeLoading;
+  final bool chatGptFastModeSaving;
+  final ValueChanged<bool>? onChatGptFastModeChanged;
   final Set<String> availableProviderIds;
   final ValueChanged<String>? onProviderSelected;
   final String? modelsEmptyLabel;
@@ -406,6 +432,11 @@ class _ComposerActions extends StatelessWidget {
       selectedModelRouteKey: selectedModelRouteKey,
       providerId: providerId,
       isChatGptConnected: isChatGptConnected,
+      chatGptFastModeEnabled: chatGptFastModeEnabled,
+      chatGptFastModeAvailable: chatGptFastModeAvailable,
+      chatGptFastModeLoading: chatGptFastModeLoading,
+      chatGptFastModeSaving: chatGptFastModeSaving,
+      onChatGptFastModeChanged: onChatGptFastModeChanged,
       availableProviderIds: availableProviderIds,
       onProviderSelected: onProviderSelected,
       isLoadingModels: isLoadingModels,
@@ -418,7 +449,6 @@ class _ComposerActions extends StatelessWidget {
     );
     final reasoningSelector = showReasoningSelector
         ? _ReasoningSelector(
-            label: l10n.reasoning,
             level: reasoningLevel,
             iconRoot: iconRoot,
             palette: palette,
@@ -433,7 +463,7 @@ class _ComposerActions extends StatelessWidget {
       mode: toolPermissionMode,
       palette: palette,
       compact: touchTargets,
-      width: narrow ? 128 : 136,
+      width: narrow ? 168 : 176,
       hasSelectedModel: selectedModelId != null,
       supportsToolCalls: contextSupportsTools,
       onSelected: onToolPermissionModeChanged,
@@ -462,7 +492,7 @@ class _ComposerActions extends StatelessWidget {
               focusColor: focusRing,
             ),
             child: Icon(
-              Icons.attach_file_rounded,
+              LucideIcons.paperclip,
               size: 18,
               color: attachmentsEnabled
                   ? palette.secondaryIcon
@@ -540,19 +570,8 @@ class _ComposerActions extends StatelessWidget {
                     shape: const CircleBorder(),
                   ),
                   icon: isSending
-                      ? const Icon(Icons.stop_rounded)
-                      : SvgPicture.asset(
-                          '$iconRoot/send.svg',
-                          width: 18,
-                          height: 18,
-                          colorFilter: ColorFilter.mode(
-                            actionEnabled
-                                ? primaryForeground
-                                : palette.disabledForeground,
-                            BlendMode.srcIn,
-                          ),
-                          excludeFromSemantics: true,
-                        ),
+                      ? const Icon(LucideIcons.square)
+                      : const Icon(LucideIcons.arrowUp, size: 18),
                 ),
               ),
             ),
@@ -614,7 +633,6 @@ class _ComposerActions extends StatelessWidget {
 
 class _ReasoningSelector extends StatelessWidget {
   const _ReasoningSelector({
-    required this.label,
     required this.level,
     required this.iconRoot,
     required this.palette,
@@ -625,7 +643,6 @@ class _ReasoningSelector extends StatelessWidget {
     required this.onSelected,
   });
 
-  final String label;
   final String? level;
   final String iconRoot;
   final OpenChatPalette palette;
@@ -640,8 +657,9 @@ class _ReasoningSelector extends StatelessWidget {
     final currentLevel = level;
     final l10n = context.openchatL10n;
     return Tooltip(
-      message:
-          '$label: ${currentLevel == null ? defaultHint : _reasoningLabel(context, currentLevel)}',
+      message: currentLevel == null
+          ? defaultHint
+          : _reasoningLabel(context, currentLevel),
       child: OpenChatSelect<String?>(
         options: [
           OpenChatSelectOption<String?>(
@@ -679,20 +697,6 @@ class _ReasoningSelector extends StatelessWidget {
                 BlendMode.srcIn,
               ),
               excludeFromSemantics: true,
-            ),
-            const SizedBox(width: 4),
-            Flexible(
-              child: Text(
-                '$label ·',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: palette.secondaryText,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w400,
-                  height: 16 / 11,
-                ),
-              ),
             ),
             const SizedBox(width: 4),
             Flexible(
@@ -739,10 +743,28 @@ class _ToolPermissionSelector extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.openchatL10n;
+    final warning = OpenChatSemanticColors.of(context).warning;
     final label = switch (mode) {
       ToolPermissionMode.requireApproval => l10n.toolPermissionRequireApproval,
+      ToolPermissionMode.approveSafeOperations =>
+        l10n.toolPermissionApproveSafeOperations,
       ToolPermissionMode.fullAccess => l10n.toolPermissionFullAccess,
     };
+    final description = switch (mode) {
+      ToolPermissionMode.requireApproval =>
+        l10n.toolPermissionRequireApprovalDescription,
+      ToolPermissionMode.approveSafeOperations =>
+        l10n.toolPermissionApproveSafeOperationsDescription,
+      ToolPermissionMode.fullAccess => l10n.toolPermissionFullAccessDescription,
+    };
+    final modeIcon = switch (mode) {
+      ToolPermissionMode.requireApproval => LucideIcons.hand,
+      ToolPermissionMode.approveSafeOperations => LucideIcons.shieldCheck,
+      ToolPermissionMode.fullAccess => LucideIcons.shieldAlert,
+    };
+    final modeColor = mode == ToolPermissionMode.fullAccess
+        ? warning
+        : palette.secondaryIcon;
     final selector = OpenChatSelect<ToolPermissionMode>(
       options: [
         for (final option in ToolPermissionMode.values)
@@ -751,22 +773,43 @@ class _ToolPermissionSelector extends StatelessWidget {
             label: switch (option) {
               ToolPermissionMode.requireApproval =>
                 l10n.toolPermissionRequireApproval,
+              ToolPermissionMode.approveSafeOperations =>
+                l10n.toolPermissionApproveSafeOperations,
               ToolPermissionMode.fullAccess => l10n.toolPermissionFullAccess,
             },
+            description: switch (option) {
+              ToolPermissionMode.requireApproval =>
+                l10n.toolPermissionRequireApprovalDescription,
+              ToolPermissionMode.approveSafeOperations =>
+                l10n.toolPermissionApproveSafeOperationsDescription,
+              ToolPermissionMode.fullAccess =>
+                l10n.toolPermissionFullAccessDescription,
+            },
             icon: switch (option) {
-              ToolPermissionMode.requireApproval => Icons.lock_outline_rounded,
-              ToolPermissionMode.fullAccess => Icons.lock_open_rounded,
+              ToolPermissionMode.requireApproval => LucideIcons.hand,
+              ToolPermissionMode.approveSafeOperations =>
+                LucideIcons.shieldCheck,
+              ToolPermissionMode.fullAccess => LucideIcons.shieldAlert,
             },
             iconColor: option == ToolPermissionMode.fullAccess
-                ? palette.accentIcon
+                ? warning
                 : palette.secondaryText,
+            descriptionColor: option == ToolPermissionMode.fullAccess
+                ? warning
+                : palette.secondaryText,
+            selectedColor: option == ToolPermissionMode.fullAccess
+                ? warning
+                : null,
+            textStyle: option == ToolPermissionMode.fullAccess
+                ? TextStyle(color: warning, fontSize: 13)
+                : null,
           ),
       ],
       value: mode,
       onChanged: onSelected,
       palette: palette,
       width: width,
-      menuWidth: width,
+      menuWidth: 440,
       height: composerControlHeight(context),
       compact: compact,
       triggerStyle: composerControlStyle(
@@ -778,17 +821,15 @@ class _ToolPermissionSelector extends StatelessWidget {
         rightPadding: 10,
         focusColor: _focusRingColor(context),
       ),
-      leadingIcon: mode == ToolPermissionMode.fullAccess
-          ? Icons.lock_open_rounded
-          : Icons.lock_outline_rounded,
-      leadingIconColor: palette.secondaryText,
+      leadingIcon: modeIcon,
+      leadingIconColor: modeColor,
       leadingIconGap: 5,
       selectedContent: Text(
         label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: Theme.of(context).textTheme.labelLarge?.copyWith(
-          color: palette.text,
+          color: mode == ToolPermissionMode.fullAccess ? warning : palette.text,
           fontSize: 13,
           fontWeight: FontWeight.w500,
           height: 18 / 13,
@@ -803,7 +844,9 @@ class _ToolPermissionSelector extends StatelessWidget {
             null => l10n.selectedModelToolSupportUnknown,
           };
     return Tooltip(
-      message: capabilityNotice == null ? label : '$label\n$capabilityNotice',
+      message: capabilityNotice == null
+          ? description
+          : '$description\n$capabilityNotice',
       child: selector,
     );
   }

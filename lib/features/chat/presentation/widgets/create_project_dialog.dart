@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
@@ -109,7 +110,7 @@ class _CreateProjectDialogState extends State<CreateProjectDialog> {
               child: Row(
                 children: [
                   Icon(
-                    Icons.folder_outlined,
+                    LucideIcons.folder,
                     size: 18,
                     color: palette.secondaryIcon,
                   ),
@@ -138,7 +139,7 @@ class _CreateProjectDialogState extends State<CreateProjectDialog> {
                       dimension: 16,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Icon(Icons.folder_open_outlined, size: 18),
+                  : const Icon(LucideIcons.folderOpen, size: 18),
               label: Text(l10n.chooseProjectFolder),
             ),
             if (_errorMessage case final String error) ...[

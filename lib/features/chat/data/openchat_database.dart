@@ -36,6 +36,7 @@ class Conversations extends Table {
     onDelete: KeyAction.setNull,
   )();
   BoolColumn get isPinned => boolean().withDefault(const Constant(false))();
+  BoolColumn get isArchived => boolean().withDefault(const Constant(false))();
   IntColumn get createdAt => integer()();
   IntColumn get updatedAt => integer()();
 
@@ -82,7 +83,7 @@ class OpenChatDatabase extends _$OpenChatDatabase {
   OpenChatDatabase.atPath(String databasePath)
     : super(_databaseAtPath(databasePath));
 
-  static const currentSchemaVersion = 10;
+  static const currentSchemaVersion = 11;
   static const minimumSqliteVersionNumber = 3051003;
 
   static bool supportsSqliteRuntime(int versionNumber) =>
@@ -258,6 +259,13 @@ class OpenChatDatabase extends _$OpenChatDatabase {
     }
     if (from < 10 && to >= 10) {
       await _addColumnIfMissing(migrator, messages, messages.failureCode);
+    }
+    if (from < 11 && to >= 11) {
+      await _addColumnIfMissing(
+        migrator,
+        conversations,
+        conversations.isArchived,
+      );
     }
   }
 

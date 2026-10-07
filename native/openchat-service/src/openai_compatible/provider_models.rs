@@ -178,6 +178,16 @@ fn parse_models(
                         })
                         .or(input_token_limit)
                         .filter(|value| *value > 0);
+                    let max_output_tokens = [
+                        item.pointer("/top_provider/max_completion_tokens"),
+                        item.get("max_completion_tokens"),
+                        details.and_then(|model| model.get("outputTokenLimit")),
+                        details.and_then(|model| model.get("max_completion_tokens")),
+                    ]
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_i64)
+                    .find(|limit| *limit > 0);
                     let supports_images = supports_images(provider_id, id, item, details);
                     let supports_tools = provider_tool_support(provider_id, id, item);
                     let reasoning_levels = if provider_id == "mistral" {
@@ -194,6 +204,7 @@ fn parse_models(
                         "supportsImages": supports_images,
                         "supportsTools": supports_tools,
                         "inputTokenLimit": input_token_limit,
+                        "maxOutputTokens": max_output_tokens,
                         "groupId": if provider_id == "openrouter" { "free" } else { "models" },
                         "defaultReasoningLevel": null,
                         "reasoningLevels": reasoning_levels,
@@ -454,10 +465,10 @@ pub(super) fn context_limits(
     provider_id: &str,
     api_key: &str,
     model_id: &str,
-) -> Result<(Option<i64>, Option<i64>), ServiceError> {
+) -> Result<(Option<i64>, Option<i64>, Option<i64>), ServiceError> {
     let key_hash = api_key_hash(api_key);
     let Some((models, _)) = load_catalog(storage, provider_id, &key_hash)? else {
-        return Ok((None, None));
+        return Ok((None, None, None));
     };
     let model = models
         .iter()
@@ -471,7 +482,11 @@ pub(super) fn context_limits(
         .and_then(Value::as_i64)
         .filter(|limit| *limit > 0)
         .map(|limit| context_window.map_or(limit, |context| limit.min(context)));
-    Ok((context_window, input_token_limit))
+    let max_output_tokens = model
+        .and_then(|model| model.get("maxOutputTokens"))
+        .and_then(Value::as_i64)
+        .filter(|limit| *limit > 0);
+    Ok((context_window, input_token_limit, max_output_tokens))
 }
 
 pub(super) fn supports_image_input(

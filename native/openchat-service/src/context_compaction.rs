@@ -167,6 +167,28 @@ pub(crate) fn request_context_token_estimate(value: &serde_json::Value) -> i64 {
     }
 }
 
+pub(crate) fn request_image_count(value: &serde_json::Value) -> i64 {
+    match value {
+        serde_json::Value::Object(object)
+            if matches!(
+                object.get("type").and_then(serde_json::Value::as_str),
+                Some("input_image" | "image_url")
+            ) =>
+        {
+            1
+        }
+        serde_json::Value::Object(object) => object
+            .values()
+            .map(request_image_count)
+            .fold(0_i64, i64::saturating_add),
+        serde_json::Value::Array(values) => values
+            .iter()
+            .map(request_image_count)
+            .fold(0_i64, i64::saturating_add),
+        _ => 0,
+    }
+}
+
 fn request_text_token_estimate(text: &str) -> i64 {
     let byte_length = text.len();
     let whitespace_count = text
@@ -293,11 +315,20 @@ pub(crate) fn should_compact(check: CompactionCheck<'_>) -> bool {
         )
         && let Some(last_prompt_index) = messages.iter().position(|m| m.id == last_message_id)
     {
+        let last_prompt_message = &messages[last_prompt_index];
+        let assistant_reply_tokens = if last_prompt_message.role == "assistant" {
+            text_token_estimate(&last_prompt_message.content)
+        } else {
+            0
+        };
         let new_tokens = messages[last_prompt_index + 1..]
             .iter()
             .map(message_token_estimate)
             .fold(0i64, i64::saturating_add);
-        return input_tokens.saturating_add(new_tokens) >= trigger_tokens(context_window);
+        return input_tokens
+            .saturating_add(assistant_reply_tokens)
+            .saturating_add(new_tokens)
+            >= trigger_tokens(context_window);
     }
 
     let after_compaction = if active_compaction_matches {

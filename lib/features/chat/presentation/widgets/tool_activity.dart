@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_surface_card.dart';
@@ -35,12 +36,12 @@ class ToolActivityAccordion extends StatelessWidget {
     };
     final statusIndicator = switch (activity.status) {
       ChatToolActivityStatus.awaitingApproval => Icon(
-        Icons.lock_outline_rounded,
+        LucideIcons.lockKeyhole,
         size: 12,
         color: palette.accent,
       ),
       ChatToolActivityStatus.waitingForUser => Icon(
-        Icons.question_answer_outlined,
+        LucideIcons.messageCircleQuestion,
         size: 12,
         color: palette.accent,
       ),
@@ -52,22 +53,22 @@ class ToolActivityAccordion extends StatelessWidget {
         ),
       ),
       ChatToolActivityStatus.completed => Icon(
-        Icons.check_circle_outline_rounded,
+        LucideIcons.circleCheck,
         size: 12,
         color: palette.secondaryIcon,
       ),
       ChatToolActivityStatus.failed => Icon(
-        Icons.error_outline_rounded,
+        LucideIcons.circleAlert,
         size: 12,
         color: Theme.of(context).colorScheme.error,
       ),
       ChatToolActivityStatus.denied => Icon(
-        Icons.block_rounded,
+        LucideIcons.ban,
         size: 12,
         color: Theme.of(context).colorScheme.error,
       ),
       ChatToolActivityStatus.cancelled => Icon(
-        Icons.cancel_outlined,
+        LucideIcons.circleX,
         size: 12,
         color: palette.secondaryIcon,
       ),
@@ -283,7 +284,7 @@ class _ToolActivityTechnicalDetails extends StatelessWidget {
           ),
         ),
         leading: Icon(
-          Icons.tune_rounded,
+          LucideIcons.slidersHorizontal,
           size: 15,
           color: palette.secondaryIcon,
         ),

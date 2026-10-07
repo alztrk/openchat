@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_dropdown.dart';
 import 'package:openchat/app/openchat_theme.dart';
@@ -10,13 +11,16 @@ class DraggableSidebarConversation extends StatelessWidget {
     super.key,
     required this.conversation,
     required this.child,
+    this.enabled = true,
   });
 
   final ConversationSidebarConversation conversation;
   final Widget child;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
+    if (!enabled) return child;
     final palette = OpenChatPalette.of(context);
 
     return Draggable<String>(
@@ -36,7 +40,7 @@ class DraggableSidebarConversation extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                Icons.chat_bubble_outline_rounded,
+                LucideIcons.messageCircle,
                 size: 14,
                 color: palette.secondaryIcon,
               ),
@@ -71,6 +75,7 @@ class SidebarConversationTile extends StatefulWidget {
     this.onRename,
     this.onDelete,
     this.onExport,
+    this.onArchive,
     super.key,
   });
 
@@ -84,6 +89,7 @@ class SidebarConversationTile extends StatefulWidget {
   final VoidCallback? onRename;
   final VoidCallback? onDelete;
   final VoidCallback? onExport;
+  final VoidCallback? onArchive;
 
   @override
   State<SidebarConversationTile> createState() =>
@@ -106,7 +112,13 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
         widget.onTogglePinned != null ||
         widget.onRename != null ||
         widget.onDelete != null ||
-        widget.onExport != null;
+        widget.onExport != null ||
+        widget.onArchive != null;
+    final hasMenuAction =
+        widget.onRename != null ||
+        widget.onDelete != null ||
+        widget.onExport != null ||
+        widget.onArchive != null;
     final showActions =
         hasActions &&
         (_hovered ||
@@ -145,7 +157,7 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                   children: [
                     if (widget.showChatIcon) ...[
                       Icon(
-                        Icons.chat_bubble_outline_rounded,
+                        LucideIcons.messageCircle,
                         size: 14,
                         color: palette.secondaryIcon,
                       ),
@@ -192,14 +204,12 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                                     onPressed: widget.onTogglePinned,
                                     icon: Icon(
                                       widget.conversation.isPinned
-                                          ? Icons.push_pin_rounded
-                                          : Icons.push_pin_outlined,
+                                          ? LucideIcons.pin
+                                          : LucideIcons.pin,
                                       size: 15,
                                     ),
                                   ),
-                                if (widget.onRename != null ||
-                                    widget.onDelete != null ||
-                                    widget.onExport != null)
+                                if (hasMenuAction)
                                   SizedBox(
                                     width: 32,
                                     height: 32,
@@ -222,6 +232,16 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                                             palette: palette,
                                             label: l10n.exportConversation,
                                             onPressed: onExport,
+                                          ),
+                                        if (widget.onArchive
+                                            case final onArchive?)
+                                          _menuActionItem(
+                                            palette: palette,
+                                            label:
+                                                widget.conversation.isArchived
+                                                ? l10n.restoreConversation
+                                                : l10n.archiveConversation,
+                                            onPressed: onArchive,
                                           ),
                                         if (onDelete != null)
                                           _menuActionItem(
@@ -248,7 +268,7 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                                                 ? controller.close()
                                                 : controller.open(),
                                             icon: const Icon(
-                                              Icons.more_horiz_rounded,
+                                              LucideIcons.ellipsis,
                                               size: 17,
                                             ),
                                           ),

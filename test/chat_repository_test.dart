@@ -120,6 +120,38 @@ void main() {
     },
   );
 
+  test(
+    'adds the archive state when upgrading a version ten database',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'openchat-archive-migration-',
+      );
+      late OpenChatDatabase database;
+      addTearDown(() async {
+        await database.close();
+        await directory.delete(recursive: true);
+      });
+      final path = '${directory.path}${Platform.pathSeparator}history.sqlite';
+      database = OpenChatDatabase(NativeDatabase(File(path)));
+      await ChatRepository(database).createConversation(
+        id: 'before-archive-upgrade',
+        title: 'Existing conversation',
+        createdAt: DateTime.utc(2026, 10, 7),
+      );
+      await database.customStatement(
+        'ALTER TABLE conversations DROP COLUMN is_archived',
+      );
+      await database.customStatement('PRAGMA user_version = 10');
+      await database.close();
+
+      database = OpenChatDatabase(NativeDatabase(File(path)));
+      final conversation = await ChatRepository(database)
+          .getConversation('before-archive-upgrade');
+      expect(conversation?.isArchived, isFalse);
+      expect(OpenChatDatabase.currentSchemaVersion, 11);
+    },
+  );
+
   test('does not save a message without its conversation', () async {
     final database = OpenChatDatabase(NativeDatabase.memory());
     addTearDown(database.close);
@@ -137,6 +169,62 @@ void main() {
       throwsA(isA<ConversationNotFoundException>()),
     );
   });
+
+  test(
+    'archives conversations without deleting messages and restores them',
+    () async {
+      final database = OpenChatDatabase(NativeDatabase.memory());
+      addTearDown(database.close);
+      final repository = ChatRepository(database);
+      final createdAt = DateTime.utc(2026, 10, 7);
+      await repository.createConversation(
+        id: 'archive-me',
+        title: 'Saved conversation',
+        createdAt: createdAt,
+      );
+      await repository.saveMessage(
+        conversationId: 'archive-me',
+        message: const ChatMessage(
+          id: 'saved-message',
+          role: ChatMessageRole.user,
+          content: 'Keep this message',
+        ),
+      );
+      await repository.setConversationPinned(
+        conversationId: 'archive-me',
+        isPinned: true,
+      );
+
+      await repository.setConversationArchived(
+        conversationId: 'archive-me',
+        isArchived: true,
+      );
+
+      expect(
+        (await repository.watchConversations().first).single.isArchived,
+        isTrue,
+      );
+      expect(
+        (await repository.watchArchivedConversations().first).single.isPinned,
+        isFalse,
+      );
+      expect(
+        (await repository.watchMessages('archive-me').first).single.content,
+        'Keep this message',
+      );
+
+      await repository.setConversationArchived(
+        conversationId: 'archive-me',
+        isArchived: false,
+      );
+
+      expect(
+        (await repository.watchConversations().first).single.isArchived,
+        isFalse,
+      );
+      expect(await repository.watchArchivedConversations().first, isEmpty);
+    },
+  );
 
   test(
     'streaming message updates do not reorder the conversation list',

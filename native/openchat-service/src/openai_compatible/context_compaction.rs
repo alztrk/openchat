@@ -6,6 +6,7 @@ use crate::{
     chatgpt_store::StoredMessage,
     context_compaction::{self, MIN_CONTEXT_WINDOW},
     protocol::ServiceError,
+    storage::AppStorage,
 };
 
 use super::route::ChatRoute;
@@ -20,7 +21,29 @@ const CONTEXT_PROMPT_BUDGET_PERCENT: i64 = 66;
 const SUMMARY_OUTPUT_BUDGET_DIVISOR: i64 = 16;
 const SUMMARY_PROMPT_OVERHEAD_BYTES: usize = 128;
 
+#[cfg(test)]
 pub(super) async fn summarize_history(
+    route: &ChatRoute,
+    api_key: Option<&str>,
+    session_id: Option<&str>,
+    existing_summary: Option<&str>,
+    messages: &[StoredMessage],
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<String, ServiceError> {
+    summarize_history_with_storage(
+        None,
+        route,
+        api_key,
+        session_id,
+        existing_summary,
+        messages,
+        cancellation,
+    )
+    .await
+}
+
+pub(super) async fn summarize_history_with_storage(
+    storage: Option<&AppStorage>,
     route: &ChatRoute,
     api_key: Option<&str>,
     session_id: Option<&str>,
@@ -32,7 +55,8 @@ pub(super) async fn summarize_history(
         .request_context_limit()
         .filter(|window| *window >= MIN_CONTEXT_WINDOW)
         .ok_or_else(invalid_response_error)?;
-    let max_output_tokens = max_summary_tokens(context_window);
+    let max_output_tokens =
+        max_summary_tokens(context_window).min(route.max_output_tokens.unwrap_or(i64::MAX));
     let summary_byte_limit = usize::try_from(max_output_tokens)
         .unwrap_or(0)
         .saturating_mul(4)
@@ -73,10 +97,15 @@ pub(super) async fn summarize_history(
             tool_activities: Vec::new(),
             attachments: Vec::new(),
         }];
-        for batch in HistoryBatcher::new(&previous_summary, history_batch_limit) {
+        for batch in HistoryBatcher::for_provider(
+            &previous_summary,
+            history_batch_limit,
+            route.provider_id.as_deref().unwrap_or_default(),
+        ) {
             let transcript = transcript_messages(summary.as_deref(), &batch);
             summary = Some(
-                summarize_transcript(
+                summarize_transcript_with_storage(
+                    storage,
                     route,
                     api_key,
                     session_id,
@@ -89,10 +118,15 @@ pub(super) async fn summarize_history(
             );
         }
     }
-    for history_batch in HistoryBatcher::new(messages, history_batch_limit) {
+    for history_batch in HistoryBatcher::for_provider(
+        messages,
+        history_batch_limit,
+        route.provider_id.as_deref().unwrap_or_default(),
+    ) {
         let transcript = transcript_messages(summary.as_deref(), &history_batch);
         summary = Some(
-            summarize_transcript(
+            summarize_transcript_with_storage(
+                storage,
                 route,
                 api_key,
                 session_id,
@@ -109,7 +143,31 @@ pub(super) async fn summarize_history(
         .ok_or_else(invalid_response_error)
 }
 
+#[cfg(test)]
 async fn summarize_transcript(
+    route: &ChatRoute,
+    api_key: Option<&str>,
+    session_id: Option<&str>,
+    transcript: &str,
+    max_output_tokens: i64,
+    summary_byte_limit: usize,
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<String, ServiceError> {
+    summarize_transcript_with_storage(
+        None,
+        route,
+        api_key,
+        session_id,
+        transcript,
+        max_output_tokens,
+        summary_byte_limit,
+        cancellation,
+    )
+    .await
+}
+
+async fn summarize_transcript_with_storage(
+    storage: Option<&AppStorage>,
     route: &ChatRoute,
     api_key: Option<&str>,
     session_id: Option<&str>,
@@ -200,6 +258,34 @@ async fn summarize_transcript(
         bytes.extend_from_slice(&chunk);
     }
     let value = serde_json::from_slice::<Value>(&bytes).map_err(|_| invalid_response_error())?;
+    let mut request_usage = None;
+    super::stream::update_provider_request_usage(&value, &mut request_usage);
+    if let (Some(storage), Some(provider_id)) = (
+        storage,
+        route
+            .provider_id
+            .as_deref()
+            .filter(|provider_id| matches!(*provider_id, "cerebras" | "mistral" | "openrouter")),
+    ) {
+        let usage = request_usage.unwrap_or_default();
+        if storage
+            .log_provider_request_usage(
+                provider_id,
+                &route.provider_model_id,
+                "compaction",
+                usage.prompt_tokens,
+                usage.completion_tokens,
+                usage.cached_tokens,
+                usage.cache_write_tokens,
+                usage.cache_discount,
+                context_compaction::request_context_token_estimate(&body).saturating_add(1024),
+                context_compaction::request_image_count(&body),
+            )
+            .is_err()
+        {
+            eprintln!("provider_usage_diagnostic_log_write_failed");
+        }
+    }
     let summary = if route.uses_responses_api {
         value
             .get("output")
@@ -258,6 +344,7 @@ struct HistoryBatcher<'a> {
     content_offset: usize,
     message_text: Option<String>,
     max_bytes: usize,
+    provider_id: Option<String>,
 }
 
 impl<'a> HistoryBatcher<'a> {
@@ -268,7 +355,14 @@ impl<'a> HistoryBatcher<'a> {
             content_offset: 0,
             message_text: None,
             max_bytes,
+            provider_id: None,
         }
+    }
+
+    fn for_provider(messages: &'a [StoredMessage], max_bytes: usize, provider_id: &str) -> Self {
+        let mut batcher = Self::new(messages, max_bytes);
+        batcher.provider_id = Some(provider_id.to_owned());
+        batcher
     }
 }
 
@@ -279,10 +373,15 @@ impl Iterator for HistoryBatcher<'_> {
         let mut batch = String::new();
         while self.message_index < self.messages.len() {
             if self.message_text.is_none() {
-                self.message_text = self
-                    .messages
-                    .get(self.message_index)
-                    .map(crate::history::summary_text);
+                let provider_id = self.provider_id.clone();
+                self.message_text = self.messages.get(self.message_index).map(|message| {
+                    match provider_id.as_deref() {
+                        Some(provider_id) => {
+                            crate::history::summary_text_for_provider(message, provider_id)
+                        }
+                        None => crate::history::summary_text(message),
+                    }
+                });
             }
             let Some(message) = self.messages.get(self.message_index) else {
                 return (!batch.is_empty()).then_some(batch);
@@ -495,6 +594,7 @@ mod tests {
             uses_responses_api: false,
             context_window: Some(2048),
             input_token_limit: None,
+            max_output_tokens: None,
             supports_images: false,
             supports_tool_calls: None,
             connection_id: Some("gemini".to_owned()),
@@ -607,6 +707,7 @@ mod tests {
             uses_responses_api: false,
             context_window: Some(context_window),
             input_token_limit: None,
+            max_output_tokens: None,
             supports_images: false,
             supports_tool_calls: None,
             connection_id: None,
@@ -660,6 +761,7 @@ mod tests {
             uses_responses_api: false,
             context_window: Some(2048),
             input_token_limit: None,
+            max_output_tokens: None,
             supports_images: false,
             supports_tool_calls: None,
             connection_id: None,
@@ -699,6 +801,7 @@ mod tests {
             uses_responses_api: false,
             context_window: Some(2048),
             input_token_limit: None,
+            max_output_tokens: None,
             supports_images: false,
             supports_tool_calls: None,
             connection_id: None,
@@ -745,6 +848,7 @@ mod tests {
             uses_responses_api: false,
             context_window: Some(2048),
             input_token_limit: None,
+            max_output_tokens: None,
             supports_images: false,
             supports_tool_calls: None,
             connection_id: None,

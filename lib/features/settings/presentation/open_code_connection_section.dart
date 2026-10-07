@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
@@ -119,16 +120,13 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
           onPressed: _saving
               ? null
               : () => setState(() => _showForm = !_showForm),
-          icon: Icon(
-            hasKey ? Icons.edit_outlined : Icons.add_rounded,
-            size: 16,
-          ),
+          icon: Icon(hasKey ? LucideIcons.pencil : LucideIcons.plus, size: 16),
           label: Text(hasKey ? l10n.edit : l10n.add),
         ),
         if (hasKey)
           TextButton.icon(
             onPressed: _saving ? null : _remove,
-            icon: const Icon(Icons.delete_outline_rounded, size: 16),
+            icon: const Icon(LucideIcons.trash2, size: 16),
             label: Text(l10n.deleteAll),
           ),
       ],

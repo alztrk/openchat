@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
@@ -114,7 +115,7 @@ class ToolTerminalResult extends StatelessWidget {
           Row(
             children: [
               Icon(
-                Icons.terminal_rounded,
+                LucideIcons.terminal,
                 size: 15,
                 color: palette.secondaryIcon,
               ),
@@ -146,7 +147,7 @@ class ToolTerminalResult extends StatelessWidget {
                     minWidth: 24,
                     minHeight: 24,
                   ),
-                  icon: Icon(Icons.copy_rounded, color: palette.secondaryIcon),
+                  icon: Icon(LucideIcons.copy, color: palette.secondaryIcon),
                   onPressed: () {
                     final textToCopy = cleanedOutput.isNotEmpty
                         ? cleanedOutput
@@ -310,11 +311,7 @@ class ToolTerminalResult extends StatelessWidget {
             const SizedBox(height: 6),
             Row(
               children: [
-                Icon(
-                  Icons.info_outline_rounded,
-                  size: 13,
-                  color: palette.secondaryIcon,
-                ),
+                Icon(LucideIcons.info, size: 13, color: palette.secondaryIcon),
                 const SizedBox(width: 5),
                 Expanded(
                   child: Text(

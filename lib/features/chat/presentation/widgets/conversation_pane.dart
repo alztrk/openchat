@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:intl/intl.dart';
 
@@ -48,6 +49,11 @@ class ConversationPane extends StatelessWidget {
     this.favoriteModels = const <FavoriteModel>[],
     required this.providerId,
     this.isChatGptConnected = false,
+    this.chatGptFastModeEnabled = false,
+    this.chatGptFastModeAvailable = false,
+    this.chatGptFastModeLoading = false,
+    this.chatGptFastModeSaving = false,
+    this.onChatGptFastModeChanged,
     this.availableProviderIds = const <String>{},
     this.onProviderSelected,
     this.hiddenModelKeys = const <String>{},
@@ -130,6 +136,11 @@ class ConversationPane extends StatelessWidget {
   final List<FavoriteModel> favoriteModels;
   final String providerId;
   final bool isChatGptConnected;
+  final bool chatGptFastModeEnabled;
+  final bool chatGptFastModeAvailable;
+  final bool chatGptFastModeLoading;
+  final bool chatGptFastModeSaving;
+  final ValueChanged<bool>? onChatGptFastModeChanged;
   final Set<String> availableProviderIds;
   final ValueChanged<String>? onProviderSelected;
   final Set<String> hiddenModelKeys;
@@ -294,7 +305,7 @@ class ConversationPane extends StatelessWidget {
                       child: Row(
                         children: [
                           Icon(
-                            Icons.error_outline_rounded,
+                            LucideIcons.circleAlert,
                             size: 16,
                             color: Theme.of(context).colorScheme.error,
                           ),
@@ -350,6 +361,11 @@ class ConversationPane extends StatelessWidget {
                     favoriteModels: favoriteModels,
                     providerId: providerId,
                     isChatGptConnected: isChatGptConnected,
+                    chatGptFastModeEnabled: chatGptFastModeEnabled,
+                    chatGptFastModeAvailable: chatGptFastModeAvailable,
+                    chatGptFastModeLoading: chatGptFastModeLoading,
+                    chatGptFastModeSaving: chatGptFastModeSaving,
+                    onChatGptFastModeChanged: onChatGptFastModeChanged,
                     availableProviderIds: availableProviderIds,
                     onProviderSelected: onProviderSelected,
                     modelsEmptyLabel: modelsEmptyLabel,
@@ -450,7 +466,7 @@ class _ConversationMessageError extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  Icons.error_outline_rounded,
+                  LucideIcons.circleAlert,
                   color: Theme.of(context).colorScheme.error,
                   size: 24,
                 ),
@@ -1090,7 +1106,7 @@ class _FileChangesButton extends StatelessWidget {
     final l10n = context.openchatL10n;
     return OutlinedButton.icon(
       onPressed: onPressed,
-      icon: const Icon(Icons.difference_outlined, size: 16),
+      icon: const Icon(LucideIcons.fileDiff, size: 16),
       label: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1487,7 +1503,7 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
                 message: widget.historyButtonTooltip ?? l10n.historyOpen,
                 child: IconButton(
                   onPressed: widget.onOpenHistory,
-                  icon: const Icon(Icons.menu_rounded),
+                  icon: const Icon(LucideIcons.menu),
                 ),
               ),
               const SizedBox(width: 12),
@@ -1565,7 +1581,7 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
                                         strokeWidth: 2,
                                       ),
                                     )
-                                  : const Icon(Icons.check_rounded, size: 18),
+                                  : const Icon(LucideIcons.check, size: 18),
                             ),
                             IconButton(
                               tooltip: l10n.cancel,
@@ -1576,7 +1592,7 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
                               ),
                               padding: EdgeInsets.zero,
                               onPressed: _isSaving ? null : _cancelTitleEdit,
-                              icon: const Icon(Icons.close_rounded, size: 18),
+                              icon: const Icon(LucideIcons.x, size: 18),
                             ),
                           ],
                         ),

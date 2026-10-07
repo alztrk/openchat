@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:intl/intl.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
@@ -56,7 +57,7 @@ class _ConversationArchiveSectionState
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(Icons.enhanced_encryption_outlined, color: palette.accent),
+              Icon(LucideIcons.shieldCheck, color: palette.accent),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -92,14 +93,14 @@ class _ConversationArchiveSectionState
                 onPressed: enabled
                     ? () => unawaited(_exportConversations())
                     : null,
-                icon: const Icon(Icons.archive_outlined, size: 18),
+                icon: const Icon(LucideIcons.archive, size: 18),
                 label: Text(l10n.exportConversations),
               ),
               OutlinedButton.icon(
                 onPressed: enabled
                     ? () => unawaited(_importConversations())
                     : null,
-                icon: const Icon(Icons.unarchive_outlined, size: 18),
+                icon: const Icon(LucideIcons.archiveRestore, size: 18),
                 label: Text(l10n.importConversations),
               ),
             ],
@@ -347,7 +348,7 @@ class _ConversationArchiveExportDialogState
                 controller: _searchController,
                 onChanged: (value) => setState(() => _search = value.trim()),
                 decoration: InputDecoration(
-                  prefixIcon: const Icon(Icons.search_rounded),
+                  prefixIcon: const Icon(LucideIcons.search),
                   hintText: l10n.conversationArchiveSearch,
                   isDense: true,
                 ),
@@ -471,7 +472,7 @@ class _ConversationArchiveExportDialogState
                     ),
                   );
                 },
-          icon: const Icon(Icons.lock_outline_rounded, size: 18),
+          icon: const Icon(LucideIcons.lockKeyhole, size: 18),
           label: Text(l10n.exportConversations),
         ),
       ],
@@ -575,7 +576,7 @@ class _ConversationArchiveRestoreDialogState
         ),
         FilledButton.icon(
           onPressed: () => Navigator.of(context).pop(_policy),
-          icon: const Icon(Icons.unarchive_outlined, size: 18),
+          icon: const Icon(LucideIcons.archiveRestore, size: 18),
           label: Text(l10n.importConversations),
         ),
       ],
