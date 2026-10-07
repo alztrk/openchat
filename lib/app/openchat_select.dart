@@ -83,9 +83,11 @@ class OpenChatSelect<T> extends StatelessWidget {
                 ? () => onChanged!(option.value)
                 : null,
             style: OpenChatDropdown.menuItemStyle(palette),
-            child: SizedBox(
-              width: resolvedMenuWidth,
-              height: 42,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: 44,
+                maxWidth: resolvedMenuWidth,
+              ),
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: option.value == value
@@ -96,7 +98,10 @@ class OpenChatSelect<T> extends StatelessWidget {
                   borderRadius: BorderRadius.circular(7),
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                   child: Row(
                     children: [
                       if (option.icon != null) ...[
@@ -112,8 +117,6 @@ class OpenChatSelect<T> extends StatelessWidget {
                       Expanded(
                         child: Text(
                           option.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style:
                               option.textStyle?.copyWith(
                                 color: option.enabled
@@ -149,7 +152,10 @@ class OpenChatSelect<T> extends StatelessWidget {
       ],
       builder: (context, controller, _) => SizedBox(
         width: width,
-        height: height,
+        height: math.max(
+          height,
+          MediaQuery.textScalerOf(context).scale(18) + 12,
+        ),
         child: OutlinedButton(
           onPressed: onChanged == null || options.isEmpty
               ? null

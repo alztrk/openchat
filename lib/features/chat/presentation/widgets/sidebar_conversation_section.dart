@@ -48,7 +48,7 @@ class SidebarConversationSection extends StatelessWidget {
           children: [
             AnimatedContainer(
               duration: const Duration(milliseconds: 120),
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 6),
               decoration: BoxDecoration(
                 color: isDropTarget ? palette.hover : Colors.transparent,
                 borderRadius: BorderRadius.circular(6),
@@ -61,7 +61,7 @@ class SidebarConversationSection extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 6),
+            const SizedBox(height: 4),
             if (conversations.isEmpty)
               Padding(
                 padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
@@ -76,15 +76,15 @@ class SidebarConversationSection extends StatelessWidget {
               )
             else
               for (var index = 0; index < conversations.length; index++) ...[
-                if (index > 0) const SizedBox(height: 4),
+                if (index > 0) const SizedBox(height: 2),
                 DraggableSidebarConversation(
                   conversation: conversations[index],
                   child: SidebarConversationTile(
                     conversation: conversations[index],
                     selected: conversations[index].id == selectedConversationId,
                     height: itemHeight,
-                    inset: 10,
-                    showChatIcon: true,
+                    inset: 8,
+                    showChatIcon: false,
                     onPressed: onSelectConversation == null
                         ? null
                         : () => onSelectConversation!(conversations[index].id),

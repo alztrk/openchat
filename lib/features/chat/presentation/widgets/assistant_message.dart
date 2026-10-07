@@ -36,15 +36,16 @@ class AssistantMessage extends StatelessWidget {
     final conversationStyle = OpenChatConversationStyle.of(context);
     final l10n = context.openchatL10n;
     final localeName = l10n.localeName;
-    final tokensPerSecond = message.tokensPerSecond == null
-        ? l10n.unavailableValue
-        : NumberFormat('0.#', localeName).format(message.tokensPerSecond);
-    final outputTokens = message.outputTokens == null
-        ? l10n.unavailableValue
-        : NumberFormat.decimalPattern(localeName).format(message.outputTokens);
-    final timestamp = message.createdAt == null
-        ? l10n.unavailableTime
-        : DateFormat.Hm(localeName).format(message.createdAt!.toLocal());
+    final metadata = <String>[
+      if (message.tokensPerSecond case final rate?)
+        l10n.responseTokenRate(NumberFormat('0.#', localeName).format(rate)),
+      if (message.outputTokens case final count?)
+        l10n.responseTokenCount(
+          NumberFormat.decimalPattern(localeName).format(count),
+        ),
+      if (message.createdAt case final createdAt?)
+        DateFormat.Hm(localeName).format(createdAt.toLocal()),
+    ];
     final responseStatus = _responseStatusLabel(context, message);
     final waitingForFirstText =
         message.status == ChatMessageStatus.streaming &&
@@ -94,15 +95,10 @@ class AssistantMessage extends StatelessWidget {
                 ),
               ] else ...[
                 const SizedBox(height: 6),
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    minHeight: message.content.contains('\n\n') ? 96 : 40,
-                  ),
-                  child: _AssistantResponseContent(
-                    content: message.content,
-                    isStreaming: message.status == ChatMessageStatus.streaming,
-                    palette: palette,
-                  ),
+                _AssistantResponseContent(
+                  content: message.content,
+                  isStreaming: message.status == ChatMessageStatus.streaming,
+                  palette: palette,
                 ),
               ],
               if (message.attachments.isNotEmpty) ...[
@@ -120,19 +116,16 @@ class AssistantMessage extends StatelessWidget {
                 runSpacing: 0,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  Text(
-                    l10n.responseMetadata(
-                      tokensPerSecond,
-                      outputTokens,
-                      timestamp,
+                  if (metadata.isNotEmpty)
+                    Text(
+                      metadata.join(' · '),
+                      style: TextStyle(
+                        color: palette.secondaryText,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                        height: 18 / 12,
+                      ),
                     ),
-                    style: TextStyle(
-                      color: palette.secondaryText,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w400,
-                      height: 18 / 12,
-                    ),
-                  ),
                   if (responseStatus != null)
                     Text(
                       responseStatus,
@@ -278,8 +271,8 @@ class _AssistantModelHeader extends StatelessWidget {
     final l10n = context.openchatL10n;
     final displayModelLabel = modelLabel?.trim();
 
-    return SizedBox(
-      height: 20,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 20),
       child: Row(
         children: [
           ProviderIcon(
@@ -296,7 +289,7 @@ class _AssistantModelHeader extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: palette.accent,
+                color: palette.text,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
                 height: 20 / 13,

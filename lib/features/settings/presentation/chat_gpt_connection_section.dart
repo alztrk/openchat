@@ -567,7 +567,9 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
                       ],
                     );
 
-                    if (constraints.maxWidth < 520) {
+                    if (constraints.maxWidth /
+                            MediaQuery.textScalerOf(context).scale(1) <
+                        520) {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [

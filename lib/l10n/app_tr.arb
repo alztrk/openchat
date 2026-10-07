@@ -831,13 +831,13 @@
   "today": "Bugün",
   "unavailableTime": "—:—",
   "unavailableValue": "—",
-  "responseMetadata": "{rate} t/s · {tokens} token · {time}",
-  "@responseMetadata": {
-    "placeholders": {
-      "rate": { "type": "String" },
-      "tokens": { "type": "String" },
-      "time": { "type": "String" }
-    }
+  "responseTokenRate": "{rate} t/s",
+  "@responseTokenRate": {
+    "placeholders": { "rate": { "type": "String" } }
+  },
+  "responseTokenCount": "{count} token",
+  "@responseTokenCount": {
+    "placeholders": { "count": { "type": "String" } }
   },
   "responseCompleted": "Yanıt tamamlandı",
   "responseCompletedWithDuration": "Yanıt tamamlandı · {duration}",

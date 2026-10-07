@@ -39,3 +39,9 @@ Windows development requires Flutter, Rust with Cargo, and the Visual Studio C++
 - `git diff --check`
 
 The Windows workflow uploads the portable executable as a short-lived build artifact. It does not publish a GitHub release. Live provider-account checks remain deferred until the first GitHub release.
+
+Visual regression checks live in `test/fidelity_screenshot_test.dart`. They render the existing Flutter components in both themes with isolated test data, check narrow windows and enlarged text, and exercise the history drawer and virtual-keyboard layout. The files in `test/goldens` are local rendering baselines, not evidence of a live provider connection.
+
+For an intentional visual change, run `flutter test --no-pub --update-goldens test/fidelity_screenshot_test.dart`, inspect the changed images, then run `flutter test --no-pub` without updating baselines. Check the composer with all applicable selectors visible: fitting the default empty state alone does not prove the controls fit a narrow window.
+
+Open menus and provider forms at 200% text scale, visit every settings section, and check both narrow and short windows. Scope repeated navigation labels to their page so a test cannot accidentally open the global model catalog instead of model settings. Keep empty and unavailable states reachable without a connected service. Verify focus, Escape dismissal, disabled actions, and touch targets before accepting new visual baselines.

@@ -1016,19 +1016,13 @@
   "today": "Heute",
   "unavailableTime": "—:—",
   "unavailableValue": "—",
-  "responseMetadata": "{rate} Tok/s · {tokens} Tokens · {time}",
-  "@responseMetadata": {
-    "placeholders": {
-      "rate": {
-        "type": "String"
-      },
-      "tokens": {
-        "type": "String"
-      },
-      "time": {
-        "type": "String"
-      }
-    }
+  "responseTokenRate": "{rate} Tok/s",
+  "@responseTokenRate": {
+    "placeholders": { "rate": { "type": "String" } }
+  },
+  "responseTokenCount": "{count} Tokens",
+  "@responseTokenCount": {
+    "placeholders": { "count": { "type": "String" } }
   },
   "responseCompleted": "Antwort abgeschlossen",
   "responseCompletedWithDuration": "Antwort abgeschlossen · {duration}",

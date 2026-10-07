@@ -1016,19 +1016,13 @@
   "today": "Aujourd'hui",
   "unavailableTime": "—:—",
   "unavailableValue": "—",
-  "responseMetadata": "{rate} jetons/s · {tokens} jetons · {time}",
-  "@responseMetadata": {
-    "placeholders": {
-      "rate": {
-        "type": "String"
-      },
-      "tokens": {
-        "type": "String"
-      },
-      "time": {
-        "type": "String"
-      }
-    }
+  "responseTokenRate": "{rate} jetons/s",
+  "@responseTokenRate": {
+    "placeholders": { "rate": { "type": "String" } }
+  },
+  "responseTokenCount": "{count} jetons",
+  "@responseTokenCount": {
+    "placeholders": { "count": { "type": "String" } }
   },
   "responseCompleted": "Réponse terminée",
   "responseCompletedWithDuration": "Réponse terminée · {duration}",

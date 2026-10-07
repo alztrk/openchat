@@ -9,6 +9,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:intl/intl.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/app/openchat_brand_mark.dart';
 import 'package:openchat/app/openchat_toast.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
 import 'package:openchat/features/chat/data/chat_file_changes_repository.dart';
@@ -202,7 +203,7 @@ class ConversationPane extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.openchatL10n;
 
-    return LayoutBuilder(
+    final content = LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 640;
         final horizontalPadding = compact
@@ -242,10 +243,7 @@ class ConversationPane extends StatelessWidget {
             : messages.isEmpty &&
                   !showAssistantLoading &&
                   historySearchTargetMessageId == null
-            ? _NewConversationEmptyState(
-                title: l10n.emptyChatWelcomeTitle,
-                description: l10n.emptyChatWelcomeBody,
-              )
+            ? _NewConversationEmptyState(title: l10n.emptyChatWelcomeTitle)
             : _ConversationHistory(
                 messages: messages,
                 messagesLoaded: true,
@@ -265,7 +263,9 @@ class ConversationPane extends StatelessWidget {
             horizontalPadding,
             0,
             horizontalPadding,
-            24,
+            constraints.maxHeight <= 320
+                ? OpenChatSpacing.mainSurfaceInset
+                : OpenChatSpacing.composerBottomInset,
           ),
           child: Center(
             child: ConstrainedBox(
@@ -425,6 +425,10 @@ class ConversationPane extends StatelessWidget {
         );
       },
     );
+    return ColoredBox(
+      color: OpenChatPalette.of(context).surface,
+      child: SafeArea(left: false, right: false, child: content),
+    );
   }
 }
 
@@ -440,11 +444,26 @@ class _ConversationMessageError extends StatelessWidget {
         padding: const EdgeInsets.all(24),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 440),
-          child: Text(
-            description,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium
-                ?.copyWith(color: OpenChatPalette.of(context).secondaryText),
+          child: Semantics(
+            liveRegion: true,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.error_outline_rounded,
+                  color: Theme.of(context).colorScheme.error,
+                  size: 24,
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  description,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: OpenChatPalette.of(context).secondaryText,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1127,13 +1146,13 @@ class _ConversationDateLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.openchatL10n;
     final localDate = createdAt?.toLocal();
-    final label =
-        localDate == null || DateUtils.isSameDay(localDate, DateTime.now())
+    if (localDate == null) return const SizedBox.shrink();
+    final label = DateUtils.isSameDay(localDate, DateTime.now())
         ? l10n.today
         : DateFormat.yMMMMd(l10n.localeName).format(localDate);
 
-    return SizedBox(
-      height: 20,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 20),
       child: Center(
         child: Text(
           label,
@@ -1159,157 +1178,139 @@ class _UserMessage extends StatelessWidget {
     final palette = OpenChatPalette.of(context);
     final conversationStyle = OpenChatConversationStyle.of(context);
     final l10n = context.openchatL10n;
-    final timestamp = message.createdAt == null
-        ? l10n.unavailableTime
-        : DateFormat.Hm(l10n.localeName).format(message.createdAt!.toLocal());
+    final timestamp = switch (message.createdAt) {
+      final createdAt? => DateFormat.Hm(
+        l10n.localeName,
+      ).format(createdAt.toLocal()),
+      null => null,
+    };
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Align(
-          alignment: Alignment.centerRight,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Flexible(
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxWidth:
-                          conversationStyle.maxWidth *
-                          (540 / OpenChatSpacing.conversationMaxWidth),
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
+    return Semantics(
+      label: l10n.userMessage,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Flexible(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth:
+                            conversationStyle.maxWidth *
+                            (540 / OpenChatSpacing.conversationMaxWidth),
                       ),
-                      decoration: BoxDecoration(
-                        color: palette.composer,
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(16),
-                          topRight: Radius.circular(16),
-                          bottomLeft: Radius.circular(16),
-                          bottomRight: Radius.circular(4),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          color: palette.composer,
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(16),
+                            topRight: Radius.circular(16),
+                            bottomLeft: Radius.circular(16),
+                            bottomRight: Radius.circular(4),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (message.content.isNotEmpty)
+                              Text(
+                                message.content,
+                                style: TextStyle(
+                                  color: palette.text,
+                                  fontFamily: conversationStyle.fontFamily,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w400,
+                                  height: 22 / 15,
+                                ),
+                              ),
+                            if (message.attachments.isNotEmpty) ...[
+                              if (message.content.isNotEmpty)
+                                const SizedBox(height: 10),
+                              ChatAttachmentGallery(
+                                attachments: message.attachments,
+                                palette: palette,
+                                preferredImageWidth: 280,
+                                imageHeight: 200,
+                              ),
+                            ],
+                          ],
                         ),
                       ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (message.content.isNotEmpty)
-                            Text(
-                              message.content,
-                              style: TextStyle(
-                                color: palette.text,
-                                fontFamily: conversationStyle.fontFamily,
-                                fontSize: 15,
-                                fontWeight: FontWeight.w400,
-                                height: 22 / 15,
-                              ),
-                            ),
-                          if (message.attachments.isNotEmpty) ...[
-                            if (message.content.isNotEmpty)
-                              const SizedBox(height: 10),
-                            ChatAttachmentGallery(
-                              attachments: message.attachments,
-                              palette: palette,
-                              preferredImageWidth: 280,
-                              imageHeight: 200,
-                            ),
-                          ],
-                        ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.only(right: 20),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (timestamp != null) ...[
+                    Text(
+                      timestamp,
+                      textAlign: TextAlign.right,
+                      style: TextStyle(
+                        color: palette.secondaryText,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w400,
+                        height: 18 / 12,
                       ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Tooltip(
-                    message: l10n.userMessage,
-                    child: Icon(
-                      Icons.person_outline_rounded,
-                      size: 20,
-                      color: palette.secondaryIcon,
-                      semanticLabel: l10n.userMessage,
-                    ),
-                  ),
-                ),
-              ],
+                    const SizedBox(width: 4),
+                  ],
+                  if (message.content.trim().isNotEmpty)
+                    CopyMessageButton(content: message.content),
+                ],
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 2),
-        Align(
-          alignment: Alignment.centerRight,
-          child: Padding(
-            padding: const EdgeInsets.only(right: 20),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  timestamp,
-                  textAlign: TextAlign.right,
-                  style: TextStyle(
-                    color: palette.secondaryText,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w400,
-                    height: 18 / 12,
-                  ),
-                ),
-                const SizedBox(width: 4),
-                CopyMessageButton(content: message.content),
-                const SizedBox(width: 28),
-              ],
-            ),
-          ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
 class _NewConversationEmptyState extends StatelessWidget {
-  const _NewConversationEmptyState({
-    required this.title,
-    required this.description,
-  });
+  const _NewConversationEmptyState({required this.title});
 
   final String title;
-  final String description;
 
   @override
   Widget build(BuildContext context) {
     final palette = OpenChatPalette.of(context);
 
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            const ExcludeSemantics(child: OpenChatBrandMark(size: 40)),
+            const SizedBox(height: 24),
             Text(
               title,
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: palette.text,
-                fontSize: 26,
-                fontWeight: FontWeight.w600,
-                height: 34 / 26,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              description,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: palette.secondaryText,
-                fontSize: 15,
-                fontWeight: FontWeight.w400,
-                height: 24 / 15,
+                fontSize: 22,
+                fontWeight: FontWeight.w500,
+                height: 30 / 22,
               ),
             ),
           ],
@@ -1463,10 +1464,20 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
     final palette = OpenChatPalette.of(context);
     final canRename =
         widget.conversationId != null && widget.onRenameConversation != null;
+    final showTitle =
+        widget.conversationId != null || widget.title != l10n.conversationTitle;
 
-    return SizedBox(
+    return ConstrainedBox(
       key: const ValueKey<String>('conversation-header'),
-      height: OpenChatSpacing.conversationHeaderHeight,
+      constraints: BoxConstraints(
+        minHeight: OpenChatSpacing.conversationHeaderHeight,
+        maxHeight: showTitle
+            ? math.max(
+                OpenChatSpacing.conversationHeaderHeight,
+                MediaQuery.textScalerOf(context).scale(14) * (20 / 14) + 18,
+              )
+            : OpenChatSpacing.conversationHeaderHeight,
+      ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Row(
@@ -1481,15 +1492,17 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
               ),
               const SizedBox(width: 12),
             ],
-            SvgPicture.asset(
-              Theme.of(context).brightness == Brightness.dark
-                  ? 'assets/icons/conversation/dark.svg'
-                  : 'assets/icons/conversation/light.svg',
-              width: 18,
-              height: 18,
-              excludeFromSemantics: true,
-            ),
-            const SizedBox(width: 10),
+            if (showTitle) ...[
+              SvgPicture.asset(
+                Theme.of(context).brightness == Brightness.dark
+                    ? 'assets/icons/conversation/dark.svg'
+                    : 'assets/icons/conversation/light.svg',
+                width: 18,
+                height: 18,
+                excludeFromSemantics: true,
+              ),
+              const SizedBox(width: 10),
+            ],
             Expanded(
               child: _isEditing
                   ? Align(
@@ -1575,14 +1588,14 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 4),
                         child: Text(
-                          widget.title,
+                          showTitle ? widget.title : '',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: palette.text,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            height: 24 / 16,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            height: 20 / 13,
                           ),
                         ),
                       ),

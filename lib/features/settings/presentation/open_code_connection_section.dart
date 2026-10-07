@@ -192,7 +192,9 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
                         ? l10n.openCodeKeySaved(_keySuffix!)
                         : l10n.openCodeNoKey,
                   );
-                  if (constraints.maxWidth < 520) {
+                  if (constraints.maxWidth /
+                          MediaQuery.textScalerOf(context).scale(1) <
+                      520) {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -212,29 +214,31 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
                 },
               ),
             if (_showForm)
-              Row(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      obscureText: true,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      decoration: InputDecoration(
-                        labelText: l10n.openCodeApiKey,
-                        errorText: _error == 'invalid'
-                            ? l10n.openCodeKeyInvalid
-                            : _error == 'storage'
-                            ? l10n.openCodeKeyStorageFailed
-                            : null,
-                      ),
-                      onSubmitted: (_) => unawaited(_save()),
+                  TextField(
+                    controller: _controller,
+                    obscureText: true,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    decoration: InputDecoration(
+                      labelText: l10n.openCodeApiKey,
+                      errorText: _error == 'invalid'
+                          ? l10n.openCodeKeyInvalid
+                          : _error == 'storage'
+                          ? l10n.openCodeKeyStorageFailed
+                          : null,
                     ),
+                    onSubmitted: (_) => unawaited(_save()),
                   ),
-                  const SizedBox(width: 12),
-                  FilledButton(
-                    onPressed: _saving ? null : _save,
-                    child: Text(_saving ? l10n.saving : l10n.save),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton(
+                      onPressed: _saving ? null : _save,
+                      child: Text(_saving ? l10n.saving : l10n.save),
+                    ),
                   ),
                 ],
               ),

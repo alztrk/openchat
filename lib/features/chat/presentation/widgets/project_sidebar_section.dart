@@ -66,6 +66,7 @@ class ProjectSidebarSection extends StatelessWidget {
           title: l10n.projects,
           createProjectLabel: l10n.createProject,
           onCreateProject: onCreateProject,
+          alwaysShowAction: projects.isEmpty,
         ),
         if (loading)
           const Padding(
@@ -88,7 +89,7 @@ class ProjectSidebarSection extends StatelessWidget {
               style: TextStyle(color: palette.secondaryText, fontSize: 12),
             ),
           ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
         for (final entry in projects) ...[
           _ProjectSidebarTile(
             project: entry.project,
@@ -106,30 +107,13 @@ class ProjectSidebarSection extends StatelessWidget {
             key: ValueKey<String>('sidebar-project-${entry.project.id}'),
           ),
           if (entry.conversations.isNotEmpty) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(
-                    width: 24,
-                    height:
-                        entry.conversations.length * 40.0 +
-                        (entry.conversations.length - 1) * 4.0,
-                    child: CustomPaint(
-                      painter: _ProjectConversationTreePainter(
-                        itemCount: entry.conversations.length,
-                        color:
-                            Color.lerp(
-                              palette.border,
-                              palette.secondaryText,
-                              0.18,
-                            ) ??
-                            palette.border,
-                      ),
-                    ),
-                  ),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -141,7 +125,7 @@ class ProjectSidebarSection extends StatelessWidget {
                             index < entry.conversations.length;
                             index++
                           ) ...[
-                            if (index > 0) const SizedBox(height: 4),
+                            if (index > 0) const SizedBox(height: 2),
                             DraggableSidebarConversation(
                               conversation: entry.conversations[index],
                               child: SidebarConversationTile(
@@ -149,9 +133,9 @@ class ProjectSidebarSection extends StatelessWidget {
                                 selected:
                                     entry.conversations[index].id ==
                                     selectedConversationId,
-                                height: 40,
+                                height: 32,
                                 inset: 8,
-                                showChatIcon: true,
+                                showChatIcon: false,
                                 onPressed: onSelectConversation == null
                                     ? null
                                     : () => onSelectConversation!(
@@ -204,7 +188,7 @@ class ProjectSidebarSection extends StatelessWidget {
               ),
             ),
           ],
-          if (entry != projects.last) const SizedBox(height: 16),
+          if (entry != projects.last) const SizedBox(height: 12),
         ],
       ],
     );
@@ -216,11 +200,13 @@ class _ProjectsHeading extends StatefulWidget {
     required this.title,
     required this.createProjectLabel,
     required this.onCreateProject,
+    required this.alwaysShowAction,
   });
 
   final String title;
   final String createProjectLabel;
   final VoidCallback? onCreateProject;
+  final bool alwaysShowAction;
 
   @override
   State<_ProjectsHeading> createState() => _ProjectsHeadingState();
@@ -230,91 +216,63 @@ class _ProjectsHeadingState extends State<_ProjectsHeading> {
   bool _hovered = false;
   bool _focused = false;
 
-  bool get _showAction => _hovered || _focused;
-
   @override
   Widget build(BuildContext context) {
-    final duration = MediaQuery.disableAnimationsOf(context)
+    final touch = switch (Theme.of(context).platform) {
+      TargetPlatform.android ||
+      TargetPlatform.iOS ||
+      TargetPlatform.fuchsia => true,
+      _ => false,
+    };
+    final showAction = widget.alwaysShowAction || touch || _hovered || _focused;
+    final actionSize = touch ? 44.0 : 32.0;
+    final duration = MediaQuery.disableAnimationsOf(context) || _focused
         ? Duration.zero
         : const Duration(milliseconds: 140);
 
     return Focus(
+      canRequestFocus: widget.onCreateProject != null,
       onFocusChange: (focused) => setState(() => _focused = focused),
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovered = true),
         onExit: (_) => setState(() => _hovered = false),
-        child: SizedBox(
-          height: 32,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 24),
           child: Row(
             children: [
               Expanded(child: SidebarSectionHeading(title: widget.title)),
-              ExcludeSemantics(
-                excluding: !_showAction,
-                child: IgnorePointer(
-                  ignoring: !_showAction,
-                  child: AnimatedOpacity(
-                    duration: duration,
-                    opacity: _showAction ? 1 : 0,
-                    child: IconButton(
-                      key: const ValueKey<String>('project-create-button'),
-                      tooltip: widget.createProjectLabel,
-                      onPressed: widget.onCreateProject,
-                      visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 40,
-                        height: 40,
+              if (widget.onCreateProject != null)
+                ExcludeSemantics(
+                  excluding: !showAction,
+                  child: ExcludeFocus(
+                    excluding: !showAction,
+                    child: IgnorePointer(
+                      ignoring: !showAction,
+                      child: AnimatedOpacity(
+                        duration: duration,
+                        opacity: showAction ? 1 : 0,
+                        child: IconButton(
+                          key: const ValueKey<String>('project-create-button'),
+                          tooltip: widget.createProjectLabel,
+                          onPressed: widget.onCreateProject,
+                          visualDensity: VisualDensity.standard,
+                          constraints: BoxConstraints.tightFor(
+                            width: actionSize,
+                            height: actionSize,
+                          ),
+                          padding: EdgeInsets.zero,
+                          icon: const Icon(Icons.add_rounded, size: 19),
+                        ),
                       ),
-                      padding: EdgeInsets.zero,
-                      icon: const Icon(Icons.add_rounded, size: 19),
                     ),
                   ),
                 ),
-              ),
             ],
           ),
         ),
       ),
     );
   }
-}
-
-class _ProjectConversationTreePainter extends CustomPainter {
-  const _ProjectConversationTreePainter({
-    required this.itemCount,
-    required this.color,
-  });
-
-  final int itemCount;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (itemCount == 0) return;
-
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = 1.2
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
-    const trunkX = 8.0;
-    const rowHeight = 40.0;
-    const rowGap = 4.0;
-    final lastCenterY = (itemCount - 1) * (rowHeight + rowGap) + rowHeight / 2;
-
-    canvas.drawLine(Offset(trunkX, 0), Offset(trunkX, lastCenterY), paint);
-    for (var index = 0; index < itemCount; index++) {
-      final centerY = index * (rowHeight + rowGap) + rowHeight / 2;
-      canvas.drawLine(
-        Offset(trunkX, centerY),
-        Offset(size.width - 1, centerY),
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_ProjectConversationTreePainter oldDelegate) =>
-      itemCount != oldDelegate.itemCount || color != oldDelegate.color;
 }
 
 class _ProjectSidebarTile extends StatelessWidget {
@@ -343,8 +301,8 @@ class _ProjectSidebarTile extends StatelessWidget {
     final labelStyle = Theme.of(context).textTheme.bodyMedium?.copyWith(
       color: selected ? palette.text : palette.secondaryText,
       fontSize: 13,
-      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-      height: 20 / 13,
+      fontWeight: selected ? FontWeight.w500 : FontWeight.w400,
+      height: 18 / 13,
     );
 
     return DragTarget<String>(
@@ -359,29 +317,29 @@ class _ProjectSidebarTile extends StatelessWidget {
         child: Material(
           color: selected || candidates.isNotEmpty
               ? palette.selected
-              : palette.hover,
+              : Colors.transparent,
           shape: RoundedRectangleBorder(
-            side: BorderSide(color: selected ? palette.accent : palette.border),
-            borderRadius: BorderRadius.circular(8),
+            side: BorderSide.none,
+            borderRadius: BorderRadius.circular(6),
           ),
           child: InkWell(
             onTap: onSelect,
             hoverColor: palette.selected,
-            borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
-              height: 38,
+            borderRadius: BorderRadius.circular(6),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 32),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Row(
                   children: [
                     Icon(
                       Icons.folder_outlined,
                       color: selected || candidates.isNotEmpty
-                          ? palette.accentIcon
+                          ? palette.text
                           : palette.secondaryIcon,
-                      size: 17,
+                      size: 15,
                     ),
-                    const SizedBox(width: 9),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         project.title,
@@ -460,8 +418,18 @@ class _ProjectAction extends StatelessWidget {
           message: label,
           child: InkWell(
             onTap: onPressed,
+            focusColor: OpenChatSemanticColors.of(context).focusRing
+                .withValues(alpha: 0.24),
             borderRadius: BorderRadius.circular(6),
-            child: SizedBox(width: 24, height: 28, child: Center(child: child)),
+            child: SizedBox.square(
+              dimension: switch (Theme.of(context).platform) {
+                TargetPlatform.android ||
+                TargetPlatform.iOS ||
+                TargetPlatform.fuchsia => 44,
+                _ => 32,
+              },
+              child: Center(child: child),
+            ),
           ),
         ),
       ),
@@ -490,8 +458,8 @@ class _ShowMoreProjectConversations extends StatelessWidget {
         child: InkWell(
           onTap: onPressed,
           borderRadius: BorderRadius.circular(6),
-          child: SizedBox(
-            height: 18,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 24),
             child: Padding(
               padding: const EdgeInsets.only(left: 4),
               child: Align(

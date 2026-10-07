@@ -21,10 +21,7 @@ class OpenChatWindowTitleBar extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: palette.navigation,
-        border: Border(
-          bottom: BorderSide(color: palette.border.withValues(alpha: 0.48)),
-        ),
+        color: OpenChatSemanticColors.of(context).background,
       ),
       child: SizedBox(
         height: OpenChatSpacing.appTitleBarHeight,
@@ -42,7 +39,7 @@ class OpenChatWindowTitleBar extends StatelessWidget {
                     const SizedBox(width: 9),
                     Text(
                       'OpenChat',
-                      style: theme.textTheme.titleSmall?.copyWith(
+                      style: theme.textTheme.bodyMedium?.copyWith(
                         color: palette.text,
                         fontWeight: FontWeight.w600,
                       ),

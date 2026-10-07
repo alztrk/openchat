@@ -26,21 +26,21 @@ class DraggableSidebarConversation extends StatelessWidget {
         color: Colors.transparent,
         child: Container(
           constraints: const BoxConstraints(maxWidth: 280),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
             color: palette.composer,
             border: Border.all(color: palette.border),
-            borderRadius: BorderRadius.circular(7),
+            borderRadius: BorderRadius.circular(6),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 Icons.chat_bubble_outline_rounded,
-                size: 15,
+                size: 14,
                 color: palette.secondaryIcon,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 6),
               Flexible(
                 child: Text(
                   conversation.title,
@@ -92,6 +92,7 @@ class SidebarConversationTile extends StatefulWidget {
 
 class _SidebarConversationTileState extends State<SidebarConversationTile> {
   bool _hovered = false;
+  bool _focused = false;
   bool _menuOpen = false;
 
   @override
@@ -109,6 +110,8 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
     final showActions =
         hasActions &&
         (_hovered ||
+            _focused ||
+            widget.onPressed == null ||
             widget.selected ||
             _menuOpen ||
             MediaQuery.sizeOf(context).width <
@@ -124,13 +127,18 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
         label: widget.conversation.title,
         child: Material(
           color: widget.selected ? palette.selected : Colors.transparent,
-          borderRadius: BorderRadius.circular(7),
+          borderRadius: BorderRadius.circular(6),
           child: InkWell(
             onTap: widget.onPressed,
+            onFocusChange: (focused) => setState(() => _focused = focused),
             hoverColor: palette.selected,
-            borderRadius: BorderRadius.circular(7),
-            child: SizedBox(
-              height: hasActions ? 40 : widget.height,
+            focusColor: OpenChatSemanticColors.of(context).focusRing
+                .withValues(alpha: 0.24),
+            borderRadius: BorderRadius.circular(6),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                minHeight: hasActions ? 32 : widget.height,
+              ),
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: widget.inset),
                 child: Row(
@@ -138,10 +146,10 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                     if (widget.showChatIcon) ...[
                       Icon(
                         Icons.chat_bubble_outline_rounded,
-                        size: 15,
+                        size: 14,
                         color: palette.secondaryIcon,
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                     ],
                     Expanded(
                       child: Text(
@@ -159,91 +167,95 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                       ),
                     ),
                     if (hasActions) ...[
-                      const SizedBox(width: 4),
-                      IgnorePointer(
-                        ignoring: !showActions,
-                        child: AnimatedOpacity(
-                          opacity: showActions ? 1 : 0,
-                          duration: const Duration(milliseconds: 120),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (widget.onTogglePinned != null)
-                                IconButton(
-                                  tooltip: widget.conversation.isPinned
-                                      ? l10n.unpinConversation
-                                      : l10n.pinConversation,
-                                  visualDensity: VisualDensity.compact,
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints.tightFor(
+                      const SizedBox(width: 2),
+                      ExcludeFocus(
+                        excluding: !showActions,
+                        child: IgnorePointer(
+                          ignoring: !showActions,
+                          child: AnimatedOpacity(
+                            opacity: showActions ? 1 : 0,
+                            duration: const Duration(milliseconds: 120),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (widget.onTogglePinned != null)
+                                  IconButton(
+                                    tooltip: widget.conversation.isPinned
+                                        ? l10n.unpinConversation
+                                        : l10n.pinConversation,
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints.tightFor(
+                                      width: 32,
+                                      height: 32,
+                                    ),
+                                    onPressed: widget.onTogglePinned,
+                                    icon: Icon(
+                                      widget.conversation.isPinned
+                                          ? Icons.push_pin_rounded
+                                          : Icons.push_pin_outlined,
+                                      size: 15,
+                                    ),
+                                  ),
+                                if (widget.onRename != null ||
+                                    widget.onDelete != null ||
+                                    widget.onExport != null)
+                                  SizedBox(
                                     width: 32,
-                                    height: 36,
-                                  ),
-                                  onPressed: widget.onTogglePinned,
-                                  icon: Icon(
-                                    widget.conversation.isPinned
-                                        ? Icons.push_pin_rounded
-                                        : Icons.push_pin_outlined,
-                                    size: 15,
-                                  ),
-                                ),
-                              if (widget.onRename != null ||
-                                  widget.onDelete != null ||
-                                  widget.onExport != null)
-                                SizedBox(
-                                  width: 32,
-                                  height: 36,
-                                  child: OpenChatDropdown(
-                                    palette: palette,
-                                    alignmentOffset: const Offset(-152, 6),
-                                    onOpen: () =>
-                                        setState(() => _menuOpen = true),
-                                    onClose: () =>
-                                        setState(() => _menuOpen = false),
-                                    menuChildren: [
-                                      if (onRename != null)
-                                        _menuActionItem(
-                                          palette: palette,
-                                          label: l10n.renameConversation,
-                                          onPressed: onRename,
-                                        ),
-                                      if (onExport != null)
-                                        _menuActionItem(
-                                          palette: palette,
-                                          label: l10n.exportConversation,
-                                          onPressed: onExport,
-                                        ),
-                                      if (onDelete != null)
-                                        _menuActionItem(
-                                          palette: palette,
-                                          label: l10n.deleteConversation,
-                                          foregroundColor: Theme.of(context)
-                                              .colorScheme
-                                              .error,
-                                          onPressed: onDelete,
-                                        ),
-                                    ],
-                                    builder: (context, controller, _) =>
-                                        IconButton(
-                                          tooltip: l10n.moreOptions,
-                                          visualDensity: VisualDensity.compact,
-                                          padding: EdgeInsets.zero,
-                                          constraints:
-                                              const BoxConstraints.tightFor(
-                                                width: 32,
-                                                height: 36,
-                                              ),
-                                          onPressed: () => controller.isOpen
-                                              ? controller.close()
-                                              : controller.open(),
-                                          icon: const Icon(
-                                            Icons.more_horiz_rounded,
-                                            size: 17,
+                                    height: 32,
+                                    child: OpenChatDropdown(
+                                      palette: palette,
+                                      alignmentOffset: const Offset(-152, 6),
+                                      onOpen: () =>
+                                          setState(() => _menuOpen = true),
+                                      onClose: () =>
+                                          setState(() => _menuOpen = false),
+                                      menuChildren: [
+                                        if (onRename != null)
+                                          _menuActionItem(
+                                            palette: palette,
+                                            label: l10n.renameConversation,
+                                            onPressed: onRename,
                                           ),
-                                        ),
+                                        if (onExport != null)
+                                          _menuActionItem(
+                                            palette: palette,
+                                            label: l10n.exportConversation,
+                                            onPressed: onExport,
+                                          ),
+                                        if (onDelete != null)
+                                          _menuActionItem(
+                                            palette: palette,
+                                            label: l10n.deleteConversation,
+                                            foregroundColor: Theme.of(context)
+                                                .colorScheme
+                                                .error,
+                                            onPressed: onDelete,
+                                          ),
+                                      ],
+                                      builder: (context, controller, _) =>
+                                          IconButton(
+                                            tooltip: l10n.moreOptions,
+                                            visualDensity:
+                                                VisualDensity.compact,
+                                            padding: EdgeInsets.zero,
+                                            constraints:
+                                                const BoxConstraints.tightFor(
+                                                  width: 32,
+                                                  height: 32,
+                                                ),
+                                            onPressed: () => controller.isOpen
+                                                ? controller.close()
+                                                : controller.open(),
+                                            icon: const Icon(
+                                              Icons.more_horiz_rounded,
+                                              size: 17,
+                                            ),
+                                          ),
+                                    ),
                                   ),
-                                ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ),

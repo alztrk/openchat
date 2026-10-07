@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 
@@ -83,8 +84,27 @@ class OpenChatDropdown extends StatelessWidget {
       crossAxisUnconstrained: crossAxisUnconstrained,
       onOpen: onOpen,
       onClose: onClose,
-      menuChildren: menuChildren,
-      builder: builder,
+      menuChildren: [
+        for (var index = 0; index < menuChildren.length; index++)
+          Focus(
+            autofocus: index == 0,
+            skipTraversal: true,
+            child: menuChildren[index],
+          ),
+      ],
+      builder: (context, controller, child) => Focus(
+        skipTraversal: true,
+        onKeyEvent: (_, event) {
+          if (controller.isOpen &&
+              event is KeyDownEvent &&
+              event.logicalKey == LogicalKeyboardKey.escape) {
+            controller.close();
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
+        child: builder(context, controller, child),
+      ),
     );
   }
 }

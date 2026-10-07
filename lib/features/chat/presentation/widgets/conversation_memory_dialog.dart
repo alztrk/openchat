@@ -441,64 +441,40 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
       content: SizedBox(
         width: size.width < 640 ? size.width * 0.78 : 520,
         height: size.height * 0.62,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              l10n.conversationMemoryDescription,
-              style: Theme.of(context).textTheme.bodySmall
-                  ?.copyWith(color: palette.secondaryText),
-            ),
-            const SizedBox(height: 12),
-            _buildSemanticSearchSection(context),
-            const SizedBox(height: 14),
-            _buildSummarySection(context),
-            const SizedBox(height: 8),
-            _buildArchiveIndexSection(context),
-            const SizedBox(height: 18),
-            Text(
-              l10n.conversationMemorySearchTitle,
-              style: Theme.of(context).textTheme.titleSmall,
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _queryController,
-                    maxLength: 512,
-                    maxLines: 1,
-                    textInputAction: TextInputAction.search,
-                    onSubmitted: (_) => _searchArchive(),
-                    decoration: InputDecoration(
-                      hintText: l10n.conversationMemorySearchHint,
-                      counterText: '',
-                      prefixIcon: const Icon(Icons.search_rounded),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                FilledButton.tonal(
-                  onPressed: _isSearching ? null : _searchArchive,
-                  child: _isSearching
-                      ? const SizedBox.square(
-                          dimension: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Text(l10n.conversationMemorySearchAction),
+        child: SingleChildScrollView(
+          primary: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                l10n.conversationMemoryDescription,
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: palette.secondaryText),
+              ),
+              const SizedBox(height: 12),
+              _buildSemanticSearchSection(context),
+              const SizedBox(height: 14),
+              _buildSummarySection(context),
+              const SizedBox(height: 8),
+              _buildArchiveIndexSection(context),
+              const SizedBox(height: 18),
+              Text(
+                l10n.conversationMemorySearchTitle,
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
+              const SizedBox(height: 8),
+              _buildArchiveSearchControls(context),
+              if (_searchQueryTooShort) ...[
+                const SizedBox(height: 6),
+                Text(
+                  l10n.conversationMemorySearchQueryTooShort,
+                  style: TextStyle(color: palette.secondaryText),
                 ),
               ],
-            ),
-            if (_searchQueryTooShort) ...[
-              const SizedBox(height: 6),
-              Text(
-                l10n.conversationMemorySearchQueryTooShort,
-                style: TextStyle(color: palette.secondaryText),
-              ),
+              const SizedBox(height: 10),
+              SizedBox(height: 320, child: _buildSearchResults(context)),
             ],
-            const SizedBox(height: 10),
-            Expanded(child: _buildSearchResults(context)),
-          ],
+          ),
         ),
       ),
       actions: [
@@ -574,34 +550,7 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
             style: Theme.of(context).textTheme.titleSmall,
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _queryController,
-                  maxLength: 512,
-                  maxLines: 1,
-                  textInputAction: TextInputAction.search,
-                  onSubmitted: (_) => _searchArchive(),
-                  decoration: InputDecoration(
-                    hintText: l10n.conversationMemorySearchHint,
-                    counterText: '',
-                    prefixIcon: const Icon(Icons.search_rounded),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton.tonal(
-                onPressed: _isSearching ? null : _searchArchive,
-                child: _isSearching
-                    ? const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(l10n.conversationMemorySearchAction),
-              ),
-            ],
-          ),
+          _buildArchiveSearchControls(context),
           if (_searchQueryTooShort) ...[
             const SizedBox(height: 6),
             Text(
@@ -641,6 +590,53 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
     );
   }
 
+  Widget _buildArchiveSearchControls(BuildContext context) {
+    final l10n = context.openchatL10n;
+    final field = TextField(
+      controller: _queryController,
+      maxLength: 512,
+      maxLines: 1,
+      textInputAction: TextInputAction.search,
+      onSubmitted: (_) => _searchArchive(),
+      decoration: InputDecoration(
+        hintText: l10n.conversationMemorySearchHint,
+        counterText: '',
+        prefixIcon: const Icon(Icons.search_rounded),
+      ),
+    );
+    final action = FilledButton.tonal(
+      onPressed: _isSearching ? null : _searchArchive,
+      child: _isSearching
+          ? const SizedBox.square(
+              dimension: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : Text(l10n.conversationMemorySearchAction),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1) <
+            360) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              field,
+              const SizedBox(height: 8),
+              Align(alignment: Alignment.centerRight, child: action),
+            ],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: field),
+            const SizedBox(width: 8),
+            action,
+          ],
+        );
+      },
+    );
+  }
+
   Widget _buildSemanticSearchSection(BuildContext context) {
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
@@ -652,7 +648,7 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
       return Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.auto_awesome_rounded, size: 18, color: palette.accent),
+          Icon(Icons.manage_search_rounded, size: 18, color: palette.accent),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -689,67 +685,86 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
       );
     }
 
+    final description = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          Icons.manage_search_rounded,
+          size: 18,
+          color: palette.secondaryText,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(l10n.conversationMemorySemanticTitle, style: titleStyle),
+              const SizedBox(height: 3),
+              Text(
+                l10n.conversationMemorySemanticDescription,
+                style: detailStyle,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+    final action =
+        _isPreparingSemanticSearch &&
+            (_semanticPreparationProgress == null ||
+                _semanticPreparationProgress?.phase ==
+                    SemanticPreparationPhase.downloading)
+        ? OutlinedButton(
+            onPressed: _isCancellingSemanticPreparation
+                ? null
+                : _cancelSemanticPreparation,
+            child: _isCancellingSemanticPreparation
+                ? const SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(l10n.cancel),
+          )
+        : _isPreparingSemanticSearch
+        ? const OutlinedButton(
+            onPressed: null,
+            child: SizedBox.square(
+              dimension: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          )
+        : OutlinedButton(
+            onPressed: widget.repository == null
+                ? null
+                : _prepareSemanticSearch,
+            child: Text(
+              _semanticPreparationFailed
+                  ? l10n.retry
+                  : l10n.conversationMemorySemanticPrepare,
+            ),
+          );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              Icons.auto_awesome_outlined,
-              size: 18,
-              color: palette.secondaryText,
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Column(
+        LayoutBuilder(
+          builder: (context, constraints) {
+            if (constraints.maxWidth /
+                    MediaQuery.textScalerOf(context).scale(1) <
+                420) {
+              return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(l10n.conversationMemorySemanticTitle, style: titleStyle),
-                  const SizedBox(height: 3),
-                  Text(
-                    l10n.conversationMemorySemanticDescription,
-                    style: detailStyle,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            if (_isPreparingSemanticSearch &&
-                (_semanticPreparationProgress == null ||
-                    _semanticPreparationProgress?.phase ==
-                        SemanticPreparationPhase.downloading))
-              OutlinedButton(
-                onPressed: _isCancellingSemanticPreparation
-                    ? null
-                    : _cancelSemanticPreparation,
-                child: _isCancellingSemanticPreparation
-                    ? const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text(l10n.cancel),
-              )
-            else if (_isPreparingSemanticSearch)
-              const OutlinedButton(
-                onPressed: null,
-                child: SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              )
-            else
-              OutlinedButton(
-                onPressed: widget.repository == null
-                    ? null
-                    : _prepareSemanticSearch,
-                child: Text(
-                  _semanticPreparationFailed
-                      ? l10n.retry
-                      : l10n.conversationMemorySemanticPrepare,
-                ),
-              ),
-          ],
+                children: [description, const SizedBox(height: 12), action],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: description),
+                const SizedBox(width: 12),
+                action,
+              ],
+            );
+          },
         ),
         if (_isPreparingSemanticSearch) ...[
           const SizedBox(height: 8),

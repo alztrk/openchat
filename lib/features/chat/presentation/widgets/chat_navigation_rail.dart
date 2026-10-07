@@ -40,27 +40,32 @@ class ChatNavigationRail extends StatelessWidget {
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final railContentWidth = expanded ? 226.0 : 44.0;
+    final touch = switch (Theme.of(context).platform) {
+      TargetPlatform.android || TargetPlatform.iOS => true,
+      _ => false,
+    };
+    final railContentWidth = expanded
+        ? 226.0
+        : touch
+        ? 44.0
+        : 36.0;
 
     return Container(
       width: expanded
           ? OpenChatSpacing.expandedRailWidth
           : OpenChatSpacing.compactRailWidth,
       decoration: BoxDecoration(
-        color: palette.navigation,
-        border: Border(
-          right: BorderSide(color: palette.border.withValues(alpha: 0.48)),
-        ),
+        color: OpenChatSemanticColors.of(context).background,
       ),
       child: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
             final content = Padding(
-              padding: EdgeInsets.symmetric(horizontal: expanded ? 16 : 5.5),
+              padding: EdgeInsets.symmetric(horizontal: expanded ? 16 : 4),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SizedBox(height: expanded ? 20 : 8),
+                  SizedBox(height: expanded ? 20 : 4),
                   if (expanded)
                     _Brand(palette: palette)
                   else if (showBrand) ...[
@@ -90,7 +95,7 @@ class ChatNavigationRail extends StatelessWidget {
                                       modelsSelected ||
                                       localModelsSelected
                                   ? palette.secondaryIcon
-                                  : palette.accentIcon,
+                                  : palette.text,
                             ),
                             palette: palette,
                             onPressed: onOpenChat,
@@ -102,9 +107,9 @@ class ChatNavigationRail extends StatelessWidget {
                               label: l10n.models,
                               selected: modelsSelected,
                               icon: Icon(
-                                Icons.view_list_rounded,
+                                Icons.hub_outlined,
                                 color: modelsSelected
-                                    ? palette.accentIcon
+                                    ? palette.text
                                     : palette.secondaryIcon,
                                 size: 19,
                               ),
@@ -120,9 +125,9 @@ class ChatNavigationRail extends StatelessWidget {
                               label: l10n.localModelsPageTitle,
                               selected: localModelsSelected,
                               icon: Icon(
-                                Icons.folder_copy_outlined,
+                                Icons.storage_rounded,
                                 color: localModelsSelected
-                                    ? palette.accentIcon
+                                    ? palette.text
                                     : palette.secondaryIcon,
                                 size: 19,
                               ),
@@ -153,7 +158,9 @@ class ChatNavigationRail extends StatelessWidget {
                                 : l10n.switchToDarkMode,
                             child: _ThemeButton(
                               expanded: expanded,
-                              label: l10n.theme,
+                              label: dark
+                                  ? l10n.switchToLightMode
+                                  : l10n.switchToDarkMode,
                               palette: palette,
                               onPressed: onToggleTheme,
                             ),
@@ -166,7 +173,7 @@ class ChatNavigationRail extends StatelessWidget {
                             icon: _RailIcon(
                               assetPath: 'assets/icons/settings.svg',
                               color: settingsSelected
-                                  ? palette.accentIcon
+                                  ? palette.text
                                   : palette.secondaryIcon,
                             ),
                             palette: palette,
@@ -307,6 +314,10 @@ class _RailNavigationButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final foreground = selected ? palette.text : palette.secondaryText;
+    final touch = switch (Theme.of(context).platform) {
+      TargetPlatform.android || TargetPlatform.iOS => true,
+      _ => false,
+    };
     final item = Semantics(
       button: true,
       enabled: enabled,
@@ -315,12 +326,15 @@ class _RailNavigationButton extends StatelessWidget {
       child: ExcludeSemantics(
         child: Material(
           color: selected ? palette.selected : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(OpenChatRadii.control),
           child: InkWell(
             onTap: onPressed,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(OpenChatRadii.control),
+            hoverColor: palette.hover,
+            focusColor: OpenChatSemanticColors.of(context).focusRing
+                .withValues(alpha: 0.24),
             child: SizedBox(
-              height: 44,
+              height: touch || expanded ? 44 : 36,
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: expanded ? 12 : 0),
                 child: Row(
@@ -373,9 +387,13 @@ class _ThemeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final touch = switch (Theme.of(context).platform) {
+      TargetPlatform.android || TargetPlatform.iOS => true,
+      _ => false,
+    };
     return SizedBox(
       width: double.infinity,
-      height: 44,
+      height: touch || expanded ? 44 : 36,
       child: TextButton(
         onPressed: onPressed,
         style: TextButton.styleFrom(
@@ -389,22 +407,23 @@ class _ThemeButton extends StatelessWidget {
               ? MainAxisAlignment.start
               : MainAxisAlignment.center,
           children: [
-            SvgPicture.asset(
-              'assets/icons/sun.svg',
-              width: 20,
-              height: 20,
-              colorFilter: ColorFilter.mode(
-                palette.secondaryIcon,
-                BlendMode.srcIn,
-              ),
-              excludeFromSemantics: true,
+            Icon(
+              Theme.of(context).brightness == Brightness.dark
+                  ? Icons.light_mode_outlined
+                  : Icons.dark_mode_outlined,
+              size: 20,
+              color: palette.secondaryIcon,
             ),
             if (expanded) ...[
               const SizedBox(width: 12),
-              Text(
-                label,
-                style: Theme.of(context).textTheme.bodyMedium
-                    ?.copyWith(fontSize: 14, height: 20 / 14),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyMedium
+                      ?.copyWith(fontSize: 14, height: 20 / 14),
+                ),
               ),
             ],
           ],

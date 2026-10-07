@@ -2,17 +2,28 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/openchat_window_title_bar.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
+import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
 import 'package:openchat/features/chat/domain/history_storage_status.dart';
 import 'package:openchat/features/chat/presentation/chat_screen.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_composer.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_navigation_rail.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_sidebar.dart';
+import 'package:openchat/features/chat/presentation/widgets/context_usage_indicator.dart';
+import 'package:openchat/features/chat/presentation/widgets/sidebar_conversation_tile.dart';
 import 'package:openchat/features/chat/presentation/widgets/window_control_bar.dart';
+import 'package:openchat/features/models/presentation/models_page.dart';
+import 'package:openchat/features/models/presentation/local_models_page.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
+import 'package:openchat/features/settings/data/api_compatible_provider_key_store.dart';
+import 'package:openchat/features/settings/data/open_code_api_key_store.dart';
+import 'package:openchat/features/settings/presentation/compatible_provider_connection_section.dart';
+import 'package:openchat/features/settings/presentation/open_code_connection_section.dart';
+import 'package:openchat/features/settings/presentation/chat_gpt_api_key_form.dart';
 import 'package:openchat/features/settings/presentation/settings_screen.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -22,7 +33,7 @@ import 'package:shared_preferences_platform_interface/shared_preferences_async_p
 import 'fixtures/figma_chat_messages.dart';
 import 'fixtures/figma_sidebar_items.dart';
 
-const _mainSurfaceBottomInset = 10.0;
+const _mainSurfaceBottomInset = OpenChatSpacing.mainSurfaceInset;
 
 late GoldenFileComparator _previousGoldenComparator;
 
@@ -91,7 +102,7 @@ void main() {
         locale: const Locale('tr'),
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
-        theme: OpenChatTheme.dark,
+        theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
         home: Scaffold(
           body: ConversationSidebar(
             searchController: searchController,
@@ -118,7 +129,10 @@ void main() {
       tester.getSize(find.byTooltip(l10n!.searchMessagesTooltip)).width,
       32,
     );
-    expect(tester.getSize(find.byTooltip(l10n.newConversation)).width, 32);
+    expect(
+      tester.getSize(find.byTooltip(l10n.newChat)).width,
+      OpenChatSpacing.sidebarWidth - 24,
+    );
 
     final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
     addTearDown(mouse.removePointer);
@@ -177,7 +191,10 @@ void main() {
   });
 
   testWidgets('scrolls navigation controls in a short window', (tester) async {
-    tester.view.physicalSize = const Size(56, 120);
+    tester.view.physicalSize = const Size(
+      OpenChatSpacing.compactRailWidth,
+      120,
+    );
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
@@ -195,8 +212,11 @@ void main() {
               showBrand: false,
               settingsSelected: false,
               onOpenChat: () {},
+              onOpenModels: () {},
+              onOpenLocalModels: () {},
               onOpenSettings: () {},
               onToggleTheme: () {},
+              onToggleSidebars: () {},
             ),
           ),
         ),
@@ -208,66 +228,67 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('keeps the permission menu compact and without tooltips', (
-    tester,
-  ) async {
-    const locale = Locale('tr');
-    final l10n = await AppLocalizations.delegate.load(locale);
-    final controller = TextEditingController();
-    addTearDown(controller.dispose);
-    tester.view.physicalSize = const Size(1200, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets(
+    'permission menu keeps full labels accessible without descriptions',
+    (tester) async {
+      const locale = Locale('tr');
+      final l10n = await AppLocalizations.delegate.load(locale);
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        locale: locale,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        theme: OpenChatTheme.light,
-        home: Scaffold(
-          body: Center(
-            child: SizedBox(
-              width: 1000,
-              child: ChatComposer(
-                controller: controller,
-                onSendMessage: () {},
-                canSendMessage: false,
-                showReasoningSelector: false,
-                providerId: 'chatgpt',
-                onToolPermissionModeChanged: (_) {},
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: locale,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          theme: OpenChatTheme.light,
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 1000,
+                child: ChatComposer(
+                  controller: controller,
+                  onSendMessage: () {},
+                  canSendMessage: false,
+                  showReasoningSelector: false,
+                  providerId: 'chatgpt',
+                  onToolPermissionModeChanged: (_) {},
+                ),
               ),
             ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    final permissionButton = find.widgetWithText(
-      OutlinedButton,
-      l10n.toolPermissionRequireApproval,
-    );
-    expect(permissionButton, findsOneWidget);
-    expect(
-      find.ancestor(of: permissionButton, matching: find.byType(Tooltip)),
-      findsNothing,
-    );
-    expect(
-      find.text(l10n.toolPermissionRequireApprovalDescription),
-      findsNothing,
-    );
+      final permissionButton = find.widgetWithText(
+        OutlinedButton,
+        l10n.toolPermissionRequireApproval,
+      );
+      expect(permissionButton, findsOneWidget);
+      expect(
+        find.ancestor(of: permissionButton, matching: find.byType(Tooltip)),
+        findsOneWidget,
+      );
+      expect(
+        find.text(l10n.toolPermissionRequireApprovalDescription),
+        findsNothing,
+      );
 
-    await tester.tap(permissionButton);
-    await tester.pumpAndSettle();
+      await tester.tap(permissionButton);
+      await tester.pumpAndSettle();
 
-    expect(
-      find.text(l10n.toolPermissionRequireApprovalDescription),
-      findsNothing,
-    );
-    expect(find.text(l10n.toolPermissionFullAccessDescription), findsNothing);
-  });
+      expect(
+        find.text(l10n.toolPermissionRequireApprovalDescription),
+        findsNothing,
+      );
+      expect(find.text(l10n.toolPermissionFullAccessDescription), findsNothing);
+    },
+  );
 
   for (final appearance in [
     (name: 'light', theme: OpenChatTheme.light),
@@ -383,9 +404,9 @@ void main() {
   }
 
   for (final layout in [
-    (name: 'wide', width: 1680.0, height: 900.0, rail: 56.0, sidebar: 320.0),
-    (name: 'compact', width: 1492.0, height: 900.0, rail: 56.0, sidebar: 320.0),
-    (name: 'narrow', width: 1280.0, height: 720.0, rail: 56.0, sidebar: 300.0),
+    (name: 'wide', width: 1680.0, height: 900.0, rail: 52.0, sidebar: 320.0),
+    (name: 'compact', width: 1492.0, height: 900.0, rail: 52.0, sidebar: 320.0),
+    (name: 'narrow', width: 1280.0, height: 720.0, rail: 52.0, sidebar: 300.0),
   ]) {
     testWidgets('matches the ${layout.name} Figma composition geometry', (
       tester,
@@ -467,6 +488,567 @@ void main() {
 
     expect(tester.takeException(), isNull);
   });
+
+  for (final theme in <ThemeData>[OpenChatTheme.light, OpenChatTheme.dark]) {
+    for (final size in <Size>[
+      const Size(320, 600),
+      const Size(390, 480),
+      const Size(768, 512),
+      const Size(1440, 400),
+    ]) {
+      for (final scale in <double>[1, 2]) {
+        testWidgets(
+          'settings sections remain usable ${theme.brightness.name} $size at scale $scale',
+          (tester) async {
+            await _pumpSettingsScreen(
+              tester,
+              theme: theme,
+              size: size,
+              textScale: scale,
+            );
+            final context = tester.element(find.byType(SettingsScreen));
+            final l10n = AppLocalizations.of(context);
+            if (l10n == null) {
+              throw StateError('Settings localization is missing.');
+            }
+            expect(tester.takeException(), isNull);
+            for (final label in <String>[
+              l10n.connections,
+              l10n.usageQuotas,
+              l10n.models,
+              l10n.localEngines,
+              l10n.conversationMemory,
+              l10n.sharedInstructions,
+              l10n.appearance,
+              l10n.localData,
+            ]) {
+              final navigation = find
+                  .descendant(
+                    of: find.byType(SettingsScreen),
+                    matching: find.byTooltip(label),
+                  )
+                  .first;
+              await tester.ensureVisible(navigation);
+              await tester.pumpAndSettle();
+              await tester.tap(navigation);
+              await tester.pumpAndSettle();
+              expect(find.text(label), findsWidgets);
+              expect(tester.takeException(), isNull, reason: label);
+            }
+          },
+        );
+      }
+    }
+  }
+
+  for (final size in <Size>[const Size(320, 600), const Size(1440, 400)]) {
+    for (final scale in <double>[1, 2]) {
+      testWidgets('model routes remain usable $size at scale $scale', (
+        tester,
+      ) async {
+        tester.view.physicalSize = size;
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        Widget app(Widget page) => MaterialApp(
+          locale: const Locale('tr'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          theme: OpenChatTheme.dark,
+          builder: (context, child) {
+            if (child == null) throw StateError('Model test route is missing.');
+            return MediaQuery(
+              data: MediaQuery.of(context)
+                  .copyWith(textScaler: TextScaler.linear(scale)),
+              child: child,
+            );
+          },
+          home: Scaffold(body: page),
+        );
+        await tester.pumpWidget(
+          app(
+            ModelsPage(
+              serviceClient: null,
+              downloadController: null,
+              settingsPreferences: SettingsPreferences(
+                SharedPreferencesAsync(),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        await tester.ensureVisible(
+          find.widgetWithIcon(OutlinedButton, Icons.refresh_rounded).last,
+        );
+        await tester.tap(
+          find.widgetWithIcon(OutlinedButton, Icons.refresh_rounded).last,
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final l10n = await AppLocalizations.delegate.load(const Locale('tr'));
+        await tester.ensureVisible(find.text(l10n.modelChooseForDetails));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(
+          app(LocalModelsPage(serviceClient: null, onOpenModelCatalog: () {})),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
+
+  for (final locale in <Locale>[
+    const Locale('tr'),
+    const Locale('de'),
+    const Locale('fr'),
+  ]) {
+    testWidgets(
+      'provider forms remain usable with enlarged ${locale.languageCode} text',
+      (tester) async {
+        tester.view.physicalSize = const Size(320, 600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        FlutterSecureStorage.setMockInitialValues({});
+        final l10n = await AppLocalizations.delegate.load(locale);
+        final controller = TextEditingController();
+        addTearDown(controller.dispose);
+        var cancelled = false;
+        Widget app(Widget section) => MaterialApp(
+          locale: locale,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          theme: OpenChatTheme.light,
+          builder: (context, child) {
+            if (child == null) {
+              throw StateError('Provider test route is missing.');
+            }
+            return MediaQuery(
+              data: MediaQuery.of(context)
+                  .copyWith(textScaler: TextScaler.linear(2)),
+              child: child,
+            );
+          },
+          home: Scaffold(
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: section,
+            ),
+          ),
+        );
+        for (final section in <Widget>[
+          OpenCodeConnectionSection(
+            apiKeyStore: OpenCodeApiKeyStore(const FlutterSecureStorage()),
+            onChanged: null,
+          ),
+          CompatibleProviderConnectionSection(
+            providerId: 'gemini',
+            apiKeyStore: ApiCompatibleProviderKeyStore(
+              const FlutterSecureStorage(),
+            ),
+            onChanged: null,
+          ),
+        ]) {
+          await tester.pumpWidget(app(section));
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(find.text(l10n.add));
+          await tester.pumpAndSettle();
+          await tester.tap(find.text(l10n.add));
+          await tester.pumpAndSettle();
+          expect(find.byType(TextField), findsOneWidget);
+          expect(
+            tester.getSize(find.byType(TextField)).width,
+            greaterThan(200),
+          );
+          expect(tester.takeException(), isNull);
+          await tester.ensureVisible(find.text(l10n.save));
+          await tester.tap(find.text(l10n.save));
+          await tester.pumpAndSettle();
+          final field = tester.widget<TextField>(find.byType(TextField));
+          expect(field.decoration?.errorText, isNotNull);
+          expect(tester.takeException(), isNull);
+        }
+        await tester.pumpWidget(
+          app(
+            ChatGptApiKeyForm(
+              controller: controller,
+              errorText: l10n.apiKeyRequired,
+              isSaving: false,
+              onChanged: () {},
+              onSave: () {},
+              onCancel: () => cancelled = true,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        await tester.ensureVisible(find.text(l10n.cancel));
+        await tester.tap(find.text(l10n.cancel));
+        expect(cancelled, isTrue);
+      },
+    );
+  }
+
+  for (final platform in <TargetPlatform>[
+    TargetPlatform.windows,
+    TargetPlatform.android,
+  ]) {
+    testWidgets('project creation is discoverable on ${platform.name}', (
+      tester,
+    ) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      var created = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: const Locale('tr'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          theme: OpenChatTheme.dark.copyWith(platform: platform),
+          home: Scaffold(
+            body: ConversationSidebar(
+              searchController: controller,
+              width: 320,
+              projects: platform == TargetPlatform.android
+                  ? figmaSidebarProjects
+                  : const [],
+              onCreateProject: () => created++,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final button = find.byKey(
+        const ValueKey<String>('project-create-button'),
+      );
+      final opacity = find.ancestor(
+        of: button,
+        matching: find.byType(AnimatedOpacity),
+      );
+      expect(tester.widget<AnimatedOpacity>(opacity).opacity, 1);
+      if (platform == TargetPlatform.android) {
+        expect(tester.getSize(button).width, greaterThanOrEqualTo(44));
+        expect(tester.getSize(button).height, greaterThanOrEqualTo(44));
+      }
+      await tester.tap(button);
+      expect(created, 1);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('keyboard users can reveal and activate project creation', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+    var created = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('tr'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
+        home: Scaffold(
+          body: ConversationSidebar(
+            searchController: controller,
+            width: 320,
+            projects: figmaSidebarProjects,
+            onCreateProject: () => created++,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    final button = find.byKey(const ValueKey<String>('project-create-button'));
+    final opacity = find.ancestor(
+      of: button,
+      matching: find.byType(AnimatedOpacity),
+    );
+    expect(tester.widget<AnimatedOpacity>(opacity).opacity, 1);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    expect(created, 1);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final contextWindow in <int?>[null, 4096]) {
+    testWidgets(
+      'context details fit a short window with limit $contextWindow',
+      (tester) async {
+        tester.view.physicalSize = const Size(320, 360);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final controller = TextEditingController(text: 'Test draft content');
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          MaterialApp(
+            locale: const Locale('tr'),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            theme: OpenChatTheme.dark,
+            builder: (context, child) {
+              if (child == null) {
+                throw StateError('Context test route is missing.');
+              }
+              return MediaQuery(
+                data: MediaQuery.of(context).copyWith(
+                  textScaler: TextScaler.linear(2),
+                  disableAnimations: true,
+                ),
+                child: child,
+              );
+            },
+            home: Scaffold(
+              body: Center(
+                child: ContextUsageIndicator(
+                  controller: controller,
+                  messages: const [],
+                  providerId: null,
+                  modelId: null,
+                  supportsTools: null,
+                  contextWindow: contextWindow,
+                  repository: null,
+                  conversationId: null,
+                  isSending: false,
+                  settingsPreferences: null,
+                  toolPermissionMode: ToolPermissionMode.requireApproval,
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.pumpAndSettle();
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        await tester.pump(const Duration(milliseconds: 500));
+        final context = tester.element(find.byType(ContextUsageIndicator));
+        final l10n = AppLocalizations.of(context);
+        if (l10n == null) throw StateError('Context localization is missing.');
+        expect(find.text(l10n.contextUsageTitle), findsOneWidget);
+        final heading = tester.getRect(find.text(l10n.contextUsageTitle));
+        expect(heading.left, greaterThanOrEqualTo(0));
+        expect(heading.right, lessThanOrEqualTo(320));
+        expect(heading.top, greaterThanOrEqualTo(0));
+        expect(heading.bottom, lessThanOrEqualTo(360));
+        expect(tester.takeException(), isNull);
+        await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+        await tester.pumpAndSettle();
+        expect(find.text(l10n.contextUsageTitle), findsNothing);
+      },
+    );
+  }
+
+  for (final theme in <ThemeData>[OpenChatTheme.light, OpenChatTheme.dark]) {
+    testWidgets(
+      'active messages fit enlarged text in ${theme.brightness.name}',
+      (tester) async {
+        tester.view.physicalSize = const Size(390, 600);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final controller = TextEditingController();
+        addTearDown(controller.dispose);
+        await tester.pumpWidget(
+          MaterialApp(
+            locale: const Locale('tr'),
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            theme: theme,
+            builder: (context, child) {
+              if (child == null) {
+                throw StateError('Message test route is missing.');
+              }
+              return MediaQuery(
+                data: MediaQuery.of(context)
+                    .copyWith(textScaler: TextScaler.linear(2)),
+                child: child,
+              );
+            },
+            home: Scaffold(
+              body: ConversationPane(
+                messageController: controller,
+                messages: figmaChatMessages,
+                conversationTitle: 'Test conversation',
+                showHistoryButton: true,
+                onOpenHistory: () {},
+                onSendMessage: () {},
+                providerId: 'opencode',
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final composer = tester.getRect(find.byType(ChatComposer));
+        expect(composer.right, lessThanOrEqualTo(390));
+        expect(composer.bottom, lessThanOrEqualTo(600));
+      },
+    );
+  }
+
+  for (final theme in <ThemeData>[OpenChatTheme.light, OpenChatTheme.dark]) {
+    for (final size in <Size>[
+      const Size(320, 720),
+      const Size(390, 844),
+      const Size(600, 960),
+      const Size(768, 1024),
+      const Size(920, 720),
+      const Size(1100, 800),
+    ]) {
+      for (final scale in <double>[1, 2]) {
+        testWidgets(
+          'chat controls fit ${theme.brightness.name} ${size.width} at text scale $scale',
+          (tester) async {
+            tester.view.physicalSize = size;
+            tester.view.devicePixelRatio = 1;
+            addTearDown(tester.view.resetPhysicalSize);
+            addTearDown(tester.view.resetDevicePixelRatio);
+
+            await tester.pumpWidget(
+              MaterialApp(
+                locale: const Locale('tr'),
+                localizationsDelegates: AppLocalizations.localizationsDelegates,
+                supportedLocales: AppLocalizations.supportedLocales,
+                theme: theme.copyWith(platform: TargetPlatform.windows),
+                builder: (context, child) => MediaQuery(
+                  data: MediaQuery.of(context).copyWith(
+                    textScaler: TextScaler.linear(scale),
+                    disableAnimations: true,
+                  ),
+                  child: child!,
+                ),
+                home: const ChatScreen(
+                  themeMode: ThemeMode.system,
+                  onThemeModeChanged: _ignoreThemeMode,
+                  onToggleTheme: _ignoreThemeToggle,
+                  historyStorageStatus: HistoryStorageStatus.available,
+                ),
+              ),
+            );
+            await tester.pumpAndSettle();
+
+            final composer = tester.getRect(find.byType(ChatComposer));
+            expect(composer.left, greaterThanOrEqualTo(0));
+            expect(composer.right, lessThanOrEqualTo(size.width));
+            expect(composer.bottom, lessThanOrEqualTo(size.height));
+            _expectComposerControls(tester, outlinedButtonCount: 3);
+            expect(tester.takeException(), isNull);
+
+            if (size.width < OpenChatSpacing.sidebarBreakpoint) {
+              final l10n = AppLocalizations.of(
+                tester.element(find.byType(ChatComposer)),
+              )!;
+              await tester.tap(find.byTooltip(l10n.historyOpen));
+              await tester.pumpAndSettle();
+              expect(find.byType(ConversationSidebar), findsOneWidget);
+              expect(tester.takeException(), isNull);
+            }
+          },
+        );
+      }
+    }
+  }
+
+  testWidgets('chat remains usable in a short window with a virtual keyboard', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 480);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('tr'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.android),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            viewInsets: const EdgeInsets.only(bottom: 180),
+            padding: const EdgeInsets.only(top: 24, bottom: 16),
+            disableAnimations: true,
+          ),
+          child: child!,
+        ),
+        home: Scaffold(
+          body: ConversationPane(
+            messageController: controller,
+            showHistoryButton: true,
+            onOpenHistory: () {},
+            onSendMessage: () {},
+            providerId: 'opencode',
+            showReasoningSelector: true,
+            reasoningOptions: const <String>['low', 'medium', 'high'],
+            reasoningLevel: 'high',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final composer = tester.getRect(find.byType(ChatComposer));
+    expect(composer.bottom, lessThanOrEqualTo(300));
+    _expectComposerControls(tester, outlinedButtonCount: 4);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('keyboard focus reveals conversation actions', (tester) async {
+    tester.view.physicalSize = const Size(1200, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('tr'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 320,
+              child: Focus(
+                autofocus: true,
+                child: SidebarConversationTile(
+                  conversation: const ConversationSidebarConversation(
+                    id: 'keyboard-test',
+                    title: 'Keyboard test conversation',
+                  ),
+                  selected: false,
+                  height: 32,
+                  inset: 8,
+                  showChatIcon: false,
+                  onPressed: () {},
+                  onRename: () {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
+      0,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity,
+      1,
+    );
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Future<void> _expectCompactNavigationRailMatchesFigma(
@@ -474,7 +1056,7 @@ Future<void> _expectCompactNavigationRailMatchesFigma(
   required ThemeData theme,
   required String goldenPath,
 }) async {
-  tester.view.physicalSize = const Size(56, 900);
+  tester.view.physicalSize = const Size(OpenChatSpacing.compactRailWidth, 900);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
@@ -492,8 +1074,11 @@ Future<void> _expectCompactNavigationRailMatchesFigma(
             expanded: false,
             settingsSelected: false,
             onOpenChat: _ignoreThemeToggle,
+            onOpenModels: _ignoreThemeToggle,
+            onOpenLocalModels: _ignoreThemeToggle,
             onOpenSettings: _ignoreThemeToggle,
             onToggleTheme: _ignoreThemeToggle,
+            onToggleSidebars: _ignoreThemeToggle,
           ),
         ),
       ),
@@ -503,15 +1088,15 @@ Future<void> _expectCompactNavigationRailMatchesFigma(
 
   expect(
     tester.getRect(find.byTooltip('Anasayfa')),
-    const Rect.fromLTWH(5.5, 82, 44, 44),
+    const Rect.fromLTWH(8, 78, 36, 36),
   );
   expect(
     tester.getRect(find.byType(ChatNavigationRail)),
-    const Rect.fromLTWH(0, 0, 56, 900),
+    const Rect.fromLTWH(0, 0, 52, 900),
   );
   expect(
     tester.getRect(find.byKey(const ValueKey<String>('compact-brand'))),
-    const Rect.fromLTWH(5.5, 8, 44, 44),
+    const Rect.fromLTWH(4, 4, 44, 44),
   );
   expect(find.text('OpenChat'), findsNothing);
 
@@ -638,7 +1223,6 @@ Future<void> _expectEmptyScreenMatchesFigma(
           onThemeModeChanged: _ignoreThemeMode,
           onToggleTheme: _ignoreThemeToggle,
           historyStorageStatus: HistoryStorageStatus.available,
-          selectedModelLabel: 'Örnek 1',
         ),
       ),
     ),
@@ -669,6 +1253,7 @@ Future<void> _pumpSettingsScreen(
   WidgetTester tester, {
   required ThemeData theme,
   Size size = const Size(1680, 900),
+  double textScale = 1,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -681,6 +1266,16 @@ Future<void> _pumpSettingsScreen(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       theme: theme.copyWith(platform: TargetPlatform.windows),
+      builder: (context, child) {
+        if (child == null) throw StateError('Settings test route is missing.');
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: TextScaler.linear(textScale),
+            disableAnimations: true,
+          ),
+          child: child,
+        );
+      },
       home: RepaintBoundary(
         key: const ValueKey<String>('settings-screen-screenshot'),
         child: ChatScreen(
@@ -694,6 +1289,8 @@ Future<void> _pumpSettingsScreen(
       ),
     ),
   );
+  await tester.pumpAndSettle();
+  await tester.ensureVisible(find.byTooltip('Ayarlar'));
   await tester.pumpAndSettle();
   await tester.tap(find.byTooltip('Ayarlar'));
   await tester.pumpAndSettle();
@@ -738,8 +1335,11 @@ Future<void> _expectActiveScreenMatchesFigma(
                       showBrand: false,
                       settingsSelected: false,
                       onOpenChat: () {},
+                      onOpenModels: () {},
+                      onOpenLocalModels: () {},
                       onOpenSettings: () {},
                       onToggleTheme: () {},
+                      onToggleSidebars: () {},
                     ),
                     ConversationSidebar(
                       searchController: searchController,
@@ -1019,7 +1619,14 @@ void _expectComposerControls(
   final controlRects = <Rect>[
     for (final element in outlinedButtons.evaluate())
       tester.getRect(find.byWidget(element.widget)),
-    tester.getRect(find.byType(FilledButton)),
+    tester.getRect(
+      find.descendant(
+        of: composer,
+        matching: find.byTooltip(
+          AppLocalizations.of(tester.element(composer))!.send,
+        ),
+      ),
+    ),
   ];
   expect(controlRects, hasLength(outlinedButtonCount + 1));
 

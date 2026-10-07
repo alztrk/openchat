@@ -305,14 +305,30 @@ class _ContextUsageIndicatorState extends State<ContextUsageIndicator> {
             ? snapshot.totalTokens / contextWindow
             : null;
         final percentLabel = fraction == null
-            ? '—'
+            ? null
             : percentFormat.format(fraction);
+        final touch = switch (Theme.of(context).platform) {
+          TargetPlatform.android ||
+          TargetPlatform.iOS ||
+          TargetPlatform.fuchsia => true,
+          _ => false,
+        };
+        final buttonSize = touch ? 44.0 : 36.0;
+        final focusRing = OpenChatSemanticColors.of(context).focusRing;
+        final detailsUnavailable =
+            _inspectionFailed || _instructionsFailed || _configurationFailed;
+        final statusLabel = _configurationLoading
+            ? l10n.contextUsageConfigurationLoading
+            : detailsUnavailable
+            ? l10n.contextUsageConfigurationUnavailable
+            : percentLabel ?? l10n.contextUsageNoModelLimit;
         final barColor = fraction != null && fraction >= 0.9
             ? Theme.of(context).colorScheme.error
             : palette.accent;
         final tooltip = Tooltip(
           key: _tooltipKey,
           richMessage: _tooltipMessage(context, snapshot, contextWindow),
+          excludeFromSemantics: true,
           waitDuration: const Duration(milliseconds: 400),
           showDuration: const Duration(seconds: 8),
           triggerMode: TooltipTriggerMode.tap,
@@ -333,60 +349,88 @@ class _ContextUsageIndicatorState extends State<ContextUsageIndicator> {
             ],
           ),
           child: Semantics(
-            button: true,
-            focusable: true,
-            label: '${l10n.contextUsageTitle}: $percentLabel',
-            onTap: () {
-              _tooltipKey.currentState?.ensureTooltipVisible();
-            },
-            child: MouseRegion(
-              cursor: SystemMouseCursors.help,
-              child: SizedBox.square(
-                dimension: 36,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    SizedBox.expand(
-                      child: CircularProgressIndicator(
-                        value: fraction?.clamp(0, 1) ?? 0,
-                        strokeWidth: 3,
-                        strokeCap: StrokeCap.round,
-                        backgroundColor: palette.border,
-                        color: barColor,
+            label: '${l10n.contextUsageTitle}: $statusLabel',
+            child: IconButton(
+              onPressed: () => _tooltipKey.currentState?.ensureTooltipVisible(),
+              padding: const EdgeInsets.all(6),
+              constraints: BoxConstraints.tightFor(
+                width: buttonSize,
+                height: buttonSize,
+              ),
+              style:
+                  IconButton.styleFrom(
+                    foregroundColor: palette.secondaryIcon,
+                    minimumSize: Size.square(buttonSize),
+                    maximumSize: Size.square(buttonSize),
+                    tapTargetSize: touch
+                        ? MaterialTapTargetSize.padded
+                        : MaterialTapTargetSize.shrinkWrap,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(
+                        OpenChatRadii.control,
                       ),
                     ),
-                    ExcludeSemantics(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: Text(
-                          percentLabel,
-                          style: Theme.of(context).textTheme.labelSmall
-                              ?.copyWith(
-                                color: palette.text,
-                                fontWeight: FontWeight.w600,
-                              ),
-                        ),
-                      ),
+                  ).copyWith(
+                    side: WidgetStateProperty.resolveWith(
+                      (states) => states.contains(WidgetState.focused)
+                          ? BorderSide(color: focusRing, width: 1.4)
+                          : BorderSide.none,
                     ),
-                  ],
-                ),
+                  ),
+              icon: ExcludeSemantics(
+                child: _configurationLoading
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : detailsUnavailable
+                    ? Icon(
+                        widget.repository == null
+                            ? Icons.cloud_off_outlined
+                            : Icons.error_outline_rounded,
+                        size: 20,
+                        color: widget.repository == null
+                            ? palette.secondaryIcon
+                            : Theme.of(context).colorScheme.error,
+                      )
+                    : percentLabel == null
+                    ? const Icon(Icons.data_usage_rounded, size: 20)
+                    : Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          SizedBox.expand(
+                            child: CircularProgressIndicator(
+                              value: fraction?.clamp(0, 1) ?? 0,
+                              strokeWidth: 3,
+                              strokeCap: StrokeCap.round,
+                              backgroundColor: palette.border,
+                              color: barColor,
+                            ),
+                          ),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              percentLabel,
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: palette.text,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                          ),
+                        ],
+                      ),
               ),
             ),
           ),
         );
 
         return Focus(
-          canRequestFocus: true,
+          skipTraversal: true,
           onKeyEvent: (node, event) {
             if (event is! KeyDownEvent) return KeyEventResult.ignored;
             if (event.logicalKey == LogicalKeyboardKey.escape) {
               Tooltip.dismissAllToolTips();
-              return KeyEventResult.handled;
-            }
-            if (event.logicalKey == LogicalKeyboardKey.enter ||
-                event.logicalKey == LogicalKeyboardKey.numpadEnter ||
-                event.logicalKey == LogicalKeyboardKey.space) {
-              _tooltipKey.currentState?.ensureTooltipVisible();
               return KeyEventResult.handled;
             }
             return KeyEventResult.ignored;
@@ -405,19 +449,35 @@ class _ContextUsageIndicatorState extends State<ContextUsageIndicator> {
     final tooltipContentWidth = (MediaQuery.sizeOf(context).width - 64)
         .clamp(1.0, 520.0)
         .toDouble();
+    final media = MediaQuery.of(context);
+    final tooltipContentHeight =
+        (media.size.height -
+                media.viewInsets.vertical -
+                media.padding.vertical -
+                96)
+            .clamp(48.0, 560.0)
+            .toDouble();
     return WidgetSpan(
       alignment: PlaceholderAlignment.middle,
-      child: SizedBox(
-        width: tooltipContentWidth,
-        child: _ContextUsagePopover(
-          providerId: widget.providerId,
-          modelId: widget.modelId,
-          snapshot: snapshot,
-          contextWindow: contextWindow,
-          inspectionFailed: _inspectionFailed,
-          instructionsFailed: _instructionsFailed,
-          configurationLoading: _configurationLoading,
-          configurationFailed: _configurationFailed,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: tooltipContentWidth,
+          maxHeight: tooltipContentHeight,
+        ),
+        child: SingleChildScrollView(
+          child: SizedBox(
+            width: tooltipContentWidth,
+            child: _ContextUsagePopover(
+              providerId: widget.providerId,
+              modelId: widget.modelId,
+              snapshot: snapshot,
+              contextWindow: contextWindow,
+              inspectionFailed: _inspectionFailed,
+              instructionsFailed: _instructionsFailed,
+              configurationLoading: _configurationLoading,
+              configurationFailed: _configurationFailed,
+            ),
+          ),
         ),
       ),
     );
@@ -618,25 +678,22 @@ class _ContextUsagePopover extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          children: [
-            Expanded(child: Text(l10n.contextUsageTitle, style: titleStyle)),
-            Semantics(
-              label: contextLimitLabel,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.data_usage_rounded,
-                    size: 14,
-                    color: palette.secondaryText,
-                  ),
-                  const SizedBox(width: 5),
-                  Text(contextLimitLabel, style: detailStyle),
-                ],
+        Text(l10n.contextUsageTitle, style: titleStyle),
+        const SizedBox(height: 4),
+        Semantics(
+          label: contextLimitLabel,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.data_usage_rounded,
+                size: 14,
+                color: palette.secondaryText,
               ),
-            ),
-          ],
+              const SizedBox(width: 5),
+              Flexible(child: Text(contextLimitLabel, style: detailStyle)),
+            ],
+          ),
         ),
         const SizedBox(height: 8),
         if (contentWidth < 420) ...[

@@ -12,6 +12,30 @@ import 'package:openchat/platform/windows/openchat_service_client.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  testWidgets(
+    'memory dialog remains scrollable with enlarged text in a narrow window',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final service = _FakeMemoryServiceClient();
+      await tester.pumpWidget(_testApp(service, textScale: 2));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.byType(TextField));
+      await tester.enterText(find.byType(TextField), 'Atlas archive');
+      await tester.ensureVisible(find.text('Ara'));
+      await tester.tap(find.text('Ara'));
+      await tester.pumpAndSettle();
+      expect(
+        service.calls,
+        contains('chat.memory.search:conversation-1:Atlas archive'),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('shows compacted context and searches scoped archive results', (
     tester,
   ) async {
@@ -228,11 +252,20 @@ Widget _testApp(
   OpenChatServiceClient service, {
   bool isSending = false,
   ConversationMemoryRepository? repository,
+  double textScale = 1,
 }) => MaterialApp(
   locale: const Locale('tr'),
   localizationsDelegates: AppLocalizations.localizationsDelegates,
   supportedLocales: AppLocalizations.supportedLocales,
   theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
+  builder: (context, child) {
+    if (child == null) throw StateError('Memory test route is missing.');
+    return MediaQuery(
+      data: MediaQuery.of(context)
+          .copyWith(textScaler: TextScaler.linear(textScale)),
+      child: child,
+    );
+  },
   home: Scaffold(
     body: Center(
       child: ConversationMemoryDialog(

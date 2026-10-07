@@ -109,13 +109,15 @@ class ConversationSidebar extends StatelessWidget {
           : null,
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              SizedBox(
+              ConstrainedBox(
                 key: const ValueKey<String>('conversation-sidebar-header'),
-                height: OpenChatSpacing.conversationHeaderHeight,
+                constraints: const BoxConstraints(
+                  minHeight: OpenChatSpacing.conversationHeaderHeight,
+                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -209,8 +211,13 @@ class ConversationSidebar extends StatelessWidget {
                                 ),
                                 alignment: Alignment.centerLeft,
                                 child: Text(
-                                  l10n.chats,
-                                  style: Theme.of(context).textTheme.titleLarge,
+                                  'OpenChat',
+                                  style: TextStyle(
+                                    color: palette.text,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w500,
+                                    height: 20 / 15,
+                                  ),
                                 ),
                               ),
                       ),
@@ -247,25 +254,43 @@ class ConversationSidebar extends StatelessWidget {
                               excludeFromSemantics: true,
                             ),
                     ),
-                    IconButton(
-                      tooltip: l10n.newConversation,
-                      onPressed: onCreateConversation,
-                      visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 40,
-                        height: 40,
-                      ),
-                      padding: EdgeInsets.zero,
-                      icon: Icon(
-                        Icons.add_rounded,
-                        color: palette.secondaryIcon,
-                        size: 19,
-                      ),
-                    ),
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
+              Tooltip(
+                message: l10n.newChat,
+                child: TextButton.icon(
+                  onPressed: onCreateConversation,
+                  icon: Icon(
+                    Icons.add_comment_outlined,
+                    color: palette.secondaryIcon,
+                    size: 18,
+                  ),
+                  label: Text(
+                    l10n.newChat,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.text,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      height: 18 / 13,
+                    ),
+                  ),
+                  style: TextButton.styleFrom(
+                    alignment: Alignment.centerLeft,
+                    minimumSize: const Size.fromHeight(44),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    tapTargetSize: MaterialTapTargetSize.padded,
+                    visualDensity: VisualDensity.compact,
+                    foregroundColor: palette.text,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
               Expanded(
                 child: Stack(
                   children: [
@@ -281,8 +306,8 @@ class ConversationSidebar extends StatelessWidget {
                             return ListView(
                               padding: const EdgeInsets.only(
                                 top: 4,
-                                right: 8,
-                                bottom: 16,
+                                right: 0,
+                                bottom: 12,
                               ),
                               children: [
                                 _SidebarSection(
@@ -350,10 +375,28 @@ class ConversationSidebar extends StatelessWidget {
                             return ListView(
                               padding: const EdgeInsets.only(
                                 top: 4,
-                                right: 8,
-                                bottom: 16,
+                                right: 0,
+                                bottom: 12,
                               ),
                               children: [
+                                SidebarConversationSection(
+                                  title: l10n.pinnedChats,
+                                  emptyMessage: hasQuery
+                                      ? l10n.noChatsSearchTitle
+                                      : l10n.noPinnedChats,
+                                  conversations: visiblePinnedConversations,
+                                  selectedConversationId:
+                                      selectedConversationId,
+                                  itemHeight: 32,
+                                  dropIcon: Icons.push_pin_outlined,
+                                  onSelectConversation: onSelectConversation,
+                                  onTogglePinned: onToggleConversationPinned,
+                                  onRenameConversation: onRenameConversation,
+                                  onDeleteConversation: onDeleteConversation,
+                                  onExportConversation: onExportConversation,
+                                  onDropConversation: onPinConversation,
+                                ),
+                                const SizedBox(height: 16),
                                 ProjectSidebarSection(
                                   projects: visibleProjects,
                                   selectedProjectId: selectedProjectId,
@@ -380,25 +423,7 @@ class ConversationSidebar extends StatelessWidget {
                                       ? l10n.noChatsSearchTitle
                                       : l10n.noProjects,
                                 ),
-                                const SizedBox(height: 22),
-                                SidebarConversationSection(
-                                  title: l10n.pinnedChats,
-                                  emptyMessage: hasQuery
-                                      ? l10n.noChatsSearchTitle
-                                      : l10n.noPinnedChats,
-                                  conversations: visiblePinnedConversations,
-                                  selectedConversationId:
-                                      selectedConversationId,
-                                  itemHeight: 34,
-                                  dropIcon: Icons.push_pin_outlined,
-                                  onSelectConversation: onSelectConversation,
-                                  onTogglePinned: onToggleConversationPinned,
-                                  onRenameConversation: onRenameConversation,
-                                  onDeleteConversation: onDeleteConversation,
-                                  onExportConversation: onExportConversation,
-                                  onDropConversation: onPinConversation,
-                                ),
-                                const SizedBox(height: 24),
+                                const SizedBox(height: 16),
                                 SidebarConversationSection(
                                   title: l10n.chats,
                                   emptyMessage: hasQuery
@@ -423,10 +448,15 @@ class ConversationSidebar extends StatelessWidget {
                           return ListView(
                             padding: const EdgeInsets.only(
                               top: 4,
-                              right: 8,
-                              bottom: 16,
+                              right: 0,
+                              bottom: 12,
                             ),
                             children: [
+                              _SidebarSection(
+                                title: l10n.pinnedChats,
+                                emptyMessage: l10n.noPinnedChats,
+                              ),
+                              const SizedBox(height: 16),
                               ProjectSidebarSection(
                                 projects: const [],
                                 selectedProjectId: selectedProjectId,
@@ -452,12 +482,7 @@ class ConversationSidebar extends StatelessWidget {
                                     ? l10n.noChatsSearchTitle
                                     : l10n.noProjects,
                               ),
-                              const SizedBox(height: 24),
-                              _SidebarSection(
-                                title: l10n.pinnedChats,
-                                emptyMessage: l10n.noPinnedChats,
-                              ),
-                              const SizedBox(height: 24),
+                              const SizedBox(height: 16),
                               _SidebarSection(
                                 title: l10n.chats,
                                 emptyMessage: hasQuery
@@ -476,7 +501,7 @@ class ConversationSidebar extends StatelessWidget {
                       Positioned(
                         top: 0,
                         left: 0,
-                        right: 8,
+                        right: 0,
                         child: Material(
                           color: palette.navigation,
                           elevation: 5,
@@ -707,19 +732,21 @@ class _SidebarSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final palette = OpenChatPalette.of(context);
 
     return ConstrainedBox(
       constraints: BoxConstraints(minHeight: onRetry == null ? 56 : 104),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            height: 18,
+          ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 18),
             child: Text(
               title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: textTheme.bodyMedium?.copyWith(
+                color: palette.secondaryText,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
                 height: 18 / 13,
@@ -734,6 +761,7 @@ class _SidebarSection extends StatelessWidget {
               maxLines: onRetry == null ? 1 : 2,
               overflow: TextOverflow.ellipsis,
               style: textTheme.bodyMedium?.copyWith(
+                color: palette.secondaryText,
                 fontSize: 13,
                 fontWeight: FontWeight.w400,
                 height: 18 / 13,

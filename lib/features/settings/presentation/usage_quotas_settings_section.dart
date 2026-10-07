@@ -298,31 +298,31 @@ class _UsageQuotasSettingsSectionState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    l10n.usageQuotas,
-                    style: Theme.of(context).textTheme.titleMedium,
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final stacked =
+                constraints.maxWidth /
+                    MediaQuery.textScalerOf(context).scale(1) <
+                560;
+            final description = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.usageQuotas,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  l10n.usageQuotasDescription,
+                  style: TextStyle(
+                    color: palette.secondaryText,
+                    fontSize: 13,
+                    height: 1.4,
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    l10n.usageQuotasDescription,
-                    style: TextStyle(
-                      color: palette.secondaryText,
-                      fontSize: 13,
-                      height: 1.4,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 16),
-            OutlinedButton.icon(
+                ),
+              ],
+            );
+            final refresh = OutlinedButton.icon(
               onPressed:
                   _isRefreshingAll || _loadState == _QuotasLoadState.loading
                   ? null
@@ -334,8 +334,22 @@ class _UsageQuotasSettingsSectionState
                     )
                   : const Icon(Icons.refresh_rounded, size: 16),
               label: Text(l10n.refreshAll),
-            ),
-          ],
+            );
+            if (stacked) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [description, const SizedBox(height: 12), refresh],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: description),
+                const SizedBox(width: 16),
+                refresh,
+              ],
+            );
+          },
         ),
         const SizedBox(height: 20),
         if (_loadState == _QuotasLoadState.loading && _connections.isEmpty)

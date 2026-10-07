@@ -2435,8 +2435,13 @@ class AppLocalizationsFr extends AppLocalizations {
   String get unavailableValue => '—';
 
   @override
-  String responseMetadata(String rate, String tokens, String time) {
-    return '$rate jetons/s · $tokens jetons · $time';
+  String responseTokenRate(String rate) {
+    return '$rate jetons/s';
+  }
+
+  @override
+  String responseTokenCount(String count) {
+    return '$count jetons';
   }
 
   @override

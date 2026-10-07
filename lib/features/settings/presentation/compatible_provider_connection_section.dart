@@ -228,7 +228,9 @@ class _CompatibleProviderConnectionSectionState
                               : l10n.providerKeySavedSuffix(suffix)
                         : l10n.providerNoKey,
                   );
-                  if (constraints.maxWidth < 520) {
+                  if (constraints.maxWidth /
+                          MediaQuery.textScalerOf(context).scale(1) <
+                      520) {
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
@@ -249,29 +251,31 @@ class _CompatibleProviderConnectionSectionState
               ),
             if (_showForm) ...[
               const SizedBox(height: 12),
-              Row(
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      obscureText: true,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      decoration: InputDecoration(
-                        labelText: l10n.providerApiKey,
-                        errorText: _error == 'invalid'
-                            ? l10n.providerKeyInvalid
-                            : _error == 'storage'
-                            ? l10n.providerKeyStorageFailed
-                            : null,
-                      ),
-                      onSubmitted: (_) => unawaited(_save()),
+                  TextField(
+                    controller: _controller,
+                    obscureText: true,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    decoration: InputDecoration(
+                      labelText: l10n.providerApiKey,
+                      errorText: _error == 'invalid'
+                          ? l10n.providerKeyInvalid
+                          : _error == 'storage'
+                          ? l10n.providerKeyStorageFailed
+                          : null,
                     ),
+                    onSubmitted: (_) => unawaited(_save()),
                   ),
-                  const SizedBox(width: 12),
-                  FilledButton(
-                    onPressed: _saving ? null : _save,
-                    child: Text(_saving ? l10n.saving : l10n.save),
+                  const SizedBox(height: 12),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton(
+                      onPressed: _saving ? null : _save,
+                      child: Text(_saving ? l10n.saving : l10n.save),
+                    ),
                   ),
                 ],
               ),

@@ -3626,9 +3626,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildMainSurface({required Widget child}) {
     return Padding(
-      padding: const EdgeInsets.only(right: 10, bottom: 10),
+      padding: const EdgeInsets.only(
+        right: OpenChatSpacing.mainSurfaceInset,
+        bottom: OpenChatSpacing.mainSurfaceInset,
+      ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(OpenChatRadii.card),
+        borderRadius: BorderRadius.circular(OpenChatRadii.control),
         clipBehavior: Clip.antiAlias,
         child: child,
       ),

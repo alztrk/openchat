@@ -466,40 +466,41 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
           ),
         ),
         const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: SizedBox(
-                height: 38,
-                child: TextField(
-                  controller: _searchController,
-                  onChanged: (val) => setState(() => _searchQuery = val),
-                  style: TextStyle(color: palette.text, fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: l10n.modelSearchHint,
-                    hintStyle: TextStyle(
-                      color: palette.secondaryText,
-                      fontSize: 13,
-                    ),
-                    prefixIcon: Icon(
-                      Icons.search,
-                      size: 18,
-                      color: palette.secondaryIcon,
-                    ),
-                    prefixIconConstraints: const BoxConstraints(minWidth: 36),
-                    filled: true,
-                    fillColor: palette.navigation,
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 9,
-                    ),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final stacked =
+                constraints.maxWidth /
+                    MediaQuery.textScalerOf(context).scale(1) <
+                560;
+            final search = ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 40),
+              child: TextField(
+                controller: _searchController,
+                onChanged: (val) => setState(() => _searchQuery = val),
+                style: TextStyle(color: palette.text, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: l10n.modelSearchHint,
+                  hintStyle: TextStyle(
+                    color: palette.secondaryText,
+                    fontSize: 13,
+                  ),
+                  prefixIcon: Icon(
+                    Icons.search,
+                    size: 18,
+                    color: palette.secondaryIcon,
+                  ),
+                  prefixIconConstraints: const BoxConstraints(minWidth: 36),
+                  filled: true,
+                  fillColor: palette.navigation,
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 9,
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 10),
-            OutlinedButton.icon(
+            );
+            final refresh = OutlinedButton.icon(
               onPressed: _isLoading
                   ? null
                   : () => _loadData(forceRefresh: true),
@@ -510,8 +511,25 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                     )
                   : const Icon(Icons.refresh_rounded, size: 16),
               label: Text(l10n.refreshModels),
-            ),
-          ],
+            );
+            if (stacked) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  search,
+                  const SizedBox(height: 12),
+                  Align(alignment: Alignment.centerLeft, child: refresh),
+                ],
+              );
+            }
+            return Row(
+              children: [
+                Expanded(child: search),
+                const SizedBox(width: 10),
+                refresh,
+              ],
+            );
+          },
         ),
         const SizedBox(height: 16),
         if (_isLoading)

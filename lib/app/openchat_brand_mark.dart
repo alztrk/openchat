@@ -10,9 +10,6 @@ class OpenChatBrandMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final layerRoot = dark ? 'assets/brand/dark' : 'assets/brand/light';
-
     return SizedBox(
       width: size,
       height: size,
@@ -24,13 +21,6 @@ class OpenChatBrandMark extends StatelessWidget {
             height: _sourceSize,
             child: Stack(
               children: [
-                Positioned(
-                  left: -11.76,
-                  top: -11.76,
-                  width: 81.87,
-                  height: 81.87,
-                  child: SvgPicture.asset('$layerRoot/base.svg'),
-                ),
                 const Positioned(
                   left: 5.08,
                   top: 8.74,

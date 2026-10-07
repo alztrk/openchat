@@ -33,6 +33,25 @@ void main() {
         _contrast(semantic.focusRing, semantic.surface),
         greaterThanOrEqualTo(3),
       );
+      for (final surface in <Color>[
+        palette.surface,
+        palette.navigation,
+        palette.composer,
+      ]) {
+        expect(_contrast(palette.text, surface), greaterThanOrEqualTo(7));
+        expect(
+          _contrast(palette.secondaryText, surface),
+          greaterThanOrEqualTo(4.5),
+        );
+        expect(
+          _contrast(palette.secondaryIcon, surface),
+          greaterThanOrEqualTo(3),
+        );
+        expect(
+          _contrast(palette.disabledIcon, surface),
+          greaterThanOrEqualTo(3),
+        );
+      }
     }
   });
 

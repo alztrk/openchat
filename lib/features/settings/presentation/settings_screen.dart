@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_theme.dart';
@@ -37,7 +36,18 @@ enum _SettingsSection {
   conversationMemory,
   sharedInstructions,
   appearance,
-  localData,
+  localData;
+
+  IconData get icon => switch (this) {
+    connections => Icons.link_rounded,
+    usageQuotas => Icons.data_usage_rounded,
+    models => Icons.hub_outlined,
+    localEngines => Icons.memory_rounded,
+    conversationMemory => Icons.psychology_outlined,
+    sharedInstructions => Icons.notes_rounded,
+    appearance => Icons.palette_outlined,
+    localData => Icons.storage_rounded,
+  };
 }
 
 class SettingsScreen extends StatefulWidget {
@@ -149,7 +159,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context, constraints) {
         final compactSidebar = constraints.maxWidth < 960;
         final horizontalInset = constraints.maxWidth < 640 ? 16.0 : 24.0;
-        final headerInset = constraints.maxWidth < 640 ? 20.0 : 32.0;
         final sectionTitle = switch (_selectedSection) {
           _SettingsSection.connections => l10n.connections,
           _SettingsSection.usageQuotas => l10n.usageQuotas,
@@ -164,6 +173,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return ColoredBox(
           color: palette.surface,
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _SettingsSidebar(
                 compact: compactSidebar,
@@ -176,7 +186,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   children: [
                     _SettingsHeader(
                       title: sectionTitle,
-                      horizontalInset: headerInset,
+                      icon: _selectedSection.icon,
+                      horizontalInset: horizontalInset,
                     ),
                     Expanded(
                       child: IndexedStack(
@@ -375,13 +386,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 8),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 12,
               children: [
                 Text(
                   '${_sharedInstructionsController.text.characters.length}/$_sharedInstructionsMaxLength',
                   style: TextStyle(color: palette.secondaryText, fontSize: 12),
                 ),
-                const Spacer(),
                 FilledButton.icon(
                   onPressed:
                       _isSavingInstructions ||
@@ -965,31 +979,29 @@ class _SettingsRow extends StatelessWidget {
 }
 
 class _SettingsHeader extends StatelessWidget {
-  const _SettingsHeader({required this.title, required this.horizontalInset});
+  const _SettingsHeader({
+    required this.title,
+    required this.icon,
+    required this.horizontalInset,
+  });
 
   final String title;
+  final IconData icon;
   final double horizontalInset;
 
   @override
   Widget build(BuildContext context) {
     final palette = OpenChatPalette.of(context);
 
-    return SizedBox(
-      height: OpenChatSpacing.conversationHeaderHeight,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(
+        minHeight: OpenChatSpacing.conversationHeaderHeight,
+      ),
       child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: horizontalInset),
+        padding: EdgeInsets.symmetric(horizontal: horizontalInset, vertical: 8),
         child: Row(
           children: [
-            SvgPicture.asset(
-              'assets/icons/settings.svg',
-              width: 18,
-              height: 18,
-              colorFilter: ColorFilter.mode(
-                palette.secondaryIcon,
-                BlendMode.srcIn,
-              ),
-              excludeFromSemantics: true,
-            ),
+            Icon(icon, size: 18, color: palette.secondaryIcon),
             const SizedBox(width: 10),
             Expanded(
               child: Text(
@@ -998,9 +1010,9 @@ class _SettingsHeader extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: palette.text,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  height: 24 / 16,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  height: 20 / 13,
                 ),
               ),
             ),
@@ -1027,46 +1039,20 @@ class _SettingsSidebar extends StatelessWidget {
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
     final entries = [
-      (
-        section: _SettingsSection.connections,
-        label: l10n.connections,
-        icon: Icons.link_rounded,
-      ),
-      (
-        section: _SettingsSection.usageQuotas,
-        label: l10n.usageQuotas,
-        icon: Icons.data_usage_rounded,
-      ),
-      (
-        section: _SettingsSection.models,
-        label: l10n.models,
-        icon: Icons.tune_rounded,
-      ),
-      (
-        section: _SettingsSection.localEngines,
-        label: l10n.localEngines,
-        icon: Icons.memory_rounded,
-      ),
+      (section: _SettingsSection.connections, label: l10n.connections),
+      (section: _SettingsSection.usageQuotas, label: l10n.usageQuotas),
+      (section: _SettingsSection.models, label: l10n.models),
+      (section: _SettingsSection.localEngines, label: l10n.localEngines),
       (
         section: _SettingsSection.conversationMemory,
         label: l10n.conversationMemory,
-        icon: Icons.memory_outlined,
       ),
       (
         section: _SettingsSection.sharedInstructions,
         label: l10n.sharedInstructions,
-        icon: Icons.notes_rounded,
       ),
-      (
-        section: _SettingsSection.appearance,
-        label: l10n.appearance,
-        icon: Icons.palette_outlined,
-      ),
-      (
-        section: _SettingsSection.localData,
-        label: l10n.localData,
-        icon: Icons.storage_rounded,
-      ),
+      (section: _SettingsSection.appearance, label: l10n.appearance),
+      (section: _SettingsSection.localData, label: l10n.localData),
     ];
 
     return Container(
@@ -1083,49 +1069,43 @@ class _SettingsSidebar extends StatelessWidget {
             compact ? 8 : 14,
             16,
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (compact)
-                SizedBox(
-                  height: 38,
-                  child: Center(
-                    child: Icon(
-                      Icons.settings_outlined,
-                      color: palette.secondaryIcon,
-                      size: 20,
+          child: SingleChildScrollView(
+            primary: false,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (compact)
+                  SizedBox(
+                    height: 38,
+                    child: Center(
+                      child: Icon(
+                        Icons.settings_outlined,
+                        color: palette.secondaryIcon,
+                        size: 20,
+                      ),
                     ),
+                  )
+                else ...[
+                  Text(
+                    l10n.settings,
+                    style: Theme.of(context).textTheme.titleLarge,
                   ),
-                )
-              else ...[
-                Text(
-                  l10n.settings,
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  l10n.settingsDescription,
-                  style: TextStyle(
-                    color: palette.secondaryText,
-                    fontSize: 12,
-                    height: 1.4,
+                ],
+                const SizedBox(height: 16),
+                Divider(height: 1, color: palette.border),
+                const SizedBox(height: 12),
+                for (final entry in entries) ...[
+                  _SettingsSidebarItem(
+                    compact: compact,
+                    label: entry.label,
+                    icon: entry.section.icon,
+                    selected: selectedSection == entry.section,
+                    onPressed: () => onSelectSection(entry.section),
                   ),
-                ),
+                  const SizedBox(height: 4),
+                ],
               ],
-              const SizedBox(height: 16),
-              Divider(height: 1, color: palette.border),
-              const SizedBox(height: 12),
-              for (final entry in entries) ...[
-                _SettingsSidebarItem(
-                  compact: compact,
-                  label: entry.label,
-                  icon: entry.icon,
-                  selected: selectedSection == entry.section,
-                  onPressed: () => onSelectSection(entry.section),
-                ),
-                const SizedBox(height: 4),
-              ],
-            ],
+            ),
           ),
         ),
       ),
@@ -1166,14 +1146,18 @@ class _SettingsSidebarItem extends StatelessWidget {
               onTap: onPressed,
               borderRadius: BorderRadius.circular(8),
               overlayColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.hovered)) return palette.hover;
                 if (states.contains(WidgetState.pressed)) {
                   return palette.selected;
                 }
+                if (states.contains(WidgetState.focused)) {
+                  return OpenChatSemanticColors.of(context).focusRing
+                      .withValues(alpha: 0.24);
+                }
+                if (states.contains(WidgetState.hovered)) return palette.hover;
                 return null;
               }),
-              child: SizedBox(
-                height: 44,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 44),
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: compact ? 0 : 12),
                   child: Row(
@@ -1183,9 +1167,7 @@ class _SettingsSidebarItem extends StatelessWidget {
                     children: [
                       Icon(
                         icon,
-                        color: selected
-                            ? palette.accentIcon
-                            : palette.secondaryIcon,
+                        color: selected ? palette.text : palette.secondaryIcon,
                         size: 18,
                       ),
                       if (!compact) ...[
@@ -1237,8 +1219,8 @@ class _SettingDescription extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          height: 22,
+        ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 22),
           child: Align(
             alignment: Alignment.centerLeft,
             child: Text(
@@ -1305,7 +1287,7 @@ class _SegmentedSelector<T> extends StatelessWidget {
 
     return Container(
       width: width,
-      height: 40,
+      constraints: const BoxConstraints(minHeight: 40),
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: changeSelection == null

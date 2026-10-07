@@ -4052,11 +4052,17 @@ abstract class AppLocalizations {
   /// **'—'**
   String get unavailableValue;
 
-  /// No description provided for @responseMetadata.
+  /// No description provided for @responseTokenRate.
   ///
   /// In en, this message translates to:
-  /// **'{rate} tok/s · {tokens} tokens · {time}'**
-  String responseMetadata(String rate, String tokens, String time);
+  /// **'{rate} tok/s'**
+  String responseTokenRate(String rate);
+
+  /// No description provided for @responseTokenCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} tokens'**
+  String responseTokenCount(String count);
 
   /// No description provided for @responseCompleted.
   ///

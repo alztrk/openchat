@@ -64,7 +64,9 @@ class _ModelsPageState extends State<ModelsPage> {
   void initState() {
     super.initState();
     widget.downloadController?.addListener(_onDownloadChanged);
-    unawaited(_searchModels());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_searchModels());
+    });
   }
 
   @override
@@ -367,7 +369,11 @@ class _ModelsPageState extends State<ModelsPage> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final compact = constraints.maxWidth < 900;
+        final textScale = MediaQuery.textScalerOf(context).scale(1);
+        final compact =
+            constraints.maxWidth < 900 ||
+            constraints.maxHeight < 600 ||
+            textScale > 1.4;
         final headerPadding = constraints.maxWidth < 640 ? 20.0 : 32.0;
         final contentPadding = constraints.maxWidth < 640 ? 16.0 : 28.0;
         final header = Padding(
@@ -413,22 +419,42 @@ class _ModelsPageState extends State<ModelsPage> {
 
         final resultList = _buildResultList(palette);
         final details = _buildDetailsPanel(palette);
-        final body = compact
-            ? Column(
-                children: [
-                  SizedBox(height: 240, child: resultList),
-                  const SizedBox(height: 12),
-                  Expanded(child: details),
-                ],
-              )
-            : Row(
+        if (compact) {
+          return ColoredBox(
+            color: palette.surface,
+            child: SingleChildScrollView(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SizedBox(width: 340, child: resultList),
-                  const SizedBox(width: 16),
-                  Expanded(child: details),
+                  header,
+                  Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      contentPadding,
+                      0,
+                      contentPadding,
+                      contentPadding,
+                    ),
+                    child: Column(
+                      children: [
+                        SizedBox(height: 240 * textScale, child: resultList),
+                        const SizedBox(height: 12),
+                        SizedBox(height: 360 * textScale, child: details),
+                      ],
+                    ),
+                  ),
                 ],
-              );
+              ),
+            ),
+          );
+        }
+        final body = Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(width: 340, child: resultList),
+            const SizedBox(width: 16),
+            Expanded(child: details),
+          ],
+        );
 
         return ColoredBox(
           color: palette.surface,
@@ -501,7 +527,7 @@ class _ModelsPageState extends State<ModelsPage> {
                   size: 18,
                 ),
                 const SizedBox(width: 8),
-                Text(option.$2, maxLines: 1, overflow: TextOverflow.ellipsis),
+                Flexible(child: Text(option.$2)),
               ],
             ),
           ),
@@ -686,8 +712,11 @@ class _ModelsPageState extends State<ModelsPage> {
     final l10n = context.openchatL10n;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        runSpacing: 4,
         children: [
           TextButton.icon(
             onPressed: !_isSearching && _pageIndex > 0
@@ -1163,26 +1192,28 @@ class _ModelsPageState extends State<ModelsPage> {
   }) {
     final palette = OpenChatPalette.of(context);
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (loading)
-              const CircularProgressIndicator()
-            else if (icon != null)
-              Icon(icon, color: palette.secondaryIcon, size: 28),
-            const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center),
-            if (onRetry != null) ...[
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (loading)
+                const CircularProgressIndicator()
+              else if (icon != null)
+                Icon(icon, color: palette.secondaryIcon, size: 28),
               const SizedBox(height: 12),
-              OutlinedButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh_rounded),
-                label: Text(context.openchatL10n.retry),
-              ),
+              Text(message, textAlign: TextAlign.center),
+              if (onRetry != null) ...[
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: Text(context.openchatL10n.retry),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

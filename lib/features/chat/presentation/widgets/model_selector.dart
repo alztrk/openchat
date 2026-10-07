@@ -20,6 +20,7 @@ class ModelSelector extends StatefulWidget {
     required this.iconRoot,
     required this.palette,
     required this.compact,
+    this.width = 152,
     required this.models,
     required this.favoriteModels,
     required this.selectedModelId,
@@ -40,6 +41,7 @@ class ModelSelector extends StatefulWidget {
   final String iconRoot;
   final OpenChatPalette palette;
   final bool compact;
+  final double width;
   final List<ChatGptModel> models;
   final List<FavoriteModel> favoriteModels;
   final String? selectedModelId;
@@ -193,12 +195,19 @@ class _ModelSelectorState extends State<ModelSelector> {
     final shownCount = _showFavorites
         ? visibleFavorites.length
         : modelEntries.length;
-    final screenWidth = MediaQuery.sizeOf(context).width;
+    final media = MediaQuery.of(context);
+    final screenWidth = media.size.width;
+    final menuHeight = math.min(
+      _menuHeight,
+      math.max(120.0, media.size.height - media.viewInsets.bottom - 48),
+    );
     final menuWidth = math.max(0.0, math.min(520.0, screenWidth - 32));
     final providerWidth = math.min(
       menuWidth * 0.36,
       menuWidth < 420 ? 112.0 : 152.0,
     );
+
+    final focusColor = OpenChatSemanticColors.of(context).focusRing;
 
     return OpenChatDropdown(
       palette: widget.palette,
@@ -207,11 +216,11 @@ class _ModelSelectorState extends State<ModelSelector> {
       alignmentOffset: const Offset(0, 8),
       reservedPadding: const EdgeInsets.all(12),
       menuPadding: EdgeInsets.zero,
-      maximumSize: Size(menuWidth, _menuHeight),
+      maximumSize: Size(menuWidth, menuHeight),
       menuChildren: [
         SizedBox(
           width: menuWidth,
-          height: _menuHeight,
+          height: menuHeight,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -262,8 +271,8 @@ class _ModelSelectorState extends State<ModelSelector> {
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
                   child: Column(
                     children: [
-                      SizedBox(
-                        height: 40,
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(minHeight: 40),
                         child: TextField(
                           controller: _searchController,
                           onChanged: (value) =>
@@ -311,23 +320,27 @@ class _ModelSelectorState extends State<ModelSelector> {
                                           strokeWidth: 2,
                                         ),
                                       )
-                                    : Padding(
-                                        padding: const EdgeInsets.all(16),
-                                        child: Text(
-                                          _showFavorites
-                                              ? favoriteModels.isNotEmpty &&
-                                                        normalizedQuery
-                                                            .isNotEmpty
-                                                    ? l10n.modelSearchNoResults
-                                                    : l10n.favoriteModelsEmpty
-                                              : availableModels.isNotEmpty &&
-                                                    normalizedQuery.isNotEmpty
-                                              ? l10n.modelSearchNoResults
-                                              : widget.emptyModelsLabel,
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            color: widget.palette.secondaryText,
-                                            fontSize: 13,
+                                    : SingleChildScrollView(
+                                        primary: false,
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(16),
+                                          child: Text(
+                                            _showFavorites
+                                                ? favoriteModels.isNotEmpty &&
+                                                          normalizedQuery
+                                                              .isNotEmpty
+                                                      ? l10n.modelSearchNoResults
+                                                      : l10n.favoriteModelsEmpty
+                                                : availableModels.isNotEmpty &&
+                                                      normalizedQuery.isNotEmpty
+                                                ? l10n.modelSearchNoResults
+                                                : widget.emptyModelsLabel,
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              color:
+                                                  widget.palette.secondaryText,
+                                              fontSize: 13,
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -480,70 +493,79 @@ class _ModelSelectorState extends State<ModelSelector> {
           ),
         ),
       ],
-      builder: (context, controller, _) => SizedBox(
-        width: 132,
-        height: 36,
-        child: OutlinedButton(
-          onPressed:
-              widget.onSelected == null && widget.onProviderSelected == null
-              ? null
-              : () =>
-                    controller.isOpen ? controller.close() : controller.open(),
-          style: composerControlStyle(
-            widget.palette,
-            width: 132,
-            compact: widget.compact,
-            leftPadding: 12,
-            rightPadding: 12,
-          ),
-          child: Row(
-            children: [
-              SizedBox(
-                width: 16,
-                height: 16,
-                child: Center(
-                  child: ProviderIcon(
-                    providerId: widget.providerId,
-                    color: isEnabled
-                        ? widget.palette.secondaryIcon
-                        : widget.palette.disabledIcon,
-                    size: 16,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  widget.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.left,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    height: 20 / 14,
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: 16,
-                height: 16,
-                child: Center(
-                  child: SvgPicture.asset(
-                    '${widget.iconRoot}/chevron.svg',
-                    width: 10.6667,
-                    height: 6.66668,
-                    colorFilter: ColorFilter.mode(
-                      isEnabled
+      builder: (context, controller, _) => Tooltip(
+        message: widget.label,
+        child: SizedBox(
+          width: widget.width,
+          height: composerControlHeight(context),
+          child: OutlinedButton(
+            onPressed:
+                widget.onSelected == null && widget.onProviderSelected == null
+                ? null
+                : () => controller.isOpen
+                      ? controller.close()
+                      : controller.open(),
+            style: composerControlStyle(
+              widget.palette,
+              width: widget.width,
+              height: composerControlHeight(context),
+              compact: widget.compact,
+              leftPadding: 12,
+              rightPadding: 12,
+              focusColor: focusColor,
+            ),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: Center(
+                    child: ProviderIcon(
+                      providerId: widget.providerId,
+                      color: isEnabled
                           ? widget.palette.secondaryIcon
                           : widget.palette.disabledIcon,
-                      BlendMode.srcIn,
+                      size: 16,
                     ),
-                    excludeFromSemantics: true,
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    widget.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.left,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      height: 18 / 13,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: Center(
+                    child: RotatedBox(
+                      quarterTurns: controller.isOpen ? 0 : 2,
+                      child: SvgPicture.asset(
+                        '${widget.iconRoot}/chevron.svg',
+                        width: 10.6667,
+                        height: 6.66668,
+                        colorFilter: ColorFilter.mode(
+                          isEnabled
+                              ? widget.palette.secondaryIcon
+                              : widget.palette.disabledIcon,
+                          BlendMode.srcIn,
+                        ),
+                        excludeFromSemantics: true,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -748,8 +770,18 @@ class _ModelOptionState extends State<_ModelOption> {
         : null;
     final hasDetails = widget.description != null || contextWindowLabel != null;
     final l10n = context.openchatL10n;
+    final touchTargets = switch (Theme.of(context).platform) {
+      TargetPlatform.android ||
+      TargetPlatform.iOS ||
+      TargetPlatform.fuchsia => true,
+      _ => false,
+    };
     final showFavorite =
-        _hovered || _rowFocused || _favoriteFocused || widget.isFavorite;
+        touchTargets ||
+        _hovered ||
+        _rowFocused ||
+        _favoriteFocused ||
+        widget.isFavorite;
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -782,7 +814,9 @@ class _ModelOptionState extends State<_ModelOption> {
                       children: [
                         ProviderIcon(
                           providerId: widget.providerId,
-                          color: widget.palette.secondaryIcon,
+                          color: widget.isAvailable
+                              ? widget.palette.secondaryIcon
+                              : widget.palette.disabledIcon,
                           size: 16,
                         ),
                         if (widget.selected) ...[
@@ -801,15 +835,18 @@ class _ModelOptionState extends State<_ModelOption> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                widget.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: widget.isAvailable
-                                      ? widget.palette.text
-                                      : widget.palette.secondaryText,
-                                  fontSize: 13,
+                              Tooltip(
+                                message: widget.title,
+                                child: Text(
+                                  widget.title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: widget.isAvailable
+                                        ? widget.palette.text
+                                        : widget.palette.secondaryText,
+                                    fontSize: 13,
+                                  ),
                                 ),
                               ),
                               if (widget.description case final description?)
@@ -825,78 +862,66 @@ class _ModelOptionState extends State<_ModelOption> {
                                     ),
                                   ),
                                 ),
-                            ],
-                          ),
-                        ),
-                        if (contextWindowLabel case final label?)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 8, right: 4),
-                            child: Tooltip(
-                              message: widget.providerId == 'opencode'
-                                  ? l10n.openCodeModelContextWindow(label)
-                                  : l10n.modelContextWindow(label),
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  color: widget.palette.hover,
-                                  border: Border.all(
-                                    color: widget.palette.border,
-                                  ),
-                                  borderRadius: BorderRadius.circular(7),
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 7,
-                                    vertical: 3,
-                                  ),
-                                  child: Text(
-                                    label,
-                                    style: TextStyle(
-                                      color: widget.palette.secondaryText,
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
+                              if (contextWindowLabel case final label?)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 3),
+                                  child: Tooltip(
+                                    message: widget.providerId == 'opencode'
+                                        ? l10n.openCodeModelContextWindow(label)
+                                        : l10n.modelContextWindow(label),
+                                    child: Text(
+                                      label,
+                                      style: TextStyle(
+                                        color: widget.palette.secondaryText,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ),
+                            ],
                           ),
+                        ),
                       ],
                     ),
                   ),
                 ),
               ),
             ),
-            Focus(
-              onFocusChange: (focused) => setState(() {
-                _favoriteFocused = focused;
-              }),
-              child: AnimatedOpacity(
-                opacity: showFavorite ? 1 : 0,
-                duration: const Duration(milliseconds: 100),
-                child: SizedBox(
-                  width: 40,
-                  child: IconButton(
-                    tooltip: widget.isFavorite
-                        ? widget.removeFavoriteLabel
-                        : widget.addFavoriteLabel,
-                    onPressed: showFavorite ? widget.onToggleFavorite : null,
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    iconSize: 18,
-                    color: widget.isFavorite
-                        ? widget.palette.accent
-                        : widget.onToggleFavorite == null
-                        ? widget.palette.disabledIcon
-                        : widget.palette.secondaryIcon,
-                    icon: Icon(
-                      widget.isFavorite
-                          ? Icons.star_rounded
-                          : Icons.star_border_rounded,
+            if (widget.onToggleFavorite != null || widget.isFavorite)
+              Focus(
+                onFocusChange: (focused) => setState(() {
+                  _favoriteFocused = focused;
+                }),
+                child: AnimatedOpacity(
+                  opacity: showFavorite ? 1 : 0,
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : const Duration(milliseconds: 100),
+                  child: SizedBox(
+                    width: touchTargets ? 44 : 40,
+                    child: IconButton(
+                      tooltip: widget.isFavorite
+                          ? widget.removeFavoriteLabel
+                          : widget.addFavoriteLabel,
+                      onPressed: showFavorite ? widget.onToggleFavorite : null,
+                      visualDensity: VisualDensity.standard,
+                      padding: EdgeInsets.zero,
+                      iconSize: 18,
+                      color: widget.isFavorite
+                          ? widget.palette.accent
+                          : widget.onToggleFavorite == null
+                          ? widget.palette.disabledIcon
+                          : widget.palette.secondaryIcon,
+                      icon: Icon(
+                        widget.isFavorite
+                            ? Icons.star_rounded
+                            : Icons.star_border_rounded,
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
           ],
         ),
       ),
@@ -977,49 +1002,54 @@ class _ModelProviderTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       selected: selected,
-      child: TextButton(
-        onPressed: onPressed,
-        style: TextButton.styleFrom(
-          alignment: Alignment.centerLeft,
-          backgroundColor: selected ? palette.selected : Colors.transparent,
-          foregroundColor: selected ? palette.text : palette.secondaryText,
-          disabledForegroundColor: selected
-              ? palette.text
-              : palette.disabledForeground,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          minimumSize: const Size(0, 40),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 18,
-              height: 18,
-              child: Center(
-                child: ProviderIcon(
-                  providerId: providerId,
-                  color: selected
-                      ? palette.secondaryIcon
-                      : onPressed == null
-                      ? palette.disabledIcon
-                      : palette.secondaryText,
-                  size: 18,
+      child: Tooltip(
+        message: label,
+        child: TextButton(
+          onPressed: onPressed,
+          style: TextButton.styleFrom(
+            alignment: Alignment.centerLeft,
+            backgroundColor: selected ? palette.selected : Colors.transparent,
+            foregroundColor: selected ? palette.text : palette.secondaryText,
+            disabledForegroundColor: selected
+                ? palette.text
+                : palette.disabledForeground,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            minimumSize: const Size(0, 40),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          child: Row(
+            children: [
+              SizedBox(
+                width: 18,
+                height: 18,
+                child: Center(
+                  child: ProviderIcon(
+                    providerId: providerId,
+                    color: selected
+                        ? palette.secondaryIcon
+                        : onPressed == null
+                        ? palette.disabledIcon
+                        : palette.secondaryText,
+                    size: 18,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
