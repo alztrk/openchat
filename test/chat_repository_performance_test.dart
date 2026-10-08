@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -43,9 +45,11 @@ void main() {
       batch.insertAll(database.messages, messages);
     });
 
-    final getMessages = () => repository.getMessages(conversationId);
-    final watchMessages = () => repository.watchMessages(conversationId).first;
-    final queryRows = () {
+    Future<List<ChatMessage>> getMessages() =>
+        repository.getMessages(conversationId);
+    Future<List<ChatMessage>> watchMessages() =>
+        repository.watchMessages(conversationId).first;
+    Future<List<Message>> queryRows() {
       final query = database.select(database.messages)
         ..where((message) => message.conversationId.equals(conversationId))
         ..orderBy([
@@ -53,7 +57,7 @@ void main() {
           (message) => OrderingTerm.asc(message.id),
         ]);
       return query.get();
-    };
+    }
 
     for (var index = 0; index < _warmupCount; index++) {
       if (index.isEven) {
@@ -112,7 +116,7 @@ void main() {
       latestWatchMessages.map((message) => message.id),
       latestGetMessages.map((message) => message.id),
     );
-    print(
+    stdout.writeln(
       'history-mapping debug; messages=$_messageCount; '
       'select.get ${_formatPercentiles(rowSamples)}; '
       'getMessages ${_formatPercentiles(getSamples)}; '
