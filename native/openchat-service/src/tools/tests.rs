@@ -1526,7 +1526,28 @@ async fn simulate_execute_command_with_user_permission_approval_flow() {
     let respond_res = broker.respond(&approval_id, true).await;
     assert!(respond_res.is_ok());
 
-    let result = exec_task.await.expect("join task").expect("execute_call");
+    let mut result = exec_task.await.expect("join task").expect("execute_call");
+    for _ in 0..60 {
+        if result.output["is_running"] != true {
+            break;
+        }
+        let terminal_id = result.output["terminal_id"]
+            .as_str()
+            .expect("running command should expose its terminal session")
+            .to_owned();
+        result.output = super::terminal::TerminalSessionManager::global()
+            .read_output_of(&terminal_id, Some(500))
+            .await
+            .expect("approved command output should remain readable");
+    }
+    if result.output["is_running"] == true {
+        if let Some(terminal_id) = result.output["terminal_id"].as_str() {
+            super::terminal::TerminalSessionManager::global()
+                .kill_session(terminal_id)
+                .await
+                .expect("timed-out approved command should be terminated");
+        }
+    }
     assert!(
         result.output["output"]
             .as_str()
