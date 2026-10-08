@@ -11,6 +11,7 @@ use std::{
     },
     path::{Path, PathBuf},
     ptr::{null, null_mut},
+    sync::Mutex,
     time::Duration,
 };
 
@@ -56,6 +57,7 @@ use windows_sys::Win32::{
 
 const MAX_ACL_ENTRIES: usize = 20_000;
 const WAIT_INTERVAL: Duration = Duration::from_millis(25);
+static APP_CONTAINER_ACL_LOCK: Mutex<()> = Mutex::new(());
 
 pub(crate) struct SandboxedProcess {
     process: OwnedHandle,
@@ -571,6 +573,10 @@ fn update_app_container_acl(
     permissions: u32,
     inheritance: u32,
 ) -> io::Result<()> {
+    // Keep the DACL read-modify-write sequence atomic across concurrent terminal sessions.
+    let _guard = APP_CONTAINER_ACL_LOCK
+        .lock()
+        .map_err(|_| io::Error::other("The AppContainer ACL lock is unavailable."))?;
     let path_wide = wide(path.as_os_str());
     let mut current_dacl = null_mut();
     let mut security_descriptor = null_mut();
