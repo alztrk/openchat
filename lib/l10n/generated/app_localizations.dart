@@ -3130,6 +3130,198 @@ abstract class AppLocalizations {
   /// **'Search messages'**
   String get searchMessagesTooltip;
 
+  /// No description provided for @historySearchDateFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'Filter by date'**
+  String get historySearchDateFilter;
+
+  /// No description provided for @historySearchDateFilterApplied.
+  ///
+  /// In en, this message translates to:
+  /// **'Date filter is active'**
+  String get historySearchDateFilterApplied;
+
+  /// No description provided for @historySearchFiltersTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Search filters'**
+  String get historySearchFiltersTitle;
+
+  /// No description provided for @historySearchRouteFilterNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Provider and model refer to the route saved with each assistant answer.'**
+  String get historySearchRouteFilterNote;
+
+  /// No description provided for @historySearchProviderFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'Answer provider'**
+  String get historySearchProviderFilter;
+
+  /// No description provided for @historySearchModelFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'Answer model'**
+  String get historySearchModelFilter;
+
+  /// No description provided for @historySearchProjectFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'Project'**
+  String get historySearchProjectFilter;
+
+  /// No description provided for @historySearchArchiveFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'Archive status'**
+  String get historySearchArchiveFilter;
+
+  /// No description provided for @historySearchAllProviders.
+  ///
+  /// In en, this message translates to:
+  /// **'All providers'**
+  String get historySearchAllProviders;
+
+  /// No description provided for @historySearchAllModels.
+  ///
+  /// In en, this message translates to:
+  /// **'All models'**
+  String get historySearchAllModels;
+
+  /// No description provided for @historySearchAllProjects.
+  ///
+  /// In en, this message translates to:
+  /// **'All projects'**
+  String get historySearchAllProjects;
+
+  /// No description provided for @historySearchTagFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'Tag'**
+  String get historySearchTagFilter;
+
+  /// No description provided for @selectConversations.
+  ///
+  /// In en, this message translates to:
+  /// **'Select chats'**
+  String get selectConversations;
+
+  /// No description provided for @cancelSelection.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel selection'**
+  String get cancelSelection;
+
+  /// No description provided for @archiveSelectedConversations.
+  ///
+  /// In en, this message translates to:
+  /// **'Archive selected chats'**
+  String get archiveSelectedConversations;
+
+  /// No description provided for @moveSelectedChats.
+  ///
+  /// In en, this message translates to:
+  /// **'Move selected chats'**
+  String get moveSelectedChats;
+
+  /// No description provided for @moveToChats.
+  ///
+  /// In en, this message translates to:
+  /// **'Move to chats'**
+  String get moveToChats;
+
+  /// No description provided for @bookmarkConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Bookmark conversation'**
+  String get bookmarkConversation;
+
+  /// No description provided for @removeConversationBookmark.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove bookmark'**
+  String get removeConversationBookmark;
+
+  /// No description provided for @conversationBookmarkFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The conversation bookmark could not be updated.'**
+  String get conversationBookmarkFailed;
+
+  /// No description provided for @conversationBookmarked.
+  ///
+  /// In en, this message translates to:
+  /// **'Bookmarked'**
+  String get conversationBookmarked;
+
+  /// No description provided for @selectConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Select {title}'**
+  String selectConversation(String title);
+
+  /// No description provided for @conversationsSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'{count, plural, =0{No chats selected} one{# chat selected} other{# chats selected}}'**
+  String conversationsSelected(int count);
+
+  /// No description provided for @historySearchAllTags.
+  ///
+  /// In en, this message translates to:
+  /// **'All tags'**
+  String get historySearchAllTags;
+
+  /// No description provided for @historySearchAllStatuses.
+  ///
+  /// In en, this message translates to:
+  /// **'All conversations'**
+  String get historySearchAllStatuses;
+
+  /// No description provided for @historySearchActiveConversations.
+  ///
+  /// In en, this message translates to:
+  /// **'Active conversations'**
+  String get historySearchActiveConversations;
+
+  /// No description provided for @historySearchArchivedConversations.
+  ///
+  /// In en, this message translates to:
+  /// **'Archived conversations'**
+  String get historySearchArchivedConversations;
+
+  /// No description provided for @historySearchClearFilters.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear filters'**
+  String get historySearchClearFilters;
+
+  /// No description provided for @historySearchApplyFilters.
+  ///
+  /// In en, this message translates to:
+  /// **'Apply filters'**
+  String get historySearchApplyFilters;
+
+  /// No description provided for @historySearchOpenFilters.
+  ///
+  /// In en, this message translates to:
+  /// **'Open search filters'**
+  String get historySearchOpenFilters;
+
+  /// No description provided for @historySearchFiltersActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Search filters are active'**
+  String get historySearchFiltersActive;
+
+  /// No description provided for @historySearchClearDateFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear date filter'**
+  String get historySearchClearDateFilter;
+
   /// No description provided for @searchMessagesHeader.
   ///
   /// In en, this message translates to:
@@ -3718,6 +3910,24 @@ abstract class AppLocalizations {
   /// **'Child task: {objective}'**
   String agentRunSubagentTask(String objective);
 
+  /// No description provided for @agentRunLiveStarting.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting delegated analysis…'**
+  String get agentRunLiveStarting;
+
+  /// No description provided for @agentRunLiveThinking.
+  ///
+  /// In en, this message translates to:
+  /// **'Analyzing delegated task…'**
+  String get agentRunLiveThinking;
+
+  /// No description provided for @agentRunLiveUsingTool.
+  ///
+  /// In en, this message translates to:
+  /// **'Using {tool}'**
+  String agentRunLiveUsingTool(String tool);
+
   /// No description provided for @agentRunEndedInAnotherChat.
   ///
   /// In en, this message translates to:
@@ -4183,6 +4393,96 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Edit chat title'**
   String get renameConversation;
+
+  /// No description provided for @editConversationTags.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit tags'**
+  String get editConversationTags;
+
+  /// No description provided for @conversationTagsDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation tags'**
+  String get conversationTagsDialogTitle;
+
+  /// No description provided for @conversationTagsFieldLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Tags'**
+  String get conversationTagsFieldLabel;
+
+  /// No description provided for @conversationTagsFieldHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Separate tags with commas'**
+  String get conversationTagsFieldHint;
+
+  /// No description provided for @conversationTagsHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Use up to 12 tags, with 32 characters per tag.'**
+  String get conversationTagsHelp;
+
+  /// No description provided for @conversationTagsSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Tags could not be saved.'**
+  String get conversationTagsSaveFailed;
+
+  /// No description provided for @saveHistorySearchTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Save history search'**
+  String get saveHistorySearchTitle;
+
+  /// No description provided for @savedHistorySearchName.
+  ///
+  /// In en, this message translates to:
+  /// **'Search name'**
+  String get savedHistorySearchName;
+
+  /// No description provided for @savedHistorySearchesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved searches'**
+  String get savedHistorySearchesTitle;
+
+  /// No description provided for @savedHistorySearchesEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No saved searches yet.'**
+  String get savedHistorySearchesEmpty;
+
+  /// No description provided for @deleteSavedHistorySearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete saved search'**
+  String get deleteSavedHistorySearch;
+
+  /// No description provided for @saveCurrentHistorySearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Save current search'**
+  String get saveCurrentHistorySearch;
+
+  /// No description provided for @savedHistorySearchesLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved searches could not be loaded.'**
+  String get savedHistorySearchesLoadFailed;
+
+  /// No description provided for @savedHistorySearchSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved searches could not be updated.'**
+  String get savedHistorySearchSaveFailed;
+
+  /// No description provided for @savedHistorySearchLimitReached.
+  ///
+  /// In en, this message translates to:
+  /// **'You can save up to 20 searches.'**
+  String get savedHistorySearchLimitReached;
 
   /// No description provided for @pinConversation.
   ///

@@ -111,6 +111,8 @@ pub(crate) enum ImageGenerationContext<'a> {
     ApiKey {
         service: &'a ChatGptService,
         api_key: &'a str,
+        model_id: &'a str,
+        reasoning_effort: Option<String>,
     },
 }
 
@@ -684,6 +686,34 @@ impl ToolExecutor {
                         user_questions,
                     )
                     .await
+                } else if let Some(ImageGenerationContext::ApiKey {
+                    service,
+                    api_key,
+                    model_id,
+                    reasoning_effort,
+                }) = image_generation
+                {
+                    crate::chatgpt::subagents::run_child_analysis_api_key(
+                        service,
+                        api_key,
+                        call,
+                        task,
+                        context.as_deref(),
+                        model_id,
+                        reasoning_effort.as_deref(),
+                        &snapshot.message_id,
+                        self.project_root.as_deref(),
+                        permissions,
+                        request_id,
+                        snapshot,
+                        events,
+                        cancellation,
+                        storage,
+                        run_id,
+                        self,
+                        user_questions,
+                    )
+                    .await
                 } else {
                     json!({"error": {"code": "subagent_unavailable", "message": "Delegated analysis is unavailable for this provider route."}})
                 }
@@ -822,7 +852,9 @@ impl ToolExecutor {
                     )
                     .await
             }
-            ImageGenerationContext::ApiKey { service, api_key } => {
+            ImageGenerationContext::ApiKey {
+                service, api_key, ..
+            } => {
                 service
                     .generate_image(
                         &request,

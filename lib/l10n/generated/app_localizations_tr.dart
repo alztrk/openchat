@@ -1818,6 +1818,114 @@ class AppLocalizationsTr extends AppLocalizations {
   String get searchMessagesTooltip => 'Mesajları ara';
 
   @override
+  String get historySearchDateFilter => 'Tarihe göre filtrele';
+
+  @override
+  String get historySearchDateFilterApplied => 'Tarih filtresi etkin';
+
+  @override
+  String get historySearchFiltersTitle => 'Arama filtreleri';
+
+  @override
+  String get historySearchRouteFilterNote =>
+      'Sağlayıcı ve model, her yanıtla kaydedilmiş rotayı belirtir.';
+
+  @override
+  String get historySearchProviderFilter => 'Yanıt sağlayıcısı';
+
+  @override
+  String get historySearchModelFilter => 'Yanıt modeli';
+
+  @override
+  String get historySearchProjectFilter => 'Proje';
+
+  @override
+  String get historySearchArchiveFilter => 'Arşiv durumu';
+
+  @override
+  String get historySearchAllProviders => 'Tüm sağlayıcılar';
+
+  @override
+  String get historySearchAllModels => 'Tüm modeller';
+
+  @override
+  String get historySearchAllProjects => 'Tüm projeler';
+
+  @override
+  String get historySearchTagFilter => 'Etiket';
+
+  @override
+  String get selectConversations => 'Sohbetleri seç';
+
+  @override
+  String get cancelSelection => 'Seçimi iptal et';
+
+  @override
+  String get archiveSelectedConversations => 'Seçilen sohbetleri arşivle';
+
+  @override
+  String get moveSelectedChats => 'Seçilen sohbetleri taşı';
+
+  @override
+  String get moveToChats => 'Sohbetlere taşı';
+
+  @override
+  String get bookmarkConversation => 'Sohbeti yer imlerine ekle';
+
+  @override
+  String get removeConversationBookmark => 'Yer imini kaldır';
+
+  @override
+  String get conversationBookmarkFailed => 'Sohbet yer imi güncellenemedi.';
+
+  @override
+  String get conversationBookmarked => 'Yer imlerinde';
+
+  @override
+  String selectConversation(String title) {
+    return '$title sohbetini seç';
+  }
+
+  @override
+  String conversationsSelected(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# sohbet seçildi',
+      one: '# sohbet seçildi',
+      zero: 'Sohbet seçilmedi',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get historySearchAllTags => 'Tüm etiketler';
+
+  @override
+  String get historySearchAllStatuses => 'Tüm sohbetler';
+
+  @override
+  String get historySearchActiveConversations => 'Etkin sohbetler';
+
+  @override
+  String get historySearchArchivedConversations => 'Arşivlenmiş sohbetler';
+
+  @override
+  String get historySearchClearFilters => 'Filtreleri temizle';
+
+  @override
+  String get historySearchApplyFilters => 'Filtreleri uygula';
+
+  @override
+  String get historySearchOpenFilters => 'Arama filtrelerini aç';
+
+  @override
+  String get historySearchFiltersActive => 'Arama filtreleri etkin';
+
+  @override
+  String get historySearchClearDateFilter => 'Tarih filtresini temizle';
+
+  @override
   String get searchMessagesHeader => 'Mesaj eşleşmeleri';
 
   @override
@@ -2151,6 +2259,17 @@ class AppLocalizationsTr extends AppLocalizations {
   }
 
   @override
+  String get agentRunLiveStarting => 'Devredilen analiz başlatılıyor…';
+
+  @override
+  String get agentRunLiveThinking => 'Devredilen görev analiz ediliyor…';
+
+  @override
+  String agentRunLiveUsingTool(String tool) {
+    return '$tool kullanılıyor';
+  }
+
+  @override
   String get agentRunEndedInAnotherChat =>
       'Başka bir sohbetteki çalışma sona erdi.';
 
@@ -2460,6 +2579,53 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get renameConversation => 'Sohbet başlığını düzenle';
+
+  @override
+  String get editConversationTags => 'Etiketleri düzenle';
+
+  @override
+  String get conversationTagsDialogTitle => 'Sohbet etiketleri';
+
+  @override
+  String get conversationTagsFieldLabel => 'Etiketler';
+
+  @override
+  String get conversationTagsFieldHint => 'Etiketleri virgülle ayırın';
+
+  @override
+  String get conversationTagsHelp =>
+      'En fazla 12 etiket ekleyin; her etiket 32 karakter olabilir.';
+
+  @override
+  String get conversationTagsSaveFailed => 'Etiketler kaydedilemedi.';
+
+  @override
+  String get saveHistorySearchTitle => 'Geçmiş aramasını kaydet';
+
+  @override
+  String get savedHistorySearchName => 'Arama adı';
+
+  @override
+  String get savedHistorySearchesTitle => 'Kayıtlı aramalar';
+
+  @override
+  String get savedHistorySearchesEmpty => 'Henüz kayıtlı arama yok.';
+
+  @override
+  String get deleteSavedHistorySearch => 'Kayıtlı aramayı sil';
+
+  @override
+  String get saveCurrentHistorySearch => 'Geçerli aramayı kaydet';
+
+  @override
+  String get savedHistorySearchesLoadFailed => 'Kayıtlı aramalar yüklenemedi.';
+
+  @override
+  String get savedHistorySearchSaveFailed => 'Kayıtlı aramalar güncellenemedi.';
+
+  @override
+  String get savedHistorySearchLimitReached =>
+      'En fazla 20 arama kaydedebilirsiniz.';
 
   @override
   String get pinConversation => 'Sohbeti sabitle';

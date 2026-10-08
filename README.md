@@ -90,6 +90,18 @@ In a conversation's Settings > Conversation memory panel, Archive indexing can b
 
 The tool-memory index applies best-effort redaction to common credential field names and visible token formats before building keyword and semantic indexes. It also rebuilds existing derived indexes when that rule is introduced. Redaction does not change saved messages, tool activity, recent context sent to a provider, or archive exports, and it cannot detect every custom, encoded, or transformed secret. Treat local conversation history and exported archives as sensitive data.
 
+Sidebar history search covers indexed messages and completed tool activity across opted-in conversations. It can narrow results by an inclusive local-date range, assistant-message provider/model, project, archive status, or conversation tag; provider and model values come from the route stored with each assistant answer. Search results remain bounded and open the matching message directly.
+
+Conversations can be labeled with up to 12 local tags of 32 characters each. Tags appear in the sidebar and are removed with their conversation.
+
+Users can save up to 20 named history searches, including their query, route/project/archive filters, and date range. Saved searches stay in local application preferences and can be reapplied or removed from the sidebar search view.
+
+Conversations can be bookmarked from the sidebar menu. Bookmarks persist with the local conversation database and appear in the sidebar with an accessible status label. Selection mode can move multiple active conversations into a project or back to the general chat list, or archive them in one transaction. The encrypted conversation archive can export multiple selected conversations and their attachments.
+
+Provider citations are saved as source records for ChatGPT Responses, Mistral references when their source mapping is unambiguous, and OpenRouter/Groq citation annotations. Provider sources do not have a local retrieval timestamp unless the provider supplies one.
+
+Assistant citations link to source cards when the message has a valid stored source. Mistral reference chunks can point to local sources from one unambiguous prior tool result; the current Chat Completions route does not enable Mistral-hosted web search.
+
 People can delete individual conversations after confirmation, export a conversation with its exposed reasoning summaries and tool activity as Markdown, and retry the latest assistant response. A retry keeps the previous response until the replacement completes successfully and uses the conversation's saved provider and model route.
 
 The Settings > Conversation memory page inspects the selected conversation's readable compacted summary, last request input-token count when available, and a bounded search over completed messages and tool results. Resetting compacted context removes only its saved summary and usage snapshot; the full message history and searchable archive remain intact. Keyword search is always available. When the user prepares the local semantic model, search also finds paraphrased details. Current builds fetch only the pinned public model files from Hugging Face; conversation data stays local. Model downloads show byte progress, can be cancelled, and resume from valid partial files when the host supports HTTP range requests; otherwise, the download restarts safely.

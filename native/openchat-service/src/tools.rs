@@ -641,6 +641,7 @@ pub fn definitions_for_chatgpt_api() -> Vec<ToolDefinition> {
 
 fn chatgpt_api_tool_definitions() -> Vec<ToolDefinition> {
     let mut definitions = definitions_for_provider("chatgpt_api");
+    definitions.push(delegate_task_tool_definition());
     if let Some(image_tool) = definitions
         .iter_mut()
         .find(|tool| tool.name == "generate_image")
@@ -1078,6 +1079,25 @@ mod image_tool_tests {
                 "{provider_id}"
             );
         }
+    }
+
+    #[test]
+    fn delegated_child_runs_are_available_on_both_responses_routes() {
+        for provider_id in ["chatgpt", "chatgpt_api"] {
+            assert!(
+                definitions_for_request(provider_id, Some(true))
+                    .iter()
+                    .any(|tool| tool.name == "delegate_task"),
+                "{provider_id}"
+            );
+            assert!(definitions_for_request(provider_id, Some(false)).is_empty());
+        }
+
+        assert!(
+            !definitions_for_provider("openrouter")
+                .iter()
+                .any(|tool| tool.name == "delegate_task")
+        );
     }
 
     #[test]

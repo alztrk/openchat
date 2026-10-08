@@ -25,6 +25,11 @@ class ProjectSidebarSection extends StatelessWidget {
     required this.onDeleteConversation,
     required this.onExportConversation,
     this.onArchiveConversation,
+    this.onEditConversationTags,
+    this.onToggleConversationBookmark,
+    this.selectionMode = false,
+    this.selectedConversationIds = const <String>{},
+    this.onToggleBatchSelection,
     this.collapsed = false,
     this.onToggleCollapsed,
     required this.onCreateProject,
@@ -55,6 +60,11 @@ class ProjectSidebarSection extends StatelessWidget {
   final ValueChanged<String>? onDeleteConversation;
   final ValueChanged<String>? onExportConversation;
   final ValueChanged<String>? onArchiveConversation;
+  final ValueChanged<String>? onEditConversationTags;
+  final ValueChanged<String>? onToggleConversationBookmark;
+  final bool selectionMode;
+  final Set<String> selectedConversationIds;
+  final ValueChanged<String>? onToggleBatchSelection;
   final bool collapsed;
   final VoidCallback? onToggleCollapsed;
   final VoidCallback? onCreateProject;
@@ -174,11 +184,22 @@ class ProjectSidebarSection extends StatelessWidget {
                                           selected:
                                               entry.conversations[index].id ==
                                               selectedConversationId,
+                                          selectionMode: selectionMode,
+                                          selectedForBatch:
+                                              selectedConversationIds.contains(
+                                                entry.conversations[index].id,
+                                              ),
                                           height: 32,
                                           inset: 8,
                                           showChatIcon: false,
-                                          onPressed:
-                                              onSelectConversation == null
+                                          onPressed: selectionMode
+                                              ? () => onToggleBatchSelection
+                                                    ?.call(
+                                                      entry
+                                                          .conversations[index]
+                                                          .id,
+                                                    )
+                                              : onSelectConversation == null
                                               ? null
                                               : () => onSelectConversation!(
                                                   entry.conversations[index].id,
@@ -213,6 +234,22 @@ class ProjectSidebarSection extends StatelessWidget {
                                               : () => onArchiveConversation!(
                                                   entry.conversations[index].id,
                                                 ),
+                                          onEditTags:
+                                              onEditConversationTags == null
+                                              ? null
+                                              : () => onEditConversationTags!(
+                                                  entry.conversations[index].id,
+                                                ),
+                                          onToggleBookmark:
+                                              onToggleConversationBookmark ==
+                                                  null
+                                              ? null
+                                              : () =>
+                                                    onToggleConversationBookmark!(
+                                                      entry
+                                                          .conversations[index]
+                                                          .id,
+                                                    ),
                                           key: ValueKey<String>(
                                             'sidebar-conversation-${entry.conversations[index].id}',
                                           ),

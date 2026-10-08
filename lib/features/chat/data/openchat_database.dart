@@ -37,6 +37,8 @@ class Conversations extends Table {
   )();
   BoolColumn get isPinned => boolean().withDefault(const Constant(false))();
   BoolColumn get isArchived => boolean().withDefault(const Constant(false))();
+  BoolColumn get isBookmarked => boolean().withDefault(const Constant(false))();
+  TextColumn get tags => text().withDefault(const Constant('[]'))();
   IntColumn get createdAt => integer()();
   IntColumn get updatedAt => integer()();
 
@@ -86,7 +88,7 @@ class OpenChatDatabase extends _$OpenChatDatabase {
   OpenChatDatabase.atPath(String databasePath)
     : super(_databaseAtPath(databasePath));
 
-  static const currentSchemaVersion = 12;
+  static const currentSchemaVersion = 14;
   static const minimumSqliteVersionNumber = 3051003;
 
   static bool supportsSqliteRuntime(int versionNumber) =>
@@ -274,6 +276,16 @@ class OpenChatDatabase extends _$OpenChatDatabase {
       await _addColumnIfMissing(migrator, messages, messages.providerId);
       await _addColumnIfMissing(migrator, messages, messages.modelId);
       await _addColumnIfMissing(migrator, messages, messages.citationSources);
+    }
+    if (from < 13 && to >= 13) {
+      await _addColumnIfMissing(migrator, conversations, conversations.tags);
+    }
+    if (from < 14 && to >= 14) {
+      await _addColumnIfMissing(
+        migrator,
+        conversations,
+        conversations.isBookmarked,
+      );
     }
   }
 

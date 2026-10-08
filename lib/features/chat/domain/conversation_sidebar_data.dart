@@ -4,12 +4,16 @@ class ConversationSidebarConversation {
     required this.title,
     this.isPinned = false,
     this.isArchived = false,
+    this.isBookmarked = false,
+    this.tags = const <String>[],
   });
 
   final String id;
   final String title;
   final bool isPinned;
   final bool isArchived;
+  final bool isBookmarked;
+  final List<String> tags;
 }
 
 class ConversationSidebarProject {

@@ -28,7 +28,8 @@ pub use conversations::{
     save_assistant_message, save_assistant_tool_checkpoint,
 };
 pub use memory::{
-    ArchiveIndexSettings, ArchiveIndexTool, ArchivedMemoryExcerpt, archive_index_settings,
+    ArchiveIndexSettings, ArchiveIndexTool, ArchivedMemoryExcerpt, HistorySearchFilterOptions,
+    HistorySearchFilters, archive_index_settings, history_search_filter_options,
     prepare_semantic_search, retrieve_archived_memories, search_chat_history,
     search_conversation_archive, semantic_search_is_ready, set_archive_tool_included,
     set_conversation_archive_included,

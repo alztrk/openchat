@@ -128,6 +128,17 @@ async fn receive_with_client(
     let mut pending = Vec::new();
     let mut round_content = String::new();
     let mut tool_calls = BTreeMap::<usize, StreamedToolCall>::new();
+    let supports_provider_citations = matches!(
+        request.route.provider_id.as_deref(),
+        Some("openrouter" | "groq")
+    );
+    let mut provider_citation_sources = Vec::<Value>::new();
+    let mut provider_citation_ids = BTreeMap::<(String, String), String>::new();
+    let mistral_reference_sources = if request.route.provider_id.as_deref() == Some("mistral") {
+        mistral_reference_sources(request.body)
+    } else {
+        Vec::new()
+    };
     let mut saw_done = false;
     let mut saw_finish_reason = false;
     let mut stream_ended = false;
@@ -232,6 +243,14 @@ async fn receive_with_client(
                 continue;
             }
 
+            if supports_provider_citations {
+                collect_provider_citations(
+                    &value,
+                    &mut provider_citation_ids,
+                    &mut provider_citation_sources,
+                );
+            }
+
             saw_finish_reason |= finish_reason(&value).is_some();
             let is_mistral = request.route.provider_id.as_deref() == Some("mistral");
             let mistral_delta = is_mistral.then(|| mistral_content_delta(&value));
@@ -244,9 +263,20 @@ async fn receive_with_client(
                         .flatten()
                         .and_then(Value::as_str)
                 });
-            if let Some(text) = text {
-                request.content.push_str(text);
-                round_content.push_str(text);
+            let mut visible_delta = text.unwrap_or_default().to_owned();
+            if let Some(delta) = mistral_delta.as_ref() {
+                for reference_id in &delta.reference_ids {
+                    let Some(source_id) = mistral_reference_sources.get(*reference_id) else {
+                        continue;
+                    };
+                    visible_delta.push_str(" [");
+                    visible_delta.push_str(source_id);
+                    visible_delta.push(']');
+                }
+            }
+            if !visible_delta.is_empty() {
+                request.content.push_str(&visible_delta);
+                round_content.push_str(&visible_delta);
                 request
                     .events
                     .send(
@@ -336,11 +366,114 @@ async fn receive_with_client(
         return Err(invalid_response_error());
     }
 
+    if !provider_citation_sources.is_empty() {
+        append_provider_citation_anchors(
+            request.content,
+            &mut round_content,
+            &provider_citation_sources,
+        );
+        request
+            .events
+            .send(&crate::protocol::Response::event(
+                request.request_id.clone(),
+                "chat.citations.updated",
+                serde_json::json!({
+                    "conversationId": request.conversation_id,
+                    "messageId": request.message_id,
+                    "content": request.content,
+                    "createdAtUnixMs": request.created_at,
+                    "sources": provider_citation_sources,
+                }),
+            ))
+            .await
+            .map_err(|_| protocol_error())?;
+    }
+
     Ok(StreamedTurn {
         round_content,
         tool_calls: parse_streamed_tool_calls(tool_calls, request.route.is_opencode)?,
         provider_request_usage,
     })
+}
+
+fn collect_provider_citations(
+    value: &Value,
+    ids: &mut BTreeMap<(String, String), String>,
+    sources: &mut Vec<Value>,
+) {
+    let annotations = value
+        .pointer("/choices/0/delta/annotations")
+        .or_else(|| value.pointer("/choices/0/message/annotations"))
+        .or_else(|| value.pointer("/choices/0/annotations"))
+        .or_else(|| value.get("citations"));
+    let Some(annotations) = annotations.and_then(Value::as_array) else {
+        return;
+    };
+    for annotation in annotations {
+        if sources.len() >= 32 {
+            break;
+        }
+        if annotation
+            .get("type")
+            .and_then(Value::as_str)
+            .is_some_and(|kind| kind != "url_citation" && kind != "citation")
+        {
+            continue;
+        }
+        let Some(raw_url) = annotation
+            .get("url")
+            .and_then(Value::as_str)
+            .filter(|url| url.len() <= 4096)
+        else {
+            continue;
+        };
+        let Ok(url) = url::Url::parse(raw_url) else {
+            continue;
+        };
+        if !matches!(url.scheme(), "http" | "https")
+            || url.host_str().is_none()
+            || !url.username().is_empty()
+            || url.password().is_some()
+        {
+            continue;
+        }
+        let Some(title) = annotation
+            .get("title")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|title| !title.is_empty() && title.len() <= 512)
+        else {
+            continue;
+        };
+        let normalized_url = url.to_string();
+        let key = (normalized_url.clone(), title.to_owned());
+        if ids.contains_key(&key) {
+            continue;
+        }
+        let id = format!("P{}", sources.len() + 1);
+        ids.insert(key, id.clone());
+        sources.push(serde_json::json!({
+            "id": id,
+            "title": title,
+            "url": normalized_url,
+            "sourceType": "provider_native"
+        }));
+    }
+}
+
+fn append_provider_citation_anchors(
+    content: &mut String,
+    round_content: &mut String,
+    sources: &[Value],
+) {
+    for source in sources {
+        let Some(id) = source.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        let reference = format!(" [{id}]");
+        content.push_str(&reference);
+        round_content.push_str(&reference);
+    }
 }
 
 fn connection_error(route: &super::super::route::ChatRoute) -> ServiceError {
@@ -370,12 +503,14 @@ fn local_inference_error() -> ServiceError {
 struct MistralContentDelta {
     text: String,
     reasoning: String,
+    reference_ids: Vec<usize>,
 }
 
 fn mistral_content_delta(value: &Value) -> MistralContentDelta {
     let mut delta = MistralContentDelta {
         text: String::new(),
         reasoning: String::new(),
+        reference_ids: Vec::new(),
     };
     let Some(content) = value.pointer("/choices/0/delta/content") else {
         return delta;
@@ -389,6 +524,17 @@ fn mistral_content_delta(value: &Value) -> MistralContentDelta {
                         append_mistral_thinking(part.get("thinking"), &mut delta.reasoning)
                     }
                     Some("text") => append_text_field(part, &mut delta.text),
+                    Some("reference") => {
+                        if let Some(ids) = part.get("reference_ids").and_then(Value::as_array) {
+                            delta.reference_ids.extend(ids.iter().filter_map(|id| {
+                                id.as_u64()
+                                    .and_then(|value| usize::try_from(value).ok())
+                                    .or_else(|| {
+                                        id.as_str().and_then(|value| value.parse::<usize>().ok())
+                                    })
+                            }));
+                        }
+                    }
                     _ => append_text_field(part, &mut delta.text),
                 }
             }
@@ -396,6 +542,67 @@ fn mistral_content_delta(value: &Value) -> MistralContentDelta {
         _ => {}
     }
     delta
+}
+
+fn mistral_reference_sources(body: &Value) -> Vec<String> {
+    let tool_sources = body
+        .get("messages")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|message| message.get("role").and_then(Value::as_str) == Some("tool"))
+        .filter_map(|message| message.get("content").and_then(Value::as_str))
+        .filter_map(|content| serde_json::from_str::<Value>(content).ok())
+        .filter_map(|result| {
+            let mut indexed_sources = result
+                .as_object()
+                .into_iter()
+                .flat_map(|object| object.iter())
+                .filter_map(|(key, value)| {
+                    key.parse::<usize>()
+                        .ok()
+                        .map(|index| (index, value.get("sourceId").and_then(Value::as_str)))
+                })
+                .collect::<Vec<_>>();
+            indexed_sources.sort_by_key(|(index, _)| *index);
+            if !indexed_sources.is_empty() {
+                return Some(
+                    indexed_sources
+                        .into_iter()
+                        .map(|(_, source_id)| source_id.map(str::to_owned))
+                        .collect::<Vec<_>>(),
+                );
+            }
+            let mut sources = result
+                .get("results")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .map(|source| {
+                    source
+                        .get("sourceId")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned)
+                })
+                .collect::<Vec<_>>();
+            if let Some(source_id) = result.get("sourceId").and_then(Value::as_str) {
+                sources.insert(0, Some(source_id.to_owned()));
+            }
+            (!sources.is_empty()).then_some(sources)
+        })
+        .take(2)
+        .collect::<Vec<_>>();
+
+    // Mistral reference IDs index one tool result's reference object. Avoid
+    // attaching a citation when multiple independent tool results make that
+    // index ambiguous, or when a result is missing a source ID.
+    let [sources] = tool_sources.as_slice() else {
+        return Vec::new();
+    };
+    if sources.len() > 64 || sources.iter().any(Option::is_none) {
+        return Vec::new();
+    }
+    sources.iter().flatten().cloned().collect()
 }
 
 fn append_mistral_thinking(value: Option<&Value>, output: &mut String) {
@@ -430,8 +637,9 @@ mod tests {
     };
 
     use super::{
-        ResponseStreamRequest, StreamedTurn, connection_error, local_inference_error,
-        mistral_content_delta, receive_with_client, request_contains_tool_payload,
+        ResponseStreamRequest, StreamedTurn, append_provider_citation_anchors,
+        collect_provider_citations, connection_error, local_inference_error, mistral_content_delta,
+        mistral_reference_sources, receive_with_client, request_contains_tool_payload,
     };
     use crate::{
         openai_compatible::route::ChatRoute,
@@ -696,6 +904,40 @@ mod tests {
         })));
     }
 
+    #[test]
+    fn parses_provider_url_citations_and_appends_local_references() {
+        let value = json!({
+            "choices": [{
+                "delta": {
+                    "annotations": [
+                        {
+                            "type": "url_citation",
+                            "url": "https://example.org/article",
+                            "title": "Example article"
+                        },
+                        {
+                            "type": "url_citation",
+                            "url": "javascript:alert(1)",
+                            "title": "Unsafe"
+                        }
+                    ]
+                }
+            }]
+        });
+        let mut ids = std::collections::BTreeMap::new();
+        let mut sources = Vec::new();
+        collect_provider_citations(&value, &mut ids, &mut sources);
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0]["id"], "P1");
+        assert_eq!(sources[0]["sourceType"], "provider_native");
+
+        let mut content = "A sourced claim.".to_owned();
+        let mut round_content = "A sourced claim.".to_owned();
+        append_provider_citation_anchors(&mut content, &mut round_content, &sources);
+        assert_eq!(content, "A sourced claim. [P1]");
+        assert_eq!(round_content, content);
+    }
+
     fn route(provider_id: &str) -> ChatRoute {
         ChatRoute {
             model_id: "test-model".to_owned(),
@@ -768,6 +1010,28 @@ mod tests {
 
         assert!(delta.reasoning.is_empty());
         assert_eq!(delta.text, "Answer.");
+    }
+
+    #[test]
+    fn maps_mistral_reference_ids_to_one_tool_result_and_skips_ambiguous_results() {
+        let body = json!({
+            "messages": [{
+                "role": "tool",
+                "content": "{\"0\":{\"sourceId\":\"S1-call1234\"},\"1\":{\"sourceId\":\"S2-call1234\"}}"
+            }]
+        });
+        assert_eq!(
+            mistral_reference_sources(&body),
+            ["S1-call1234", "S2-call1234"]
+        );
+
+        let ambiguous = json!({
+            "messages": [
+                {"role": "tool", "content": "{\"sourceId\":\"U1-call1234\"}"},
+                {"role": "tool", "content": "{\"results\":[{\"sourceId\":\"S1-call5678\"}]}"}
+            ]
+        });
+        assert!(mistral_reference_sources(&ambiguous).is_empty());
     }
 
     #[tokio::test]

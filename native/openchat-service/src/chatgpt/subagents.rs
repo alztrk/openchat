@@ -4,7 +4,7 @@ use std::{
     time::Duration,
 };
 
-use reqwest::Method;
+use reqwest::{Client, Method, Response as HttpResponse};
 use serde_json::{Value, json};
 use tokio::{
     sync::Semaphore,
@@ -18,7 +18,7 @@ use super::{
 };
 use crate::{
     permissions::ToolPermissionBroker,
-    protocol::{EventSink, ServiceError},
+    protocol::{EventSink, Response, ServiceError},
     provider_schema::{ChatStreamSnapshot, ToolCall},
     storage::{AppStorage, user_questions},
     tools::{self, ToolExecutor},
@@ -45,6 +45,24 @@ const CHILD_WEB_TOOL_NAMES: &[&str] = &["web_search", "read_url_content"];
 
 static CHILD_RUN_LIMIT: OnceLock<Arc<Semaphore>> = OnceLock::new();
 
+#[derive(Clone, Copy)]
+enum ChildRunAuth<'a> {
+    ChatGptOAuth {
+        connection_id: &'a str,
+        workspace_id: &'a str,
+        external_workspace_id: &'a str,
+    },
+    OpenAiApiKey(&'a str),
+}
+
+struct ChildRunRoute<'a> {
+    provider_id: &'static str,
+    model_id: &'a str,
+    reasoning_effort: Option<&'a str>,
+    fast_mode: bool,
+    auth: ChildRunAuth<'a>,
+}
+
 pub(crate) async fn run_child_analysis(
     service: &ChatGptService,
     call: &ToolCall,
@@ -56,6 +74,104 @@ pub(crate) async fn run_child_analysis(
     model_id: &str,
     reasoning_effort: Option<&str>,
     fast_mode: bool,
+    parent_message_id: &str,
+    project_root: Option<&Path>,
+    permission_broker: &ToolPermissionBroker,
+    request_id: &Value,
+    snapshot: &ChatStreamSnapshot,
+    events: &EventSink,
+    cancellation: &mut tokio::sync::watch::Receiver<bool>,
+    storage: &AppStorage,
+    parent_run_id: &str,
+    tool_executor: &ToolExecutor,
+    user_questions: &UserQuestionBroker,
+) -> Value {
+    run_child_analysis_for_route(
+        service,
+        ChildRunRoute {
+            provider_id: "chatgpt",
+            model_id,
+            reasoning_effort,
+            fast_mode,
+            auth: ChildRunAuth::ChatGptOAuth {
+                connection_id,
+                workspace_id,
+                external_workspace_id,
+            },
+        },
+        call,
+        task,
+        additional_context,
+        parent_message_id,
+        project_root,
+        permission_broker,
+        request_id,
+        snapshot,
+        events,
+        cancellation,
+        storage,
+        parent_run_id,
+        tool_executor,
+        user_questions,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn run_child_analysis_api_key(
+    service: &ChatGptService,
+    api_key: &str,
+    call: &ToolCall,
+    task: &str,
+    additional_context: Option<&str>,
+    model_id: &str,
+    reasoning_effort: Option<&str>,
+    parent_message_id: &str,
+    project_root: Option<&Path>,
+    permission_broker: &ToolPermissionBroker,
+    request_id: &Value,
+    snapshot: &ChatStreamSnapshot,
+    events: &EventSink,
+    cancellation: &mut tokio::sync::watch::Receiver<bool>,
+    storage: &AppStorage,
+    parent_run_id: &str,
+    tool_executor: &ToolExecutor,
+    user_questions: &UserQuestionBroker,
+) -> Value {
+    run_child_analysis_for_route(
+        service,
+        ChildRunRoute {
+            provider_id: "chatgpt_api",
+            model_id,
+            reasoning_effort,
+            fast_mode: false,
+            auth: ChildRunAuth::OpenAiApiKey(api_key),
+        },
+        call,
+        task,
+        additional_context,
+        parent_message_id,
+        project_root,
+        permission_broker,
+        request_id,
+        snapshot,
+        events,
+        cancellation,
+        storage,
+        parent_run_id,
+        tool_executor,
+        user_questions,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_child_analysis_for_route(
+    service: &ChatGptService,
+    route: ChildRunRoute<'_>,
+    call: &ToolCall,
+    task: &str,
+    additional_context: Option<&str>,
     parent_message_id: &str,
     project_root: Option<&Path>,
     permission_broker: &ToolPermissionBroker,
@@ -80,6 +196,10 @@ pub(crate) async fn run_child_analysis(
     }
 
     let child_run_id = Uuid::new_v4().simple().to_string();
+    let workspace_id = match route.auth {
+        ChildRunAuth::ChatGptOAuth { workspace_id, .. } => Some(workspace_id),
+        ChildRunAuth::OpenAiApiKey(_) => None,
+    };
     let checkpoint = json!({
         "version": 1,
         "runKind": "subagent",
@@ -87,14 +207,14 @@ pub(crate) async fn run_child_analysis(
         "parentMessageId": parent_message_id,
         "parentToolCallId": call.id,
         "objective": task,
-        "providerId": "chatgpt",
-        "modelId": model_id,
+        "providerId": route.provider_id,
+        "modelId": route.model_id,
         "workspaceId": workspace_id,
         "toolAllowlist": child_tool_names(project_root.is_some()),
         "maxToolCalls": CHILD_MAX_TOOL_CALLS,
         "timeoutSeconds": CHILD_TIMEOUT.as_secs(),
-        "fastMode": fast_mode,
-        "reasoningEffort": reasoning_effort,
+        "fastMode": route.fast_mode,
+        "reasoningEffort": route.reasoning_effort,
     });
     let connection = match storage.connect() {
         Ok(connection) => connection,
@@ -137,6 +257,39 @@ pub(crate) async fn run_child_analysis(
     }
     drop(connection);
 
+    if send_subagent_progress(
+        events,
+        storage,
+        &snapshot.conversation_id,
+        &child_run_id,
+        "running",
+        "starting",
+        None,
+    )
+    .await
+    .is_err()
+    {
+        if finish_child_run(
+            user_questions,
+            storage,
+            snapshot,
+            &child_run_id,
+            RunOutcome::Failed,
+        )
+        .await
+        .is_err()
+        {
+            return tool_error(
+                "subagent_storage_unavailable",
+                "The child run could not be finalized locally.",
+            );
+        }
+        return tool_error(
+            "subagent_progress_unavailable",
+            "The child run progress could not be delivered.",
+        );
+    }
+
     let semaphore = CHILD_RUN_LIMIT
         .get_or_init(|| Arc::new(Semaphore::new(2)))
         .clone();
@@ -156,6 +309,23 @@ pub(crate) async fn run_child_analysis(
                 {
                     return tool_error("subagent_storage_unavailable", "The child run could not be finalized locally.");
                 }
+                if send_subagent_progress(
+                    events,
+                    storage,
+                    &snapshot.conversation_id,
+                    &child_run_id,
+                    "failed",
+                    "failed",
+                    None,
+                )
+                .await
+                .is_err()
+                {
+                    return tool_error(
+                        "subagent_progress_unavailable",
+                        "The child run could not report its failure.",
+                    );
+                }
                 return tool_error("subagent_unavailable", "The child analysis could not start.");
             }
         },
@@ -173,6 +343,23 @@ pub(crate) async fn run_child_analysis(
             {
                 return tool_error("subagent_storage_unavailable", "The cancelled child run could not be finalized locally.");
             }
+            if send_subagent_progress(
+                events,
+                storage,
+                &snapshot.conversation_id,
+                &child_run_id,
+                "cancelled",
+                "cancelled",
+                None,
+            )
+            .await
+            .is_err()
+            {
+                return tool_error(
+                    "subagent_progress_unavailable",
+                    "The cancelled child run could not report its final status.",
+                );
+            }
             return tool_error("operation_cancelled", "The delegated task was stopped.");
         }
     };
@@ -180,13 +367,9 @@ pub(crate) async fn run_child_analysis(
     let deadline = Instant::now() + CHILD_TIMEOUT;
     let result = run_child_requests(
         service,
+        &route,
         task,
         additional_context,
-        connection_id,
-        external_workspace_id,
-        model_id,
-        reasoning_effort,
-        fast_mode,
         parent_message_id,
         project_root,
         permission_broker,
@@ -261,11 +444,23 @@ pub(crate) async fn run_child_analysis(
                     "The child result could not be finalized locally.",
                 );
             }
+            let progress_available = send_subagent_progress(
+                events,
+                storage,
+                &snapshot.conversation_id,
+                &child_run_id,
+                "completed",
+                "completed",
+                None,
+            )
+            .await
+            .is_ok();
             json!({
                 "runId": child_run_id,
                 "status": "completed",
                 "summary": summary,
                 "usage": usage_value(&usage),
+                "progressAvailable": progress_available,
             })
         }
         Err(error) => {
@@ -283,6 +478,28 @@ pub(crate) async fn run_child_analysis(
                     "The child run could not be finalized locally.",
                 );
             }
+            let terminal_status = if outcome == RunOutcome::Cancelled {
+                "cancelled"
+            } else {
+                "failed"
+            };
+            if send_subagent_progress(
+                events,
+                storage,
+                &snapshot.conversation_id,
+                &child_run_id,
+                terminal_status,
+                terminal_status,
+                None,
+            )
+            .await
+            .is_err()
+            {
+                return tool_error(
+                    "subagent_progress_unavailable",
+                    "The child run ended, but its final status could not be delivered.",
+                );
+            }
             tool_error(error.code, &error.message)
         }
     }
@@ -291,13 +508,9 @@ pub(crate) async fn run_child_analysis(
 #[allow(clippy::too_many_arguments)]
 async fn run_child_requests(
     service: &ChatGptService,
+    route: &ChildRunRoute<'_>,
     task: &str,
     additional_context: Option<&str>,
-    connection_id: &str,
-    external_workspace_id: &str,
-    model_id: &str,
-    reasoning_effort: Option<&str>,
-    fast_mode: bool,
     parent_message_id: &str,
     project_root: Option<&Path>,
     permission_broker: &ToolPermissionBroker,
@@ -331,7 +544,7 @@ async fn run_child_requests(
         None => format!("Delegated task:\n{task}"),
     };
     let mut payload = json!({
-        "model": model_id,
+        "model": route.model_id,
         "input": [{"role": "user", "content": user_input}],
         "instructions": instructions,
         "max_output_tokens": CHILD_MAX_OUTPUT_TOKENS,
@@ -340,10 +553,10 @@ async fn run_child_requests(
         "tools": definitions.iter().map(responses_tool).collect::<Vec<_>>(),
         "parallel_tool_calls": false,
     });
-    if fast_mode {
+    if route.fast_mode {
         payload["service_tier"] = json!(super::CHATGPT_FAST_SERVICE_TIER);
     }
-    if let Some(reasoning_effort) = reasoning_effort {
+    if let Some(reasoning_effort) = route.reasoning_effort {
         payload["reasoning"] = json!({"effort": reasoning_effort, "summary": "auto"});
     }
     let allowed_tools = definitions
@@ -358,6 +571,16 @@ async fn run_child_requests(
         if Instant::now() >= deadline {
             return Err(subagent_timeout());
         }
+        send_subagent_progress(
+            events,
+            storage,
+            &snapshot.conversation_id,
+            child_run_id,
+            "running",
+            "thinking",
+            None,
+        )
+        .await?;
         if serde_json::to_vec(&payload).map_or(true, |bytes| bytes.len() > CHILD_MAX_REQUEST_BYTES)
         {
             return Err(subagent_limit_error());
@@ -366,11 +589,11 @@ async fn run_child_requests(
             storage,
             &snapshot.conversation_id,
             Some(parent_message_id),
-            "chatgpt",
-            model_id,
-            reasoning_effort,
+            route.provider_id,
+            route.model_id,
+            route.reasoning_effort,
             "tool_follow_up",
-            fast_mode,
+            route.fast_mode,
             child_run_id,
         )
         .map_err(|_| subagent_storage_error())?;
@@ -378,22 +601,37 @@ async fn run_child_requests(
             .record_request_manifest(&payload, None)
             .map_err(|_| subagent_storage_error())?;
 
-        let response = match timeout_at(
-            deadline,
-            service.authorized_stream_request(
-                StreamRequest {
-                    method: Method::POST,
-                    url: format!("{}/responses", super::CHATGPT_CODEX_BASE),
-                    connection_id,
-                    external_workspace_id,
-                    body: Some(payload.clone()),
-                    response_context_id: &snapshot.conversation_id,
-                },
-                cancellation,
-            ),
-        )
-        .await
-        {
+        let response_result = match route.auth {
+            ChildRunAuth::ChatGptOAuth {
+                connection_id,
+                external_workspace_id,
+                ..
+            } => {
+                timeout_at(
+                    deadline,
+                    service.authorized_stream_request(
+                        StreamRequest {
+                            method: Method::POST,
+                            url: format!("{}/responses", super::CHATGPT_CODEX_BASE),
+                            connection_id,
+                            external_workspace_id,
+                            body: Some(payload.clone()),
+                            response_context_id: &snapshot.conversation_id,
+                        },
+                        cancellation,
+                    ),
+                )
+                .await
+            }
+            ChildRunAuth::OpenAiApiKey(api_key) => {
+                timeout_at(
+                    deadline,
+                    send_api_key_child_request(service, api_key, &payload, cancellation),
+                )
+                .await
+            }
+        };
+        let response = match response_result {
             Ok(Ok(Some(response))) => response,
             Ok(Ok(None)) => {
                 usage_request
@@ -440,7 +678,7 @@ async fn run_child_requests(
                 return Err(subagent_timeout());
             }
         };
-        let usage = UsageData::from_responses_event(&response_value, "chatgpt");
+        let usage = UsageData::from_responses_event(&response_value, route.provider_id);
         usage_request
             .complete(&usage)
             .map_err(|_| subagent_storage_error())?;
@@ -473,6 +711,16 @@ async fn run_child_requests(
             if Instant::now() >= deadline {
                 return Err(subagent_timeout());
             }
+            send_subagent_progress(
+                events,
+                storage,
+                &snapshot.conversation_id,
+                child_run_id,
+                "running",
+                "tool",
+                Some(&call.name),
+            )
+            .await?;
             let output = if allowed_tools.iter().any(|tool| tool == &call.name) {
                 Box::pin(tool_executor.execute_call_with_image_context(
                     call,
@@ -483,7 +731,7 @@ async fn run_child_requests(
                     cancellation,
                     storage,
                     child_run_id,
-                    "chatgpt",
+                    route.provider_id,
                     user_questions,
                     None,
                 ))
@@ -519,6 +767,122 @@ async fn finish_child_run(
     user_questions
         .finish_run(storage, &snapshot.conversation_id, child_run_id, outcome)
         .await
+}
+
+async fn send_api_key_child_request(
+    service: &ChatGptService,
+    api_key: &str,
+    payload: &Value,
+    cancellation: &mut tokio::sync::watch::Receiver<bool>,
+) -> Result<Option<HttpResponse>, ServiceError> {
+    send_api_key_child_request_to(
+        &service.http,
+        "https://api.openai.com/v1/responses",
+        api_key,
+        payload,
+        cancellation,
+    )
+    .await
+}
+
+async fn send_api_key_child_request_to(
+    http: &Client,
+    endpoint: &str,
+    api_key: &str,
+    payload: &Value,
+    cancellation: &mut tokio::sync::watch::Receiver<bool>,
+) -> Result<Option<HttpResponse>, ServiceError> {
+    tokio::select! {
+        changed = cancellation.changed() => {
+            let _ = changed;
+            Ok(None)
+        }
+        response = http
+            .post(endpoint)
+            .bearer_auth(api_key)
+            .json(payload)
+            .send() => response
+            .map(Some)
+            .map_err(|_| ServiceError::new(
+                "network_unavailable",
+                "OpenAI could not be reached. Check the internet connection and try again.",
+                true,
+            )),
+    }
+}
+
+async fn send_subagent_progress(
+    events: &EventSink,
+    storage: &AppStorage,
+    conversation_id: &str,
+    run_id: &str,
+    status: &str,
+    phase: &str,
+    tool_name: Option<&str>,
+) -> Result<(), ServiceError> {
+    if status == "running" {
+        let connection = storage.connect().map_err(|_| {
+            ServiceError::new(
+                "subagent_storage_unavailable",
+                "The child run progress could not be saved locally.",
+                true,
+            )
+        })?;
+        let run = user_questions::load_run_for_conversation(&connection, conversation_id, run_id)
+            .map_err(|_| {
+            ServiceError::new(
+                "subagent_storage_unavailable",
+                "The child run progress could not be saved locally.",
+                true,
+            )
+        })?;
+        let mut checkpoint = run.checkpoint.unwrap_or_else(|| json!({}));
+        let checkpoint_object = checkpoint.as_object_mut().ok_or_else(|| {
+            ServiceError::new(
+                "subagent_storage_unavailable",
+                "The child run progress could not be saved locally.",
+                true,
+            )
+        })?;
+        checkpoint_object.insert(
+            "progress".to_owned(),
+            json!({"phase": phase, "toolName": tool_name}),
+        );
+        user_questions::save_checkpoint(
+            &connection,
+            conversation_id,
+            run_id,
+            run.checkpoint_revision,
+            &checkpoint,
+        )
+        .map_err(|_| {
+            ServiceError::new(
+                "subagent_storage_unavailable",
+                "The child run progress could not be saved locally.",
+                true,
+            )
+        })?;
+    }
+    events
+        .send(&Response::event(
+            json!(0),
+            "chat.subagent.updated",
+            json!({
+                "conversationId": conversation_id,
+                "runId": run_id,
+                "status": status,
+                "phase": phase,
+                "toolName": tool_name,
+            }),
+        ))
+        .await
+        .map_err(|_| {
+            ServiceError::new(
+                "subagent_progress_unavailable",
+                "The child run progress could not be delivered.",
+                true,
+            )
+        })
 }
 
 fn child_tool_names(include_project_tools: bool) -> Vec<&'static str> {
@@ -579,7 +943,13 @@ fn tool_error(code: &str, message: &str) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{child_tool_names, truncate_text};
+    use super::{Client, child_tool_names, send_api_key_child_request_to, truncate_text};
+    use serde_json::json;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+        sync::watch,
+    };
 
     #[test]
     fn child_tool_allowlist_exposes_only_web_tools_without_a_project() {
@@ -622,6 +992,67 @@ mod tests {
         let truncated = truncate_text("ábc", 2);
         assert!(truncated.starts_with('á'));
         assert!(truncated.ends_with("[Child output truncated.]"));
+    }
+
+    #[tokio::test]
+    async fn api_key_child_request_sends_credentials_only_as_bearer_auth() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind local request listener");
+        let endpoint = format!(
+            "http://{}/responses",
+            listener.local_addr().expect("read listener address")
+        );
+        let request = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept API request");
+            let mut bytes = Vec::new();
+            let header_end = loop {
+                let mut chunk = [0u8; 2048];
+                let read = stream.read(&mut chunk).await.expect("read request");
+                assert_ne!(read, 0, "request closed before its headers arrived");
+                bytes.extend_from_slice(&chunk[..read]);
+                if let Some(index) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
+                    break index + 4;
+                }
+            };
+            let headers = String::from_utf8_lossy(&bytes[..header_end]).to_ascii_lowercase();
+            let content_length = headers
+                .lines()
+                .find_map(|line| line.strip_prefix("content-length: "))
+                .and_then(|length| length.trim().parse::<usize>().ok())
+                .expect("JSON request content length");
+            while bytes.len() < header_end + content_length {
+                let mut chunk = [0u8; 2048];
+                let read = stream.read(&mut chunk).await.expect("read request body");
+                assert_ne!(read, 0, "request closed before its body arrived");
+                bytes.extend_from_slice(&chunk[..read]);
+            }
+            let body = String::from_utf8_lossy(&bytes[header_end..header_end + content_length]);
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+                .await
+                .expect("send local response");
+            (headers, body.into_owned())
+        });
+
+        let http = Client::new();
+        let (_cancel, mut cancellation) = watch::channel(false);
+        let response = send_api_key_child_request_to(
+            &http,
+            &endpoint,
+            "test-api-key",
+            &json!({"model": "test-model", "input": "hello"}),
+            &mut cancellation,
+        )
+        .await
+        .expect("send API request")
+        .expect("request was not cancelled");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+        let (headers, body) = request.await.expect("finish local request capture");
+        assert!(headers.contains("authorization: bearer test-api-key"));
+        assert!(!body.contains("test-api-key"));
+        assert!(body.contains("test-model"));
     }
 }
 

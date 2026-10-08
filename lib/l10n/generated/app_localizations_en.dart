@@ -1826,6 +1826,115 @@ class AppLocalizationsEn extends AppLocalizations {
   String get searchMessagesTooltip => 'Search messages';
 
   @override
+  String get historySearchDateFilter => 'Filter by date';
+
+  @override
+  String get historySearchDateFilterApplied => 'Date filter is active';
+
+  @override
+  String get historySearchFiltersTitle => 'Search filters';
+
+  @override
+  String get historySearchRouteFilterNote =>
+      'Provider and model refer to the route saved with each assistant answer.';
+
+  @override
+  String get historySearchProviderFilter => 'Answer provider';
+
+  @override
+  String get historySearchModelFilter => 'Answer model';
+
+  @override
+  String get historySearchProjectFilter => 'Project';
+
+  @override
+  String get historySearchArchiveFilter => 'Archive status';
+
+  @override
+  String get historySearchAllProviders => 'All providers';
+
+  @override
+  String get historySearchAllModels => 'All models';
+
+  @override
+  String get historySearchAllProjects => 'All projects';
+
+  @override
+  String get historySearchTagFilter => 'Tag';
+
+  @override
+  String get selectConversations => 'Select chats';
+
+  @override
+  String get cancelSelection => 'Cancel selection';
+
+  @override
+  String get archiveSelectedConversations => 'Archive selected chats';
+
+  @override
+  String get moveSelectedChats => 'Move selected chats';
+
+  @override
+  String get moveToChats => 'Move to chats';
+
+  @override
+  String get bookmarkConversation => 'Bookmark conversation';
+
+  @override
+  String get removeConversationBookmark => 'Remove bookmark';
+
+  @override
+  String get conversationBookmarkFailed =>
+      'The conversation bookmark could not be updated.';
+
+  @override
+  String get conversationBookmarked => 'Bookmarked';
+
+  @override
+  String selectConversation(String title) {
+    return 'Select $title';
+  }
+
+  @override
+  String conversationsSelected(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# chats selected',
+      one: '# chat selected',
+      zero: 'No chats selected',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get historySearchAllTags => 'All tags';
+
+  @override
+  String get historySearchAllStatuses => 'All conversations';
+
+  @override
+  String get historySearchActiveConversations => 'Active conversations';
+
+  @override
+  String get historySearchArchivedConversations => 'Archived conversations';
+
+  @override
+  String get historySearchClearFilters => 'Clear filters';
+
+  @override
+  String get historySearchApplyFilters => 'Apply filters';
+
+  @override
+  String get historySearchOpenFilters => 'Open search filters';
+
+  @override
+  String get historySearchFiltersActive => 'Search filters are active';
+
+  @override
+  String get historySearchClearDateFilter => 'Clear date filter';
+
+  @override
   String get searchMessagesHeader => 'Message matches';
 
   @override
@@ -2162,6 +2271,17 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get agentRunLiveStarting => 'Starting delegated analysis…';
+
+  @override
+  String get agentRunLiveThinking => 'Analyzing delegated task…';
+
+  @override
+  String agentRunLiveUsingTool(String tool) {
+    return 'Using $tool';
+  }
+
+  @override
   String get agentRunEndedInAnotherChat => 'A run in another chat ended.';
 
   @override
@@ -2474,6 +2594,55 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get renameConversation => 'Edit chat title';
+
+  @override
+  String get editConversationTags => 'Edit tags';
+
+  @override
+  String get conversationTagsDialogTitle => 'Conversation tags';
+
+  @override
+  String get conversationTagsFieldLabel => 'Tags';
+
+  @override
+  String get conversationTagsFieldHint => 'Separate tags with commas';
+
+  @override
+  String get conversationTagsHelp =>
+      'Use up to 12 tags, with 32 characters per tag.';
+
+  @override
+  String get conversationTagsSaveFailed => 'Tags could not be saved.';
+
+  @override
+  String get saveHistorySearchTitle => 'Save history search';
+
+  @override
+  String get savedHistorySearchName => 'Search name';
+
+  @override
+  String get savedHistorySearchesTitle => 'Saved searches';
+
+  @override
+  String get savedHistorySearchesEmpty => 'No saved searches yet.';
+
+  @override
+  String get deleteSavedHistorySearch => 'Delete saved search';
+
+  @override
+  String get saveCurrentHistorySearch => 'Save current search';
+
+  @override
+  String get savedHistorySearchesLoadFailed =>
+      'Saved searches could not be loaded.';
+
+  @override
+  String get savedHistorySearchSaveFailed =>
+      'Saved searches could not be updated.';
+
+  @override
+  String get savedHistorySearchLimitReached =>
+      'You can save up to 20 searches.';
 
   @override
   String get pinConversation => 'Pin chat';

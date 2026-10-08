@@ -154,6 +154,8 @@ class _ChatScreenState extends State<ChatScreen> {
   late final Future<void> _questionNotificationsReady;
   final Set<String> _notificationRepliesInFlight = <String>{};
   String? _activeChatConversationId;
+  bool _isSelectingConversations = false;
+  final Set<String> _selectedConversationIds = <String>{};
   String? _replacingAssistantMessageId;
   bool _isLoadingConnections = false;
   bool _providerStateReloadRequested = false;
@@ -203,7 +205,13 @@ class _ChatScreenState extends State<ChatScreen> {
   int _fileChangesLoadGeneration = 0;
   bool _isFileChangesPanelOpen = false;
   HistorySearchRepository? _historySearchRepository;
+  HistorySearchFilterOptions? _historySearchFilterOptions;
+  bool _isLoadingHistorySearchFilterOptions = false;
+  HistorySearchFilters _historySearchFilters = const HistorySearchFilters();
+  List<SavedHistorySearch> _savedHistorySearches = const <SavedHistorySearch>[];
+  bool _savedHistorySearchesLoaded = false;
   String? _historySearchQuery;
+  DateTimeRange? _historySearchDateRange;
   List<HistorySearchResult> _historySearchResults =
       const <HistorySearchResult>[];
   String? _historySearchErrorCode;
@@ -462,6 +470,247 @@ class _ChatScreenState extends State<ChatScreen> {
   void _openHistorySearch() {
     if (_isHistorySearchOpen) return;
     setState(() => _isHistorySearchOpen = true);
+    unawaited(_loadHistorySearchFilterOptions());
+    unawaited(_loadSavedHistorySearches());
+  }
+
+  Future<void> _loadSavedHistorySearches() async {
+    if (_savedHistorySearchesLoaded) return;
+    try {
+      final searches = await _settingsPreferences.readSavedHistorySearches();
+      if (!mounted) return;
+      setState(() {
+        _savedHistorySearches = searches;
+        _savedHistorySearchesLoaded = true;
+      });
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_history_search',
+          context: ErrorDescription('while loading saved history searches'),
+        ),
+      );
+      if (mounted) {
+        showOpenChatToast(
+          context,
+          context.openchatL10n.savedHistorySearchesLoadFailed,
+          type: OpenChatToastType.error,
+        );
+      }
+    }
+  }
+
+  Future<void> _saveCurrentHistorySearch() async {
+    await _loadSavedHistorySearches();
+    if (!mounted) return;
+    final query = _searchController.text.trim();
+    if (query.runes.length < 2 || query.runes.length > 512) return;
+    final l10n = context.openchatL10n;
+    final controller = TextEditingController(text: query);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.saveHistorySearchTitle),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 60,
+          decoration: InputDecoration(labelText: l10n.savedHistorySearchName),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: Text(l10n.cancel),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = controller.text.trim();
+              if (value.isNotEmpty && value.runes.length <= 60) {
+                Navigator.of(dialogContext).pop(value);
+              }
+            },
+            child: Text(l10n.save),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null || !mounted) return;
+    final dateRange = _historySearchDateRange;
+    final current = SavedHistorySearch(
+      name: name,
+      query: query,
+      filters: _historySearchFilters,
+      fromUnixMs: dateRange == null
+          ? null
+          : DateTime(
+              dateRange.start.year,
+              dateRange.start.month,
+              dateRange.start.day,
+            ).millisecondsSinceEpoch,
+      throughUnixMs: dateRange == null
+          ? null
+          : DateTime(
+              dateRange.end.year,
+              dateRange.end.month,
+              dateRange.end.day + 1,
+            ).millisecondsSinceEpoch,
+    );
+    final searches = _savedHistorySearches
+        .where((saved) => saved.name.toLowerCase() != name.toLowerCase())
+        .toList(growable: true);
+    if (searches.length >= 20) {
+      showOpenChatToast(
+        context,
+        l10n.savedHistorySearchLimitReached,
+        type: OpenChatToastType.error,
+      );
+      return;
+    }
+    searches.insert(0, current);
+    await _persistSavedHistorySearches(searches);
+  }
+
+  Future<void> _persistSavedHistorySearches(
+    List<SavedHistorySearch> searches,
+  ) async {
+    try {
+      await _settingsPreferences.writeSavedHistorySearches(searches);
+      if (!mounted) return;
+      setState(() {
+        _savedHistorySearches = List<SavedHistorySearch>.unmodifiable(searches);
+        _savedHistorySearchesLoaded = true;
+      });
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_history_search',
+          context: ErrorDescription('while saving history searches'),
+        ),
+      );
+      if (mounted) {
+        showOpenChatToast(
+          context,
+          context.openchatL10n.savedHistorySearchSaveFailed,
+          type: OpenChatToastType.error,
+        );
+      }
+    }
+  }
+
+  Future<void> _openSavedHistorySearches() async {
+    await _loadSavedHistorySearches();
+    if (!mounted) return;
+    final l10n = context.openchatL10n;
+    final selected = await showDialog<SavedHistorySearch>(
+      context: context,
+      builder: (dialogContext) {
+        var searches = List<SavedHistorySearch>.of(_savedHistorySearches);
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: Text(l10n.savedHistorySearchesTitle),
+            content: SizedBox(
+              width: 420,
+              child: searches.isEmpty
+                  ? Text(l10n.savedHistorySearchesEmpty)
+                  : ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: searches.length,
+                      itemBuilder: (context, index) {
+                        final search = searches[index];
+                        return ListTile(
+                          title: Text(search.name),
+                          subtitle: Text(search.query),
+                          onTap: () => Navigator.of(dialogContext).pop(search),
+                          trailing: IconButton(
+                            tooltip: l10n.deleteSavedHistorySearch,
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () {
+                              searches = searches
+                                  .where((item) => item != search)
+                                  .toList(growable: false);
+                              setDialogState(() {});
+                              unawaited(_persistSavedHistorySearches(searches));
+                            },
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text(l10n.close),
+              ),
+              TextButton.icon(
+                onPressed: _searchController.text.trim().runes.length < 2
+                    ? null
+                    : () {
+                        Navigator.of(dialogContext).pop();
+                        unawaited(_saveCurrentHistorySearch());
+                      },
+                icon: const Icon(Icons.bookmark_add_outlined),
+                label: Text(l10n.saveCurrentHistorySearch),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (selected == null || !mounted) return;
+    final fromUnixMs = selected.fromUnixMs;
+    final throughUnixMs = selected.throughUnixMs;
+    final from = fromUnixMs == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(fromUnixMs);
+    final through = throughUnixMs == null
+        ? null
+        : DateTime.fromMillisecondsSinceEpoch(throughUnixMs);
+    setState(() {
+      _historySearchFilters = selected.filters;
+      _historySearchDateRange = from == null || through == null
+          ? null
+          : DateTimeRange(
+              start: from,
+              end: DateTime(through.year, through.month, through.day - 1),
+            );
+      _searchController.text = selected.query;
+    });
+    _submitHistorySearch(selected.query);
+  }
+
+  Future<void> _loadHistorySearchFilterOptions() async {
+    final repository = _historySearchRepository;
+    if (repository == null ||
+        _historySearchFilterOptions != null ||
+        _isLoadingHistorySearchFilterOptions) {
+      return;
+    }
+    setState(() => _isLoadingHistorySearchFilterOptions = true);
+    try {
+      final options = await repository.loadFilterOptions();
+      if (!mounted) return;
+      setState(() {
+        _historySearchFilterOptions = options;
+        _isLoadingHistorySearchFilterOptions = false;
+      });
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_history_search',
+          context: ErrorDescription('while loading history search filters'),
+        ),
+      );
+      if (mounted) {
+        setState(() => _isLoadingHistorySearchFilterOptions = false);
+      }
+    }
   }
 
   Future<void> _openRunManager() async {
@@ -487,6 +736,8 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() {
       _isHistorySearchOpen = false;
       _historySearchQuery = null;
+      _historySearchDateRange = null;
+      _historySearchFilters = const HistorySearchFilters();
       _historySearchResults = const <HistorySearchResult>[];
       _historySearchErrorCode = null;
       _isSearchingHistory = false;
@@ -571,7 +822,28 @@ class _ChatScreenState extends State<ChatScreen> {
     int generation,
   ) async {
     try {
-      final results = await repository.search(query);
+      final dateRange = _historySearchDateRange;
+      final from = dateRange == null
+          ? null
+          : DateTime(
+              dateRange.start.year,
+              dateRange.start.month,
+              dateRange.start.day,
+            );
+      final through = dateRange == null
+          ? null
+          : DateTime(
+              dateRange.end.year,
+              dateRange.end.month,
+              dateRange.end.day + 1,
+            );
+      final filters = _historySearchFilters;
+      final results = await repository.search(
+        query,
+        from: from,
+        through: through,
+        filters: filters,
+      );
       if (!mounted || generation != _historySearchGeneration) return;
       setState(() {
         _historySearchResults = results;
@@ -594,6 +866,33 @@ class _ChatScreenState extends State<ChatScreen> {
         _isSearchingHistory = false;
       });
     }
+  }
+
+  Future<void> _pickHistorySearchDateRange() async {
+    final today = DateUtils.dateOnly(DateTime.now());
+    final selected = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(1970),
+      lastDate: today,
+      initialDateRange: _historySearchDateRange,
+    );
+    if (!mounted || selected == null) return;
+    setState(() => _historySearchDateRange = selected);
+    final query = _historySearchQuery;
+    if (query != null && query.length >= 2) _submitHistorySearch(query);
+  }
+
+  void _clearHistorySearchDateRange() {
+    if (_historySearchDateRange == null) return;
+    setState(() => _historySearchDateRange = null);
+    final query = _historySearchQuery;
+    if (query != null && query.length >= 2) _submitHistorySearch(query);
+  }
+
+  void _applyHistorySearchFilters(HistorySearchFilters filters) {
+    setState(() => _historySearchFilters = filters);
+    final query = _historySearchQuery;
+    if (query != null && query.length >= 2) _submitHistorySearch(query);
   }
 
   void _selectHistorySearchResult(HistorySearchResult result) {
@@ -3665,6 +3964,33 @@ class _ChatScreenState extends State<ChatScreen> {
     await _updateConversationPinned(conversationId);
   }
 
+  Future<void> _toggleConversationBookmark(String conversationId) async {
+    final repository = widget.chatRepository;
+    if (repository == null) return;
+    try {
+      final conversation = await repository.getConversation(conversationId);
+      if (conversation == null) {
+        throw StateError('The conversation no longer exists.');
+      }
+      await repository.setConversationBookmarked(
+        conversationId: conversationId,
+        isBookmarked: !conversation.isBookmarked,
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_history',
+          context: ErrorDescription('while toggling a conversation bookmark'),
+        ),
+      );
+      if (mounted) {
+        _showMessage(context.openchatL10n.conversationBookmarkFailed);
+      }
+    }
+  }
+
   Future<void> _pinConversation(String conversationId) async {
     await _updateConversationPinned(conversationId, isPinned: true);
   }
@@ -3987,6 +4313,109 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _editConversationTags(String conversationId) async {
+    final repository = widget.chatRepository;
+    if (repository == null) return;
+    ChatConversation? conversation;
+    try {
+      conversation = await repository.getConversation(conversationId);
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_history',
+          context: ErrorDescription('while loading conversation tags'),
+        ),
+      );
+      if (mounted) {
+        showOpenChatToast(
+          context,
+          context.openchatL10n.conversationTagsSaveFailed,
+          type: OpenChatToastType.error,
+        );
+      }
+      return;
+    }
+    if (conversation == null || !mounted) return;
+    final l10n = context.openchatL10n;
+    final controller = TextEditingController(
+      text: conversation.tags.join(', '),
+    );
+    final tags = await showDialog<List<String>>(
+      context: context,
+      builder: (dialogContext) {
+        var hasValidationError = false;
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: Text(l10n.conversationTagsDialogTitle),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: l10n.conversationTagsFieldLabel,
+                hintText: l10n.conversationTagsFieldHint,
+                helperText: hasValidationError
+                    ? null
+                    : l10n.conversationTagsHelp,
+                errorText: hasValidationError
+                    ? l10n.conversationTagsHelp
+                    : null,
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: Text(l10n.cancel),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final parsed = controller.text
+                      .split(',')
+                      .map((tag) => tag.trim())
+                      .where((tag) => tag.isNotEmpty)
+                      .toList(growable: false);
+                  final unique = parsed.map((tag) => tag.toLowerCase()).toSet();
+                  if (unique.length > 12 ||
+                      parsed.any((tag) => tag.length > 32)) {
+                    setDialogState(() => hasValidationError = true);
+                    return;
+                  }
+                  Navigator.of(dialogContext).pop(parsed);
+                },
+                child: Text(l10n.save),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    controller.dispose();
+    if (tags == null) return;
+    try {
+      await repository.setConversationTags(
+        conversationId: conversationId,
+        tags: tags,
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_history',
+          context: ErrorDescription('while saving conversation tags'),
+        ),
+      );
+      if (mounted) {
+        showOpenChatToast(
+          context,
+          l10n.conversationTagsSaveFailed,
+          type: OpenChatToastType.error,
+        );
+      }
+    }
+  }
+
   Future<void> _deleteConversation(String conversationId) async {
     final repository = widget.chatRepository;
     if (repository == null) return;
@@ -4098,6 +4527,89 @@ class _ChatScreenState extends State<ChatScreen> {
               : context.openchatL10n.conversationRestoreFailed,
         );
       }
+    }
+  }
+
+  void _toggleConversationBatchSelection(String conversationId) {
+    setState(() {
+      if (!_selectedConversationIds.add(conversationId)) {
+        _selectedConversationIds.remove(conversationId);
+      }
+    });
+  }
+
+  void _toggleConversationSelectionMode() {
+    setState(() {
+      _isSelectingConversations = !_isSelectingConversations;
+      _selectedConversationIds.clear();
+    });
+  }
+
+  Future<void> _archiveSelectedConversations() async {
+    final repository = widget.chatRepository;
+    final ids = Set<String>.of(_selectedConversationIds);
+    if (repository == null || ids.isEmpty) return;
+    if (_activeChatConversationId != null &&
+        ids.contains(_activeChatConversationId)) {
+      _showMessage(context.openchatL10n.stopResponseBeforeArchive);
+      return;
+    }
+    try {
+      await repository.setConversationsArchived(
+        conversationIds: ids.toList(growable: false),
+        isArchived: true,
+      );
+      if (!mounted) return;
+      final selectedConversationWillBeArchived =
+          _selectedConversationId != null &&
+          ids.contains(_selectedConversationId);
+      setState(() {
+        _selectedConversationIds.clear();
+        _isSelectingConversations = false;
+      });
+      if (selectedConversationWillBeArchived) _startNewConversation();
+      showOpenChatToast(
+        context,
+        context.openchatL10n.conversationsSelected(ids.length),
+        type: OpenChatToastType.success,
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_history',
+          context: ErrorDescription('while archiving selected conversations'),
+        ),
+      );
+      if (mounted) _showMessage(context.openchatL10n.conversationArchiveFailed);
+    }
+  }
+
+  Future<void> _moveSelectedConversations(String? projectId) async {
+    final repository = widget.chatRepository;
+    final ids = Set<String>.of(_selectedConversationIds);
+    if (repository == null || ids.isEmpty) return;
+    try {
+      await repository.moveConversations(
+        conversationIds: ids.toList(growable: false),
+        projectId: projectId,
+      );
+      if (!mounted) return;
+      setState(() {
+        _selectedConversationIds.clear();
+        _isSelectingConversations = false;
+      });
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_projects',
+          context: ErrorDescription('while moving selected conversations'),
+        ),
+      );
+      if (mounted) _showMessage(context.openchatL10n.projectMoveFailed);
     }
   }
 
@@ -4662,10 +5174,21 @@ class _ChatScreenState extends State<ChatScreen> {
                   widget.historyStorageStatus != HistoryStorageStatus.available
               ? null
               : () => unawaited(_openRunManager()),
+          onOpenSavedHistorySearches: _isHistorySearchOpen
+              ? () => unawaited(_openSavedHistorySearches())
+              : null,
           onCloseHistorySearch: _closeHistorySearch,
           onSearchChanged: _handleHistorySearchChanged,
           onSearchSubmitted: _submitHistorySearch,
           historySearchQuery: _historySearchQuery,
+          hasHistorySearchDateRange: _historySearchDateRange != null,
+          onPickHistorySearchDateRange: _pickHistorySearchDateRange,
+          onClearHistorySearchDateRange: _clearHistorySearchDateRange,
+          historySearchFilterOptions: _historySearchFilterOptions,
+          isLoadingHistorySearchFilterOptions:
+              _isLoadingHistorySearchFilterOptions,
+          historySearchFilters: _historySearchFilters,
+          onApplyHistorySearchFilters: _applyHistorySearchFilters,
           historySearchResults: _historySearchResults,
           isHistorySearchLoading: _isSearchingHistory,
           historySearchErrorCode: _historySearchErrorCode,
@@ -4688,6 +5211,13 @@ class _ChatScreenState extends State<ChatScreen> {
               .map(_sidebarConversationFromModel)
               .toList(growable: false),
           selectedConversationId: selectedConversationId,
+          selectionMode: _isSelectingConversations,
+          selectedConversationIds: _selectedConversationIds,
+          onToggleBatchSelection: _toggleConversationBatchSelection,
+          onToggleSelectionMode: _toggleConversationSelectionMode,
+          onArchiveSelected: () => unawaited(_archiveSelectedConversations()),
+          onMoveSelected: (projectId) =>
+              unawaited(_moveSelectedConversations(projectId)),
           onSelectConversation: _selectConversation,
           onToggleConversationPinned: (conversationId) =>
               unawaited(_toggleConversationPinned(conversationId)),
@@ -4708,6 +5238,10 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
           ),
+          onEditConversationTags: (conversationId) =>
+              unawaited(_editConversationTags(conversationId)),
+          onToggleConversationBookmark: (conversationId) =>
+              unawaited(_toggleConversationBookmark(conversationId)),
           onMoveConversationToProject: (conversationId, projectId) =>
               unawaited(_moveConversationToProject(conversationId, projectId)),
           onOpenProjectOptions: (projectId, projectRoot, projectName) =>
@@ -4739,6 +5273,8 @@ class _ChatScreenState extends State<ChatScreen> {
       title: conversation.title,
       isPinned: conversation.isPinned,
       isArchived: conversation.isArchived,
+      isBookmarked: conversation.isBookmarked,
+      tags: conversation.tags,
     );
   }
 

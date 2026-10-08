@@ -76,6 +76,10 @@ class SidebarConversationTile extends StatefulWidget {
     this.onDelete,
     this.onExport,
     this.onArchive,
+    this.onEditTags,
+    this.onToggleBookmark,
+    this.selectionMode = false,
+    this.selectedForBatch = false,
     super.key,
   });
 
@@ -90,6 +94,10 @@ class SidebarConversationTile extends StatefulWidget {
   final VoidCallback? onDelete;
   final VoidCallback? onExport;
   final VoidCallback? onArchive;
+  final VoidCallback? onEditTags;
+  final VoidCallback? onToggleBookmark;
+  final bool selectionMode;
+  final bool selectedForBatch;
 
   @override
   State<SidebarConversationTile> createState() =>
@@ -109,16 +117,22 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
     final onExport = widget.onExport;
     final onDelete = widget.onDelete;
     final hasActions =
-        widget.onTogglePinned != null ||
-        widget.onRename != null ||
-        widget.onDelete != null ||
-        widget.onExport != null ||
-        widget.onArchive != null;
+        !widget.selectionMode &&
+        (widget.onTogglePinned != null ||
+            widget.onRename != null ||
+            widget.onDelete != null ||
+            widget.onExport != null ||
+            widget.onArchive != null ||
+            widget.onEditTags != null ||
+            widget.onToggleBookmark != null);
     final hasMenuAction =
-        widget.onRename != null ||
-        widget.onDelete != null ||
-        widget.onExport != null ||
-        widget.onArchive != null;
+        !widget.selectionMode &&
+        (widget.onRename != null ||
+            widget.onDelete != null ||
+            widget.onExport != null ||
+            widget.onArchive != null ||
+            widget.onEditTags != null ||
+            widget.onToggleBookmark != null);
     final showActions =
         hasActions &&
         (_hovered ||
@@ -136,7 +150,11 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
         button: true,
         enabled: widget.onPressed != null,
         selected: widget.selected,
-        label: widget.conversation.title,
+        label: <String>[
+          widget.conversation.title,
+          ...widget.conversation.tags,
+          if (widget.conversation.isBookmarked) l10n.conversationBookmarked,
+        ].join(', '),
         child: Material(
           color: widget.selected ? palette.selected : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
@@ -155,6 +173,23 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                 padding: EdgeInsets.symmetric(horizontal: widget.inset),
                 child: Row(
                   children: [
+                    if (widget.selectionMode) ...[
+                      Semantics(
+                        label: l10n.selectConversation(
+                          widget.conversation.title,
+                        ),
+                        child: Checkbox(
+                          value: widget.selectedForBatch,
+                          onChanged: widget.onPressed == null
+                              ? null
+                              : (_) => widget.onPressed!(),
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                    ],
                     if (widget.showChatIcon) ...[
                       Icon(
                         LucideIcons.messageCircle,
@@ -178,6 +213,27 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                         ),
                       ),
                     ),
+                    if (widget.conversation.tags.isNotEmpty)
+                      Tooltip(
+                        message: widget.conversation.tags.join(', '),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                          child: Icon(
+                            LucideIcons.tags,
+                            size: 13,
+                            color: palette.secondaryIcon,
+                          ),
+                        ),
+                      ),
+                    if (widget.conversation.isBookmarked)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Icon(
+                          LucideIcons.bookmark,
+                          size: 13,
+                          color: palette.accentIcon,
+                        ),
+                      ),
                     if (hasActions) ...[
                       const SizedBox(width: 2),
                       ExcludeFocus(
@@ -221,6 +277,23 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                                       onClose: () =>
                                           setState(() => _menuOpen = false),
                                       menuChildren: [
+                                        if (widget.onToggleBookmark
+                                            case final onToggleBookmark?)
+                                          _menuActionItem(
+                                            palette: palette,
+                                            label:
+                                                widget.conversation.isBookmarked
+                                                ? l10n.removeConversationBookmark
+                                                : l10n.bookmarkConversation,
+                                            onPressed: onToggleBookmark,
+                                          ),
+                                        if (widget.onEditTags
+                                            case final onEditTags?)
+                                          _menuActionItem(
+                                            palette: palette,
+                                            label: l10n.editConversationTags,
+                                            onPressed: onEditTags,
+                                          ),
                                         if (onRename != null)
                                           _menuActionItem(
                                             palette: palette,

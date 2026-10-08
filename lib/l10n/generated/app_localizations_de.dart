@@ -1856,6 +1856,115 @@ class AppLocalizationsDe extends AppLocalizations {
   String get searchMessagesTooltip => 'Nachrichten durchsuchen';
 
   @override
+  String get historySearchDateFilter => 'Nach Datum filtern';
+
+  @override
+  String get historySearchDateFilterApplied => 'Datumsfilter ist aktiv';
+
+  @override
+  String get historySearchFiltersTitle => 'Suchfilter';
+
+  @override
+  String get historySearchRouteFilterNote =>
+      'Anbieter und Modell beziehen sich auf die jeweilige gespeicherte Antwort.';
+
+  @override
+  String get historySearchProviderFilter => 'Antwortanbieter';
+
+  @override
+  String get historySearchModelFilter => 'Antwortmodell';
+
+  @override
+  String get historySearchProjectFilter => 'Projekt';
+
+  @override
+  String get historySearchArchiveFilter => 'Archivstatus';
+
+  @override
+  String get historySearchAllProviders => 'Alle Anbieter';
+
+  @override
+  String get historySearchAllModels => 'Alle Modelle';
+
+  @override
+  String get historySearchAllProjects => 'Alle Projekte';
+
+  @override
+  String get historySearchTagFilter => 'Tag';
+
+  @override
+  String get selectConversations => 'Chats auswählen';
+
+  @override
+  String get cancelSelection => 'Auswahl abbrechen';
+
+  @override
+  String get archiveSelectedConversations => 'Ausgewählte Chats archivieren';
+
+  @override
+  String get moveSelectedChats => 'Ausgewählte Chats verschieben';
+
+  @override
+  String get moveToChats => 'Zu Chats verschieben';
+
+  @override
+  String get bookmarkConversation => 'Unterhaltung als Lesezeichen speichern';
+
+  @override
+  String get removeConversationBookmark => 'Lesezeichen entfernen';
+
+  @override
+  String get conversationBookmarkFailed =>
+      'Das Lesezeichen der Unterhaltung konnte nicht aktualisiert werden.';
+
+  @override
+  String get conversationBookmarked => 'Als Lesezeichen gespeichert';
+
+  @override
+  String selectConversation(String title) {
+    return '$title auswählen';
+  }
+
+  @override
+  String conversationsSelected(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '# Chats ausgewählt',
+      one: '# Chat ausgewählt',
+      zero: 'Keine Chats ausgewählt',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get historySearchAllTags => 'Alle Tags';
+
+  @override
+  String get historySearchAllStatuses => 'Alle Gespräche';
+
+  @override
+  String get historySearchActiveConversations => 'Aktive Gespräche';
+
+  @override
+  String get historySearchArchivedConversations => 'Archivierte Gespräche';
+
+  @override
+  String get historySearchClearFilters => 'Filter löschen';
+
+  @override
+  String get historySearchApplyFilters => 'Filter anwenden';
+
+  @override
+  String get historySearchOpenFilters => 'Suchfilter öffnen';
+
+  @override
+  String get historySearchFiltersActive => 'Suchfilter sind aktiv';
+
+  @override
+  String get historySearchClearDateFilter => 'Datumsfilter entfernen';
+
+  @override
   String get searchMessagesHeader => 'Treffer in Nachrichten';
 
   @override
@@ -2199,6 +2308,17 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
+  String get agentRunLiveStarting => 'Delegierte Analyse wird gestartet…';
+
+  @override
+  String get agentRunLiveThinking => 'Delegierte Aufgabe wird analysiert…';
+
+  @override
+  String agentRunLiveUsingTool(String tool) {
+    return 'Verwendet $tool';
+  }
+
+  @override
   String get agentRunEndedInAnotherChat =>
       'Ein Lauf in einem anderen Chat ist beendet.';
 
@@ -2514,6 +2634,56 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get renameConversation => 'Chat-Titel bearbeiten';
+
+  @override
+  String get editConversationTags => 'Tags bearbeiten';
+
+  @override
+  String get conversationTagsDialogTitle => 'Chat-Tags';
+
+  @override
+  String get conversationTagsFieldLabel => 'Tags';
+
+  @override
+  String get conversationTagsFieldHint => 'Tags durch Kommas trennen';
+
+  @override
+  String get conversationTagsHelp =>
+      'Bis zu 12 Tags mit jeweils höchstens 32 Zeichen.';
+
+  @override
+  String get conversationTagsSaveFailed =>
+      'Tags konnten nicht gespeichert werden.';
+
+  @override
+  String get saveHistorySearchTitle => 'Verlaufssuche speichern';
+
+  @override
+  String get savedHistorySearchName => 'Suchname';
+
+  @override
+  String get savedHistorySearchesTitle => 'Gespeicherte Suchen';
+
+  @override
+  String get savedHistorySearchesEmpty => 'Noch keine gespeicherten Suchen.';
+
+  @override
+  String get deleteSavedHistorySearch => 'Gespeicherte Suche löschen';
+
+  @override
+  String get saveCurrentHistorySearch => 'Aktuelle Suche speichern';
+
+  @override
+  String get savedHistorySearchesLoadFailed =>
+      'Gespeicherte Suchen konnten nicht geladen werden.';
+
+  @override
+  String get savedHistorySearchSaveFailed =>
+      'Gespeicherte Suchen konnten nicht aktualisiert werden.';
+
+  @override
+  String get savedHistorySearchLimitReached =>
+      'Du kannst bis zu 20 Suchen speichern.';
 
   @override
   String get pinConversation => 'Chat anheften';

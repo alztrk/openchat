@@ -39,6 +39,7 @@ class ChatRepository {
   Stream<List<ChatConversation>> watchConversations() {
     final query = _database.select(_database.conversations)
       ..orderBy([
+        (conversation) => OrderingTerm.desc(conversation.isBookmarked),
         (conversation) => OrderingTerm.desc(conversation.isPinned),
         (conversation) => OrderingTerm.desc(conversation.updatedAt),
         (conversation) => OrderingTerm.asc(conversation.id),
@@ -210,6 +211,59 @@ class ChatRepository {
           isPinned: const Value(false),
         ),
       );
+    });
+  }
+
+  Future<void> moveConversations({
+    required List<String> conversationIds,
+    required String? projectId,
+  }) async {
+    final ids = conversationIds.map((id) => id.trim()).toSet();
+    if (ids.isEmpty || ids.any((id) => id.isEmpty)) {
+      throw ArgumentError.value(
+        conversationIds,
+        'conversationIds',
+        'At least one conversation ID is required.',
+      );
+    }
+    final normalizedProjectId = projectId == null
+        ? null
+        : _requireValue(projectId, 'projectId');
+    await _database.transaction(() async {
+      if (normalizedProjectId != null) {
+        final project =
+            await (_database.select(_database.projects)
+                  ..where((row) => row.id.equals(normalizedProjectId)))
+                .getSingleOrNull();
+        if (project == null) {
+          throw ProjectNotFoundException(normalizedProjectId);
+        }
+      }
+      final orderedIds = ids.toList(growable: false);
+      final existingIds = <String>{};
+      for (var offset = 0; offset < orderedIds.length; offset += 500) {
+        final chunk = orderedIds.skip(offset).take(500).toSet();
+        existingIds.addAll(
+          await (_database.select(
+            _database.conversations,
+          )..where((row) => row.id.isIn(chunk))).map((row) => row.id).get(),
+        );
+      }
+      final missingIds = ids.difference(existingIds);
+      if (missingIds.isNotEmpty) {
+        throw ConversationNotFoundException(missingIds.first);
+      }
+      for (var offset = 0; offset < orderedIds.length; offset += 500) {
+        final chunk = orderedIds.skip(offset).take(500).toSet();
+        await (_database.update(
+          _database.conversations,
+        )..where((row) => row.id.isIn(chunk))).write(
+          ConversationsCompanion(
+            projectId: Value(normalizedProjectId),
+            isPinned: const Value(false),
+          ),
+        );
+      }
     });
   }
 
@@ -808,6 +862,19 @@ class ChatRepository {
     }
   }
 
+  Future<void> setConversationBookmarked({
+    required String conversationId,
+    required bool isBookmarked,
+  }) async {
+    final updatedRows =
+        await (_database.update(_database.conversations)
+              ..where((conversation) => conversation.id.equals(conversationId)))
+            .write(ConversationsCompanion(isBookmarked: Value(isBookmarked)));
+    if (updatedRows == 0) {
+      throw ConversationNotFoundException(conversationId);
+    }
+  }
+
   Future<void> setConversationArchived({
     required String conversationId,
     required bool isArchived,
@@ -826,6 +893,85 @@ class ChatRepository {
     if (updatedRows == 0) {
       throw ConversationNotFoundException(conversationId);
     }
+  }
+
+  Future<void> setConversationsArchived({
+    required List<String> conversationIds,
+    required bool isArchived,
+  }) async {
+    final ids = conversationIds.map((id) => id.trim()).toSet();
+    if (ids.isEmpty || ids.any((id) => id.isEmpty)) {
+      throw ArgumentError.value(
+        conversationIds,
+        'conversationIds',
+        'At least one conversation ID is required.',
+      );
+    }
+    await _database.transaction(() async {
+      final orderedIds = ids.toList(growable: false);
+      final existingIds = <String>{};
+      for (var offset = 0; offset < orderedIds.length; offset += 500) {
+        final chunk = orderedIds.skip(offset).take(500).toSet();
+        existingIds.addAll(
+          await (_database.select(_database.conversations)
+                ..where((conversation) => conversation.id.isIn(chunk)))
+              .map((row) => row.id)
+              .get(),
+        );
+      }
+      final missingIds = ids.difference(existingIds);
+      if (missingIds.isNotEmpty) {
+        throw ConversationNotFoundException(missingIds.first);
+      }
+      for (var offset = 0; offset < orderedIds.length; offset += 500) {
+        final chunk = orderedIds.skip(offset).take(500).toSet();
+        await (_database.update(
+          _database.conversations,
+        )..where((conversation) => conversation.id.isIn(chunk))).write(
+          ConversationsCompanion(
+            isArchived: Value(isArchived),
+            isPinned: isArchived ? const Value(false) : const Value.absent(),
+          ),
+        );
+      }
+    });
+  }
+
+  Future<void> setConversationTags({
+    required String conversationId,
+    required List<String> tags,
+  }) async {
+    final normalizedTags = <String, String>{};
+    for (final tag in tags) {
+      final label = tag.trim();
+      if (label.isEmpty) continue;
+      if (label.length > 32) {
+        throw ArgumentError.value(
+          tags,
+          'tags',
+          'Tags must be 32 characters or fewer.',
+        );
+      }
+      normalizedTags.putIfAbsent(label.toLowerCase(), () => label);
+    }
+    if (normalizedTags.length > 12) {
+      throw ArgumentError.value(
+        tags,
+        'tags',
+        'A conversation can have at most 12 tags.',
+      );
+    }
+    final updatedRows =
+        await (_database.update(_database.conversations)
+              ..where((conversation) => conversation.id.equals(conversationId)))
+            .write(
+              ConversationsCompanion(
+                tags: Value(
+                  jsonEncode(normalizedTags.values.toList(growable: false)),
+                ),
+              ),
+            );
+    if (updatedRows == 0) throw ConversationNotFoundException(conversationId);
   }
 
   Future<void> deleteConversation(String conversationId) async {
@@ -888,6 +1034,8 @@ class ChatRepository {
       projectId: row.projectId,
       isPinned: row.isPinned,
       isArchived: row.isArchived,
+      isBookmarked: row.isBookmarked,
+      tags: _decodeConversationTags(row.tags),
       createdAt: DateTime.fromMillisecondsSinceEpoch(
         row.createdAt,
         isUtc: true,
@@ -897,6 +1045,23 @@ class ChatRepository {
         isUtc: true,
       ),
     );
+  }
+
+  List<String> _decodeConversationTags(String encoded) {
+    final decoded = jsonDecode(encoded);
+    if (decoded is! List<Object?> || decoded.length > 12) {
+      throw const FormatException('Conversation tags are invalid.');
+    }
+    final tags = <String>[];
+    final seen = <String>{};
+    for (final value in decoded) {
+      if (value is! String || value.trim().isEmpty || value.length > 32) {
+        throw const FormatException('Conversation tags are invalid.');
+      }
+      final label = value.trim();
+      if (seen.add(label.toLowerCase())) tags.add(label);
+    }
+    return List<String>.unmodifiable(tags);
   }
 
   String _requireValue(String value, String parameterName) {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -24,11 +26,45 @@ class _AgentRunManagerDialogState extends State<AgentRunManagerDialog> {
   bool _isLoading = true;
   String? _errorCode;
   int _requestGeneration = 0;
+  final Map<String, _LiveSubagentProgress> _liveSubagentProgress =
+      <String, _LiveSubagentProgress>{};
+  StreamSubscription<OpenChatServiceEvent>? _serviceEvents;
 
   @override
   void initState() {
     super.initState();
+    _serviceEvents = widget.serviceClient.events.listen(_handleServiceEvent);
     _loadRuns();
+  }
+
+  void _handleServiceEvent(OpenChatServiceEvent event) {
+    if (!mounted) return;
+    if (event.name != 'chat.subagent.updated') return;
+    final runId = event.data['runId'];
+    final phase = event.data['phase'];
+    final toolName = event.data['toolName'];
+    if (runId is! String ||
+        runId.isEmpty ||
+        phase is! String ||
+        (toolName != null && toolName is! String)) {
+      return;
+    }
+    if (!_liveSubagentProgress.containsKey(runId) &&
+        _liveSubagentProgress.length >= 50) {
+      _liveSubagentProgress.remove(_liveSubagentProgress.keys.first);
+    }
+    setState(() {
+      _liveSubagentProgress[runId] = _LiveSubagentProgress(
+        phase: phase,
+        toolName: toolName is String ? toolName : null,
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    unawaited(_serviceEvents?.cancel());
+    super.dispose();
   }
 
   Future<void> _loadRuns() async {
@@ -205,6 +241,20 @@ class _AgentRunManagerDialogState extends State<AgentRunManagerDialog> {
         final title = run.runKind == 'subagent' && run.objective != null
             ? l10n.agentRunSubagentTask(run.objective!)
             : run.conversationTitle ?? l10n.newChat;
+        final liveProgress = _liveSubagentProgress[run.runId];
+        final progressPhase = liveProgress?.phase ?? run.progressPhase;
+        final progressToolName = liveProgress?.toolName ?? run.progressToolName;
+        final progressLabel = run.status != 'running'
+            ? null
+            : switch (progressPhase) {
+                'starting' => l10n.agentRunLiveStarting,
+                'thinking' => l10n.agentRunLiveThinking,
+                'tool' => switch (progressToolName) {
+                  final toolName? => l10n.agentRunLiveUsingTool(toolName),
+                  _ => l10n.agentRunLiveThinking,
+                },
+                _ => null,
+              };
         final icon = switch (run.status) {
           'running' => LucideIcons.loaderCircle,
           'paused' || 'interrupted' => LucideIcons.pause,
@@ -241,6 +291,8 @@ class _AgentRunManagerDialogState extends State<AgentRunManagerDialog> {
                 ),
                 const SizedBox(height: 6),
                 Text(_statusLabel(context, run.status)),
+                if (progressLabel != null)
+                  Semantics(liveRegion: true, child: Text(progressLabel)),
                 Text(_updatedLabel(context, run.updatedAtUnixMs)),
                 if (route.isNotEmpty)
                   Text(route, maxLines: 2, overflow: TextOverflow.ellipsis),
@@ -263,6 +315,13 @@ class _AgentRunManagerDialogState extends State<AgentRunManagerDialog> {
   }
 }
 
+class _LiveSubagentProgress {
+  const _LiveSubagentProgress({required this.phase, this.toolName});
+
+  final String phase;
+  final String? toolName;
+}
+
 class _AgentRunSummary {
   const _AgentRunSummary({
     required this.runId,
@@ -275,6 +334,8 @@ class _AgentRunSummary {
     required this.runKind,
     required this.parentRunId,
     required this.objective,
+    required this.progressPhase,
+    required this.progressToolName,
   });
 
   final String runId;
@@ -287,6 +348,8 @@ class _AgentRunSummary {
   final String? runKind;
   final String? parentRunId;
   final String? objective;
+  final String? progressPhase;
+  final String? progressToolName;
 
   factory _AgentRunSummary.fromObject(Object? value) {
     if (value is! Map<String, Object?>) {
@@ -302,6 +365,8 @@ class _AgentRunSummary {
     final runKindValue = value['runKind'];
     final parentRunIdValue = value['parentRunId'];
     final objectiveValue = value['objective'];
+    final progressPhaseValue = value['progressPhase'];
+    final progressToolNameValue = value['progressToolName'];
     final providerId = switch (providerIdValue) {
       null => null,
       final String id => id,
@@ -327,6 +392,16 @@ class _AgentRunSummary {
       final String value => value,
       _ => throw const FormatException('A run summary was invalid.'),
     };
+    final progressPhase = switch (progressPhaseValue) {
+      null => null,
+      final String phase => phase,
+      _ => throw const FormatException('A run summary was invalid.'),
+    };
+    final progressToolName = switch (progressToolNameValue) {
+      null => null,
+      final String name => name,
+      _ => throw const FormatException('A run summary was invalid.'),
+    };
     final title = switch (conversationTitle) {
       null => null,
       final String name => name,
@@ -349,6 +424,8 @@ class _AgentRunSummary {
       runKind: runKind,
       parentRunId: parentRunId,
       objective: objective,
+      progressPhase: progressPhase,
+      progressToolName: progressToolName,
     );
   }
 }

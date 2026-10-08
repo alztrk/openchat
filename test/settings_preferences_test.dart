@@ -8,6 +8,7 @@ import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/domain/default_model_preference.dart';
 import 'package:openchat/features/chat/domain/history_storage_status.dart';
+import 'package:openchat/features/chat/domain/history_search_result.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/features/settings/presentation/settings_screen.dart';
@@ -35,6 +36,31 @@ void main() {
 
   tearDown(() {
     SharedPreferencesAsyncPlatform.instance = null;
+  });
+
+  test('saved history searches persist their filters and date range', () async {
+    final preferences = SettingsPreferences(SharedPreferencesAsync());
+    const saved = SavedHistorySearch(
+      name: 'Recent provider errors',
+      query: 'connection failed',
+      filters: HistorySearchFilters(
+        providerId: 'mistral',
+        projectId: 'project-1',
+        isArchived: false,
+        tag: 'Research',
+      ),
+      fromUnixMs: 1791417600000,
+      throughUnixMs: 1791590400000,
+    );
+
+    await preferences.writeSavedHistorySearches(const <SavedHistorySearch>[
+      saved,
+    ]);
+
+    final reopened = await SettingsPreferences(SharedPreferencesAsync())
+        .readSavedHistorySearches();
+    expect(reopened, hasLength(1));
+    expect(reopened.single.toJson(), saved.toJson());
   });
 
   test(

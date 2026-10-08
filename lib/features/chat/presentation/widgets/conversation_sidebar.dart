@@ -16,10 +16,18 @@ class ConversationSidebar extends StatelessWidget {
     this.isHistorySearchOpen = false,
     this.onOpenHistorySearch,
     this.onOpenRunManager,
+    this.onOpenSavedHistorySearches,
     this.onCloseHistorySearch,
     this.onSearchChanged,
     this.onSearchSubmitted,
     this.historySearchQuery,
+    this.hasHistorySearchDateRange = false,
+    this.onPickHistorySearchDateRange,
+    this.onClearHistorySearchDateRange,
+    this.historySearchFilterOptions,
+    this.isLoadingHistorySearchFilterOptions = false,
+    this.historySearchFilters = const HistorySearchFilters(),
+    this.onApplyHistorySearchFilters,
     this.historySearchResults = const <HistorySearchResult>[],
     this.isHistorySearchLoading = false,
     this.historySearchErrorCode,
@@ -42,6 +50,14 @@ class ConversationSidebar extends StatelessWidget {
     this.onDeleteConversation,
     this.onExportConversation,
     this.onArchiveConversation,
+    this.onEditConversationTags,
+    this.onToggleConversationBookmark,
+    this.selectionMode = false,
+    this.selectedConversationIds = const <String>{},
+    this.onToggleBatchSelection,
+    this.onToggleSelectionMode,
+    this.onArchiveSelected,
+    this.onMoveSelected,
     this.onMoveConversationToProject,
     this.onCreateProject,
     this.projectsLoading = false,
@@ -61,10 +77,18 @@ class ConversationSidebar extends StatelessWidget {
   final bool isHistorySearchOpen;
   final VoidCallback? onOpenHistorySearch;
   final VoidCallback? onOpenRunManager;
+  final VoidCallback? onOpenSavedHistorySearches;
   final VoidCallback? onCloseHistorySearch;
   final ValueChanged<String>? onSearchChanged;
   final ValueChanged<String>? onSearchSubmitted;
   final String? historySearchQuery;
+  final bool hasHistorySearchDateRange;
+  final VoidCallback? onPickHistorySearchDateRange;
+  final VoidCallback? onClearHistorySearchDateRange;
+  final HistorySearchFilterOptions? historySearchFilterOptions;
+  final bool isLoadingHistorySearchFilterOptions;
+  final HistorySearchFilters historySearchFilters;
+  final ValueChanged<HistorySearchFilters>? onApplyHistorySearchFilters;
   final List<HistorySearchResult> historySearchResults;
   final bool isHistorySearchLoading;
   final String? historySearchErrorCode;
@@ -87,6 +111,14 @@ class ConversationSidebar extends StatelessWidget {
   final ValueChanged<String>? onDeleteConversation;
   final ValueChanged<String>? onExportConversation;
   final ValueChanged<String>? onArchiveConversation;
+  final ValueChanged<String>? onEditConversationTags;
+  final ValueChanged<String>? onToggleConversationBookmark;
+  final bool selectionMode;
+  final Set<String> selectedConversationIds;
+  final ValueChanged<String>? onToggleBatchSelection;
+  final VoidCallback? onToggleSelectionMode;
+  final VoidCallback? onArchiveSelected;
+  final ValueChanged<String?>? onMoveSelected;
   final void Function(String conversationId, String projectId)?
   onMoveConversationToProject;
   final VoidCallback? onCreateProject;
@@ -106,6 +138,255 @@ class ConversationSidebar extends StatelessWidget {
 
   VoidCallback _toggleSection(String section) =>
       () => onToggleSection?.call(section);
+
+  Widget _buildBatchSelectionBar(BuildContext context) {
+    final l10n = context.openchatL10n;
+    if (!selectionMode && onToggleSelectionMode == null) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 0, 8, 8),
+      child: Row(
+        children: [
+          if (selectionMode)
+            IconButton(
+              tooltip: l10n.cancelSelection,
+              onPressed: onToggleSelectionMode,
+              icon: const Icon(LucideIcons.x),
+            )
+          else
+            TextButton.icon(
+              onPressed: onToggleSelectionMode,
+              icon: const Icon(LucideIcons.listChecks, size: 16),
+              label: Text(l10n.selectConversations),
+            ),
+          if (selectionMode) ...[
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                l10n.conversationsSelected(selectedConversationIds.length),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            PopupMenuButton<String>(
+              tooltip: l10n.moveSelectedChats,
+              enabled:
+                  selectedConversationIds.isNotEmpty && onMoveSelected != null,
+              onSelected: (projectId) =>
+                  onMoveSelected!(projectId.isEmpty ? null : projectId),
+              itemBuilder: (context) => [
+                PopupMenuItem<String>(value: '', child: Text(l10n.moveToChats)),
+                for (final project in projects)
+                  PopupMenuItem<String>(
+                    value: project.id,
+                    child: Text(project.title),
+                  ),
+              ],
+              icon: const Icon(LucideIcons.folder),
+            ),
+            IconButton(
+              tooltip: l10n.archiveSelectedConversations,
+              onPressed: selectedConversationIds.isEmpty
+                  ? null
+                  : onArchiveSelected,
+              icon: const Icon(LucideIcons.archive),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showHistorySearchFilters(BuildContext context) async {
+    final l10n = context.openchatL10n;
+    final options = historySearchFilterOptions;
+    String? providerId =
+        options?.providerIds.contains(historySearchFilters.providerId) ?? false
+        ? historySearchFilters.providerId
+        : null;
+    String? modelId =
+        options?.modelIds.contains(historySearchFilters.modelId) ?? false
+        ? historySearchFilters.modelId
+        : null;
+    String? projectId =
+        projects.any((project) => project.id == historySearchFilters.projectId)
+        ? historySearchFilters.projectId
+        : null;
+    String? tag = options?.tags.contains(historySearchFilters.tag) ?? false
+        ? historySearchFilters.tag
+        : null;
+    var archiveState = switch (historySearchFilters.isArchived) {
+      true => 'archived',
+      false => 'active',
+      null => 'all',
+    };
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              20,
+              20,
+              20,
+              20 + MediaQuery.viewInsetsOf(context).bottom,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    l10n.historySearchFiltersTitle,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    l10n.historySearchRouteFilterNote,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  if (isLoadingHistorySearchFilterOptions) ...[
+                    const SizedBox(height: 12),
+                    const LinearProgressIndicator(),
+                  ],
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String?>(
+                    initialValue: providerId,
+                    decoration: InputDecoration(
+                      labelText: l10n.historySearchProviderFilter,
+                    ),
+                    items: [
+                      DropdownMenuItem<String?>(
+                        child: Text(l10n.historySearchAllProviders),
+                      ),
+                      for (final id in options?.providerIds ?? const <String>[])
+                        DropdownMenuItem<String?>(value: id, child: Text(id)),
+                    ],
+                    onChanged: options == null
+                        ? null
+                        : (value) => setSheetState(() => providerId = value),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String?>(
+                    initialValue: modelId,
+                    decoration: InputDecoration(
+                      labelText: l10n.historySearchModelFilter,
+                    ),
+                    items: [
+                      DropdownMenuItem<String?>(
+                        child: Text(l10n.historySearchAllModels),
+                      ),
+                      for (final id in options?.modelIds ?? const <String>[])
+                        DropdownMenuItem<String?>(value: id, child: Text(id)),
+                    ],
+                    onChanged: options == null
+                        ? null
+                        : (value) => setSheetState(() => modelId = value),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String?>(
+                    initialValue: projectId,
+                    decoration: InputDecoration(
+                      labelText: l10n.historySearchProjectFilter,
+                    ),
+                    items: [
+                      DropdownMenuItem<String?>(
+                        child: Text(l10n.historySearchAllProjects),
+                      ),
+                      for (final project in projects)
+                        DropdownMenuItem<String?>(
+                          value: project.id,
+                          child: Text(project.title),
+                        ),
+                    ],
+                    onChanged: (value) =>
+                        setSheetState(() => projectId = value),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String?>(
+                    initialValue: tag,
+                    decoration: InputDecoration(
+                      labelText: l10n.historySearchTagFilter,
+                    ),
+                    items: [
+                      DropdownMenuItem<String?>(
+                        child: Text(l10n.historySearchAllTags),
+                      ),
+                      for (final value in options?.tags ?? const <String>[])
+                        DropdownMenuItem<String?>(
+                          value: value,
+                          child: Text(value),
+                        ),
+                    ],
+                    onChanged: (value) => setSheetState(() => tag = value),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    initialValue: archiveState,
+                    decoration: InputDecoration(
+                      labelText: l10n.historySearchArchiveFilter,
+                    ),
+                    items: [
+                      DropdownMenuItem(
+                        value: 'all',
+                        child: Text(l10n.historySearchAllStatuses),
+                      ),
+                      DropdownMenuItem(
+                        value: 'active',
+                        child: Text(l10n.historySearchActiveConversations),
+                      ),
+                      DropdownMenuItem(
+                        value: 'archived',
+                        child: Text(l10n.historySearchArchivedConversations),
+                      ),
+                    ],
+                    onChanged: (value) =>
+                        setSheetState(() => archiveState = value ?? 'all'),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () {
+                          onApplyHistorySearchFilters?.call(
+                            const HistorySearchFilters(),
+                          );
+                          Navigator.of(sheetContext).pop();
+                        },
+                        child: Text(l10n.historySearchClearFilters),
+                      ),
+                      const Spacer(),
+                      FilledButton(
+                        onPressed: () {
+                          onApplyHistorySearchFilters?.call(
+                            HistorySearchFilters(
+                              providerId: providerId,
+                              modelId: modelId,
+                              projectId: projectId,
+                              tag: tag,
+                              isArchived: switch (archiveState) {
+                                'active' => false,
+                                'archived' => true,
+                                _ => null,
+                              },
+                            ),
+                          );
+                          Navigator.of(sheetContext).pop();
+                        },
+                        child: Text(l10n.historySearchApplyFilters),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -243,6 +524,79 @@ class ConversationSidebar extends StatelessWidget {
                                 ),
                         ),
                       ),
+                      if (isHistorySearchOpen)
+                        IconButton(
+                          tooltip: hasHistorySearchDateRange
+                              ? l10n.historySearchDateFilterApplied
+                              : l10n.historySearchDateFilter,
+                          onPressed: onPickHistorySearchDateRange,
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 36,
+                            height: 40,
+                          ),
+                          padding: EdgeInsets.zero,
+                          icon: Icon(
+                            LucideIcons.calendarDays,
+                            color: hasHistorySearchDateRange
+                                ? palette.accent
+                                : palette.secondaryIcon,
+                            size: 17,
+                          ),
+                        ),
+                      if (isHistorySearchOpen &&
+                          onOpenSavedHistorySearches != null)
+                        IconButton(
+                          tooltip: l10n.savedHistorySearchesTitle,
+                          onPressed: onOpenSavedHistorySearches,
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 32,
+                            height: 40,
+                          ),
+                          padding: EdgeInsets.zero,
+                          icon: Icon(
+                            LucideIcons.bookmark,
+                            color: palette.secondaryIcon,
+                            size: 17,
+                          ),
+                        ),
+                      if (isHistorySearchOpen)
+                        IconButton(
+                          tooltip: historySearchFilters.isEmpty
+                              ? l10n.historySearchOpenFilters
+                              : l10n.historySearchFiltersActive,
+                          onPressed: () => _showHistorySearchFilters(context),
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 36,
+                            height: 40,
+                          ),
+                          padding: EdgeInsets.zero,
+                          icon: Icon(
+                            LucideIcons.slidersHorizontal,
+                            color: historySearchFilters.isEmpty
+                                ? palette.secondaryIcon
+                                : palette.accent,
+                            size: 17,
+                          ),
+                        ),
+                      if (isHistorySearchOpen && hasHistorySearchDateRange)
+                        IconButton(
+                          tooltip: l10n.historySearchClearDateFilter,
+                          onPressed: onClearHistorySearchDateRange,
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 32,
+                            height: 40,
+                          ),
+                          padding: EdgeInsets.zero,
+                          icon: Icon(
+                            LucideIcons.x,
+                            color: palette.secondaryIcon,
+                            size: 16,
+                          ),
+                        ),
                       if (onOpenRunManager != null)
                         IconButton(
                           tooltip: l10n.agentRunManagerTitle,
@@ -430,6 +784,7 @@ class ConversationSidebar extends StatelessWidget {
                                 bottom: 12,
                               ),
                               children: [
+                                _buildBatchSelectionBar(context),
                                 SidebarConversationSection(
                                   title: l10n.pinnedChats,
                                   emptyMessage: hasQuery
@@ -446,7 +801,16 @@ class ConversationSidebar extends StatelessWidget {
                                   onDeleteConversation: onDeleteConversation,
                                   onExportConversation: onExportConversation,
                                   onArchiveConversation: onArchiveConversation,
+                                  onEditConversationTags:
+                                      onEditConversationTags,
+                                  onToggleConversationBookmark:
+                                      onToggleConversationBookmark,
                                   onDropConversation: onPinConversation,
+                                  selectionMode: selectionMode,
+                                  selectedConversationIds:
+                                      selectedConversationIds,
+                                  onToggleBatchSelection:
+                                      onToggleBatchSelection,
                                   collapsed: _isCollapsed('pinned'),
                                   onToggleCollapsed: _toggleSection('pinned'),
                                 ),
@@ -473,6 +837,15 @@ class ConversationSidebar extends StatelessWidget {
                                   onDeleteConversation: onDeleteConversation,
                                   onExportConversation: onExportConversation,
                                   onArchiveConversation: onArchiveConversation,
+                                  onEditConversationTags:
+                                      onEditConversationTags,
+                                  onToggleConversationBookmark:
+                                      onToggleConversationBookmark,
+                                  selectionMode: selectionMode,
+                                  selectedConversationIds:
+                                      selectedConversationIds,
+                                  onToggleBatchSelection:
+                                      onToggleBatchSelection,
                                   onCreateProject: onCreateProject,
                                   loading: projectsLoading,
                                   errorMessage: projectLoadError,
@@ -497,7 +870,16 @@ class ConversationSidebar extends StatelessWidget {
                                   onDeleteConversation: onDeleteConversation,
                                   onExportConversation: onExportConversation,
                                   onArchiveConversation: onArchiveConversation,
+                                  onEditConversationTags:
+                                      onEditConversationTags,
+                                  onToggleConversationBookmark:
+                                      onToggleConversationBookmark,
                                   onDropConversation: onMoveConversationToChats,
+                                  selectionMode: selectionMode,
+                                  selectedConversationIds:
+                                      selectedConversationIds,
+                                  onToggleBatchSelection:
+                                      onToggleBatchSelection,
                                   collapsed: _isCollapsed('chats'),
                                   onToggleCollapsed: _toggleSection('chats'),
                                 ),
@@ -520,6 +902,10 @@ class ConversationSidebar extends StatelessWidget {
                                   onDropConversation: null,
                                   isArchivedSection: true,
                                   onArchiveConversation: onArchiveConversation,
+                                  onEditConversationTags:
+                                      onEditConversationTags,
+                                  onToggleConversationBookmark:
+                                      onToggleConversationBookmark,
                                   collapsed: _isCollapsed('archived'),
                                   onToggleCollapsed: _toggleSection('archived'),
                                 ),
@@ -535,6 +921,7 @@ class ConversationSidebar extends StatelessWidget {
                               bottom: 12,
                             ),
                             children: [
+                              _buildBatchSelectionBar(context),
                               _SidebarSection(
                                 title: l10n.pinnedChats,
                                 emptyMessage: l10n.noPinnedChats,
@@ -596,6 +983,13 @@ class ConversationSidebar extends StatelessWidget {
                                 onDropConversation: null,
                                 isArchivedSection: true,
                                 onArchiveConversation: onArchiveConversation,
+                                onEditConversationTags: onEditConversationTags,
+                                onToggleConversationBookmark:
+                                    onToggleConversationBookmark,
+                                selectionMode: selectionMode,
+                                selectedConversationIds:
+                                    selectedConversationIds,
+                                onToggleBatchSelection: onToggleBatchSelection,
                                 collapsed: _isCollapsed('archived'),
                                 onToggleCollapsed: _toggleSection('archived'),
                               ),

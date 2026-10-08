@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::{Connection, params};
 
-use super::{ArchivedMemoryExcerpt, HistorySearchResult, index};
+use super::{ArchivedMemoryExcerpt, HistorySearchFilters, HistorySearchResult, index};
 
 const MAX_SEARCH_TERMS: usize = 12;
 const MAX_SEARCH_TERM_CHARS: usize = 128;
@@ -177,6 +177,7 @@ pub(super) fn search_archived_memories_from_connection(
 pub(super) fn search_chat_history_from_connection(
     connection: &Connection,
     search_expression: &str,
+    filters: &HistorySearchFilters,
     result_limit: i64,
 ) -> rusqlite::Result<Vec<HistorySearchResult>> {
     index::ensure_all_archived_memory_indexes(connection)?;
@@ -228,21 +229,58 @@ pub(super) fn search_chat_history_from_connection(
          FROM deduplicated
          JOIN conversations AS conversation
            ON conversation.id = deduplicated.conversation_id
+         WHERE (?2 IS NULL OR deduplicated.created_at >= ?2)
+           AND (?3 IS NULL OR deduplicated.created_at < ?3)
+           AND (?4 IS NULL OR EXISTS (
+                SELECT 1 FROM messages AS routed_message
+                WHERE routed_message.conversation_id = deduplicated.conversation_id
+                  AND routed_message.id = deduplicated.message_id
+                  AND routed_message.provider_id = ?4
+           ))
+           AND (?5 IS NULL OR EXISTS (
+                SELECT 1 FROM messages AS routed_message
+                WHERE routed_message.conversation_id = deduplicated.conversation_id
+                  AND routed_message.id = deduplicated.message_id
+                  AND routed_message.model_id = ?5
+           ))
+           AND (?6 IS NULL OR conversation.project_id = ?6)
+           AND (?7 IS NULL OR conversation.is_archived = ?7)
+           AND (?8 IS NULL OR EXISTS (
+                SELECT 1 FROM json_each(
+                    CASE WHEN json_valid(conversation.tags)
+                         THEN conversation.tags ELSE '[]' END
+                ) AS conversation_tag
+                WHERE typeof(conversation_tag.value) = 'text'
+                  AND lower(conversation_tag.value) = lower(?8)
+           ))
          ORDER BY deduplicated.relevance DESC,
                   deduplicated.created_at DESC,
                   deduplicated.message_id DESC
-         LIMIT ?2",
+         LIMIT ?9",
     )?;
-    let rows = statement.query_map(params![search_expression, result_limit], |row| {
-        Ok(HistorySearchResult {
-            conversation_id: row.get(0)?,
-            conversation_title: row.get(1)?,
-            message_id: row.get(2)?,
-            role: row.get(3)?,
-            excerpt: bounded_archive_excerpt(row.get(4)?),
-            created_at_unix_ms: row.get(5)?,
-        })
-    })?;
+    let rows = statement.query_map(
+        params![
+            search_expression,
+            filters.from_unix_ms,
+            filters.through_unix_ms,
+            filters.provider_id,
+            filters.model_id,
+            filters.project_id,
+            filters.is_archived.map(i64::from),
+            filters.tag,
+            result_limit
+        ],
+        |row| {
+            Ok(HistorySearchResult {
+                conversation_id: row.get(0)?,
+                conversation_title: row.get(1)?,
+                message_id: row.get(2)?,
+                role: row.get(3)?,
+                excerpt: bounded_archive_excerpt(row.get(4)?),
+                created_at_unix_ms: row.get(5)?,
+            })
+        },
+    )?;
     rows.collect()
 }
 

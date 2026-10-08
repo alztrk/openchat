@@ -499,6 +499,31 @@ class $ConversationsTable extends Conversations
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _isBookmarkedMeta = const VerificationMeta(
+    'isBookmarked',
+  );
+  @override
+  late final GeneratedColumn<bool> isBookmarked = GeneratedColumn<bool>(
+    'is_bookmarked',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_bookmarked" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _tagsMeta = const VerificationMeta('tags');
+  @override
+  late final GeneratedColumn<String> tags = GeneratedColumn<String>(
+    'tags',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('[]'),
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -534,6 +559,8 @@ class $ConversationsTable extends Conversations
     projectId,
     isPinned,
     isArchived,
+    isBookmarked,
+    tags,
     createdAt,
     updatedAt,
   ];
@@ -628,6 +655,21 @@ class $ConversationsTable extends Conversations
         isArchived.isAcceptableOrUnknown(data['is_archived']!, _isArchivedMeta),
       );
     }
+    if (data.containsKey('is_bookmarked')) {
+      context.handle(
+        _isBookmarkedMeta,
+        isBookmarked.isAcceptableOrUnknown(
+          data['is_bookmarked']!,
+          _isBookmarkedMeta,
+        ),
+      );
+    }
+    if (data.containsKey('tags')) {
+      context.handle(
+        _tagsMeta,
+        tags.isAcceptableOrUnknown(data['tags']!, _tagsMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -697,6 +739,14 @@ class $ConversationsTable extends Conversations
         DriftSqlType.bool,
         data['${effectivePrefix}is_archived'],
       )!,
+      isBookmarked: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_bookmarked'],
+      )!,
+      tags: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}tags'],
+      )!,
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}created_at'],
@@ -726,6 +776,8 @@ class Conversation extends DataClass implements Insertable<Conversation> {
   final String? projectId;
   final bool isPinned;
   final bool isArchived;
+  final bool isBookmarked;
+  final String tags;
   final int createdAt;
   final int updatedAt;
   const Conversation({
@@ -740,6 +792,8 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     this.projectId,
     required this.isPinned,
     required this.isArchived,
+    required this.isBookmarked,
+    required this.tags,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -769,6 +823,8 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     }
     map['is_pinned'] = Variable<bool>(isPinned);
     map['is_archived'] = Variable<bool>(isArchived);
+    map['is_bookmarked'] = Variable<bool>(isBookmarked);
+    map['tags'] = Variable<String>(tags);
     map['created_at'] = Variable<int>(createdAt);
     map['updated_at'] = Variable<int>(updatedAt);
     return map;
@@ -799,6 +855,8 @@ class Conversation extends DataClass implements Insertable<Conversation> {
           : Value(projectId),
       isPinned: Value(isPinned),
       isArchived: Value(isArchived),
+      isBookmarked: Value(isBookmarked),
+      tags: Value(tags),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -823,6 +881,8 @@ class Conversation extends DataClass implements Insertable<Conversation> {
       projectId: serializer.fromJson<String?>(json['projectId']),
       isPinned: serializer.fromJson<bool>(json['isPinned']),
       isArchived: serializer.fromJson<bool>(json['isArchived']),
+      isBookmarked: serializer.fromJson<bool>(json['isBookmarked']),
+      tags: serializer.fromJson<String>(json['tags']),
       createdAt: serializer.fromJson<int>(json['createdAt']),
       updatedAt: serializer.fromJson<int>(json['updatedAt']),
     );
@@ -842,6 +902,8 @@ class Conversation extends DataClass implements Insertable<Conversation> {
       'projectId': serializer.toJson<String?>(projectId),
       'isPinned': serializer.toJson<bool>(isPinned),
       'isArchived': serializer.toJson<bool>(isArchived),
+      'isBookmarked': serializer.toJson<bool>(isBookmarked),
+      'tags': serializer.toJson<String>(tags),
       'createdAt': serializer.toJson<int>(createdAt),
       'updatedAt': serializer.toJson<int>(updatedAt),
     };
@@ -859,6 +921,8 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     Value<String?> projectId = const Value.absent(),
     bool? isPinned,
     bool? isArchived,
+    bool? isBookmarked,
+    String? tags,
     int? createdAt,
     int? updatedAt,
   }) => Conversation(
@@ -875,6 +939,8 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     projectId: projectId.present ? projectId.value : this.projectId,
     isPinned: isPinned ?? this.isPinned,
     isArchived: isArchived ?? this.isArchived,
+    isBookmarked: isBookmarked ?? this.isBookmarked,
+    tags: tags ?? this.tags,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -903,6 +969,10 @@ class Conversation extends DataClass implements Insertable<Conversation> {
       isArchived: data.isArchived.present
           ? data.isArchived.value
           : this.isArchived,
+      isBookmarked: data.isBookmarked.present
+          ? data.isBookmarked.value
+          : this.isBookmarked,
+      tags: data.tags.present ? data.tags.value : this.tags,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -922,6 +992,8 @@ class Conversation extends DataClass implements Insertable<Conversation> {
           ..write('projectId: $projectId, ')
           ..write('isPinned: $isPinned, ')
           ..write('isArchived: $isArchived, ')
+          ..write('isBookmarked: $isBookmarked, ')
+          ..write('tags: $tags, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -941,6 +1013,8 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     projectId,
     isPinned,
     isArchived,
+    isBookmarked,
+    tags,
     createdAt,
     updatedAt,
   );
@@ -959,6 +1033,8 @@ class Conversation extends DataClass implements Insertable<Conversation> {
           other.projectId == this.projectId &&
           other.isPinned == this.isPinned &&
           other.isArchived == this.isArchived &&
+          other.isBookmarked == this.isBookmarked &&
+          other.tags == this.tags &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -975,6 +1051,8 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
   final Value<String?> projectId;
   final Value<bool> isPinned;
   final Value<bool> isArchived;
+  final Value<bool> isBookmarked;
+  final Value<String> tags;
   final Value<int> createdAt;
   final Value<int> updatedAt;
   final Value<int> rowid;
@@ -990,6 +1068,8 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     this.projectId = const Value.absent(),
     this.isPinned = const Value.absent(),
     this.isArchived = const Value.absent(),
+    this.isBookmarked = const Value.absent(),
+    this.tags = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -1006,6 +1086,8 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     this.projectId = const Value.absent(),
     this.isPinned = const Value.absent(),
     this.isArchived = const Value.absent(),
+    this.isBookmarked = const Value.absent(),
+    this.tags = const Value.absent(),
     required int createdAt,
     required int updatedAt,
     this.rowid = const Value.absent(),
@@ -1025,6 +1107,8 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     Expression<String>? projectId,
     Expression<bool>? isPinned,
     Expression<bool>? isArchived,
+    Expression<bool>? isBookmarked,
+    Expression<String>? tags,
     Expression<int>? createdAt,
     Expression<int>? updatedAt,
     Expression<int>? rowid,
@@ -1042,6 +1126,8 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
       if (projectId != null) 'project_id': projectId,
       if (isPinned != null) 'is_pinned': isPinned,
       if (isArchived != null) 'is_archived': isArchived,
+      if (isBookmarked != null) 'is_bookmarked': isBookmarked,
+      if (tags != null) 'tags': tags,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -1060,6 +1146,8 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     Value<String?>? projectId,
     Value<bool>? isPinned,
     Value<bool>? isArchived,
+    Value<bool>? isBookmarked,
+    Value<String>? tags,
     Value<int>? createdAt,
     Value<int>? updatedAt,
     Value<int>? rowid,
@@ -1076,6 +1164,8 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
       projectId: projectId ?? this.projectId,
       isPinned: isPinned ?? this.isPinned,
       isArchived: isArchived ?? this.isArchived,
+      isBookmarked: isBookmarked ?? this.isBookmarked,
+      tags: tags ?? this.tags,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -1118,6 +1208,12 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     if (isArchived.present) {
       map['is_archived'] = Variable<bool>(isArchived.value);
     }
+    if (isBookmarked.present) {
+      map['is_bookmarked'] = Variable<bool>(isBookmarked.value);
+    }
+    if (tags.present) {
+      map['tags'] = Variable<String>(tags.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<int>(createdAt.value);
     }
@@ -1144,6 +1240,8 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
           ..write('projectId: $projectId, ')
           ..write('isPinned: $isPinned, ')
           ..write('isArchived: $isArchived, ')
+          ..write('isBookmarked: $isBookmarked, ')
+          ..write('tags: $tags, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -2797,6 +2895,8 @@ typedef $$ConversationsTableCreateCompanionBuilder =
       Value<String?> projectId,
       Value<bool> isPinned,
       Value<bool> isArchived,
+      Value<bool> isBookmarked,
+      Value<String> tags,
       required int createdAt,
       required int updatedAt,
       Value<int> rowid,
@@ -2814,6 +2914,8 @@ typedef $$ConversationsTableUpdateCompanionBuilder =
       Value<String?> projectId,
       Value<bool> isPinned,
       Value<bool> isArchived,
+      Value<bool> isBookmarked,
+      Value<String> tags,
       Value<int> createdAt,
       Value<int> updatedAt,
       Value<int> rowid,
@@ -2921,6 +3023,16 @@ class $$ConversationsTableFilterComposer
 
   ColumnFilters<bool> get isArchived => $composableBuilder(
     column: $table.isArchived,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isBookmarked => $composableBuilder(
+    column: $table.isBookmarked,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get tags => $composableBuilder(
+    column: $table.tags,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3042,6 +3154,16 @@ class $$ConversationsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get isBookmarked => $composableBuilder(
+    column: $table.isBookmarked,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get tags => $composableBuilder(
+    column: $table.tags,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -3126,6 +3248,14 @@ class $$ConversationsTableAnnotationComposer
     column: $table.isArchived,
     builder: (column) => column,
   );
+
+  GeneratedColumn<bool> get isBookmarked => $composableBuilder(
+    column: $table.isBookmarked,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get tags =>
+      $composableBuilder(column: $table.tags, builder: (column) => column);
 
   GeneratedColumn<int> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -3223,6 +3353,8 @@ class $$ConversationsTableTableManager
                 Value<String?> projectId = const Value.absent(),
                 Value<bool> isPinned = const Value.absent(),
                 Value<bool> isArchived = const Value.absent(),
+                Value<bool> isBookmarked = const Value.absent(),
+                Value<String> tags = const Value.absent(),
                 Value<int> createdAt = const Value.absent(),
                 Value<int> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -3238,6 +3370,8 @@ class $$ConversationsTableTableManager
                 projectId: projectId,
                 isPinned: isPinned,
                 isArchived: isArchived,
+                isBookmarked: isBookmarked,
+                tags: tags,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -3255,6 +3389,8 @@ class $$ConversationsTableTableManager
                 Value<String?> projectId = const Value.absent(),
                 Value<bool> isPinned = const Value.absent(),
                 Value<bool> isArchived = const Value.absent(),
+                Value<bool> isBookmarked = const Value.absent(),
+                Value<String> tags = const Value.absent(),
                 required int createdAt,
                 required int updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -3270,6 +3406,8 @@ class $$ConversationsTableTableManager
                 projectId: projectId,
                 isPinned: isPinned,
                 isArchived: isArchived,
+                isBookmarked: isBookmarked,
+                tags: tags,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,

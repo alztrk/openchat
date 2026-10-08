@@ -13,6 +13,8 @@ class ChatConversation {
     this.projectId,
     this.isPinned = false,
     this.isArchived = false,
+    this.isBookmarked = false,
+    this.tags = const <String>[],
   });
 
   final String id;
@@ -28,6 +30,8 @@ class ChatConversation {
   final String? projectId;
   final bool isPinned;
   final bool isArchived;
+  final bool isBookmarked;
+  final List<String> tags;
 }
 
 enum ChatConversationTitleSource { automatic, manual }

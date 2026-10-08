@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/presentation/widgets/assistant_message.dart';
+import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
+import 'package:openchat/features/chat/presentation/widgets/conversation_sidebar.dart';
+import 'package:openchat/features/chat/presentation/widgets/sidebar_conversation_tile.dart';
 import 'package:openchat/features/chat/domain/tool_permission_request.dart';
 import 'package:openchat/features/chat/presentation/widgets/tool_permission_card.dart';
 import 'package:openchat/features/chat/presentation/widgets/project_tool_permissions_dialog.dart';
@@ -10,6 +14,133 @@ import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 
 void main() {
+  testWidgets('conversation sidebar selection works with keyboard focus', (
+    tester,
+  ) async {
+    var selected = false;
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.dark,
+        home: Scaffold(
+          body: FocusTraversalGroup(
+            child: Column(
+              children: [
+                TextButton(onPressed: () {}, child: const Text('Before')),
+                SidebarConversationTile(
+                  conversation: const ConversationSidebarConversation(
+                    id: 'keyboard-selection',
+                    title: 'Keyboard selection conversation',
+                  ),
+                  selected: false,
+                  height: 40,
+                  inset: 8,
+                  onPressed: () => selected = true,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pump();
+
+    expect(selected, isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'conversation selection stays labeled across locales, widths, and text scales',
+    (tester) async {
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final semantics = tester.ensureSemantics();
+      final searchController = TextEditingController();
+      addTearDown(searchController.dispose);
+      try {
+        for (final locale in AppLocalizations.supportedLocales) {
+          for (final width in <double>[320, 480, 1200]) {
+            for (final scale in <double>[1, 1.5, 2]) {
+              tester.view.devicePixelRatio = 1;
+              tester.view.physicalSize = Size(width, 900);
+              await tester.pumpWidget(
+                MaterialApp(
+                  key: ValueKey<String>('${locale.languageCode}-$width-$scale'),
+                  locale: locale,
+                  localizationsDelegates:
+                      AppLocalizations.localizationsDelegates,
+                  supportedLocales: AppLocalizations.supportedLocales,
+                  theme: OpenChatTheme.dark,
+                  home: MediaQuery(
+                    data: MediaQueryData(
+                      size: Size(width, 900),
+                      textScaler: TextScaler.linear(scale),
+                      disableAnimations: true,
+                    ),
+                    child: Scaffold(
+                      body: ConversationSidebar(
+                        width: 300,
+                        searchController: searchController,
+                        conversations: const <ConversationSidebarConversation>[
+                          ConversationSidebarConversation(
+                            id: 'selection-matrix',
+                            title: 'Selection matrix conversation',
+                            isBookmarked: true,
+                            tags: <String>['Research'],
+                          ),
+                        ],
+                        selectionMode: true,
+                        selectedConversationIds: const <String>{},
+                        onToggleSelectionMode: () {},
+                        onToggleBatchSelection: (_) {},
+                      ),
+                    ),
+                  ),
+                ),
+              );
+              await tester.pumpAndSettle();
+              final localizations = AppLocalizations.of(
+                tester.element(find.byType(ConversationSidebar)),
+              )!;
+              expect(
+                find.bySemanticsLabel(
+                  localizations.selectConversation(
+                    'Selection matrix conversation',
+                  ),
+                ),
+                findsOneWidget,
+                reason: '${locale.languageCode}, width $width, scale $scale',
+              );
+              final tileSemantics = tester.widget<Semantics>(
+                find
+                    .descendant(
+                      of: find.byType(SidebarConversationTile),
+                      matching: find.byType(Semantics),
+                    )
+                    .first,
+              );
+              expect(
+                tileSemantics.properties.label,
+                'Selection matrix conversation, Research, '
+                '${localizations.conversationBookmarked}',
+              );
+              expect(tester.takeException(), isNull);
+            }
+          }
+        }
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
   testWidgets(
     'provider citation responses remain readable across locales and display scales',
     (tester) async {

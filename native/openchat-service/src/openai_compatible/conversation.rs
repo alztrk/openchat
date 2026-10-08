@@ -677,6 +677,8 @@ async fn stream_conversation(
                     api_key.map(|api_key| crate::tools::ImageGenerationContext::ApiKey {
                         service: image_service,
                         api_key,
+                        model_id: &route.model_id,
+                        reasoning_effort: provider_request.reasoning_effort.clone(),
                     })
                 } else {
                     None

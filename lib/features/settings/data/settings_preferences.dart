@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:openchat/features/chat/domain/default_model_preference.dart';
+import 'package:openchat/features/chat/domain/history_search_result.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum ToolPermissionMode {
@@ -107,10 +108,49 @@ class SettingsPreferences {
   static const _defaultModelKey = 'models.default_model';
   static const _hiddenModelKeysKey = 'models.hidden_keys';
   static const _collapsedSidebarSectionsKey = 'chat.collapsed_sidebar_sections';
+  static const _savedHistorySearchesKey = 'chat.saved_history_searches';
   static const _localModelDirectoryPrefix = 'models.local_engine_directory.';
   static const maxSharedInstructionsCharacters = 4096;
 
   final SharedPreferencesAsync _preferences;
+
+  Future<List<SavedHistorySearch>> readSavedHistorySearches() async {
+    final encoded = await _preferences.getString(_savedHistorySearchesKey);
+    if (encoded == null) return const <SavedHistorySearch>[];
+    final decoded = jsonDecode(encoded);
+    if (decoded is! List<Object?> || decoded.length > 20) {
+      throw const FormatException('Saved history searches are invalid.');
+    }
+    final searches = decoded
+        .map(SavedHistorySearch.fromJson)
+        .toList(growable: false);
+    final names = searches.map((search) => search.name.toLowerCase()).toSet();
+    if (names.length != searches.length) {
+      throw const FormatException('Saved history searches are invalid.');
+    }
+    return List<SavedHistorySearch>.unmodifiable(searches);
+  }
+
+  Future<void> writeSavedHistorySearches(
+    List<SavedHistorySearch> searches,
+  ) async {
+    if (searches.length > 20 ||
+        searches.map((search) => search.name.toLowerCase()).toSet().length !=
+            searches.length) {
+      throw ArgumentError.value(
+        searches,
+        'searches',
+        'Saved history search names must be unique and limited to 20 entries.',
+      );
+    }
+    for (final search in searches) {
+      SavedHistorySearch.fromJson(search.toJson());
+    }
+    await _preferences.setString(
+      _savedHistorySearchesKey,
+      jsonEncode(searches.map((search) => search.toJson()).toList()),
+    );
+  }
 
   Future<ThemeMode?> readThemeMode() async {
     final value = await _preferences.getString(_themeModeKey);

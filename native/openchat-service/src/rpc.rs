@@ -565,7 +565,26 @@ pub(crate) async fn dispatch(
         }
         "chat.history.search" => {
             let query = required_memory_search_query(&request.params)?;
-            let results = chatgpt_store::search_chat_history(storage, query)
+            let from_unix_ms = optional_history_timestamp(&request.params, "fromUnixMs")?;
+            let through_unix_ms = optional_history_timestamp(&request.params, "throughUnixMs")?;
+            if matches!((from_unix_ms, through_unix_ms), (Some(from), Some(through)) if from >= through)
+            {
+                return Err(ServiceError::new(
+                    "invalid_request_params",
+                    "The conversation history date range is invalid.",
+                    false,
+                ));
+            }
+            let filters = chatgpt_store::HistorySearchFilters {
+                from_unix_ms,
+                through_unix_ms,
+                provider_id: optional_history_filter_string(&request.params, "providerId")?,
+                model_id: optional_history_filter_string(&request.params, "modelId")?,
+                project_id: optional_history_filter_string(&request.params, "projectId")?,
+                is_archived: optional_history_filter_bool(&request.params, "isArchived")?,
+                tag: optional_history_tag_filter(&request.params)?,
+            };
+            let results = chatgpt_store::search_chat_history(storage, query, filters)
                 .await
                 .map_err(|_| {
                     ServiceError::new(
@@ -583,6 +602,21 @@ pub(crate) async fn dispatch(
                     "excerpt": result.excerpt,
                     "createdAtUnixMs": result.created_at_unix_ms,
                 })).collect::<Vec<_>>(),
+            }))
+        }
+        "chat.history.search_filters" => {
+            let options: chatgpt_store::HistorySearchFilterOptions =
+                chatgpt_store::history_search_filter_options(storage).map_err(|_| {
+                    ServiceError::new(
+                        "history_search_unavailable",
+                        "Conversation history filters could not be loaded.",
+                        true,
+                    )
+                })?;
+            Ok(json!({
+                "providerIds": options.provider_ids,
+                "modelIds": options.model_ids,
+                "tags": options.tags,
             }))
         }
         "conversation.archive.export" => {
@@ -1606,6 +1640,65 @@ fn required_memory_search_query(params: &Value) -> Result<&str, ServiceError> {
     Ok(query)
 }
 
+fn optional_history_timestamp(params: &Value, field: &str) -> Result<Option<i64>, ServiceError> {
+    let Some(value) = params.get(field) else {
+        return Ok(None);
+    };
+    let timestamp = value
+        .as_i64()
+        .filter(|timestamp| (0..=8_640_000_000_000_000).contains(timestamp));
+    timestamp.map(Some).ok_or_else(|| {
+        ServiceError::new(
+            "invalid_request_params",
+            "The conversation history date range is invalid.",
+            false,
+        )
+    })
+}
+
+fn optional_history_filter_string(
+    params: &Value,
+    field: &str,
+) -> Result<Option<String>, ServiceError> {
+    let Some(value) = params.get(field) else {
+        return Ok(None);
+    };
+    let Some(value) = value.as_str() else {
+        return Err(invalid_history_filter());
+    };
+    if value.is_empty()
+        || value.trim() != value
+        || value.len() > 256
+        || value.chars().any(char::is_control)
+    {
+        return Err(invalid_history_filter());
+    }
+    Ok(Some(value.to_owned()))
+}
+
+fn optional_history_tag_filter(params: &Value) -> Result<Option<String>, ServiceError> {
+    let tag = optional_history_filter_string(params, "tag")?;
+    if tag.as_ref().is_some_and(|value| value.chars().count() > 32) {
+        return Err(invalid_history_filter());
+    }
+    Ok(tag)
+}
+
+fn optional_history_filter_bool(params: &Value, field: &str) -> Result<Option<bool>, ServiceError> {
+    let Some(value) = params.get(field) else {
+        return Ok(None);
+    };
+    value.as_bool().map(Some).ok_or_else(invalid_history_filter)
+}
+
+fn invalid_history_filter() -> ServiceError {
+    ServiceError::new(
+        "invalid_request_params",
+        "The conversation history filters are invalid.",
+        false,
+    )
+}
+
 fn archive_index_settings_json(settings: &chatgpt_store::ArchiveIndexSettings) -> Value {
     json!({
         "included": settings.included,
@@ -1830,9 +1923,19 @@ mod tests {
     };
 
     use super::{
-        dispatch, required_memory_conversation_id, required_memory_search_query,
-        required_secret_string, required_string_array,
+        dispatch, optional_history_tag_filter, required_memory_conversation_id,
+        required_memory_search_query, required_secret_string, required_string_array,
     };
+
+    #[test]
+    fn validates_history_tag_filters() {
+        assert_eq!(
+            optional_history_tag_filter(&json!({"tag": "Research"})).expect("valid tag filter"),
+            Some("Research".to_owned())
+        );
+        assert!(optional_history_tag_filter(&json!({"tag": "x".repeat(33)})).is_err());
+        assert!(optional_history_tag_filter(&json!({"tag": 12})).is_err());
+    }
 
     #[test]
     fn archive_rpc_removes_and_bounds_sensitive_parameters() {

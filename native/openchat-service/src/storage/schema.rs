@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
-pub(super) const SCHEMA_VERSION: i64 = 27;
+pub(super) const SCHEMA_VERSION: i64 = 29;
 pub(super) const INITIAL_SCHEMA_VERSION: i64 = 2;
 
 const REDACTED_TOOL_INDEX_TRIGGERS: &str = r#"
@@ -1838,6 +1838,52 @@ pub(super) fn initialize_schema(
         current_version = 27;
     }
 
+    if current_version < 28 && target_version >= 28 {
+        let has_tags = {
+            let mut statement = connection.prepare("PRAGMA table_info(conversations)")?;
+            let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+            columns
+                .collect::<rusqlite::Result<Vec<_>>>()?
+                .iter()
+                .any(|name| name == "tags")
+        };
+        let transaction = connection.unchecked_transaction()?;
+        if !has_tags {
+            transaction.execute_batch(
+                "ALTER TABLE conversations ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';",
+            )?;
+        }
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (28, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 28;
+    }
+
+    if current_version < 29 && target_version >= 29 {
+        let has_bookmark = {
+            let mut statement = connection.prepare("PRAGMA table_info(conversations)")?;
+            let columns = statement.query_map([], |row| row.get::<_, String>(1))?;
+            columns
+                .collect::<rusqlite::Result<Vec<_>>>()?
+                .iter()
+                .any(|name| name == "is_bookmarked")
+        };
+        let transaction = connection.unchecked_transaction()?;
+        if !has_bookmark {
+            transaction.execute_batch(
+                "ALTER TABLE conversations ADD COLUMN is_bookmarked INTEGER NOT NULL DEFAULT 0;",
+            )?;
+        }
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (29, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 29;
+    }
+
     Ok(current_version)
 }
 
@@ -2072,6 +2118,32 @@ mod tests {
                 DROP TRIGGER IF EXISTS conversation_memory_tool_delete;",
             )
             .expect("remove derived memory index triggers");
+    }
+
+    #[test]
+    fn upgrades_conversation_bookmarks_without_duplicating_the_drift_column() {
+        let connection = memory_index_repair_fixture(SCHEMA_VERSION - 1);
+        initialize_schema(&connection, SCHEMA_VERSION).expect("add conversation bookmarks");
+        let is_bookmarked = connection
+            .query_row(
+                "SELECT is_bookmarked FROM conversations WHERE id = 'conversation'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("read default conversation bookmark state");
+        assert_eq!(is_bookmarked, 0);
+
+        initialize_schema(&connection, SCHEMA_VERSION)
+            .expect("reopen current schema without duplicate migration");
+
+        let frontend_migrated = memory_index_repair_fixture(SCHEMA_VERSION - 1);
+        frontend_migrated
+            .execute_batch(
+                "ALTER TABLE conversations ADD COLUMN is_bookmarked INTEGER NOT NULL DEFAULT 0;",
+            )
+            .expect("simulate the Drift-owned bookmark migration");
+        initialize_schema(&frontend_migrated, SCHEMA_VERSION)
+            .expect("recognize the existing Drift bookmark column");
     }
 
     fn assert_memory_indexes_rebuilt(connection: &Connection) {

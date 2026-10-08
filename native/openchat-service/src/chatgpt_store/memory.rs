@@ -23,6 +23,24 @@ pub struct HistorySearchResult {
     pub created_at_unix_ms: i64,
 }
 
+#[derive(Clone, Debug)]
+pub struct HistorySearchFilters {
+    pub from_unix_ms: Option<i64>,
+    pub through_unix_ms: Option<i64>,
+    pub provider_id: Option<String>,
+    pub model_id: Option<String>,
+    pub project_id: Option<String>,
+    pub is_archived: Option<bool>,
+    pub tag: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct HistorySearchFilterOptions {
+    pub provider_ids: Vec<String>,
+    pub model_ids: Vec<String>,
+    pub tags: Vec<String>,
+}
+
 pub use preferences::{ArchiveIndexSettings, ArchiveIndexTool};
 
 pub fn archive_index_settings(
@@ -184,6 +202,7 @@ pub async fn search_conversation_archive(
 pub async fn search_chat_history(
     storage: &AppStorage,
     query: &str,
+    filters: HistorySearchFilters,
 ) -> rusqlite::Result<Vec<HistorySearchResult>> {
     if query.chars().count() > search::MAX_ARCHIVE_SEARCH_QUERY_CHARS {
         return Err(rusqlite::Error::InvalidQuery);
@@ -197,11 +216,58 @@ pub async fn search_chat_history(
         search::search_chat_history_from_connection(
             &connection,
             &search_expression,
+            &filters,
             search::MAX_HISTORY_SEARCH_RESULTS,
         )
     })
     .await
     .map_err(worker_join_error)?
+}
+
+pub fn history_search_filter_options(
+    storage: &AppStorage,
+) -> rusqlite::Result<HistorySearchFilterOptions> {
+    let connection = storage.connect()?;
+    let provider_ids = {
+        let mut statement = connection.prepare(
+            "SELECT DISTINCT provider_id FROM messages
+             WHERE provider_id IS NOT NULL AND trim(provider_id) != ''
+             ORDER BY provider_id LIMIT 100",
+        )?;
+        statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    let model_ids = {
+        let mut statement = connection.prepare(
+            "SELECT DISTINCT model_id FROM messages
+             WHERE model_id IS NOT NULL AND trim(model_id) != ''
+             ORDER BY model_id LIMIT 200",
+        )?;
+        statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    let tags = {
+        let mut statement = connection.prepare(
+            "SELECT DISTINCT tag.value
+             FROM conversations AS conversation,
+                  json_each(CASE WHEN json_valid(conversation.tags)
+                                 THEN conversation.tags ELSE '[]' END) AS tag
+             WHERE typeof(tag.value) = 'text'
+               AND trim(tag.value) != ''
+               AND length(tag.value) <= 32
+             ORDER BY tag.value COLLATE NOCASE LIMIT 100",
+        )?;
+        statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    Ok(HistorySearchFilterOptions {
+        provider_ids,
+        model_ids,
+        tags,
+    })
 }
 
 pub async fn semantic_search_is_ready(storage: &AppStorage) -> bool {

@@ -22,8 +22,13 @@ class SidebarConversationSection extends StatelessWidget {
     required this.onDropConversation,
     this.isArchivedSection = false,
     this.onArchiveConversation,
+    this.onEditConversationTags,
+    this.onToggleConversationBookmark,
     this.collapsed = false,
     this.onToggleCollapsed,
+    this.selectionMode = false,
+    this.selectedConversationIds = const <String>{},
+    this.onToggleBatchSelection,
   });
 
   final String title;
@@ -40,8 +45,13 @@ class SidebarConversationSection extends StatelessWidget {
   final ValueChanged<String>? onDropConversation;
   final bool isArchivedSection;
   final ValueChanged<String>? onArchiveConversation;
+  final ValueChanged<String>? onEditConversationTags;
+  final ValueChanged<String>? onToggleConversationBookmark;
   final bool collapsed;
   final VoidCallback? onToggleCollapsed;
+  final bool selectionMode;
+  final Set<String> selectedConversationIds;
+  final ValueChanged<String>? onToggleBatchSelection;
 
   @override
   Widget build(BuildContext context) {
@@ -103,16 +113,24 @@ class SidebarConversationSection extends StatelessWidget {
                           if (index > 0) const SizedBox(height: 2),
                           DraggableSidebarConversation(
                             conversation: conversations[index],
-                            enabled: !isArchivedSection,
+                            enabled: !isArchivedSection && !selectionMode,
                             child: SidebarConversationTile(
                               conversation: conversations[index],
                               selected:
                                   conversations[index].id ==
                                   selectedConversationId,
+                              selectionMode:
+                                  selectionMode && !isArchivedSection,
+                              selectedForBatch: selectedConversationIds
+                                  .contains(conversations[index].id),
                               height: itemHeight,
                               inset: 8,
                               showChatIcon: false,
-                              onPressed: onSelectConversation == null
+                              onPressed: selectionMode && !isArchivedSection
+                                  ? () => onToggleBatchSelection?.call(
+                                      conversations[index].id,
+                                    )
+                                  : onSelectConversation == null
                                   ? null
                                   : () => onSelectConversation!(
                                       conversations[index].id,
@@ -141,6 +159,17 @@ class SidebarConversationSection extends StatelessWidget {
                               onArchive: onArchiveConversation == null
                                   ? null
                                   : () => onArchiveConversation!(
+                                      conversations[index].id,
+                                    ),
+                              onEditTags: onEditConversationTags == null
+                                  ? null
+                                  : () => onEditConversationTags!(
+                                      conversations[index].id,
+                                    ),
+                              onToggleBookmark:
+                                  onToggleConversationBookmark == null
+                                  ? null
+                                  : () => onToggleConversationBookmark!(
                                       conversations[index].id,
                                     ),
                               key: ValueKey<String>(

@@ -263,7 +263,7 @@ mod tests {
             }
         }
         assert_ne!(result["is_running"], true, "echo process did not finish");
-        assert_eq!(result["exit_code"], 0);
+        assert_eq!(result["exit_code"], 0, "command result: {result}");
         let output = result["output"].as_str().unwrap_or("");
         assert!(output.contains("hello_openchat"));
         std::fs::remove_dir_all(temp_dir).expect("remove the isolated terminal test folder");

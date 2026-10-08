@@ -155,37 +155,42 @@ void main() {
     },
   );
 
-  test(
-    'adds the archive state when upgrading a version ten database',
-    () async {
-      final directory = await Directory.systemTemp.createTemp(
-        'openchat-archive-migration-',
-      );
-      late OpenChatDatabase database;
-      addTearDown(() async {
-        await database.close();
-        await directory.delete(recursive: true);
-      });
-      final path = '${directory.path}${Platform.pathSeparator}history.sqlite';
-      database = OpenChatDatabase(NativeDatabase(File(path)));
-      await ChatRepository(database).createConversation(
-        id: 'before-archive-upgrade',
-        title: 'Existing conversation',
-        createdAt: DateTime.utc(2026, 10, 7),
-      );
-      await database.customStatement(
-        'ALTER TABLE conversations DROP COLUMN is_archived',
-      );
-      await database.customStatement('PRAGMA user_version = 10');
+  test('adds archive, tag, and bookmark state when upgrading a version ten database', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'openchat-archive-migration-',
+    );
+    late OpenChatDatabase database;
+    addTearDown(() async {
       await database.close();
+      await directory.delete(recursive: true);
+    });
+    final path = '${directory.path}${Platform.pathSeparator}history.sqlite';
+    database = OpenChatDatabase(NativeDatabase(File(path)));
+    await ChatRepository(database).createConversation(
+      id: 'before-archive-upgrade',
+      title: 'Existing conversation',
+      createdAt: DateTime.utc(2026, 10, 7),
+    );
+    await database.customStatement(
+      'ALTER TABLE conversations DROP COLUMN is_archived',
+    );
+    await database.customStatement(
+      'ALTER TABLE conversations DROP COLUMN tags',
+    );
+    await database.customStatement(
+      'ALTER TABLE conversations DROP COLUMN is_bookmarked',
+    );
+    await database.customStatement('PRAGMA user_version = 10');
+    await database.close();
 
-      database = OpenChatDatabase(NativeDatabase(File(path)));
-      final conversation = await ChatRepository(database)
-          .getConversation('before-archive-upgrade');
-      expect(conversation?.isArchived, isFalse);
-      expect(OpenChatDatabase.currentSchemaVersion, 12);
-    },
-  );
+    database = OpenChatDatabase(NativeDatabase(File(path)));
+    final conversation = await ChatRepository(database)
+        .getConversation('before-archive-upgrade');
+    expect(conversation?.isArchived, isFalse);
+    expect(conversation?.tags, isEmpty);
+    expect(conversation?.isBookmarked, isFalse);
+    expect(OpenChatDatabase.currentSchemaVersion, 14);
+  });
 
   test('does not save a message without its conversation', () async {
     final database = OpenChatDatabase(NativeDatabase.memory());
@@ -243,6 +248,28 @@ void main() {
         (await repository.watchArchivedConversations().first).single.isPinned,
         isFalse,
       );
+      await repository.setConversationTags(
+        conversationId: 'archive-me',
+        tags: const <String>[' Work ', 'work', 'Notes'],
+      );
+      expect(
+        (await repository.getConversation('archive-me'))?.tags,
+        const <String>['Work', 'Notes'],
+      );
+      await expectLater(
+        repository.setConversationTags(
+          conversationId: 'archive-me',
+          tags: List<String>.generate(13, (index) => 'tag-$index'),
+        ),
+        throwsArgumentError,
+      );
+      await expectLater(
+        repository.setConversationTags(
+          conversationId: 'archive-me',
+          tags: <String>[List<String>.filled(33, 'x').join()],
+        ),
+        throwsArgumentError,
+      );
       expect(
         (await repository.watchMessages('archive-me').first).single.content,
         'Keep this message',
@@ -257,9 +284,134 @@ void main() {
         (await repository.watchConversations().first).single.isArchived,
         isFalse,
       );
+      expect(
+        (await repository.getConversation('archive-me'))?.tags,
+        const <String>['Work', 'Notes'],
+      );
       expect(await repository.watchArchivedConversations().first, isEmpty);
     },
   );
+
+  test(
+    'archives selected conversations together and rolls back missing IDs',
+    () async {
+      final database = OpenChatDatabase(NativeDatabase.memory());
+      addTearDown(database.close);
+      final repository = ChatRepository(database);
+      final createdAt = DateTime.utc(2026, 10, 8);
+      await repository.createConversation(
+        id: 'bulk-a',
+        title: 'A',
+        createdAt: createdAt,
+      );
+      await repository.createConversation(
+        id: 'bulk-b',
+        title: 'B',
+        createdAt: createdAt,
+      );
+      await repository.setConversationPinned(
+        conversationId: 'bulk-a',
+        isPinned: true,
+      );
+
+      await expectLater(
+        repository.setConversationsArchived(
+          conversationIds: <String>['bulk-a', 'missing'],
+          isArchived: true,
+        ),
+        throwsA(isA<ConversationNotFoundException>()),
+      );
+      expect((await repository.getConversation('bulk-a'))?.isArchived, isFalse);
+      expect((await repository.getConversation('bulk-a'))?.isPinned, isTrue);
+
+      await repository.setConversationsArchived(
+        conversationIds: <String>['bulk-a', 'bulk-b', 'bulk-a'],
+        isArchived: true,
+      );
+      for (final id in <String>['bulk-a', 'bulk-b']) {
+        final conversation = await repository.getConversation(id);
+        expect(conversation?.isArchived, isTrue);
+        expect(conversation?.isPinned, isFalse);
+      }
+    },
+  );
+
+  test('moves selected conversations atomically between projects', () async {
+    final database = OpenChatDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = ChatRepository(database);
+    final createdAt = DateTime.utc(2026, 10, 8);
+    await repository.createProject(
+      id: 'bulk-project',
+      name: 'Bulk project',
+      folderPath: 'C:/workspace',
+      createdAt: createdAt,
+    );
+    for (final id in <String>['move-a', 'move-b']) {
+      await repository.createConversation(
+        id: id,
+        title: id,
+        createdAt: createdAt,
+      );
+    }
+    await repository.setConversationPinned(
+      conversationId: 'move-a',
+      isPinned: true,
+    );
+
+    await expectLater(
+      repository.moveConversations(
+        conversationIds: <String>['move-a', 'missing'],
+        projectId: 'bulk-project',
+      ),
+      throwsA(isA<ConversationNotFoundException>()),
+    );
+    expect((await repository.getConversation('move-a'))?.projectId, isNull);
+    expect((await repository.getConversation('move-a'))?.isPinned, isTrue);
+
+    await repository.moveConversations(
+      conversationIds: <String>['move-a', 'move-b'],
+      projectId: 'bulk-project',
+    );
+    for (final id in <String>['move-a', 'move-b']) {
+      final conversation = await repository.getConversation(id);
+      expect(conversation?.projectId, 'bulk-project');
+      expect(conversation?.isPinned, isFalse);
+    }
+
+    await repository.moveConversations(
+      conversationIds: <String>['move-a', 'move-b'],
+      projectId: null,
+    );
+    expect((await repository.getConversation('move-a'))?.projectId, isNull);
+  });
+
+  test('stores and clears conversation bookmarks', () async {
+    final database = OpenChatDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = ChatRepository(database);
+    await repository.createConversation(
+      id: 'bookmark-me',
+      title: 'Bookmarked',
+      createdAt: DateTime.utc(2026, 10, 8),
+    );
+    await repository.setConversationBookmarked(
+      conversationId: 'bookmark-me',
+      isBookmarked: true,
+    );
+    expect(
+      (await repository.getConversation('bookmark-me'))?.isBookmarked,
+      isTrue,
+    );
+    await repository.setConversationBookmarked(
+      conversationId: 'bookmark-me',
+      isBookmarked: false,
+    );
+    expect(
+      (await repository.getConversation('bookmark-me'))?.isBookmarked,
+      isFalse,
+    );
+  });
 
   test(
     'streaming message updates do not reorder the conversation list',

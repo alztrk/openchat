@@ -208,6 +208,8 @@ pub(crate) struct AgentRunSummary {
     pub(crate) run_kind: Option<String>,
     pub(crate) parent_run_id: Option<String>,
     pub(crate) objective: Option<String>,
+    pub(crate) progress_phase: Option<String>,
+    pub(crate) progress_tool_name: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -327,6 +329,18 @@ pub(crate) fn list_run_summaries(
                     .and_then(|checkpoint| checkpoint.get("objective"))
                     .and_then(Value::as_str)
                     .map(str::to_owned);
+                let progress_phase = checkpoint
+                    .as_ref()
+                    .and_then(|checkpoint| checkpoint.get("progress"))
+                    .and_then(|progress| progress.get("phase"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                let progress_tool_name = checkpoint
+                    .as_ref()
+                    .and_then(|checkpoint| checkpoint.get("progress"))
+                    .and_then(|progress| progress.get("toolName"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
                 Ok(AgentRunSummary {
                     run_id,
                     conversation_id,
@@ -338,6 +352,8 @@ pub(crate) fn list_run_summaries(
                     run_kind,
                     parent_run_id,
                     objective,
+                    progress_phase,
+                    progress_tool_name,
                 })
             },
         )
