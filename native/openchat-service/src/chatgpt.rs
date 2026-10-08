@@ -95,7 +95,7 @@ impl ChatGptService {
 
     pub async fn send_message(
         self: &Arc<Self>,
-        context: ChatSendContext<'_>,
+        mut context: ChatSendContext<'_>,
         reasoning_effort: Option<&str>,
         fast_mode: bool,
     ) -> Result<Value, ServiceError> {
@@ -192,7 +192,26 @@ impl ChatGptService {
             .collect::<Vec<_>>();
         crate::history::validate_model_attachments(&messages, model.supports_images)?;
         let last_message_id = included_messages.last().map(|message| message.id.clone());
+        #[cfg(windows)]
+        let mcp_registry = tools::mcp::McpRegistry::connect(context.mcp_configs.clone())
+            .await
+            .map_err(|_| {
+                ServiceError::new(
+                    "mcp_server_unavailable",
+                    "An enabled project MCP server could not be started or discovered.",
+                    false,
+                )
+            })?
+            .map(Arc::new);
         let mut tools = tools::definitions_for_chatgpt_model();
+        #[cfg(windows)]
+        if let Some(registry) = mcp_registry.as_ref() {
+            tools.extend(registry.definitions().iter().cloned());
+        }
+        #[cfg(windows)]
+        {
+            context.mcp_registry = mcp_registry;
+        }
         if project_root.is_some() && !tools.is_empty() {
             tools.push(tools::project_tasks::tool_definition());
         }

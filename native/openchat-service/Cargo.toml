@@ -33,6 +33,7 @@ zeroize = "=1.8.1"
 
 [target.'cfg(windows)'.dependencies]
 keyring = { version = "=3.6.3", default-features = false, features = ["windows-native"] }
+rmcp = { version = "=3.0.1", default-features = false, features = ["client", "transport-async-rw"] }
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["copy-dylibs"] }
 windows-sys = { version = "=0.61.2", features = [
     "Win32_Foundation",

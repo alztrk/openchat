@@ -130,7 +130,7 @@ async fn receive_with_client(
     let mut tool_calls = BTreeMap::<usize, StreamedToolCall>::new();
     let supports_provider_citations = matches!(
         request.route.provider_id.as_deref(),
-        Some("openai" | "openrouter" | "groq")
+        Some("openai" | "chatgpt_api" | "opencode" | "openrouter" | "groq")
     );
     let mut provider_citation_sources = Vec::<Value>::new();
     let mut provider_citation_ids = BTreeMap::<(String, String), String>::new();
@@ -173,6 +173,13 @@ async fn receive_with_client(
             };
 
             if request.route.uses_responses_api {
+                if supports_provider_citations {
+                    collect_provider_citations(
+                        &value,
+                        &mut provider_citation_ids,
+                        &mut provider_citation_sources,
+                    );
+                }
                 update_provider_request_usage(
                     request.route.provider_id.as_deref().unwrap_or_default(),
                     &value,
@@ -401,15 +408,29 @@ fn collect_provider_citations(
     ids: &mut BTreeMap<(String, String), String>,
     sources: &mut Vec<Value>,
 ) {
-    let annotations = value
+    let mut annotation_groups = Vec::new();
+    if let Some(annotations) = value
         .pointer("/choices/0/delta/annotations")
         .or_else(|| value.pointer("/choices/0/message/annotations"))
         .or_else(|| value.pointer("/choices/0/annotations"))
-        .or_else(|| value.get("citations"));
-    let Some(annotations) = annotations.and_then(Value::as_array) else {
-        return;
-    };
-    for annotation in annotations {
+        .or_else(|| value.get("citations"))
+    {
+        if let Some(annotations) = annotations.as_array() {
+            annotation_groups.push(annotations);
+        }
+    }
+    if let Some(output) = value.pointer("/response/output").and_then(Value::as_array) {
+        for item in output {
+            if let Some(content) = item.get("content").and_then(Value::as_array) {
+                for part in content {
+                    if let Some(annotations) = part.get("annotations").and_then(Value::as_array) {
+                        annotation_groups.push(annotations);
+                    }
+                }
+            }
+        }
+    }
+    for annotation in annotation_groups.into_iter().flatten() {
         if sources.len() >= 32 {
             break;
         }
@@ -963,6 +984,35 @@ mod tests {
         assert_eq!(sources[0]["title"], "Example article");
         assert_eq!(sources[0]["url"], "https://example.org/article");
         assert_eq!(sources[0]["sourceType"], "provider_native");
+    }
+
+    #[test]
+    fn parses_responses_api_completed_output_citations() {
+        let value = json!({
+            "type": "response.completed",
+            "response": {
+                "output": [{
+                    "type": "message",
+                    "content": [{
+                        "type": "output_text",
+                        "text": "A sourced answer.",
+                        "annotations": [{
+                            "type": "url_citation",
+                            "url": "https://example.org/source",
+                            "title": "Provider source"
+                        }]
+                    }]
+                }]
+            }
+        });
+        let mut ids = std::collections::BTreeMap::new();
+        let mut sources = Vec::new();
+
+        collect_provider_citations(&value, &mut ids, &mut sources);
+
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0]["url"], "https://example.org/source");
+        assert_eq!(sources[0]["title"], "Provider source");
     }
 
     fn route(provider_id: &str) -> ChatRoute {

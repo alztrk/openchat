@@ -85,7 +85,7 @@ pub(super) async fn execute(
             let wire_name = if is_opencode {
                 crate::tools::opencode_wire_name(&call.name)
             } else {
-                call.name.as_str()
+                call.name.clone()
             };
             let arguments =
                 serde_json::to_string(&call.arguments).map_err(|_| invalid_response_error())?;

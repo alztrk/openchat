@@ -527,8 +527,9 @@ async fn run_child_requests(
     let definitions = tools::definitions_for_chatgpt_model()
         .into_iter()
         .filter(|tool| {
-            CHILD_WEB_TOOL_NAMES.contains(&tool.name)
-                || (project_root.is_some() && CHILD_PROJECT_TOOL_NAMES.contains(&tool.name))
+            CHILD_WEB_TOOL_NAMES.contains(&tool.name.as_str())
+                || (project_root.is_some()
+                    && CHILD_PROJECT_TOOL_NAMES.contains(&tool.name.as_str()))
         })
         .collect::<Vec<_>>();
     let mut instructions = String::from(

@@ -24,7 +24,7 @@ use tokio::{
 
 #[cfg(windows)]
 #[path = "terminal_windows.rs"]
-mod windows_sandbox;
+pub(crate) mod windows_sandbox;
 #[cfg(windows)]
 use windows_sandbox::SandboxedProcess;
 

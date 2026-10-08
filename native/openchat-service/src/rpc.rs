@@ -1135,6 +1135,43 @@ pub(crate) async fn dispatch(
                         )
                     })?;
             }
+            #[cfg(windows)]
+            let mcp_configs = if matches!(
+                provider_id.as_deref(),
+                Some(
+                    "chatgpt"
+                        | "chatgpt_api"
+                        | "opencode"
+                        | "gemini"
+                        | "groq"
+                        | "cerebras"
+                        | "openrouter"
+                        | "mistral"
+                        | "llama_cpp"
+                        | "vllm"
+                        | "exllama"
+                )
+            ) {
+                match project_root.as_deref() {
+                    Some(project_root) => {
+                        match tools::mcp::load_server_configs(Path::new(project_root)) {
+                            Ok(configs) => configs,
+                            Err(error) => {
+                                crate::storage::user_questions::mark_run_failed(
+                                    &connection,
+                                    conversation_id,
+                                    &run_id,
+                                )
+                                .map_err(map_question_storage_error)?;
+                                return Err(error);
+                            }
+                        }
+                    }
+                    None => Vec::new(),
+                }
+            } else {
+                Vec::new()
+            };
             let context = ChatSendContext {
                 request_id: request.id,
                 run_id: run_id.clone(),
@@ -1147,6 +1184,10 @@ pub(crate) async fn dispatch(
                 storage,
                 permission_mode,
                 tool_permission_rules,
+                #[cfg(windows)]
+                mcp_configs,
+                #[cfg(windows)]
+                mcp_registry: None,
                 permission_broker: &permission_broker,
                 user_question_broker: &user_question_broker,
                 cancellation: &mut cancellation,

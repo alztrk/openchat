@@ -69,6 +69,9 @@ pub(crate) fn parse_tool_permission_rules(
 }
 
 fn is_permission_rule_tool(name: &str) -> bool {
+    if name.starts_with("mcp__") {
+        return false;
+    }
     matches!(
         name,
         "list_files"
@@ -147,6 +150,8 @@ pub struct ToolExecutor {
     tool_activities: Mutex<Vec<ToolActivity>>,
     allowed_tool_names: HashSet<String>,
     permission_rules: ToolPermissionRules,
+    #[cfg(windows)]
+    mcp_registry: Option<std::sync::Arc<super::mcp::McpRegistry>>,
 }
 
 #[derive(Default)]
@@ -225,7 +230,18 @@ impl ToolExecutor {
             tool_activities: Mutex::new(Vec::new()),
             allowed_tool_names: allowed_tool_names.into_iter().collect(),
             permission_rules,
+            #[cfg(windows)]
+            mcp_registry: None,
         }
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn with_mcp_registry(
+        mut self,
+        registry: Option<std::sync::Arc<super::mcp::McpRegistry>>,
+    ) -> Self {
+        self.mcp_registry = registry;
+        self
     }
 
     fn validate_tool_name(&self, tool_name: &str) -> Result<(), ServiceError> {
@@ -326,6 +342,20 @@ impl ToolExecutor {
         image_generation: Option<&ImageGenerationContext<'_>>,
     ) -> Result<ToolResult, ServiceError> {
         self.validate_tool_name(&call.name)?;
+        #[cfg(windows)]
+        if call.name.starts_with("mcp__") {
+            return self
+                .execute_mcp_call(
+                    call,
+                    permissions,
+                    request_id,
+                    snapshot,
+                    events,
+                    cancellation,
+                    storage,
+                )
+                .await;
+        }
         if call.name == "generate_image" {
             return self
                 .execute_image_call(
@@ -742,6 +772,183 @@ impl ToolExecutor {
         activity.file_changes_error = file_changes_error;
         self.emit_activity(storage, activity, request_id, snapshot, events)
             .await?;
+        Ok(ToolResult {
+            call_id: call.id.clone(),
+            output,
+        })
+    }
+
+    #[cfg(windows)]
+    async fn execute_mcp_call(
+        &self,
+        call: &ToolCall,
+        permissions: &ToolPermissionBroker,
+        request_id: &Value,
+        snapshot: &ChatStreamSnapshot,
+        events: &EventSink,
+        cancellation: &mut watch::Receiver<bool>,
+        storage: &AppStorage,
+    ) -> Result<ToolResult, ServiceError> {
+        let Some(registry) = self.mcp_registry.as_ref() else {
+            return Err(ServiceError::new(
+                "invalid_provider_response",
+                "The provider requested an MCP tool that is not active for this request.",
+                false,
+            ));
+        };
+        let Some(server_id) = registry.server_id_for_tool(&call.name) else {
+            return Err(ServiceError::new(
+                "invalid_provider_response",
+                "The provider requested an MCP tool that is not active for this request.",
+                false,
+            ));
+        };
+        let target = format!("MCP server {server_id}");
+        self.emit_activity(
+            storage,
+            ToolActivity::awaiting_approval(call, target.clone()),
+            request_id,
+            snapshot,
+            events,
+        )
+        .await?;
+        let approved = match permissions
+            .request_approval(
+                request_id,
+                &call.name,
+                &target,
+                &call.arguments,
+                events,
+                cancellation,
+            )
+            .await
+        {
+            Ok(approved) => approved,
+            Err(error) if error.code == "operation_cancelled" => {
+                let output = tool_error("operation_cancelled", "The request was stopped.");
+                self.emit_activity(
+                    storage,
+                    ToolActivity::cancelled(call, target, output),
+                    request_id,
+                    snapshot,
+                    events,
+                )
+                .await?;
+                return Err(error);
+            }
+            Err(error) => {
+                let output = tool_error(error.code, &error.message);
+                self.emit_activity(
+                    storage,
+                    ToolActivity::finished(call, Some(target), output),
+                    request_id,
+                    snapshot,
+                    events,
+                )
+                .await?;
+                return Err(error);
+            }
+        };
+        if !approved {
+            let output = tool_error("permission_denied", "The user denied this MCP tool call.");
+            self.emit_activity(
+                storage,
+                ToolActivity::denied(call, target, output.clone()),
+                request_id,
+                snapshot,
+                events,
+            )
+            .await?;
+            return Ok(ToolResult {
+                call_id: call.id.clone(),
+                output,
+            });
+        }
+
+        self.emit_activity(
+            storage,
+            ToolActivity::running(call, Some(target.clone())),
+            request_id,
+            snapshot,
+            events,
+        )
+        .await?;
+        let arguments = match call.arguments.as_object() {
+            Some(arguments) => arguments.clone(),
+            None => {
+                let output = tool_error(
+                    "invalid_tool_arguments",
+                    "The MCP tool arguments must be a JSON object.",
+                );
+                self.emit_activity(
+                    storage,
+                    ToolActivity::finished(call, Some(target), output.clone()),
+                    request_id,
+                    snapshot,
+                    events,
+                )
+                .await?;
+                return Ok(ToolResult {
+                    call_id: call.id.clone(),
+                    output,
+                });
+            }
+        };
+        if *cancellation.borrow() {
+            let output = tool_error("operation_cancelled", "The request was stopped.");
+            self.emit_activity(
+                storage,
+                ToolActivity::cancelled(call, target, output),
+                request_id,
+                snapshot,
+                events,
+            )
+            .await?;
+            return Err(crate::permissions::operation_cancelled_error());
+        }
+        let call_future =
+            registry.call_tool(&call.name, arguments, std::time::Duration::from_secs(120));
+        tokio::pin!(call_future);
+        let result = loop {
+            tokio::select! {
+                result = &mut call_future => break result,
+                changed = cancellation.changed() => {
+                    if changed.is_err() || *cancellation.borrow() {
+                        let output = tool_error("operation_cancelled", "The request was stopped.");
+                        self.emit_activity(
+                            storage,
+                            ToolActivity::cancelled(call, target, output),
+                            request_id,
+                            snapshot,
+                            events,
+                        ).await?;
+                        return Err(crate::permissions::operation_cancelled_error());
+                    }
+                }
+            }
+        };
+        let output = match result {
+            Ok(result) if result.get("isError").and_then(Value::as_bool) == Some(true) => {
+                json!({
+                    "error": {
+                        "code": "mcp_tool_failed",
+                        "message": "The MCP server reported a tool error."
+                    },
+                    "untrusted": true,
+                    "result": result
+                })
+            }
+            Ok(result) => json!({"untrusted": true, "result": result}),
+            Err(_) => tool_error("mcp_tool_failed", "The MCP tool call failed or timed out."),
+        };
+        self.emit_activity(
+            storage,
+            ToolActivity::finished(call, Some(target), output.clone()),
+            request_id,
+            snapshot,
+            events,
+        )
+        .await?;
         Ok(ToolResult {
             call_id: call.id.clone(),
             output,

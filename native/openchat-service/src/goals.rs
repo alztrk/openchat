@@ -117,8 +117,8 @@ pub(crate) fn execution_from_run(run: AgentRun) -> Result<GoalExecution, Service
 
 pub(crate) fn control_tool_definition() -> ToolDefinition {
     ToolDefinition {
-        name: CONTROL_TOOL_NAME,
-        description: "Report goal progress, completion, a blocker, or a need for user input. Call this after a meaningful work step and before returning a final response.",
+        name: CONTROL_TOOL_NAME.to_owned(),
+        description: "Report goal progress, completion, a blocker, or a need for user input. Call this after a meaningful work step and before returning a final response.".to_owned(),
         parameters: json!({
             "type": "object",
             "properties": {
@@ -140,8 +140,8 @@ pub(crate) fn control_tool_definition() -> ToolDefinition {
 pub(crate) fn control_tool_definitions() -> [ToolDefinition; 3] {
     [
         ToolDefinition {
-            name: START_GOAL_TOOL_NAME,
-            description: "Start a persistent multi-turn goal for substantial work that the user asked you to carry out. Provide a clear, bounded objective. Do not use this for simple questions or work that fits in one response.",
+            name: START_GOAL_TOOL_NAME.to_owned(),
+            description: "Start a persistent multi-turn goal for substantial work that the user asked you to carry out. Provide a clear, bounded objective. Do not use this for simple questions or work that fits in one response.".to_owned(),
             parameters: json!({
                 "type": "object",
                 "properties": {
@@ -157,8 +157,8 @@ pub(crate) fn control_tool_definitions() -> [ToolDefinition; 3] {
         },
         control_tool_definition(),
         ToolDefinition {
-            name: STOP_GOAL_TOOL_NAME,
-            description: "Stop the active persistent goal when the user asks you to stop or continuing is no longer appropriate. After calling this, provide a concise final summary and take no further actions.",
+            name: STOP_GOAL_TOOL_NAME.to_owned(),
+            description: "Stop the active persistent goal when the user asks you to stop or continuing is no longer appropriate. After calling this, provide a concise final summary and take no further actions.".to_owned(),
             parameters: json!({
                 "type": "object",
                 "properties": {

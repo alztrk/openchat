@@ -746,6 +746,26 @@ fn opencode_wire_tools_include_bash_and_read_with_industry_standards() {
 }
 
 #[test]
+fn opencode_mcp_tool_names_are_preserved_for_round_trip_execution() {
+    let tool = super::ToolDefinition {
+        name: "mcp__local_docs__search".to_owned(),
+        description: "Search local docs".to_owned(),
+        parameters: serde_json::json!({"type": "object", "properties": {"query": {"type": "string"}}}),
+    };
+
+    let wire = super::opencode_wire_tool(&tool);
+    assert_eq!(
+        wire.pointer("/function/name")
+            .and_then(serde_json::Value::as_str),
+        Some("mcp__local_docs__search")
+    );
+    assert_eq!(
+        super::internal_tool_name(true, "mcp__local_docs__search"),
+        tool.name
+    );
+}
+
+#[test]
 fn write_file_and_edit_file_flow_and_guards() {
     let directory = TestDirectory::new();
     let root = directory.root();

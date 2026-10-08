@@ -25,8 +25,8 @@ use windows_sys::Win32::{
     Security::{
         Authorization::{
             ConvertSidToStringSidW, EXPLICIT_ACCESS_W, GetNamedSecurityInfoW, REVOKE_ACCESS,
-            SE_FILE_OBJECT, SET_ACCESS, SetEntriesInAclW, SetNamedSecurityInfoW, TRUSTEE_IS_SID,
-            TRUSTEE_IS_UNKNOWN, TRUSTEE_W,
+            SE_FILE_OBJECT, SET_ACCESS, SetEntriesInAclW, TRUSTEE_IS_SID, TRUSTEE_IS_UNKNOWN,
+            TRUSTEE_W,
         },
         CONTAINER_INHERIT_ACE, DACL_SECURITY_INFORMATION, FreeSid, OBJECT_INHERIT_ACE,
         SECURITY_ATTRIBUTES, SECURITY_CAPABILITIES,
@@ -71,8 +71,34 @@ pub(crate) struct SandboxedProcess {
 impl SandboxedProcess {
     pub(crate) fn spawn(command: &str, workdir: &Path) -> io::Result<Self> {
         let sandbox = AppContainerSandbox::create(workdir)?;
-        let workdir = shell_path(&sandbox.working_directory);
+        let workdir = sandbox.working_directory.clone();
         let (application, arguments) = shell_invocation(command, &workdir);
+        Self::spawn_in_sandbox(sandbox, application, arguments, workdir)
+    }
+
+    pub(crate) fn spawn_program(
+        program: &Path,
+        arguments: &[std::ffi::OsString],
+        workdir: &Path,
+    ) -> io::Result<Self> {
+        let program = fs::canonicalize(program)?;
+        if !program.is_file() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "The sandboxed program is unavailable.",
+            ));
+        }
+        let sandbox = AppContainerSandbox::create(workdir)?;
+        let working_directory = sandbox.working_directory.clone();
+        Self::spawn_in_sandbox(sandbox, program, arguments.to_vec(), working_directory)
+    }
+
+    fn spawn_in_sandbox(
+        sandbox: AppContainerSandbox,
+        application: PathBuf,
+        arguments: Vec<std::ffi::OsString>,
+        workdir: PathBuf,
+    ) -> io::Result<Self> {
         let security_attributes = SECURITY_ATTRIBUTES {
             nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
             bInheritHandle: 1,
@@ -579,7 +605,7 @@ fn update_app_container_acl(
         .map_err(|_| io::Error::other("The AppContainer ACL lock is unavailable."))?;
     let path_wide = wide(path.as_os_str());
     let mut current_dacl = null_mut();
-    let mut security_descriptor = null_mut();
+    let mut source_descriptor = null_mut();
     let status = unsafe {
         GetNamedSecurityInfoW(
             path_wide.as_ptr(),
@@ -589,14 +615,14 @@ fn update_app_container_acl(
             null_mut(),
             &mut current_dacl,
             null_mut(),
-            &mut security_descriptor,
+            &mut source_descriptor,
         )
     };
     if status != 0 {
         return Err(io::Error::from_raw_os_error(status as i32));
     }
     if current_dacl.is_null() {
-        unsafe { windows_sys::Win32::Foundation::LocalFree(security_descriptor) };
+        unsafe { windows_sys::Win32::Foundation::LocalFree(source_descriptor) };
         return Ok(());
     }
     let mut access = EXPLICIT_ACCESS_W {
@@ -614,26 +640,46 @@ fn update_app_container_acl(
     let mut updated_dacl = null_mut();
     let acl_status = unsafe { SetEntriesInAclW(1, &mut access, current_dacl, &mut updated_dacl) };
     if acl_status != 0 {
-        unsafe { windows_sys::Win32::Foundation::LocalFree(security_descriptor) };
+        unsafe { windows_sys::Win32::Foundation::LocalFree(source_descriptor) };
         return Err(io::Error::from_raw_os_error(acl_status as i32));
     }
+    unsafe { windows_sys::Win32::Foundation::LocalFree(source_descriptor) };
+    let mut descriptor_storage =
+        std::mem::MaybeUninit::<windows_sys::Win32::Security::SECURITY_DESCRIPTOR>::uninit();
+    let descriptor = descriptor_storage.as_mut_ptr();
+    let initialized =
+        unsafe { windows_sys::Win32::Security::InitializeSecurityDescriptor(descriptor.cast(), 1) };
+    if initialized == 0
+        || unsafe {
+            windows_sys::Win32::Security::SetSecurityDescriptorDacl(
+                descriptor.cast(),
+                1,
+                updated_dacl,
+                0,
+            )
+        } == 0
+    {
+        let error = last_os_error();
+        unsafe {
+            windows_sys::Win32::Foundation::LocalFree(updated_dacl.cast());
+        }
+        return Err(error);
+    }
+    // SetFileSecurity updates this DACL without recursively propagating inherited ACEs.
+    // Existing descendants are checked and updated individually by grant_working_directory.
     let set_status = unsafe {
-        SetNamedSecurityInfoW(
+        windows_sys::Win32::Security::SetFileSecurityW(
             path_wide.as_ptr(),
-            SE_FILE_OBJECT,
             DACL_SECURITY_INFORMATION,
-            null_mut(),
-            null_mut(),
-            updated_dacl,
-            null_mut(),
+            descriptor.cast(),
         )
     };
+    let set_error = (set_status == 0).then(last_os_error);
     unsafe {
         windows_sys::Win32::Foundation::LocalFree(updated_dacl.cast());
-        windows_sys::Win32::Foundation::LocalFree(security_descriptor);
     }
-    if set_status != 0 {
-        return Err(io::Error::from_raw_os_error(set_status as i32));
+    if let Some(error) = set_error {
+        return Err(error);
     }
     Ok(())
 }
@@ -811,11 +857,12 @@ unsafe fn wide_os_string(value: windows_sys::core::PWSTR) -> std::ffi::OsString 
 
 #[cfg(test)]
 mod tests {
-    use super::SandboxedProcess;
+    use super::{SandboxedProcess, shell_invocation};
     use std::{
         fs,
         io::ErrorKind,
         path::{Path, PathBuf},
+        time::Duration,
     };
     use tokio::io::AsyncReadExt;
 
@@ -847,7 +894,10 @@ mod tests {
     async fn capture(mut process: SandboxedProcess) -> (i32, String, String) {
         let mut stdout = process.take_stdout().expect("sandbox stdout handle");
         let mut stderr = process.take_stderr().expect("sandbox stderr handle");
-        let status = process.wait().await.expect("wait for sandbox process");
+        let status = tokio::time::timeout(Duration::from_secs(15), process.wait())
+            .await
+            .expect("sandbox test process exceeded its exit timeout")
+            .expect("wait for sandbox process");
         let mut stdout_text = String::new();
         stdout
             .read_to_string(&mut stdout_text)
@@ -881,6 +931,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn configured_program_receives_arguments_inside_the_appcontainer() {
+        let workspace = TestWorkspace::new();
+        let (program, arguments) =
+            shell_invocation("Write-Output configured_program_ok", workspace.path());
+        let process = SandboxedProcess::spawn_program(&program, &arguments, workspace.path())
+            .expect("start configured program in AppContainer");
+        let (exit_code, stdout, stderr) = capture(process).await;
+
+        assert_eq!(exit_code, 0, "stdout: {stdout}; stderr: {stderr}");
+        assert!(stdout.contains("configured_program_ok"), "{stdout}");
+    }
+
+    #[tokio::test]
     async fn command_cannot_read_outside_its_workspace() {
         let workspace = TestWorkspace::new();
         let allowed = workspace.path().join("allowed");
@@ -911,7 +974,7 @@ mod tests {
             .expect("read local listener address")
             .port();
         let command = format!(
-            "$client = [System.Net.Sockets.TcpClient]::new(); try {{ $client.Connect('127.0.0.1', {port}); exit 0 }} catch {{ exit 19 }}"
+            "$client = [System.Net.Sockets.TcpClient]::new(); try {{ $pending = $client.BeginConnect('127.0.0.1', {port}, $null, $null); if (-not $pending.AsyncWaitHandle.WaitOne(1000)) {{ exit 19 }}; $client.EndConnect($pending); exit 0 }} catch {{ exit 19 }} finally {{ $client.Dispose() }}"
         );
         let process = SandboxedProcess::spawn(&command, workspace.path())
             .expect("start command in AppContainer");

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/presentation/widgets/assistant_message.dart';
+import 'package:openchat/features/chat/presentation/widgets/chat_composer.dart';
 import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_sidebar.dart';
 import 'package:openchat/features/chat/presentation/widgets/sidebar_conversation_tile.dart';
@@ -14,6 +15,89 @@ import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 
 void main() {
+  testWidgets(
+    'chat composer send action is labeled in every supported locale',
+    (tester) async {
+      final controller = TextEditingController(text: 'Send this message');
+      addTearDown(controller.dispose);
+      final semantics = tester.ensureSemantics();
+      try {
+        for (final locale in AppLocalizations.supportedLocales) {
+          await tester.pumpWidget(
+            MaterialApp(
+              key: ValueKey<String>('composer-${locale.languageCode}'),
+              locale: locale,
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              theme: OpenChatTheme.dark,
+              home: Scaffold(
+                body: ChatComposer(
+                  controller: controller,
+                  onSendMessage: () {},
+                  canSendMessage: true,
+                  showReasoningSelector: false,
+                  providerId: 'opencode',
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          final localizations = AppLocalizations.of(
+            tester.element(find.byType(ChatComposer)),
+          )!;
+          expect(
+            find.bySemanticsLabel(localizations.send),
+            findsOneWidget,
+            reason: locale.languageCode,
+          );
+          expect(tester.takeException(), isNull);
+        }
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets(
+    'chat composer sends from the keyboard in every supported locale',
+    (tester) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+
+      for (final locale in AppLocalizations.supportedLocales) {
+        var sent = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            key: ValueKey<String>('keyboard-composer-${locale.languageCode}'),
+            locale: locale,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            theme: OpenChatTheme.dark,
+            home: Scaffold(
+              body: ChatComposer(
+                controller: controller,
+                onSendMessage: () => sent++,
+                canSendMessage: true,
+                showReasoningSelector: false,
+                providerId: 'opencode',
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final field = find.byType(TextField);
+        await tester.tap(field);
+        await tester.enterText(field, 'Keyboard message');
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        expect(sent, 1, reason: locale.languageCode);
+        expect(tester.takeException(), isNull);
+        controller.clear();
+      }
+    },
+  );
+
   testWidgets('conversation sidebar selection works with keyboard focus', (
     tester,
   ) async {

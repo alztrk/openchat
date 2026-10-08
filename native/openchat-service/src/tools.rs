@@ -16,6 +16,8 @@ use crate::{protocol::ServiceError, provider_schema::ToolDefinition};
 
 mod search;
 pub use search::search_files;
+#[cfg(windows)]
+pub(crate) mod mcp;
 pub(crate) mod project_tasks;
 pub mod terminal;
 pub mod web_search;
@@ -354,22 +356,29 @@ pub fn edit_file(
     }))
 }
 
-pub fn opencode_wire_name(internal_name: &str) -> &'static str {
+pub fn opencode_wire_name(internal_name: &str) -> String {
     match internal_name {
-        "read_file" | "read" => "read",
-        "write_file" | "write" => "write",
-        "edit_file" | "edit" => "edit",
-        "list_files" | "list_directory" | "glob" => "glob",
-        "search_files" | "grep" => "grep",
-        "execute_command" | "bash" => "bash",
-        "send_terminal_input" => "send_terminal_input",
-        "web_search" => "web_search",
-        "read_url_content" | "read_url" => "read_url_content",
-        "get_file_info" => "get_file_info",
-        "start_goal" => "start_goal",
-        "goal_update" => "goal_update",
-        "stop_goal" => "stop_goal",
-        _ => "custom",
+        "read_file" | "read" => "read".to_owned(),
+        "write_file" | "write" => "write".to_owned(),
+        "edit_file" | "edit" => "edit".to_owned(),
+        "list_files" | "list_directory" | "glob" => "glob".to_owned(),
+        "search_files" | "grep" => "grep".to_owned(),
+        "execute_command" | "bash" => "bash".to_owned(),
+        "send_terminal_input"
+        | "web_search"
+        | "read_url_content"
+        | "read_url"
+        | "get_file_info"
+        | "start_goal"
+        | "goal_update"
+        | "stop_goal" => {
+            if internal_name == "read_url" {
+                "read_url_content".to_owned()
+            } else {
+                internal_name.to_owned()
+            }
+        }
+        _ => internal_name.to_owned(),
     }
 }
 
@@ -393,8 +402,8 @@ pub fn internal_tool_name(is_opencode: bool, wire_name: &str) -> String {
 }
 
 pub fn opencode_wire_tool(tool: &ToolDefinition) -> Value {
-    let wire_name = opencode_wire_name(tool.name);
-    let (parameters, description) = match wire_name {
+    let wire_name = opencode_wire_name(&tool.name);
+    let (parameters, description) = match wire_name.as_str() {
         "read" => (
             json!({
                 "type": "object",
@@ -512,7 +521,7 @@ pub fn opencode_wire_tool(tool: &ToolDefinition) -> Value {
             }),
             "Fetch a web page and convert its readable content to clean, token-friendly Markdown.",
         ),
-        _ => (tool.parameters.clone(), tool.description),
+        _ => (tool.parameters.clone(), tool.description.as_str()),
     };
 
     json!({
@@ -532,8 +541,8 @@ pub fn opencode_wire_tools(defs: &[ToolDefinition]) -> Vec<Value> {
         .any(|t| t.pointer("/function/name").and_then(Value::as_str) == Some("bash"))
     {
         tools.push(opencode_wire_tool(&ToolDefinition {
-            name: "execute_command",
-            description: "Command execution is unavailable in this client.",
+            name: "execute_command".to_owned(),
+            description: "Command execution is unavailable in this client.".to_owned(),
             parameters: json!({"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}),
         }));
     }
@@ -542,8 +551,8 @@ pub fn opencode_wire_tools(defs: &[ToolDefinition]) -> Vec<Value> {
         .any(|t| t.pointer("/function/name").and_then(Value::as_str) == Some("read"))
     {
         tools.push(opencode_wire_tool(&ToolDefinition {
-            name: "read_file",
-            description: "Read a bounded range of lines from a file.",
+            name: "read_file".to_owned(),
+            description: "Read a bounded range of lines from a file.".to_owned(),
             parameters: json!({"type": "object", "properties": {"filePath": {"type": "string"}}}),
         }));
     }
@@ -604,8 +613,8 @@ pub fn definitions_for_chatgpt_model() -> Vec<ToolDefinition> {
 
 pub(crate) fn delegate_task_tool_definition() -> ToolDefinition {
     ToolDefinition {
-        name: "delegate_task",
-        description: "Run one bounded child analysis with the current ChatGPT model. The child can only use read-only project and web tools, and its work is reported back to this response.",
+        name: "delegate_task".to_owned(),
+        description: "Run one bounded child analysis with the current ChatGPT model. The child can only use read-only project and web tools, and its work is reported back to this response.".to_owned(),
         parameters: json!({
             "type": "object",
             "properties": {
@@ -1018,8 +1027,8 @@ pub fn definitions() -> Vec<ToolDefinition> {
     ]
     .into_iter()
     .map(|(name, description, parameters)| ToolDefinition {
-        name,
-        description,
+        name: name.to_owned(),
+        description: description.to_owned(),
         parameters,
     })
     .collect()

@@ -169,7 +169,7 @@ pub(super) fn completion_messages(request: &ProviderChatRequest, provider_id: &s
                                 "name": if provider_id == "opencode" {
                                     tools::opencode_wire_name(&call.name)
                                 } else {
-                                    call.name.as_str()
+                                        call.name.clone()
                                 },
                             "arguments": call.arguments.to_string(),
                         },

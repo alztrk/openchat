@@ -44,6 +44,10 @@ pub async fn send_message(
         storage: context_storage,
         permission_mode,
         tool_permission_rules,
+        #[cfg(windows)]
+        mcp_configs,
+        #[cfg(windows)]
+            mcp_registry: _,
         permission_broker,
         user_question_broker,
         run_id,
@@ -61,6 +65,21 @@ pub async fn send_message(
     )
     .await?;
     let provider_id = route.provider_id.as_deref().ok_or_else(route_error)?;
+    #[cfg(windows)]
+    let mcp_registry = if route.supports_tool_calls != Some(false) {
+        crate::tools::mcp::McpRegistry::connect(mcp_configs)
+            .await
+            .map_err(|_| {
+                ServiceError::new(
+                    "mcp_server_unavailable",
+                    "An enabled project MCP server could not be started or discovered.",
+                    false,
+                )
+            })?
+            .map(std::sync::Arc::new)
+    } else {
+        None
+    };
     let mut context_state =
         chatgpt_store::load_conversation_context_state(storage, conversation_id)
             .map_err(|_| storage_error())?;
@@ -114,6 +133,14 @@ pub async fn send_message(
             goal_objective: goal.as_ref().map(|goal| goal.objective.as_str()),
         },
     )?;
+    #[cfg(windows)]
+    if route.supports_tool_calls != Some(false)
+        && let Some(registry) = mcp_registry.as_ref()
+    {
+        provider_request
+            .tools
+            .extend(registry.definitions().iter().cloned());
+    }
     let active_compaction_matches = context_state.as_ref().is_some_and(|state| {
         context_compaction::compaction_payload_matches_route(
             state,
@@ -381,6 +408,10 @@ pub async fn send_message(
             .map(|tool| tool.name.to_owned()),
         tool_permission_rules,
     );
+    #[cfg(windows)]
+    {
+        tool_executor = tool_executor.with_mcp_registry(mcp_registry);
+    }
     let result = stream_conversation(
         &route,
         provider_id,

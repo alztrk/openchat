@@ -28,8 +28,8 @@ struct ProjectTaskCatalog {
 
 pub(crate) fn tool_definition() -> ToolDefinition {
     ToolDefinition {
-        name: "run_project_task",
-        description: "Run a named task from the attached project's .openchat/tasks.json file through the configured terminal permission and output limits. When approval is required, the resolved command is shown before it runs.",
+        name: "run_project_task".to_owned(),
+        description: "Run a named task from the attached project's .openchat/tasks.json file through the configured terminal permission and output limits. When approval is required, the resolved command is shown before it runs.".to_owned(),
         parameters: json!({
             "type": "object",
             "properties": {

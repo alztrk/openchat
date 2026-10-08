@@ -54,6 +54,10 @@ impl ChatGptService {
             storage,
             permission_mode,
             tool_permission_rules,
+            #[cfg(windows)]
+                mcp_configs: _,
+            #[cfg(windows)]
+            mcp_registry,
             permission_broker,
             user_question_broker,
             run_id,
@@ -125,13 +129,17 @@ impl ChatGptService {
 
         let mut output_tokens = None;
         let mut input_tokens;
-        let tool_executor = ToolExecutor::with_permission_rules(
+        let mut tool_executor = ToolExecutor::with_permission_rules(
             project_root,
             data_root,
             permission_mode,
             response_tool_names(&payload),
             tool_permission_rules,
         );
+        #[cfg(windows)]
+        {
+            tool_executor = tool_executor.with_mcp_registry(mcp_registry);
+        }
         let citation_sources;
         let image_generation = Some(ImageGenerationContext::ChatGptOAuth {
             service: self,
