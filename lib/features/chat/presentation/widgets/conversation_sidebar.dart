@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
@@ -62,6 +61,7 @@ class ConversationSidebar extends StatelessWidget {
     this.onCreateProject,
     this.projectsLoading = false,
     this.projectLoadError,
+    this.onRetryProjects,
     this.onOpenProjectOptions,
     this.onCreateProjectConversation,
     this.onShowMoreProjectConversations,
@@ -124,6 +124,7 @@ class ConversationSidebar extends StatelessWidget {
   final VoidCallback? onCreateProject;
   final bool projectsLoading;
   final String? projectLoadError;
+  final VoidCallback? onRetryProjects;
   final void Function(String projectId, String projectRoot, String projectName)?
   onOpenProjectOptions;
   final ValueChanged<String>? onCreateProjectConversation;
@@ -255,7 +256,20 @@ class ConversationSidebar extends StatelessWidget {
                   ),
                   if (isLoadingHistorySearchFilterOptions) ...[
                     const SizedBox(height: 12),
-                    const LinearProgressIndicator(),
+                    Semantics(
+                      liveRegion: true,
+                      label: l10n.historySearchFiltersLoading,
+                      child: ExcludeSemantics(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const LinearProgressIndicator(),
+                            const SizedBox(height: 6),
+                            Text(l10n.historySearchFiltersLoading),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String?>(
@@ -398,8 +412,6 @@ class ConversationSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
-    final dark = Theme.of(context).brightness == Brightness.dark;
-
     return Container(
       width: width,
       decoration: BoxDecoration(color: palette.navigation),
@@ -460,6 +472,7 @@ class ConversationSidebar extends StatelessWidget {
                                     height: 18 / 13,
                                   ),
                                   decoration: InputDecoration(
+                                    labelText: l10n.searchChats,
                                     hintText: l10n.searchChatsHint,
                                     hintStyle: TextStyle(
                                       color: palette.secondaryText,
@@ -476,17 +489,10 @@ class ConversationSidebar extends StatelessWidget {
                                         8,
                                         10,
                                       ),
-                                      child: SvgPicture.asset(
-                                        dark
-                                            ? 'assets/icons/dark/search.svg'
-                                            : 'assets/icons/search.svg',
-                                        width: 16,
-                                        height: 16,
-                                        colorFilter: ColorFilter.mode(
-                                          palette.secondaryText,
-                                          BlendMode.srcIn,
-                                        ),
-                                        excludeFromSemantics: true,
+                                      child: Icon(
+                                        LucideIcons.search,
+                                        size: 16,
+                                        color: palette.secondaryText,
                                       ),
                                     ),
                                     prefixIconConstraints:
@@ -495,16 +501,20 @@ class ConversationSidebar extends StatelessWidget {
                                           height: 36,
                                         ),
                                     suffixIcon: isHistorySearchLoading
-                                        ? const SizedBox(
-                                            width: 34,
-                                            height: 36,
-                                            child: Center(
-                                              child: SizedBox.square(
-                                                dimension: 15,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                    ),
+                                        ? Semantics(
+                                            liveRegion: true,
+                                            label: l10n.searchMessagesLoading,
+                                            child: const SizedBox(
+                                              width: 34,
+                                              height: 36,
+                                              child: Center(
+                                                child: SizedBox.square(
+                                                  dimension: 15,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                        strokeWidth: 2,
+                                                      ),
+                                                ),
                                               ),
                                             ),
                                           )
@@ -638,17 +648,10 @@ class ConversationSidebar extends StatelessWidget {
                                 color: palette.secondaryIcon,
                                 size: 18,
                               )
-                            : SvgPicture.asset(
-                                dark
-                                    ? 'assets/icons/dark/search.svg'
-                                    : 'assets/icons/search.svg',
-                                width: 17,
-                                height: 17,
-                                colorFilter: ColorFilter.mode(
-                                  palette.secondaryIcon,
-                                  BlendMode.srcIn,
-                                ),
-                                excludeFromSemantics: true,
+                            : Icon(
+                                LucideIcons.search,
+                                size: 17,
+                                color: palette.secondaryIcon,
                               ),
                       ),
                     ],
@@ -855,6 +858,7 @@ class ConversationSidebar extends StatelessWidget {
                                   onCreateProject: onCreateProject,
                                   loading: projectsLoading,
                                   errorMessage: projectLoadError,
+                                  onRetry: onRetryProjects,
                                   emptyMessage: hasQuery
                                       ? l10n.noChatsSearchTitle
                                       : l10n.noProjects,
@@ -958,6 +962,7 @@ class ConversationSidebar extends StatelessWidget {
                                 onCreateProject: onCreateProject,
                                 loading: projectsLoading,
                                 errorMessage: projectLoadError,
+                                onRetry: onRetryProjects,
                                 emptyMessage: hasQuery
                                     ? l10n.noChatsSearchTitle
                                     : l10n.noProjects,
@@ -1094,6 +1099,7 @@ class _HistorySearchResultsSection extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
             child: Semantics(
+              liveRegion: true,
               label: l10n.searchMessagesLoading,
               child: const LinearProgressIndicator(minHeight: 2),
             ),

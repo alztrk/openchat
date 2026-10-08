@@ -1,4 +1,5 @@
 import 'package:drift/native.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -75,6 +76,42 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
+  testWidgets('shows unassigned chats when no workspace exists', (
+    tester,
+  ) async {
+    final database = OpenChatDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = ChatRepository(database);
+    await repository.createConversation(
+      id: 'conversation-unassigned',
+      title: 'Unassigned conversation',
+      createdAt: DateTime.utc(2026, 10, 9),
+    );
+    final l10n = await AppLocalizations.delegate.load(const Locale('tr'));
+
+    await tester.pumpWidget(
+      _testApp(
+        WorkspacesPage(
+          repository: repository,
+          onCreateWorkspace: (_) async {},
+          onRenameWorkspace: (_, _) async {},
+          onDeleteWorkspace: (_) async {},
+          onSetConversationWorkspace: (_, _) async {},
+          onCreateConversation: (_) {},
+          onOpenConversation: (_) {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(l10n.workspaceEmptyTitle), findsOneWidget);
+    expect(find.text(l10n.workspaceUnassignedChats), findsOneWidget);
+    expect(find.text('Unassigned conversation'), findsOneWidget);
+    expect(find.byTooltip(l10n.workspaceMoveConversation), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
   testWidgets('shows, opens, and removes a saved assistant response', (
     tester,
   ) async {
@@ -95,6 +132,8 @@ void main() {
         content: 'Kaydedilmiş yanıt',
         createdAt: createdAt,
         status: ChatMessageStatus.completed,
+        providerId: 'chatgpt',
+        modelId: 'gpt-5.5',
       ),
     );
     await repository.saveOutput(
@@ -116,6 +155,14 @@ void main() {
 
     expect(find.text('Araştırma notları'), findsOneWidget);
     expect(find.text('Kaydedilmiş yanıt'), findsOneWidget);
+    expect(
+      find.textContaining(l10n.outputSourceProvider(l10n.chatGptProvider)),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(l10n.outputSourceModel('gpt-5.5')),
+      findsOneWidget,
+    );
     await tester.tap(find.text(l10n.outputOpenConversation));
     expect(openedMessageId, 'answer-1');
 
@@ -125,6 +172,149 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
+
+  for (final appearance in [
+    (name: 'light', theme: OpenChatTheme.light),
+    (name: 'dark', theme: OpenChatTheme.dark),
+  ]) {
+    testWidgets('matches the ${appearance.name} workspaces page golden', (
+      tester,
+    ) async {
+      await _expectWorkspacesGolden(
+        tester,
+        theme: appearance.theme,
+        goldenPath: 'goldens/workspaces-${appearance.name}.png',
+      );
+    });
+
+    testWidgets('matches the ${appearance.name} saved answers page golden', (
+      tester,
+    ) async {
+      await _expectOutputsGolden(
+        tester,
+        theme: appearance.theme,
+        goldenPath: 'goldens/outputs-${appearance.name}.png',
+      );
+    });
+  }
+}
+
+Future<void> _expectWorkspacesGolden(
+  WidgetTester tester, {
+  required ThemeData theme,
+  required String goldenPath,
+}) async {
+  tester.view.physicalSize = const Size(1280, 900);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
+  final database = OpenChatDatabase(NativeDatabase.memory());
+  addTearDown(database.close);
+  final repository = ChatRepository(database);
+  final createdAt = DateTime.utc(2026, 10, 9, 12);
+  await repository.createWorkspace(
+    id: 'workspace-golden',
+    name: 'Product research',
+    createdAt: createdAt,
+  );
+  await repository.createConversation(
+    id: 'conversation-golden',
+    title: 'Collect general user feedback',
+    createdAt: createdAt,
+    productWorkspaceId: 'workspace-golden',
+  );
+
+  await tester.pumpWidget(
+    MaterialApp(
+      locale: const Locale('tr'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      theme: theme.copyWith(platform: TargetPlatform.windows),
+      home: RepaintBoundary(
+        key: const ValueKey<String>('workspaces-page-screenshot'),
+        child: Scaffold(
+          body: WorkspacesPage(
+            repository: repository,
+            onCreateWorkspace: (_) async {},
+            onRenameWorkspace: (_, _) async {},
+            onDeleteWorkspace: (_) async {},
+            onSetConversationWorkspace: (_, _) async {},
+            onCreateConversation: (_) {},
+            onOpenConversation: (_) {},
+          ),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+
+  expect(find.text('Product research'), findsOneWidget);
+  expect(find.text('Collect general user feedback'), findsOneWidget);
+  await expectLater(
+    find.byKey(const ValueKey<String>('workspaces-page-screenshot')),
+    matchesGoldenFile(goldenPath),
+  );
+  await tester.pumpWidget(const SizedBox.shrink());
+  await tester.pump(const Duration(seconds: 1));
+}
+
+Future<void> _expectOutputsGolden(
+  WidgetTester tester, {
+  required ThemeData theme,
+  required String goldenPath,
+}) async {
+  tester.view.physicalSize = const Size(1280, 900);
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+
+  final database = OpenChatDatabase(NativeDatabase.memory());
+  addTearDown(database.close);
+  final repository = ChatRepository(database);
+  await repository.createConversation(
+    id: 'conversation-output-golden',
+    title: 'Product research notes',
+    createdAt: DateTime.utc(2026, 10, 9, 12),
+  );
+  await database
+      .into(database.savedOutputs)
+      .insert(
+        SavedOutputsCompanion.insert(
+          conversationId: 'conversation-output-golden',
+          messageId: 'answer-output-golden',
+          conversationTitle: 'Product research notes',
+          content: 'A useful answer can be saved here and revisited from the saved answers page.',
+          providerId: const Value<String?>('chatgpt'),
+          modelId: const Value<String?>('gpt-5.5'),
+          savedAt: DateTime.utc(2026, 10, 9, 12).millisecondsSinceEpoch,
+        ),
+      );
+
+  await tester.pumpWidget(
+    MaterialApp(
+      locale: const Locale('tr'),
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
+      theme: theme.copyWith(platform: TargetPlatform.windows),
+      home: RepaintBoundary(
+        key: const ValueKey<String>('outputs-page-screenshot'),
+        child: Scaffold(
+          body: OutputsPage(repository: repository, onOpenConversation: (_) {}),
+        ),
+      ),
+    ),
+  );
+  await tester.pumpAndSettle();
+
+  expect(find.text('Product research notes'), findsOneWidget);
+  expect(find.textContaining('gpt-5.5'), findsOneWidget);
+  await expectLater(
+    find.byKey(const ValueKey<String>('outputs-page-screenshot')),
+    matchesGoldenFile(goldenPath),
+  );
+  await tester.pumpWidget(const SizedBox.shrink());
+  await tester.pump(const Duration(seconds: 1));
 }
 
 Widget _testApp(Widget child) => MaterialApp(

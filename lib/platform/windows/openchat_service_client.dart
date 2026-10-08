@@ -7,7 +7,16 @@ import 'package:flutter/foundation.dart';
 class OpenChatServiceClient {
   static const _requestTimeout = Duration(seconds: 15);
   static const _maximumMessageBytes = 1024 * 1024;
+  static const _debugDataRoot = String.fromEnvironment(
+    'OPENCHAT_DEBUG_DATA_ROOT',
+  );
 
+  OpenChatServiceClient({String? dataRoot})
+    : _dataRoot = kDebugMode
+          ? (dataRoot ?? (_debugDataRoot.isEmpty ? null : _debugDataRoot))
+          : null;
+
+  final String? _dataRoot;
   final Map<int, _PendingServiceCall> _pendingRequests = {};
   Completer<OpenChatServiceException?> _databaseInitialization =
       Completer<OpenChatServiceException?>();
@@ -132,9 +141,13 @@ class OpenChatServiceClient {
     }
 
     try {
+      final dataRoot = _dataRoot;
+      final arguments = dataRoot == null
+          ? const <String>[]
+          : <String>['--data-root', dataRoot];
       final process = await Process.start(
         executable.path,
-        const <String>[],
+        arguments,
         runInShell: false,
       );
       _process = process;

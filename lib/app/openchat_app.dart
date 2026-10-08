@@ -590,25 +590,37 @@ class _OpenChatAppState extends State<OpenChatApp> {
 
   @override
   Widget build(BuildContext context) {
-    final lightTheme = OpenChatTheme.withConversationStyle(
-      OpenChatTheme.light,
-      maxWidth: _conversationWidth.maxWidth,
-      fontFamily: _appFont.familyName,
+    ThemeData applyAppFont(ThemeData theme) => theme.copyWith(
+      textTheme: theme.textTheme.apply(fontFamily: _appFont.familyName),
     );
-    final darkTheme = OpenChatTheme.withConversationStyle(
-      OpenChatTheme.dark,
-      maxWidth: _conversationWidth.maxWidth,
-      fontFamily: _appFont.familyName,
+
+    final lightTheme = applyAppFont(
+      OpenChatTheme.withConversationStyle(
+        OpenChatTheme.light,
+        maxWidth: _conversationWidth.maxWidth,
+        fontFamily: _appFont.familyName,
+      ),
     );
-    final highContrastTheme = OpenChatTheme.withConversationStyle(
-      OpenChatTheme.highContrastLight,
-      maxWidth: _conversationWidth.maxWidth,
-      fontFamily: _appFont.familyName,
+    final darkTheme = applyAppFont(
+      OpenChatTheme.withConversationStyle(
+        OpenChatTheme.dark,
+        maxWidth: _conversationWidth.maxWidth,
+        fontFamily: _appFont.familyName,
+      ),
     );
-    final highContrastDarkTheme = OpenChatTheme.withConversationStyle(
-      OpenChatTheme.highContrastDark,
-      maxWidth: _conversationWidth.maxWidth,
-      fontFamily: _appFont.familyName,
+    final highContrastTheme = applyAppFont(
+      OpenChatTheme.withConversationStyle(
+        OpenChatTheme.highContrastLight,
+        maxWidth: _conversationWidth.maxWidth,
+        fontFamily: _appFont.familyName,
+      ),
+    );
+    final highContrastDarkTheme = applyAppFont(
+      OpenChatTheme.withConversationStyle(
+        OpenChatTheme.highContrastDark,
+        maxWidth: _conversationWidth.maxWidth,
+        fontFamily: _appFont.familyName,
+      ),
     );
 
     return ToastificationWrapper(

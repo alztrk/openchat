@@ -3,7 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 
-class OpenChatDropdown extends StatelessWidget {
+class OpenChatDropdown extends StatefulWidget {
   const OpenChatDropdown({
     required this.palette,
     required this.menuChildren,
@@ -25,6 +25,7 @@ class OpenChatDropdown extends StatelessWidget {
     BuildContext context,
     MenuController controller,
     Widget? child,
+    FocusNode focusNode,
   )
   builder;
   final MenuController? controller;
@@ -45,7 +46,7 @@ class OpenChatDropdown extends StatelessWidget {
       backgroundColor: WidgetStatePropertyAll(palette.surface),
       elevation: const WidgetStatePropertyAll(6),
       padding: WidgetStatePropertyAll(padding),
-      side: WidgetStatePropertyAll(BorderSide(color: palette.border)),
+      side: WidgetStatePropertyAll(BorderSide(color: palette.controlBorder)),
       shape: WidgetStatePropertyAll(
         RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(OpenChatRadii.menu),
@@ -62,49 +63,115 @@ class OpenChatDropdown extends StatelessWidget {
       overlayColor: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.disabled)) return Colors.transparent;
         if (states.contains(WidgetState.pressed)) return palette.selected;
-        if (states.contains(WidgetState.hovered) ||
-            states.contains(WidgetState.focused)) {
-          return palette.hover;
-        }
+        if (states.contains(WidgetState.hovered)) return palette.hover;
         return Colors.transparent;
       }),
+      side: WidgetStateProperty.resolveWith<BorderSide?>((states) {
+        if (!states.contains(WidgetState.focused)) return BorderSide.none;
+        return BorderSide(color: palette.focusRing, width: 2);
+      }),
       shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+        RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(OpenChatRadii.control),
+        ),
       ),
     );
   }
 
   @override
+  State<OpenChatDropdown> createState() => _OpenChatDropdownState();
+}
+
+class _OpenChatDropdownState extends State<OpenChatDropdown> {
+  MenuController? _activeMenuController;
+  late final FocusNode _triggerFocusNode = FocusNode(
+    debugLabel: 'open chat dropdown trigger',
+  );
+  late final FocusScopeNode _menuFocusScope = FocusScopeNode(
+    debugLabel: 'open chat dropdown menu',
+  );
+  bool _listeningForEscape = false;
+
+  bool _handleKeyEvent(KeyEvent event) {
+    if (event is KeyDownEvent &&
+        event.logicalKey == LogicalKeyboardKey.escape &&
+        (_activeMenuController?.isOpen ?? false)) {
+      _activeMenuController?.close();
+      _triggerFocusNode.requestFocus();
+      return true;
+    }
+    return false;
+  }
+
+  void _handleMenuOpen() {
+    if (!_listeningForEscape) {
+      HardwareKeyboard.instance.addHandler(_handleKeyEvent);
+      _listeningForEscape = true;
+    }
+    widget.onOpen?.call();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !(_activeMenuController?.isOpen ?? false)) return;
+      final context = _menuFocusScope.context;
+      if (context == null) return;
+      final policy =
+          FocusTraversalGroup.maybeOf(context) ?? ReadingOrderTraversalPolicy();
+      policy
+          .findFirstFocus(_menuFocusScope, ignoreCurrentFocus: true)
+          ?.requestFocus();
+    });
+  }
+
+  void _handleMenuClose() {
+    if (_listeningForEscape) {
+      HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
+      _listeningForEscape = false;
+    }
+    widget.onClose?.call();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || ModalRoute.isCurrentOf(context) != true) return;
+      _triggerFocusNode.requestFocus();
+    });
+  }
+
+  @override
+  void dispose() {
+    if (_listeningForEscape) {
+      HardwareKeyboard.instance.removeHandler(_handleKeyEvent);
+    }
+    _triggerFocusNode.dispose();
+    _menuFocusScope.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return MenuAnchor(
-      controller: controller,
-      style: menuStyle(palette, padding: menuPadding, maximumSize: maximumSize),
-      alignmentOffset: alignmentOffset,
-      reservedPadding: reservedPadding,
-      crossAxisUnconstrained: crossAxisUnconstrained,
-      onOpen: onOpen,
-      onClose: onClose,
-      menuChildren: [
-        for (var index = 0; index < menuChildren.length; index++)
-          Focus(
-            autofocus: index == 0,
-            skipTraversal: true,
-            child: menuChildren[index],
-          ),
-      ],
-      builder: (context, controller, child) => Focus(
-        skipTraversal: true,
-        onKeyEvent: (_, event) {
-          if (controller.isOpen &&
-              event is KeyDownEvent &&
-              event.logicalKey == LogicalKeyboardKey.escape) {
-            controller.close();
-            return KeyEventResult.handled;
-          }
-          return KeyEventResult.ignored;
-        },
-        child: builder(context, controller, child),
+      controller: widget.controller,
+      childFocusNode: _triggerFocusNode,
+      style: OpenChatDropdown.menuStyle(
+        widget.palette,
+        padding: widget.menuPadding,
+        maximumSize: widget.maximumSize,
       ),
+      alignmentOffset: widget.alignmentOffset,
+      reservedPadding: widget.reservedPadding,
+      crossAxisUnconstrained: widget.crossAxisUnconstrained,
+      onOpen: _handleMenuOpen,
+      onClose: _handleMenuClose,
+      menuChildren: [
+        FocusScope(
+          node: _menuFocusScope,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: widget.menuChildren,
+          ),
+        ),
+      ],
+      builder: (context, controller, child) {
+        _activeMenuController = controller;
+        return widget.builder(context, controller, child, _triggerFocusNode);
+      },
     );
   }
 }

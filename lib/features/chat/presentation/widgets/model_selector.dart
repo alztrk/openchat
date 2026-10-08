@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:openchat/app/openchat_dropdown.dart';
 import 'package:openchat/app/openchat_theme.dart';
@@ -18,7 +17,6 @@ class ModelSelector extends StatefulWidget {
   const ModelSelector({
     super.key,
     required this.label,
-    required this.iconRoot,
     required this.palette,
     required this.compact,
     this.width = 152,
@@ -44,7 +42,6 @@ class ModelSelector extends StatefulWidget {
   });
 
   final String label;
-  final String iconRoot;
   final OpenChatPalette palette;
   final bool compact;
   final double width;
@@ -297,6 +294,7 @@ class _ModelSelectorState extends State<ModelSelector> {
                                   fontSize: 13,
                                 ),
                                 decoration: InputDecoration(
+                                  labelText: l10n.searchModels,
                                   hintText: l10n.modelSearchHint,
                                   hintStyle: TextStyle(
                                     color: widget.palette.secondaryText,
@@ -522,12 +520,13 @@ class _ModelSelectorState extends State<ModelSelector> {
           ),
         ),
       ],
-      builder: (context, controller, _) => Tooltip(
+      builder: (context, controller, _, focusNode) => Tooltip(
         message: widget.label,
         child: SizedBox(
           width: widget.width,
           height: composerControlHeight(context),
           child: OutlinedButton(
+            focusNode: focusNode,
             onPressed:
                 widget.onSelected == null && widget.onProviderSelected == null
                 ? null
@@ -578,17 +577,14 @@ class _ModelSelectorState extends State<ModelSelector> {
                   child: Center(
                     child: RotatedBox(
                       quarterTurns: controller.isOpen ? 0 : 2,
-                      child: SvgPicture.asset(
-                        '${widget.iconRoot}/chevron.svg',
-                        width: 10.6667,
-                        height: 6.66668,
-                        colorFilter: ColorFilter.mode(
-                          isEnabled
-                              ? widget.palette.secondaryIcon
-                              : widget.palette.disabledIcon,
-                          BlendMode.srcIn,
-                        ),
-                        excludeFromSemantics: true,
+                      child: Icon(
+                        controller.isOpen
+                            ? LucideIcons.chevronUp
+                            : LucideIcons.chevronDown,
+                        size: 16,
+                        color: isEnabled
+                            ? widget.palette.secondaryIcon
+                            : widget.palette.disabledIcon,
                       ),
                     ),
                   ),
@@ -820,98 +816,110 @@ class _ModelOptionState extends State<_ModelOption> {
               ? widget.palette.selected
               : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
+          border: _rowFocused
+              ? Border.all(color: widget.palette.focusRing, width: 2)
+              : widget.selected
+              ? Border.all(color: widget.palette.accent)
+              : null,
         ),
         child: Row(
           children: [
             Expanded(
-              child: InkWell(
-                onTap: widget.onSelected,
-                onFocusChange: (focused) => setState(() {
-                  _rowFocused = focused;
-                }),
-                borderRadius: BorderRadius.circular(8),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: hasDetails ? 56 : 44),
-                  child: Padding(
-                    padding: const EdgeInsets.only(
-                      left: 12,
-                      right: 4,
-                      top: 6,
-                      bottom: 6,
+              child: Semantics(
+                selected: widget.selected,
+                child: InkWell(
+                  onTap: widget.onSelected,
+                  onFocusChange: (focused) => setState(() {
+                    _rowFocused = focused;
+                  }),
+                  borderRadius: BorderRadius.circular(8),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: hasDetails ? 56 : 44,
                     ),
-                    child: Row(
-                      children: [
-                        ProviderIcon(
-                          providerId: widget.providerId,
-                          color: widget.isAvailable
-                              ? widget.palette.secondaryIcon
-                              : widget.palette.disabledIcon,
-                          size: 16,
-                        ),
-                        if (widget.selected) ...[
-                          const SizedBox(width: 4),
-                          Icon(
-                            LucideIcons.check,
+                    child: Padding(
+                      padding: const EdgeInsets.only(
+                        left: 12,
+                        right: 4,
+                        top: 6,
+                        bottom: 6,
+                      ),
+                      child: Row(
+                        children: [
+                          ProviderIcon(
+                            providerId: widget.providerId,
+                            color: widget.isAvailable
+                                ? widget.palette.secondaryIcon
+                                : widget.palette.disabledIcon,
                             size: 16,
-                            color: widget.palette.accent,
                           ),
-                          const SizedBox(width: 4),
-                        ] else
-                          const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Tooltip(
-                                message: widget.title,
-                                child: Text(
-                                  widget.title,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: widget.isAvailable
-                                        ? widget.palette.text
-                                        : widget.palette.secondaryText,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ),
-                              if (widget.description case final description?)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 2),
+                          if (widget.selected) ...[
+                            const SizedBox(width: 4),
+                            Icon(
+                              LucideIcons.check,
+                              size: 16,
+                              color: widget.palette.accent,
+                            ),
+                            const SizedBox(width: 4),
+                          ] else
+                            const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Tooltip(
+                                  message: widget.title,
                                   child: Text(
-                                    description,
-                                    maxLines: 1,
+                                    widget.title,
+                                    maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                      color: widget.palette.secondaryText,
-                                      fontSize: OpenChatTypography.metadata,
+                                      color: widget.isAvailable
+                                          ? widget.palette.text
+                                          : widget.palette.secondaryText,
+                                      fontSize: 13,
                                     ),
                                   ),
                                 ),
-                              if (contextWindowLabel case final label?)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 3),
-                                  child: Tooltip(
-                                    message: widget.providerId == 'opencode'
-                                        ? l10n.openCodeModelContextWindow(label)
-                                        : l10n.modelContextWindow(label),
+                                if (widget.description case final description?)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
                                     child: Text(
-                                      label,
+                                      description,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
                                       style: TextStyle(
                                         color: widget.palette.secondaryText,
                                         fontSize: OpenChatTypography.metadata,
-                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
                                   ),
-                                ),
-                            ],
+                                if (contextWindowLabel case final label?)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 3),
+                                    child: Tooltip(
+                                      message: widget.providerId == 'opencode'
+                                          ? l10n.openCodeModelContextWindow(
+                                              label,
+                                            )
+                                          : l10n.modelContextWindow(label),
+                                      child: Text(
+                                        label,
+                                        style: TextStyle(
+                                          color: widget.palette.secondaryText,
+                                          fontSize: OpenChatTypography.metadata,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),

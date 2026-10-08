@@ -16,8 +16,6 @@ class LocalEngineIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isExllama = engineId == 'exllama';
-    final iconWidth = isExllama ? size * 2 : size;
     final Widget icon = switch (engineId) {
       'llama_cpp' => SvgPicture.asset(
         'assets/icons/engines/llama-cpp.svg',
@@ -32,18 +30,21 @@ class LocalEngineIcon extends StatelessWidget {
         height: size,
         excludeFromSemantics: true,
       ),
-      'exllama' => Image.asset(
-        'assets/icons/engines/exllama-v3.png',
-        width: iconWidth,
-        height: size,
-        fit: BoxFit.contain,
-        excludeFromSemantics: true,
+      'exllama' => Text(
+        'EX',
+        style: TextStyle(
+          color: color,
+          fontSize: size * 0.62,
+          fontWeight: FontWeight.w700,
+          height: 1,
+          letterSpacing: -0.3,
+        ),
       ),
       _ => Icon(LucideIcons.microchip, size: size, color: color),
     };
 
     return SizedBox(
-      width: iconWidth,
+      width: size,
       height: size,
       child: Center(child: ExcludeSemantics(child: icon)),
     );

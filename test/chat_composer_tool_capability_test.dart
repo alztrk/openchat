@@ -88,6 +88,11 @@ void main() {
           expect(tester.widget<IconButton>(send).onPressed, isNotNull);
           await tester.tap(send);
           expect(sent, 1);
+          final moreOptions = find.text(l10n.moreOptions);
+          expect(moreOptions, findsOneWidget);
+          await tester.ensureVisible(moreOptions);
+          await tester.tap(moreOptions);
+          await tester.pumpAndSettle();
           final permission = find.widgetWithText(
             OutlinedButton,
             l10n.toolPermissionRequireApproval,
@@ -216,6 +221,7 @@ void main() {
         supportsToolCalls: null,
       ),
     );
+    await _showMoreOptions(tester, l10n);
 
     final tooltip = tester.widget<Tooltip>(
       find
@@ -250,6 +256,7 @@ void main() {
         supportsToolCalls: false,
       ),
     );
+    await _showMoreOptions(tester, l10n);
 
     final tooltip = tester.widget<Tooltip>(
       find
@@ -287,6 +294,7 @@ void main() {
         supportsToolCalls: true,
       ),
     );
+    await _showMoreOptions(tester, l10n);
 
     final permissionButton = find.widgetWithText(
       OutlinedButton,
@@ -298,6 +306,16 @@ void main() {
     );
     expect(tooltip.message, l10n.toolPermissionRequireApprovalDescription);
   });
+}
+
+Future<void> _showMoreOptions(
+  WidgetTester tester,
+  AppLocalizations l10n,
+) async {
+  final moreOptions = find.text(l10n.moreOptions);
+  expect(moreOptions, findsOneWidget);
+  await tester.tap(moreOptions);
+  await tester.pumpAndSettle();
 }
 
 Widget _composerApp({

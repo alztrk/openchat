@@ -21,6 +21,7 @@ class WorkspacesPage extends StatefulWidget {
     required this.onSetConversationWorkspace,
     required this.onCreateConversation,
     required this.onOpenConversation,
+    this.pageHeadingFocusNode,
     this.onRetry,
     super.key,
   });
@@ -34,6 +35,7 @@ class WorkspacesPage extends StatefulWidget {
   onSetConversationWorkspace;
   final ValueChanged<String> onCreateConversation;
   final ValueChanged<String> onOpenConversation;
+  final FocusNode? pageHeadingFocusNode;
   final VoidCallback? onRetry;
 
   @override
@@ -65,6 +67,7 @@ class _WorkspacesPageState extends State<WorkspacesPage> {
               OpenChatPageHeader(
                 title: l10n.workspaces,
                 description: l10n.workspacesDescription,
+                focusNode: widget.pageHeadingFocusNode,
                 actions: [
                   FilledButton.icon(
                     onPressed: repository == null
@@ -87,10 +90,14 @@ class _WorkspacesPageState extends State<WorkspacesPage> {
                       return _loadFailure(context);
                     }
                     if (!workspaceSnapshot.hasData) {
-                      return const Center(
+                      return Center(
                         child: Padding(
-                          padding: EdgeInsets.all(OpenChatSpacing.xl),
-                          child: CircularProgressIndicator(),
+                          padding: const EdgeInsets.all(OpenChatSpacing.xl),
+                          child: Semantics(
+                            liveRegion: true,
+                            label: l10n.workspacesLoading,
+                            child: const CircularProgressIndicator(),
+                          ),
                         ),
                       );
                     }
@@ -101,10 +108,14 @@ class _WorkspacesPageState extends State<WorkspacesPage> {
                           return _loadFailure(context);
                         }
                         if (!conversationSnapshot.hasData) {
-                          return const Center(
+                          return Center(
                             child: Padding(
-                              padding: EdgeInsets.all(OpenChatSpacing.xl),
-                              child: CircularProgressIndicator(),
+                              padding: const EdgeInsets.all(OpenChatSpacing.xl),
+                              child: Semantics(
+                                liveRegion: true,
+                                label: l10n.conversationsLoading,
+                                child: const CircularProgressIndicator(),
+                              ),
                             ),
                           );
                         }
@@ -137,8 +148,33 @@ class _WorkspacesPageState extends State<WorkspacesPage> {
         .where((conversation) => conversation.productWorkspaceId == null)
         .toList(growable: false);
 
-    if (workspaces.isEmpty) {
+    if (workspaces.isEmpty && unassigned.isEmpty) {
       return _EmptyWorkspaces(onCreate: () => unawaited(_editWorkspaceName()));
+    }
+
+    if (workspaces.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _EmptyWorkspaces(onCreate: () => unawaited(_editWorkspaceName())),
+          const SizedBox(height: OpenChatSpacing.lg),
+          Text(
+            l10n.workspaceUnassignedChats,
+            style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: OpenChatSpacing.xs),
+          for (final conversation in unassigned)
+            _WorkspaceConversationRow(
+              conversation: conversation,
+              workspaces: workspaces,
+              onOpen: () => widget.onOpenConversation(conversation.id),
+              onMove: (workspaceId) => unawaited(
+                widget.onSetConversationWorkspace(conversation.id, workspaceId),
+              ),
+              locale: l10n.localeName,
+            ),
+        ],
+      );
     }
 
     return Column(
@@ -177,6 +213,7 @@ class _WorkspacesPageState extends State<WorkspacesPage> {
               onMove: (workspaceId) => unawaited(
                 widget.onSetConversationWorkspace(conversation.id, workspaceId),
               ),
+              locale: l10n.localeName,
             ),
         ],
       ],
@@ -375,12 +412,13 @@ class _WorkspaceGroup extends StatelessWidget {
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
     final locale = l10n.localeName;
-    return Container(
-      decoration: BoxDecoration(
-        color: palette.surface,
+    return Material(
+      color: palette.surface,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(OpenChatRadii.panel),
-        border: Border.all(color: palette.subtleBorder),
+        side: BorderSide(color: palette.subtleBorder),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -503,22 +541,24 @@ class _WorkspaceConversationRow extends StatelessWidget {
         DateFormat.yMMMd(locale).format(conversation.updatedAt.toLocal()),
       ),
       onTap: onOpen,
-      trailing: PopupMenuButton<String>(
-        tooltip: l10n.workspaceMoveConversation,
-        onSelected: (id) => onMove(id.isEmpty ? null : id),
-        itemBuilder: (context) => [
-          for (final workspace in workspaces)
-            PopupMenuItem<String>(
-              value: workspace.id,
-              child: Text(workspace.name),
+      trailing: workspaces.isEmpty
+          ? null
+          : PopupMenuButton<String>(
+              tooltip: l10n.workspaceMoveConversation,
+              onSelected: (id) => onMove(id.isEmpty ? null : id),
+              itemBuilder: (context) => [
+                for (final workspace in workspaces)
+                  PopupMenuItem<String>(
+                    value: workspace.id,
+                    child: Text(workspace.name),
+                  ),
+                PopupMenuItem<String>(
+                  value: '',
+                  child: Text(l10n.workspaceNoWorkspace),
+                ),
+              ],
+              icon: const Icon(LucideIcons.folderInput, size: 18),
             ),
-          PopupMenuItem<String>(
-            value: '',
-            child: Text(l10n.workspaceNoWorkspace),
-          ),
-        ],
-        icon: const Icon(LucideIcons.folderInput, size: 18),
-      ),
     );
   }
 }

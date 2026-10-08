@@ -104,65 +104,141 @@ class ToolTerminalResult extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.openchatL10n;
-    final theme = Theme.of(context);
+    final errorMessage = data.errorMessage;
     final cleanedOutput = cleanAnsiCodes(data.output ?? '').trim();
+    final terminalId = data.terminalId;
+    final sessionLabel = terminalId == null
+        ? l10n.toolExecuteCommand
+        : l10n.terminalSession(terminalId);
+    final Widget outputContent;
+    if (errorMessage != null) {
+      outputContent = Semantics(
+        liveRegion: true,
+        label: errorMessage,
+        child: ExcludeSemantics(
+          child: Text(
+            errorMessage,
+            style: TextStyle(
+              color: palette.destructive,
+              fontFamily: OpenChatTypography.codeFontFamily,
+              fontSize: OpenChatTypography.code,
+              height: 20 / OpenChatTypography.code,
+            ),
+          ),
+        ),
+      );
+    } else if (cleanedOutput.isNotEmpty) {
+      outputContent = SelectableText(
+        cleanedOutput,
+        style: TextStyle(
+          color: palette.text,
+          fontFamily: OpenChatTypography.codeFontFamily,
+          fontSize: OpenChatTypography.code,
+          height: 20 / OpenChatTypography.code,
+        ),
+      );
+    } else if (data.isRunning) {
+      outputContent = Semantics(
+        liveRegion: true,
+        label: l10n.toolTerminalWaitingOutput,
+        child: ExcludeSemantics(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox.square(
+                dimension: 12,
+                child: CircularProgressIndicator(
+                  strokeWidth: 1.5,
+                  color: palette.accent,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                l10n.toolTerminalWaitingOutput,
+                style: TextStyle(
+                  color: palette.secondaryText,
+                  fontSize: OpenChatTypography.metadata,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else {
+      outputContent = Semantics(
+        liveRegion: true,
+        label: l10n.toolTerminalNoOutput,
+        child: ExcludeSemantics(
+          child: Text(
+            l10n.toolTerminalNoOutput,
+            style: TextStyle(
+              color: palette.secondaryText,
+              fontSize: OpenChatTypography.metadata,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Icon(
-                LucideIcons.terminal,
-                size: 15,
-                color: palette.secondaryIcon,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  data.terminalId != null
-                      ? 'terminal: ${data.terminalId}'
-                      : l10n.toolExecuteCommand,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: palette.secondaryText,
-                    fontSize: OpenChatTypography.metadata,
-                    height: 16 / 11,
-                  ),
+          Semantics(
+            label: sessionLabel,
+            child: Row(
+              children: [
+                Icon(
+                  LucideIcons.terminal,
+                  size: 15,
+                  color: palette.secondaryIcon,
                 ),
-              ),
-              const SizedBox(width: 8),
-              _TerminalStatusBadge(data: data, palette: palette),
-              if (cleanedOutput.isNotEmpty || data.command != null) ...[
                 const SizedBox(width: 6),
-                IconButton(
-                  tooltip: l10n.toolTerminalCopied,
-                  iconSize: 14,
-                  visualDensity: VisualDensity.compact,
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 24,
-                    minHeight: 24,
+                Expanded(
+                  child: Text(
+                    sessionLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: palette.secondaryText,
+                      fontSize: OpenChatTypography.metadata,
+                      height: 16 / 11,
+                    ),
                   ),
-                  icon: Icon(LucideIcons.copy, color: palette.secondaryIcon),
-                  onPressed: () {
-                    final textToCopy = cleanedOutput.isNotEmpty
-                        ? cleanedOutput
-                        : data.command ?? '';
-                    Clipboard.setData(ClipboardData(text: textToCopy));
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text(l10n.toolTerminalCopied),
-                        duration: const Duration(seconds: 2),
-                      ),
-                    );
-                  },
                 ),
+                const SizedBox(width: 8),
+                _TerminalStatusBadge(data: data, palette: palette),
+                if (cleanedOutput.isNotEmpty || data.command != null) ...[
+                  const SizedBox(width: 6),
+                  IconButton(
+                    tooltip: l10n.toolTerminalCopied,
+                    iconSize: 14,
+                    visualDensity: VisualDensity.standard,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 44,
+                      height: 44,
+                    ),
+                    icon: Icon(LucideIcons.copy, color: palette.secondaryIcon),
+                    onPressed: () {
+                      final textToCopy = cleanedOutput.isNotEmpty
+                          ? cleanedOutput
+                          : data.command ?? '';
+                      Clipboard.setData(ClipboardData(text: textToCopy));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(l10n.toolTerminalCopied),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    },
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
           if (data.command case final command?) ...[
             const SizedBox(height: 7),
@@ -252,59 +328,7 @@ class ToolTerminalResult extends StatelessWidget {
             constraints: const BoxConstraints(maxHeight: 240, minHeight: 44),
             padding: const EdgeInsets.all(10),
             child: SingleChildScrollView(
-              child: Align(
-                alignment: Alignment.topLeft,
-                child: data.errorMessage != null
-                    ? Text(
-                        data.errorMessage!,
-                        style: TextStyle(
-                          color: theme.colorScheme.error,
-                          fontFamily: OpenChatTypography.codeFontFamily,
-                          fontSize: OpenChatTypography.code,
-                          height: 20 / OpenChatTypography.code,
-                        ),
-                      )
-                    : cleanedOutput.isNotEmpty
-                    ? SelectableText(
-                        cleanedOutput,
-                        style: TextStyle(
-                          color: palette.text,
-                          fontFamily: OpenChatTypography.codeFontFamily,
-                          fontSize: OpenChatTypography.code,
-                          height: 20 / OpenChatTypography.code,
-                        ),
-                      )
-                    : data.isRunning
-                    ? Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox.square(
-                            dimension: 12,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 1.5,
-                              color: palette.accent,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            l10n.toolTerminalWaitingOutput,
-                            style: TextStyle(
-                              color: palette.secondaryText,
-                              fontSize: OpenChatTypography.metadata,
-                              fontStyle: FontStyle.italic,
-                            ),
-                          ),
-                        ],
-                      )
-                    : Text(
-                        l10n.toolTerminalNoOutput,
-                        style: TextStyle(
-                          color: palette.secondaryText,
-                          fontSize: OpenChatTypography.metadata,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-              ),
+              child: Align(alignment: Alignment.topLeft, child: outputContent),
             ),
           ),
           if (data.isTruncated) ...[
@@ -341,7 +365,6 @@ class _TerminalStatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.openchatL10n;
-    final theme = Theme.of(context);
 
     if (data.isTerminated) {
       return Container(
@@ -350,12 +373,16 @@ class _TerminalStatusBadge extends StatelessWidget {
           color: palette.composer,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Text(
-          l10n.toolTerminalTerminated,
-          style: TextStyle(
-            color: palette.secondaryText,
-            fontSize: OpenChatTypography.metadata,
-            fontWeight: FontWeight.w500,
+        child: Semantics(
+          liveRegion: true,
+          label: l10n.toolTerminalTerminated,
+          child: Text(
+            l10n.toolTerminalTerminated,
+            style: TextStyle(
+              color: palette.secondaryText,
+              fontSize: OpenChatTypography.metadata,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ),
       );
@@ -379,14 +406,22 @@ class _TerminalStatusBadge extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 5),
-            Text(
-              data.waitingForInput
+            Semantics(
+              liveRegion: true,
+              label: data.waitingForInput
                   ? l10n.toolTerminalWaitingForInput
                   : l10n.toolTerminalRunning,
-              style: TextStyle(
-                color: palette.accent,
-                fontSize: OpenChatTypography.metadata,
-                fontWeight: FontWeight.w500,
+              child: ExcludeSemantics(
+                child: Text(
+                  data.waitingForInput
+                      ? l10n.toolTerminalWaitingForInput
+                      : l10n.toolTerminalRunning,
+                  style: TextStyle(
+                    color: palette.accent,
+                    fontSize: OpenChatTypography.metadata,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ),
             ),
           ],
@@ -398,19 +433,25 @@ class _TerminalStatusBadge extends StatelessWidget {
       final isSuccess = code == 0;
       final badgeColor = isSuccess
           ? palette.secondaryIcon
-          : theme.colorScheme.error;
+          : palette.destructive;
       return Container(
         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
         decoration: BoxDecoration(
           color: palette.composer,
           borderRadius: BorderRadius.circular(12),
         ),
-        child: Text(
-          l10n.toolTerminalExitCode(code),
-          style: TextStyle(
-            color: badgeColor,
-            fontSize: OpenChatTypography.metadata,
-            fontWeight: FontWeight.w600,
+        child: Semantics(
+          liveRegion: true,
+          label: l10n.toolTerminalExitCode(code),
+          child: ExcludeSemantics(
+            child: Text(
+              l10n.toolTerminalExitCode(code),
+              style: TextStyle(
+                color: badgeColor,
+                fontSize: OpenChatTypography.metadata,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ),
         ),
       );

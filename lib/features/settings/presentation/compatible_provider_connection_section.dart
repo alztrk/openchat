@@ -147,7 +147,7 @@ class _CompatibleProviderConnectionSectionState
       color: palette.surface,
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(OpenChatRadii.card),
         side: BorderSide(color: palette.border),
       ),
       child: Padding(

@@ -39,6 +39,7 @@ pub async fn send_message(
         conversation_id,
         excluded_assistant_message_id,
         custom_instructions,
+        project_instructions,
         project_root,
         data_root,
         storage: context_storage,
@@ -141,6 +142,7 @@ pub async fn send_message(
             provider_id: route.provider_id.as_deref().unwrap_or(""),
             excluded_assistant_message_id,
             custom_instructions,
+            project_instructions,
             permission_mode,
             has_project: project_root.is_some(),
             project_task_ids: &project_task_ids,
@@ -343,6 +345,11 @@ pub async fn send_message(
         }
     }
     let request_sources = RequestDataSources {
+        instruction_sources: crate::usage_statistics::instruction_source_categories(
+            custom_instructions,
+            project_instructions,
+            goal.is_some(),
+        ),
         message_ids: included_messages[history_start..]
             .iter()
             .map(|message| message.id.clone())

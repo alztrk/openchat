@@ -49,6 +49,8 @@ impl ChatGptService {
             request_id,
             conversation_id,
             excluded_assistant_message_id,
+            custom_instructions,
+            project_instructions,
             project_root,
             data_root,
             storage,
@@ -205,8 +207,16 @@ impl ChatGptService {
                     true,
                 )
             })?;
+            let request_sources = crate::usage_statistics::RequestDataSources {
+                instruction_sources: crate::usage_statistics::instruction_source_categories(
+                    custom_instructions,
+                    project_instructions,
+                    goal.is_some(),
+                ),
+                ..Default::default()
+            };
             usage_request
-                .record_request_manifest(&payload, None)
+                .record_request_manifest(&payload, Some(&request_sources))
                 .map_err(database_error)?;
             let response = match self
                 .authorized_stream_request(

@@ -28,6 +28,7 @@ class GoalStatusBar extends StatefulWidget {
 class _GoalStatusBarState extends State<GoalStatusBar> {
   Timer? _elapsedTimer;
   Duration _elapsed = Duration.zero;
+  bool _showTasks = false;
 
   @override
   void initState() {
@@ -119,75 +120,136 @@ class _GoalStatusBarState extends State<GoalStatusBar> {
     return Container(
       padding: const EdgeInsetsDirectional.only(start: 12, top: 7, bottom: 7),
       decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerLow,
+        color: palette.raisedSurface,
         border: Border.all(color: palette.border.withValues(alpha: 0.72)),
         borderRadius: BorderRadius.circular(OpenChatRadii.control),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(
-            isRunning ? LucideIcons.circleDashed : LucideIcons.circlePause,
-            size: 16,
-            color: theme.colorScheme.primary,
-          ),
-          const SizedBox(width: 9),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _statusLabel(context),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: palette.text,
-                    fontWeight: FontWeight.w600,
-                  ),
+          Row(
+            children: [
+              Icon(
+                isRunning ? LucideIcons.circleDashed : LucideIcons.circlePause,
+                size: 16,
+                color: palette.accentIcon,
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Semantics(
+                      liveRegion: true,
+                      label: _statusLabel(context),
+                      child: ExcludeSemantics(
+                        child: Text(
+                          _statusLabel(context),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: palette.text,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      detail,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: palette.secondaryText,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 1),
-                Text(
-                  detail,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
+              ),
+              const SizedBox(width: 8),
+              Semantics(
+                label: l10n.goalElapsedTime(_formatElapsed(_elapsed)),
+                child: Text(
+                  _formatElapsed(_elapsed),
+                  style: theme.textTheme.labelSmall?.copyWith(
                     color: palette.secondaryText,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: canResume
+                    ? l10n.goalResumeAction
+                    : l10n.goalPauseAction,
+                onPressed: widget.isBusy || (!isRunning && !canResume)
+                    ? null
+                    : widget.onPauseOrResume,
+                visualDensity: VisualDensity.standard,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+                icon: Icon(
+                  canResume ? LucideIcons.play : LucideIcons.pause,
+                  size: 16,
+                ),
+              ),
+              IconButton(
+                tooltip: l10n.goalStopAction,
+                onPressed: widget.isBusy ? null : widget.onStop,
+                visualDensity: VisualDensity.standard,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+                icon: const Icon(LucideIcons.square, size: 15),
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          Semantics(
-            label: l10n.goalElapsedTime(_formatElapsed(_elapsed)),
-            child: Text(
-              _formatElapsed(_elapsed),
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: palette.secondaryText,
-                fontFeatures: const [FontFeature.tabularFigures()],
+          if (widget.goal.todos.isNotEmpty) ...[
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton.icon(
+                onPressed: () => setState(() => _showTasks = !_showTasks),
+                icon: Icon(
+                  _showTasks ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+                  size: 15,
+                ),
+                label: Text(
+                  l10n.goalTasksCount(
+                    widget.goal.todos.where((todo) => todo.completed).length,
+                    widget.goal.todos.length,
+                  ),
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 4),
-          IconButton(
-            tooltip: canResume ? l10n.goalResumeAction : l10n.goalPauseAction,
-            onPressed: widget.isBusy || (!isRunning && !canResume)
-                ? null
-                : widget.onPauseOrResume,
-            visualDensity: VisualDensity.compact,
-            constraints: const BoxConstraints.tightFor(width: 34, height: 34),
-            icon: Icon(
-              canResume ? LucideIcons.play : LucideIcons.pause,
-              size: 16,
-            ),
-          ),
-          IconButton(
-            tooltip: l10n.goalStopAction,
-            onPressed: widget.isBusy ? null : widget.onStop,
-            visualDensity: VisualDensity.compact,
-            constraints: const BoxConstraints.tightFor(width: 34, height: 34),
-            icon: const Icon(LucideIcons.square, size: 15),
-          ),
+            if (_showTasks)
+              ...widget.goal.todos.map(
+                (todo) => Semantics(
+                  checked: todo.completed,
+                  child: Padding(
+                    padding: const EdgeInsetsDirectional.only(
+                      start: 28,
+                      bottom: 4,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          todo.completed
+                              ? LucideIcons.circleCheck
+                              : LucideIcons.circle,
+                          size: 15,
+                          color: todo.completed
+                              ? theme.colorScheme.primary
+                              : palette.secondaryIcon,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text(todo.text)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
         ],
       ),
     );

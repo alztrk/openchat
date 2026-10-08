@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
@@ -35,6 +34,7 @@ class ProjectSidebarSection extends StatelessWidget {
     required this.onCreateProject,
     required this.loading,
     required this.errorMessage,
+    this.onRetry,
     required this.emptyMessage,
   });
 
@@ -70,6 +70,7 @@ class ProjectSidebarSection extends StatelessWidget {
   final VoidCallback? onCreateProject;
   final bool loading;
   final String? errorMessage;
+  final VoidCallback? onRetry;
   final String emptyMessage;
 
   @override
@@ -100,20 +101,37 @@ class ProjectSidebarSection extends StatelessWidget {
               children: [
                 if (!collapsed) ...[
                   if (loading)
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(4, 7, 4, 4),
-                      child: LinearProgressIndicator(minHeight: 2),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 7, 4, 4),
+                      child: Semantics(
+                        liveRegion: true,
+                        label: context.openchatL10n.projectLoading,
+                        child: const LinearProgressIndicator(minHeight: 2),
+                      ),
                     )
                   else if (errorMessage != null)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(0, 6, 0, 2),
-                      child: Text(
-                        errorMessage!,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: palette.secondaryText,
-                          fontSize: 12,
-                          height: 18 / 12,
-                        ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              errorMessage!,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: palette.secondaryText,
+                                    fontSize: OpenChatTypography.metadata,
+                                    height: 18 / OpenChatTypography.metadata,
+                                  ),
+                            ),
+                          ),
+                          if (onRetry != null)
+                            IconButton(
+                              tooltip: l10n.retry,
+                              onPressed: onRetry,
+                              icon: const Icon(LucideIcons.refreshCw),
+                            ),
+                        ],
                       ),
                     )
                   else if (projects.isEmpty)
@@ -416,86 +434,89 @@ class _ProjectSidebarTile extends StatelessWidget {
       onWillAcceptWithDetails: (_) => onMoveConversationToProject != null,
       onAcceptWithDetails: (details) =>
           onMoveConversationToProject?.call(details.data, project.id),
-      builder: (context, candidates, _) => Semantics(
-        button: true,
-        enabled: onSelect != null,
-        selected: selected,
-        label: project.title,
-        child: Material(
-          color: selected || candidates.isNotEmpty
-              ? palette.selected
-              : Colors.transparent,
-          shape: RoundedRectangleBorder(
-            side: BorderSide.none,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: InkWell(
-            onTap: onSelect,
-            hoverColor: palette.selected,
-            borderRadius: BorderRadius.circular(6),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 32),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Row(
-                  children: [
-                    Icon(
-                      LucideIcons.folder,
-                      color: selected || candidates.isNotEmpty
-                          ? palette.text
-                          : palette.secondaryIcon,
-                      size: 15,
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        project.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: labelStyle,
-                        key: ValueKey<String>(
-                          'sidebar-project-label-${project.id}',
-                        ),
-                      ),
-                    ),
-                    if (onOpenOptions != null)
-                      _ProjectAction(
-                        label: l10n.projectOptions,
-                        onPressed: onOpenOptions,
-                        key: ValueKey<String>(
-                          'sidebar-project-options-${project.id}',
-                        ),
-                        child: Icon(
-                          LucideIcons.ellipsis,
-                          color: palette.secondaryIcon,
-                          size: 18,
-                        ),
-                      ),
-                    if (onCreateConversation != null)
-                      _ProjectAction(
-                        label: l10n.newProjectConversation,
-                        onPressed: onCreateConversation,
-                        key: ValueKey<String>(
-                          'sidebar-project-new-chat-${project.id}',
-                        ),
-                        child: SvgPicture.asset(
-                          Theme.of(context).brightness == Brightness.dark
-                              ? 'assets/icons/conversation/dark.svg'
-                              : 'assets/icons/conversation/light.svg',
-                          width: 18,
-                          height: 18,
-                          colorFilter: ColorFilter.mode(
-                            palette.secondaryIcon,
-                            BlendMode.srcIn,
+      builder: (context, candidates, _) => Focus(
+        child: Builder(
+          builder: (context) {
+            final focused = Focus.of(context).hasFocus;
+            return Semantics(
+              button: true,
+              enabled: onSelect != null,
+              selected: selected,
+              label: project.title,
+              onTap: onSelect,
+              child: Material(
+                color: selected || candidates.isNotEmpty
+                    ? palette.selected
+                    : Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  side: focused
+                      ? BorderSide(color: palette.focusRing, width: 2)
+                      : BorderSide.none,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: InkWell(
+                  onTap: onSelect,
+                  hoverColor: palette.selected,
+                  borderRadius: BorderRadius.circular(6),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 44),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Row(
+                        children: [
+                          Icon(
+                            LucideIcons.folder,
+                            color: selected || candidates.isNotEmpty
+                                ? palette.text
+                                : palette.secondaryIcon,
+                            size: 15,
                           ),
-                          excludeFromSemantics: true,
-                        ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              project.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: labelStyle,
+                              key: ValueKey<String>(
+                                'sidebar-project-label-${project.id}',
+                              ),
+                            ),
+                          ),
+                          if (onOpenOptions != null)
+                            _ProjectAction(
+                              label: l10n.projectOptions,
+                              onPressed: onOpenOptions,
+                              key: ValueKey<String>(
+                                'sidebar-project-options-${project.id}',
+                              ),
+                              child: Icon(
+                                LucideIcons.ellipsis,
+                                color: palette.secondaryIcon,
+                                size: 18,
+                              ),
+                            ),
+                          if (onCreateConversation != null)
+                            _ProjectAction(
+                              label: l10n.newProjectConversation,
+                              onPressed: onCreateConversation,
+                              key: ValueKey<String>(
+                                'sidebar-project-new-chat-${project.id}',
+                              ),
+                              child: Icon(
+                                LucideIcons.messageSquarePlus,
+                                color: palette.secondaryIcon,
+                                size: 18,
+                              ),
+                            ),
+                        ],
                       ),
-                  ],
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
@@ -516,29 +537,36 @@ class _ProjectAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      enabled: onPressed != null,
-      label: label,
-      child: ExcludeSemantics(
-        child: Tooltip(
-          message: label,
-          child: InkWell(
-            onTap: onPressed,
-            focusColor: OpenChatSemanticColors.of(context).focusRing
-                .withValues(alpha: 0.24),
-            borderRadius: BorderRadius.circular(6),
-            child: SizedBox.square(
-              dimension: switch (Theme.of(context).platform) {
-                TargetPlatform.android ||
-                TargetPlatform.iOS ||
-                TargetPlatform.fuchsia => 44,
-                _ => 32,
-              },
-              child: Center(child: child),
-            ),
+    final dimension = switch (Theme.of(context).platform) {
+      TargetPlatform.android ||
+      TargetPlatform.iOS ||
+      TargetPlatform.fuchsia => 44.0,
+      _ => 40.0,
+    };
+
+    return SizedBox.square(
+      dimension: dimension,
+      child: IconButton(
+        tooltip: label,
+        onPressed: onPressed,
+        padding: EdgeInsets.zero,
+        iconSize: 18,
+        constraints: BoxConstraints.tightFor(
+          width: dimension,
+          height: dimension,
+        ),
+        style: IconButton.styleFrom(
+          minimumSize: Size.square(dimension),
+          maximumSize: Size.square(dimension),
+          padding: EdgeInsets.zero,
+          tapTargetSize: dimension == 44
+              ? MaterialTapTargetSize.padded
+              : MaterialTapTargetSize.shrinkWrap,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(OpenChatRadii.control),
           ),
         ),
+        icon: child,
       ),
     );
   }
@@ -556,35 +584,14 @@ class _ShowMoreProjectConversations extends StatelessWidget {
   final VoidCallback? onPressed;
 
   @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      enabled: onPressed != null,
-      label: label,
-      child: ExcludeSemantics(
-        child: InkWell(
-          onTap: onPressed,
-          borderRadius: BorderRadius.circular(6),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 24),
-            child: Padding(
-              padding: const EdgeInsets.only(left: 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    height: 18 / 12,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => TextButton(
+    onPressed: onPressed,
+    style: TextButton.styleFrom(
+      minimumSize: const Size(40, 40),
+      padding: const EdgeInsets.only(left: 4, right: 8),
+      alignment: Alignment.centerLeft,
+      foregroundColor: color,
+    ),
+    child: Text(label, style: const TextStyle(fontSize: 13, height: 18 / 13)),
+  );
 }

@@ -449,7 +449,7 @@ class _UsageQuotasSettingsSectionState
             const SizedBox(width: 14),
             Expanded(
               child: Text(
-                l10n.oauthConnectionsLoadFailed,
+                l10n.usageQuotasLoadFailed,
                 style: TextStyle(color: palette.secondaryText, fontSize: 13),
               ),
             ),

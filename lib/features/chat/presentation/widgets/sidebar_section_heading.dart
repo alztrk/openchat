@@ -19,9 +19,9 @@ class SidebarSectionHeading extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
           color: palette.secondaryText,
-          fontSize: 12,
-          fontWeight: FontWeight.w400,
-          height: 18 / 12,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          height: 18 / 13,
         ),
       ),
     );

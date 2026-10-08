@@ -26,6 +26,7 @@ import 'package:openchat/features/chat/domain/chat_message.dart' as chat;
 import 'package:openchat/features/chat/domain/chat_attachment.dart';
 import 'package:openchat/features/chat/domain/chat_project.dart';
 import 'package:openchat/features/chat/domain/chat_saved_output.dart';
+import 'package:openchat/features/chat/domain/chat_workspace.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
 import 'package:openchat/features/chat/domain/default_model_preference.dart';
@@ -43,6 +44,7 @@ import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/features/settings/domain/chat_gpt_api_key_connection.dart';
 import 'package:openchat/features/settings/presentation/settings_screen.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
+import 'package:openchat/l10n/generated/app_localizations.dart';
 import 'package:openchat/platform/windows/openchat_service_client.dart';
 import 'package:openchat/platform/windows/user_question_notifications.dart';
 import 'package:openchat/platform/windows/window_controls.dart';
@@ -57,11 +59,17 @@ import 'package:openchat/features/chat/presentation/widgets/agent_run_manager_di
 import 'package:openchat/features/chat/presentation/widgets/create_project_dialog.dart';
 import 'package:openchat/features/chat/presentation/widgets/project_tool_permissions_dialog.dart';
 import 'package:openchat/features/chat/presentation/widgets/project_mcp_servers_dialog.dart';
+import 'package:openchat/features/chat/presentation/widgets/project_instructions_dialog.dart';
 import 'package:openchat/features/chat/presentation/widgets/project_worktrees_dialog.dart';
 
 const _localEngineProviderIds = <String>{'llama_cpp', 'vllm', 'exllama'};
 
-enum _ProjectOptionsAction { toolPermissions, mcpServers, worktrees }
+enum _ProjectOptionsAction {
+  instructions,
+  toolPermissions,
+  mcpServers,
+  worktrees,
+}
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
@@ -120,6 +128,15 @@ class _ChatScreenState extends State<ChatScreen> {
       widget.settingsPreferences ??
       SettingsPreferences(SharedPreferencesAsync());
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  final _settingsHeadingFocusNode = FocusNode(debugLabel: 'settings heading');
+  final _workspacesHeadingFocusNode = FocusNode(
+    debugLabel: 'workspaces heading',
+  );
+  final _outputsHeadingFocusNode = FocusNode(debugLabel: 'outputs heading');
+  final _modelsHeadingFocusNode = FocusNode(debugLabel: 'models heading');
+  final _localModelsHeadingFocusNode = FocusNode(
+    debugLabel: 'local models heading',
+  );
   final _searchController = TextEditingController();
   final _messageController = TextEditingController();
   final _messageScrollController = ScrollController();
@@ -202,6 +219,7 @@ class _ChatScreenState extends State<ChatScreen> {
   OpenChatServiceOperation? _activeChatOperation;
   Stream<List<ChatConversation>>? _conversationStream;
   Stream<List<ChatProject>>? _projectStream;
+  Stream<List<ChatWorkspace>>? _workspaceStream;
   Stream<List<chat.ChatMessage>>? _messageStream;
   Stream<List<FavoriteModel>>? _favoriteModelsStream;
   StreamSubscription<List<ChatSavedOutput>>? _savedOutputsSubscription;
@@ -326,6 +344,7 @@ class _ChatScreenState extends State<ChatScreen> {
         widget.historyStorageStatus != HistoryStorageStatus.available) {
       _conversationStream = null;
       _projectStream = null;
+      _workspaceStream = null;
       _messageStream = null;
       _favoriteModelsStream = null;
       _savedOutputKeys = <String>{};
@@ -334,6 +353,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     _conversationStream = repository.watchConversations();
     _projectStream = repository.watchProjects();
+    _workspaceStream = repository.watchWorkspaces();
     _favoriteModelsStream = repository.watchModelFavorites();
     _savedOutputsSubscription = repository.watchSavedOutputs().listen(
       (outputs) {
@@ -2576,6 +2596,56 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
+  void _requestPageHeadingFocus(FocusNode focusNode) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) focusNode.requestFocus();
+    });
+  }
+
+  void _openSettingsPage() {
+    setState(() {
+      _settingsOpen = true;
+      _workspacesOpen = false;
+      _outputsOpen = false;
+      _modelsPageOpen = false;
+      _localModelsPageOpen = false;
+    });
+    _requestPageHeadingFocus(_settingsHeadingFocusNode);
+  }
+
+  void _openWorkspacesPage() {
+    setState(() {
+      _workspacesOpen = true;
+      _settingsOpen = false;
+      _outputsOpen = false;
+      _modelsPageOpen = false;
+      _localModelsPageOpen = false;
+    });
+    _requestPageHeadingFocus(_workspacesHeadingFocusNode);
+  }
+
+  void _openOutputsPage() {
+    setState(() {
+      _outputsOpen = true;
+      _settingsOpen = false;
+      _workspacesOpen = false;
+      _modelsPageOpen = false;
+      _localModelsPageOpen = false;
+    });
+    _requestPageHeadingFocus(_outputsHeadingFocusNode);
+  }
+
+  void _openModelsPage() {
+    setState(() {
+      _modelsPageOpen = true;
+      _settingsOpen = false;
+      _workspacesOpen = false;
+      _outputsOpen = false;
+      _localModelsPageOpen = false;
+    });
+    _requestPageHeadingFocus(_modelsHeadingFocusNode);
+  }
+
   void _startProjectConversation(String projectId) {
     if (widget.historyStorageStatus != HistoryStorageStatus.available) return;
     _startNewConversation();
@@ -4338,6 +4408,13 @@ class _ChatScreenState extends State<ChatScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
+                leading: const Icon(LucideIcons.notebookPen),
+                title: Text(l10n.projectOptionsInstructions),
+                onTap: () =>
+                    Navigator.of(dialogContext)
+                        .pop(_ProjectOptionsAction.instructions),
+              ),
+              ListTile(
                 leading: const Icon(LucideIcons.hand),
                 title: Text(l10n.projectOptionsToolPermissions),
                 onTap: () =>
@@ -4370,6 +4447,18 @@ class _ChatScreenState extends State<ChatScreen> {
       },
     );
     if (!mounted || action == null) return;
+    if (action == _ProjectOptionsAction.instructions) {
+      final service = widget.serviceClient;
+      if (service == null) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => ProjectInstructionsDialog(
+          serviceClient: service,
+          projectId: projectId,
+        ),
+      );
+      return;
+    }
     if (action == _ProjectOptionsAction.toolPermissions) {
       await _openProjectToolPermissions(projectId);
       return;
@@ -5158,6 +5247,11 @@ class _ChatScreenState extends State<ChatScreen> {
     _searchController.dispose();
     _messageController.dispose();
     _messageScrollController.dispose();
+    _settingsHeadingFocusNode.dispose();
+    _workspacesHeadingFocusNode.dispose();
+    _outputsHeadingFocusNode.dispose();
+    _modelsHeadingFocusNode.dispose();
+    _localModelsHeadingFocusNode.dispose();
     final downloadController = _modelDownloadController;
     downloadController?.removeListener(_handleModelDownloadChanged);
     downloadController?.dispose();
@@ -5269,34 +5363,10 @@ class _ChatScreenState extends State<ChatScreen> {
                               modelsSelected:
                                   _modelsPageOpen || _localModelsPageOpen,
                               onOpenChat: _openChatSurface,
-                              onOpenSettings: () => setState(() {
-                                _settingsOpen = true;
-                                _workspacesOpen = false;
-                                _outputsOpen = false;
-                                _modelsPageOpen = false;
-                                _localModelsPageOpen = false;
-                              }),
-                              onOpenWorkspaces: () => setState(() {
-                                _workspacesOpen = true;
-                                _settingsOpen = false;
-                                _outputsOpen = false;
-                                _modelsPageOpen = false;
-                                _localModelsPageOpen = false;
-                              }),
-                              onOpenOutputs: () => setState(() {
-                                _outputsOpen = true;
-                                _settingsOpen = false;
-                                _workspacesOpen = false;
-                                _modelsPageOpen = false;
-                                _localModelsPageOpen = false;
-                              }),
-                              onOpenModels: () => setState(() {
-                                _modelsPageOpen = true;
-                                _settingsOpen = false;
-                                _workspacesOpen = false;
-                                _outputsOpen = false;
-                                _localModelsPageOpen = false;
-                              }),
+                              onOpenSettings: _openSettingsPage,
+                              onOpenWorkspaces: _openWorkspacesPage,
+                              onOpenOutputs: _openOutputsPage,
+                              onOpenModels: _openModelsPage,
                               onToggleTheme: _handleThemeToggle,
                               sidebarsCompact: _sidebarsCompact,
                               onToggleSidebars: () => setState(
@@ -5308,6 +5378,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                 child: _buildMainSurface(
                                   surfaceKey: 'settings',
                                   child: SettingsScreen(
+                                    pageHeadingFocusNode:
+                                        _settingsHeadingFocusNode,
                                     themeMode: widget.themeMode,
                                     locale: widget.locale,
                                     conversationWidth: widget.conversationWidth,
@@ -5359,14 +5431,21 @@ class _ChatScreenState extends State<ChatScreen> {
                                 child: _buildMainSurface(
                                   surfaceKey: 'models',
                                   child: ModelsPage(
+                                    pageHeadingFocusNode:
+                                        _modelsHeadingFocusNode,
                                     serviceClient: widget.serviceClient,
                                     downloadController:
                                         _modelDownloadController,
                                     settingsPreferences: _settingsPreferences,
-                                    onOpenLocalModels: () => setState(() {
-                                      _modelsPageOpen = false;
-                                      _localModelsPageOpen = true;
-                                    }),
+                                    onOpenLocalModels: () {
+                                      setState(() {
+                                        _modelsPageOpen = false;
+                                        _localModelsPageOpen = true;
+                                      });
+                                      _requestPageHeadingFocus(
+                                        _localModelsHeadingFocusNode,
+                                      );
+                                    },
                                   ),
                                 ),
                               )
@@ -5375,11 +5454,18 @@ class _ChatScreenState extends State<ChatScreen> {
                                 child: _buildMainSurface(
                                   surfaceKey: 'local-models',
                                   child: LocalModelsPage(
+                                    pageHeadingFocusNode:
+                                        _localModelsHeadingFocusNode,
                                     serviceClient: widget.serviceClient,
-                                    onOpenModelCatalog: () => setState(() {
-                                      _modelsPageOpen = true;
-                                      _localModelsPageOpen = false;
-                                    }),
+                                    onOpenModelCatalog: () {
+                                      setState(() {
+                                        _modelsPageOpen = true;
+                                        _localModelsPageOpen = false;
+                                      });
+                                      _requestPageHeadingFocus(
+                                        _modelsHeadingFocusNode,
+                                      );
+                                    },
                                   ),
                                 ),
                               )
@@ -5388,6 +5474,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                 child: _buildMainSurface(
                                   surfaceKey: 'workspaces',
                                   child: WorkspacesPage(
+                                    pageHeadingFocusNode:
+                                        _workspacesHeadingFocusNode,
                                     repository:
                                         resolvedStorageStatus ==
                                             HistoryStorageStatus.available
@@ -5410,6 +5498,8 @@ class _ChatScreenState extends State<ChatScreen> {
                                 child: _buildMainSurface(
                                   surfaceKey: 'outputs',
                                   child: OutputsPage(
+                                    pageHeadingFocusNode:
+                                        _outputsHeadingFocusNode,
                                     repository:
                                         resolvedStorageStatus ==
                                             HistoryStorageStatus.available
@@ -5532,6 +5622,7 @@ class _ChatScreenState extends State<ChatScreen> {
     required VoidCallback? onRetryStorage,
     bool showDivider = true,
   }) {
+    final l10n = context.openchatL10n;
     return StreamBuilder<List<ChatProject>>(
       stream: _projectStream,
       builder: (context, projectSnapshot) {
@@ -5554,7 +5645,10 @@ class _ChatScreenState extends State<ChatScreen> {
                           conversation.projectId == project.id &&
                           !conversation.isPinned,
                     )
-                    .map(_sidebarConversationFromModel)
+                    .map(
+                      (conversation) =>
+                          _sidebarConversationFromModel(conversation, l10n),
+                    )
                     .toList(growable: false),
               ),
             )
@@ -5605,16 +5699,32 @@ class _ChatScreenState extends State<ChatScreen> {
               !projectSnapshot.hasData &&
               !projectSnapshot.hasError,
           projectLoadError: projectSnapshot.hasError
-              ? context.openchatL10n.projectLoadFailed
+              ? l10n.projectLoadFailed
               : null,
+          onRetryProjects: widget.chatRepository == null
+              ? null
+              : () {
+                  final repository = widget.chatRepository;
+                  if (repository == null) return;
+                  setState(() => _projectStream = repository.watchProjects());
+                },
           pinnedConversations: pinnedConversations
-              .map(_sidebarConversationFromModel)
+              .map(
+                (conversation) =>
+                    _sidebarConversationFromModel(conversation, l10n),
+              )
               .toList(growable: false),
           conversations: unassignedConversations
-              .map(_sidebarConversationFromModel)
+              .map(
+                (conversation) =>
+                    _sidebarConversationFromModel(conversation, l10n),
+              )
               .toList(growable: false),
           archivedConversations: archivedConversations
-              .map(_sidebarConversationFromModel)
+              .map(
+                (conversation) =>
+                    _sidebarConversationFromModel(conversation, l10n),
+              )
               .toList(growable: false),
           selectedConversationId: selectedConversationId,
           selectionMode: _isSelectingConversations,
@@ -5673,13 +5783,42 @@ class _ChatScreenState extends State<ChatScreen> {
 
   ConversationSidebarConversation _sidebarConversationFromModel(
     ChatConversation conversation,
+    AppLocalizations l10n,
   ) {
+    final providerLabel = switch (conversation.providerId) {
+      'chatgpt' || 'chatgpt_api' => l10n.chatGptProvider,
+      'opencode' => l10n.openCodeProvider,
+      'gemini' => l10n.geminiProvider,
+      'groq' => l10n.groqProvider,
+      'cerebras' => l10n.cerebrasProvider,
+      'openrouter' => l10n.openRouterProvider,
+      'mistral' => l10n.mistralProvider,
+      'llama_cpp' || 'vllm' || 'exllama' => l10n.localModelsPageTitle,
+      _ => null,
+    };
+    final modelLabel = _firstOrNull(
+      _models.where(
+        (model) =>
+            model.providerId == conversation.providerId &&
+            model.id == conversation.modelId,
+      ),
+    )?.displayName;
+    final normalizedModelLabel = modelLabel?.trim();
+    final modelId = conversation.modelId?.trim();
+    final modelMetadata = <String>[
+      ?providerLabel,
+      if (normalizedModelLabel != null && normalizedModelLabel.isNotEmpty)
+        normalizedModelLabel,
+      if (normalizedModelLabel == null && modelId != null && modelId.isNotEmpty)
+        modelId,
+    ].join(' · ');
     return ConversationSidebarConversation(
       id: conversation.id,
       title: conversation.title,
       isPinned: conversation.isPinned,
       isArchived: conversation.isArchived,
       isBookmarked: conversation.isBookmarked,
+      providerLabel: modelMetadata.isEmpty ? null : modelMetadata,
       tags: conversation.tags,
     );
   }
@@ -5788,232 +5927,279 @@ class _ChatScreenState extends State<ChatScreen> {
         ? '$modelLabel · ${l10n.cachedCatalog}'
         : modelLabel;
 
-    return StreamBuilder<List<chat.ChatMessage>>(
-      stream: selectedConversation == null ? null : _messageStream,
-      builder: (context, messageSnapshot) {
-        final storedMessages = selectedConversation == null
-            ? const <chat.ChatMessage>[]
-            : messageSnapshot.data ?? const <chat.ChatMessage>[];
-        final messages =
-            _replacingAssistantMessageId != null &&
-                _activeChatConversationId == selectedConversation?.id
-            ? storedMessages
-                  .where(
-                    (message) => message.id != _replacingAssistantMessageId,
-                  )
-                  .toList(growable: false)
-            : storedMessages;
-        return StreamBuilder<List<FavoriteModel>>(
-          stream: _favoriteModelsStream,
-          builder: (context, favoriteSnapshot) {
-            final activeGoal =
-                _activeGoal?.conversationId == selectedConversation?.id
-                ? _activeGoal
-                : null;
-            final savedOutputMessageIds = <String>{
-              for (final message in messages)
-                if (selectedConversation != null &&
-                    _savedOutputKeys.contains(
-                      _savedOutputKey(selectedConversation.id, message.id),
-                    ))
-                  message.id,
-            };
-            final pendingSavedOutputMessageIds = <String>{
-              for (final message in messages)
-                if (selectedConversation != null &&
-                    _pendingSavedOutputKeys.contains(
-                      _savedOutputKey(selectedConversation.id, message.id),
-                    ))
-                  message.id,
-            };
-            return ConversationPane(
-              messageController: _messageController,
-              messageScrollController: _messageScrollController,
-              historySearchTargetMessageId:
-                  _historyTargetConversationId == _selectedConversationId
-                  ? _historyTargetMessageId
-                  : null,
-              historySearchTargetRequestId: _historyTargetRequestId,
-              onHistorySearchTargetHandled: _handleHistorySearchTarget,
-              showHistoryButton:
-                  MediaQuery.sizeOf(context).width <
-                  OpenChatSpacing.sidebarBreakpoint,
-              onOpenHistory: () => _scaffoldKey.currentState?.openDrawer(),
-              onSendMessage: () =>
-                  unawaited(_sendMessage(selectedConversation)),
-              onRetryResponse: selectedConversation == null
-                  ? null
-                  : (message) => unawaited(
-                      _sendMessage(
-                        selectedConversation,
-                        responseToReplace: message,
-                      ),
-                    ),
-              onBranchMessage:
-                  selectedConversation == null ||
-                      !canSend ||
-                      widget.chatRepository == null ||
-                      widget.serviceClient == null
-                  ? null
-                  : (message, editedContent) => _branchFromUserMessage(
-                      selectedConversation,
-                      message,
-                      editedContent,
-                    ),
-              onStopMessage: _stopMessage,
-              activeGoal: activeGoal,
-              isChangingGoal:
-                  _isChangingGoal ||
-                  (_isSending && activeGoal?.status != AgentGoalStatus.running),
-              onPauseOrResumeGoal: activeGoal == null
-                  ? null
-                  : () => unawaited(
-                      _toggleGoal(activeGoal, selectedConversation),
-                    ),
-              onStopGoal: activeGoal == null
-                  ? null
-                  : () => unawaited(_stopGoal(activeGoal)),
-              canSendMessage: canSend,
-              pendingAttachments: _pendingAttachments,
-              onAddAttachments: () => _pickAttachments(
-                supportsImages: selectedModel?.supportsImages ?? false,
-              ),
-              onRemoveAttachment: _removePendingAttachment,
-              attachmentsEnabled:
-                  widget.chatRepository?.supportsAttachments == true &&
-                  !_isSending,
-              isSending: _isSending,
-              isLoadingModels: _isLoadingModels,
-              models: modelOptions,
-              favoriteModels: favoriteSnapshot.data ?? const <FavoriteModel>[],
-              providerId: _providerFamily(routeProviderId),
-              isChatGptConnected: _isChatGptConnected,
-              chatGptFastModeEnabled: _chatGptFastModeEnabled,
-              chatGptFastModeAvailable:
-                  routeProviderId == 'chatgpt_api' ||
-                  (routeProviderId == 'chatgpt' &&
-                      selectedModel?.supportsFastMode == true),
-              chatGptFastModeLoading: _isLoadingChatGptFastMode,
-              chatGptFastModeSaving: _isSavingChatGptFastMode,
-              onChatGptFastModeChanged: (enabled) =>
-                  unawaited(_setChatGptFastMode(enabled)),
-              availableProviderIds: {
-                'opencode',
-                ..._localEngineProviderIds,
-                if (_isChatGptConnected) 'chatgpt',
-                ..._availableCompatibleProviderIds,
-              },
-              onProviderSelected: selectedConversation == null
-                  ? _selectProvider
-                  : null,
-              hiddenModelKeys: _hiddenModelKeys,
-              selectedModelId: selectedModelId,
-              selectedModelRouteKey: selectedModelRouteKey,
-              onModelSelected: _isUpdatingConversationModel
-                  ? null
-                  : _selectModel,
-              onModelFavoriteChanged:
-                  (
-                    providerId,
-                    modelId,
-                    displayName,
-                    sourceConnectionId,
-                    isFavorite,
-                  ) => unawaited(
-                    _setModelFavorite(
-                      providerId: providerId,
-                      modelId: modelId,
-                      displayName: displayName,
-                      sourceConnectionId: sourceConnectionId,
-                      isFavorite: isFavorite,
-                    ),
+    return StreamBuilder<List<ChatWorkspace>>(
+      stream: _workspaceStream,
+      builder: (context, workspaceSnapshot) {
+        final workspaceId = selectedConversation?.productWorkspaceId;
+        final productWorkspace = _firstOrNull(
+          (workspaceSnapshot.data ?? const <ChatWorkspace>[]).where(
+            (workspace) => workspace.id == workspaceId,
+          ),
+        );
+        return StreamBuilder<List<chat.ChatMessage>>(
+          stream: selectedConversation == null ? null : _messageStream,
+          builder: (context, messageSnapshot) {
+            final storedMessages = selectedConversation == null
+                ? const <chat.ChatMessage>[]
+                : messageSnapshot.data ?? const <chat.ChatMessage>[];
+            final messages =
+                _replacingAssistantMessageId != null &&
+                    _activeChatConversationId == selectedConversation?.id
+                ? storedMessages
+                      .where(
+                        (message) => message.id != _replacingAssistantMessageId,
+                      )
+                      .toList(growable: false)
+                : storedMessages;
+            return StreamBuilder<List<FavoriteModel>>(
+              stream: _favoriteModelsStream,
+              builder: (context, favoriteSnapshot) {
+                final activeGoal =
+                    _activeGoal?.conversationId == selectedConversation?.id
+                    ? _activeGoal
+                    : null;
+                final savedOutputMessageIds = <String>{
+                  for (final message in messages)
+                    if (selectedConversation != null &&
+                        _savedOutputKeys.contains(
+                          _savedOutputKey(selectedConversation.id, message.id),
+                        ))
+                      message.id,
+                };
+                final pendingSavedOutputMessageIds = <String>{
+                  for (final message in messages)
+                    if (selectedConversation != null &&
+                        _pendingSavedOutputKeys.contains(
+                          _savedOutputKey(selectedConversation.id, message.id),
+                        ))
+                      message.id,
+                };
+                return ConversationPane(
+                  messageController: _messageController,
+                  messageScrollController: _messageScrollController,
+                  historySearchTargetMessageId:
+                      _historyTargetConversationId == _selectedConversationId
+                      ? _historyTargetMessageId
+                      : null,
+                  historySearchTargetRequestId: _historyTargetRequestId,
+                  onHistorySearchTargetHandled: _handleHistorySearchTarget,
+                  showHistoryButton:
+                      MediaQuery.sizeOf(context).width <
+                      OpenChatSpacing.sidebarBreakpoint,
+                  onOpenHistory: () => _scaffoldKey.currentState?.openDrawer(),
+                  onSendMessage: () =>
+                      unawaited(_sendMessage(selectedConversation)),
+                  onRetryResponse: selectedConversation == null
+                      ? null
+                      : (message) => unawaited(
+                          _sendMessage(
+                            selectedConversation,
+                            responseToReplace: message,
+                          ),
+                        ),
+                  onBranchMessage:
+                      selectedConversation == null ||
+                          !canSend ||
+                          widget.chatRepository == null ||
+                          widget.serviceClient == null
+                      ? null
+                      : (message, editedContent) => _branchFromUserMessage(
+                          selectedConversation,
+                          message,
+                          editedContent,
+                        ),
+                  onStopMessage: _stopMessage,
+                  activeGoal: activeGoal,
+                  isChangingGoal:
+                      _isChangingGoal ||
+                      (_isSending &&
+                          activeGoal?.status != AgentGoalStatus.running),
+                  onPauseOrResumeGoal: activeGoal == null
+                      ? null
+                      : () => unawaited(
+                          _toggleGoal(activeGoal, selectedConversation),
+                        ),
+                  onStopGoal: activeGoal == null
+                      ? null
+                      : () => unawaited(_stopGoal(activeGoal)),
+                  canSendMessage: canSend,
+                  pendingAttachments: _pendingAttachments,
+                  onAddAttachments: () => _pickAttachments(
+                    supportsImages: selectedModel?.supportsImages ?? false,
                   ),
-              onFavoriteModelSelected: (favorite) =>
-                  unawaited(_selectFavoriteModel(favorite)),
-              reasoningOptions: reasoningOptions,
-              showReasoningSelector: selectedModel?.supportsReasoning ?? false,
-              onReasoningSelected: _selectReasoning,
-              selectedModelLabel: resolvedModelLabel,
-              modelsEmptyLabel: modelsEmptyLabel,
-              reasoningLevel: selectedReasoning,
-              toolPermissionMode: _toolPermissionMode,
-              onToolPermissionModeChanged:
-                  _isLoadingToolPermissionMode || _isSavingToolPermissionMode
-                  ? null
-                  : _selectToolPermissionMode,
-              toolPermissionRequest: _pendingToolPermissionRequest,
-              isRespondingToToolPermission: _isRespondingToToolPermission,
-              toolPermissionError: _toolPermissionError,
-              onApproveToolPermission: () =>
-                  unawaited(_respondToToolPermission(approved: true)),
-              onDenyToolPermission: () =>
-                  unawaited(_respondToToolPermission(approved: false)),
-              pendingQuestionGroups: _pendingQuestionGroups,
-              focusedQuestionGroupId: _focusedQuestionGroupId,
-              isResumingQuestion: _isResumingQuestion,
-              pendingQuestionError: _questionLoadFailed
-                  ? context.openchatL10n.userQuestionLoadFailed
-                  : null,
-              onRetryPendingQuestions: selectedConversation == null
-                  ? null
-                  : () => unawaited(
-                      _loadPendingQuestionGroups(selectedConversation.id),
-                    ),
-              onSubmitQuestionAnswers: selectedConversation == null
-                  ? null
-                  : (group, answers) => _submitQuestionAnswers(
-                      selectedConversation,
-                      group,
-                      answers,
-                    ),
-              conversationTitle: selectedConversation?.title,
-              conversationId: selectedConversation?.id,
-              contextProviderId: routeProviderId,
-              contextModelId: selectedModelId,
-              contextSupportsTools: selectedModel?.supportsTools,
-              contextWindow: selectedModel?.contextWindow,
-              contextConnectionId: routeConnectionId ?? routeApiKeyConnectionId,
-              contextWorkspaceId: routeWorkspaceId,
-              conversationMemoryRepository: _conversationMemoryRepository,
-              fileChangesRepository: _chatFileChangesRepository,
-              conversationFileChanges:
-                  selectedConversation?.id == _fileChangesConversationId
-                  ? _conversationFileChanges
-                  : const <ChatFileChange>[],
-              fileChangesRevision: _fileChangesRevision,
-              isFileChangesPanelOpen: _isFileChangesPanelOpen,
-              onOpenFileChanges: _openConversationFileChanges,
-              onCloseFileChanges: _closeConversationFileChanges,
-              onFileChangesUpdated: selectedConversation == null
-                  ? null
-                  : (changes) => _updateConversationFileChanges(
-                      selectedConversation.id,
-                      changes,
-                    ),
-              settingsPreferences: _settingsPreferences,
-              titleEditRequestId: _titleEditRequestId,
-              onRenameConversation: _renameConversation,
-              onConversationTitleEditFinished: _finishConversationTitleEdit,
-              assistantModelLabel: modelLabel,
-              messages: messages,
-              savedOutputMessageIds: savedOutputMessageIds,
-              pendingSavedOutputMessageIds: pendingSavedOutputMessageIds,
-              onToggleSavedOutput: selectedConversation == null
-                  ? null
-                  : (message) => unawaited(
-                      _toggleSavedOutput(selectedConversation, message),
-                    ),
-              showAssistantLoading:
-                  _isSending &&
-                  _activeChatConversationId != null &&
-                  _activeChatConversationId == _selectedConversationId,
-              messagesLoading:
-                  selectedConversation != null &&
-                  !messageSnapshot.hasData &&
-                  !messageSnapshot.hasError,
-              messagesErrorDescription: messageSnapshot.hasError
-                  ? context.openchatL10n.messageHistoryLoadFailed
-                  : null,
+                  onRemoveAttachment: _removePendingAttachment,
+                  attachmentsEnabled:
+                      widget.chatRepository?.supportsAttachments == true &&
+                      !_isSending,
+                  isSending: _isSending,
+                  isLoadingModels: _isLoadingModels || _isLoadingConnections,
+                  hasAvailableModels: modelOptions.any(
+                    (model) => model.isAvailable,
+                  ),
+                  modelCatalogFailed:
+                      _modelLoadError != null && _modelLoadError != 'empty',
+                  onOpenConnections: _openSettingsPage,
+                  onRetryModels: () {
+                    final conversationId = _selectedConversationId;
+                    if (conversationId == null) {
+                      unawaited(_loadProviderState(forceRefresh: true));
+                    } else {
+                      unawaited(
+                        _loadConversationModels(
+                          conversationId,
+                          forceRefresh: true,
+                        ),
+                      );
+                    }
+                  },
+                  models: modelOptions,
+                  favoriteModels:
+                      favoriteSnapshot.data ?? const <FavoriteModel>[],
+                  providerId: _providerFamily(routeProviderId),
+                  isChatGptConnected: _isChatGptConnected,
+                  chatGptFastModeEnabled: _chatGptFastModeEnabled,
+                  chatGptFastModeAvailable:
+                      routeProviderId == 'chatgpt_api' ||
+                      (routeProviderId == 'chatgpt' &&
+                          selectedModel?.supportsFastMode == true),
+                  chatGptFastModeLoading: _isLoadingChatGptFastMode,
+                  chatGptFastModeSaving: _isSavingChatGptFastMode,
+                  onChatGptFastModeChanged: (enabled) =>
+                      unawaited(_setChatGptFastMode(enabled)),
+                  availableProviderIds: {
+                    'opencode',
+                    ..._localEngineProviderIds,
+                    if (_isChatGptConnected) 'chatgpt',
+                    ..._availableCompatibleProviderIds,
+                  },
+                  onProviderSelected: selectedConversation == null
+                      ? _selectProvider
+                      : null,
+                  hiddenModelKeys: _hiddenModelKeys,
+                  selectedModelId: selectedModelId,
+                  selectedModelRouteKey: selectedModelRouteKey,
+                  onModelSelected: _isUpdatingConversationModel
+                      ? null
+                      : _selectModel,
+                  onModelFavoriteChanged:
+                      (
+                        providerId,
+                        modelId,
+                        displayName,
+                        sourceConnectionId,
+                        isFavorite,
+                      ) => unawaited(
+                        _setModelFavorite(
+                          providerId: providerId,
+                          modelId: modelId,
+                          displayName: displayName,
+                          sourceConnectionId: sourceConnectionId,
+                          isFavorite: isFavorite,
+                        ),
+                      ),
+                  onFavoriteModelSelected: (favorite) =>
+                      unawaited(_selectFavoriteModel(favorite)),
+                  reasoningOptions: reasoningOptions,
+                  showReasoningSelector:
+                      selectedModel?.supportsReasoning ?? false,
+                  onReasoningSelected: _selectReasoning,
+                  selectedModelLabel: resolvedModelLabel,
+                  modelsEmptyLabel: modelsEmptyLabel,
+                  reasoningLevel: selectedReasoning,
+                  toolPermissionMode: _toolPermissionMode,
+                  onToolPermissionModeChanged:
+                      _isLoadingToolPermissionMode ||
+                          _isSavingToolPermissionMode
+                      ? null
+                      : _selectToolPermissionMode,
+                  toolPermissionRequest: _pendingToolPermissionRequest,
+                  isRespondingToToolPermission: _isRespondingToToolPermission,
+                  toolPermissionError: _toolPermissionError,
+                  onApproveToolPermission: () =>
+                      unawaited(_respondToToolPermission(approved: true)),
+                  onDenyToolPermission: () =>
+                      unawaited(_respondToToolPermission(approved: false)),
+                  pendingQuestionGroups: _pendingQuestionGroups,
+                  focusedQuestionGroupId: _focusedQuestionGroupId,
+                  isResumingQuestion: _isResumingQuestion,
+                  pendingQuestionError: _questionLoadFailed
+                      ? context.openchatL10n.userQuestionLoadFailed
+                      : null,
+                  onRetryPendingQuestions: selectedConversation == null
+                      ? null
+                      : () => unawaited(
+                          _loadPendingQuestionGroups(selectedConversation.id),
+                        ),
+                  onSubmitQuestionAnswers: selectedConversation == null
+                      ? null
+                      : (group, answers) => _submitQuestionAnswers(
+                          selectedConversation,
+                          group,
+                          answers,
+                        ),
+                  conversationTitle: selectedConversation?.title,
+                  conversationId: selectedConversation?.id,
+                  contextProviderId: routeProviderId,
+                  contextModelId: selectedModelId,
+                  contextSupportsTools: selectedModel?.supportsTools,
+                  contextWindow: selectedModel?.contextWindow,
+                  contextConnectionId:
+                      routeConnectionId ?? routeApiKeyConnectionId,
+                  contextWorkspaceId: routeWorkspaceId,
+                  productWorkspaceName: productWorkspace?.name,
+                  conversationMemoryRepository: _conversationMemoryRepository,
+                  fileChangesRepository: _chatFileChangesRepository,
+                  conversationFileChanges:
+                      selectedConversation?.id == _fileChangesConversationId
+                      ? _conversationFileChanges
+                      : const <ChatFileChange>[],
+                  fileChangesRevision: _fileChangesRevision,
+                  isFileChangesPanelOpen: _isFileChangesPanelOpen,
+                  onOpenFileChanges: _openConversationFileChanges,
+                  onCloseFileChanges: _closeConversationFileChanges,
+                  onFileChangesUpdated: selectedConversation == null
+                      ? null
+                      : (changes) => _updateConversationFileChanges(
+                          selectedConversation.id,
+                          changes,
+                        ),
+                  settingsPreferences: _settingsPreferences,
+                  titleEditRequestId: _titleEditRequestId,
+                  onRenameConversation: _renameConversation,
+                  onConversationTitleEditFinished: _finishConversationTitleEdit,
+                  assistantModelLabel: modelLabel,
+                  messages: messages,
+                  savedOutputMessageIds: savedOutputMessageIds,
+                  pendingSavedOutputMessageIds: pendingSavedOutputMessageIds,
+                  onToggleSavedOutput: selectedConversation == null
+                      ? null
+                      : (message) => unawaited(
+                          _toggleSavedOutput(selectedConversation, message),
+                        ),
+                  showAssistantLoading:
+                      _isSending &&
+                      _activeChatConversationId != null &&
+                      _activeChatConversationId == _selectedConversationId,
+                  messagesLoading:
+                      selectedConversation != null &&
+                      !messageSnapshot.hasData &&
+                      !messageSnapshot.hasError,
+                  messagesErrorDescription: messageSnapshot.hasError
+                      ? context.openchatL10n.messageHistoryLoadFailed
+                      : null,
+                  onRetryMessageHistory: selectedConversation == null
+                      ? null
+                      : () {
+                          final repository = widget.chatRepository;
+                          if (repository == null) return;
+                          setState(() {
+                            _messageStream = repository.watchMessages(
+                              selectedConversation.id,
+                            );
+                          });
+                        },
+                );
+              },
             );
           },
         );

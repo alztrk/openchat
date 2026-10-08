@@ -18,11 +18,13 @@ class LocalModelsPage extends StatefulWidget {
   const LocalModelsPage({
     required this.serviceClient,
     required this.onOpenModelCatalog,
+    this.pageHeadingFocusNode,
     super.key,
   });
 
   final OpenChatServiceClient? serviceClient;
   final VoidCallback onOpenModelCatalog;
+  final FocusNode? pageHeadingFocusNode;
 
   @override
   State<LocalModelsPage> createState() => _LocalModelsPageState();
@@ -119,11 +121,12 @@ class _LocalModelsPageState extends State<LocalModelsPage> {
               OpenChatPageHeader(
                 title: l10n.localModelsPageTitle,
                 description: l10n.localModelsPageDescription,
+                focusNode: widget.pageHeadingFocusNode,
                 actions: [
                   TextButton.icon(
                     onPressed: widget.onOpenModelCatalog,
                     icon: const Icon(LucideIcons.arrowLeft),
-                    label: Text(l10n.models),
+                    label: Text(l10n.modelLibrary),
                   ),
                   reloadButton,
                 ],
@@ -131,9 +134,29 @@ class _LocalModelsPageState extends State<LocalModelsPage> {
               const SizedBox(height: 20),
               ChatSurfaceCard(
                 child: switch (_pageState) {
-                  _LocalModelsLoadState.loading => const Padding(
+                  _LocalModelsLoadState.loading => Padding(
                     padding: EdgeInsets.all(32),
-                    child: Center(child: CircularProgressIndicator()),
+                    child: Center(
+                      child: Semantics(
+                        liveRegion: true,
+                        label: l10n.localModelsLoading,
+                        child: ExcludeSemantics(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(l10n.localModelsLoading),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   ),
                   _LocalModelsLoadState.unavailable => _MessageState(
                     icon: LucideIcons.cloudOff,
@@ -336,7 +359,13 @@ class _MessageState extends StatelessWidget {
         children: [
           Icon(icon, color: palette.secondaryIcon, size: 24),
           const SizedBox(height: 10),
-          Text(message, textAlign: TextAlign.center),
+          Semantics(
+            liveRegion: true,
+            label: message,
+            child: ExcludeSemantics(
+              child: Text(message, textAlign: TextAlign.center),
+            ),
+          ),
           if (action != null && actionText != null) ...[
             const SizedBox(height: 14),
             OutlinedButton.icon(

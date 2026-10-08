@@ -14,6 +14,7 @@ import 'package:openchat/app/safe_markdown.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_surface_card.dart';
 import 'package:openchat/features/models/data/hugging_face_models_repository.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
+import 'package:openchat/l10n/generated/app_localizations.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/platform/windows/openchat_service_client.dart';
 
@@ -23,6 +24,7 @@ class ModelsPage extends StatefulWidget {
     required this.downloadController,
     required this.settingsPreferences,
     required this.onOpenLocalModels,
+    this.pageHeadingFocusNode,
     super.key,
   });
 
@@ -30,6 +32,7 @@ class ModelsPage extends StatefulWidget {
   final HuggingFaceDownloadController? downloadController;
   final SettingsPreferences settingsPreferences;
   final VoidCallback onOpenLocalModels;
+  final FocusNode? pageHeadingFocusNode;
 
   @override
   State<ModelsPage> createState() => _ModelsPageState();
@@ -386,8 +389,9 @@ class _ModelsPageState extends State<ModelsPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               OpenChatPageHeader(
-                title: l10n.models,
+                title: l10n.modelLibrary,
                 description: l10n.modelsPageDescription,
+                focusNode: widget.pageHeadingFocusNode,
                 actions: [
                   OutlinedButton.icon(
                     onPressed: widget.onOpenLocalModels,
@@ -404,15 +408,20 @@ class _ModelsPageState extends State<ModelsPage> {
                 onChanged: _scheduleSearch,
                 onSubmitted: (_) => unawaited(_searchModels()),
                 decoration: InputDecoration(
+                  labelText: l10n.searchModels,
                   hintText: l10n.huggingFaceModelSearchHint,
                   prefixIcon: const Icon(LucideIcons.search),
                   suffixIcon: _isSearching
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                      ? Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Semantics(
+                            liveRegion: true,
+                            label: l10n.modelsLoading,
+                            child: SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
                           ),
                         )
                       : IconButton(
@@ -585,7 +594,13 @@ class _ModelsPageState extends State<ModelsPage> {
                     onRetry: () => unawaited(_retrySearch()),
                   )
                 : _isSearching && _models.isEmpty
-                ? const Center(child: CircularProgressIndicator())
+                ? Center(
+                    child: Semantics(
+                      liveRegion: true,
+                      label: l10n.modelsLoading,
+                      child: const CircularProgressIndicator(),
+                    ),
+                  )
                 : _models.isEmpty
                 ? _emptyState(l10n.modelSearchEmpty, LucideIcons.searchX)
                 : ListView.separated(
@@ -596,77 +611,94 @@ class _ModelsPageState extends State<ModelsPage> {
                     itemBuilder: (context, index) {
                       final model = _models[index];
                       final selected = model.repoId == _selectedModel?.repoId;
-                      return Material(
-                        key: ValueKey(model.repoId),
-                        color: selected ? palette.selected : Colors.transparent,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(
-                            OpenChatRadii.control,
-                          ),
-                          side: BorderSide(
-                            color: selected
-                                ? palette.accent
-                                : Colors.transparent,
-                          ),
-                        ),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(
-                            OpenChatRadii.control,
-                          ),
-                          onTap: () => unawaited(_selectModel(model)),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 11,
-                            ),
-                            child: Row(
-                              children: [
-                                _publisherAvatar(model.repoId, palette),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        model.repoId,
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: palette.text,
-                                          fontWeight: selected
-                                              ? FontWeight.w600
-                                              : FontWeight.w500,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        '${l10n.modelDownloadsLabel}: ${NumberFormat.compact().format(model.downloads)}',
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodySmall,
-                                      ),
-                                    ],
+                      return Focus(
+                        child: Builder(
+                          builder: (context) {
+                            final focused = Focus.of(context).hasFocus;
+                            return Semantics(
+                              button: true,
+                              selected: selected,
+                              label: model.repoId,
+                              child: Material(
+                                key: ValueKey(model.repoId),
+                                color: selected
+                                    ? palette.selected
+                                    : Colors.transparent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(
+                                    OpenChatRadii.control,
+                                  ),
+                                  side: BorderSide(
+                                    color: focused
+                                        ? palette.focusRing
+                                        : selected
+                                        ? palette.accent
+                                        : Colors.transparent,
+                                    width: focused ? 2 : 1,
                                   ),
                                 ),
-                                if (model.gated || model.private)
-                                  Icon(
-                                    LucideIcons.lockKeyhole,
-                                    size: 17,
-                                    color: palette.secondaryIcon,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(
+                                    OpenChatRadii.control,
                                   ),
-                                if (selected) ...[
-                                  if (model.gated || model.private)
-                                    const SizedBox(width: 6),
-                                  Icon(
-                                    LucideIcons.circleCheck,
-                                    size: 18,
-                                    color: palette.accent,
+                                  onTap: () => unawaited(_selectModel(model)),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 11,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        _publisherAvatar(model.repoId, palette),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                _modelDisplayName(model.repoId),
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  color: palette.text,
+                                                  fontWeight: selected
+                                                      ? FontWeight.w600
+                                                      : FontWeight.w500,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                _modelCardMetadata(model, l10n),
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        if (model.gated || model.private)
+                                          Icon(
+                                            LucideIcons.lockKeyhole,
+                                            size: 17,
+                                            color: palette.secondaryIcon,
+                                          ),
+                                        if (selected) ...[
+                                          if (model.gated || model.private)
+                                            const SizedBox(width: 6),
+                                          Icon(
+                                            LucideIcons.circleCheck,
+                                            size: 18,
+                                            color: palette.accent,
+                                          ),
+                                        ],
+                                      ],
+                                    ),
                                   ),
-                                ],
-                              ],
-                            ),
-                          ),
+                                ),
+                              ),
+                            );
+                          },
                         ),
                       );
                     },
@@ -1202,11 +1234,17 @@ class _ModelsPageState extends State<ModelsPage> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (loading)
-                const CircularProgressIndicator()
+                const ExcludeSemantics(child: CircularProgressIndicator())
               else if (icon != null)
                 Icon(icon, color: palette.secondaryIcon, size: 28),
               const SizedBox(height: 12),
-              Text(message, textAlign: TextAlign.center),
+              Semantics(
+                liveRegion: true,
+                label: message,
+                child: ExcludeSemantics(
+                  child: Text(message, textAlign: TextAlign.center),
+                ),
+              ),
               if (onRetry != null) ...[
                 const SizedBox(height: 12),
                 OutlinedButton.icon(
@@ -1221,6 +1259,27 @@ class _ModelsPageState extends State<ModelsPage> {
       ),
     );
   }
+}
+
+String _modelDisplayName(String repoId) {
+  final modelName = repoId.split('/').last.trim();
+  return modelName.isEmpty ? repoId : modelName;
+}
+
+String _modelCardMetadata(
+  HuggingFaceModelSearchResult model,
+  AppLocalizations l10n,
+) {
+  final publisher = _modelPublisherName(model.repoId);
+  final downloads =
+      '${l10n.modelDownloadsLabel}: ${NumberFormat.compact().format(model.downloads)}';
+  return publisher == null ? downloads : '$publisher · $downloads';
+}
+
+String? _modelPublisherName(String repoId) {
+  final separator = repoId.indexOf('/');
+  if (separator <= 0) return null;
+  return repoId.substring(0, separator);
 }
 
 class _ModelReadmeContent extends StatefulWidget {

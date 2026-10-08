@@ -321,6 +321,15 @@ fn archived_memory_search_scales_to_large_conversations() {
                     created_at INTEGER,
                     tool_activities TEXT NOT NULL DEFAULT '[]'
                 );
+                CREATE TABLE conversation_memory_archive_settings (
+                    conversation_id TEXT PRIMARY KEY NOT NULL,
+                    included INTEGER NOT NULL
+                );
+                CREATE TABLE conversation_memory_excluded_tools (
+                    conversation_id TEXT NOT NULL,
+                    tool_name TEXT NOT NULL,
+                    PRIMARY KEY (conversation_id, tool_name)
+                );
                 CREATE TABLE conversation_memory_index_state (
                     conversation_id TEXT PRIMARY KEY NOT NULL,
                     backfilled_at_unix_ms INTEGER NOT NULL

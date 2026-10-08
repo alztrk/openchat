@@ -125,10 +125,16 @@ class _RequestDetails extends StatelessWidget {
         style: theme.textTheme.titleSmall?.copyWith(color: palette.text),
       ),
       const SizedBox(height: 3),
-      Text(
-        l10n.toolPermissionRequestDescription,
-        style: theme.textTheme.bodySmall?.copyWith(
-          color: palette.secondaryText,
+      Semantics(
+        liveRegion: true,
+        label: l10n.toolPermissionRequestDescription,
+        child: ExcludeSemantics(
+          child: Text(
+            l10n.toolPermissionRequestDescription,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: palette.secondaryText,
+            ),
+          ),
         ),
       ),
       const SizedBox(height: 7),
@@ -178,7 +184,7 @@ class _RequestDetails extends StatelessWidget {
         Text(
           message,
           style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.error,
+          color: palette.destructive,
           ),
         ),
       ],
@@ -209,7 +215,9 @@ class _RequestActions extends StatelessWidget {
     children: [
       Semantics(
         button: true,
+        enabled: !isResponding && onDeny != null,
         label: denyLabel,
+        onTap: isResponding ? null : onDeny,
         excludeSemantics: true,
         child: TextButton(
           onPressed: isResponding ? null : onDeny,
@@ -218,7 +226,9 @@ class _RequestActions extends StatelessWidget {
       ),
       Semantics(
         button: true,
+        enabled: !isResponding && onApprove != null,
         label: approveLabel,
+        onTap: isResponding ? null : onApprove,
         excludeSemantics: true,
         child: FilledButton(
           onPressed: isResponding ? null : onApprove,
@@ -252,7 +262,7 @@ String _toolName(String name, AppLocalizations l10n) => switch (name) {
   'git_history' => l10n.toolGitHistory,
   'web_search' => l10n.toolWebSearch,
   'read_url_content' || 'read_url' => l10n.toolReadUrlContent,
-  _ => name,
+  _ => l10n.unknownTool,
 };
 
 class _RequestArgument extends StatelessWidget {

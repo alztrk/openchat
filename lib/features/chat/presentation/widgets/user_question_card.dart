@@ -336,17 +336,24 @@ class _QuestionInput extends StatelessWidget {
             ),
           )
         else
-          TextField(
-            controller: controller,
-            enabled: enabled,
-            autofocus: autofocus,
-            maxLength: question.maxLength,
-            minLines: 2,
-            maxLines: 5,
-            onChanged: onChanged,
-            decoration: InputDecoration(
-              hintText: question.placeholder,
-              border: const OutlineInputBorder(),
+          Semantics(
+            label: question.title,
+            hint: <String>[
+              if (question.required) requiredLabel,
+              ?question.description,
+            ].join('. '),
+            child: TextField(
+              controller: controller,
+              enabled: enabled,
+              autofocus: autofocus,
+              maxLength: question.maxLength,
+              minLines: 2,
+              maxLines: 5,
+              onChanged: onChanged,
+              decoration: InputDecoration(
+                hintText: question.placeholder,
+                border: const OutlineInputBorder(),
+              ),
             ),
           ),
       ],

@@ -152,19 +152,24 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
         selected: widget.selected,
         label: <String>[
           widget.conversation.title,
+          ?widget.conversation.providerLabel,
           ...widget.conversation.tags,
           if (widget.conversation.isBookmarked) l10n.conversationBookmarked,
         ].join(', '),
         onTap: widget.onPressed,
         child: Material(
           color: widget.selected ? palette.selected : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(6),
+            side: _focused
+                ? BorderSide(color: palette.focusRing, width: 2)
+                : BorderSide.none,
+          ),
+          clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: widget.onPressed,
             onFocusChange: (focused) => setState(() => _focused = focused),
             hoverColor: palette.selected,
-            focusColor: OpenChatSemanticColors.of(context).focusRing
-                .withValues(alpha: 0.24),
             borderRadius: BorderRadius.circular(6),
             child: ConstrainedBox(
               constraints: BoxConstraints(minHeight: 44),
@@ -198,18 +203,36 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                       const SizedBox(width: 6),
                     ],
                     Expanded(
-                      child: Text(
-                        widget.conversation.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: palette.text,
-                          fontSize: 13,
-                          fontWeight: widget.selected
-                              ? FontWeight.w500
-                              : FontWeight.w400,
-                          height: 18 / 13,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            widget.conversation.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: palette.text,
+                              fontSize: 13,
+                              fontWeight: widget.selected
+                                  ? FontWeight.w500
+                                  : FontWeight.w400,
+                              height: 18 / 13,
+                            ),
+                          ),
+                          if (widget.conversation.providerLabel
+                              case final providerLabel?)
+                            Text(
+                              providerLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: palette.secondaryText,
+                                fontSize: OpenChatTypography.metadata,
+                                height: 16 / OpenChatTypography.metadata,
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                     if (widget.conversation.tags.isNotEmpty)
@@ -241,7 +264,9 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                           ignoring: !showActions,
                           child: AnimatedOpacity(
                             opacity: showActions ? 1 : 0,
-                            duration: const Duration(milliseconds: 120),
+                            duration: MediaQuery.disableAnimationsOf(context)
+                                ? Duration.zero
+                                : const Duration(milliseconds: 120),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
@@ -325,9 +350,15 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                                             onPressed: onDelete,
                                           ),
                                       ],
-                                      builder: (context, controller, _) =>
-                                          IconButton(
+                                      builder:
+                                          (
+                                            context,
+                                            controller,
+                                            _,
+                                            focusNode,
+                                          ) => IconButton(
                                             tooltip: l10n.moreOptions,
+                                            focusNode: focusNode,
                                             visualDensity:
                                                 VisualDensity.compact,
                                             padding: EdgeInsets.zero,

@@ -1,4 +1,4 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -16,7 +16,9 @@ pub(crate) const START_GOAL_TOOL_NAME: &str = "start_goal";
 pub(crate) const STOP_GOAL_TOOL_NAME: &str = "stop_goal";
 pub(crate) const MAX_OBJECTIVE_BYTES: usize = 16 * 1024;
 const MAX_PROGRESS_BYTES: usize = 8 * 1024;
-const CONTINUATION_PROMPT: &str = "Continue working on the user's goal. Do not treat this continuation message as a new goal. Make concrete progress, use available tools when useful, and call goal_update when you have progress, completion, or need user input.";
+const MAX_TODO_ITEMS: usize = 20;
+const MAX_TODO_TEXT_BYTES: usize = 512;
+const CONTINUATION_PROMPT: &str = "Continue working on the user's goal. Do not treat this continuation message as a new goal. Make concrete progress, use available tools when useful, and call goal_update with a concise summary and the current durable task list when there is progress, completion, or a need for user input.";
 
 #[derive(Clone, Debug)]
 pub(crate) enum GoalDecision {
@@ -31,10 +33,18 @@ pub(crate) struct GoalExecution {
     pub(crate) conversation_id: String,
     pub(crate) objective: String,
     pub(crate) progress: String,
+    pub(crate) todos: Vec<GoalTodo>,
     pub(crate) started_at_unix_ms: i64,
     pub(crate) checkpoint_revision: i64,
     pub(crate) checkpoint: Value,
     pub(crate) decision: GoalDecision,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct GoalTodo {
+    text: String,
+    completed: bool,
 }
 
 #[derive(Deserialize)]
@@ -42,6 +52,8 @@ pub(crate) struct GoalExecution {
 struct GoalControlArguments {
     state: String,
     summary: String,
+    #[serde(default)]
+    todos: Vec<GoalTodo>,
 }
 
 #[derive(Deserialize)]
@@ -79,6 +91,7 @@ pub(crate) fn initial_checkpoint(checkpoint: &mut Value, objective: &str, starte
     checkpoint["goal"] = json!({
         "objective": objective,
         "progress": "",
+        "todos": [],
         "state": "running",
         "pauseReason": Value::Null,
         "startedAtUnixMs": started_at_unix_ms,
@@ -98,6 +111,18 @@ pub(crate) fn execution_from_run(run: AgentRun) -> Result<GoalExecution, Service
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_owned();
+    let todos = goal
+        .get("todos")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| serde_json::from_value(item.clone()).map_err(|_| checkpoint_error()))
+                .collect::<Result<Vec<GoalTodo>, ServiceError>>()
+        })
+        .transpose()?
+        .unwrap_or_default();
+    validate_todos(&todos).map_err(|_| checkpoint_error())?;
     let started_at_unix_ms = goal
         .get("startedAtUnixMs")
         .and_then(Value::as_i64)
@@ -108,6 +133,7 @@ pub(crate) fn execution_from_run(run: AgentRun) -> Result<GoalExecution, Service
         conversation_id: run.conversation_id,
         objective,
         progress,
+        todos,
         started_at_unix_ms,
         checkpoint_revision: run.checkpoint_revision,
         checkpoint,
@@ -129,6 +155,19 @@ pub(crate) fn control_tool_definition() -> ToolDefinition {
                 "summary": {
                     "type": "string",
                     "maxLength": MAX_PROGRESS_BYTES
+                },
+                "todos": {
+                    "type": "array",
+                    "maxItems": MAX_TODO_ITEMS,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "text": {"type": "string", "minLength": 1, "maxLength": MAX_TODO_TEXT_BYTES},
+                            "completed": {"type": "boolean"}
+                        },
+                        "required": ["text", "completed"],
+                        "additionalProperties": false
+                    }
                 }
             },
             "required": ["state", "summary"],
@@ -180,7 +219,7 @@ pub(crate) fn append_goal_tool_instructions(instructions: &mut String) {
 }
 
 pub(crate) fn append_goal_instructions(instructions: &mut String, objective: &str) {
-    instructions.push_str("\n\nGoal mode is active. Keep working on the current objective across model turns until it is complete or you cannot continue without user input. The objective may come from a user `/goal` message or a `start_goal` call. Use `goal_update` after meaningful progress with state `continue`; use `completed` only after verifying the goal is done; use `blocked` or `needs_user` when a real external blocker or user decision prevents progress. After reporting `completed`, `blocked`, or `needs_user`, provide a concise visible summary and take no further actions. Do not claim completion without evidence. If a turn ends without a goal update, the client will ask you to continue.");
+    instructions.push_str("\n\nGoal mode is active. Keep working on the current objective across model turns until it is complete or you cannot continue without user input. The objective may come from a user `/goal` message or a `start_goal` call. Use `goal_update` after meaningful progress with state `continue`; include a concise, current `todos` list of at most 20 objects with `text` and `completed` fields so the checklist survives interruptions. Use `completed` only after verifying the goal is done; use `blocked` or `needs_user` when a real external blocker or user decision prevents progress. After reporting `completed`, `blocked`, or `needs_user`, provide a concise visible summary and take no further actions. Do not claim completion without evidence. If a turn ends without a goal update, the client will ask you to continue.");
     instructions.push_str("\n\nGoal objective: ");
     instructions.push_str(objective);
 }
@@ -371,6 +410,9 @@ pub(crate) async fn process_control_calls(
                         }
                     };
                     active_goal.progress = summary;
+                    validate_todos(&arguments.todos)
+                        .map_err(|message| invalid_control_arguments(message))?;
+                    active_goal.todos = arguments.todos;
                     active_goal.decision = decision;
                     set_checkpoint_goal_state(active_goal, state, pause_reason.clone());
                     save_progress(storage, active_goal)?;
@@ -599,6 +641,7 @@ fn set_checkpoint_goal_state(execution: &mut GoalExecution, state: &str, pause_r
         .and_then(Value::as_object_mut)
     {
         goal.insert("progress".to_owned(), json!(execution.progress));
+        goal.insert("todos".to_owned(), json!(execution.todos));
         goal.insert("state".to_owned(), json!(state));
         goal.insert("pauseReason".to_owned(), pause_reason);
     }
@@ -614,10 +657,24 @@ pub(crate) fn goal_value(
         "runId": execution.run_id,
         "objective": execution.objective,
         "progress": execution.progress,
+        "todos": execution.todos,
         "startedAtUnixMs": execution.started_at_unix_ms,
         "status": status,
         "pauseReason": pause_reason,
     })
+}
+
+fn validate_todos(todos: &[GoalTodo]) -> Result<(), &'static str> {
+    if todos.len() > MAX_TODO_ITEMS {
+        return Err("The provider returned more goal tasks than allowed.");
+    }
+    if todos
+        .iter()
+        .any(|todo| todo.text.trim().is_empty() || todo.text.len() > MAX_TODO_TEXT_BYTES)
+    {
+        return Err("The provider returned an invalid goal task.");
+    }
+    Ok(())
 }
 
 fn checkpoint_error() -> ServiceError {
@@ -650,4 +707,45 @@ fn current_time_unix_ms() -> Result<i64, ServiceError> {
         .map_err(|_| storage_error())?
         .as_millis();
     i64::try_from(millis).map_err(|_| storage_error())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{GoalTodo, MAX_TODO_ITEMS, MAX_TODO_TEXT_BYTES, validate_todos};
+
+    #[test]
+    fn durable_todos_enforce_count_and_text_limits() {
+        let valid = GoalTodo {
+            text: "Inspect the affected route".to_owned(),
+            completed: false,
+        };
+        assert!(validate_todos(&[valid.clone()]).is_ok());
+        assert!(validate_todos(&vec![valid.clone(); MAX_TODO_ITEMS + 1]).is_err());
+        assert!(
+            validate_todos(&[GoalTodo {
+                text: " ".to_owned(),
+                completed: false,
+            }])
+            .is_err()
+        );
+        assert!(
+            validate_todos(&[GoalTodo {
+                text: "x".repeat(MAX_TODO_TEXT_BYTES + 1),
+                completed: true,
+            }])
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn durable_todos_require_only_known_fields() {
+        let value = serde_json::json!({"text": "Review", "completed": false});
+        assert!(serde_json::from_value::<GoalTodo>(value).is_ok());
+        let value = serde_json::json!({
+            "text": "Review",
+            "completed": false,
+            "access_token": "ignored"
+        });
+        assert!(serde_json::from_value::<GoalTodo>(value).is_err());
+    }
 }

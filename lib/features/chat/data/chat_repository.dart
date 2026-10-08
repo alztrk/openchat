@@ -644,9 +644,7 @@ class ChatRepository {
         (message) => OrderingTerm.asc(message.id),
       ]);
 
-    return query.watch().asyncMap((rows) async {
-      return Future.wait(rows.map(_messageFromRowWithAttachments));
-    });
+    return query.watch().asyncMap(_messagesFromRows);
   }
 
   Future<List<domain.ChatMessage>> getMessages(String conversationId) async {
@@ -657,7 +655,7 @@ class ChatRepository {
         (message) => OrderingTerm.asc(message.id),
       ]);
     final rows = await query.get();
-    return Future.wait(rows.map(_messageFromRowWithAttachments));
+    return _messagesFromRows(rows);
   }
 
   Future<void> createConversation({
@@ -1327,33 +1325,66 @@ class ChatRepository {
         unit == 95,
   );
 
-  Future<domain.ChatMessage> _messageFromRowWithAttachments(Message row) async {
-    final message = _messageFromRow(row);
+  Future<List<domain.ChatMessage>> _messagesFromRows(List<Message> rows) async {
+    final messages = List<domain.ChatMessage>.generate(
+      rows.length,
+      (index) => _messageFromRow(rows[index]),
+      growable: false,
+    );
+    final attachmentMessageIndices = <int>[];
+    for (var index = 0; index < messages.length; index++) {
+      if (messages[index].attachments.isNotEmpty) {
+        attachmentMessageIndices.add(index);
+      }
+    }
+    if (attachmentMessageIndices.isEmpty) return messages;
+
     final attachmentStore = this.attachmentStore;
-    if (message.attachments.isEmpty) return message;
     if (attachmentStore == null) {
-      return _copyMessageWithAttachments(
-        message,
-        message.attachments
-            .map(
-              (attachment) => ChatAttachment(
-                id: attachment.id,
-                name: attachment.name,
-                mimeType: attachment.mimeType,
-                sizeBytes: attachment.sizeBytes,
-                kind: attachment.kind,
-                isAvailable: false,
-              ),
-            )
-            .toList(growable: false),
+      final resolvedMessages = List<domain.ChatMessage>.of(messages);
+      for (final index in attachmentMessageIndices) {
+        final message = resolvedMessages[index];
+        resolvedMessages[index] = _copyMessageWithAttachments(
+          message,
+          message.attachments
+              .map(
+                (attachment) => ChatAttachment(
+                  id: attachment.id,
+                  name: attachment.name,
+                  mimeType: attachment.mimeType,
+                  sizeBytes: attachment.sizeBytes,
+                  kind: attachment.kind,
+                  isAvailable: false,
+                ),
+              )
+              .toList(growable: false),
+        );
+      }
+      return List<domain.ChatMessage>.of(resolvedMessages, growable: false);
+    }
+
+    final attachmentReads = <Future<List<ChatAttachment>>>[];
+    for (final index in attachmentMessageIndices) {
+      final message = messages[index];
+      final row = rows[index];
+      attachmentReads.add(
+        attachmentStore.readMessageAttachments(
+          conversationId: row.conversationId,
+          messageId: row.id,
+          expectedAttachments: message.attachments,
+        ),
       );
     }
-    final attachments = await attachmentStore.readMessageAttachments(
-      conversationId: row.conversationId,
-      messageId: row.id,
-      expectedAttachments: message.attachments,
-    );
-    return _copyMessageWithAttachments(message, attachments);
+    final loadedAttachments = await Future.wait(attachmentReads);
+    final resolvedMessages = List<domain.ChatMessage>.of(messages);
+    for (var index = 0; index < attachmentMessageIndices.length; index++) {
+      final messageIndex = attachmentMessageIndices[index];
+      resolvedMessages[messageIndex] = _copyMessageWithAttachments(
+        resolvedMessages[messageIndex],
+        loadedAttachments[index],
+      );
+    }
+    return List<domain.ChatMessage>.of(resolvedMessages, growable: false);
   }
 
   domain.ChatMessage _copyMessageWithAttachments(

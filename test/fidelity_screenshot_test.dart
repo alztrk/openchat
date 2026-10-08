@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/app/openchat_page_header.dart';
 import 'package:openchat/app/openchat_window_title_bar.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
@@ -154,6 +155,57 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('page navigation moves focus to the destination heading', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final l10n = await AppLocalizations.delegate.load(const Locale('tr'));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('tr'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.light,
+        home: const ChatScreen(
+          themeMode: ThemeMode.light,
+          onThemeModeChanged: _ignoreThemeMode,
+          onToggleTheme: _ignoreThemeToggle,
+          historyStorageStatus: HistoryStorageStatus.available,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip(l10n.settings));
+    await tester.pumpAndSettle();
+    final settingsHeader = find.byType(OpenChatPageHeader);
+    expect(settingsHeader, findsOneWidget);
+    final settingsFocusNodes = tester
+        .widgetList<Focus>(
+          find.descendant(of: settingsHeader, matching: find.byType(Focus)),
+        )
+        .map((focus) => focus.focusNode)
+        .whereType<FocusNode>();
+    expect(settingsFocusNodes.any((node) => node.hasFocus), isTrue);
+
+    await tester.tap(find.byTooltip(l10n.workspaces));
+    await tester.pumpAndSettle();
+    final workspaceHeader = find.byType(OpenChatPageHeader);
+    expect(workspaceHeader, findsOneWidget);
+    final workspaceFocusNodes = tester
+        .widgetList<Focus>(
+          find.descendant(of: workspaceHeader, matching: find.byType(Focus)),
+        )
+        .map((focus) => focus.focusNode)
+        .whereType<FocusNode>();
+    expect(workspaceFocusNodes.any((node) => node.hasFocus), isTrue);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('chat sidebar animates closed', (tester) async {
     tester.view.physicalSize = const Size(1280, 720);
     tester.view.devicePixelRatio = 1;
@@ -275,6 +327,10 @@ void main() {
       OutlinedButton,
       l10n.toolPermissionRequireApproval,
     );
+    final moreOptions = find.text(l10n.moreOptions);
+    await tester.ensureVisible(moreOptions);
+    await tester.tap(moreOptions);
+    await tester.pumpAndSettle();
     expect(permissionButton, findsOneWidget);
     expect(
       find.ancestor(of: permissionButton, matching: find.byType(Tooltip)),
@@ -517,16 +573,34 @@ void main() {
               throw StateError('Settings localization is missing.');
             }
             expect(tester.takeException(), isNull);
+            var advancedExpanded = false;
             for (final label in <String>[
               l10n.connections,
-              l10n.usageQuotas,
-              l10n.models,
-              l10n.localEngines,
-              l10n.conversationMemory,
               l10n.sharedInstructions,
               l10n.appearance,
+              l10n.usageQuotas,
+              l10n.statistics,
+              l10n.modelPreferences,
+              l10n.localEngines,
+              l10n.conversationMemory,
               l10n.localData,
             ]) {
+              if (!advancedExpanded &&
+                  <String>{
+                    l10n.usageQuotas,
+                    l10n.statistics,
+                    l10n.modelPreferences,
+                    l10n.localEngines,
+                    l10n.conversationMemory,
+                    l10n.localData,
+                  }.contains(label)) {
+                final advanced = find.byTooltip(l10n.settingsAdvanced);
+                expect(advanced, findsOneWidget);
+                await tester.ensureVisible(advanced);
+                await tester.tap(advanced);
+                await tester.pumpAndSettle();
+                advancedExpanded = true;
+              }
               final navigation = find
                   .descendant(
                     of: find.byType(SettingsScreen),
@@ -537,6 +611,14 @@ void main() {
               await tester.pumpAndSettle();
               await tester.tap(navigation);
               await tester.pumpAndSettle();
+              advancedExpanded = <String>{
+                l10n.usageQuotas,
+                l10n.statistics,
+                l10n.modelPreferences,
+                l10n.localEngines,
+                l10n.conversationMemory,
+                l10n.localData,
+              }.contains(label);
               expect(find.text(label), findsWidgets);
               expect(tester.takeException(), isNull, reason: label);
             }
@@ -957,7 +1039,7 @@ void main() {
             expect(composer.left, greaterThanOrEqualTo(0));
             expect(composer.right, lessThanOrEqualTo(size.width));
             expect(composer.bottom, lessThanOrEqualTo(size.height));
-            _expectComposerControls(tester, outlinedButtonCount: 3);
+            _expectComposerControls(tester, outlinedButtonCount: 2);
             expect(tester.takeException(), isNull);
 
             if (size.width < OpenChatSpacing.sidebarBreakpoint) {
@@ -1016,7 +1098,7 @@ void main() {
     await tester.pumpAndSettle();
     final composer = tester.getRect(find.byType(ChatComposer));
     expect(composer.bottom, lessThanOrEqualTo(300));
-    _expectComposerControls(tester, outlinedButtonCount: 4);
+    _expectComposerControls(tester, outlinedButtonCount: 2);
     expect(tester.takeException(), isNull);
   });
 
@@ -1212,7 +1294,7 @@ Future<void> _expectCompositionGeometry(
   final composer = tester.getRect(find.byType(ChatComposer));
   expect(composer.width, OpenChatSpacing.composerMaxWidth);
   expect(composer.center.dx, pane.center.dx);
-  _expectComposerControls(tester, outlinedButtonCount: 3);
+  _expectComposerControls(tester, outlinedButtonCount: 2);
 }
 
 Future<void> _expectEmptyScreenMatchesFigma(
@@ -1553,7 +1635,7 @@ Future<void> _expectNarrowComposerGeometry(
   );
   await tester.pumpAndSettle();
 
-  _expectComposerControls(tester, outlinedButtonCount: 3);
+  _expectComposerControls(tester, outlinedButtonCount: 2);
 }
 
 Future<void> _expectPaneMatchesFigma(
@@ -1603,7 +1685,7 @@ Future<void> _expectPaneMatchesFigma(
   );
   await tester.pumpAndSettle();
 
-  _expectComposerGeometry(tester, hasReasoningSelector: true);
+  _expectComposerGeometry(tester);
 
   await expectLater(
     find.byKey(const ValueKey<String>('pane-screenshot')),
@@ -1611,14 +1693,13 @@ Future<void> _expectPaneMatchesFigma(
   );
 }
 
-void _expectComposerGeometry(
-  WidgetTester tester, {
-  required bool hasReasoningSelector,
-}) {
-  _expectComposerControls(
-    tester,
-    outlinedButtonCount: hasReasoningSelector ? 3 : 2,
-  );
+void _expectComposerGeometry(WidgetTester tester) {
+  _expectComposerControls(tester, outlinedButtonCount: 2);
+  final l10n = AppLocalizations.of(tester.element(find.byType(ChatComposer)));
+  if (l10n == null) {
+    throw StateError('Composer localization is missing.');
+  }
+  expect(find.text(l10n.moreOptions), findsOneWidget);
 }
 
 void _expectComposerControls(

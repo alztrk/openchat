@@ -103,7 +103,7 @@ class ChatNavigationRail extends StatelessWidget {
                               label: l10n.workspaces,
                               selected: workspacesSelected,
                               icon: Icon(
-                                LucideIcons.folder,
+                                LucideIcons.messagesSquare,
                                 color: workspacesSelected
                                     ? palette.accentIcon
                                     : palette.secondaryIcon,
@@ -134,10 +134,10 @@ class ChatNavigationRail extends StatelessWidget {
                             const SizedBox(height: 8),
                             _RailNavigationButton(
                               expanded: expanded,
-                              label: l10n.models,
+                              label: l10n.modelLibrary,
                               selected: modelsSelected,
                               icon: Icon(
-                                LucideIcons.brain,
+                                LucideIcons.library,
                                 color: modelsSelected
                                     ? palette.accentIcon
                                     : palette.secondaryIcon,
@@ -283,7 +283,7 @@ class _CompactBrand extends StatelessWidget {
   }
 }
 
-class _RailNavigationButton extends StatelessWidget {
+class _RailNavigationButton extends StatefulWidget {
   const _RailNavigationButton({
     required this.expanded,
     required this.label,
@@ -300,18 +300,26 @@ class _RailNavigationButton extends StatelessWidget {
   final OpenChatPalette palette;
   final VoidCallback? onPressed;
 
-  bool get enabled => onPressed != null;
+  @override
+  State<_RailNavigationButton> createState() => _RailNavigationButtonState();
+}
+
+class _RailNavigationButtonState extends State<_RailNavigationButton> {
+  bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
-    final foreground = selected ? palette.text : palette.secondaryText;
+    final foreground = widget.selected
+        ? widget.palette.text
+        : widget.palette.secondaryText;
     final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    final enabled = widget.onPressed != null;
     final item = Semantics(
       button: true,
       enabled: enabled,
-      selected: selected,
-      label: label,
-      onTap: onPressed,
+      selected: widget.selected,
+      label: widget.label,
+      onTap: widget.onPressed,
       child: ExcludeSemantics(
         child: AnimatedContainer(
           duration: reducedMotion
@@ -319,34 +327,43 @@ class _RailNavigationButton extends StatelessWidget {
               : const Duration(milliseconds: 150),
           curve: Curves.easeOutCubic,
           decoration: BoxDecoration(
-            color: selected ? palette.selected : Colors.transparent,
+            color: widget.selected
+                ? widget.palette.selected
+                : Colors.transparent,
             borderRadius: BorderRadius.circular(OpenChatRadii.control),
-            border: selected ? Border.all(color: palette.border) : null,
+            border: _focused
+                ? Border.all(color: widget.palette.focusRing, width: 2)
+                : widget.selected
+                ? Border.all(color: widget.palette.border)
+                : null,
           ),
           child: Material(
             color: Colors.transparent,
             borderRadius: BorderRadius.circular(OpenChatRadii.control),
             child: InkWell(
-              onTap: onPressed,
+              onTap: widget.onPressed,
+              onFocusChange: (focused) {
+                if (_focused != focused) setState(() => _focused = focused);
+              },
               borderRadius: BorderRadius.circular(OpenChatRadii.control),
-              hoverColor: palette.hover,
-              focusColor: OpenChatSemanticColors.of(context).focusRing
-                  .withValues(alpha: 0.24),
+              hoverColor: widget.palette.hover,
               child: SizedBox(
                 height: 44,
                 child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: expanded ? 12 : 0),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: widget.expanded ? 12 : 0,
+                  ),
                   child: Row(
-                    mainAxisAlignment: expanded
+                    mainAxisAlignment: widget.expanded
                         ? MainAxisAlignment.start
                         : MainAxisAlignment.center,
                     children: [
-                      icon,
-                      if (expanded) ...[
+                      widget.icon,
+                      if (widget.expanded) ...[
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            label,
+                            widget.label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodyMedium
@@ -368,7 +385,9 @@ class _RailNavigationButton extends StatelessWidget {
       ),
     );
 
-    return expanded ? item : Tooltip(message: label, child: item);
+    return widget.expanded
+        ? item
+        : Tooltip(message: widget.label, child: item);
   }
 }
 

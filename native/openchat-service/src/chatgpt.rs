@@ -102,6 +102,7 @@ impl ChatGptService {
         let conversation_id = context.conversation_id;
         let excluded_assistant_message_id = context.excluded_assistant_message_id;
         let custom_instructions = context.custom_instructions;
+        let project_instructions = context.project_instructions;
         let project_root = context.project_root;
         let route = chatgpt_store::conversation_route(&self.storage, conversation_id)
             .map_err(database_error)?
@@ -224,6 +225,7 @@ impl ChatGptService {
         }
         let mut shared_instructions = instructions::shared_instructions(
             custom_instructions,
+            project_instructions,
             context.permission_mode,
             project_root.is_some(),
             !tools.is_empty(),

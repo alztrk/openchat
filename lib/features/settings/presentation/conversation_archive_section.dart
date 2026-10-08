@@ -348,8 +348,8 @@ class _ConversationArchiveExportDialogState
                 controller: _searchController,
                 onChanged: (value) => setState(() => _search = value.trim()),
                 decoration: InputDecoration(
+                  labelText: l10n.conversationArchiveSearch,
                   prefixIcon: const Icon(LucideIcons.search),
-                  hintText: l10n.conversationArchiveSearch,
                   isDense: true,
                 ),
               ),

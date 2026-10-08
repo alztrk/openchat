@@ -85,135 +85,163 @@ class OpenChatSelect<T> extends StatelessWidget {
       alignmentOffset: const Offset(0, 6),
       menuChildren: [
         for (final option in options)
-          MenuItemButton(
-            onPressed: option.enabled && onChanged != null
+          Semantics(
+            button: true,
+            enabled: option.enabled && onChanged != null,
+            selected: option.value == value,
+            label: option.label,
+            hint: option.description,
+            onTap: option.enabled && onChanged != null
                 ? () => onChanged!(option.value)
                 : null,
-            style: OpenChatDropdown.menuItemStyle(palette),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: option.description == null ? 44 : 58,
-                maxWidth: resolvedMenuWidth,
-              ),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: option.value == value
-                      ? palette.hover
-                      : option.enabled
-                      ? Colors.transparent
-                      : palette.disabledSurface,
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: option.description == null ? 10 : 8,
+            child: ExcludeSemantics(
+              child: MenuItemButton(
+                onPressed: option.enabled && onChanged != null
+                    ? () => onChanged!(option.value)
+                    : null,
+                style: OpenChatDropdown.menuItemStyle(palette),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: option.description == null ? 44 : 58,
+                    maxWidth: resolvedMenuWidth,
                   ),
-                  child: Row(
-                    children: [
-                      if (option.icon != null) ...[
-                        Icon(
-                          option.icon,
-                          size: 16,
-                          color: option.enabled
-                              ? option.iconColor ?? palette.secondaryIcon
-                              : palette.disabledIcon,
-                        ),
-                        const SizedBox(width: 10),
-                      ],
-                      Expanded(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              option.label,
-                              style:
-                                  option.textStyle?.copyWith(
-                                    color: option.enabled
-                                        ? option.textStyle?.color ??
-                                              palette.text
-                                        : palette.disabledForeground,
-                                    fontWeight: option.value == value
-                                        ? FontWeight.w600
-                                        : FontWeight.w500,
-                                  ) ??
-                                  TextStyle(
-                                    color: option.enabled
-                                        ? palette.text
-                                        : palette.disabledForeground,
-                                    fontSize: 13,
-                                    fontWeight: option.value == value
-                                        ? FontWeight.w600
-                                        : FontWeight.w500,
-                                  ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            if (option.description case final description?) ...[
-                              const SizedBox(height: 2),
-                              Text(
-                                description,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: option.enabled
-                                      ? option.descriptionColor ??
-                                            palette.secondaryText
-                                      : palette.disabledForeground,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w400,
-                                  height: 16 / 12,
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: option.value == value
+                          ? palette.hover
+                          : option.enabled
+                          ? Colors.transparent
+                          : palette.disabledSurface,
+                      borderRadius: BorderRadius.circular(
+                        OpenChatRadii.control,
                       ),
-                      if (option.value == value)
-                        Icon(
-                          LucideIcons.check,
-                          size: 16,
-                          color: option.selectedColor ?? palette.accentIcon,
-                        ),
-                    ],
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: option.description == null ? 10 : 8,
+                      ),
+                      child: Row(
+                        children: [
+                          if (option.icon != null) ...[
+                            Icon(
+                              option.icon,
+                              size: 16,
+                              color: option.enabled
+                                  ? option.iconColor ?? palette.secondaryIcon
+                                  : palette.disabledIcon,
+                            ),
+                            const SizedBox(width: 10),
+                          ],
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  option.label,
+                                  style:
+                                      option.textStyle?.copyWith(
+                                        color: option.enabled
+                                            ? option.textStyle?.color ??
+                                                  palette.text
+                                            : palette.disabledForeground,
+                                        fontWeight: option.value == value
+                                            ? FontWeight.w600
+                                            : FontWeight.w500,
+                                      ) ??
+                                      TextStyle(
+                                        color: option.enabled
+                                            ? palette.text
+                                            : palette.disabledForeground,
+                                        fontSize: 13,
+                                        fontWeight: option.value == value
+                                            ? FontWeight.w600
+                                            : FontWeight.w500,
+                                      ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (option.description
+                                    case final description?) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    description,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: option.enabled
+                                          ? option.descriptionColor ??
+                                                palette.secondaryText
+                                          : palette.disabledForeground,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w400,
+                                      height: 16 / 12,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          if (option.value == value)
+                            Icon(
+                              LucideIcons.check,
+                              size: 16,
+                              color: option.selectedColor ?? palette.accentIcon,
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
               ),
             ),
           ),
       ],
-      builder: (context, controller, _) => SizedBox(
+      builder: (context, controller, _, focusNode) => SizedBox(
         width: width,
         height: math.max(
           height,
           MediaQuery.textScalerOf(context).scale(18) + 12,
         ),
         child: OutlinedButton(
+          focusNode: focusNode,
           onPressed: onChanged == null || options.isEmpty
               ? null
               : () =>
                     controller.isOpen ? controller.close() : controller.open(),
           style:
-              triggerStyle ??
-              OutlinedButton.styleFrom(
-                minimumSize: Size(0, height),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                visualDensity: VisualDensity.standard,
-                tapTargetSize: compact
-                    ? MaterialTapTargetSize.padded
-                    : MaterialTapTargetSize.shrinkWrap,
-                foregroundColor: palette.text,
-                disabledForegroundColor: palette.disabledForeground,
-                disabledBackgroundColor: palette.disabledSurface,
-                side: BorderSide(
-                  color: isEnabled ? palette.border : palette.disabledBorder,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(OpenChatRadii.control),
-                ),
-              ),
+              (triggerStyle ??
+                      OutlinedButton.styleFrom(
+                        minimumSize: Size(0, height),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        visualDensity: VisualDensity.standard,
+                        tapTargetSize: compact
+                            ? MaterialTapTargetSize.padded
+                            : MaterialTapTargetSize.shrinkWrap,
+                        foregroundColor: palette.text,
+                        disabledForegroundColor: palette.disabledForeground,
+                        disabledBackgroundColor: palette.disabledSurface,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(
+                            OpenChatRadii.control,
+                          ),
+                        ),
+                      ))
+                  .copyWith(
+                    side: WidgetStateProperty.resolveWith<BorderSide>((states) {
+                      if (!isEnabled) {
+                        return BorderSide(color: palette.disabledBorder);
+                      }
+                      return BorderSide(
+                        color: states.contains(WidgetState.focused)
+                            ? palette.focusRing
+                            : palette.controlBorder,
+                        width: states.contains(WidgetState.focused) ? 2 : 1,
+                      );
+                    }),
+                  ),
           child: Row(
             children: [
               if (leadingIcon != null) ...[

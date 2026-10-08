@@ -22,7 +22,8 @@ class AppLocalizationsTr extends AppLocalizations {
   String get workspaces => 'Çalışma alanları';
 
   @override
-  String get workspacesDescription => 'İlgili sohbetleri bir arada tutun.';
+  String get workspacesDescription =>
+      'Sohbetleri konularına göre gruplayın. Dosyalar ve araçlar kod projelerinde kalır.';
 
   @override
   String get workspaceCreate => 'Yeni çalışma alanı';
@@ -76,6 +77,12 @@ class AppLocalizationsTr extends AppLocalizations {
   String get workspaceLoadFailed => 'Çalışma alanları yüklenemedi.';
 
   @override
+  String get workspacesLoading => 'Çalışma alanları yükleniyor…';
+
+  @override
+  String get conversationsLoading => 'Sohbetler yükleniyor…';
+
+  @override
   String get workspaceSaveFailed => 'Çalışma alanı kaydedilemedi.';
 
   @override
@@ -85,7 +92,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get workspaceMoveFailed => 'Sohbet taşınamadı.';
 
   @override
-  String get outputs => 'Çıktılar';
+  String get outputs => 'Kaydedilen yanıtlar';
 
   @override
   String get outputsDescription =>
@@ -100,6 +107,9 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get outputsLoadFailed => 'Kaydedilmiş yanıtlar yüklenemedi.';
+
+  @override
+  String get outputsLoading => 'Kaydedilmiş yanıtlar yükleniyor…';
 
   @override
   String get saveResponse => 'Yanıtı kaydet';
@@ -155,14 +165,68 @@ class AppLocalizationsTr extends AppLocalizations {
   String get settingsDescription => 'Bağlantılar, görünüm ve yerel veriler';
 
   @override
+  String get settingsGeneral => 'Genel';
+
+  @override
+  String get settingsAdvanced => 'Gelişmiş';
+
+  @override
+  String get settingsDataRecovery => 'Veri ve kurtarma';
+
+  @override
+  String get settingsOtherProviders => 'Diğer sağlayıcılar';
+
+  @override
+  String get settingsConnectionsDescription =>
+      'Kullanmak istediğiniz hesapları ve model sağlayıcılarını bağlayın.';
+
+  @override
+  String get settingsUsageQuotasDescription =>
+      'Bağlı hizmetlerde kalan kullanım miktarını görüntüleyin.';
+
+  @override
+  String get settingsStatisticsDescription =>
+      'Sohbet ve model kullanımınızın zaman içindeki değişimini inceleyin.';
+
+  @override
+  String get settingsModelPreferencesDescription =>
+      'Gösterilecek modelleri ve seçim davranışını belirleyin.';
+
+  @override
+  String get settingsLocalEnginesDescription =>
+      'Bu cihazda modelleri çalıştıran altyapıları yönetin.';
+
+  @override
+  String get settingsConversationMemoryDescription =>
+      'Sohbet arşivini ve bağlam aramasını yönetin.';
+
+  @override
+  String get settingsSharedInstructionsDescription =>
+      'Yeni sohbetlere eklenecek ortak yönlendirmeleri belirleyin.';
+
+  @override
+  String get settingsAppearanceDescription =>
+      'Dil, tema, metin boyutu ve sohbet genişliğini ayarlayın.';
+
+  @override
+  String get settingsLocalDataDescription =>
+      'Sohbet geçmişinin nerede tutulduğunu ve yerel arşivleri yönetin.';
+
+  @override
   String get connections => 'Bağlantılar';
 
   @override
   String get models => 'Modeller';
 
   @override
+  String get modelLibrary => 'Model bul';
+
+  @override
+  String get modelPreferences => 'Model tercihleri';
+
+  @override
   String get modelsDescription =>
-      'Bağlı sağlayıcıların modellerini yönetin, varsayılan modeli belirleyin ve istemediğiniz modelleri gizleyin.';
+      'Yeni sohbetlerde kullanılacak varsayılan modeli seçin ve kullanmadığınız modelleri gizleyin.';
 
   @override
   String get localEngines => 'Yerel motorlar';
@@ -396,6 +460,9 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get localModelsPageTitle => 'Yerel modeller';
+
+  @override
+  String get localModelsLoading => 'Yerel modeller yükleniyor…';
 
   @override
   String get localModelsPageDescription =>
@@ -752,6 +819,9 @@ class AppLocalizationsTr extends AppLocalizations {
   String get modelSearchHint => 'Model ara...';
 
   @override
+  String get searchModels => 'Model ara';
+
+  @override
   String get chatGptFastModeEnabledTooltip =>
       'Fast mod isteği açık. Abonelik kredisini daha hızlı tüketebilir veya API token maliyetini artırabilir.';
 
@@ -948,7 +1018,8 @@ class AppLocalizationsTr extends AppLocalizations {
       'Her dosya, web ve terminal çağrısından önce onay ister. Dosya erişimi proje ve OpenChat klasörleriyle sınırlıdır.';
 
   @override
-  String get toolPermissionApproveSafeOperations => 'Benim için onayla';
+  String get toolPermissionApproveSafeOperations =>
+      'Güvenli işlemleri otomatik onayla';
 
   @override
   String get toolPermissionApproveSafeOperationsDescription =>
@@ -1228,13 +1299,13 @@ class AppLocalizationsTr extends AppLocalizations {
   String get selectWorkspace => 'Çalışma alanı seç';
 
   @override
-  String get workspaceWithoutName => 'Çalışma alanı';
+  String get workspaceWithoutName => 'ChatGPT hesap çalışma alanı';
 
   @override
-  String get workspace => 'Çalışma alanı';
+  String get workspace => 'ChatGPT hesap çalışma alanı';
 
   @override
-  String get workspaceUnavailable => 'Çalışma alanı bilgisi yok.';
+  String get workspaceUnavailable => 'ChatGPT hesap çalışma alanı bilgisi yok.';
 
   @override
   String get selectAccountForWorkspace =>
@@ -1280,7 +1351,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String workspaceNumbered(int number) {
-    return 'Çalışma alanı $number';
+    return 'ChatGPT hesap çalışma alanı $number';
   }
 
   @override
@@ -1933,6 +2004,9 @@ class AppLocalizationsTr extends AppLocalizations {
   String get historySearchFiltersTitle => 'Arama filtreleri';
 
   @override
+  String get historySearchFiltersLoading => 'Arama filtreleri yükleniyor…';
+
+  @override
   String get historySearchRouteFilterNote =>
       'Sağlayıcı ve model, her yanıtla kaydedilmiş rotayı belirtir.';
 
@@ -2055,22 +2129,26 @@ class AppLocalizationsTr extends AppLocalizations {
   String get searchMessageUnavailable => 'Bu mesaj artık kullanılamıyor.';
 
   @override
-  String get projects => 'Projeler';
+  String get projects => 'Kod projeleri';
 
   @override
   String get noProjects => 'Henüz proje yok';
 
   @override
-  String get createProject => 'Proje oluştur';
+  String get createProject => 'Kod projesi oluştur';
 
   @override
-  String get projectName => 'Proje adı';
+  String get projectName => 'Kod projesi adı';
 
   @override
   String get projectNameRequired => 'Bir proje adı gir.';
 
   @override
-  String get projectFolder => 'Proje klasörü';
+  String get projectFolder => 'Kod projesi klasörü';
+
+  @override
+  String get projectFolderDescription =>
+      'Kod projeleri sohbetleri bu cihazdaki bir klasöre bağlar; dosya ve araç erişimi bu klasörü kullanır. Klasörsüz sohbet grupları için Çalışma alanları’nı kullanın.';
 
   @override
   String get chooseProjectFolder => 'Klasör seç';
@@ -2091,6 +2169,9 @@ class AppLocalizationsTr extends AppLocalizations {
   String get projectLoadFailed => 'Projeler yüklenemedi.';
 
   @override
+  String get projectLoading => 'Kod projeleri yükleniyor…';
+
+  @override
   String get projectMoveFailed => 'Sohbet projeye taşınamadı.';
 
   @override
@@ -2107,6 +2188,9 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get showMore => 'Daha fazla göster';
+
+  @override
+  String get showLess => 'Daha az göster';
 
   @override
   String get projectOptions => 'Proje seçenekleri';
@@ -2149,6 +2233,35 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get projectOptionsWorktrees => 'Git worktree\'leri';
+
+  @override
+  String get projectOptionsInstructions => 'Proje talimatları';
+
+  @override
+  String get projectInstructionsTitle => 'Proje talimatları';
+
+  @override
+  String get projectInstructionsDescription =>
+      'Bu talimatlar projedeki yeni yanıtlara eklenir. .openchat/instructions.md dosyasına kaydedilir ve 16 KiB ile sınırlıdır.';
+
+  @override
+  String get projectInstructionsHint => 'Projeye özel yönergeleri yazın';
+
+  @override
+  String get projectInstructionsLoadFailed =>
+      'Proje talimatları yüklenemedi. Dosyayı kontrol edip yeniden deneyin.';
+
+  @override
+  String get projectInstructionsSaveFailed =>
+      'Proje talimatları kaydedilemedi. Proje klasörünü kontrol edip yeniden deneyin.';
+
+  @override
+  String get projectInstructionsSave => 'Talimatları kaydet';
+
+  @override
+  String projectInstructionsSize(int bytes, int maxBytes) {
+    return '$bytes / $maxBytes bayt';
+  }
 
   @override
   String get projectMcpTitle => 'Proje MCP sunucuları';
@@ -2758,6 +2871,24 @@ class AppLocalizationsTr extends AppLocalizations {
   String get conversationMemorySearchTitle => 'Arşivde ara';
 
   @override
+  String conversationWorkspaceContext(String workspace) {
+    return 'Çalışma alanı: $workspace';
+  }
+
+  @override
+  String outputSourceProvider(String provider) {
+    return 'Sağlayıcı: $provider';
+  }
+
+  @override
+  String outputSourceModel(String model) {
+    return 'Model: $model';
+  }
+
+  @override
+  String get conversationMemorySearching => 'Sohbet arşivi aranıyor…';
+
+  @override
   String get conversationMemorySearchHint => 'Eski bir konu veya ifade yaz...';
 
   @override
@@ -3102,9 +3233,6 @@ class AppLocalizationsTr extends AppLocalizations {
   String get messageHint => 'Mesajını yaz...';
 
   @override
-  String get sendMessage => 'Mesajı gönder';
-
-  @override
   String get send => 'Gönder';
 
   @override
@@ -3184,6 +3312,14 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get toolRunning => 'Çalışıyor';
+
+  @override
+  String get unknownTool => 'Diğer araç';
+
+  @override
+  String terminalSession(String terminal) {
+    return 'Terminal · $terminal';
+  }
 
   @override
   String get toolWaitingForUser => 'Yanıtın bekleniyor';
@@ -3508,6 +3644,9 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get usageQuotasDescription =>
       'Tüm bağlı ChatGPT hesaplarınızın kalan kotalarını, kullanım limitlerini ve sıfırlanma zamanlarını görüntüleyin.';
+
+  @override
+  String get usageQuotasLoadFailed => 'Kullanım kotaları yüklenemedi.';
 
   @override
   String get statistics => 'İstatistikler';
@@ -3904,12 +4043,12 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String workspaceQuotaLabel(String name) {
-    return 'Çalışma alanı: $name';
+    return 'ChatGPT çalışma alanı: $name';
   }
 
   @override
   String get modelsPageDescription =>
-      'Hugging Face’teki modelleri bul ve indir.';
+      'Bu cihazda çalıştırabileceğiniz modelleri bulun. İndirilenler Yerel modeller bölümünde görünür.';
 
   @override
   String get modelSortDownloads => 'En çok indirilen';
@@ -3941,7 +4080,10 @@ class AppLocalizationsTr extends AppLocalizations {
   String get modelFormatExllama => 'ExLlama · EXL3';
 
   @override
-  String get huggingFaceModelSearchHint => 'Hugging Face modellerinde ara';
+  String get huggingFaceModelSearchHint => 'Modellerde ara';
+
+  @override
+  String get otherProvider => 'Diğer sağlayıcı';
 
   @override
   String get modelSearchRefresh => 'Model sonuçlarını yenile';
@@ -4286,5 +4428,10 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String goalElapsedTime(String time) {
     return 'Geçen süre: $time';
+  }
+
+  @override
+  String goalTasksCount(int completed, int total) {
+    return 'Görevler: $completed/$total';
   }
 }

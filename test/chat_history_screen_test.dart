@@ -92,7 +92,9 @@ void main() {
 
     await tester.tap(find.byTooltip('Ayarlar'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Yerel veriler'));
+    await tester.tap(find.byTooltip('Gelişmiş'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Yerel veriler'));
     await tester.pumpAndSettle();
     expect(find.text('Konuşmalar bu cihazda saklanır.'), findsOneWidget);
     expect(find.text('Bu cihazda'), findsOneWidget);

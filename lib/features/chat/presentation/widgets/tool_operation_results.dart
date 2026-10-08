@@ -697,7 +697,7 @@ class _ToolResultState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final errorColor = Theme.of(context).colorScheme.error;
+    final errorColor = palette.destructive;
     final foreground = isError ? errorColor : palette.secondaryIcon;
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -734,12 +734,18 @@ class _ToolResultState extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    message,
-                    style: TextStyle(
-                      color: isError ? errorColor : palette.text,
-                      fontSize: OpenChatTypography.metadata,
-                      height: 16 / 11,
+                  Semantics(
+                    liveRegion: isError || isWorking,
+                    label: message,
+                    child: ExcludeSemantics(
+                      child: Text(
+                        message,
+                        style: TextStyle(
+                          color: isError ? errorColor : palette.text,
+                          fontSize: OpenChatTypography.metadata,
+                          height: 16 / 11,
+                        ),
+                      ),
                     ),
                   ),
                   if (path case final path? when path.isNotEmpty) ...[

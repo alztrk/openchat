@@ -34,9 +34,9 @@ class ProviderIcon extends StatelessWidget {
         colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
         excludeFromSemantics: true,
       ),
-      'gemini' => Icon(LucideIcons.sparkles, size: size, color: color),
-      'groq' => Icon(LucideIcons.zap, size: size, color: color),
-      'cerebras' => Icon(LucideIcons.microchip, size: size, color: color),
+      'gemini' => _ProviderMonogram(label: 'Ge', color: color, size: size),
+      'groq' => _ProviderMonogram(label: 'Gr', color: color, size: size),
+      'cerebras' => _ProviderMonogram(label: 'Ce', color: color, size: size),
       'openrouter' => SvgPicture.asset(
         'assets/icons/openrouter.svg',
         width: size,
@@ -48,7 +48,8 @@ class ProviderIcon extends StatelessWidget {
         'assets/icons/mistral.png',
         width: size,
         height: size,
-        filterQuality: FilterQuality.none,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.medium,
         excludeFromSemantics: true,
       ),
       'llama_cpp' || 'vllm' || 'exllama' => LocalEngineIcon(
@@ -64,6 +65,38 @@ class ProviderIcon extends StatelessWidget {
       width: iconWidth,
       height: size,
       child: Center(child: ExcludeSemantics(child: icon)),
+    );
+  }
+}
+
+class _ProviderMonogram extends StatelessWidget {
+  const _ProviderMonogram({
+    required this.label,
+    required this.color,
+    required this.size,
+  });
+
+  final String label;
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: size,
+      child: Center(
+        child: Text(
+          label,
+          maxLines: 1,
+          style: TextStyle(
+            color: color,
+            fontSize: size * 0.62,
+            fontWeight: FontWeight.w700,
+            height: 1,
+            letterSpacing: -0.3,
+          ),
+        ),
+      ),
     );
   }
 }

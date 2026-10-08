@@ -23,7 +23,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get workspacesDescription =>
-      'Zusammengehörige Unterhaltungen an einem Ort sammeln.';
+      'Unterhaltungen nach Thema gruppieren. Dateien und Tools bleiben in Codeprojekten.';
 
   @override
   String get workspaceCreate => 'Neuer Arbeitsbereich';
@@ -79,6 +79,12 @@ class AppLocalizationsDe extends AppLocalizations {
       'Arbeitsbereiche konnten nicht geladen werden.';
 
   @override
+  String get workspacesLoading => 'Arbeitsbereiche werden geladen…';
+
+  @override
+  String get conversationsLoading => 'Unterhaltungen werden geladen…';
+
+  @override
   String get workspaceSaveFailed =>
       'Der Arbeitsbereich konnte nicht gespeichert werden.';
 
@@ -91,7 +97,7 @@ class AppLocalizationsDe extends AppLocalizations {
       'Die Unterhaltung konnte nicht verschoben werden.';
 
   @override
-  String get outputs => 'Ausgaben';
+  String get outputs => 'Gespeicherte Antworten';
 
   @override
   String get outputsDescription =>
@@ -107,6 +113,9 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get outputsLoadFailed =>
       'Gespeicherte Antworten konnten nicht geladen werden.';
+
+  @override
+  String get outputsLoading => 'Gespeicherte Antworten werden geladen…';
 
   @override
   String get saveResponse => 'Antwort speichern';
@@ -165,14 +174,68 @@ class AppLocalizationsDe extends AppLocalizations {
       'Verbindungen, Darstellung und lokale Daten';
 
   @override
+  String get settingsGeneral => 'Allgemein';
+
+  @override
+  String get settingsAdvanced => 'Erweitert';
+
+  @override
+  String get settingsDataRecovery => 'Daten und Wiederherstellung';
+
+  @override
+  String get settingsOtherProviders => 'Weitere Anbieter';
+
+  @override
+  String get settingsConnectionsDescription =>
+      'Verbinde deine Konten und Modellanbieter.';
+
+  @override
+  String get settingsUsageQuotasDescription =>
+      'Prüfe das verbleibende Nutzungskontingent verbundener Dienste.';
+
+  @override
+  String get settingsStatisticsDescription =>
+      'Sieh dir die Nutzung von Unterhaltungen und Modellen im Zeitverlauf an.';
+
+  @override
+  String get settingsModelPreferencesDescription =>
+      'Lege fest, welche Modelle angezeigt und wie sie ausgewählt werden.';
+
+  @override
+  String get settingsLocalEnginesDescription =>
+      'Verwalte die Software, mit der Modelle auf diesem Gerät ausgeführt werden.';
+
+  @override
+  String get settingsConversationMemoryDescription =>
+      'Durchsuche und verwalte das lokale Unterhaltungsarchiv.';
+
+  @override
+  String get settingsSharedInstructionsDescription =>
+      'Lege Hinweise fest, die neuen Unterhaltungen hinzugefügt werden.';
+
+  @override
+  String get settingsAppearanceDescription =>
+      'Passe Sprache, Design, Textgröße und Breite der Unterhaltung an.';
+
+  @override
+  String get settingsLocalDataDescription =>
+      'Prüfe den Speicherort des Verlaufs und verwalte lokale Archive.';
+
+  @override
   String get connections => 'Verbindungen';
 
   @override
   String get models => 'Modelle';
 
   @override
+  String get modelLibrary => 'Modelle finden';
+
+  @override
+  String get modelPreferences => 'Modelleinstellungen';
+
+  @override
   String get modelsDescription =>
-      'Modelle verbundener Anbieter verwalten, ein Standardmodell festlegen und nicht benötigte Modelle ausblenden.';
+      'Das Standardmodell für neue Unterhaltungen auswählen und nicht benötigte Modelle ausblenden.';
 
   @override
   String get localEngines => 'Lokale Engines';
@@ -412,6 +475,9 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get localModelsPageTitle => 'Lokale Modelle';
+
+  @override
+  String get localModelsLoading => 'Lokale Modelle werden geladen…';
 
   @override
   String get localModelsPageDescription =>
@@ -772,6 +838,9 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get modelSearchHint => 'Modelle suchen …';
+
+  @override
+  String get searchModels => 'Modelle suchen';
 
   @override
   String get chatGptFastModeEnabledTooltip =>
@@ -1260,14 +1329,14 @@ class AppLocalizationsDe extends AppLocalizations {
   String get selectWorkspace => 'Arbeitsbereich auswählen';
 
   @override
-  String get workspaceWithoutName => 'Arbeitsbereich';
+  String get workspaceWithoutName => 'ChatGPT-Kontoarbeitsbereich';
 
   @override
-  String get workspace => 'Arbeitsbereich';
+  String get workspace => 'ChatGPT-Kontoarbeitsbereich';
 
   @override
   String get workspaceUnavailable =>
-      'Keine Informationen zum Arbeitsbereich verfügbar.';
+      'Keine Informationen zum ChatGPT-Kontoarbeitsbereich verfügbar.';
 
   @override
   String get selectAccountForWorkspace =>
@@ -1315,7 +1384,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String workspaceNumbered(int number) {
-    return 'Arbeitsbereich $number';
+    return 'ChatGPT-Kontoarbeitsbereich $number';
   }
 
   @override
@@ -1980,6 +2049,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get historySearchFiltersTitle => 'Suchfilter';
 
   @override
+  String get historySearchFiltersLoading => 'Suchfilter werden geladen…';
+
+  @override
   String get historySearchRouteFilterNote =>
       'Anbieter und Modell beziehen sich auf die jeweilige gespeicherte Antwort.';
 
@@ -2105,22 +2177,26 @@ class AppLocalizationsDe extends AppLocalizations {
       'Diese Nachricht ist nicht mehr verfügbar.';
 
   @override
-  String get projects => 'Projekte';
+  String get projects => 'Codeprojekte';
 
   @override
   String get noProjects => 'Noch keine Projekte';
 
   @override
-  String get createProject => 'Projekt erstellen';
+  String get createProject => 'Codeprojekt erstellen';
 
   @override
-  String get projectName => 'Projektname';
+  String get projectName => 'Name des Codeprojekts';
 
   @override
   String get projectNameRequired => 'Geben Sie einen Projektnamen ein.';
 
   @override
-  String get projectFolder => 'Projektordner';
+  String get projectFolder => 'Codeprojektordner';
+
+  @override
+  String get projectFolderDescription =>
+      'Codeprojekte verbinden Unterhaltungen für Datei- und Werkzeugzugriff mit einem Ordner auf diesem Gerät. Unterhaltungen ohne Ordner gruppieren Sie in Arbeitsbereichen.';
 
   @override
   String get chooseProjectFolder => 'Ordner auswählen';
@@ -2143,6 +2219,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get projectLoadFailed => 'Projekte konnten nicht geladen werden.';
 
   @override
+  String get projectLoading => 'Codeprojekte werden geladen…';
+
+  @override
   String get projectMoveFailed =>
       'Der Chat konnte nicht in das Projekt verschoben werden.';
 
@@ -2160,6 +2239,9 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get showMore => 'Mehr anzeigen';
+
+  @override
+  String get showLess => 'Weniger anzeigen';
 
   @override
   String get projectOptions => 'Projektoptionen';
@@ -2202,6 +2284,35 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get projectOptionsWorktrees => 'Git-Worktrees';
+
+  @override
+  String get projectOptionsInstructions => 'Projektanweisungen';
+
+  @override
+  String get projectInstructionsTitle => 'Projektanweisungen';
+
+  @override
+  String get projectInstructionsDescription =>
+      'Diese Anweisungen werden bei neuen Antworten in diesem Projekt gesendet. Sie werden in .openchat/instructions.md gespeichert und sind auf 16 KiB begrenzt.';
+
+  @override
+  String get projectInstructionsHint => 'Projektspezifische Hinweise eingeben';
+
+  @override
+  String get projectInstructionsLoadFailed =>
+      'Die Projektanweisungen konnten nicht geladen werden. Prüfe die Datei und versuche es erneut.';
+
+  @override
+  String get projectInstructionsSaveFailed =>
+      'Die Projektanweisungen konnten nicht gespeichert werden. Prüfe den Projektordner und versuche es erneut.';
+
+  @override
+  String get projectInstructionsSave => 'Anweisungen speichern';
+
+  @override
+  String projectInstructionsSize(int bytes, int maxBytes) {
+    return '$bytes / $maxBytes Bytes';
+  }
 
   @override
   String get projectMcpTitle => 'MCP-Server des Projekts';
@@ -2821,6 +2932,25 @@ class AppLocalizationsDe extends AppLocalizations {
   String get conversationMemorySearchTitle => 'Archiv durchsuchen';
 
   @override
+  String conversationWorkspaceContext(String workspace) {
+    return 'Arbeitsbereich: $workspace';
+  }
+
+  @override
+  String outputSourceProvider(String provider) {
+    return 'Anbieter: $provider';
+  }
+
+  @override
+  String outputSourceModel(String model) {
+    return 'Modell: $model';
+  }
+
+  @override
+  String get conversationMemorySearching =>
+      'Konversationsarchiv wird durchsucht…';
+
+  @override
   String get conversationMemorySearchHint =>
       'Älteres Thema oder eine Formulierung eingeben …';
 
@@ -3178,9 +3308,6 @@ class AppLocalizationsDe extends AppLocalizations {
   String get messageHint => 'Nachricht schreiben …';
 
   @override
-  String get sendMessage => 'Nachricht senden';
-
-  @override
   String get send => 'Senden';
 
   @override
@@ -3262,6 +3389,14 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get toolRunning => 'Wird ausgeführt';
+
+  @override
+  String get unknownTool => 'Weiteres Werkzeug';
+
+  @override
+  String terminalSession(String terminal) {
+    return 'Terminal · $terminal';
+  }
 
   @override
   String get toolWaitingForUser => 'Wartet auf deine Antwort';
@@ -3591,6 +3726,10 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get usageQuotasDescription =>
       'Verbleibende Kontingente, Nutzungslimits und Rücksetzzeiten für alle verbundenen ChatGPT-Konten anzeigen.';
+
+  @override
+  String get usageQuotasLoadFailed =>
+      'Nutzungskontingente konnten nicht geladen werden.';
 
   @override
   String get statistics => 'Statistiken';
@@ -3994,12 +4133,12 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String workspaceQuotaLabel(String name) {
-    return 'Arbeitsbereich: $name';
+    return 'ChatGPT-Arbeitsbereich: $name';
   }
 
   @override
   String get modelsPageDescription =>
-      'Auf Hugging Face gehostete Modelle finden und herunterladen.';
+      'Finde Modelle, die auf diesem Gerät laufen können. Heruntergeladene Modelle findest du unter Lokale Modelle.';
 
   @override
   String get modelSortDownloads => 'Am häufigsten heruntergeladen';
@@ -4031,7 +4170,10 @@ class AppLocalizationsDe extends AppLocalizations {
   String get modelFormatExllama => 'ExLlama · EXL3';
 
   @override
-  String get huggingFaceModelSearchHint => 'Hugging-Face-Modelle durchsuchen';
+  String get huggingFaceModelSearchHint => 'Modelle suchen';
+
+  @override
+  String get otherProvider => 'Weiterer Anbieter';
 
   @override
   String get modelSearchRefresh => 'Modellergebnisse aktualisieren';
@@ -4393,5 +4535,10 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String goalElapsedTime(String time) {
     return 'Vergangen: $time';
+  }
+
+  @override
+  String goalTasksCount(int completed, int total) {
+    return 'Aufgaben: $completed von $total';
   }
 }

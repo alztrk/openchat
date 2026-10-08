@@ -6,6 +6,7 @@ class AgentGoal {
     required this.progress,
     required this.startedAt,
     required this.status,
+    this.todos = const <AgentGoalTodo>[],
     this.pauseReason,
   });
 
@@ -15,11 +16,13 @@ class AgentGoal {
   final String progress;
   final DateTime startedAt;
   final AgentGoalStatus status;
+  final List<AgentGoalTodo> todos;
   final String? pauseReason;
 
   AgentGoal copyWith({
     String? progress,
     AgentGoalStatus? status,
+    List<AgentGoalTodo>? todos,
     String? pauseReason,
     bool clearPauseReason = false,
   }) {
@@ -30,6 +33,7 @@ class AgentGoal {
       progress: progress ?? this.progress,
       startedAt: startedAt,
       status: status ?? this.status,
+      todos: todos ?? this.todos,
       pauseReason: clearPauseReason ? null : pauseReason ?? this.pauseReason,
     );
   }
@@ -46,6 +50,12 @@ class AgentGoal {
     final startedAtUnixMs = value['startedAtUnixMs'];
     final statusValue = value['status'];
     final pauseReason = value['pauseReason'];
+    final rawTodos = value['todos'];
+    final todos = rawTodos == null
+        ? const <AgentGoalTodo>[]
+        : rawTodos is List<Object?>
+        ? rawTodos.map(AgentGoalTodo.fromObject).toList(growable: false)
+        : throw const FormatException('The active goal response was invalid.');
     if (conversationId is! String ||
         conversationId.isEmpty ||
         runId is! String ||
@@ -77,8 +87,28 @@ class AgentGoal {
         isUtc: true,
       ),
       status: status,
+      todos: todos,
       pauseReason: pauseReason as String?,
     );
+  }
+}
+
+class AgentGoalTodo {
+  const AgentGoalTodo({required this.text, required this.completed});
+
+  final String text;
+  final bool completed;
+
+  factory AgentGoalTodo.fromObject(Object? value) {
+    if (value is! Map<String, Object?>) {
+      throw const FormatException('The active goal task was invalid.');
+    }
+    final text = value['text'];
+    final completed = value['completed'];
+    if (text is! String || text.trim().isEmpty || completed is! bool) {
+      throw const FormatException('The active goal task was invalid.');
+    }
+    return AgentGoalTodo(text: text, completed: completed);
   }
 }
 

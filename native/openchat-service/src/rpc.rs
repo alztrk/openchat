@@ -166,6 +166,23 @@ pub(crate) async fn dispatch(
                 .await
                 .map_err(git_worktree_error)
         }
+        "project.instructions.get" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let project_root = project_root_for_mcp(storage, project_id)?;
+            let instructions = crate::project_instructions::load(&project_root)?;
+            Ok(json!({"instructions": instructions.unwrap_or_default()}))
+        }
+        "project.instructions.save" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let instructions = request
+                .params
+                .get("instructions")
+                .and_then(Value::as_str)
+                .ok_or_else(invalid_request_params)?;
+            let project_root = project_root_for_mcp(storage, project_id)?;
+            crate::project_instructions::save(&project_root, instructions)?;
+            Ok(json!({"saved": true}))
+        }
         "project.mcp.catalog.get" => {
             let project_id = required_string(&request.params, "projectId")?;
             let project_root = project_root_for_mcp(storage, project_id)?;
@@ -596,31 +613,43 @@ pub(crate) async fn dispatch(
             instructions::validate_custom_instructions(custom_instructions)
                 .map_err(|_| invalid_context_usage_params())?;
             let conversation_id = optional_string(&request.params, "conversationId")?;
-            let has_project = match conversation_id {
-                Some(conversation_id) => storage
-                    .connect()
-                    .and_then(|connection| {
-                        connection.query_row(
-                            "SELECT EXISTS(
-                                SELECT 1 FROM conversations
-                                INNER JOIN projects ON projects.id = conversations.project_id
-                                WHERE conversations.id = ?1
-                                  AND projects.folder_path IS NOT NULL
-                                  AND projects.folder_path <> ''
-                            )",
-                            [conversation_id],
-                            |row| row.get::<_, bool>(0),
-                        )
-                    })
-                    .map_err(|_| {
+            let project_root = match conversation_id {
+                Some(conversation_id) => {
+                    let connection = storage.connect().map_err(|_| {
                         ServiceError::new(
                             "storage_unavailable",
                             "Chat context usage could not be measured.",
                             true,
                         )
-                    })?,
-                None => false,
+                    })?;
+                    connection
+                        .query_row(
+                            "SELECT projects.folder_path
+                             FROM conversations
+                             INNER JOIN projects ON projects.id = conversations.project_id
+                             WHERE conversations.id = ?1",
+                            [conversation_id],
+                            |row| row.get::<_, Option<String>>(0),
+                        )
+                        .optional()
+                        .map_err(|_| {
+                            ServiceError::new(
+                                "storage_unavailable",
+                                "Chat context usage could not be measured.",
+                                true,
+                            )
+                        })?
+                        .flatten()
+                        .filter(|path| !path.trim().is_empty())
+                }
+                None => None,
             };
+            let project_instructions = project_root
+                .as_deref()
+                .map(|root| crate::project_instructions::load(Path::new(root)))
+                .transpose()?
+                .flatten();
+            let has_project = project_root.is_some();
             let available_tools = openai_compatible::context_usage_tool_definitions(
                 storage,
                 provider_id,
@@ -629,6 +658,7 @@ pub(crate) async fn dispatch(
             )?;
             let instructions = instructions::shared_instructions(
                 custom_instructions,
+                project_instructions.as_deref(),
                 permission_mode,
                 has_project,
                 !available_tools.is_empty(),
@@ -1082,152 +1112,178 @@ pub(crate) async fn dispatch(
                 ));
             }
             let resuming_question_run = resume_run_id.is_some();
-            let (run_id, custom_instructions, reasoning_effort, fast_mode, goal_execution) =
-                if let Some(run_id) = resume_run_id {
+            let (
+                run_id,
+                custom_instructions,
+                project_instructions,
+                reasoning_effort,
+                fast_mode,
+                goal_execution,
+            ) = if let Some(run_id) = resume_run_id {
+                let run = crate::storage::user_questions::load_run_for_conversation(
+                    &connection,
+                    conversation_id,
+                    run_id,
+                )
+                .map_err(map_question_storage_error)?;
+                let checkpoint = run.checkpoint.as_ref().ok_or_else(|| {
+                    ServiceError::new(
+                        "question_run_checkpoint_missing",
+                        "The pending AI response has no saved continuation data.",
+                        false,
+                    )
+                })?;
+                if checkpoint.get("providerId").and_then(Value::as_str) != provider_id.as_deref()
+                    || checkpoint.get("modelId").and_then(Value::as_str) != model_id.as_deref()
+                    || checkpoint.get("connectionId").and_then(Value::as_str)
+                        != connection_id.as_deref()
+                    || checkpoint.get("workspaceId").and_then(Value::as_str)
+                        != workspace_id.as_deref()
+                    || checkpoint
+                        .get("providerConnectionId")
+                        .or_else(|| checkpoint.get("apiKeyConnectionId"))
+                        .and_then(Value::as_str)
+                        != stored_api_key_connection_id.as_deref()
+                {
+                    return Err(ServiceError::new(
+                        "question_route_changed",
+                        "The conversation model changed while the AI was waiting. Restore the original model to continue.",
+                        false,
+                    ));
+                }
+                let custom_instructions = checkpoint
+                    .get("customInstructions")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                let project_instructions = match checkpoint.get("projectInstructions") {
+                    None | Some(Value::Null) => None,
+                    Some(Value::String(instructions)) => {
+                        crate::project_instructions::validate(instructions).map_err(|_| {
+                            ServiceError::new(
+                                "question_run_checkpoint_invalid",
+                                "The saved project instructions are invalid.",
+                                false,
+                            )
+                        })?;
+                        Some(instructions.clone())
+                    }
+                    Some(_) => {
+                        return Err(ServiceError::new(
+                            "question_run_checkpoint_invalid",
+                            "The saved project instructions are invalid.",
+                            false,
+                        ));
+                    }
+                };
+                let reasoning_effort = checkpoint
+                    .get("reasoningEffort")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                let fast_mode = match checkpoint.get("fastMode") {
+                    None => false,
+                    Some(Value::Bool(enabled)) => *enabled,
+                    _ => {
+                        return Err(ServiceError::new(
+                            "question_run_checkpoint_invalid",
+                            "The saved Fast mode setting is invalid.",
+                            false,
+                        ));
+                    }
+                };
+                if fast_mode && !matches!(provider_id.as_deref(), Some("chatgpt" | "chatgpt_api")) {
+                    return Err(ServiceError::new(
+                        "question_run_checkpoint_invalid",
+                        "The saved Fast mode setting does not match the selected provider.",
+                        false,
+                    ));
+                }
+                instructions::validate_custom_instructions(custom_instructions.as_deref())
+                    .map_err(|message| {
+                        ServiceError::new("question_run_checkpoint_invalid", message, false)
+                    })?;
+                let mut goal_execution = if checkpoint.get("goal").is_some() {
+                    Some(goals::execution_from_run(run.clone())?)
+                } else {
+                    None
+                };
+                crate::storage::user_questions::claim_run_resume(
+                    &connection,
+                    conversation_id,
+                    run_id,
+                )
+                .map_err(map_question_storage_error)?;
+                if let Some(goal) = goal_execution.as_mut() {
+                    goals::set_running(storage, goal)?;
+                }
+                (
+                    run_id.to_owned(),
+                    custom_instructions,
+                    project_instructions,
+                    reasoning_effort,
+                    fast_mode,
+                    goal_execution,
+                )
+            } else {
+                let project_instructions = project_root
+                    .as_deref()
+                    .map(|root| crate::project_instructions::load(Path::new(root)))
+                    .transpose()?
+                    .flatten();
+                let run_id = uuid::Uuid::new_v4().simple().to_string();
+                crate::storage::user_questions::create_run(
+                    &connection,
+                    &crate::storage::user_questions::NewAgentRun {
+                        run_id: run_id.clone(),
+                        conversation_id: conversation_id.to_owned(),
+                    },
+                )
+                .map_err(map_question_storage_error)?;
+                instructions::validate_custom_instructions(requested_custom_instructions).map_err(
+                    |message| ServiceError::new("invalid_request_params", message, false),
+                )?;
+                let mut checkpoint = json!({
+                    "version": 1,
+                    "providerId": provider_id,
+                    "modelId": model_id,
+                    "connectionId": connection_id,
+                    "workspaceId": workspace_id,
+                    "providerConnectionId": stored_api_key_connection_id,
+                    "customInstructions": requested_custom_instructions,
+                    "projectInstructions": project_instructions,
+                    "reasoningEffort": requested_reasoning_effort,
+                    "fastMode": requested_fast_mode,
+                });
+                if let Some(objective) = requested_goal_objective {
+                    goals::initial_checkpoint(&mut checkpoint, objective, current_time_unix_ms()?);
+                }
+                crate::storage::user_questions::save_checkpoint(
+                    &connection,
+                    conversation_id,
+                    &run_id,
+                    0,
+                    &checkpoint,
+                )
+                .map_err(map_question_storage_error)?;
+                let goal_execution = if requested_goal_objective.is_some() {
                     let run = crate::storage::user_questions::load_run_for_conversation(
                         &connection,
                         conversation_id,
-                        run_id,
-                    )
-                    .map_err(map_question_storage_error)?;
-                    let checkpoint = run.checkpoint.as_ref().ok_or_else(|| {
-                        ServiceError::new(
-                            "question_run_checkpoint_missing",
-                            "The pending AI response has no saved continuation data.",
-                            false,
-                        )
-                    })?;
-                    if checkpoint.get("providerId").and_then(Value::as_str)
-                        != provider_id.as_deref()
-                        || checkpoint.get("modelId").and_then(Value::as_str) != model_id.as_deref()
-                        || checkpoint.get("connectionId").and_then(Value::as_str)
-                            != connection_id.as_deref()
-                        || checkpoint.get("workspaceId").and_then(Value::as_str)
-                            != workspace_id.as_deref()
-                        || checkpoint
-                            .get("providerConnectionId")
-                            .or_else(|| checkpoint.get("apiKeyConnectionId"))
-                            .and_then(Value::as_str)
-                            != stored_api_key_connection_id.as_deref()
-                    {
-                        return Err(ServiceError::new(
-                            "question_route_changed",
-                            "The conversation model changed while the AI was waiting. Restore the original model to continue.",
-                            false,
-                        ));
-                    }
-                    let custom_instructions = checkpoint
-                        .get("customInstructions")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned);
-                    let reasoning_effort = checkpoint
-                        .get("reasoningEffort")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned);
-                    let fast_mode = match checkpoint.get("fastMode") {
-                        None => false,
-                        Some(Value::Bool(enabled)) => *enabled,
-                        _ => {
-                            return Err(ServiceError::new(
-                                "question_run_checkpoint_invalid",
-                                "The saved Fast mode setting is invalid.",
-                                false,
-                            ));
-                        }
-                    };
-                    if fast_mode
-                        && !matches!(provider_id.as_deref(), Some("chatgpt" | "chatgpt_api"))
-                    {
-                        return Err(ServiceError::new(
-                            "question_run_checkpoint_invalid",
-                            "The saved Fast mode setting does not match the selected provider.",
-                            false,
-                        ));
-                    }
-                    instructions::validate_custom_instructions(custom_instructions.as_deref())
-                        .map_err(|message| {
-                            ServiceError::new("question_run_checkpoint_invalid", message, false)
-                        })?;
-                    let mut goal_execution = if checkpoint.get("goal").is_some() {
-                        Some(goals::execution_from_run(run.clone())?)
-                    } else {
-                        None
-                    };
-                    crate::storage::user_questions::claim_run_resume(
-                        &connection,
-                        conversation_id,
-                        run_id,
-                    )
-                    .map_err(map_question_storage_error)?;
-                    if let Some(goal) = goal_execution.as_mut() {
-                        goals::set_running(storage, goal)?;
-                    }
-                    (
-                        run_id.to_owned(),
-                        custom_instructions,
-                        reasoning_effort,
-                        fast_mode,
-                        goal_execution,
-                    )
-                } else {
-                    let run_id = uuid::Uuid::new_v4().simple().to_string();
-                    crate::storage::user_questions::create_run(
-                        &connection,
-                        &crate::storage::user_questions::NewAgentRun {
-                            run_id: run_id.clone(),
-                            conversation_id: conversation_id.to_owned(),
-                        },
-                    )
-                    .map_err(map_question_storage_error)?;
-                    instructions::validate_custom_instructions(requested_custom_instructions)
-                        .map_err(|message| {
-                            ServiceError::new("invalid_request_params", message, false)
-                        })?;
-                    let mut checkpoint = json!({
-                        "version": 1,
-                        "providerId": provider_id,
-                        "modelId": model_id,
-                        "connectionId": connection_id,
-                        "workspaceId": workspace_id,
-                        "providerConnectionId": stored_api_key_connection_id,
-                        "customInstructions": requested_custom_instructions,
-                        "reasoningEffort": requested_reasoning_effort,
-                        "fastMode": requested_fast_mode,
-                    });
-                    if let Some(objective) = requested_goal_objective {
-                        goals::initial_checkpoint(
-                            &mut checkpoint,
-                            objective,
-                            current_time_unix_ms()?,
-                        );
-                    }
-                    crate::storage::user_questions::save_checkpoint(
-                        &connection,
-                        conversation_id,
                         &run_id,
-                        0,
-                        &checkpoint,
                     )
                     .map_err(map_question_storage_error)?;
-                    let goal_execution = if requested_goal_objective.is_some() {
-                        let run = crate::storage::user_questions::load_run_for_conversation(
-                            &connection,
-                            conversation_id,
-                            &run_id,
-                        )
-                        .map_err(map_question_storage_error)?;
-                        Some(goals::execution_from_run(run)?)
-                    } else {
-                        None
-                    };
-                    (
-                        run_id,
-                        requested_custom_instructions.map(str::to_owned),
-                        requested_reasoning_effort.map(str::to_owned),
-                        requested_fast_mode,
-                        goal_execution,
-                    )
+                    Some(goals::execution_from_run(run)?)
+                } else {
+                    None
                 };
+                (
+                    run_id,
+                    requested_custom_instructions.map(str::to_owned),
+                    project_instructions,
+                    requested_reasoning_effort.map(str::to_owned),
+                    requested_fast_mode,
+                    goal_execution,
+                )
+            };
             if let Some(goal) = goal_execution.as_ref() {
                 events
                     .send(&Response::event(
@@ -1291,6 +1347,7 @@ pub(crate) async fn dispatch(
                 conversation_id,
                 excluded_assistant_message_id,
                 custom_instructions: custom_instructions.as_deref(),
+                project_instructions: project_instructions.as_deref(),
                 project_root: project_root.as_deref().map(Path::new),
                 data_root: storage.root(),
                 storage,
@@ -2245,6 +2302,14 @@ mod tests {
     #[tokio::test]
     async fn chat_send_saves_initial_provider_checkpoint_before_provider_authentication() {
         let directory = TestDirectory::new();
+        let project_root = directory.0.join("project");
+        let project_config = project_root.join(".openchat");
+        fs::create_dir_all(&project_config).expect("create project instruction directory");
+        fs::write(
+            project_config.join("instructions.md"),
+            "Use the project's established terminology.",
+        )
+        .expect("write project instructions");
         let storage =
             Arc::new(AppStorage::open_at(directory.0.clone()).expect("open test storage"));
         let connection = storage.connect().expect("connect test storage");
@@ -2280,10 +2345,16 @@ mod tests {
                 "INSERT INTO conversations (
                     id, provider_id, project_id, model_id, connection_id, workspace_id,
                     api_key_connection_id
-                 ) VALUES (?1, 'gemini', NULL, 'test-model', NULL, NULL, 'gemini')",
+                 ) VALUES (?1, 'gemini', 'project-1', 'test-model', NULL, NULL, 'gemini')",
                 params!["conversation"],
             )
             .expect("insert API-key provider conversation");
+        connection
+            .execute(
+                "INSERT INTO projects (id, folder_path) VALUES (?1, ?2)",
+                params!["project-1", project_root.to_string_lossy().as_ref()],
+            )
+            .expect("save project folder");
         drop(connection);
 
         let service = Arc::new(
@@ -2328,6 +2399,10 @@ mod tests {
             .checkpoint
             .expect("initial route checkpoint should be saved");
         assert_eq!(checkpoint["providerConnectionId"], "gemini");
+        assert_eq!(
+            checkpoint["projectInstructions"],
+            "Use the project's established terminology."
+        );
         assert!(checkpoint.get("apiKey").is_none());
         assert!(checkpoint.get("apiKeyConnectionId").is_none());
 

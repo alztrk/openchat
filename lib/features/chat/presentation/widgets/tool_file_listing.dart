@@ -243,7 +243,7 @@ class ToolActivityNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final errorColor = Theme.of(context).colorScheme.error;
+    final errorColor = palette.destructive;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
       decoration: BoxDecoration(
@@ -269,12 +269,18 @@ class ToolActivityNotice extends StatelessWidget {
           ],
           if (isLoading || isError) const SizedBox(width: 7),
           Expanded(
-            child: Text(
-              message,
-              style: TextStyle(
-                color: isError ? errorColor : palette.secondaryText,
-                fontSize: 12,
-                height: 18 / 12,
+            child: Semantics(
+              liveRegion: isLoading || isError,
+              label: message,
+              child: ExcludeSemantics(
+                child: Text(
+                  message,
+                  style: TextStyle(
+                    color: isError ? errorColor : palette.secondaryText,
+                    fontSize: 12,
+                    height: 18 / 12,
+                  ),
+                ),
               ),
             ),
           ),

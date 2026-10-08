@@ -98,6 +98,11 @@ class _CreateProjectDialogState extends State<CreateProjectDialog> {
               l10n.projectFolder,
               style: Theme.of(context).textTheme.labelLarge,
             ),
+            const SizedBox(height: 4),
+            Text(
+              l10n.projectFolderDescription,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
             const SizedBox(height: 8),
             Container(
               constraints: const BoxConstraints(minHeight: 52),

@@ -267,8 +267,8 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
             }
           }
         }
-      } catch (e) {
-        // Ignored
+      } catch (error) {
+        _providerErrors['api_compatible'] = error.toString();
       }
     }
 
@@ -466,6 +466,39 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
             height: 1.45,
           ),
         ),
+        if (_providerErrors.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: palette.surface,
+              borderRadius: BorderRadius.circular(OpenChatRadii.card),
+              border: Border.all(color: palette.controlBorder),
+            ),
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: Text(
+                    l10n.modelCatalogUnavailable,
+                    style: TextStyle(color: palette.text),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _isLoading
+                      ? null
+                      : () => _loadData(forceRefresh: true),
+                  icon: const Icon(LucideIcons.refreshCw),
+                  label: Text(l10n.retry),
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 16),
         LayoutBuilder(
           builder: (context, constraints) {
@@ -480,6 +513,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                 onChanged: (val) => setState(() => _searchQuery = val),
                 style: TextStyle(color: palette.text, fontSize: 13),
                 decoration: InputDecoration(
+                  labelText: l10n.searchModels,
                   hintText: l10n.modelSearchHint,
                   hintStyle: TextStyle(
                     color: palette.secondaryText,
@@ -506,9 +540,13 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                   ? null
                   : () => _loadData(forceRefresh: true),
               icon: _isLoading
-                  ? const SizedBox.square(
-                      dimension: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                  ? Semantics(
+                      liveRegion: true,
+                      label: l10n.modelsLoading,
+                      child: const SizedBox.square(
+                        dimension: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
                     )
                   : const Icon(LucideIcons.refreshCw, size: 16),
               label: Text(l10n.refreshModels),
@@ -534,9 +572,15 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
         ),
         const SizedBox(height: 16),
         if (_isLoading)
-          const Padding(
+          Padding(
             padding: EdgeInsets.symmetric(vertical: 32),
-            child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            child: Center(
+              child: Semantics(
+                liveRegion: true,
+                label: l10n.modelsLoading,
+                child: const CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
           )
         else if (filteredModelCount == 0)
           Card(
@@ -551,7 +595,11 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
               padding: const EdgeInsets.all(24),
               child: Center(
                 child: Text(
-                  l10n.noModelsFound,
+                  query.isNotEmpty
+                      ? l10n.noModelsFound
+                      : _providerErrors.isNotEmpty
+                      ? l10n.modelCatalogUnavailable
+                      : l10n.noConnectedProviders,
                   style: TextStyle(color: palette.secondaryText, fontSize: 13),
                 ),
               ),

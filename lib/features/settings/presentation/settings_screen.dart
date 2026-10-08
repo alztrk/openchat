@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/openchat_toast.dart';
+import 'package:openchat/app/openchat_page_header.dart';
 import 'package:openchat/features/chat/data/chat_repository.dart';
 import 'package:openchat/features/chat/domain/history_storage_status.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
@@ -41,11 +42,20 @@ enum _SettingsSection {
   appearance,
   localData;
 
+  bool get isAdvanced => switch (this) {
+    usageQuotas ||
+    statistics ||
+    models ||
+    localEngines ||
+    conversationMemory => true,
+    connections || sharedInstructions || appearance || localData => false,
+  };
+
   IconData get icon => switch (this) {
     connections => LucideIcons.link,
     usageQuotas => LucideIcons.chartNoAxesCombined,
     statistics => LucideIcons.chartBarIncreasing,
-    models => LucideIcons.network,
+    models => LucideIcons.slidersHorizontal,
     localEngines => LucideIcons.microchip,
     conversationMemory => LucideIcons.brain,
     sharedInstructions => LucideIcons.notebookPen,
@@ -64,6 +74,7 @@ class SettingsScreen extends StatefulWidget {
     this.activeConversationTitle,
     this.isActiveConversationSending = false,
     required this.settingsPreferences,
+    this.pageHeadingFocusNode,
     this.locale,
     this.conversationWidth = ConversationWidthPreference.normal,
     this.conversationTextSize = ConversationTextSizePreference.normal,
@@ -102,6 +113,7 @@ class SettingsScreen extends StatefulWidget {
   final String? activeConversationTitle;
   final bool isActiveConversationSending;
   final SettingsPreferences settingsPreferences;
+  final FocusNode? pageHeadingFocusNode;
   final Future<void> Function()? onClearConversationHistory;
   final ChatGptApiKeyStore? chatGptApiKeyStore;
   final ApiCompatibleProviderKeyStore? apiCompatibleProviderKeyStore;
@@ -126,6 +138,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _savedSharedInstructions = '';
   String? _sharedInstructionsError;
   _SettingsSection _selectedSection = _SettingsSection.connections;
+  bool _advancedSettingsExpanded = false;
   ConversationMemoryRepository? _conversationMemoryRepository;
 
   @override
@@ -156,6 +169,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.dispose();
   }
 
+  void _selectSection(_SettingsSection section) {
+    setState(() {
+      _selectedSection = section;
+      _advancedSettingsExpanded = section.isAdvanced;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.pageHeadingFocusNode?.requestFocus();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final palette = OpenChatPalette.of(context);
@@ -169,12 +192,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _SettingsSection.connections => l10n.connections,
           _SettingsSection.usageQuotas => l10n.usageQuotas,
           _SettingsSection.statistics => l10n.statistics,
-          _SettingsSection.models => l10n.models,
+          _SettingsSection.models => l10n.modelPreferences,
           _SettingsSection.localEngines => l10n.localEngines,
           _SettingsSection.conversationMemory => l10n.conversationMemory,
           _SettingsSection.sharedInstructions => l10n.sharedInstructions,
           _SettingsSection.appearance => l10n.appearance,
           _SettingsSection.localData => l10n.localData,
+        };
+        final sectionDescription = switch (_selectedSection) {
+          _SettingsSection.connections => l10n.settingsConnectionsDescription,
+          _SettingsSection.usageQuotas => l10n.settingsUsageQuotasDescription,
+          _SettingsSection.statistics => l10n.settingsStatisticsDescription,
+          _SettingsSection.models => l10n.settingsModelPreferencesDescription,
+          _SettingsSection.localEngines => l10n.settingsLocalEnginesDescription,
+          _SettingsSection.conversationMemory =>
+            l10n.settingsConversationMemoryDescription,
+          _SettingsSection.sharedInstructions =>
+            l10n.settingsSharedInstructionsDescription,
+          _SettingsSection.appearance => l10n.settingsAppearanceDescription,
+          _SettingsSection.localData => l10n.settingsLocalDataDescription,
         };
 
         return ColoredBox(
@@ -185,16 +221,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SettingsSidebar(
                 compact: compactSidebar,
                 selectedSection: _selectedSection,
-                onSelectSection: (section) =>
-                    setState(() => _selectedSection = section),
+                advancedExpanded: _advancedSettingsExpanded,
+                onToggleAdvanced: () => setState(
+                  () => _advancedSettingsExpanded = !_advancedSettingsExpanded,
+                ),
+                onSelectSection: _selectSection,
               ),
               Expanded(
                 child: Column(
                   children: [
-                    _SettingsHeader(
-                      title: sectionTitle,
-                      icon: _selectedSection.icon,
-                      horizontalInset: horizontalInset,
+                    Padding(
+                      padding: EdgeInsets.fromLTRB(
+                        horizontalInset,
+                        20,
+                        horizontalInset,
+                        16,
+                      ),
+                      child: OpenChatPageHeader(
+                        title: sectionTitle,
+                        description: sectionDescription,
+                        focusNode: widget.pageHeadingFocusNode,
+                      ),
                     ),
                     Expanded(
                       child: IndexedStack(
@@ -210,10 +257,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             horizontalInset: horizontalInset,
                             child: UsageQuotasSettingsSection(
                               serviceClient: widget.serviceClient,
-                              onNavigateToConnections: () => setState(
-                                () => _selectedSection =
-                                    _SettingsSection.connections,
-                              ),
+                              onNavigateToConnections: () => setState(() {
+                                _selectedSection = _SettingsSection.connections;
+                                _advancedSettingsExpanded = false;
+                              }),
                             ),
                           ),
                           _buildSectionPage(
@@ -296,7 +343,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Align(
         alignment: Alignment.topLeft,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 840),
+          constraints: const BoxConstraints(maxWidth: 1040),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [child],
@@ -321,6 +368,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
           apiKeyStore: widget.openCodeApiKeyStore,
           onChanged: widget.onProviderStateChanged,
         ),
+        const SizedBox(height: 26),
+        Text(
+          context.openchatL10n.settingsOtherProviders,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 10),
         for (final providerId in ApiCompatibleProviderKeyStore.providerIds) ...[
           const SizedBox(height: 14),
           CompatibleProviderConnectionSection(
@@ -368,35 +421,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           )
         else ...[
-          TextField(
-            controller: _sharedInstructionsController,
-            enabled: !_isSavingInstructions,
-            minLines: 4,
-            maxLines: 8,
-            maxLength: _sharedInstructionsMaxLength,
-            buildCounter: (
-              context, {
-              required currentLength,
-              required isFocused,
-              maxLength,
-            }) => null,
-            style: Theme.of(context).textTheme.bodyLarge,
-            cursorColor: palette.accent,
-            textCapitalization: TextCapitalization.sentences,
-            textAlignVertical: TextAlignVertical.top,
-            decoration: InputDecoration(
-              hintText: l10n.sharedInstructionsHint,
-              hintStyle: TextStyle(
-                color: palette.secondaryText,
-                fontSize: 13,
-                height: 1.5,
+          Semantics(
+            label: l10n.sharedInstructions,
+            hint: l10n.sharedInstructionsDescription,
+            child: TextField(
+              controller: _sharedInstructionsController,
+              enabled: !_isSavingInstructions,
+              minLines: 4,
+              maxLines: 8,
+              maxLength: _sharedInstructionsMaxLength,
+              buildCounter: (
+                context, {
+                required currentLength,
+                required isFocused,
+                maxLength,
+              }) => null,
+              style: Theme.of(context).textTheme.bodyLarge,
+              cursorColor: palette.accent,
+              textCapitalization: TextCapitalization.sentences,
+              textAlignVertical: TextAlignVertical.top,
+              decoration: InputDecoration(
+                hintText: l10n.sharedInstructionsHint,
+                hintStyle: TextStyle(
+                  color: palette.secondaryText,
+                  fontSize: 13,
+                  height: 1.5,
+                ),
+                alignLabelWithHint: true,
+                filled: true,
+                fillColor: palette.composer,
+                contentPadding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
               ),
-              alignLabelWithHint: true,
-              filled: true,
-              fillColor: palette.composer,
-              contentPadding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              onChanged: (_) => setState(() {}),
             ),
-            onChanged: (_) => setState(() {}),
           ),
           const SizedBox(height: 8),
           Padding(
@@ -993,80 +1050,46 @@ class _SettingsRow extends StatelessWidget {
   }
 }
 
-class _SettingsHeader extends StatelessWidget {
-  const _SettingsHeader({
-    required this.title,
-    required this.icon,
-    required this.horizontalInset,
-  });
-
-  final String title;
-  final IconData icon;
-  final double horizontalInset;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = OpenChatPalette.of(context);
-
-    return ConstrainedBox(
-      constraints: const BoxConstraints(
-        minHeight: OpenChatSpacing.conversationHeaderHeight,
-      ),
-      child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: horizontalInset, vertical: 8),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: palette.secondaryIcon),
-            const SizedBox(width: OpenChatSpacing.sm),
-            Expanded(
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                  color: palette.text,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _SettingsSidebar extends StatelessWidget {
   const _SettingsSidebar({
     required this.compact,
     required this.selectedSection,
+    required this.advancedExpanded,
+    required this.onToggleAdvanced,
     required this.onSelectSection,
   });
 
   final bool compact;
   final _SettingsSection selectedSection;
+  final bool advancedExpanded;
+  final VoidCallback onToggleAdvanced;
   final ValueChanged<_SettingsSection> onSelectSection;
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
-    final entries = [
+    final generalEntries = [
       (section: _SettingsSection.connections, label: l10n.connections),
-      (section: _SettingsSection.usageQuotas, label: l10n.usageQuotas),
-      (section: _SettingsSection.statistics, label: l10n.statistics),
-      (section: _SettingsSection.models, label: l10n.models),
-      (section: _SettingsSection.localEngines, label: l10n.localEngines),
-      (
-        section: _SettingsSection.conversationMemory,
-        label: l10n.conversationMemory,
-      ),
       (
         section: _SettingsSection.sharedInstructions,
         label: l10n.sharedInstructions,
       ),
       (section: _SettingsSection.appearance, label: l10n.appearance),
-      (section: _SettingsSection.localData, label: l10n.localData),
+    ];
+    final recoveryEntry = (
+      section: _SettingsSection.localData,
+      label: l10n.localData,
+    );
+    final advancedEntries = [
+      (section: _SettingsSection.usageQuotas, label: l10n.usageQuotas),
+      (section: _SettingsSection.statistics, label: l10n.statistics),
+      (section: _SettingsSection.models, label: l10n.modelPreferences),
+      (section: _SettingsSection.localEngines, label: l10n.localEngines),
+      (
+        section: _SettingsSection.conversationMemory,
+        label: l10n.conversationMemory,
+      ),
     ];
 
     return Container(
@@ -1108,7 +1131,11 @@ class _SettingsSidebar extends StatelessWidget {
                 const SizedBox(height: 16),
                 Divider(height: 1, color: palette.border),
                 const SizedBox(height: 12),
-                for (final entry in entries) ...[
+                if (!compact) ...[
+                  _SettingsGroupLabel(label: l10n.settingsGeneral),
+                  const SizedBox(height: 6),
+                ],
+                for (final entry in generalEntries) ...[
                   _SettingsSidebarItem(
                     compact: compact,
                     label: entry.label,
@@ -1117,6 +1144,96 @@ class _SettingsSidebar extends StatelessWidget {
                     onPressed: () => onSelectSection(entry.section),
                   ),
                   const SizedBox(height: 4),
+                ],
+                if (!compact) ...[
+                  const SizedBox(height: 8),
+                  Divider(height: 1, color: palette.border),
+                  const SizedBox(height: 10),
+                  _SettingsGroupLabel(label: l10n.settingsDataRecovery),
+                  const SizedBox(height: 6),
+                ],
+                _SettingsSidebarItem(
+                  compact: compact,
+                  label: recoveryEntry.label,
+                  icon: recoveryEntry.section.icon,
+                  selected: selectedSection == recoveryEntry.section,
+                  onPressed: () => onSelectSection(recoveryEntry.section),
+                ),
+                const SizedBox(height: 8),
+                if (!compact) Divider(height: 1, color: palette.border),
+                if (!compact) const SizedBox(height: 10),
+                Semantics(
+                  button: true,
+                  expanded: advancedExpanded,
+                  label: l10n.settingsAdvanced,
+                  onTap: onToggleAdvanced,
+                  child: ExcludeSemantics(
+                    child: Tooltip(
+                      message: l10n.settingsAdvanced,
+                      child: Material(
+                        color: Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
+                        child: InkWell(
+                          onTap: onToggleAdvanced,
+                          borderRadius: BorderRadius.circular(8),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(minHeight: 44),
+                            child: Padding(
+                              padding: EdgeInsets.symmetric(
+                                horizontal: compact ? 0 : 12,
+                              ),
+                              child: Row(
+                                mainAxisAlignment: compact
+                                    ? MainAxisAlignment.center
+                                    : MainAxisAlignment.start,
+                                children: [
+                                  Icon(
+                                    LucideIcons.slidersHorizontal,
+                                    size: 18,
+                                    color: advancedExpanded
+                                        ? palette.text
+                                        : palette.secondaryIcon,
+                                  ),
+                                  if (!compact) ...[
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        l10n.settingsAdvanced,
+                                        style: TextStyle(
+                                          color: palette.secondaryText,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ),
+                                    Icon(
+                                      advancedExpanded
+                                          ? LucideIcons.chevronDown
+                                          : LucideIcons.chevronRight,
+                                      size: 16,
+                                      color: palette.secondaryIcon,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                if (advancedExpanded) ...[
+                  const SizedBox(height: 6),
+                  for (final entry in advancedEntries) ...[
+                    _SettingsSidebarItem(
+                      compact: compact,
+                      label: entry.label,
+                      icon: entry.section.icon,
+                      selected: selectedSection == entry.section,
+                      onPressed: () => onSelectSection(entry.section),
+                    ),
+                    const SizedBox(height: 4),
+                  ],
                 ],
               ],
             ),
@@ -1127,7 +1244,29 @@ class _SettingsSidebar extends StatelessWidget {
   }
 }
 
-class _SettingsSidebarItem extends StatelessWidget {
+class _SettingsGroupLabel extends StatelessWidget {
+  const _SettingsGroupLabel({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = OpenChatPalette.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: palette.secondaryText,
+          fontSize: OpenChatTypography.metadata,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _SettingsSidebarItem extends StatefulWidget {
   const _SettingsSidebarItem({
     required this.compact,
     required this.label,
@@ -1143,29 +1282,43 @@ class _SettingsSidebarItem extends StatelessWidget {
   final VoidCallback onPressed;
 
   @override
+  State<_SettingsSidebarItem> createState() => _SettingsSidebarItemState();
+}
+
+class _SettingsSidebarItemState extends State<_SettingsSidebarItem> {
+  bool _focused = false;
+
+  @override
   Widget build(BuildContext context) {
     final palette = OpenChatPalette.of(context);
 
     return Semantics(
       button: true,
-      selected: selected,
-      label: label,
+      enabled: true,
+      selected: widget.selected,
+      label: widget.label,
+      onTap: widget.onPressed,
       child: ExcludeSemantics(
         child: Tooltip(
-          message: label,
+          message: widget.label,
           child: Material(
-            color: selected ? palette.selected : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
+            color: widget.selected ? palette.selected : Colors.transparent,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+              side: _focused
+                  ? BorderSide(color: palette.focusRing, width: 2)
+                  : BorderSide.none,
+            ),
+            clipBehavior: Clip.antiAlias,
             child: InkWell(
-              onTap: onPressed,
+              onTap: widget.onPressed,
+              onFocusChange: (focused) {
+                if (_focused != focused) setState(() => _focused = focused);
+              },
               borderRadius: BorderRadius.circular(8),
               overlayColor: WidgetStateProperty.resolveWith((states) {
                 if (states.contains(WidgetState.pressed)) {
                   return palette.selected;
-                }
-                if (states.contains(WidgetState.focused)) {
-                  return OpenChatSemanticColors.of(context).focusRing
-                      .withValues(alpha: 0.24);
                 }
                 if (states.contains(WidgetState.hovered)) return palette.hover;
                 return null;
@@ -1173,30 +1326,34 @@ class _SettingsSidebarItem extends StatelessWidget {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(minHeight: 44),
                 child: Padding(
-                  padding: EdgeInsets.symmetric(horizontal: compact ? 0 : 12),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: widget.compact ? 0 : 12,
+                  ),
                   child: Row(
-                    mainAxisAlignment: compact
+                    mainAxisAlignment: widget.compact
                         ? MainAxisAlignment.center
                         : MainAxisAlignment.start,
                     children: [
                       Icon(
-                        icon,
-                        color: selected ? palette.text : palette.secondaryIcon,
+                        widget.icon,
+                        color: widget.selected
+                            ? palette.text
+                            : palette.secondaryIcon,
                         size: 18,
                       ),
-                      if (!compact) ...[
+                      if (!widget.compact) ...[
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            label,
+                            widget.label,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                              color: selected
+                              color: widget.selected
                                   ? palette.text
                                   : palette.secondaryText,
                               fontSize: 13,
-                              fontWeight: selected
+                              fontWeight: widget.selected
                                   ? FontWeight.w600
                                   : FontWeight.w400,
                             ),
@@ -1343,6 +1500,7 @@ class _ThemeChoice extends StatelessWidget {
       enabled: onPressed != null,
       selected: selected,
       label: selectedSemanticsLabel,
+      onTap: onPressed,
       child: ExcludeSemantics(
         child: Material(
           color: selected ? palette.selected : Colors.transparent,

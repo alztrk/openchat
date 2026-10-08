@@ -65,5 +65,10 @@ void main() {
     expect(themed.extension<OpenChatSemanticColors>(), isNotNull);
     expect(themed.extension<OpenChatPalette>(), OpenChatPalette.dark);
     expect(themed.extension<OpenChatConversationStyle>()?.maxWidth, 760);
+    expect(
+      themed.extension<OpenChatConversationStyle>()?.fontFamily,
+      'Manrope',
+    );
+    expect(themed.textTheme.bodyLarge?.fontFamily, OpenChatTypography.uiFontFamily);
   });
 }

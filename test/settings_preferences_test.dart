@@ -290,7 +290,7 @@ void main() {
     },
   );
 
-  test('appearance theme applies the saved width and app font', () {
+  test('appearance theme applies the saved width and response font', () {
     final theme = OpenChatTheme.withConversationStyle(
       OpenChatTheme.light,
       maxWidth: ConversationWidthPreference.wide.maxWidth,
@@ -302,7 +302,7 @@ void main() {
     expect(style?.fontFamily, AppFontPreference.georgia.familyName);
     expect(
       theme.textTheme.bodyLarge?.fontFamily,
-      AppFontPreference.georgia.familyName,
+      OpenChatTypography.uiFontFamily,
     );
   });
 
@@ -357,6 +357,70 @@ void main() {
     expect(selectedValue, 'wide');
     expect(find.text('Wide'), findsOneWidget);
     expect(find.byIcon(LucideIcons.check), findsNothing);
+  });
+
+  testWidgets('shared select opens and selects an option from the keyboard', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(800, 600);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    var selectedValue = 'normal';
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OpenChatTheme.light,
+        home: Scaffold(
+          body: Center(
+            child: StatefulBuilder(
+              builder: (context, setState) => OpenChatSelect<String>(
+                options: const [
+                  OpenChatSelectOption<String>(
+                    value: 'normal',
+                    label: 'Normal',
+                  ),
+                  OpenChatSelectOption<String>(value: 'wide', label: 'Wide'),
+                ],
+                value: selectedValue,
+                onChanged: (value) => setState(() => selectedValue = value),
+                palette: OpenChatPalette.of(context),
+                width: 240,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    final triggerFocusNode = tester
+        .widget<OutlinedButton>(find.byType(OutlinedButton))
+        .focusNode;
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.text('Wide'), findsOneWidget);
+    expect(find.byType(MenuItemButton), findsNWidgets(2));
+    expect(
+      tester.binding.focusManager.primaryFocus?.debugLabel,
+      contains('MenuItemButton'),
+    );
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(selectedValue, 'wide');
+    expect(tester.binding.focusManager.primaryFocus, same(triggerFocusNode));
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(find.byType(MenuItemButton), findsNWidgets(2));
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pumpAndSettle();
+    expect(find.byType(MenuItemButton), findsNothing);
+    expect(tester.binding.focusManager.primaryFocus, same(triggerFocusNode));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('appearance controls apply and persist all three choices', (
@@ -681,15 +745,19 @@ class _SettingsTestHostState extends State<_SettingsTestHost> {
       locale: _locale,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      theme: OpenChatTheme.withConversationStyle(
-        OpenChatTheme.light,
-        maxWidth: _width.maxWidth,
-        fontFamily: _appFont.familyName,
+      theme: _withAppFont(
+        OpenChatTheme.withConversationStyle(
+          OpenChatTheme.light,
+          maxWidth: _width.maxWidth,
+          fontFamily: _appFont.familyName,
+        ),
       ),
-      darkTheme: OpenChatTheme.withConversationStyle(
-        OpenChatTheme.dark,
-        maxWidth: _width.maxWidth,
-        fontFamily: _appFont.familyName,
+      darkTheme: _withAppFont(
+        OpenChatTheme.withConversationStyle(
+          OpenChatTheme.dark,
+          maxWidth: _width.maxWidth,
+          fontFamily: _appFont.familyName,
+        ),
       ),
       themeMode: _themeMode,
       builder: (context, child) {
@@ -751,4 +819,8 @@ class _SettingsTestHostState extends State<_SettingsTestHost> {
       ),
     );
   }
+
+  ThemeData _withAppFont(ThemeData theme) => theme.copyWith(
+    textTheme: theme.textTheme.apply(fontFamily: _appFont.familyName),
+  );
 }

@@ -5,6 +5,7 @@ class ConversationSidebarConversation {
     this.isPinned = false,
     this.isArchived = false,
     this.isBookmarked = false,
+    this.providerLabel,
     this.tags = const <String>[],
   });
 
@@ -13,6 +14,7 @@ class ConversationSidebarConversation {
   final bool isPinned;
   final bool isArchived;
   final bool isBookmarked;
+  final String? providerLabel;
   final List<String> tags;
 }
 

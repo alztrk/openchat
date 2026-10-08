@@ -1,4 +1,7 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{
+    sync::OnceLock,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
 use futures_util::StreamExt;
 use reqwest::{Client, StatusCode};
@@ -147,13 +150,23 @@ pub(crate) fn opencode_session_id() -> String {
     opencode_session_id_for_conversation("", 0)
 }
 
-fn client() -> Result<Client, ServiceError> {
+static CLIENT: OnceLock<Client> = OnceLock::new();
+
+fn build_client() -> Result<Client, ServiceError> {
     Client::builder()
         .user_agent(concat!("OpenChat/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(300))
         .build()
         .map_err(|_| network_error())
+}
+
+fn client() -> Result<Client, ServiceError> {
+    if let Some(client) = CLIENT.get() {
+        return Ok(client.clone());
+    }
+    let client = build_client()?;
+    Ok(CLIENT.get_or_init(|| client).clone())
 }
 
 pub(super) async fn opencode_free_tier_restricted(response: reqwest::Response) -> bool {
@@ -355,8 +368,120 @@ fn protocol_error() -> ServiceError {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
+    use std::hint::black_box;
+    use std::time::Instant;
 
     use serde_json::{Value, json};
+
+    fn percentile(sorted_samples: &[u128], percentile: usize) -> u128 {
+        sorted_samples[(sorted_samples.len() - 1) * percentile / 100]
+    }
+
+    fn client_access_sample(mut operation: impl FnMut()) -> u128 {
+        const OPERATIONS: usize = 200;
+        let start = Instant::now();
+        for _ in 0..OPERATIONS {
+            operation();
+        }
+        start.elapsed().as_nanos() / OPERATIONS as u128
+    }
+
+    #[test]
+    #[ignore]
+    fn benchmark_openai_compatible_http_client_reuse() {
+        const WARMUP: usize = 20;
+        const SAMPLES: usize = 200;
+        const REPEATS: usize = 5;
+
+        for _ in 0..WARMUP {
+            client_access_sample(|| {
+                black_box(super::build_client().expect("HTTP client is configured"));
+            });
+            client_access_sample(|| {
+                black_box(super::client().expect("HTTP client is configured"));
+            });
+        }
+
+        for repeat in 1..=REPEATS {
+            let mut fresh_samples = Vec::with_capacity(SAMPLES);
+            let mut pooled_samples = Vec::with_capacity(SAMPLES);
+            for sample in 0..SAMPLES {
+                if sample % 2 == 0 {
+                    pooled_samples.push(client_access_sample(|| {
+                        black_box(super::client().expect("HTTP client is configured"));
+                    }));
+                    fresh_samples.push(client_access_sample(|| {
+                        black_box(super::build_client().expect("HTTP client is configured"));
+                    }));
+                } else {
+                    fresh_samples.push(client_access_sample(|| {
+                        black_box(super::build_client().expect("HTTP client is configured"));
+                    }));
+                    pooled_samples.push(client_access_sample(|| {
+                        black_box(super::client().expect("HTTP client is configured"));
+                    }));
+                }
+            }
+            fresh_samples.sort_unstable();
+            pooled_samples.sort_unstable();
+
+            eprintln!(
+                "http_client_reuse repeat={repeat} fresh_p50={}ns fresh_p95={}ns fresh_p99={}ns pooled_p50={}ns pooled_p95={}ns pooled_p99={}ns",
+                percentile(&fresh_samples, 50),
+                percentile(&fresh_samples, 95),
+                percentile(&fresh_samples, 99),
+                percentile(&pooled_samples, 50),
+                percentile(&pooled_samples, 95),
+                percentile(&pooled_samples, 99),
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn compatible_http_client_reuses_keep_alive_connections() {
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind local test server");
+        let address = listener.local_addr().expect("read local address");
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept client connection");
+            for _ in 0..2 {
+                let mut request = Vec::new();
+                let mut byte = [0; 1];
+                while !request.ends_with(b"\r\n\r\n") {
+                    let read = stream.read(&mut byte).await.expect("read request headers");
+                    assert_ne!(read, 0, "client closed before sending both requests");
+                    request.push(byte[0]);
+                }
+                stream
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\nok",
+                    )
+                    .await
+                    .expect("write response");
+            }
+        });
+
+        let client = super::client().expect("HTTP client is configured");
+        for _ in 0..2 {
+            let response = client
+                .get(format!("http://{address}/health"))
+                .send()
+                .await
+                .expect("send local request");
+            assert_eq!(response.text().await.expect("read response body"), "ok");
+        }
+
+        tokio::time::timeout(std::time::Duration::from_secs(2), server)
+            .await
+            .expect("server received both requests on one connection")
+            .expect("test server task completed");
+    }
 
     #[test]
     fn classifies_tool_payload_rejections_separately_from_auth_and_quota_errors() {

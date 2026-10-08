@@ -131,7 +131,7 @@ abstract class AppLocalizations {
   /// No description provided for @workspacesDescription.
   ///
   /// In en, this message translates to:
-  /// **'Keep related conversations together.'**
+  /// **'Group conversations by topic. Files and tools stay in code projects.'**
   String get workspacesDescription;
 
   /// No description provided for @workspaceCreate.
@@ -224,6 +224,18 @@ abstract class AppLocalizations {
   /// **'Workspaces could not be loaded.'**
   String get workspaceLoadFailed;
 
+  /// No description provided for @workspacesLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading workspaces…'**
+  String get workspacesLoading;
+
+  /// No description provided for @conversationsLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading conversations…'**
+  String get conversationsLoading;
+
   /// No description provided for @workspaceSaveFailed.
   ///
   /// In en, this message translates to:
@@ -245,7 +257,7 @@ abstract class AppLocalizations {
   /// No description provided for @outputs.
   ///
   /// In en, this message translates to:
-  /// **'Outputs'**
+  /// **'Saved answers'**
   String get outputs;
 
   /// No description provided for @outputsDescription.
@@ -271,6 +283,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Saved responses could not be loaded.'**
   String get outputsLoadFailed;
+
+  /// No description provided for @outputsLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading saved answers…'**
+  String get outputsLoading;
 
   /// No description provided for @saveResponse.
   ///
@@ -374,6 +392,84 @@ abstract class AppLocalizations {
   /// **'Connections, appearance, and local data'**
   String get settingsDescription;
 
+  /// No description provided for @settingsGeneral.
+  ///
+  /// In en, this message translates to:
+  /// **'General'**
+  String get settingsGeneral;
+
+  /// No description provided for @settingsAdvanced.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced'**
+  String get settingsAdvanced;
+
+  /// No description provided for @settingsDataRecovery.
+  ///
+  /// In en, this message translates to:
+  /// **'Data and recovery'**
+  String get settingsDataRecovery;
+
+  /// No description provided for @settingsOtherProviders.
+  ///
+  /// In en, this message translates to:
+  /// **'Other providers'**
+  String get settingsOtherProviders;
+
+  /// No description provided for @settingsConnectionsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect the accounts and model providers you use.'**
+  String get settingsConnectionsDescription;
+
+  /// No description provided for @settingsUsageQuotasDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Check the remaining usage available for connected services.'**
+  String get settingsUsageQuotasDescription;
+
+  /// No description provided for @settingsStatisticsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Review conversation and model usage over time.'**
+  String get settingsStatisticsDescription;
+
+  /// No description provided for @settingsModelPreferencesDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose which models appear and how they are selected.'**
+  String get settingsModelPreferencesDescription;
+
+  /// No description provided for @settingsLocalEnginesDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage the software that runs models on this device.'**
+  String get settingsLocalEnginesDescription;
+
+  /// No description provided for @settingsConversationMemoryDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Search and manage the local conversation archive.'**
+  String get settingsConversationMemoryDescription;
+
+  /// No description provided for @settingsSharedInstructionsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Set guidance included in new conversations.'**
+  String get settingsSharedInstructionsDescription;
+
+  /// No description provided for @settingsAppearanceDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Adjust language, theme, text size, and conversation width.'**
+  String get settingsAppearanceDescription;
+
+  /// No description provided for @settingsLocalDataDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Check where history is stored and manage local archives.'**
+  String get settingsLocalDataDescription;
+
   /// No description provided for @connections.
   ///
   /// In en, this message translates to:
@@ -386,10 +482,22 @@ abstract class AppLocalizations {
   /// **'Models'**
   String get models;
 
+  /// No description provided for @modelLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Find models'**
+  String get modelLibrary;
+
+  /// No description provided for @modelPreferences.
+  ///
+  /// In en, this message translates to:
+  /// **'Model preferences'**
+  String get modelPreferences;
+
   /// No description provided for @modelsDescription.
   ///
   /// In en, this message translates to:
-  /// **'Manage models from connected providers, set a default model, and hide models you don\'t need.'**
+  /// **'Choose the default model for new conversations and hide models you don\'t use.'**
   String get modelsDescription;
 
   /// No description provided for @localEngines.
@@ -781,6 +889,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Local models'**
   String get localModelsPageTitle;
+
+  /// No description provided for @localModelsLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading local models…'**
+  String get localModelsLoading;
 
   /// No description provided for @localModelsPageDescription.
   ///
@@ -1363,6 +1477,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Search models...'**
   String get modelSearchHint;
+
+  /// No description provided for @searchModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Search models'**
+  String get searchModels;
 
   /// No description provided for @chatGptFastModeEnabledTooltip.
   ///
@@ -2195,19 +2315,19 @@ abstract class AppLocalizations {
   /// No description provided for @workspaceWithoutName.
   ///
   /// In en, this message translates to:
-  /// **'Workspace'**
+  /// **'ChatGPT account workspace'**
   String get workspaceWithoutName;
 
   /// No description provided for @workspace.
   ///
   /// In en, this message translates to:
-  /// **'Workspace'**
+  /// **'ChatGPT account workspace'**
   String get workspace;
 
   /// No description provided for @workspaceUnavailable.
   ///
   /// In en, this message translates to:
-  /// **'No workspace information is available.'**
+  /// **'No ChatGPT account workspace information is available.'**
   String get workspaceUnavailable;
 
   /// No description provided for @selectAccountForWorkspace.
@@ -2285,7 +2405,7 @@ abstract class AppLocalizations {
   /// No description provided for @workspaceNumbered.
   ///
   /// In en, this message translates to:
-  /// **'Workspace {number}'**
+  /// **'ChatGPT account workspace {number}'**
   String workspaceNumbered(int number);
 
   /// No description provided for @quotaResetsAt.
@@ -3340,6 +3460,12 @@ abstract class AppLocalizations {
   /// **'Search filters'**
   String get historySearchFiltersTitle;
 
+  /// No description provided for @historySearchFiltersLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading search filters…'**
+  String get historySearchFiltersLoading;
+
   /// No description provided for @historySearchRouteFilterNote.
   ///
   /// In en, this message translates to:
@@ -3559,7 +3685,7 @@ abstract class AppLocalizations {
   /// No description provided for @projects.
   ///
   /// In en, this message translates to:
-  /// **'Projects'**
+  /// **'Code projects'**
   String get projects;
 
   /// No description provided for @noProjects.
@@ -3571,13 +3697,13 @@ abstract class AppLocalizations {
   /// No description provided for @createProject.
   ///
   /// In en, this message translates to:
-  /// **'Create project'**
+  /// **'Create code project'**
   String get createProject;
 
   /// No description provided for @projectName.
   ///
   /// In en, this message translates to:
-  /// **'Project name'**
+  /// **'Code project name'**
   String get projectName;
 
   /// No description provided for @projectNameRequired.
@@ -3589,8 +3715,14 @@ abstract class AppLocalizations {
   /// No description provided for @projectFolder.
   ///
   /// In en, this message translates to:
-  /// **'Project folder'**
+  /// **'Code project folder'**
   String get projectFolder;
+
+  /// No description provided for @projectFolderDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Code projects connect conversations to a folder on this device for file and tool access. Use Workspaces to group conversations without a folder.'**
+  String get projectFolderDescription;
 
   /// No description provided for @chooseProjectFolder.
   ///
@@ -3628,6 +3760,12 @@ abstract class AppLocalizations {
   /// **'Projects could not be loaded.'**
   String get projectLoadFailed;
 
+  /// No description provided for @projectLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading code projects…'**
+  String get projectLoading;
+
   /// No description provided for @projectMoveFailed.
   ///
   /// In en, this message translates to:
@@ -3663,6 +3801,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Show more'**
   String get showMore;
+
+  /// No description provided for @showLess.
+  ///
+  /// In en, this message translates to:
+  /// **'Show less'**
+  String get showLess;
 
   /// No description provided for @projectOptions.
   ///
@@ -3741,6 +3885,54 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Git worktrees'**
   String get projectOptionsWorktrees;
+
+  /// No description provided for @projectOptionsInstructions.
+  ///
+  /// In en, this message translates to:
+  /// **'Project instructions'**
+  String get projectOptionsInstructions;
+
+  /// No description provided for @projectInstructionsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Project instructions'**
+  String get projectInstructionsTitle;
+
+  /// No description provided for @projectInstructionsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'These instructions are sent with new responses in this project. They are saved to .openchat/instructions.md and limited to 16 KiB.'**
+  String get projectInstructionsDescription;
+
+  /// No description provided for @projectInstructionsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Write project-specific guidance'**
+  String get projectInstructionsHint;
+
+  /// No description provided for @projectInstructionsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Project instructions could not be loaded. Check the file and try again.'**
+  String get projectInstructionsLoadFailed;
+
+  /// No description provided for @projectInstructionsSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Project instructions could not be saved. Check the project folder and try again.'**
+  String get projectInstructionsSaveFailed;
+
+  /// No description provided for @projectInstructionsSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save instructions'**
+  String get projectInstructionsSave;
+
+  /// No description provided for @projectInstructionsSize.
+  ///
+  /// In en, this message translates to:
+  /// **'{bytes} / {maxBytes} bytes'**
+  String projectInstructionsSize(int bytes, int maxBytes);
 
   /// No description provided for @projectMcpTitle.
   ///
@@ -4712,6 +4904,30 @@ abstract class AppLocalizations {
   /// **'Search the archive'**
   String get conversationMemorySearchTitle;
 
+  /// No description provided for @conversationWorkspaceContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Workspace: {workspace}'**
+  String conversationWorkspaceContext(String workspace);
+
+  /// No description provided for @outputSourceProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Provider: {provider}'**
+  String outputSourceProvider(String provider);
+
+  /// No description provided for @outputSourceModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model: {model}'**
+  String outputSourceModel(String model);
+
+  /// No description provided for @conversationMemorySearching.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching the conversation archive…'**
+  String get conversationMemorySearching;
+
   /// No description provided for @conversationMemorySearchHint.
   ///
   /// In en, this message translates to:
@@ -5324,12 +5540,6 @@ abstract class AppLocalizations {
   /// **'Write a message...'**
   String get messageHint;
 
-  /// No description provided for @sendMessage.
-  ///
-  /// In en, this message translates to:
-  /// **'Send message'**
-  String get sendMessage;
-
   /// No description provided for @send.
   ///
   /// In en, this message translates to:
@@ -5467,6 +5677,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Running'**
   String get toolRunning;
+
+  /// No description provided for @unknownTool.
+  ///
+  /// In en, this message translates to:
+  /// **'Other tool'**
+  String get unknownTool;
+
+  /// No description provided for @terminalSession.
+  ///
+  /// In en, this message translates to:
+  /// **'Terminal · {terminal}'**
+  String terminalSession(String terminal);
 
   /// No description provided for @toolWaitingForUser.
   ///
@@ -5995,6 +6217,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'View remaining quotas, usage limits, and reset times for all your connected ChatGPT accounts.'**
   String get usageQuotasDescription;
+
+  /// No description provided for @usageQuotasLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Usage quotas could not be loaded.'**
+  String get usageQuotasLoadFailed;
 
   /// No description provided for @statistics.
   ///
@@ -6689,13 +6917,13 @@ abstract class AppLocalizations {
   /// No description provided for @workspaceQuotaLabel.
   ///
   /// In en, this message translates to:
-  /// **'Workspace: {name}'**
+  /// **'ChatGPT workspace: {name}'**
   String workspaceQuotaLabel(String name);
 
   /// No description provided for @modelsPageDescription.
   ///
   /// In en, this message translates to:
-  /// **'Find and download models hosted on Hugging Face.'**
+  /// **'Find open models to run on this device. Downloaded models appear in Local models.'**
   String get modelsPageDescription;
 
   /// No description provided for @modelSortDownloads.
@@ -6755,8 +6983,14 @@ abstract class AppLocalizations {
   /// No description provided for @huggingFaceModelSearchHint.
   ///
   /// In en, this message translates to:
-  /// **'Search Hugging Face models'**
+  /// **'Search open models'**
   String get huggingFaceModelSearchHint;
+
+  /// No description provided for @otherProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Other provider'**
+  String get otherProvider;
 
   /// No description provided for @modelSearchRefresh.
   ///
@@ -7357,6 +7591,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Elapsed: {time}'**
   String goalElapsedTime(String time);
+
+  /// No description provided for @goalTasksCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Tasks: {completed} of {total}'**
+  String goalTasksCount(int completed, int total);
 }
 
 class _AppLocalizationsDelegate

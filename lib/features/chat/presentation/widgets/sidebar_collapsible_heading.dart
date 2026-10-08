@@ -24,62 +24,70 @@ class SidebarCollapsibleHeading extends StatefulWidget {
 }
 
 class _SidebarCollapsibleHeadingState extends State<SidebarCollapsibleHeading> {
-  bool _hovered = false;
   bool _focused = false;
 
   @override
   Widget build(BuildContext context) {
     final palette = OpenChatPalette.of(context);
-    final touch = switch (Theme.of(context).platform) {
-      TargetPlatform.android ||
-      TargetPlatform.iOS ||
-      TargetPlatform.fuchsia => true,
-      _ => false,
-    };
-    final showArrow = touch || _hovered || _focused;
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
 
-    return Focus(
-      onFocusChange: (focused) => setState(() => _focused = focused),
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hovered = true),
-        onExit: (_) => setState(() => _hovered = false),
-        child: Material(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
-          child: InkWell(
-            onTap: widget.onPressed,
-            borderRadius: BorderRadius.circular(6),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 28),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Row(
-                  children: [
-                    Expanded(child: SidebarSectionHeading(title: widget.title)),
-                    if (widget.trailing != null) widget.trailing!,
-                    ExcludeSemantics(
-                      excluding: !showArrow,
-                      child: AnimatedOpacity(
-                        duration: MediaQuery.disableAnimationsOf(context)
-                            ? Duration.zero
-                            : const Duration(milliseconds: 120),
-                        opacity: showArrow ? 1 : 0,
-                        child: Icon(
-                          widget.collapsed
-                              ? LucideIcons.chevronDown
-                              : LucideIcons.chevronUp,
-                          size: 15,
-                          color: palette.secondaryIcon,
+    return Row(
+      children: [
+        Expanded(
+          child: Focus(
+            onFocusChange: (focused) => setState(() => _focused = focused),
+            child: Semantics(
+              button: true,
+              enabled: true,
+              expanded: !widget.collapsed,
+              label: widget.title,
+              onTap: widget.onPressed,
+              child: ExcludeSemantics(
+                child: Material(
+                  color: Colors.transparent,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                    side: _focused
+                        ? BorderSide(color: palette.focusRing, width: 2)
+                        : BorderSide.none,
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: widget.onPressed,
+                    hoverColor: palette.hover,
+                    borderRadius: BorderRadius.circular(6),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 40),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: SidebarSectionHeading(title: widget.title),
+                            ),
+                            AnimatedRotation(
+                              duration: reducedMotion
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 120),
+                              turns: widget.collapsed ? 0 : 0.5,
+                              child: Icon(
+                                LucideIcons.chevronDown,
+                                size: 16,
+                                color: palette.secondaryIcon,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
         ),
-      ),
+        if (widget.trailing != null) widget.trailing!,
+      ],
     );
   }
 }

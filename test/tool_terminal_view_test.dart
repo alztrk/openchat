@@ -96,7 +96,10 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 200));
 
-    expect(find.text('terminal: term_interactive_1'), findsOneWidget);
+    expect(
+      find.text(l10n.terminalSession('term_interactive_1')),
+      findsOneWidget,
+    );
     expect(find.text('confirm_yes'), findsOneWidget);
     expect(find.text('Processing confirmation...'), findsOneWidget);
     expect(find.text(l10n.toolTerminalWaitingForInput), findsOneWidget);
@@ -161,7 +164,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('terminal: term_killed_1'), findsOneWidget);
+    expect(find.text(l10n.terminalSession('term_killed_1')), findsOneWidget);
     expect(find.text(l10n.toolTerminalTerminated), findsOneWidget);
     expect(find.text('Session ended by user.'), findsOneWidget);
   });

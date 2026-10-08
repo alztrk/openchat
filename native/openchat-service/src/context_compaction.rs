@@ -191,30 +191,30 @@ pub(crate) fn request_image_count(value: &serde_json::Value) -> i64 {
 
 fn request_text_token_estimate(text: &str) -> i64 {
     let byte_length = text.len();
-    let whitespace_count = text
-        .chars()
-        .filter(|character| character.is_whitespace())
-        .count();
-    let punctuation_count = text
-        .chars()
-        .filter(|character| !character.is_alphanumeric() && !character.is_whitespace())
-        .count();
-    let character_count = text.chars().count();
+    let mut whitespace_count = 0usize;
+    let mut punctuation_count = 0usize;
+    let mut character_count = 0usize;
+    let mut ascii_bytes = 0usize;
+    let mut non_ascii_characters = 0usize;
+    for character in text.chars() {
+        character_count += 1;
+        if character.is_whitespace() {
+            whitespace_count += 1;
+        } else if !character.is_alphanumeric() {
+            punctuation_count += 1;
+        }
+        if character.is_ascii() {
+            ascii_bytes += 1;
+        } else {
+            non_ascii_characters += 1;
+        }
+    }
     if byte_length >= 128
         && (whitespace_count == 0 || punctuation_count.saturating_mul(2) >= character_count)
     {
         return text_token_estimate(text);
     }
 
-    let mut ascii_bytes = 0usize;
-    let mut non_ascii_characters = 0usize;
-    for character in text.chars() {
-        if character.is_ascii() {
-            ascii_bytes = ascii_bytes.saturating_add(1);
-        } else {
-            non_ascii_characters = non_ascii_characters.saturating_add(1);
-        }
-    }
     i64::try_from(ascii_bytes.div_ceil(3))
         .unwrap_or(i64::MAX)
         .saturating_add(
@@ -439,14 +439,21 @@ fn trigger_tokens(context_window: i64) -> i64 {
 
 #[cfg(test)]
 mod tests {
+    use std::{hint::black_box, time::Instant};
+
     use crate::chatgpt_store::{ConversationContextState, StoredAttachment, StoredMessage};
     use serde_json::json;
 
     use super::{
         CompactionCheck, compaction_payload_matches_route, compaction_prefix_end,
-        local_extractive_summary, local_summary_byte_limit, message_token_estimate, should_compact,
+        local_extractive_summary, local_summary_byte_limit, message_token_estimate,
+        request_context_token_estimate, request_text_token_estimate, should_compact,
         text_token_estimate, validate_request_context,
     };
+
+    fn percentile(sorted_samples: &[u128], percentile: usize) -> u128 {
+        sorted_samples[(sorted_samples.len() - 1) * percentile / 100]
+    }
 
     fn message(id: &str, role: &str, content: &str) -> StoredMessage {
         StoredMessage {
@@ -457,6 +464,53 @@ mod tests {
             output_tokens: None,
             tool_activities: Vec::new(),
             attachments: Vec::new(),
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn benchmark_request_context_token_estimation() {
+        const WARMUP: usize = 20;
+        const SAMPLES: usize = 200;
+        const REPEATS: usize = 5;
+
+        let request = json!({
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "The agent should preserve relevant decisions, constraints, and recent conversation details while assembling a request. ".repeat(2048),
+                },
+                {
+                    "role": "user",
+                    "content": "Türkçe konuşma özeti, önceki kararları ve önemli ayrıntıları korur. ".repeat(1024),
+                },
+                {
+                    "role": "assistant",
+                    "content": "{\"tool\":\"search_files\",\"arguments\":{\"pattern\":\"src/**/*.rs\",\"maxResults\":500}} ".repeat(512),
+                },
+            ],
+            "tools": [{"name": "search_files", "parameters": {"type": "object"}}],
+        });
+
+        for _ in 0..WARMUP {
+            black_box(request_context_token_estimate(black_box(&request)));
+        }
+
+        for repeat in 1..=REPEATS {
+            let mut samples = Vec::with_capacity(SAMPLES);
+            for _ in 0..SAMPLES {
+                let start = Instant::now();
+                black_box(request_context_token_estimate(black_box(&request)));
+                samples.push(start.elapsed().as_nanos());
+            }
+            samples.sort_unstable();
+
+            eprintln!(
+                "request_context_estimate repeat={repeat} p50={}us p95={}us p99={}us",
+                percentile(&samples, 50) / 1_000,
+                percentile(&samples, 95) / 1_000,
+                percentile(&samples, 99) / 1_000,
+            );
         }
     }
 
@@ -505,6 +559,16 @@ mod tests {
     fn text_estimate_counts_utf8_bytes() {
         assert_eq!(text_token_estimate("hello"), 5);
         assert_eq!(text_token_estimate("界"), 3);
+    }
+
+    #[test]
+    fn request_text_estimate_preserves_ascii_unicode_and_dense_text_rules() {
+        assert_eq!(request_text_token_estimate("a"), 1);
+        assert_eq!(request_text_token_estimate("abcd"), 2);
+        assert_eq!(request_text_token_estimate("Türkçe"), 6);
+        assert_eq!(request_text_token_estimate(&"a ".repeat(64)), 43);
+        assert_eq!(request_text_token_estimate(&"!. ".repeat(43)), 129);
+        assert_eq!(request_text_token_estimate(&"é".repeat(64)), 128);
     }
 
     #[test]

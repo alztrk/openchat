@@ -706,7 +706,7 @@ class _AssistantResponseContentState extends State<_AssistantResponseContent> {
           },
           'code' => {
             'background-color': _cssColor(widget.palette.composer),
-            'font-family': 'monospace',
+            'font-family': '"${OpenChatTypography.codeFontFamily}"',
           },
           'blockquote' => {
             'border-left': '2px solid ${_cssColor(widget.palette.border)}',

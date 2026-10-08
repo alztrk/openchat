@@ -877,7 +877,7 @@ class _LocalEnginesSettingsSectionState
       elevation: 0,
       color: palette.surface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(OpenChatRadii.card),
         side: BorderSide(color: palette.border),
       ),
       child: Padding(

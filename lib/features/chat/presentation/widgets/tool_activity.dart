@@ -189,15 +189,21 @@ class ToolActivityAccordion extends StatelessWidget {
                     children: [
                       statusIndicator,
                       const SizedBox(width: 5),
-                      Text(
-                        statusLabel,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: statusColor,
-                          fontSize: OpenChatTypography.metadata,
-                          fontWeight: FontWeight.w500,
-                          height: 14 / 10,
+                      Semantics(
+                        liveRegion: true,
+                        label: statusLabel,
+                        child: ExcludeSemantics(
+                          child: Text(
+                            statusLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: statusColor,
+                              fontSize: OpenChatTypography.metadata,
+                              fontWeight: FontWeight.w500,
+                              height: 14 / 10,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -258,7 +264,7 @@ class ToolActivityAccordion extends StatelessWidget {
         'git_history' => l10n.toolGitHistory,
         'web_search' => l10n.toolWebSearch,
         'read_url_content' || 'read_url' => l10n.toolReadUrlContent,
-        _ => name,
+        _ => l10n.unknownTool,
       };
 }
 

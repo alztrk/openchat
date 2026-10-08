@@ -41,7 +41,6 @@ void main() {
                 updateSelector = setState;
                 return ModelSelector(
                   label: 'Model seç',
-                  iconRoot: 'assets/icons',
                   palette: OpenChatPalette.of(context),
                   compact: false,
                   models: const <ChatGptModel>[],
@@ -169,7 +168,6 @@ void main() {
                 updateSelector = setState;
                 return ModelSelector(
                   label: 'Model seç',
-                  iconRoot: 'assets/icons',
                   palette: OpenChatPalette.of(context),
                   compact: false,
                   models: providerId == 'opencode'
@@ -263,7 +261,6 @@ void main() {
           body: Center(
             child: ModelSelector(
               label: 'Model seç',
-              iconRoot: 'assets/icons',
               palette: OpenChatPalette.light,
               compact: false,
               models: models,
@@ -371,7 +368,6 @@ void main() {
           body: Center(
             child: ModelSelector(
               label: 'Model seç',
-              iconRoot: 'assets/icons',
               palette: OpenChatPalette.light,
               compact: false,
               models: openCodeModels,

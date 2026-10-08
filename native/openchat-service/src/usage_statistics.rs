@@ -122,10 +122,29 @@ pub(crate) struct UsageRequestTracker<'a> {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct RequestDataSources {
+    pub(crate) instruction_sources: Vec<String>,
     pub(crate) message_ids: Vec<String>,
     pub(crate) archived_message_ids: Vec<String>,
     pub(crate) summarized_through_message_id: Option<String>,
     pub(crate) attachments: Vec<RequestAttachmentSource>,
+}
+
+pub(crate) fn instruction_source_categories(
+    custom_instructions: Option<&str>,
+    project_instructions: Option<&str>,
+    goal_mode: bool,
+) -> Vec<String> {
+    let mut sources = Vec::new();
+    if custom_instructions.is_some_and(|value| !value.trim().is_empty()) {
+        sources.push("shared_preferences".to_owned());
+    }
+    if project_instructions.is_some_and(|value| !value.trim().is_empty()) {
+        sources.push("project_instructions".to_owned());
+    }
+    if goal_mode {
+        sources.push("goal_mode".to_owned());
+    }
+    sources
 }
 
 #[derive(Clone, Debug)]
@@ -339,6 +358,17 @@ fn request_data_manifest(payload: &Value, sources: Option<&RequestDataSources>) 
                         })
                         .count(),
                 );
+            }
+        }
+    }
+    if let Some(sources) = sources {
+        for source in sources.instruction_sources.iter().take(8) {
+            if matches!(
+                source.as_str(),
+                "shared_preferences" | "project_instructions" | "goal_mode"
+            ) && !instruction_sources.contains(&source.as_str())
+            {
+                instruction_sources.push(source.as_str());
             }
         }
     }
@@ -907,7 +937,19 @@ fn request_details(
 mod request_manifest_tests {
     use serde_json::json;
 
-    use super::{RequestAttachmentSource, RequestDataSources, request_data_manifest};
+    use super::{
+        RequestAttachmentSource, RequestDataSources, instruction_source_categories,
+        request_data_manifest,
+    };
+
+    #[test]
+    fn instruction_source_categories_exclude_empty_and_unconfigured_sources() {
+        assert_eq!(
+            instruction_source_categories(Some("shared"), Some("project"), true),
+            ["shared_preferences", "project_instructions", "goal_mode"]
+        );
+        assert!(instruction_source_categories(Some(" \n"), None, false).is_empty());
+    }
 
     #[test]
     fn request_manifest_records_sent_data_categories_without_content() {
@@ -929,6 +971,7 @@ mod request_manifest_tests {
         });
 
         let sources = RequestDataSources {
+            instruction_sources: vec!["project_instructions".to_owned()],
             message_ids: vec!["message-user".to_owned()],
             archived_message_ids: vec!["message-archive".to_owned()],
             summarized_through_message_id: Some("message-summary-boundary".to_owned()),
@@ -949,6 +992,8 @@ mod request_manifest_tests {
         assert_eq!(manifest["imageCount"], 1);
         assert_eq!(manifest["toolResultCount"], 1);
         assert_eq!(manifest["instructionBytes"], 26);
+        assert_eq!(manifest["instructionSources"][0], "instructions");
+        assert_eq!(manifest["instructionSources"][1], "project_instructions");
         assert_eq!(manifest["toolDefinitions"][0], "read_file");
         assert_eq!(manifest["toolDefinitions"][1], "web_search");
         assert_eq!(manifest["cacheControls"][0], "prompt_cache_key");

@@ -600,6 +600,7 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
       textInputAction: TextInputAction.search,
       onSubmitted: (_) => _searchArchive(),
       decoration: InputDecoration(
+        labelText: l10n.conversationMemorySearchTitle,
         hintText: l10n.conversationMemorySearchHint,
         counterText: '',
         prefixIcon: const Icon(LucideIcons.search),
@@ -646,43 +647,58 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
         ?.copyWith(color: palette.secondaryText);
 
     if (_semanticSearchReady == true) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(LucideIcons.search, size: 18, color: palette.accent),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(l10n.conversationMemorySemanticReady, style: titleStyle),
-                const SizedBox(height: 3),
-                Text(
-                  l10n.conversationMemorySemanticIndexNotice,
-                  style: detailStyle,
+      return Semantics(
+        liveRegion: true,
+        label: l10n.conversationMemorySemanticReady,
+        child: ExcludeSemantics(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(LucideIcons.search, size: 18, color: palette.accent),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l10n.conversationMemorySemanticReady,
+                      style: titleStyle,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      l10n.conversationMemorySemanticIndexNotice,
+                      style: detailStyle,
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       );
     }
 
     if (_semanticSearchReady == null && !_semanticPreparationFailed) {
-      return Row(
-        children: [
-          const SizedBox.square(
-            dimension: 16,
-            child: CircularProgressIndicator(strokeWidth: 2),
+      return Semantics(
+        liveRegion: true,
+        label: l10n.conversationMemorySemanticChecking,
+        child: ExcludeSemantics(
+          child: Row(
+            children: [
+              const SizedBox.square(
+                dimension: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  l10n.conversationMemorySemanticChecking,
+                  style: detailStyle,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              l10n.conversationMemorySemanticChecking,
-              style: detailStyle,
-            ),
-          ),
-        ],
+        ),
       );
     }
 
@@ -1056,9 +1072,15 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
     if (_searchFailed) {
-      return Text(
-        l10n.conversationMemorySearchFailed,
-        style: TextStyle(color: Theme.of(context).colorScheme.error),
+      return Semantics(
+        liveRegion: true,
+        label: l10n.conversationMemorySearchFailed,
+        child: ExcludeSemantics(
+          child: Text(
+            l10n.conversationMemorySearchFailed,
+            style: TextStyle(color: palette.destructive),
+          ),
+        ),
       );
     }
     if (!_hasSearched) {
@@ -1068,12 +1090,36 @@ class _ConversationMemorySectionState extends State<ConversationMemorySection> {
       );
     }
     if (_isSearching) {
-      return const Center(child: CircularProgressIndicator());
+      return Center(
+        child: Semantics(
+          liveRegion: true,
+          label: l10n.conversationMemorySearching,
+          child: ExcludeSemantics(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox.square(
+                  dimension: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(width: 10),
+                Text(l10n.conversationMemorySearching),
+              ],
+            ),
+          ),
+        ),
+      );
     }
     if (_searchResults.isEmpty) {
-      return Text(
-        l10n.conversationMemorySearchNoResults,
-        style: TextStyle(color: palette.secondaryText),
+      return Semantics(
+        liveRegion: true,
+        label: l10n.conversationMemorySearchNoResults,
+        child: ExcludeSemantics(
+          child: Text(
+            l10n.conversationMemorySearchNoResults,
+            style: TextStyle(color: palette.secondaryText),
+          ),
+        ),
       );
     }
 

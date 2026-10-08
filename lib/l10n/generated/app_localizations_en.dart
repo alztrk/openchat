@@ -22,7 +22,8 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workspaces => 'Workspaces';
 
   @override
-  String get workspacesDescription => 'Keep related conversations together.';
+  String get workspacesDescription =>
+      'Group conversations by topic. Files and tools stay in code projects.';
 
   @override
   String get workspaceCreate => 'New workspace';
@@ -76,6 +77,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workspaceLoadFailed => 'Workspaces could not be loaded.';
 
   @override
+  String get workspacesLoading => 'Loading workspaces…';
+
+  @override
+  String get conversationsLoading => 'Loading conversations…';
+
+  @override
   String get workspaceSaveFailed => 'The workspace could not be saved.';
 
   @override
@@ -85,7 +92,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get workspaceMoveFailed => 'The conversation could not be moved.';
 
   @override
-  String get outputs => 'Outputs';
+  String get outputs => 'Saved answers';
 
   @override
   String get outputsDescription =>
@@ -100,6 +107,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get outputsLoadFailed => 'Saved responses could not be loaded.';
+
+  @override
+  String get outputsLoading => 'Loading saved answers…';
 
   @override
   String get saveResponse => 'Save response';
@@ -156,14 +166,68 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsDescription => 'Connections, appearance, and local data';
 
   @override
+  String get settingsGeneral => 'General';
+
+  @override
+  String get settingsAdvanced => 'Advanced';
+
+  @override
+  String get settingsDataRecovery => 'Data and recovery';
+
+  @override
+  String get settingsOtherProviders => 'Other providers';
+
+  @override
+  String get settingsConnectionsDescription =>
+      'Connect the accounts and model providers you use.';
+
+  @override
+  String get settingsUsageQuotasDescription =>
+      'Check the remaining usage available for connected services.';
+
+  @override
+  String get settingsStatisticsDescription =>
+      'Review conversation and model usage over time.';
+
+  @override
+  String get settingsModelPreferencesDescription =>
+      'Choose which models appear and how they are selected.';
+
+  @override
+  String get settingsLocalEnginesDescription =>
+      'Manage the software that runs models on this device.';
+
+  @override
+  String get settingsConversationMemoryDescription =>
+      'Search and manage the local conversation archive.';
+
+  @override
+  String get settingsSharedInstructionsDescription =>
+      'Set guidance included in new conversations.';
+
+  @override
+  String get settingsAppearanceDescription =>
+      'Adjust language, theme, text size, and conversation width.';
+
+  @override
+  String get settingsLocalDataDescription =>
+      'Check where history is stored and manage local archives.';
+
+  @override
   String get connections => 'Connections';
 
   @override
   String get models => 'Models';
 
   @override
+  String get modelLibrary => 'Find models';
+
+  @override
+  String get modelPreferences => 'Model preferences';
+
+  @override
   String get modelsDescription =>
-      'Manage models from connected providers, set a default model, and hide models you don\'t need.';
+      'Choose the default model for new conversations and hide models you don\'t use.';
 
   @override
   String get localEngines => 'Local engines';
@@ -397,6 +461,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get localModelsPageTitle => 'Local models';
+
+  @override
+  String get localModelsLoading => 'Loading local models…';
 
   @override
   String get localModelsPageDescription =>
@@ -752,6 +819,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get modelSearchHint => 'Search models...';
+
+  @override
+  String get searchModels => 'Search models';
 
   @override
   String get chatGptFastModeEnabledTooltip =>
@@ -1232,13 +1302,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get selectWorkspace => 'Choose a workspace';
 
   @override
-  String get workspaceWithoutName => 'Workspace';
+  String get workspaceWithoutName => 'ChatGPT account workspace';
 
   @override
-  String get workspace => 'Workspace';
+  String get workspace => 'ChatGPT account workspace';
 
   @override
-  String get workspaceUnavailable => 'No workspace information is available.';
+  String get workspaceUnavailable =>
+      'No ChatGPT account workspace information is available.';
 
   @override
   String get selectAccountForWorkspace =>
@@ -1285,7 +1356,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String workspaceNumbered(int number) {
-    return 'Workspace $number';
+    return 'ChatGPT account workspace $number';
   }
 
   @override
@@ -1942,6 +2013,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get historySearchFiltersTitle => 'Search filters';
 
   @override
+  String get historySearchFiltersLoading => 'Loading search filters…';
+
+  @override
   String get historySearchRouteFilterNote =>
       'Provider and model refer to the route saved with each assistant answer.';
 
@@ -2066,22 +2140,26 @@ class AppLocalizationsEn extends AppLocalizations {
   String get searchMessageUnavailable => 'This message is no longer available.';
 
   @override
-  String get projects => 'Projects';
+  String get projects => 'Code projects';
 
   @override
   String get noProjects => 'No projects yet';
 
   @override
-  String get createProject => 'Create project';
+  String get createProject => 'Create code project';
 
   @override
-  String get projectName => 'Project name';
+  String get projectName => 'Code project name';
 
   @override
   String get projectNameRequired => 'Enter a project name.';
 
   @override
-  String get projectFolder => 'Project folder';
+  String get projectFolder => 'Code project folder';
+
+  @override
+  String get projectFolderDescription =>
+      'Code projects connect conversations to a folder on this device for file and tool access. Use Workspaces to group conversations without a folder.';
 
   @override
   String get chooseProjectFolder => 'Choose folder';
@@ -2103,6 +2181,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get projectLoadFailed => 'Projects could not be loaded.';
 
   @override
+  String get projectLoading => 'Loading code projects…';
+
+  @override
   String get projectMoveFailed => 'The chat could not be moved to the project.';
 
   @override
@@ -2119,6 +2200,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get showMore => 'Show more';
+
+  @override
+  String get showLess => 'Show less';
 
   @override
   String get projectOptions => 'Project options';
@@ -2161,6 +2245,35 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get projectOptionsWorktrees => 'Git worktrees';
+
+  @override
+  String get projectOptionsInstructions => 'Project instructions';
+
+  @override
+  String get projectInstructionsTitle => 'Project instructions';
+
+  @override
+  String get projectInstructionsDescription =>
+      'These instructions are sent with new responses in this project. They are saved to .openchat/instructions.md and limited to 16 KiB.';
+
+  @override
+  String get projectInstructionsHint => 'Write project-specific guidance';
+
+  @override
+  String get projectInstructionsLoadFailed =>
+      'Project instructions could not be loaded. Check the file and try again.';
+
+  @override
+  String get projectInstructionsSaveFailed =>
+      'Project instructions could not be saved. Check the project folder and try again.';
+
+  @override
+  String get projectInstructionsSave => 'Save instructions';
+
+  @override
+  String projectInstructionsSize(int bytes, int maxBytes) {
+    return '$bytes / $maxBytes bytes';
+  }
 
   @override
   String get projectMcpTitle => 'Project MCP servers';
@@ -2772,6 +2885,25 @@ class AppLocalizationsEn extends AppLocalizations {
   String get conversationMemorySearchTitle => 'Search the archive';
 
   @override
+  String conversationWorkspaceContext(String workspace) {
+    return 'Workspace: $workspace';
+  }
+
+  @override
+  String outputSourceProvider(String provider) {
+    return 'Provider: $provider';
+  }
+
+  @override
+  String outputSourceModel(String model) {
+    return 'Model: $model';
+  }
+
+  @override
+  String get conversationMemorySearching =>
+      'Searching the conversation archive…';
+
+  @override
   String get conversationMemorySearchHint =>
       'Enter an older topic or phrase...';
 
@@ -3122,9 +3254,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get messageHint => 'Write a message...';
 
   @override
-  String get sendMessage => 'Send message';
-
-  @override
   String get send => 'Send';
 
   @override
@@ -3204,6 +3333,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolRunning => 'Running';
+
+  @override
+  String get unknownTool => 'Other tool';
+
+  @override
+  String terminalSession(String terminal) {
+    return 'Terminal · $terminal';
+  }
 
   @override
   String get toolWaitingForUser => 'Waiting for your answer';
@@ -3527,6 +3664,9 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get usageQuotasDescription =>
       'View remaining quotas, usage limits, and reset times for all your connected ChatGPT accounts.';
+
+  @override
+  String get usageQuotasLoadFailed => 'Usage quotas could not be loaded.';
 
   @override
   String get statistics => 'Statistics';
@@ -3924,12 +4064,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String workspaceQuotaLabel(String name) {
-    return 'Workspace: $name';
+    return 'ChatGPT workspace: $name';
   }
 
   @override
   String get modelsPageDescription =>
-      'Find and download models hosted on Hugging Face.';
+      'Find open models to run on this device. Downloaded models appear in Local models.';
 
   @override
   String get modelSortDownloads => 'Most downloaded';
@@ -3961,7 +4101,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get modelFormatExllama => 'ExLlama · EXL3';
 
   @override
-  String get huggingFaceModelSearchHint => 'Search Hugging Face models';
+  String get huggingFaceModelSearchHint => 'Search open models';
+
+  @override
+  String get otherProvider => 'Other provider';
 
   @override
   String get modelSearchRefresh => 'Refresh model results';
@@ -4317,5 +4460,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String goalElapsedTime(String time) {
     return 'Elapsed: $time';
+  }
+
+  @override
+  String goalTasksCount(int completed, int total) {
+    return 'Tasks: $completed of $total';
   }
 }

@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:intl/intl.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
@@ -48,6 +47,10 @@ class ConversationPane extends StatelessWidget {
     this.canSendMessage = false,
     this.isSending = false,
     this.isLoadingModels = false,
+    this.hasAvailableModels = false,
+    this.modelCatalogFailed = false,
+    this.onOpenConnections,
+    this.onRetryModels,
     this.models = const <ChatGptModel>[],
     this.favoriteModels = const <FavoriteModel>[],
     required this.providerId,
@@ -75,7 +78,9 @@ class ConversationPane extends StatelessWidget {
     this.messagesLoading = false,
     this.showAssistantLoading = false,
     this.messagesErrorDescription,
+    this.onRetryMessageHistory,
     this.conversationTitle,
+    this.productWorkspaceName,
     this.conversationId,
     this.contextProviderId,
     this.contextModelId,
@@ -144,6 +149,10 @@ class ConversationPane extends StatelessWidget {
   final bool canSendMessage;
   final bool isSending;
   final bool isLoadingModels;
+  final bool hasAvailableModels;
+  final bool modelCatalogFailed;
+  final VoidCallback? onOpenConnections;
+  final VoidCallback? onRetryModels;
   final List<ChatGptModel> models;
   final List<FavoriteModel> favoriteModels;
   final String providerId;
@@ -178,7 +187,9 @@ class ConversationPane extends StatelessWidget {
   final bool messagesLoading;
   final bool showAssistantLoading;
   final String? messagesErrorDescription;
+  final VoidCallback? onRetryMessageHistory;
   final String? conversationTitle;
+  final String? productWorkspaceName;
   final String? conversationId;
   final String? contextProviderId;
   final String? contextModelId;
@@ -251,6 +262,7 @@ class ConversationPane extends StatelessWidget {
         final header = _ConversationHeader(
           showHistoryButton: showHistoryButton,
           title: conversationTitle ?? l10n.conversationTitle,
+          productWorkspaceName: productWorkspaceName,
           conversationId: conversationId,
           titleEditRequestId: titleEditRequestId,
           onRenameConversation: onRenameConversation,
@@ -259,7 +271,10 @@ class ConversationPane extends StatelessWidget {
           historyButtonTooltip: historyButtonTooltip,
         );
         final history = messagesErrorDescription != null
-            ? _ConversationMessageError(description: messagesErrorDescription!)
+            ? _ConversationMessageError(
+                description: messagesErrorDescription!,
+                onRetry: onRetryMessageHistory,
+              )
             : messagesLoading
             ? Center(
                 child: Semantics(
@@ -273,7 +288,22 @@ class ConversationPane extends StatelessWidget {
             : messages.isEmpty &&
                   !showAssistantLoading &&
                   historySearchTargetMessageId == null
-            ? _NewConversationEmptyState(title: l10n.emptyChatWelcomeTitle)
+            ? _NewConversationEmptyState(
+                title: !isLoadingModels && !hasAvailableModels
+                    ? modelCatalogFailed
+                          ? l10n.modelsUnavailable
+                          : l10n.noModelConnected
+                    : l10n.emptyChatWelcomeTitle,
+                description: !isLoadingModels && !hasAvailableModels
+                    ? modelCatalogFailed
+                          ? l10n.modelCatalogUnavailable
+                          : l10n.noModelConnectedBody
+                    : l10n.emptyChatWelcomeBody,
+                onOpenConnections: !isLoadingModels && !hasAvailableModels
+                    ? onOpenConnections
+                    : null,
+                onRetryModels: modelCatalogFailed ? onRetryModels : null,
+              )
             : _ConversationHistory(
                 messages: messages,
                 messagesLoaded: true,
@@ -481,9 +511,10 @@ class ConversationPane extends StatelessWidget {
 }
 
 class _ConversationMessageError extends StatelessWidget {
-  const _ConversationMessageError({required this.description});
+  const _ConversationMessageError({required this.description, this.onRetry});
 
   final String description;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -510,6 +541,14 @@ class _ConversationMessageError extends StatelessWidget {
                     color: OpenChatPalette.of(context).secondaryText,
                   ),
                 ),
+                if (onRetry != null) ...[
+                  const SizedBox(height: 16),
+                  OutlinedButton.icon(
+                    onPressed: onRetry,
+                    icon: const Icon(LucideIcons.refreshCw),
+                    label: Text(context.openchatL10n.retry),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1534,9 +1573,17 @@ class _EditConversationBranchDialogState
 }
 
 class _NewConversationEmptyState extends StatelessWidget {
-  const _NewConversationEmptyState({required this.title});
+  const _NewConversationEmptyState({
+    required this.title,
+    required this.description,
+    this.onOpenConnections,
+    this.onRetryModels,
+  });
 
   final String title;
+  final String description;
+  final VoidCallback? onOpenConnections;
+  final VoidCallback? onRetryModels;
 
   @override
   Widget build(BuildContext context) {
@@ -1560,6 +1607,41 @@ class _NewConversationEmptyState extends StatelessWidget {
                 height: 30 / 22,
               ),
             ),
+            const SizedBox(height: 8),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 440),
+              child: Text(
+                description,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: palette.secondaryText,
+                  fontSize: OpenChatTypography.body,
+                  height: 20 / OpenChatTypography.body,
+                ),
+              ),
+            ),
+            if (onOpenConnections != null || onRetryModels != null) ...[
+              const SizedBox(height: 20),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (onOpenConnections != null)
+                    FilledButton.icon(
+                      onPressed: onOpenConnections,
+                      icon: const Icon(LucideIcons.link),
+                      label: Text(context.openchatL10n.connections),
+                    ),
+                  if (onRetryModels != null)
+                    OutlinedButton.icon(
+                      onPressed: onRetryModels,
+                      icon: const Icon(LucideIcons.refreshCw),
+                      label: Text(context.openchatL10n.retry),
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -1571,6 +1653,7 @@ class _ConversationHeader extends StatefulWidget {
   const _ConversationHeader({
     required this.showHistoryButton,
     required this.title,
+    required this.productWorkspaceName,
     required this.conversationId,
     required this.titleEditRequestId,
     required this.onRenameConversation,
@@ -1581,6 +1664,7 @@ class _ConversationHeader extends StatefulWidget {
 
   final bool showHistoryButton;
   final String title;
+  final String? productWorkspaceName;
   final String? conversationId;
   final String? titleEditRequestId;
   final Future<void> Function(String conversationId, String title)?
@@ -1598,6 +1682,7 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
   late final FocusNode _titleFocusNode;
   bool _isEditing = false;
   bool _isSaving = false;
+  bool _titleHasFocus = false;
 
   @override
   void initState() {
@@ -1713,17 +1798,35 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
         widget.conversationId != null && widget.onRenameConversation != null;
     final showTitle =
         widget.conversationId != null || widget.title != l10n.conversationTitle;
+    final workspaceName = widget.productWorkspaceName?.trim();
+    final hasWorkspaceContext =
+        workspaceName != null && workspaceName.isNotEmpty;
+    final scaledHeaderHeight = MediaQuery.textScalerOf(context).scale(22) + 12;
 
     return ConstrainedBox(
       key: const ValueKey<String>('conversation-header'),
       constraints: BoxConstraints(
         minHeight: OpenChatSpacing.conversationHeaderHeight,
-        maxHeight: showTitle
+        maxHeight: hasWorkspaceContext
             ? math.max(
-                OpenChatSpacing.conversationHeaderHeight,
+                math.max(
+                  OpenChatSpacing.conversationHeaderHeight,
+                  scaledHeaderHeight,
+                ),
+                MediaQuery.textScalerOf(context).scale(13) * 2 + 34,
+              )
+            : showTitle
+            ? math.max(
+                math.max(
+                  OpenChatSpacing.conversationHeaderHeight,
+                  scaledHeaderHeight,
+                ),
                 MediaQuery.textScalerOf(context).scale(14) * (20 / 14) + 18,
               )
-            : OpenChatSpacing.conversationHeaderHeight,
+            : math.max(
+                OpenChatSpacing.conversationHeaderHeight,
+                scaledHeaderHeight,
+              ),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1740,14 +1843,7 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
               const SizedBox(width: 12),
             ],
             if (showTitle) ...[
-              SvgPicture.asset(
-                Theme.of(context).brightness == Brightness.dark
-                    ? 'assets/icons/conversation/dark.svg'
-                    : 'assets/icons/conversation/light.svg',
-                width: 18,
-                height: 18,
-                excludeFromSemantics: true,
-              ),
+              const Icon(LucideIcons.messageCircle, size: 18),
               const SizedBox(width: 10),
             ],
             Expanded(
@@ -1783,6 +1879,7 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
                                     height: 20 / 14,
                                   ),
                                   decoration: InputDecoration(
+                                    labelText: l10n.conversationTitle,
                                     isDense: true,
                                     filled: true,
                                     fillColor: palette.composer,
@@ -1796,10 +1893,9 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
                             ),
                             IconButton(
                               tooltip: l10n.save,
-                              visualDensity: VisualDensity.compact,
                               constraints: const BoxConstraints.tightFor(
-                                width: 34,
-                                height: 36,
+                                width: 44,
+                                height: 44,
                               ),
                               padding: EdgeInsets.zero,
                               onPressed: _isSaving
@@ -1816,10 +1912,9 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
                             ),
                             IconButton(
                               tooltip: l10n.cancel,
-                              visualDensity: VisualDensity.compact,
                               constraints: const BoxConstraints.tightFor(
-                                width: 34,
-                                height: 36,
+                                width: 44,
+                                height: 44,
                               ),
                               padding: EdgeInsets.zero,
                               onPressed: _isSaving ? null : _cancelTitleEdit,
@@ -1829,23 +1924,93 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
                         ),
                       ),
                     )
-                  : InkWell(
-                      onTap: canRename ? _beginTitleEdit : null,
-                      borderRadius: BorderRadius.circular(4),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Text(
-                          showTitle ? widget.title : '',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: palette.text,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500,
-                            height: 20 / 13,
+                  : Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Semantics(
+                          button: true,
+                          enabled: canRename,
+                          label: widget.title,
+                          onTap: canRename ? _beginTitleEdit : null,
+                          child: ExcludeSemantics(
+                            child: InkWell(
+                              onTap: canRename ? _beginTitleEdit : null,
+                              onFocusChange: (focused) {
+                                if (_titleHasFocus == focused) return;
+                                setState(() => _titleHasFocus = focused);
+                              },
+                              borderRadius: BorderRadius.circular(4),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  border: _titleHasFocus
+                                      ? Border.all(
+                                          color: palette.focusRing,
+                                          width: 2,
+                                        )
+                                      : null,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 3,
+                                    vertical: 3,
+                                  ),
+                                  child: Text(
+                                    showTitle ? widget.title : '',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: palette.text,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                      height: 20 / 13,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                        if (hasWorkspaceContext)
+                          Semantics(
+                            label: l10n.conversationWorkspaceContext(
+                              workspaceName,
+                            ),
+                            child: ExcludeSemantics(
+                              child: Padding(
+                                padding: const EdgeInsetsDirectional.only(
+                                  start: 4,
+                                  top: 1,
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      LucideIcons.folder,
+                                      size: 12,
+                                      color: palette.secondaryIcon,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Flexible(
+                                      child: Text(
+                                        workspaceName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: palette.secondaryText,
+                                          fontSize: OpenChatTypography.metadata,
+                                          height: 14 / 10,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
             ),
           ],

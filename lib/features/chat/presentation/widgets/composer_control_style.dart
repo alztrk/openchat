@@ -9,7 +9,7 @@ double composerControlHeight(BuildContext context) {
     TargetPlatform.fuchsia => 44.0,
     _ => 36.0,
   };
-  final scaledHeight = MediaQuery.textScalerOf(context).scale(18) + 12;
+  final scaledHeight = MediaQuery.textScalerOf(context).scale(18) + 24;
   return scaledHeight > minimum ? scaledHeight : minimum;
 }
 
@@ -23,7 +23,7 @@ ButtonStyle composerControlStyle(
   Color? sideColor,
   Color? focusColor,
 }) {
-  final controlSide = sideColor ?? Colors.transparent;
+  final controlSide = sideColor ?? palette.controlBorder;
   final resolvedFocusColor = focusColor ?? palette.accent;
   return OutlinedButton.styleFrom(
     minimumSize: Size(width, height),
@@ -43,10 +43,10 @@ ButtonStyle composerControlStyle(
   ).copyWith(
     side: WidgetStateProperty.resolveWith<BorderSide?>((states) {
       if (states.contains(WidgetState.disabled)) {
-        return BorderSide(color: controlSide);
+        return BorderSide(color: palette.disabledBorder);
       }
       if (states.contains(WidgetState.focused)) {
-        return BorderSide(color: resolvedFocusColor, width: 1.4);
+        return BorderSide(color: resolvedFocusColor, width: 2);
       }
       return BorderSide(color: controlSide);
     }),

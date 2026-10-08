@@ -16,6 +16,7 @@ pub(super) struct ProviderRequestOptions<'a> {
     pub(super) provider_id: &'a str,
     pub(super) excluded_assistant_message_id: Option<&'a str>,
     pub(super) custom_instructions: Option<&'a str>,
+    pub(super) project_instructions: Option<&'a str>,
     pub(super) permission_mode: ToolPermissionMode,
     pub(super) has_project: bool,
     pub(super) project_task_ids: &'a [String],
@@ -34,6 +35,7 @@ pub(super) fn build_provider_request(
         provider_id,
         excluded_assistant_message_id,
         custom_instructions,
+        project_instructions,
         permission_mode,
         has_project,
         project_task_ids,
@@ -109,6 +111,7 @@ pub(super) fn build_provider_request(
     }
     let mut shared_instructions = instructions::shared_instructions(
         custom_instructions,
+        project_instructions,
         permission_mode,
         has_project,
         !tools.is_empty(),

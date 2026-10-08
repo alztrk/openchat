@@ -38,7 +38,7 @@ Windows development requires Flutter, Rust with Cargo, and the Visual Studio C++
 - `cargo test --locked --manifest-path native/openchat-launcher/Cargo.toml --target-dir build/launcher-test-target`
 - `git diff --check`
 
-The Windows workflow uploads the portable executable as a short-lived build artifact. It does not publish a GitHub release. Live provider-account checks remain deferred until the first GitHub release.
+The Windows workflow uploads the portable executable as a short-lived build artifact. It does not publish a GitHub release. Live provider-account checks require configured provider credentials and are run separately from credential-free CI.
 
 Visual regression checks live in `test/fidelity_screenshot_test.dart`. They render the existing Flutter components in both themes with isolated test data, check narrow windows and enlarged text, and exercise the history drawer and virtual-keyboard layout. The files in `test/goldens` are local rendering baselines, not evidence of a live provider connection.
 

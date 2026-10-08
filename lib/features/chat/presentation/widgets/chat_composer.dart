@@ -160,10 +160,8 @@ class ChatComposer extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: palette.composer,
                     border: Border.all(
-                      color: hasFocus
-                          ? focusRing
-                          : palette.border.withValues(alpha: 0.72),
-                      width: hasFocus ? 1.4 : 1,
+                      color: hasFocus ? focusRing : palette.controlBorder,
+                      width: hasFocus ? 2 : 1,
                     ),
                     borderRadius: BorderRadius.circular(narrow ? 16 : 20),
                   ),
@@ -411,34 +409,37 @@ class _GoalSlashInputState extends State<_GoalSlashInput> {
             ),
             const SizedBox(height: 10),
           ],
-          TextField(
-            controller: widget.controller,
-            minLines: 1,
-            maxLines: 3,
-            textCapitalization: TextCapitalization.sentences,
-            textInputAction: TextInputAction.newline,
-            cursorColor: widget.focusRing,
-            decoration: InputDecoration(
-              hintText: l10n.messageHint,
-              hintStyle: TextStyle(
-                color: widget.palette.secondaryText,
+          Semantics(
+            label: l10n.messageHint,
+            child: TextField(
+              controller: widget.controller,
+              minLines: 1,
+              maxLines: 3,
+              textCapitalization: TextCapitalization.sentences,
+              textInputAction: TextInputAction.newline,
+              cursorColor: widget.focusRing,
+              decoration: InputDecoration(
+                hintText: l10n.messageHint,
+                hintStyle: TextStyle(
+                  color: widget.palette.secondaryText,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w400,
+                  height: 20 / 15,
+                ),
+                filled: false,
+                border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
+                contentPadding: EdgeInsets.zero,
+                isDense: true,
+                isCollapsed: true,
+              ),
+              style: TextStyle(
+                color: widget.palette.text,
                 fontSize: 15,
                 fontWeight: FontWeight.w400,
                 height: 20 / 15,
               ),
-              filled: false,
-              border: InputBorder.none,
-              enabledBorder: InputBorder.none,
-              focusedBorder: InputBorder.none,
-              contentPadding: EdgeInsets.zero,
-              isDense: true,
-              isCollapsed: true,
-            ),
-            style: TextStyle(
-              color: widget.palette.text,
-              fontSize: 15,
-              fontWeight: FontWeight.w400,
-              height: 20 / 15,
             ),
           ),
         ],
@@ -567,7 +568,6 @@ class _ComposerActions extends StatelessWidget {
       label: selectedModelLabel == null || selectedModelLabel.isEmpty
           ? l10n.modelSelection
           : selectedModelLabel,
-      iconRoot: iconRoot,
       palette: palette,
       compact: touchTargets,
       width: narrow ? 144 : 152,
@@ -625,23 +625,26 @@ class _ComposerActions extends StatelessWidget {
         label: attachmentsEnabled
             ? l10n.attachFile
             : l10n.attachmentsUnavailable,
-        child: SizedBox.square(
-          dimension: attachmentSize,
-          child: OutlinedButton(
-            onPressed: attachmentsEnabled ? onAddAttachments : null,
-            style: composerControlStyle(
-              palette,
-              width: attachmentSize,
-              height: attachmentSize,
-              compact: touchTargets,
-              focusColor: focusRing,
-            ),
-            child: Icon(
-              LucideIcons.paperclip,
-              size: 18,
-              color: attachmentsEnabled
-                  ? palette.secondaryIcon
-                  : palette.disabledIcon,
+        onTap: attachmentsEnabled ? onAddAttachments : null,
+        child: ExcludeSemantics(
+          child: SizedBox.square(
+            dimension: attachmentSize,
+            child: OutlinedButton(
+              onPressed: attachmentsEnabled ? onAddAttachments : null,
+              style: composerControlStyle(
+                palette,
+                width: attachmentSize,
+                height: attachmentSize,
+                compact: touchTargets,
+                focusColor: focusRing,
+              ),
+              child: Icon(
+                LucideIcons.paperclip,
+                size: 18,
+                color: attachmentsEnabled
+                    ? palette.secondaryIcon
+                    : palette.disabledIcon,
+              ),
             ),
           ),
         ),
@@ -689,6 +692,7 @@ class _ComposerActions extends StatelessWidget {
             button: true,
             enabled: actionEnabled,
             label: tooltip,
+            onTap: actionEnabled ? onPressed : null,
             child: ExcludeSemantics(
               child: SizedBox.square(
                 dimension: sendSize,
@@ -726,55 +730,141 @@ class _ComposerActions extends StatelessWidget {
         );
       },
     );
-    final leftControls = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        attachmentButton,
-        const SizedBox(width: 8),
-        toolPermissionSelector,
-      ],
-    );
-    final trailingControls = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [contextIndicator, const SizedBox(width: 8), sendButton],
-    );
-    final rightControls = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        modelSelector,
-        if (reasoningSelector != null) ...[
-          const SizedBox(width: 8),
-          reasoningSelector,
-        ],
-        const SizedBox(width: 8),
-        trailingControls,
-      ],
+    final fullAccessIndicator =
+        toolPermissionMode == ToolPermissionMode.fullAccess
+        ? Tooltip(
+            message: l10n.toolPermissionFullAccessDescription,
+            child: Semantics(
+              label:
+                  '${l10n.toolPermissionFullAccess}. ${l10n.toolPermissionFullAccessDescription}',
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 36),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: palette.warning.withValues(alpha: 0.12),
+                  border: Border.all(color: palette.warning),
+                  borderRadius: BorderRadius.circular(OpenChatRadii.control),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      LucideIcons.shieldAlert,
+                      size: 16,
+                      color: palette.warning,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      l10n.toolPermissionFullAccess,
+                      style: TextStyle(
+                        color: palette.warning,
+                        fontSize: OpenChatTypography.metadata,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          )
+        : null;
+    final primaryControls = narrow
+        ? Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              attachmentButton,
+              modelSelector,
+              ?fullAccessIndicator,
+              sendButton,
+            ],
+          )
+        : Row(
+            children: [
+              attachmentButton,
+              const SizedBox(width: 8),
+              modelSelector,
+              const Spacer(),
+              ?fullAccessIndicator,
+              const SizedBox(width: 8),
+              sendButton,
+            ],
+          );
+    final advancedControls = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [toolPermissionSelector, ?reasoningSelector, contextIndicator],
     );
 
-    final narrowControls = Column(
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [attachmentButton, toolPermissionSelector],
-        ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [modelSelector, ?reasoningSelector],
-        ),
-        const SizedBox(height: 8),
-        Align(alignment: Alignment.centerRight, child: trailingControls),
+        primaryControls,
+        _ComposerOptionsDisclosure(child: advancedControls),
       ],
     );
+  }
+}
 
-    if (narrow) {
-      return narrowControls;
-    }
+class _ComposerOptionsDisclosure extends StatefulWidget {
+  const _ComposerOptionsDisclosure({required this.child});
 
-    return Row(children: [leftControls, const Spacer(), rightControls]);
+  final Widget child;
+
+  @override
+  State<_ComposerOptionsDisclosure> createState() =>
+      _ComposerOptionsDisclosureState();
+}
+
+class _ComposerOptionsDisclosureState
+    extends State<_ComposerOptionsDisclosure> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.openchatL10n;
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    final palette = OpenChatPalette.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Semantics(
+          expanded: _expanded,
+          child: TextButton.icon(
+            onPressed: () => setState(() => _expanded = !_expanded),
+            icon: Icon(
+              _expanded ? LucideIcons.chevronUp : LucideIcons.slidersHorizontal,
+              size: 16,
+            ),
+            label: Text(l10n.moreOptions),
+            style: TextButton.styleFrom(
+              foregroundColor: palette.secondaryText,
+              minimumSize: const Size(40, 40),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+          ),
+        ),
+        AnimatedSize(
+          duration: reducedMotion
+              ? Duration.zero
+              : const Duration(milliseconds: 160),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topLeft,
+          child: _expanded
+              ? Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: widget.child,
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
+    );
   }
 }
 

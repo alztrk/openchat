@@ -452,7 +452,7 @@ class _ChatFileChangesPanelState extends State<ChatFileChangesPanel> {
   }
 }
 
-class _FileChangeRow extends StatelessWidget {
+class _FileChangeRow extends StatefulWidget {
   const _FileChangeRow({
     required this.change,
     required this.isSelected,
@@ -468,107 +468,145 @@ class _FileChangeRow extends StatelessWidget {
   final VoidCallback onRevert;
 
   @override
+  State<_FileChangeRow> createState() => _FileChangeRowState();
+}
+
+class _FileChangeRowState extends State<_FileChangeRow> {
+  bool _focused = false;
+
+  @override
   Widget build(BuildContext context) {
     final palette = OpenChatPalette.of(context);
     final l10n = context.openchatL10n;
+    final change = widget.change;
     return Material(
-      color: isSelected ? palette.composer : Colors.transparent,
-      child: InkWell(
-        onTap: onSelect,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(13, 7, 10, 7),
-          child: Row(
-            children: [
-              Icon(
-                _fileChangeIcon(change.kind),
-                size: 16,
-                color: palette.secondaryIcon,
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      change.path,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: palette.text,
-                        fontSize: OpenChatTypography.metadata,
-                        fontWeight: FontWeight.w500,
-                        height: 16 / 11,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      switch (change.status) {
-                        ChatFileChangeState.active => l10n.fileChangesActive,
-                        ChatFileChangeState.reverted =>
-                          l10n.fileChangesReverted,
-                        ChatFileChangeState.conflict =>
-                          l10n.fileChangesConflict,
-                      },
-                      style: TextStyle(
-                        color: change.status == ChatFileChangeState.conflict
-                            ? Theme.of(context).colorScheme.error
-                            : palette.secondaryText,
-                        fontSize: OpenChatTypography.metadata,
-                        height: 14 / 10,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (change.addedLines != null || change.removedLines != null) ...[
-                if (change.addedLines case final added?)
-                  _LineCount(label: '+$added', color: _additionColor(context)),
-                if (change.removedLines case final removed?) ...[
-                  const SizedBox(width: 6),
-                  _LineCount(
-                    label: '-$removed',
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                ],
-                const SizedBox(width: 5),
-              ] else
-                const SizedBox(width: 5),
-              if (change.canRevert)
-                TextButton(
-                  onPressed: isReverting ? null : onRevert,
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    minimumSize: const Size(58, 30),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                  ),
-                  child: isReverting
-                      ? const SizedBox.square(
-                          dimension: 14,
-                          child: CircularProgressIndicator(strokeWidth: 1.5),
-                        )
-                      : Text(l10n.fileChangesRevert),
-                )
-              else if (change.status == ChatFileChangeState.reverted)
-                Icon(LucideIcons.check, size: 16, color: palette.secondaryIcon)
-              else if (change.status == ChatFileChangeState.conflict)
-                Tooltip(
-                  message: l10n.fileChangesConflict,
-                  child: Icon(
-                    LucideIcons.triangleAlert,
-                    size: 16,
-                    color: Theme.of(context).colorScheme.error,
-                  ),
-                )
-              else if (!change.diffAvailable)
-                Tooltip(
-                  message: l10n.fileChangesDiffUnavailable,
-                  child: Icon(
-                    LucideIcons.info,
+      color: widget.isSelected ? palette.composer : Colors.transparent,
+      shape: RoundedRectangleBorder(
+        side: _focused
+            ? BorderSide(color: palette.focusRing, width: 2)
+            : widget.isSelected
+            ? BorderSide(color: palette.accent)
+            : BorderSide.none,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Semantics(
+        button: true,
+        selected: widget.isSelected,
+        child: InkWell(
+          onTap: widget.onSelect,
+          onFocusChange: (focused) {
+            if (_focused != focused) setState(() => _focused = focused);
+          },
+          borderRadius: BorderRadius.circular(8),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minHeight: 44),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(13, 7, 10, 7),
+              child: Row(
+                children: [
+                  Icon(
+                    _fileChangeIcon(change.kind),
                     size: 16,
                     color: palette.secondaryIcon,
                   ),
-                ),
-            ],
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          change.path,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: palette.text,
+                            fontSize: OpenChatTypography.metadata,
+                            fontWeight: FontWeight.w500,
+                            height: 16 / 11,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          switch (change.status) {
+                            ChatFileChangeState.active =>
+                              l10n.fileChangesActive,
+                            ChatFileChangeState.reverted =>
+                              l10n.fileChangesReverted,
+                            ChatFileChangeState.conflict =>
+                              l10n.fileChangesConflict,
+                          },
+                          style: TextStyle(
+                            color: change.status == ChatFileChangeState.conflict
+                                ? palette.destructive
+                                : palette.secondaryText,
+                            fontSize: OpenChatTypography.metadata,
+                            height: 14 / 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (change.addedLines != null ||
+                      change.removedLines != null) ...[
+                    if (change.addedLines case final added?)
+                      _LineCount(
+                        label: '+$added',
+                        color: _additionColor(context),
+                      ),
+                    if (change.removedLines case final removed?) ...[
+                      const SizedBox(width: 6),
+                      _LineCount(
+                        label: '-$removed',
+                        color: palette.destructive,
+                      ),
+                    ],
+                    const SizedBox(width: 5),
+                  ] else
+                    const SizedBox(width: 5),
+                  if (change.canRevert)
+                    TextButton(
+                      onPressed: widget.isReverting ? null : widget.onRevert,
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        minimumSize: const Size(58, 44),
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      child: widget.isReverting
+                          ? const SizedBox.square(
+                              dimension: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.5,
+                              ),
+                            )
+                          : Text(l10n.fileChangesRevert),
+                    )
+                  else if (change.status == ChatFileChangeState.reverted)
+                    Icon(
+                      LucideIcons.check,
+                      size: 16,
+                      color: palette.secondaryIcon,
+                    )
+                  else if (change.status == ChatFileChangeState.conflict)
+                    Tooltip(
+                      message: l10n.fileChangesConflict,
+                      child: Icon(
+                        LucideIcons.triangleAlert,
+                        size: 16,
+                        color: palette.destructive,
+                      ),
+                    )
+                  else if (!change.diffAvailable)
+                    Tooltip(
+                      message: l10n.fileChangesDiffUnavailable,
+                      child: Icon(
+                        LucideIcons.info,
+                        size: 16,
+                        color: palette.secondaryIcon,
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
       ),
