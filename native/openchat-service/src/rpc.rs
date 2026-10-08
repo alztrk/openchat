@@ -166,6 +166,46 @@ pub(crate) async fn dispatch(
                 .await
                 .map_err(git_worktree_error)
         }
+        "project.mcp.catalog.get" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let project_root = project_root_for_mcp(storage, project_id)?;
+            tools::mcp::server_catalog(&project_root)
+        }
+        "project.mcp.catalog.save" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let catalog = request
+                .params
+                .get("catalog")
+                .ok_or_else(invalid_request_params)?;
+            let project_root = project_root_for_mcp(storage, project_id)?;
+            tools::mcp::save_server_catalog(&project_root, catalog)
+        }
+        "project.mcp.server.check" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let project_root = project_root_for_mcp(storage, project_id)?;
+            let server = request
+                .params
+                .get("server")
+                .ok_or_else(invalid_request_params)?;
+            let config = tools::mcp::parse_server_config(&project_root, server)?;
+            if !config.enabled {
+                return Ok(json!({"status": "disabled", "toolCount": 0}));
+            }
+            let registry = tools::mcp::McpRegistry::connect(vec![config])
+                .await
+                .map_err(|_| {
+                    ServiceError::new(
+                        "mcp_server_unavailable",
+                        "The MCP server could not start or provide its tool list.",
+                        true,
+                    )
+                })?;
+            let tool_count = registry
+                .as_ref()
+                .map(|registry| registry.definitions().len())
+                .unwrap_or_default();
+            Ok(json!({"status": "connected", "toolCount": tool_count}))
+        }
         "project.worktrees.create" => {
             let project_id = required_string(&request.params, "projectId")?;
             let project_root = required_string(&request.params, "projectRoot")?;
@@ -1534,6 +1574,55 @@ fn required_string<'a>(params: &'a Value, name: &str) -> Result<&'a str, Service
         })
 }
 
+fn project_root_for_mcp(
+    storage: &AppStorage,
+    project_id: &str,
+) -> Result<std::path::PathBuf, ServiceError> {
+    let connection = storage.connect().map_err(|_| {
+        ServiceError::new(
+            "mcp_catalog_unavailable",
+            "The project MCP configuration could not be accessed.",
+            true,
+        )
+    })?;
+    let folder_path = connection
+        .query_row(
+            "SELECT folder_path FROM projects WHERE id = ?1",
+            [project_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|_| {
+            ServiceError::new(
+                "mcp_catalog_unavailable",
+                "The project MCP configuration could not be accessed.",
+                true,
+            )
+        })?
+        .ok_or_else(|| {
+            ServiceError::new(
+                "project_unavailable",
+                "The selected project is no longer available.",
+                false,
+            )
+        })?;
+    let root = std::fs::canonicalize(folder_path).map_err(|_| {
+        ServiceError::new(
+            "project_unavailable",
+            "The selected project folder is unavailable.",
+            false,
+        )
+    })?;
+    if !root.is_dir() {
+        return Err(ServiceError::new(
+            "project_unavailable",
+            "The selected project folder is unavailable.",
+            false,
+        ));
+    }
+    Ok(root)
+}
+
 fn required_string_array(params: &Value, name: &str) -> Result<Vec<String>, ServiceError> {
     params
         .get(name)
@@ -2205,6 +2294,34 @@ mod tests {
 
         drop(service);
         drop(storage);
+    }
+
+    #[test]
+    fn mcp_catalog_rpc_resolves_the_saved_project_path() {
+        let directory = TestDirectory::new();
+        let project_root = directory.0.join("project");
+        fs::create_dir(&project_root).expect("create project folder");
+        let storage =
+            Arc::new(AppStorage::open_at(directory.0.join("data")).expect("open test storage"));
+        let connection = storage.connect().expect("connect test storage");
+        connection
+            .execute(
+                "CREATE TABLE projects (id TEXT PRIMARY KEY, folder_path TEXT)",
+                [],
+            )
+            .expect("create project table");
+        connection
+            .execute(
+                "INSERT INTO projects (id, folder_path) VALUES (?1, ?2)",
+                params!["project-1", project_root.to_string_lossy().into_owned()],
+            )
+            .expect("save project folder");
+        drop(connection);
+        assert_eq!(
+            super::project_root_for_mcp(&storage, "project-1").expect("resolve saved project"),
+            fs::canonicalize(project_root).expect("canonicalize project")
+        );
+        assert!(super::project_root_for_mcp(&storage, "missing").is_err());
     }
 
     struct TestDirectory(PathBuf);

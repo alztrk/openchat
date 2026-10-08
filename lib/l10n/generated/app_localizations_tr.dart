@@ -2039,7 +2039,91 @@ class AppLocalizationsTr extends AppLocalizations {
   String get projectOptionsToolPermissions => 'Araç izinleri';
 
   @override
+  String get projectOptionsMcpServers => 'MCP sunucuları';
+
+  @override
   String get projectOptionsWorktrees => 'Git worktree\'leri';
+
+  @override
+  String get projectMcpTitle => 'Proje MCP sunucuları';
+
+  @override
+  String get projectMcpDescription =>
+      'Bu proje için yerel stdio MCP sunucularını yapılandırın. Etkin sunucular yalnızca araç destekli bir sohbet araçlarını istediğinde başlatılır.';
+
+  @override
+  String get projectMcpPermissionsLocal =>
+      'İzin seçimleri bu proje için yerel olarak saklanır ve depoya yazılmaz.';
+
+  @override
+  String get projectMcpPermissionScope => 'Bu sunucunun izni';
+
+  @override
+  String get projectMcpNoCredentials =>
+      'Kimlik bilgilerini argümanlara yazmayın. Güvenli MCP kimlik bilgisi saklama henüz desteklenmiyor.';
+
+  @override
+  String get projectMcpEmpty => 'Bu proje için MCP sunucusu yapılandırılmadı.';
+
+  @override
+  String get projectMcpAdd => 'Sunucu ekle';
+
+  @override
+  String get projectMcpEdit => 'Sunucuyu düzenle';
+
+  @override
+  String get projectMcpRemove => 'Sunucuyu kaldır';
+
+  @override
+  String get projectMcpServerId => 'Sunucu kimliği';
+
+  @override
+  String get projectMcpProgram => 'Programın mutlak yolu';
+
+  @override
+  String get projectMcpArguments => 'Argümanlar';
+
+  @override
+  String get projectMcpArgumentsHint =>
+      'Her satıra bir argüman yazın. Boş satırlar yok sayılır.';
+
+  @override
+  String get projectMcpEnabled => 'Etkin';
+
+  @override
+  String get projectMcpCheck => 'Bağlantıyı denetle';
+
+  @override
+  String get projectMcpChecking => 'Bağlantı denetleniyor…';
+
+  @override
+  String projectMcpConnected(int count) {
+    return 'Bağlandı; $count araç bulundu';
+  }
+
+  @override
+  String get projectMcpCheckFailed =>
+      'Sunucu başlatılamadı veya araç listesini vermedi.';
+
+  @override
+  String get projectMcpLoadFailed =>
+      'Proje MCP kataloğu yüklenemedi. `.openchat/mcp.json` dosyasındaki geçersiz veya güvenli olmayan kayıtları kontrol edin.';
+
+  @override
+  String get projectMcpSaveFailed =>
+      'MCP kataloğu kaydedilemedi. Sunucu kimliklerini ve programların mutlak yollarını kontrol edin.';
+
+  @override
+  String get projectMcpDuplicateId =>
+      'Her sunucunun kimliği benzersiz olmalıdır.';
+
+  @override
+  String get projectMcpInvalidId =>
+      '1–24 küçük harf, rakam veya alt çizgi kullanın.';
+
+  @override
+  String get projectMcpProgramRequired =>
+      'Sunucu programının mutlak yolunu girin.';
 
   @override
   String get projectWorktreesTitle => 'Yalıtılmış worktree\'ler';

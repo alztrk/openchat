@@ -63,6 +63,15 @@ const projectToolRuleNames = <String>{
   'run_project_task',
 };
 
+bool _isProjectToolRuleName(String name) {
+  if (projectToolRuleNames.contains(name)) return true;
+  const prefix = 'mcp__';
+  const suffix = '__*';
+  if (!name.startsWith(prefix) || !name.endsWith(suffix)) return false;
+  final serverId = name.substring(prefix.length, name.length - suffix.length);
+  return RegExp(r'^[a-z0-9_]{1,24}$').hasMatch(serverId);
+}
+
 enum ConversationWidthPreference {
   narrow(760),
   normal(920),
@@ -306,11 +315,16 @@ class SettingsPreferences {
         'Saved project tool permissions have an invalid shape.',
       );
     }
+    if (decoded.length > 32) {
+      throw const FormatException(
+        'Saved project tool permissions exceed the supported limit.',
+      );
+    }
     final rules = <String, ToolPermissionRule>{};
     for (final entry in decoded.entries) {
       final toolName = entry.key;
       if (toolName is! String ||
-          !projectToolRuleNames.contains(toolName) ||
+          !_isProjectToolRuleName(toolName) ||
           entry.value == 'inherit') {
         throw const FormatException(
           'Saved project tool permissions contain an invalid rule.',
@@ -334,7 +348,7 @@ class SettingsPreferences {
     final normalizedProjectId = _validatedProjectId(projectId);
     final storedRules = <String, String>{};
     for (final entry in rules.entries) {
-      if (!projectToolRuleNames.contains(entry.key)) {
+      if (!_isProjectToolRuleName(entry.key)) {
         throw ArgumentError.value(
           entry.key,
           'rules',

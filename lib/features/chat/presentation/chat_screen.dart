@@ -53,11 +53,12 @@ import 'package:openchat/features/chat/presentation/widgets/conversation_sidebar
 import 'package:openchat/features/chat/presentation/widgets/agent_run_manager_dialog.dart';
 import 'package:openchat/features/chat/presentation/widgets/create_project_dialog.dart';
 import 'package:openchat/features/chat/presentation/widgets/project_tool_permissions_dialog.dart';
+import 'package:openchat/features/chat/presentation/widgets/project_mcp_servers_dialog.dart';
 import 'package:openchat/features/chat/presentation/widgets/project_worktrees_dialog.dart';
 
 const _localEngineProviderIds = <String>{'llama_cpp', 'vllm', 'exllama'};
 
-enum _ProjectOptionsAction { toolPermissions, worktrees }
+enum _ProjectOptionsAction { toolPermissions, mcpServers, worktrees }
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
@@ -4105,6 +4106,13 @@ class _ChatScreenState extends State<ChatScreen> {
                         .pop(_ProjectOptionsAction.toolPermissions),
               ),
               ListTile(
+                leading: const Icon(Icons.storage_outlined),
+                title: Text(l10n.projectOptionsMcpServers),
+                onTap: () =>
+                    Navigator.of(dialogContext)
+                        .pop(_ProjectOptionsAction.mcpServers),
+              ),
+              ListTile(
                 leading: const Icon(LucideIcons.gitBranch),
                 title: Text(l10n.projectOptionsWorktrees),
                 onTap: () =>
@@ -4125,6 +4133,10 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!mounted || action == null) return;
     if (action == _ProjectOptionsAction.toolPermissions) {
       await _openProjectToolPermissions(projectId);
+      return;
+    }
+    if (action == _ProjectOptionsAction.mcpServers) {
+      await _openProjectMcpServers(projectId);
       return;
     }
     final service = widget.serviceClient;
@@ -4203,6 +4215,39 @@ class _ChatScreenState extends State<ChatScreen> {
           stack: stackTrace,
           library: 'tool_permissions',
           context: ErrorDescription('while opening project tool permissions'),
+        ),
+      );
+      if (mounted) {
+        _showMessage(context.openchatL10n.projectToolRulesLoadFailed);
+      }
+    }
+  }
+
+  Future<void> _openProjectMcpServers(String projectId) async {
+    final service = widget.serviceClient;
+    if (service == null) return;
+    try {
+      final rules = await _settingsPreferences.readProjectToolPermissionRules(
+        projectId,
+      );
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => ProjectMcpServersDialog(
+          serviceClient: service,
+          projectId: projectId,
+          initialPermissionRules: rules,
+          onSavePermissionRules: (updatedRules) => _settingsPreferences
+              .writeProjectToolPermissionRules(projectId, updatedRules),
+        ),
+      );
+    } on Exception catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'mcp_permissions',
+          context: ErrorDescription('while loading project MCP permissions'),
         ),
       );
       if (mounted) {

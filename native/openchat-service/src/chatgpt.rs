@@ -193,7 +193,9 @@ impl ChatGptService {
         crate::history::validate_model_attachments(&messages, model.supports_images)?;
         let last_message_id = included_messages.last().map(|message| message.id.clone());
         #[cfg(windows)]
-        let mcp_registry = tools::mcp::McpRegistry::connect(context.mcp_configs.clone())
+        let mcp_configs =
+            tools::mcp::filter_denied_servers(&context.mcp_configs, &context.tool_permission_rules);
+        let mcp_registry = tools::mcp::McpRegistry::connect(mcp_configs)
             .await
             .map_err(|_| {
                 ServiceError::new(

@@ -217,6 +217,7 @@ void main() {
     await writer.writeProjectToolPermissionRules('project-1', {
       'execute_command': ToolPermissionRule.ask,
       'write_file': ToolPermissionRule.deny,
+      'mcp__local_docs__*': ToolPermissionRule.allow,
       'read_file': ToolPermissionRule.inherit,
     });
     await writer.writeProjectToolPermissionRules('project-2', {
@@ -227,6 +228,7 @@ void main() {
     expect(await reader.readProjectToolPermissionRules('project-1'), {
       'execute_command': ToolPermissionRule.ask,
       'write_file': ToolPermissionRule.deny,
+      'mcp__local_docs__*': ToolPermissionRule.allow,
     });
     expect(await reader.readProjectToolPermissionRules('project-2'), {
       'read_file': ToolPermissionRule.allow,

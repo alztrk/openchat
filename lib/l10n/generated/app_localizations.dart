@@ -3538,11 +3538,155 @@ abstract class AppLocalizations {
   /// **'Tool permissions'**
   String get projectOptionsToolPermissions;
 
+  /// No description provided for @projectOptionsMcpServers.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP servers'**
+  String get projectOptionsMcpServers;
+
   /// No description provided for @projectOptionsWorktrees.
   ///
   /// In en, this message translates to:
   /// **'Git worktrees'**
   String get projectOptionsWorktrees;
+
+  /// No description provided for @projectMcpTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Project MCP servers'**
+  String get projectMcpTitle;
+
+  /// No description provided for @projectMcpDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure local stdio MCP servers for this project. Enabled servers start only when a tool-capable chat needs their tools.'**
+  String get projectMcpDescription;
+
+  /// No description provided for @projectMcpPermissionsLocal.
+  ///
+  /// In en, this message translates to:
+  /// **'Permission choices are saved locally for this project and are not stored in the repository.'**
+  String get projectMcpPermissionsLocal;
+
+  /// No description provided for @projectMcpPermissionScope.
+  ///
+  /// In en, this message translates to:
+  /// **'Permission for this server'**
+  String get projectMcpPermissionScope;
+
+  /// No description provided for @projectMcpNoCredentials.
+  ///
+  /// In en, this message translates to:
+  /// **'Do not put credentials in arguments. Secure MCP credential storage is not available yet.'**
+  String get projectMcpNoCredentials;
+
+  /// No description provided for @projectMcpEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No MCP servers are configured for this project.'**
+  String get projectMcpEmpty;
+
+  /// No description provided for @projectMcpAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add server'**
+  String get projectMcpAdd;
+
+  /// No description provided for @projectMcpEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit server'**
+  String get projectMcpEdit;
+
+  /// No description provided for @projectMcpRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove server'**
+  String get projectMcpRemove;
+
+  /// No description provided for @projectMcpServerId.
+  ///
+  /// In en, this message translates to:
+  /// **'Server ID'**
+  String get projectMcpServerId;
+
+  /// No description provided for @projectMcpProgram.
+  ///
+  /// In en, this message translates to:
+  /// **'Absolute program path'**
+  String get projectMcpProgram;
+
+  /// No description provided for @projectMcpArguments.
+  ///
+  /// In en, this message translates to:
+  /// **'Arguments'**
+  String get projectMcpArguments;
+
+  /// No description provided for @projectMcpArgumentsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter one argument per line. Empty lines are ignored.'**
+  String get projectMcpArgumentsHint;
+
+  /// No description provided for @projectMcpEnabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Enabled'**
+  String get projectMcpEnabled;
+
+  /// No description provided for @projectMcpCheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Check connection'**
+  String get projectMcpCheck;
+
+  /// No description provided for @projectMcpChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking connection…'**
+  String get projectMcpChecking;
+
+  /// No description provided for @projectMcpConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected; discovered {count} tools'**
+  String projectMcpConnected(int count);
+
+  /// No description provided for @projectMcpCheckFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The server could not start or return its tool list.'**
+  String get projectMcpCheckFailed;
+
+  /// No description provided for @projectMcpLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The project MCP catalog could not be loaded. Check `.openchat/mcp.json` for invalid or unsafe entries.'**
+  String get projectMcpLoadFailed;
+
+  /// No description provided for @projectMcpSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The MCP catalog could not be saved. Check the server IDs and absolute program paths.'**
+  String get projectMcpSaveFailed;
+
+  /// No description provided for @projectMcpDuplicateId.
+  ///
+  /// In en, this message translates to:
+  /// **'Each server must have a unique ID.'**
+  String get projectMcpDuplicateId;
+
+  /// No description provided for @projectMcpInvalidId.
+  ///
+  /// In en, this message translates to:
+  /// **'Use 1–24 lowercase letters, digits, or underscores.'**
+  String get projectMcpInvalidId;
+
+  /// No description provided for @projectMcpProgramRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter an absolute path to the server program.'**
+  String get projectMcpProgramRequired;
 
   /// No description provided for @projectWorktreesTitle.
   ///

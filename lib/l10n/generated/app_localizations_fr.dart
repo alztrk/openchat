@@ -2094,7 +2094,91 @@ class AppLocalizationsFr extends AppLocalizations {
   String get projectOptionsToolPermissions => 'Autorisations des outils';
 
   @override
+  String get projectOptionsMcpServers => 'Serveurs MCP';
+
+  @override
   String get projectOptionsWorktrees => 'Worktrees Git';
+
+  @override
+  String get projectMcpTitle => 'Serveurs MCP du projet';
+
+  @override
+  String get projectMcpDescription =>
+      'Configurez des serveurs MCP locaux sur stdio pour ce projet. Les serveurs activés démarrent uniquement lorsqu’un chat compatible avec les outils en a besoin.';
+
+  @override
+  String get projectMcpPermissionsLocal =>
+      'Les autorisations sont enregistrées localement pour ce projet et ne sont pas stockées dans le dépôt.';
+
+  @override
+  String get projectMcpPermissionScope => 'Autorisation pour ce serveur';
+
+  @override
+  String get projectMcpNoCredentials =>
+      'N’ajoutez pas d’identifiants aux arguments. Le stockage sécurisé des identifiants MCP n’est pas encore disponible.';
+
+  @override
+  String get projectMcpEmpty =>
+      'Aucun serveur MCP n’est configuré pour ce projet.';
+
+  @override
+  String get projectMcpAdd => 'Ajouter un serveur';
+
+  @override
+  String get projectMcpEdit => 'Modifier le serveur';
+
+  @override
+  String get projectMcpRemove => 'Supprimer le serveur';
+
+  @override
+  String get projectMcpServerId => 'ID du serveur';
+
+  @override
+  String get projectMcpProgram => 'Chemin absolu du programme';
+
+  @override
+  String get projectMcpArguments => 'Arguments';
+
+  @override
+  String get projectMcpArgumentsHint =>
+      'Saisissez un argument par ligne. Les lignes vides sont ignorées.';
+
+  @override
+  String get projectMcpEnabled => 'Activé';
+
+  @override
+  String get projectMcpCheck => 'Vérifier la connexion';
+
+  @override
+  String get projectMcpChecking => 'Vérification de la connexion…';
+
+  @override
+  String projectMcpConnected(int count) {
+    return 'Connecté ; $count outils détectés';
+  }
+
+  @override
+  String get projectMcpCheckFailed =>
+      'Le serveur n’a pas pu démarrer ou fournir sa liste d’outils.';
+
+  @override
+  String get projectMcpLoadFailed =>
+      'Le catalogue MCP du projet n’a pas pu être chargé. Vérifiez les entrées invalides ou non sûres dans `.openchat/mcp.json`.';
+
+  @override
+  String get projectMcpSaveFailed =>
+      'Le catalogue MCP n’a pas pu être enregistré. Vérifiez l’unicité des ID et les chemins absolus des programmes.';
+
+  @override
+  String get projectMcpDuplicateId => 'Chaque serveur doit avoir un ID unique.';
+
+  @override
+  String get projectMcpInvalidId =>
+      'Utilisez 1 à 24 lettres minuscules, chiffres ou traits de soulignement.';
+
+  @override
+  String get projectMcpProgramRequired =>
+      'Saisissez un chemin absolu vers le programme du serveur.';
 
   @override
   String get projectWorktreesTitle => 'Worktrees isolés';

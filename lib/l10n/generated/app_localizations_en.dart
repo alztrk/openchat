@@ -2050,7 +2050,91 @@ class AppLocalizationsEn extends AppLocalizations {
   String get projectOptionsToolPermissions => 'Tool permissions';
 
   @override
+  String get projectOptionsMcpServers => 'MCP servers';
+
+  @override
   String get projectOptionsWorktrees => 'Git worktrees';
+
+  @override
+  String get projectMcpTitle => 'Project MCP servers';
+
+  @override
+  String get projectMcpDescription =>
+      'Configure local stdio MCP servers for this project. Enabled servers start only when a tool-capable chat needs their tools.';
+
+  @override
+  String get projectMcpPermissionsLocal =>
+      'Permission choices are saved locally for this project and are not stored in the repository.';
+
+  @override
+  String get projectMcpPermissionScope => 'Permission for this server';
+
+  @override
+  String get projectMcpNoCredentials =>
+      'Do not put credentials in arguments. Secure MCP credential storage is not available yet.';
+
+  @override
+  String get projectMcpEmpty =>
+      'No MCP servers are configured for this project.';
+
+  @override
+  String get projectMcpAdd => 'Add server';
+
+  @override
+  String get projectMcpEdit => 'Edit server';
+
+  @override
+  String get projectMcpRemove => 'Remove server';
+
+  @override
+  String get projectMcpServerId => 'Server ID';
+
+  @override
+  String get projectMcpProgram => 'Absolute program path';
+
+  @override
+  String get projectMcpArguments => 'Arguments';
+
+  @override
+  String get projectMcpArgumentsHint =>
+      'Enter one argument per line. Empty lines are ignored.';
+
+  @override
+  String get projectMcpEnabled => 'Enabled';
+
+  @override
+  String get projectMcpCheck => 'Check connection';
+
+  @override
+  String get projectMcpChecking => 'Checking connection…';
+
+  @override
+  String projectMcpConnected(int count) {
+    return 'Connected; discovered $count tools';
+  }
+
+  @override
+  String get projectMcpCheckFailed =>
+      'The server could not start or return its tool list.';
+
+  @override
+  String get projectMcpLoadFailed =>
+      'The project MCP catalog could not be loaded. Check `.openchat/mcp.json` for invalid or unsafe entries.';
+
+  @override
+  String get projectMcpSaveFailed =>
+      'The MCP catalog could not be saved. Check the server IDs and absolute program paths.';
+
+  @override
+  String get projectMcpDuplicateId => 'Each server must have a unique ID.';
+
+  @override
+  String get projectMcpInvalidId =>
+      'Use 1–24 lowercase letters, digits, or underscores.';
+
+  @override
+  String get projectMcpProgramRequired =>
+      'Enter an absolute path to the server program.';
 
   @override
   String get projectWorktreesTitle => 'Isolated worktrees';

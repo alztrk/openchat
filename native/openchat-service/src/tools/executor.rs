@@ -39,6 +39,14 @@ pub enum ToolPermissionRule {
 
 pub(crate) type ToolPermissionRules = HashMap<String, ToolPermissionRule>;
 
+#[cfg(windows)]
+fn mcp_server_permission_rule(rules: &ToolPermissionRules, server_id: &str) -> ToolPermissionRule {
+    rules
+        .get(&format!("mcp__{server_id}__*"))
+        .copied()
+        .unwrap_or(ToolPermissionRule::Ask)
+}
+
 pub(crate) fn parse_tool_permission_rules(
     value: Option<&Value>,
 ) -> Result<ToolPermissionRules, ServiceError> {
@@ -69,8 +77,17 @@ pub(crate) fn parse_tool_permission_rules(
 }
 
 fn is_permission_rule_tool(name: &str) -> bool {
-    if name.starts_with("mcp__") {
-        return false;
+    if let Some(mcp_tool_prefix) = name.strip_prefix("mcp__") {
+        let Some(server_id) = mcp_tool_prefix.strip_suffix("__*") else {
+            return false;
+        };
+        #[cfg(windows)]
+        return super::mcp::valid_server_id(server_id);
+        #[cfg(not(windows))]
+        return {
+            let _ = server_id;
+            false
+        };
     }
     matches!(
         name,
@@ -804,53 +821,12 @@ impl ToolExecutor {
             ));
         };
         let target = format!("MCP server {server_id}");
-        self.emit_activity(
-            storage,
-            ToolActivity::awaiting_approval(call, target.clone()),
-            request_id,
-            snapshot,
-            events,
-        )
-        .await?;
-        let approved = match permissions
-            .request_approval(
-                request_id,
-                &call.name,
-                &target,
-                &call.arguments,
-                events,
-                cancellation,
-            )
-            .await
-        {
-            Ok(approved) => approved,
-            Err(error) if error.code == "operation_cancelled" => {
-                let output = tool_error("operation_cancelled", "The request was stopped.");
-                self.emit_activity(
-                    storage,
-                    ToolActivity::cancelled(call, target, output),
-                    request_id,
-                    snapshot,
-                    events,
-                )
-                .await?;
-                return Err(error);
-            }
-            Err(error) => {
-                let output = tool_error(error.code, &error.message);
-                self.emit_activity(
-                    storage,
-                    ToolActivity::finished(call, Some(target), output),
-                    request_id,
-                    snapshot,
-                    events,
-                )
-                .await?;
-                return Err(error);
-            }
-        };
-        if !approved {
-            let output = tool_error("permission_denied", "The user denied this MCP tool call.");
+        let server_rule = mcp_server_permission_rule(&self.permission_rules, server_id);
+        if server_rule == ToolPermissionRule::Deny {
+            let output = tool_error(
+                "permission_denied",
+                "This MCP server is denied by the project's permission rules.",
+            );
             self.emit_activity(
                 storage,
                 ToolActivity::denied(call, target, output.clone()),
@@ -863,6 +839,68 @@ impl ToolExecutor {
                 call_id: call.id.clone(),
                 output,
             });
+        }
+        if server_rule != ToolPermissionRule::Allow {
+            self.emit_activity(
+                storage,
+                ToolActivity::awaiting_approval(call, target.clone()),
+                request_id,
+                snapshot,
+                events,
+            )
+            .await?;
+            let approved = match permissions
+                .request_approval(
+                    request_id,
+                    &call.name,
+                    &target,
+                    &call.arguments,
+                    events,
+                    cancellation,
+                )
+                .await
+            {
+                Ok(approved) => approved,
+                Err(error) if error.code == "operation_cancelled" => {
+                    let output = tool_error("operation_cancelled", "The request was stopped.");
+                    self.emit_activity(
+                        storage,
+                        ToolActivity::cancelled(call, target, output),
+                        request_id,
+                        snapshot,
+                        events,
+                    )
+                    .await?;
+                    return Err(error);
+                }
+                Err(error) => {
+                    let output = tool_error(error.code, &error.message);
+                    self.emit_activity(
+                        storage,
+                        ToolActivity::finished(call, Some(target), output),
+                        request_id,
+                        snapshot,
+                        events,
+                    )
+                    .await?;
+                    return Err(error);
+                }
+            };
+            if !approved {
+                let output = tool_error("permission_denied", "The user denied this MCP tool call.");
+                self.emit_activity(
+                    storage,
+                    ToolActivity::denied(call, target, output.clone()),
+                    request_id,
+                    snapshot,
+                    events,
+                )
+                .await?;
+                return Ok(ToolResult {
+                    call_id: call.id.clone(),
+                    output,
+                });
+            }
         }
 
         self.emit_activity(
@@ -1437,6 +1475,19 @@ mod policy_tests {
         let rules = parse_tool_permission_rules(Some(&valid)).expect("valid rules");
         assert_eq!(rules["execute_command"], ToolPermissionRule::Ask);
 
+        #[cfg(windows)]
+        {
+            let mcp = json!({"mcp__local_docs__*": "allow"});
+            let rules = parse_tool_permission_rules(Some(&mcp)).expect("valid MCP rule");
+            assert_eq!(rules["mcp__local_docs__*"], ToolPermissionRule::Allow);
+            assert!(
+                parse_tool_permission_rules(Some(&json!({
+                    "mcp__Invalid__*": "allow"
+                })))
+                .is_err()
+            );
+        }
+
         let invalid_tool = json!({"custom_command": "allow"});
         assert_eq!(
             parse_tool_permission_rules(Some(&invalid_tool))
@@ -1450,6 +1501,26 @@ mod policy_tests {
                 .expect_err("unknown rule values must be rejected")
                 .code,
             "invalid_tool_permission_rules"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn mcp_server_permission_defaults_to_ask_and_uses_local_project_override() {
+        let mut rules = ToolPermissionRules::new();
+        assert_eq!(
+            super::mcp_server_permission_rule(&rules, "local_docs"),
+            ToolPermissionRule::Ask
+        );
+        rules.insert("mcp__local_docs__*".to_owned(), ToolPermissionRule::Allow);
+        rules.insert("mcp__remote_docs__*".to_owned(), ToolPermissionRule::Deny);
+        assert_eq!(
+            super::mcp_server_permission_rule(&rules, "local_docs"),
+            ToolPermissionRule::Allow
+        );
+        assert_eq!(
+            super::mcp_server_permission_rule(&rules, "remote_docs"),
+            ToolPermissionRule::Deny
         );
     }
 }

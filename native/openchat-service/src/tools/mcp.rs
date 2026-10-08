@@ -2,7 +2,8 @@ use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
     fs,
-    io::{self, Read},
+    fs::OpenOptions,
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -13,7 +14,7 @@ use rmcp::{
     service::RunningService,
     transport::{Transport, async_rw::AsyncRwTransport},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use tokio::{fs::File, io::AsyncReadExt, time::timeout};
 
@@ -33,7 +34,8 @@ const MAX_MCP_DESCRIPTION_BYTES: usize = 4096;
 const MAX_MCP_RESULT_BYTES: usize = 64 * 1024;
 const MAX_PROVIDER_TOOL_NAME_BYTES: usize = 64;
 const MAX_MCP_CALL_TIMEOUT: Duration = Duration::from_secs(120);
-const MCP_CATALOG_PATH: &str = ".openchat/mcp.json";
+const MCP_CATALOG_DIRECTORY: &str = ".openchat";
+const MCP_CATALOG_FILE: &str = "mcp.json";
 const MAX_MCP_CATALOG_BYTES: u64 = 64 * 1024;
 
 #[derive(Clone)]
@@ -45,7 +47,23 @@ pub(crate) struct StdioServerConfig {
     pub(crate) working_directory: PathBuf,
 }
 
-#[derive(Deserialize)]
+pub(crate) fn filter_denied_servers(
+    configs: &[StdioServerConfig],
+    rules: &super::ToolPermissionRules,
+) -> Vec<StdioServerConfig> {
+    configs
+        .iter()
+        .filter(|config| {
+            !matches!(
+                rules.get(&format!("mcp__{}__*", config.id)),
+                Some(super::ToolPermissionRule::Deny)
+            )
+        })
+        .cloned()
+        .collect()
+}
+
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct StdioServerSettings {
     id: String,
@@ -55,7 +73,7 @@ struct StdioServerSettings {
     arguments: Vec<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct StdioServerCatalog {
     version: u32,
@@ -126,11 +144,170 @@ fn parse_server_settings(
 pub(crate) fn load_server_configs(
     project_root: &Path,
 ) -> Result<Vec<StdioServerConfig>, crate::protocol::ServiceError> {
+    let (root, catalog) = read_server_catalog(project_root)?;
+    parse_server_settings(catalog.servers, &root)
+}
+
+pub(crate) fn parse_server_config(
+    project_root: &Path,
+    value: &Value,
+) -> Result<StdioServerConfig, crate::protocol::ServiceError> {
     let root = fs::canonicalize(project_root).map_err(|_| invalid_mcp_servers())?;
-    let catalog_path = project_root.join(MCP_CATALOG_PATH);
+    let setting: StdioServerSettings =
+        serde_json::from_value(value.clone()).map_err(|_| invalid_mcp_servers())?;
+    parse_server_settings(vec![setting], &root)?
+        .into_iter()
+        .next()
+        .ok_or_else(invalid_mcp_servers)
+}
+
+pub(crate) fn server_catalog(project_root: &Path) -> Result<Value, crate::protocol::ServiceError> {
+    let (_, catalog) = read_server_catalog(project_root)?;
+    serde_json::to_value(catalog).map_err(|_| invalid_mcp_servers())
+}
+
+pub(crate) fn save_server_catalog(
+    project_root: &Path,
+    value: &Value,
+) -> Result<Value, crate::protocol::ServiceError> {
+    let root = fs::canonicalize(project_root).map_err(|_| invalid_mcp_servers())?;
+    let catalog: StdioServerCatalog =
+        serde_json::from_value(value.clone()).map_err(|_| invalid_mcp_servers())?;
+    if catalog.version != 1 {
+        return Err(invalid_mcp_servers());
+    }
+    parse_server_settings(catalog.servers.clone(), &root)?;
+
+    let directory = root.join(MCP_CATALOG_DIRECTORY);
+    match fs::symlink_metadata(&directory) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
+            return Err(invalid_mcp_servers());
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            fs::create_dir(&directory).map_err(|_| invalid_mcp_servers())?;
+        }
+        Err(_) => return Err(invalid_mcp_servers()),
+    }
+    let canonical_directory = fs::canonicalize(&directory).map_err(|_| invalid_mcp_servers())?;
+    if !canonical_directory.starts_with(&root) {
+        return Err(invalid_mcp_servers());
+    }
+    let catalog_path = canonical_directory.join(MCP_CATALOG_FILE);
+    match fs::symlink_metadata(&catalog_path) {
+        Ok(metadata)
+            if metadata.file_type().is_symlink()
+                || !metadata.is_file()
+                || metadata.len() > MAX_MCP_CATALOG_BYTES =>
+        {
+            return Err(invalid_mcp_servers());
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(_) => return Err(invalid_mcp_servers()),
+    }
+    let contents = serde_json::to_vec_pretty(&catalog).map_err(|_| invalid_mcp_servers())?;
+    if contents.len() as u64 > MAX_MCP_CATALOG_BYTES {
+        return Err(invalid_mcp_servers());
+    }
+    let temporary = canonical_directory.join(format!(".mcp-{}.tmp", uuid::Uuid::new_v4()));
+    let result = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|_| invalid_mcp_servers())?;
+        file.write_all(&contents)
+            .map_err(|_| invalid_mcp_servers())?;
+        file.sync_all().map_err(|_| invalid_mcp_servers())?;
+        replace_catalog_file(&temporary, &catalog_path)?;
+        Ok::<(), crate::protocol::ServiceError>(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result?;
+    server_catalog(&root)
+}
+
+#[cfg(windows)]
+fn replace_catalog_file(
+    source: &Path,
+    destination: &Path,
+) -> Result<(), crate::protocol::ServiceError> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+    };
+
+    let source = source
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let destination = destination
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let replaced = unsafe {
+        MoveFileExW(
+            source.as_ptr(),
+            destination.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if replaced == 0 {
+        return Err(invalid_mcp_servers());
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn replace_catalog_file(
+    source: &Path,
+    destination: &Path,
+) -> Result<(), crate::protocol::ServiceError> {
+    fs::rename(source, destination).map_err(|_| invalid_mcp_servers())
+}
+
+fn read_server_catalog(
+    project_root: &Path,
+) -> Result<(PathBuf, StdioServerCatalog), crate::protocol::ServiceError> {
+    let root = fs::canonicalize(project_root).map_err(|_| invalid_mcp_servers())?;
+    let directory = root.join(MCP_CATALOG_DIRECTORY);
+    let directory_metadata = match fs::symlink_metadata(&directory) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok((
+                root,
+                StdioServerCatalog {
+                    version: 1,
+                    servers: Vec::new(),
+                },
+            ));
+        }
+        Err(_) => return Err(invalid_mcp_servers()),
+    };
+    if directory_metadata.file_type().is_symlink() || !directory_metadata.is_dir() {
+        return Err(invalid_mcp_servers());
+    }
+    let canonical_directory = fs::canonicalize(&directory).map_err(|_| invalid_mcp_servers())?;
+    if !canonical_directory.starts_with(&root) {
+        return Err(invalid_mcp_servers());
+    }
+    let catalog_path = canonical_directory.join(MCP_CATALOG_FILE);
     let metadata = match fs::symlink_metadata(&catalog_path) {
         Ok(metadata) => metadata,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return Ok((
+                root,
+                StdioServerCatalog {
+                    version: 1,
+                    servers: Vec::new(),
+                },
+            ));
+        }
         Err(_) => return Err(invalid_mcp_servers()),
     };
     if metadata.file_type().is_symlink()
@@ -157,7 +334,8 @@ pub(crate) fn load_server_configs(
     if catalog.version != 1 {
         return Err(invalid_mcp_servers());
     }
-    parse_server_settings(catalog.servers, &root)
+    parse_server_settings(catalog.servers.clone(), &root)?;
+    Ok((root, catalog))
 }
 
 fn invalid_mcp_servers() -> crate::protocol::ServiceError {
@@ -454,9 +632,11 @@ impl Transport<RoleClient> for SandboxedStdioTransport {
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_MCP_ARGUMENTS_PER_SERVER, load_server_configs, parse_server_configs, tool_definitions,
+        MAX_MCP_ARGUMENTS_PER_SERVER, load_server_configs, parse_server_config,
+        parse_server_configs, save_server_catalog, server_catalog, tool_definitions,
     };
     use rmcp::model::Tool;
+    use std::collections::HashMap;
     use std::path::{Path, PathBuf};
 
     fn tool(name: &str) -> Tool {
@@ -533,6 +713,64 @@ mod tests {
                 .expect("missing settings disable MCP")
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn denied_servers_are_not_selected_for_chat_startup() {
+        let config = parse_server_configs(
+            Some(&serde_json::json!([{
+                "id": "local_docs",
+                "enabled": true,
+                "program": r"C:\tools\mcp-server.exe"
+            }])),
+            Path::new(r"C:\workspace"),
+        )
+        .expect("valid MCP server config");
+        let rules = HashMap::from([(
+            "mcp__local_docs__*".to_owned(),
+            super::super::ToolPermissionRule::Deny,
+        )]);
+        assert!(super::filter_denied_servers(&config, &rules).is_empty());
+    }
+
+    #[test]
+    fn validates_unsaved_connection_check_settings_against_project_root() {
+        let project =
+            std::env::temp_dir().join(format!("openchat-mcp-check-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&project).expect("create temporary project");
+        let program = std::env::current_exe()
+            .expect("current test executable")
+            .to_string_lossy()
+            .into_owned();
+        let config = parse_server_config(
+            &project,
+            &serde_json::json!({
+                "id": "unsaved_server",
+                "enabled": true,
+                "program": program.clone(),
+                "arguments": ["--probe"]
+            }),
+        )
+        .expect("validate unsaved server config");
+        assert_eq!(config.id, "unsaved_server");
+        assert!(config.enabled);
+        assert_eq!(config.arguments, ["--probe"]);
+        assert_eq!(
+            config.working_directory,
+            std::fs::canonicalize(&project).expect("canonicalize project")
+        );
+        assert!(
+            parse_server_config(
+                &project,
+                &serde_json::json!({
+                    "id": "invalid_server",
+                    "enabled": true,
+                    "program": "relative.exe"
+                })
+            )
+            .is_err()
+        );
+        std::fs::remove_dir_all(project).expect("remove temporary project");
     }
 
     #[tokio::test]
@@ -627,5 +865,69 @@ mod tests {
         std::fs::write(catalog_directory.join("mcp.json"), b"{invalid")
             .expect("replace catalog with invalid data");
         assert!(load_server_configs(&project.0).is_err());
+    }
+
+    #[test]
+    fn project_catalog_can_be_read_and_atomically_replaced_after_validation() {
+        struct ProjectDirectory(PathBuf);
+
+        impl Drop for ProjectDirectory {
+            fn drop(&mut self) {
+                std::fs::remove_dir_all(&self.0).expect("remove temporary project");
+            }
+        }
+
+        let project = ProjectDirectory(
+            std::env::temp_dir().join(format!("openchat-mcp-save-{}", uuid::Uuid::new_v4())),
+        );
+        std::fs::create_dir(&project.0).expect("create temporary project");
+        assert_eq!(
+            server_catalog(&project.0).expect("read empty catalog"),
+            serde_json::json!({"version": 1, "servers": []})
+        );
+        let program = std::env::current_exe()
+            .expect("current test executable")
+            .to_string_lossy()
+            .into_owned();
+        let catalog = serde_json::json!({
+            "version": 1,
+            "servers": [{
+                "id": "local_docs",
+                "enabled": false,
+                "program": program.clone(),
+                "arguments": ["--read-only"]
+            }]
+        });
+        save_server_catalog(&project.0, &catalog).expect("save valid catalog");
+        assert_eq!(
+            server_catalog(&project.0).expect("read saved catalog"),
+            catalog
+        );
+        let updated_catalog = serde_json::json!({
+            "version": 1,
+            "servers": [{
+                "id": "local_docs",
+                "enabled": true,
+                "program": program.clone(),
+                "arguments": ["--updated"]
+            }]
+        });
+        save_server_catalog(&project.0, &updated_catalog).expect("replace valid catalog");
+        assert_eq!(
+            server_catalog(&project.0).expect("read replaced catalog"),
+            updated_catalog
+        );
+
+        let path = project.0.join(".openchat/mcp.json");
+        let original = std::fs::read(&path).expect("read saved file");
+        let invalid = serde_json::json!({
+            "version": 1,
+            "servers": [{"id": "invalid id", "enabled": true, "program": program}]
+        });
+        assert!(save_server_catalog(&project.0, &invalid).is_err());
+        assert_eq!(
+            std::fs::read(path).expect("read preserved catalog"),
+            original
+        );
     }
 }

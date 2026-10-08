@@ -67,6 +67,8 @@ pub async fn send_message(
     let provider_id = route.provider_id.as_deref().ok_or_else(route_error)?;
     #[cfg(windows)]
     let mcp_registry = if route.supports_tool_calls != Some(false) {
+        let mcp_configs =
+            crate::tools::mcp::filter_denied_servers(&mcp_configs, &tool_permission_rules);
         crate::tools::mcp::McpRegistry::connect(mcp_configs)
             .await
             .map_err(|_| {
