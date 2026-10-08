@@ -87,6 +87,68 @@ fn named_project_task_is_loaded_as_a_bounded_terminal_command() {
 }
 
 #[test]
+fn project_task_tool_is_available_only_for_declared_catalog_entries() {
+    let directory = TestDirectory::new();
+    assert!(
+        super::project_tasks::load_project_tasks_if_present(Path::new(directory.root()))
+            .expect("missing task catalog means no named tasks")
+            .is_empty()
+    );
+
+    directory.write(
+        ".openchat/tasks.json",
+        r#"{"version":1,"tasks":[{"id":"verify","command":"cargo test","timeoutSeconds":90}]}"#,
+    );
+    let task_ids = super::project_tasks::load_project_tasks_if_present(Path::new(directory.root()))
+        .expect("load task catalog")
+        .into_iter()
+        .map(|task| task.id)
+        .collect::<Vec<_>>();
+    let definition = super::project_tasks::tool_definition(&task_ids);
+    assert_eq!(
+        definition.parameters["properties"]["task"]["enum"],
+        json!(["verify"])
+    );
+}
+
+#[test]
+fn disabled_project_task_tool_does_not_block_chat_on_invalid_catalog() {
+    let directory = TestDirectory::new();
+    directory.write(".openchat/tasks.json", "not json");
+
+    assert!(
+        super::project_tasks::load_project_task_ids_if_enabled(
+            Some(Path::new(directory.root())),
+            false,
+        )
+        .expect("disabled tools must not load their optional catalog")
+        .is_empty()
+    );
+    assert_eq!(
+        super::project_tasks::load_project_task_ids_if_enabled(
+            Some(Path::new(directory.root())),
+            true,
+        )
+        .expect_err("enabled tools must report invalid configuration")
+        .code,
+        "invalid_project_task_catalog"
+    );
+}
+
+#[test]
+fn oversized_project_task_catalog_is_rejected_after_a_bounded_read() {
+    let directory = TestDirectory::new();
+    directory.write(
+        ".openchat/tasks.json",
+        &format!("{{\"version\":1,\"tasks\":[]}}{}", " ".repeat(65 * 1024)),
+    );
+
+    let error = super::project_tasks::load_project_tasks(Path::new(directory.root()))
+        .expect_err("oversized task catalogs must be rejected");
+    assert_eq!(error.code, "invalid_project_task_catalog");
+}
+
+#[test]
 fn list_files_reads_current_directory_contents_each_time() {
     let directory = TestDirectory::new();
     directory.write("src/original.txt", "original\n");
@@ -1468,7 +1530,7 @@ async fn simulate_terminal_edge_cases_and_exit_codes() {
 }
 
 #[tokio::test]
-async fn simulate_execute_command_with_user_permission_approval_flow() {
+async fn simulate_named_project_task_and_terminal_permission_approval_flow() {
     use super::executor::{ToolExecutor, ToolPermissionMode};
     use crate::{
         permissions::ToolPermissionBroker,
@@ -1500,6 +1562,13 @@ async fn simulate_execute_command_with_user_permission_approval_flow() {
             );",
         )
         .expect("create assistant message checkpoint schema");
+    fs::create_dir_all(Path::new(directory.root()).join(".openchat"))
+        .expect("create named project task directory");
+    fs::write(
+        Path::new(directory.root()).join(".openchat/tasks.json"),
+        r#"{"version":1,"tasks":[{"id":"verify","command":"echo USER_APPROVED_EXECUTION","timeoutSeconds":20}]}"#,
+    )
+    .expect("write named project task catalog");
     let broker = ToolPermissionBroker::default();
     let events = EventSink::new();
     let request_id = json!("test_req_1");
@@ -1508,20 +1577,24 @@ async fn simulate_execute_command_with_user_permission_approval_flow() {
     // 1. Approval Granted Case
     let call_allow = ToolCall {
         id: "call_allow_1".to_owned(),
-        name: "execute_command".to_owned(),
-        arguments: json!({
-            "command": "echo USER_APPROVED_EXECUTION",
-        }),
+        name: "run_project_task".to_owned(),
+        arguments: json!({"task": "verify"}),
     };
 
     let (_cancellation_tx, mut cancellation_rx) = watch::channel(false);
     let broker_clone = broker.clone();
 
     let exec_task = tokio::spawn({
-        let executor = ToolExecutor::new(
+        let mut allowed_tools = super::definitions()
+            .into_iter()
+            .map(|tool| tool.name)
+            .collect::<Vec<_>>();
+        allowed_tools.push(super::project_tasks::tool_definition(&["verify".to_owned()]).name);
+        let executor = ToolExecutor::with_allowed_tool_names(
             Some(Path::new(directory.root())),
             Path::new(directory.root()),
             ToolPermissionMode::RequireApproval,
+            allowed_tools,
         );
         let request_id = request_id.clone();
         let snapshot = snapshot.clone();

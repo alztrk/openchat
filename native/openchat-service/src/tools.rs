@@ -1038,7 +1038,10 @@ mod executor;
 pub(crate) use executor::ImageGenerationContext;
 pub(crate) use executor::tool_call_limit_error;
 pub use executor::{ToolExecutor, ToolPermissionMode};
-pub(crate) use executor::{ToolPermissionRule, ToolPermissionRules, parse_tool_permission_rules};
+pub(crate) use executor::{
+    ToolPermissionRule, ToolPermissionRules, parse_tool_permission_rules,
+    project_task_permission_rule,
+};
 
 #[cfg(test)]
 mod image_tool_tests {

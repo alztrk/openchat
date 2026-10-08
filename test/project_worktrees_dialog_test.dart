@@ -93,7 +93,10 @@ void main() {
                 projectId: 'project-1',
                 projectRoot: r'D:\projects\OpenChat',
                 permissionMode: ToolPermissionMode.requireApproval,
-                projectPermissionRules: const <String, ToolPermissionRule>{},
+                projectPermissionRules: const <String, ToolPermissionRule>{
+                  'run_project_task': ToolPermissionRule.deny,
+                  'run_project_task__verify': ToolPermissionRule.allow,
+                },
                 onUseWorktree: (_, _) async {},
               ),
             ),

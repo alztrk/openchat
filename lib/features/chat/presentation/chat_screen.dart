@@ -4199,11 +4199,43 @@ class _ChatScreenState extends State<ChatScreen> {
       final rules = await _settingsPreferences.readProjectToolPermissionRules(
         projectId,
       );
+      final service = widget.serviceClient;
+      final List<String> taskIds;
+      if (service == null) {
+        taskIds = const <String>[];
+      } else {
+        final result = await service.call(
+          'project.tasks.list',
+          params: <String, Object?>{'projectId': projectId},
+        );
+        final tasks = result['tasks'];
+        if (tasks is! List<Object?> || tasks.length > 32) {
+          throw const FormatException('The project task list was invalid.');
+        }
+        taskIds = tasks
+            .map((task) {
+              if (task is! Map<String, Object?>) {
+                throw const FormatException(
+                  'The project task list was invalid.',
+                );
+              }
+              final id = task['id'];
+              if (id is! String ||
+                  !RegExp(r'^[a-z0-9_-]{1,64}$').hasMatch(id)) {
+                throw const FormatException(
+                  'The project task list was invalid.',
+                );
+              }
+              return id;
+            })
+            .toList(growable: false);
+      }
       if (!mounted) return;
       await showDialog<void>(
         context: context,
         builder: (context) => ProjectToolPermissionsDialog(
           initialRules: rules,
+          namedTaskIds: taskIds,
           onSave: (updatedRules) => _settingsPreferences
               .writeProjectToolPermissionRules(projectId, updatedRules),
         ),

@@ -288,6 +288,11 @@ pub(crate) async fn dispatch(
             let tasks = crate::tools::project_tasks::load_project_tasks(&task_root)?;
             Ok(json!({"tasks": tasks}))
         }
+        "project.tasks.list" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let tasks = project_tasks_for_project(storage, project_id)?;
+            Ok(json!({"tasks": tasks}))
+        }
         "project.worktrees.run_task" => {
             let project_id = required_string(&request.params, "projectId")?;
             let project_root = required_string(&request.params, "projectRoot")?;
@@ -306,7 +311,9 @@ pub(crate) async fn dispatch(
                 .get("confirmed")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            match permission_rules.get("run_project_task") {
+            let task_permission_rule =
+                crate::tools::project_task_permission_rule(&permission_rules, task_id);
+            match task_permission_rule {
                 Some(crate::tools::ToolPermissionRule::Deny) => {
                     return Err(ServiceError::new(
                         "permission_denied",
@@ -1680,6 +1687,41 @@ fn project_root_for_mcp(
     Ok(root)
 }
 
+fn project_tasks_for_project(
+    storage: &AppStorage,
+    project_id: &str,
+) -> Result<Vec<crate::tools::project_tasks::ProjectTask>, ServiceError> {
+    let connection = storage.connect().map_err(|_| {
+        ServiceError::new(
+            "storage_unavailable",
+            "Project task permissions could not be read.",
+            true,
+        )
+    })?;
+    let project_root = connection
+        .query_row(
+            "SELECT folder_path FROM projects WHERE id = ?1",
+            [project_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|_| {
+            ServiceError::new(
+                "storage_unavailable",
+                "Project task permissions could not be read.",
+                true,
+            )
+        })?
+        .ok_or_else(|| {
+            ServiceError::new(
+                "project_unavailable",
+                "The selected project is no longer available.",
+                false,
+            )
+        })?;
+    crate::tools::project_tasks::load_project_tasks_if_present(std::path::Path::new(&project_root))
+}
+
 fn required_string_array(params: &Value, name: &str) -> Result<Vec<String>, ServiceError> {
     params
         .get(name)
@@ -2377,10 +2419,16 @@ mod tests {
     }
 
     #[test]
-    fn mcp_catalog_rpc_resolves_the_saved_project_path() {
+    fn project_catalog_rpcs_resolve_the_saved_project_path() {
         let directory = TestDirectory::new();
         let project_root = directory.0.join("project");
         fs::create_dir(&project_root).expect("create project folder");
+        fs::create_dir(project_root.join(".openchat")).expect("create project config folder");
+        fs::write(
+            project_root.join(".openchat/tasks.json"),
+            r#"{"version":1,"tasks":[{"id":"verify","command":"cargo test","timeoutSeconds":60}]}"#,
+        )
+        .expect("write project task catalog");
         let storage =
             Arc::new(AppStorage::open_at(directory.0.join("data")).expect("open test storage"));
         let connection = storage.connect().expect("connect test storage");
@@ -2401,7 +2449,14 @@ mod tests {
             super::project_root_for_mcp(&storage, "project-1").expect("resolve saved project"),
             fs::canonicalize(project_root).expect("canonicalize project")
         );
+        assert_eq!(
+            super::project_tasks_for_project(&storage, "project-1")
+                .expect("load saved project tasks")[0]
+                .id,
+            "verify"
+        );
         assert!(super::project_root_for_mcp(&storage, "missing").is_err());
+        assert!(super::project_tasks_for_project(&storage, "missing").is_err());
     }
 
     struct TestDirectory(PathBuf);

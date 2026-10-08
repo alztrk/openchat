@@ -667,7 +667,9 @@ class _ComposerActions extends StatelessWidget {
         final canAttemptSend =
             canSendMessage &&
             (value.text.trim().isNotEmpty || pendingAttachments.isNotEmpty);
-        final actionEnabled = isSending || canAttemptSend;
+        final actionEnabled = isSending
+            ? onStopMessage != null
+            : canAttemptSend;
         final onPressed = isSending
             ? onStopMessage
             : canAttemptSend

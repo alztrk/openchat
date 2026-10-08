@@ -18,6 +18,7 @@ pub(super) struct ProviderRequestOptions<'a> {
     pub(super) custom_instructions: Option<&'a str>,
     pub(super) permission_mode: ToolPermissionMode,
     pub(super) has_project: bool,
+    pub(super) project_task_ids: &'a [String],
     pub(super) reasoning_effort: Option<&'a str>,
     pub(super) supports_tool_calls: Option<bool>,
     pub(super) goal_objective: Option<&'a str>,
@@ -35,6 +36,7 @@ pub(super) fn build_provider_request(
         custom_instructions,
         permission_mode,
         has_project,
+        project_task_ids,
         reasoning_effort,
         supports_tool_calls,
         goal_objective,
@@ -92,8 +94,8 @@ pub(super) fn build_provider_request(
     }
 
     let mut tools = tools::definitions_for_request(provider_id, supports_tool_calls);
-    if has_project && !tools.is_empty() {
-        tools.push(tools::project_tasks::tool_definition());
+    if cfg!(windows) && has_project && !project_task_ids.is_empty() && !tools.is_empty() {
+        tools.push(tools::project_tasks::tool_definition(project_task_ids));
     }
     if goal_objective.is_some() && tools.is_empty() {
         return Err(ServiceError::new(

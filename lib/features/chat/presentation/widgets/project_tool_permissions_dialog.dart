@@ -7,10 +7,12 @@ class ProjectToolPermissionsDialog extends StatefulWidget {
   const ProjectToolPermissionsDialog({
     super.key,
     required this.initialRules,
+    this.namedTaskIds = const <String>[],
     required this.onSave,
   });
 
   final Map<String, ToolPermissionRule> initialRules;
+  final List<String> namedTaskIds;
   final Future<void> Function(Map<String, ToolPermissionRule> rules) onSave;
 
   @override
@@ -21,7 +23,15 @@ class ProjectToolPermissionsDialog extends StatefulWidget {
 class _ProjectToolPermissionsDialogState
     extends State<ProjectToolPermissionsDialog> {
   late final Map<String, ToolPermissionRule> _rules =
-      Map<String, ToolPermissionRule>.of(widget.initialRules);
+      Map<String, ToolPermissionRule>.fromEntries(
+        widget.initialRules.entries.where((entry) {
+          const prefix = 'run_project_task__';
+          if (!entry.key.startsWith(prefix)) return true;
+          return widget.namedTaskIds.contains(
+            entry.key.substring(prefix.length),
+          );
+        }),
+      );
   bool _saving = false;
   bool _saveFailed = false;
 
@@ -43,6 +53,11 @@ class _ProjectToolPermissionsDialogState
       'web_search': l10n.toolWebSearch,
       'read_url_content': l10n.toolReadUrlContent,
       'delegate_task': l10n.toolDelegateTask,
+      'run_project_task': l10n.toolRunProjectTask,
+    };
+    final ruleNames = <String>{
+      ...projectToolRuleNames,
+      ...widget.namedTaskIds.map((id) => 'run_project_task__$id'),
     };
 
     return AlertDialog(
@@ -54,14 +69,18 @@ class _ProjectToolPermissionsDialogState
           children: [
             Text(l10n.projectToolRulesDescription),
             const SizedBox(height: 16),
-            for (final name in projectToolRuleNames)
+            for (final name in ruleNames)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: DropdownButtonFormField<ToolPermissionRule>(
                   key: ValueKey<String>('project-tool-rule-$name'),
                   initialValue: _rules[name] ?? ToolPermissionRule.inherit,
                   isExpanded: true,
-                  decoration: InputDecoration(labelText: labels[name]),
+                  decoration: InputDecoration(
+                    labelText:
+                        labels[name] ??
+                        '${l10n.toolRunProjectTask}: ${name.substring('run_project_task__'.length)}',
+                  ),
                   items: [
                     DropdownMenuItem(
                       value: ToolPermissionRule.inherit,

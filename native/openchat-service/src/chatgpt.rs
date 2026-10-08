@@ -192,6 +192,8 @@ impl ChatGptService {
             .collect::<Vec<_>>();
         crate::history::validate_model_attachments(&messages, model.supports_images)?;
         let last_message_id = included_messages.last().map(|message| message.id.clone());
+        let project_task_ids =
+            tools::project_tasks::load_project_task_ids_if_enabled(project_root, cfg!(windows))?;
         #[cfg(windows)]
         let mcp_configs =
             tools::mcp::filter_denied_servers(&context.mcp_configs, &context.tool_permission_rules);
@@ -214,8 +216,8 @@ impl ChatGptService {
         {
             context.mcp_registry = mcp_registry;
         }
-        if project_root.is_some() && !tools.is_empty() {
-            tools.push(tools::project_tasks::tool_definition());
+        if cfg!(windows) && !project_task_ids.is_empty() && !tools.is_empty() {
+            tools.push(tools::project_tasks::tool_definition(&project_task_ids));
         }
         if !tools.is_empty() {
             tools.extend(goals::control_tool_definitions());

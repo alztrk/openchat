@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fs, path::Path};
+use std::{collections::HashSet, fs, io::Read, path::Path};
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -10,6 +10,7 @@ const MAX_CATALOG_BYTES: usize = 64 * 1024;
 const MAX_TASKS: usize = 32;
 const MAX_TASK_ID_BYTES: usize = 64;
 const MAX_COMMAND_BYTES: usize = 4096;
+const TASK_PERMISSION_PREFIX: &str = "run_project_task__";
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -26,7 +27,7 @@ struct ProjectTaskCatalog {
     tasks: Vec<ProjectTask>,
 }
 
-pub(crate) fn tool_definition() -> ToolDefinition {
+pub(crate) fn tool_definition(task_ids: &[String]) -> ToolDefinition {
     ToolDefinition {
         name: "run_project_task".to_owned(),
         description: "Run a named task from the attached project's .openchat/tasks.json file through the configured terminal permission and output limits. When approval is required, the resolved command is shown before it runs.".to_owned(),
@@ -36,13 +37,43 @@ pub(crate) fn tool_definition() -> ToolDefinition {
                 "task": {
                     "type": "string",
                     "maxLength": MAX_TASK_ID_BYTES,
-                    "description": "The id of a task declared in .openchat/tasks.json."
+                    "description": "The id of a task declared in .openchat/tasks.json.",
+                    "enum": task_ids
                 }
             },
             "required": ["task"],
             "additionalProperties": false
         }),
     }
+}
+
+pub(crate) fn load_project_tasks_if_present(root: &Path) -> Result<Vec<ProjectTask>, ServiceError> {
+    let config_path = root.join(TASK_CATALOG_PATH);
+    match fs::symlink_metadata(&config_path) {
+        Ok(_) => load_project_tasks(root),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(Vec::new()),
+        Err(_) => Err(ServiceError::new(
+            "project_task_catalog_unavailable",
+            "The project task file `.openchat/tasks.json` could not be read.",
+            false,
+        )),
+    }
+}
+
+pub(crate) fn load_project_task_ids_if_enabled(
+    root: Option<&Path>,
+    enabled: bool,
+) -> Result<Vec<String>, ServiceError> {
+    if !enabled {
+        return Ok(Vec::new());
+    }
+    let Some(root) = root else {
+        return Ok(Vec::new());
+    };
+    Ok(load_project_tasks_if_present(root)?
+        .into_iter()
+        .map(|task| task.id)
+        .collect())
 }
 
 pub(crate) fn load_project_task(
@@ -100,13 +131,19 @@ pub(crate) fn load_project_tasks(root: &Path) -> Result<Vec<ProjectTask>, Servic
         ));
     }
 
-    let bytes = fs::read(canonical_config).map_err(|_| {
-        ServiceError::new(
-            "project_task_catalog_unavailable",
-            "The project task file `.openchat/tasks.json` could not be read.",
-            false,
-        )
-    })?;
+    let mut bytes = Vec::new();
+    fs::File::open(canonical_config)
+        .and_then(|file| {
+            file.take((MAX_CATALOG_BYTES + 1) as u64)
+                .read_to_end(&mut bytes)
+        })
+        .map_err(|_| {
+            ServiceError::new(
+                "project_task_catalog_unavailable",
+                "The project task file `.openchat/tasks.json` could not be read.",
+                false,
+            )
+        })?;
     if bytes.len() > MAX_CATALOG_BYTES {
         return Err(invalid_task(
             "The project task file exceeds the 64 KiB limit.",
@@ -149,6 +186,15 @@ fn is_valid_task_id(id: &str) -> bool {
         && id.bytes().all(|byte| {
             byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'-')
         })
+}
+
+pub(crate) fn permission_rule_name(task_id: &str) -> Option<String> {
+    is_valid_task_id(task_id).then(|| format!("{TASK_PERMISSION_PREFIX}{task_id}"))
+}
+
+pub(crate) fn is_permission_rule_name(name: &str) -> bool {
+    name.strip_prefix(TASK_PERMISSION_PREFIX)
+        .is_some_and(is_valid_task_id)
 }
 
 fn invalid_task(message: &str) -> ServiceError {

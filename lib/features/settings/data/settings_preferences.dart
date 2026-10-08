@@ -62,10 +62,15 @@ const projectToolRuleNames = <String>{
   'delegate_task',
   'run_project_task',
 };
-const _maxProjectToolPermissionRules = 1048;
+const _maxProjectToolPermissionRules = 1080;
 
 bool _isProjectToolRuleName(String name) {
   if (projectToolRuleNames.contains(name)) return true;
+  const taskPrefix = 'run_project_task__';
+  if (name.startsWith(taskPrefix)) {
+    return RegExp(r'^[a-z0-9_-]{1,64}$')
+        .hasMatch(name.substring(taskPrefix.length));
+  }
   const prefix = 'mcp__';
   if (!name.startsWith(prefix) || name.length > 64) return false;
   final suffix = name.substring(prefix.length);

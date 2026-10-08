@@ -115,6 +115,10 @@ pub async fn send_message(
             .map_err(|_| storage_error())?
     };
     crate::history::validate_model_attachments(&stored_messages, route.supports_images)?;
+    let project_task_ids = crate::tools::project_tasks::load_project_task_ids_if_enabled(
+        project_root,
+        cfg!(windows) && route.supports_tool_calls != Some(false),
+    )?;
     let included_messages = stored_messages
         .iter()
         .filter(|message| Some(message.id.as_str()) != excluded_assistant_message_id)
@@ -130,6 +134,7 @@ pub async fn send_message(
             custom_instructions,
             permission_mode,
             has_project: project_root.is_some(),
+            project_task_ids: &project_task_ids,
             reasoning_effort,
             supports_tool_calls: route.supports_tool_calls,
             goal_objective: goal.as_ref().map(|goal| goal.objective.as_str()),

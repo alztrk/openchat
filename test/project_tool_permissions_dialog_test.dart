@@ -29,7 +29,10 @@ void main() {
               onPressed: () => showDialog<void>(
                 context: context,
                 builder: (context) => ProjectToolPermissionsDialog(
-                  initialRules: const <String, ToolPermissionRule>{},
+                  initialRules: const <String, ToolPermissionRule>{
+                    'run_project_task__removed': ToolPermissionRule.deny,
+                  },
+                  namedTaskIds: const <String>['verify'],
                   onSave: (rules) async {
                     savedRules = rules;
                   },
@@ -46,17 +49,37 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Project tool permissions'), findsOneWidget);
     expect(find.text('Use global setting'), findsWidgets);
-
-    await tester.tap(
-      find.byKey(const ValueKey<String>('project-tool-rule-list_files')),
+    expect(
+      tester
+          .widget<ProjectToolPermissionsDialog>(
+            find.byType(ProjectToolPermissionsDialog),
+          )
+          .namedTaskIds,
+      <String>['verify'],
+    );
+    await tester.scrollUntilVisible(
+      find.byKey(
+        const ValueKey<String>('project-tool-rule-run_project_task__verify'),
+      ),
+      240,
+      scrollable: find.byType(Scrollable).last,
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Allow').last);
+    expect(find.text('Run project task: verify'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('project-tool-rule-run_project_task__verify'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Deny').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
-    expect(savedRules?['list_files'], ToolPermissionRule.allow);
+    expect(savedRules?['run_project_task__verify'], ToolPermissionRule.deny);
+    expect(savedRules?.containsKey('run_project_task__removed'), isFalse);
     expect(find.byType(ProjectToolPermissionsDialog), findsNothing);
   });
 }

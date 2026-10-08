@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -58,6 +60,103 @@ void main() {
       }
     },
   );
+
+  testWidgets(
+    'chat composer stop action is labeled and keyboard-operable in every locale',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      final controller = TextEditingController(text: 'In flight');
+      addTearDown(controller.dispose);
+      try {
+        for (final locale in AppLocalizations.supportedLocales) {
+          var stopped = 0;
+          await tester.pumpWidget(
+            MaterialApp(
+              key: ValueKey<String>('composer-stop-${locale.languageCode}'),
+              locale: locale,
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              theme: OpenChatTheme.dark,
+              home: Scaffold(
+                body: FocusTraversalGroup(
+                  child: Column(
+                    children: [
+                      TextButton(onPressed: () {}, child: const Text('Before')),
+                      ChatComposer(
+                        controller: controller,
+                        onSendMessage: () {},
+                        canSendMessage: false,
+                        isSending: true,
+                        onStopMessage: () => stopped++,
+                        showReasoningSelector: false,
+                        providerId: 'opencode',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          final l10n = AppLocalizations.of(
+            tester.element(find.byType(ChatComposer)),
+          )!;
+          expect(find.bySemanticsLabel(l10n.stop), findsOneWidget);
+
+          for (var attempt = 0; attempt < 12 && stopped == 0; attempt++) {
+            await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+            await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+          }
+          expect(stopped, 1, reason: locale.languageCode);
+          expect(tester.takeException(), isNull);
+        }
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets('composer stop action is disabled when no stop callback exists', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    final controller = TextEditingController(text: 'In flight');
+    try {
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: const Locale('en'),
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          theme: OpenChatTheme.dark,
+          home: Scaffold(
+            body: ChatComposer(
+              controller: controller,
+              onSendMessage: () {},
+              canSendMessage: false,
+              isSending: true,
+              showReasoningSelector: false,
+              providerId: 'opencode',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final l10n = AppLocalizations.of(
+        tester.element(find.byType(ChatComposer)),
+      )!;
+      final stopAction = find.bySemanticsLabel(l10n.stop);
+      expect(stopAction, findsOneWidget);
+      expect(
+        tester.getSemantics(stopAction).flagsCollection.isEnabled,
+        ui.Tristate.isFalse,
+      );
+    } finally {
+      semantics.dispose();
+      controller.dispose();
+    }
+  });
 
   testWidgets(
     'assistant response actions stay labeled and operable at enlarged text in every locale',

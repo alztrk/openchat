@@ -38,7 +38,16 @@ pub enum ToolPermissionRule {
 }
 
 pub(crate) type ToolPermissionRules = HashMap<String, ToolPermissionRule>;
-const MAX_TOOL_PERMISSION_RULES: usize = 1048;
+const MAX_TOOL_PERMISSION_RULES: usize = 1080;
+
+pub(crate) fn project_task_permission_rule<'a>(
+    rules: &'a ToolPermissionRules,
+    task_id: &str,
+) -> Option<&'a ToolPermissionRule> {
+    super::project_tasks::permission_rule_name(task_id)
+        .and_then(|name| rules.get(&name))
+        .or_else(|| rules.get("run_project_task"))
+}
 
 #[cfg(windows)]
 fn mcp_server_permission_rule(rules: &ToolPermissionRules, server_id: &str) -> ToolPermissionRule {
@@ -94,6 +103,9 @@ pub(crate) fn parse_tool_permission_rules(
 }
 
 fn is_permission_rule_tool(name: &str) -> bool {
+    if super::project_tasks::is_permission_rule_name(name) {
+        return true;
+    }
     if let Some(mcp_tool_prefix) = name.strip_prefix("mcp__") {
         #[cfg(windows)]
         return super::mcp::valid_permission_rule_suffix(mcp_tool_prefix);
@@ -303,9 +315,19 @@ impl ToolExecutor {
         }
     }
 
-    fn permission_rule(&self, tool_name: &str, operation: &ToolOperation) -> ToolPermissionRule {
-        self.permission_rules
-            .get(tool_name)
+    fn permission_rule(&self, call: &ToolCall, operation: &ToolOperation) -> ToolPermissionRule {
+        let task_rule = (call.name == "run_project_task")
+            .then(|| {
+                call.arguments
+                    .get("task")
+                    .and_then(Value::as_str)
+                    .and_then(|task_id| {
+                        project_task_permission_rule(&self.permission_rules, task_id)
+                    })
+            })
+            .flatten();
+        task_rule
+            .or_else(|| self.permission_rules.get(&call.name))
             .copied()
             .unwrap_or_else(|| {
                 if self.permission_mode.requires_approval(operation) {
@@ -548,7 +570,7 @@ impl ToolExecutor {
         }
         let call = &activity_call;
 
-        let rule = self.permission_rule(&call.name, &prepared.operation);
+        let rule = self.permission_rule(call, &prepared.operation);
         if rule == ToolPermissionRule::Deny {
             let output = tool_error(
                 "permission_denied",
@@ -1512,7 +1534,7 @@ mod policy_tests {
     use serde_json::json;
 
     use super::{
-        ToolExecutor, ToolPermissionMode, ToolPermissionRule, ToolPermissionRules,
+        ToolCall, ToolExecutor, ToolPermissionMode, ToolPermissionRule, ToolPermissionRules,
         parse_tool_permission_rules, qualify_citation_source_ids,
     };
     use crate::tools::executor::validation::ToolOperation;
@@ -1567,16 +1589,83 @@ mod policy_tests {
         );
 
         assert_eq!(
-            executor.permission_rule("write_file", &operation),
+            executor.permission_rule(
+                &ToolCall {
+                    id: "call_write".to_owned(),
+                    name: "write_file".to_owned(),
+                    arguments: json!({}),
+                },
+                &operation,
+            ),
             ToolPermissionRule::Allow
         );
         assert_eq!(
-            executor.permission_rule("execute_command", &operation),
+            executor.permission_rule(
+                &ToolCall {
+                    id: "call_command".to_owned(),
+                    name: "execute_command".to_owned(),
+                    arguments: json!({}),
+                },
+                &operation,
+            ),
             ToolPermissionRule::Deny
         );
         assert_eq!(
-            executor.permission_rule("read_file", &operation),
+            executor.permission_rule(
+                &ToolCall {
+                    id: "call_read".to_owned(),
+                    name: "read_file".to_owned(),
+                    arguments: json!({}),
+                },
+                &operation,
+            ),
             ToolPermissionRule::Ask
+        );
+    }
+
+    #[test]
+    fn named_task_rules_override_the_project_wide_task_rule() {
+        let operation = ToolOperation::Bash {
+            command: Some("cargo test".to_owned()),
+            terminal_id: None,
+            input: None,
+            action: None,
+            timeout_seconds: Some(60),
+            wait_ms: None,
+        };
+        let rules = parse_tool_permission_rules(Some(&json!({
+            "run_project_task": "allow",
+            "run_project_task__verify": "deny"
+        })))
+        .expect("valid named task rules");
+        let executor = ToolExecutor::with_permission_rules(
+            None,
+            Path::new("."),
+            ToolPermissionMode::FullAccess,
+            ["run_project_task".to_owned()],
+            rules,
+        );
+        let call = ToolCall {
+            id: "call_verify".to_owned(),
+            name: "run_project_task".to_owned(),
+            arguments: json!({"task": "verify"}),
+        };
+        assert_eq!(
+            executor.permission_rule(&call, &operation),
+            ToolPermissionRule::Deny
+        );
+        let other_call = ToolCall {
+            id: "call_lint".to_owned(),
+            name: "run_project_task".to_owned(),
+            arguments: json!({"task": "lint"}),
+        };
+        assert_eq!(
+            executor.permission_rule(&other_call, &operation),
+            ToolPermissionRule::Allow
+        );
+        assert_eq!(
+            super::project_task_permission_rule(&executor.permission_rules, "verify"),
+            Some(&ToolPermissionRule::Deny)
         );
     }
 
@@ -1626,6 +1715,13 @@ mod policy_tests {
                 .code,
             "invalid_tool_permission_rules"
         );
+        let invalid_task_rule = json!({"run_project_task__Verify": "allow"});
+        assert_eq!(
+            parse_tool_permission_rules(Some(&invalid_task_rule))
+                .expect_err("task permission ids must use catalog id syntax")
+                .code,
+            "invalid_tool_permission_rules"
+        );
     }
 
     #[cfg(windows)]
@@ -1656,6 +1752,9 @@ mod policy_tests {
             "run_project_task",
         ] {
             rules.insert(tool.to_owned(), json!("ask"));
+        }
+        for task in 0..32 {
+            rules.insert(format!("run_project_task__task_{task}"), json!("deny"));
         }
         rules.insert("mcp__legacy_server__*".to_owned(), json!("allow"));
         assert_eq!(rules.len(), super::MAX_TOOL_PERMISSION_RULES);

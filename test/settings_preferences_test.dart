@@ -217,6 +217,7 @@ void main() {
     await writer.writeProjectToolPermissionRules('project-1', {
       'execute_command': ToolPermissionRule.ask,
       'write_file': ToolPermissionRule.deny,
+      'run_project_task__verify': ToolPermissionRule.deny,
       'mcp__local_docs__*': ToolPermissionRule.allow,
       'mcp__local_docs__read-file': ToolPermissionRule.deny,
       'read_file': ToolPermissionRule.inherit,
@@ -229,6 +230,7 @@ void main() {
     expect(await reader.readProjectToolPermissionRules('project-1'), {
       'execute_command': ToolPermissionRule.ask,
       'write_file': ToolPermissionRule.deny,
+      'run_project_task__verify': ToolPermissionRule.deny,
       'mcp__local_docs__*': ToolPermissionRule.allow,
       'mcp__local_docs__read-file': ToolPermissionRule.deny,
     });
@@ -260,9 +262,12 @@ void main() {
       for (final tool in projectToolRuleNames) {
         rules[tool] = ToolPermissionRule.ask;
       }
+      for (var task = 0; task < 32; task++) {
+        rules['run_project_task__task_$task'] = ToolPermissionRule.deny;
+      }
       rules['mcp__legacy_server__*'] = ToolPermissionRule.allow;
 
-      expect(rules, hasLength(1048));
+      expect(rules, hasLength(1080));
       await preferences.writeProjectToolPermissionRules('project-large', rules);
       expect(
         await preferences.readProjectToolPermissionRules('project-large'),

@@ -195,8 +195,10 @@ class _ProjectWorktreesDialogState extends State<ProjectWorktreesDialog> {
         builder: (context) => _ProjectTaskPickerDialog(tasks: tasks),
       );
       if (task == null || !mounted) return;
-      if (widget.projectPermissionRules['run_project_task'] ==
-          ToolPermissionRule.deny) {
+      final taskPermissionRule =
+          widget.projectPermissionRules['run_project_task__${task.id}'] ??
+          widget.projectPermissionRules['run_project_task'];
+      if (taskPermissionRule == ToolPermissionRule.deny) {
         _showError(l10n.projectWorktreeTaskDenied);
         return;
       }

@@ -25,6 +25,8 @@ use crate::provider_schema::ToolDefinition;
 
 use super::terminal::windows_sandbox::SandboxedProcess;
 
+mod bounded_http;
+
 const MCP_STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_MCP_TOOLS_PER_SERVER: usize = 128;
 const MAX_MCP_TOOLS_PER_REQUEST: usize = 256;
@@ -745,7 +747,10 @@ async fn start_streamable_http_service(
     if let Some(auth_token) = auth_token {
         transport_config.auth_header = Some(auth_token.to_string());
     }
-    let transport = StreamableHttpClientTransport::with_client(client, transport_config);
+    let transport = StreamableHttpClientTransport::with_client(
+        bounded_http::BoundedMcpHttpClient::new(client),
+        transport_config,
+    );
     timeout(MCP_STARTUP_TIMEOUT, ().serve(transport))
         .await
         .map_err(|_| {

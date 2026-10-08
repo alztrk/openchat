@@ -130,7 +130,7 @@ async fn receive_with_client(
     let mut tool_calls = BTreeMap::<usize, StreamedToolCall>::new();
     let supports_provider_citations = matches!(
         request.route.provider_id.as_deref(),
-        Some("openai" | "chatgpt_api" | "opencode" | "openrouter" | "groq")
+        Some("openai" | "chatgpt_api" | "opencode" | "openrouter" | "groq" | "gemini")
     );
     let mut provider_citation_sources = Vec::<Value>::new();
     let mut provider_citation_ids = BTreeMap::<(String, String), String>::new();
@@ -436,9 +436,6 @@ fn collect_provider_citations(
         }
     }
     for annotation in annotation_groups.into_iter().flatten() {
-        if sources.len() >= 32 {
-            break;
-        }
         if annotation
             .get("type")
             .and_then(Value::as_str)
@@ -447,52 +444,165 @@ fn collect_provider_citations(
             continue;
         }
         let citation = annotation.get("url_citation").unwrap_or(annotation);
-        let Some(raw_url) = citation
-            .get("url")
-            .and_then(Value::as_str)
-            .filter(|url| url.len() <= 4096)
-        else {
-            continue;
-        };
-        let Ok(url) = url::Url::parse(raw_url) else {
-            continue;
-        };
-        if !matches!(url.scheme(), "http" | "https")
-            || url.host_str().is_none()
-            || !url.username().is_empty()
-            || url.password().is_some()
-        {
-            continue;
-        }
-        let Some(title) = citation
-            .get("title")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|title| !title.is_empty() && title.len() <= 512)
-        else {
-            continue;
-        };
-        let normalized_url = url.to_string();
-        let key = (normalized_url.clone(), title.to_owned());
-        if ids.contains_key(&key) {
-            continue;
-        }
-        let id = format!("P{}", sources.len() + 1);
-        ids.insert(key, id.clone());
-        if let Some(end_index) = citation
+        let position = citation
             .get("end_index")
             .and_then(Value::as_u64)
             .and_then(|index| usize::try_from(index).ok())
-        {
-            positions.insert(id.clone(), end_index.saturating_add(1));
-        }
-        sources.push(serde_json::json!({
-            "id": id,
-            "title": title,
-            "url": normalized_url,
-            "sourceType": "provider_native"
-        }));
+            .map(|end_index| end_index.saturating_add(1));
+        store_provider_citation(citation, ids, sources, positions, position);
     }
+    collect_gemini_grounding_citations(value, ids, sources, positions);
+}
+
+fn collect_gemini_grounding_citations(
+    value: &Value,
+    ids: &mut BTreeMap<(String, String), String>,
+    sources: &mut Vec<Value>,
+    positions: &mut BTreeMap<String, usize>,
+) {
+    let Some(candidate) = value
+        .pointer("/candidates/0")
+        .or_else(|| value.get("candidate"))
+    else {
+        return;
+    };
+    let Some(chunks) = candidate
+        .pointer("/groundingMetadata/groundingChunks")
+        .and_then(Value::as_array)
+    else {
+        return;
+    };
+    let supports = candidate
+        .pointer("/groundingMetadata/groundingSupports")
+        .and_then(Value::as_array);
+    let text_parts = candidate
+        .pointer("/content/parts")
+        .and_then(Value::as_array);
+
+    let mut positions_by_chunk = BTreeMap::<usize, usize>::new();
+    for support in supports.into_iter().flatten().take(128) {
+        let Some(segment) = support.get("segment") else {
+            continue;
+        };
+        let Some(end_byte) = segment
+            .get("endIndex")
+            .and_then(Value::as_u64)
+            .and_then(|index| usize::try_from(index).ok())
+        else {
+            continue;
+        };
+        let part_index = segment
+            .get("partIndex")
+            .and_then(Value::as_u64)
+            .and_then(|index| usize::try_from(index).ok())
+            .unwrap_or(0);
+        let Some(parts) = text_parts else {
+            continue;
+        };
+        let Some(current_part) = parts
+            .get(part_index)
+            .and_then(|part| part.get("text"))
+            .and_then(Value::as_str)
+        else {
+            continue;
+        };
+        if end_byte > current_part.len() || !current_part.is_char_boundary(end_byte) {
+            continue;
+        }
+        let prefix = parts
+            .iter()
+            .take(part_index)
+            .filter_map(|part| part.get("text").and_then(Value::as_str))
+            .collect::<String>();
+        let position = format!("{prefix}{}", &current_part[..end_byte])
+            .chars()
+            .count();
+        for chunk_index in support
+            .get("groundingChunkIndices")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .take(64)
+            .filter_map(Value::as_u64)
+            .filter_map(|index| usize::try_from(index).ok())
+        {
+            positions_by_chunk
+                .entry(chunk_index)
+                .and_modify(|previous| *previous = (*previous).max(position))
+                .or_insert(position);
+        }
+    }
+
+    for (chunk_index, chunk) in chunks.iter().take(64).enumerate() {
+        if sources.len() >= 32 {
+            break;
+        }
+        let Some(web) = chunk.get("web") else {
+            continue;
+        };
+        let Some(raw_url) = web.get("uri").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(title) = web.get("title").and_then(Value::as_str) else {
+            continue;
+        };
+        let position = positions_by_chunk.get(&chunk_index).copied();
+        let citation = serde_json::json!({"url": raw_url, "title": title});
+        store_provider_citation(&citation, ids, sources, positions, position);
+    }
+}
+
+fn store_provider_citation(
+    citation: &Value,
+    ids: &mut BTreeMap<(String, String), String>,
+    sources: &mut Vec<Value>,
+    positions: &mut BTreeMap<String, usize>,
+    position: Option<usize>,
+) {
+    if sources.len() >= 32 {
+        return;
+    }
+    let Some(raw_url) = citation
+        .get("url")
+        .and_then(Value::as_str)
+        .filter(|url| url.len() <= 4096)
+    else {
+        return;
+    };
+    let Ok(url) = url::Url::parse(raw_url) else {
+        return;
+    };
+    if !matches!(url.scheme(), "http" | "https")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return;
+    }
+    let Some(title) = citation
+        .get("title")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|title| !title.is_empty() && title.len() <= 512)
+    else {
+        return;
+    };
+    let normalized_url = url.to_string();
+    let key = (normalized_url.clone(), title.to_owned());
+    if ids.contains_key(&key) {
+        return;
+    }
+    let id = format!("P{}", sources.len() + 1);
+    ids.insert(key, id.clone());
+    if let Some(position) = position {
+        positions.insert(id.clone(), position);
+    }
+    sources.push(serde_json::json!({
+        "id": id,
+        "title": title,
+        "url": normalized_url,
+        "sourceType": "provider_native"
+    }));
 }
 
 fn append_provider_citation_anchors(
@@ -712,6 +822,7 @@ mod tests {
         input_tokens: Option<i64>,
         output_tokens: Option<i64>,
         request: Vec<u8>,
+        events: Vec<crate::protocol::Response>,
     }
 
     async fn run_fixture(
@@ -752,7 +863,7 @@ mod tests {
             })
         };
         let client = fixture_client(Duration::from_secs(5));
-        let (events, _event_receiver) = EventSink::test_channel();
+        let (events, mut event_receiver) = EventSink::test_channel();
         let (_cancel_sender, mut cancellation) = watch::channel(false);
         let mut content = String::new();
         let mut reasoning = String::new();
@@ -770,6 +881,10 @@ mod tests {
             &mut input_tokens,
         )
         .await;
+        let mut emitted_events = Vec::new();
+        while let Ok(event) = event_receiver.try_recv() {
+            emitted_events.push(event);
+        }
         let request = server.await.expect("fixture server should finish");
         FixtureOutcome {
             result,
@@ -778,6 +893,7 @@ mod tests {
             input_tokens,
             output_tokens,
             request,
+            events: emitted_events,
         }
     }
 
@@ -1026,6 +1142,121 @@ mod tests {
     }
 
     #[test]
+    fn parses_gemini_grounding_chunks_and_places_sources_after_supported_text() {
+        let value = json!({
+            "candidates": [{
+                "content": {"parts": [{"text": "Claim. More text."}]},
+                "groundingMetadata": {
+                    "groundingChunks": [
+                        {"web": {"uri": "https://example.org/grounded", "title": "Grounded source"}},
+                        {"web": {"uri": "https://example.org/other", "title": "Other source"}}
+                    ],
+                    "groundingSupports": [{
+                        "segment": {"partIndex": 0, "endIndex": 6, "text": "Claim."},
+                        "groundingChunkIndices": [0]
+                    }]
+                }
+            }]
+        });
+        let mut ids = std::collections::BTreeMap::new();
+        let mut sources = Vec::new();
+        let mut positions = std::collections::BTreeMap::new();
+
+        collect_provider_citations(&value, &mut ids, &mut sources, &mut positions);
+
+        assert_eq!(sources.len(), 2);
+        assert_eq!(sources[0]["title"], "Grounded source");
+        assert_eq!(positions.get("P1"), Some(&6));
+        assert!(!positions.contains_key("P2"));
+        let mut content = "Claim. More text.".to_owned();
+        let mut round_content = content.clone();
+        append_provider_citation_anchors(&mut content, &mut round_content, &sources, &positions);
+        assert_eq!(content, "Claim. [P1] More text. [P2]");
+    }
+
+    #[test]
+    fn converts_gemini_utf8_byte_offsets_to_character_positions() {
+        let value = json!({
+            "candidates": [{
+                "content": {"parts": [{"text": "İzmir güzel."}]},
+                "groundingMetadata": {
+                    "groundingChunks": [{"web": {
+                        "uri": "https://example.org/izmir",
+                        "title": "İzmir source"
+                    }}],
+                    "groundingSupports": [{
+                        "segment": {"partIndex": 0, "endIndex": 6, "text": "İzmir"},
+                        "groundingChunkIndices": [0]
+                    }]
+                }
+            }]
+        });
+        let mut ids = std::collections::BTreeMap::new();
+        let mut sources = Vec::new();
+        let mut positions = std::collections::BTreeMap::new();
+
+        collect_provider_citations(&value, &mut ids, &mut sources, &mut positions);
+
+        let mut content = "İzmir güzel.".to_owned();
+        let mut round_content = content.clone();
+        append_provider_citation_anchors(&mut content, &mut round_content, &sources, &positions);
+        assert_eq!(content, "İzmir [P1] güzel.");
+    }
+
+    #[test]
+    fn rejects_unsafe_gemini_grounding_chunk_urls() {
+        let value = json!({
+            "candidates": [{
+                "content": {"parts": [{"text": "Claim."}]},
+                "groundingMetadata": {
+                    "groundingChunks": [
+                        {"web": {"uri": "file:///private/data", "title": "Local file"}},
+                        {"web": {"uri": "https://user:pass@example.org/private", "title": "Credential URL"}}
+                    ],
+                    "groundingSupports": []
+                }
+            }]
+        });
+        let mut ids = std::collections::BTreeMap::new();
+        let mut sources = Vec::new();
+        let mut positions = std::collections::BTreeMap::new();
+
+        collect_provider_citations(&value, &mut ids, &mut sources, &mut positions);
+
+        assert!(sources.is_empty());
+        assert!(positions.is_empty());
+    }
+
+    #[test]
+    fn ignores_gemini_grounding_chunks_beyond_the_metadata_limit() {
+        let mut chunks = vec![json!({"retrievedContext": {"title": "Ignored context"}}); 64];
+        chunks.push(json!({"web": {
+            "uri": "https://example.org/over-limit",
+            "title": "Over-limit source"
+        }}));
+        let value = json!({
+            "candidates": [{
+                "content": {"parts": [{"text": "Claim."}]},
+                "groundingMetadata": {
+                    "groundingChunks": chunks,
+                    "groundingSupports": [{
+                        "segment": {"partIndex": 0, "endIndex": 6},
+                        "groundingChunkIndices": [64]
+                    }]
+                }
+            }]
+        });
+        let mut ids = std::collections::BTreeMap::new();
+        let mut sources = Vec::new();
+        let mut positions = std::collections::BTreeMap::new();
+
+        collect_provider_citations(&value, &mut ids, &mut sources, &mut positions);
+
+        assert!(sources.is_empty());
+        assert!(positions.is_empty());
+    }
+
+    #[test]
     fn places_provider_citations_at_valid_unicode_text_offsets() {
         let value = json!({
             "choices": [{
@@ -1262,6 +1493,56 @@ mod tests {
         assert_eq!(body["messages"][1]["content"], "stored result");
         assert_eq!(body["tools"][0]["function"]["name"], "search");
         assert!(outcome.reasoning.is_empty());
+    }
+
+    #[tokio::test]
+    async fn gemini_grounding_metadata_streams_clickable_citation_sources() {
+        let mut response_body = Vec::new();
+        response_body.extend(sse_event(
+            json!({"choices": [{"delta": {"content": "Claim. More text."}}]}),
+            true,
+        ));
+        response_body.extend(sse_event(
+            json!({
+                "candidates": [{
+                    "content": {"parts": [{"text": "Claim. More text."}]},
+                    "groundingMetadata": {
+                        "groundingChunks": [{"web": {
+                            "uri": "https://example.org/grounded",
+                            "title": "Grounded source"
+                        }}],
+                        "groundingSupports": [{
+                            "segment": {"partIndex": 0, "endIndex": 6, "text": "Claim."},
+                            "groundingChunkIndices": [0]
+                        }]
+                    }
+                }]
+            }),
+            true,
+        ));
+        response_body.extend(sse_event(
+            json!({"choices": [{"delta": {}, "finish_reason": "stop"}]}),
+            true,
+        ));
+        response_body.extend(b"data: [DONE]\n\n".iter().copied());
+
+        let outcome = run_fixture(200, response_body, false).await;
+
+        assert!(outcome.result.is_ok());
+        assert_eq!(outcome.content, "Claim. [P1] More text.");
+        let citation_event = outcome
+            .events
+            .iter()
+            .find(|event| event.event.as_deref() == Some("chat.citations.updated"))
+            .expect("stream should emit the citation update");
+        assert_eq!(
+            citation_event.data.as_ref().unwrap()["sources"][0]["id"],
+            "P1"
+        );
+        assert_eq!(
+            citation_event.data.as_ref().unwrap()["sources"][0]["url"],
+            "https://example.org/grounded"
+        );
     }
 
     #[tokio::test]
