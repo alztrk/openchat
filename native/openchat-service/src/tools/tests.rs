@@ -1236,11 +1236,27 @@ async fn simulate_real_world_agent_terminal_and_file_flow() {
     let prepared_input = executor
         .prepare_call(&input_call)
         .expect("prepare send_terminal_input");
-    let input_result = execute_model_tool(&prepared_input).await;
+    let mut input_result = execute_model_tool(&prepared_input).await;
     assert!(
         input_result.get("error").is_none(),
         "send_terminal_input failed: {input_result:?}"
     );
+
+    for _ in 0..60 {
+        if input_result["is_running"] != true {
+            break;
+        }
+        input_result = super::terminal::TerminalSessionManager::global()
+            .read_output_of(&term_id, Some(500))
+            .await
+            .expect("interactive workflow output should remain readable");
+    }
+    if input_result["is_running"] == true {
+        super::terminal::TerminalSessionManager::global()
+            .kill_session(&term_id)
+            .await
+            .expect("timed-out interactive workflow should be terminated");
+    }
 
     let after_input_output = input_result["output"].as_str().unwrap_or("");
     assert!(
