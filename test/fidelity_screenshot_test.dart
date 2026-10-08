@@ -88,7 +88,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('project creation appears while hovering its section heading', (
+  testWidgets('project creation is visible in its section heading', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(360, 720);
@@ -98,6 +98,7 @@ void main() {
 
     final searchController = TextEditingController();
     addTearDown(searchController.dispose);
+    var projectCreated = false;
     await tester.pumpWidget(
       MaterialApp(
         locale: const Locale('tr'),
@@ -109,7 +110,9 @@ void main() {
             searchController: searchController,
             width: OpenChatSpacing.sidebarWidth,
             projects: figmaSidebarProjects,
-            onCreateProject: () {},
+            onCreateProject: () {
+              projectCreated = true;
+            },
           ),
         ),
       ),
@@ -123,7 +126,7 @@ void main() {
       of: createButton,
       matching: find.byType(AnimatedOpacity),
     );
-    expect(tester.widget<AnimatedOpacity>(opacity).opacity, 0);
+    expect(tester.widget<AnimatedOpacity>(opacity).opacity, 1);
     final l10n = AppLocalizations.of(tester.element(createButton));
     expect(l10n, isNotNull);
     expect(
@@ -135,16 +138,8 @@ void main() {
       OpenChatSpacing.sidebarWidth - 24,
     );
 
-    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    addTearDown(mouse.removePointer);
-    await mouse.addPointer(location: Offset.zero);
-    await mouse.moveTo(tester.getCenter(find.text('Projeler')));
-    await tester.pump(const Duration(milliseconds: 160));
-    expect(tester.widget<AnimatedOpacity>(opacity).opacity, 1);
-
-    await mouse.moveTo(const Offset(350, 200));
-    await tester.pump(const Duration(milliseconds: 160));
-    expect(tester.widget<AnimatedOpacity>(opacity).opacity, 0);
+    await tester.tap(createButton);
+    expect(projectCreated, isTrue);
     expect(tester.takeException(), isNull);
   });
 
@@ -229,67 +224,66 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-    'permission menu keeps full labels accessible without descriptions',
-    (tester) async {
-      const locale = Locale('tr');
-      final l10n = await AppLocalizations.delegate.load(locale);
-      final controller = TextEditingController();
-      addTearDown(controller.dispose);
-      tester.view.physicalSize = const Size(1200, 900);
-      tester.view.devicePixelRatio = 1;
-      addTearDown(tester.view.resetPhysicalSize);
-      addTearDown(tester.view.resetDevicePixelRatio);
+  testWidgets('permission menu keeps full labels and descriptions accessible', (
+    tester,
+  ) async {
+    const locale = Locale('tr');
+    final l10n = await AppLocalizations.delegate.load(locale);
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
-      await tester.pumpWidget(
-        MaterialApp(
-          locale: locale,
-          localizationsDelegates: AppLocalizations.localizationsDelegates,
-          supportedLocales: AppLocalizations.supportedLocales,
-          theme: OpenChatTheme.light,
-          home: Scaffold(
-            body: Center(
-              child: SizedBox(
-                width: 1000,
-                child: ChatComposer(
-                  controller: controller,
-                  onSendMessage: () {},
-                  canSendMessage: false,
-                  showReasoningSelector: false,
-                  providerId: 'chatgpt',
-                  onToolPermissionModeChanged: (_) {},
-                ),
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: locale,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.light,
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 1000,
+              child: ChatComposer(
+                controller: controller,
+                onSendMessage: () {},
+                canSendMessage: false,
+                showReasoningSelector: false,
+                providerId: 'chatgpt',
+                onToolPermissionModeChanged: (_) {},
               ),
             ),
           ),
         ),
-      );
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      final permissionButton = find.widgetWithText(
-        OutlinedButton,
-        l10n.toolPermissionRequireApproval,
-      );
-      expect(permissionButton, findsOneWidget);
-      expect(
-        find.ancestor(of: permissionButton, matching: find.byType(Tooltip)),
-        findsOneWidget,
-      );
-      expect(
-        find.text(l10n.toolPermissionRequireApprovalDescription),
-        findsNothing,
-      );
+    final permissionButton = find.widgetWithText(
+      OutlinedButton,
+      l10n.toolPermissionRequireApproval,
+    );
+    expect(permissionButton, findsOneWidget);
+    expect(
+      find.ancestor(of: permissionButton, matching: find.byType(Tooltip)),
+      findsOneWidget,
+    );
+    expect(
+      find.text(l10n.toolPermissionRequireApprovalDescription),
+      findsNothing,
+    );
 
-      await tester.tap(permissionButton);
-      await tester.pumpAndSettle();
+    await tester.tap(permissionButton);
+    await tester.pumpAndSettle();
 
-      expect(
-        find.text(l10n.toolPermissionRequireApprovalDescription),
-        findsNothing,
-      );
-      expect(find.text(l10n.toolPermissionFullAccessDescription), findsNothing);
-    },
-  );
+    expect(
+      find.text(l10n.toolPermissionRequireApprovalDescription),
+      findsOneWidget,
+    );
+    expect(find.text(l10n.toolPermissionFullAccessDescription), findsOneWidget);
+  });
 
   for (final appearance in [
     (name: 'light', theme: OpenChatTheme.light),
@@ -770,8 +764,21 @@ void main() {
       matching: find.byType(AnimatedOpacity),
     );
     expect(tester.widget<AnimatedOpacity>(opacity).opacity, 1);
-    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
-    await tester.pumpAndSettle();
+    final createProjectButton = tester.widget<IconButton>(button);
+    final createProjectFocus = createProjectButton.focusNode;
+    expect(createProjectFocus, isNotNull);
+    if (createProjectFocus == null) {
+      fail('The project creation action must expose its focus node.');
+    }
+    for (
+      var attempt = 0;
+      attempt < 8 && !createProjectFocus.hasFocus;
+      attempt++
+    ) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pumpAndSettle();
+    }
+    expect(createProjectFocus.hasFocus, isTrue);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     expect(created, 1);
     expect(tester.takeException(), isNull);
@@ -1352,7 +1359,7 @@ Future<void> _expectActiveScreenMatchesFigma(
                       selectedConversationId: 'first-chat-experience',
                       onSelectProject: (_) {},
                       onSelectConversation: (_) {},
-                      onOpenProjectOptions: (_) {},
+                      onOpenProjectOptions: (_, _, _) {},
                       onCreateProjectConversation: (_) {},
                       onShowMoreProjectConversations: (_) {},
                     ),

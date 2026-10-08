@@ -6,6 +6,7 @@ import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/presentation/widgets/tool_file_listing.dart';
 import 'package:openchat/features/chat/presentation/widgets/tool_web_search_view.dart';
+import 'package:openchat/features/chat/presentation/widgets/tool_git_inspection_view.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 
 Widget? toolOperationResult(
@@ -20,6 +21,10 @@ Widget? toolOperationResult(
   'write' => ToolWriteResult(activity: activity, palette: palette),
   'edit_file' || 'edit' => ToolEditResult(activity: activity, palette: palette),
   'web_search' => ToolWebSearchResult(activity: activity, palette: palette),
+  'git_status' || 'git_diff' || 'git_history' => ToolGitInspectionResult(
+    activity: activity,
+    palette: palette,
+  ),
   'read_url_content' ||
   'read_url' => ToolReadUrlResult(activity: activity, palette: palette),
   _ => null,
@@ -32,9 +37,13 @@ IconData toolOperationIcon(String name) => switch (name) {
   'get_file_info' => LucideIcons.info,
   'write_file' || 'write' => LucideIcons.save,
   'edit_file' || 'edit' => LucideIcons.notebookPen,
-  'execute_command' || 'bash' => LucideIcons.terminal,
+  'execute_command' || 'bash' || 'run_project_task' => LucideIcons.terminal,
+  'delegate_task' => LucideIcons.gitFork,
   'send_terminal_input' => LucideIcons.keyboard,
   'web_search' => LucideIcons.earth,
+  'git_status' => LucideIcons.gitBranch,
+  'git_diff' => LucideIcons.gitCompare,
+  'git_history' => LucideIcons.history,
   'read_url_content' || 'read_url' => LucideIcons.globe,
   _ => LucideIcons.wrench,
 };

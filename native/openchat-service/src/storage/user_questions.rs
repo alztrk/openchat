@@ -188,10 +188,26 @@ pub(crate) struct NewQuestionGroup {
 
 #[derive(Clone, Debug)]
 pub(crate) struct AgentRun {
+    pub(crate) run_id: String,
     pub(crate) conversation_id: String,
     pub(crate) status: AgentRunStatus,
     pub(crate) checkpoint: Option<Value>,
     pub(crate) checkpoint_revision: i64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AgentRunSummary {
+    pub(crate) run_id: String,
+    pub(crate) conversation_id: String,
+    pub(crate) conversation_title: Option<String>,
+    pub(crate) status: AgentRunStatus,
+    pub(crate) updated_at_unix_ms: i64,
+    pub(crate) provider_id: Option<String>,
+    pub(crate) model_id: Option<String>,
+    pub(crate) run_kind: Option<String>,
+    pub(crate) parent_run_id: Option<String>,
+    pub(crate) objective: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -245,6 +261,292 @@ pub(crate) fn load_run_for_conversation(
     let run = load_run(connection, run_id)?;
     ensure_run_conversation(&run, conversation_id)?;
     Ok(run)
+}
+
+pub(crate) fn list_run_summaries(
+    connection: &Connection,
+    requested_limit: usize,
+) -> Result<Vec<AgentRunSummary>, UserQuestionError> {
+    if !(1..=50).contains(&requested_limit) {
+        return Err(UserQuestionError::InvalidInput(
+            "run summary limit is outside the supported range".to_owned(),
+        ));
+    }
+    let limit = i64::try_from(requested_limit)
+        .map_err(|_| UserQuestionError::InvalidInput("run summary limit is invalid".to_owned()))?;
+    let rows = {
+        let mut statement = connection.prepare(
+            "SELECT runs.id, runs.conversation_id, conversations.title,
+                    runs.status, runs.updated_at_unix_ms
+             FROM agent_runs AS runs
+             INNER JOIN conversations ON conversations.id = runs.conversation_id
+             WHERE runs.status IN ('running', 'paused', 'interrupted')
+                OR json_extract(runs.checkpoint_json, '$.runKind') = 'subagent'
+             ORDER BY CASE runs.status WHEN 'running' THEN 0 ELSE 1 END,
+                      runs.updated_at_unix_ms DESC, runs.id
+             LIMIT ?1",
+        )?;
+        statement
+            .query_map([limit], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    rows.into_iter()
+        .map(
+            |(run_id, conversation_id, conversation_title, status, updated_at_unix_ms)| {
+                let checkpoint = load_run(connection, &run_id)?.checkpoint;
+                let provider_id = checkpoint
+                    .as_ref()
+                    .and_then(|checkpoint| checkpoint.get("providerId"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                let model_id = checkpoint
+                    .as_ref()
+                    .and_then(|checkpoint| checkpoint.get("modelId"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                let run_kind = checkpoint
+                    .as_ref()
+                    .and_then(|checkpoint| checkpoint.get("runKind"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                let parent_run_id = checkpoint
+                    .as_ref()
+                    .and_then(|checkpoint| checkpoint.get("parentRunId"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                let objective = checkpoint
+                    .as_ref()
+                    .and_then(|checkpoint| checkpoint.get("objective"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned);
+                Ok(AgentRunSummary {
+                    run_id,
+                    conversation_id,
+                    conversation_title,
+                    status: AgentRunStatus::parse(status)?,
+                    updated_at_unix_ms,
+                    provider_id,
+                    model_id,
+                    run_kind,
+                    parent_run_id,
+                    objective,
+                })
+            },
+        )
+        .collect()
+}
+
+pub(crate) fn latest_active_goal_run(
+    connection: &Connection,
+    conversation_id: &str,
+) -> Result<Option<AgentRun>, UserQuestionError> {
+    validate_identifier(conversation_id, "conversation id")?;
+    let mut statement = connection.prepare(
+        "SELECT id
+         FROM agent_runs
+         WHERE conversation_id = ?1
+           AND status IN ('running', 'paused', 'interrupted')
+         ORDER BY updated_at_unix_ms DESC, id DESC",
+    )?;
+    let run_ids = statement
+        .query_map([conversation_id], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    for run_id in run_ids {
+        let run = load_run(connection, &run_id)?;
+        if run
+            .checkpoint
+            .as_ref()
+            .and_then(|checkpoint| checkpoint.get("goal"))
+            .is_some()
+        {
+            return Ok(Some(run));
+        }
+    }
+    Ok(None)
+}
+
+pub(crate) enum GoalActivation {
+    Started(AgentRun),
+    ActiveGoalExists,
+}
+
+pub(crate) fn activate_goal_run(
+    connection: &Connection,
+    conversation_id: &str,
+    run_id: &str,
+    expected_revision: i64,
+    checkpoint: &Value,
+) -> Result<GoalActivation, UserQuestionError> {
+    validate_identifier(conversation_id, "conversation id")?;
+    validate_identifier(run_id, "run id")?;
+    validate_non_negative(expected_revision, "checkpoint revision")?;
+    if checkpoint.get("goal").and_then(Value::as_object).is_none() {
+        return Err(UserQuestionError::InvalidInput(
+            "goal checkpoint is missing".to_owned(),
+        ));
+    }
+    let checkpoint_json = validate_checkpoint(checkpoint)?;
+    let now = unix_time_millis()?;
+    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let run = load_run(&transaction, run_id)?;
+    ensure_run_conversation(&run, conversation_id)?;
+    if run.checkpoint_revision != expected_revision {
+        return Err(UserQuestionError::StaleRevision {
+            expected: expected_revision,
+            actual: run.checkpoint_revision,
+        });
+    }
+    if run.status != AgentRunStatus::Running {
+        return Err(invalid_run_transition(run.status, "start a goal"));
+    }
+    if run
+        .checkpoint
+        .as_ref()
+        .and_then(|value| value.get("goal"))
+        .is_some()
+        || latest_active_goal_run(&transaction, conversation_id)?.is_some()
+    {
+        return Ok(GoalActivation::ActiveGoalExists);
+    }
+    let changed = transaction.execute(
+        "UPDATE agent_runs
+         SET checkpoint_json = ?1,
+             checkpoint_revision = checkpoint_revision + 1,
+             checkpoint_updated_at_unix_ms = ?2,
+             updated_at_unix_ms = ?2
+         WHERE id = ?3
+           AND conversation_id = ?4
+           AND checkpoint_revision = ?5
+           AND status = 'running'",
+        params![
+            checkpoint_json,
+            now,
+            run_id,
+            conversation_id,
+            expected_revision
+        ],
+    )?;
+    if changed != 1 {
+        return Err(UserQuestionError::StaleRevision {
+            expected: expected_revision,
+            actual: run.checkpoint_revision,
+        });
+    }
+    transaction.commit()?;
+    load_run(connection, run_id).map(GoalActivation::Started)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum GoalRunTransition {
+    KeepRunning,
+    Pause,
+    Cancel,
+}
+
+pub(crate) fn update_goal_run(
+    connection: &Connection,
+    conversation_id: &str,
+    run_id: &str,
+    expected_revision: i64,
+    checkpoint: &Value,
+    transition: GoalRunTransition,
+) -> Result<AgentRun, UserQuestionError> {
+    validate_identifier(conversation_id, "conversation id")?;
+    validate_identifier(run_id, "run id")?;
+    validate_non_negative(expected_revision, "checkpoint revision")?;
+    let checkpoint_json = validate_checkpoint(checkpoint)?;
+    let now = unix_time_millis()?;
+    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let run = load_run(&transaction, run_id)?;
+    ensure_run_conversation(&run, conversation_id)?;
+    if run.checkpoint_revision != expected_revision {
+        return Err(UserQuestionError::StaleRevision {
+            expected: expected_revision,
+            actual: run.checkpoint_revision,
+        });
+    }
+    if run
+        .checkpoint
+        .as_ref()
+        .and_then(|value| value.get("goal"))
+        .is_none()
+    {
+        return Err(UserQuestionError::Conflict(
+            "the agent run is not a goal".to_owned(),
+        ));
+    }
+
+    let (next_status, finished_at) = match transition {
+        GoalRunTransition::KeepRunning => {
+            if run.status != AgentRunStatus::Running {
+                return Err(invalid_run_transition(run.status, "update goal progress"));
+            }
+            (AgentRunStatus::Running, None)
+        }
+        GoalRunTransition::Pause => {
+            if !matches!(
+                run.status,
+                AgentRunStatus::Running | AgentRunStatus::Paused | AgentRunStatus::Interrupted
+            ) {
+                return Err(invalid_run_transition(run.status, "pause goal"));
+            }
+            (AgentRunStatus::Paused, None)
+        }
+        GoalRunTransition::Cancel => {
+            if !matches!(
+                run.status,
+                AgentRunStatus::Running | AgentRunStatus::Paused | AgentRunStatus::Interrupted
+            ) {
+                return Err(invalid_run_transition(run.status, "stop goal"));
+            }
+            (AgentRunStatus::Cancelled, Some(now))
+        }
+    };
+    let changed = transaction.execute(
+        "UPDATE agent_runs
+         SET status = ?1,
+             checkpoint_json = ?2,
+             checkpoint_revision = checkpoint_revision + 1,
+             checkpoint_updated_at_unix_ms = ?3,
+             updated_at_unix_ms = ?3,
+             finished_at_unix_ms = CASE WHEN ?4 IS NULL THEN finished_at_unix_ms ELSE ?4 END
+         WHERE id = ?5
+           AND checkpoint_revision = ?6
+           AND status IN ('running', 'paused', 'interrupted')",
+        params![
+            next_status.as_str(),
+            checkpoint_json,
+            now,
+            finished_at,
+            run_id,
+            expected_revision,
+        ],
+    )?;
+    if changed == 0 {
+        return Err(UserQuestionError::Conflict(
+            "the goal changed before its update could be saved".to_owned(),
+        ));
+    }
+    if transition == GoalRunTransition::Cancel {
+        transaction.execute(
+            "UPDATE pending_question_groups
+             SET status = 'cancelled',
+                 revision = revision + 1,
+                 updated_at_unix_ms = ?1
+             WHERE run_id = ?2 AND status = 'pending'",
+            params![now, run_id],
+        )?;
+    }
+    transaction.commit()?;
+    load_run(connection, run_id)
 }
 
 pub(crate) fn next_question_sequence(
@@ -660,6 +962,35 @@ pub(crate) fn mark_run_completed(
     }
 }
 
+pub(crate) fn mark_run_paused(
+    connection: &Connection,
+    conversation_id: &str,
+    run_id: &str,
+) -> Result<AgentRun, UserQuestionError> {
+    validate_identifier(conversation_id, "conversation id")?;
+    validate_identifier(run_id, "run id")?;
+    let transaction = Transaction::new_unchecked(connection, TransactionBehavior::Immediate)?;
+    let run = load_run(&transaction, run_id)?;
+    ensure_run_conversation(&run, conversation_id)?;
+    match run.status {
+        AgentRunStatus::Paused => {
+            transaction.commit()?;
+            Ok(run)
+        }
+        AgentRunStatus::Running => {
+            let now = unix_time_millis()?;
+            transaction.execute(
+                "UPDATE agent_runs SET status = 'paused', updated_at_unix_ms = ?1
+                 WHERE id = ?2 AND status = 'running'",
+                params![now, run_id],
+            )?;
+            transaction.commit()?;
+            load_run(connection, run_id)
+        }
+        status => Err(invalid_run_transition(status, "pause")),
+    }
+}
+
 pub(crate) fn mark_run_cancelled(
     connection: &Connection,
     conversation_id: &str,
@@ -935,20 +1266,21 @@ fn insert_question_group(
 fn load_run(connection: &Connection, run_id: &str) -> Result<AgentRun, UserQuestionError> {
     let row = connection
         .query_row(
-            "SELECT conversation_id, status, checkpoint_json, checkpoint_revision
+            "SELECT id, conversation_id, status, checkpoint_json, checkpoint_revision
              FROM agent_runs WHERE id = ?1",
             [run_id],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, Option<String>>(2)?,
-                    row.get::<_, i64>(3)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, i64>(4)?,
                 ))
             },
         )
         .optional()?;
-    let Some((conversation_id, status, checkpoint_json, checkpoint_revision)) = row else {
+    let Some((run_id, conversation_id, status, checkpoint_json, checkpoint_revision)) = row else {
         return Err(UserQuestionError::NotFound("agent run"));
     };
     let checkpoint = checkpoint_json
@@ -962,6 +1294,7 @@ fn load_run(connection: &Connection, run_id: &str) -> Result<AgentRun, UserQuest
         })?;
     }
     Ok(AgentRun {
+        run_id,
         conversation_id,
         status: AgentRunStatus::parse(status)?,
         checkpoint,
@@ -1450,12 +1783,12 @@ mod tests {
     use uuid::Uuid;
 
     use super::{
-        NewAgentRun, NewQuestionGroup, QuestionAnswer, QuestionAnswerValue, QuestionGroupStatus,
-        QuestionItem, QuestionKind, QuestionOption, UserQuestionError, create_run,
-        interrupt_running_runs_after_restart, list_pending_groups,
-        list_recoverable_question_groups, list_recoverable_runs, load_run, mark_run_cancelled,
-        mark_run_failed, mark_run_interrupted, mark_run_resumed, next_question_sequence,
-        pause_with_questions, save_checkpoint, submit_answers,
+        AgentRunStatus, NewAgentRun, NewQuestionGroup, QuestionAnswer, QuestionAnswerValue,
+        QuestionGroupStatus, QuestionItem, QuestionKind, QuestionOption, UserQuestionError,
+        create_run, interrupt_running_runs_after_restart, list_pending_groups,
+        list_recoverable_question_groups, list_recoverable_runs, list_run_summaries, load_run,
+        mark_run_cancelled, mark_run_failed, mark_run_interrupted, mark_run_resumed,
+        next_question_sequence, pause_with_questions, save_checkpoint, submit_answers,
     };
 
     fn connection() -> Connection {
@@ -1468,7 +1801,7 @@ mod tests {
         connection
             .execute_batch(
                 "PRAGMA foreign_keys = ON;
-                 CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                 CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL, title TEXT);
                  CREATE TABLE messages (
                     conversation_id TEXT NOT NULL,
                     id TEXT NOT NULL,
@@ -1476,6 +1809,7 @@ mod tests {
                     content TEXT NOT NULL,
                     status TEXT NOT NULL,
                     created_at INTEGER,
+                    output_tokens INTEGER,
                     tool_activities TEXT NOT NULL DEFAULT '[]',
                     PRIMARY KEY (conversation_id, id)
                  );",
@@ -1486,8 +1820,50 @@ mod tests {
         super::super::schema::initialize_schema(connection, super::super::schema::SCHEMA_VERSION)
             .expect("apply question storage schema");
         connection
-            .execute("INSERT INTO conversations (id) VALUES ('conversation')", [])
+            .execute(
+                "INSERT INTO conversations (id, title) VALUES ('conversation', 'Roadmap work')",
+                [],
+            )
             .expect("insert question storage conversation");
+    }
+
+    #[test]
+    fn run_summaries_include_only_recoverable_runs_and_safe_route_metadata() {
+        let connection = connection();
+        run(&connection, "active");
+        save_checkpoint(
+            &connection,
+            "conversation",
+            "active",
+            0,
+            &json!({"providerId": "gemini", "modelId": "model-a"}),
+        )
+        .expect("save run route checkpoint");
+        run(&connection, "failed");
+        mark_run_failed(&connection, "conversation", "failed").expect("fail run");
+
+        let summaries = list_run_summaries(&connection, 50).expect("list run summaries");
+
+        assert_eq!(summaries.len(), 1);
+        assert_eq!(summaries[0].run_id, "active");
+        assert_eq!(summaries[0].conversation_id, "conversation");
+        assert_eq!(
+            summaries[0].conversation_title.as_deref(),
+            Some("Roadmap work")
+        );
+        assert_eq!(summaries[0].status, AgentRunStatus::Running);
+        assert_eq!(summaries[0].provider_id.as_deref(), Some("gemini"));
+        assert_eq!(summaries[0].model_id.as_deref(), Some("model-a"));
+        let serialized = serde_json::to_value(&summaries[0]).expect("serialize run summary");
+        assert_eq!(serialized["runId"], "active");
+        assert_eq!(serialized["conversationTitle"], "Roadmap work");
+        assert_eq!(
+            serialized["updatedAtUnixMs"],
+            summaries[0].updated_at_unix_ms
+        );
+        assert_eq!(serialized["status"], "running");
+        assert!(list_run_summaries(&connection, 0).is_err());
+        assert!(list_run_summaries(&connection, 51).is_err());
     }
 
     fn run(connection: &Connection, id: &str) {

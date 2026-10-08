@@ -142,12 +142,61 @@ pub(crate) async fn execute_model_tool(prepared: &PreparedToolCall) -> Value {
                 Err(err) => return json!({"error": {"code": "read_url_failed", "message": err}}),
             }
         }
+        ToolOperation::DelegateTask { .. } => {
+            return json!({"error": {
+                "code": "subagent_unavailable",
+                "message": "Delegated analysis could not be started in this execution context."
+            }});
+        }
+        ToolOperation::GitStatus => {
+            return git_inspection_result(crate::git_inspection::status(&prepared.root).await);
+        }
+        ToolOperation::GitDiff => {
+            return git_inspection_result(crate::git_inspection::diff(&prepared.root).await);
+        }
+        ToolOperation::GitHistory { limit } => {
+            return git_inspection_result(
+                crate::git_inspection::history(&prepared.root, *limit).await,
+            );
+        }
         ToolOperation::Info => get_file_info(&prepared.root, &prepared.relative_path),
     };
 
     match result {
         Ok(value) => value,
         Err(error) => service_error(error),
+    }
+}
+
+fn git_inspection_result(
+    result: Result<Value, crate::git_inspection::GitInspectionError>,
+) -> Value {
+    match result {
+        Ok(value) => value,
+        Err(crate::git_inspection::GitInspectionError::NotRepository) => json!({
+            "error": {
+                "code": "not_git_repository",
+                "message": "The attached project folder is not a Git repository."
+            }
+        }),
+        Err(crate::git_inspection::GitInspectionError::TimedOut) => json!({
+            "error": {
+                "code": "git_operation_timed_out",
+                "message": "The Git inspection command exceeded its time limit."
+            }
+        }),
+        Err(crate::git_inspection::GitInspectionError::InvalidInput) => json!({
+            "error": {
+                "code": "invalid_tool_input",
+                "message": "The Git inspection arguments are invalid."
+            }
+        }),
+        Err(crate::git_inspection::GitInspectionError::Unavailable) => json!({
+            "error": {
+                "code": "git_unavailable",
+                "message": "Git inspection could not be completed. Confirm Git is installed and try again."
+            }
+        }),
     }
 }
 
@@ -169,9 +218,15 @@ mod tests {
 
     #[tokio::test]
     async fn execute_command_runs_echo_successfully() {
-        let temp_dir = std::env::temp_dir();
+        let temp_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join(format!(
+                "openchat-terminal-test-{}",
+                uuid::Uuid::new_v4().simple()
+            ));
+        std::fs::create_dir_all(&temp_dir).expect("create an isolated terminal test folder");
         let prepared = PreparedToolCall {
-            root: temp_dir,
+            root: temp_dir.clone(),
             relative_path: String::new(),
             requested_path: "echo hello_openchat".to_owned(),
             target_path: PathBuf::new(),
@@ -211,5 +266,6 @@ mod tests {
         assert_eq!(result["exit_code"], 0);
         let output = result["output"].as_str().unwrap_or("");
         assert!(output.contains("hello_openchat"));
+        std::fs::remove_dir_all(temp_dir).expect("remove the isolated terminal test folder");
     }
 }

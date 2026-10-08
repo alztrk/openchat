@@ -23,6 +23,18 @@ void main() {
     expect(activity.assistantTextBeforeByteOffset, isNull);
   });
 
+  test('rejects unsafe provider citation URLs', () {
+    expect(
+      () => ChatCitationSource.fromJson(<String, Object?>{
+        'id': 'P1',
+        'title': 'Source',
+        'url': 'file:///private/key',
+        'sourceType': 'provider_native',
+      }),
+      throwsFormatException,
+    );
+  });
+
   test(
     'conversation and messages survive closing and reopening the database',
     () async {
@@ -64,6 +76,16 @@ void main() {
           outputTokens: 42,
           tokensPerSecond: 21,
           elapsed: const Duration(seconds: 2),
+          providerId: 'openrouter',
+          modelId: 'route/model-1',
+          citationSources: const <ChatCitationSource>[
+            ChatCitationSource(
+              id: 'P1',
+              title: 'Provider source',
+              url: 'https://example.org/source',
+              sourceType: 'provider_native',
+            ),
+          ],
           status: ChatMessageStatus.completed,
         ),
       );
@@ -77,6 +99,16 @@ void main() {
           outputTokens: 42,
           tokensPerSecond: 21,
           elapsed: const Duration(seconds: 2),
+          providerId: 'openrouter',
+          modelId: 'route/model-1',
+          citationSources: const <ChatCitationSource>[
+            ChatCitationSource(
+              id: 'P1',
+              title: 'Provider source',
+              url: 'https://example.org/source',
+              sourceType: 'provider_native',
+            ),
+          ],
           status: ChatMessageStatus.completed,
         ),
       );
@@ -116,6 +148,9 @@ void main() {
       expect(messages.single.outputTokens, 42);
       expect(messages.single.tokensPerSecond, 21);
       expect(messages.single.elapsed, const Duration(seconds: 2));
+      expect(messages.single.providerId, 'openrouter');
+      expect(messages.single.modelId, 'route/model-1');
+      expect(messages.single.citationSources.single.id, 'P1');
       expect(messages.single.status, ChatMessageStatus.completed);
     },
   );
@@ -148,7 +183,7 @@ void main() {
       final conversation = await ChatRepository(database)
           .getConversation('before-archive-upgrade');
       expect(conversation?.isArchived, isFalse);
-      expect(OpenChatDatabase.currentSchemaVersion, 11);
+      expect(OpenChatDatabase.currentSchemaVersion, 12);
     },
   );
 
@@ -349,6 +384,164 @@ void main() {
       expect(saved.attachments.single.name, 'generated-image-1.png');
       expect(saved.attachments.single.isAvailable, isTrue);
       expect(saved.attachments.single.localPath, isNotNull);
+    },
+  );
+
+  test(
+    'branches through an edited user message and copies its attachments',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'openchat-message-branch-',
+      );
+      final database = OpenChatDatabase(NativeDatabase.memory());
+      addTearDown(() async {
+        await database.close();
+        await directory.delete(recursive: true);
+      });
+      final repository = ChatRepository(
+        database,
+        attachmentStore: ChatAttachmentStore(directory.path),
+      );
+      final createdAt = DateTime.utc(2026, 10, 8, 9);
+      await repository.createProject(
+        id: 'project-1',
+        name: 'Project',
+        folderPath: directory.path,
+        createdAt: createdAt,
+      );
+      await repository.createConversation(
+        id: 'source-chat',
+        title: 'Source chat',
+        createdAt: createdAt,
+        providerId: 'opencode',
+        modelId: 'model-1',
+        projectId: 'project-1',
+      );
+      final imageBytes = Uint8List.fromList(<int>[
+        0x89,
+        0x50,
+        0x4e,
+        0x47,
+        0x0d,
+        0x0a,
+        0x1a,
+        0x0a,
+      ]);
+      await repository.saveMessage(
+        conversationId: 'source-chat',
+        message: ChatMessage(
+          id: 'user-before',
+          role: ChatMessageRole.user,
+          content: 'Keep this context',
+          createdAt: createdAt,
+        ),
+      );
+      await repository.saveMessage(
+        conversationId: 'source-chat',
+        message: ChatMessage(
+          id: 'assistant-before',
+          role: ChatMessageRole.assistant,
+          content: 'Prior answer',
+          createdAt: createdAt.add(const Duration(seconds: 1)),
+          providerId: 'opencode',
+          modelId: 'model-1',
+          citationSources: const <ChatCitationSource>[
+            ChatCitationSource(
+              id: 'P1',
+              title: 'Branch source',
+              url: 'https://example.org/branch',
+              sourceType: 'provider_native',
+            ),
+          ],
+        ),
+      );
+      await repository.saveMessage(
+        conversationId: 'source-chat',
+        message: ChatMessage(
+          id: 'user-to-edit',
+          role: ChatMessageRole.user,
+          content: 'Original question',
+          createdAt: createdAt.add(const Duration(seconds: 2)),
+          attachments: <ChatAttachment>[
+            ChatAttachment(
+              id: 'image-1',
+              name: 'reference.png',
+              mimeType: 'image/png',
+              sizeBytes: imageBytes.length,
+              kind: ChatAttachmentKind.image,
+              bytes: imageBytes,
+            ),
+          ],
+        ),
+      );
+      await repository.saveMessage(
+        conversationId: 'source-chat',
+        message: ChatMessage(
+          id: 'assistant-after',
+          role: ChatMessageRole.assistant,
+          content: 'Response to preserve only in the source',
+          createdAt: createdAt.add(const Duration(seconds: 3)),
+        ),
+      );
+
+      final branch = await repository.createBranchFromUserMessage(
+        sourceConversationId: 'source-chat',
+        throughUserMessageId: 'user-to-edit',
+        branchId: 'branch_1',
+        branchTitle: 'Source chat (branch)',
+        createdAt: createdAt.add(const Duration(minutes: 1)),
+        editedUserMessage: 'Edited question',
+      );
+
+      final branchMessages = await repository.getMessages(branch.id);
+      expect(branch.projectId, 'project-1');
+      expect(branch.providerId, 'opencode');
+      expect(branch.modelId, 'model-1');
+      expect(branchMessages.map((message) => message.id), <String>[
+        'branch_1_m0',
+        'branch_1_m1',
+        'branch_1_m2',
+      ]);
+      expect(branchMessages.map((message) => message.content), <String>[
+        'Keep this context',
+        'Prior answer',
+        'Edited question',
+      ]);
+      expect(branchMessages[1].providerId, 'opencode');
+      expect(branchMessages[1].modelId, 'model-1');
+      expect(branchMessages[1].citationSources.single.title, 'Branch source');
+      expect(branchMessages.last.attachments.single.isAvailable, isTrue);
+      expect(
+        branchMessages.last.attachments.single.localPath,
+        isNot(
+          (await repository.getMessages(
+            'source-chat',
+          ))[2].attachments.single.localPath,
+        ),
+      );
+      expect(
+        await File(branchMessages.last.attachments.single.localPath!)
+            .readAsBytes(),
+        imageBytes,
+      );
+      expect(
+        (await repository.getMessages('source-chat'))
+            .map((message) => message.content),
+        <String>[
+          'Keep this context',
+          'Prior answer',
+          'Original question',
+          'Response to preserve only in the source',
+        ],
+      );
+
+      await repository.deleteConversation(branch.id);
+      expect(
+        (await repository.getMessages(
+          'source-chat',
+        ))[2].attachments.single.isAvailable,
+        isTrue,
+      );
     },
   );
 

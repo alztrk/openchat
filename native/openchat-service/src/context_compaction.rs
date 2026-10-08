@@ -513,11 +513,15 @@ mod tests {
         let text_only_tokens = message_token_estimate(&user_message);
         user_message.attachments = vec![
             StoredAttachment {
+                id: "image-one".to_owned(),
+                name: "one.png".to_owned(),
                 mime_type: "image/png".to_owned(),
                 kind: "image".to_owned(),
                 content: Some(Vec::new()),
             },
             StoredAttachment {
+                id: "image-two".to_owned(),
+                name: "two.jpg".to_owned(),
                 mime_type: "image/jpeg".to_owned(),
                 kind: "image".to_owned(),
                 content: Some(Vec::new()),

@@ -2,7 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::Connection;
 
-pub(super) const SCHEMA_VERSION: i64 = 24;
+pub(super) const SCHEMA_VERSION: i64 = 27;
 pub(super) const INITIAL_SCHEMA_VERSION: i64 = 2;
 
 const REDACTED_TOOL_INDEX_TRIGGERS: &str = r#"
@@ -1788,6 +1788,56 @@ pub(super) fn initialize_schema(
         current_version = 24;
     }
 
+    if current_version < 25 && target_version >= 25 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE models_dev_catalog_cache (
+                cache_id INTEGER PRIMARY KEY CHECK (cache_id = 1),
+                fetched_at_unix_ms INTEGER NOT NULL CHECK (fetched_at_unix_ms >= 0),
+                catalog_json TEXT NOT NULL
+            );",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (25, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 25;
+    }
+
+    if current_version < 26 && target_version >= 26 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE usage_events ADD COLUMN request_manifest_json TEXT
+                CHECK (request_manifest_json IS NULL OR (
+                    json_valid(request_manifest_json) = 1
+                    AND length(request_manifest_json) <= 32768
+                ));",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (26, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 26;
+    }
+
+    if current_version < 27 && target_version >= 27 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE usage_events ADD COLUMN run_id TEXT
+                REFERENCES agent_runs(id) ON DELETE SET NULL;
+            CREATE INDEX usage_events_run_idx
+                ON usage_events(run_id, started_at_unix_ms DESC);",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (27, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 27;
+    }
+
     Ok(current_version)
 }
 
@@ -1972,6 +2022,7 @@ mod tests {
                     content TEXT NOT NULL,
                     status TEXT NOT NULL,
                     created_at INTEGER,
+                    output_tokens INTEGER,
                     tool_activities TEXT NOT NULL DEFAULT '[]',
                     PRIMARY KEY (conversation_id, id)
                 );",
@@ -2150,6 +2201,7 @@ mod tests {
                     content TEXT NOT NULL,
                     status TEXT NOT NULL,
                     created_at INTEGER,
+                    output_tokens INTEGER,
                     tool_activities TEXT NOT NULL DEFAULT '[]',
                     PRIMARY KEY (conversation_id, id)
                 );",
@@ -2238,9 +2290,12 @@ mod tests {
                     content TEXT NOT NULL,
                     status TEXT NOT NULL,
                     created_at INTEGER,
+                    output_tokens INTEGER,
                     tool_activities TEXT NOT NULL DEFAULT '[]',
                     PRIMARY KEY (conversation_id, id)
                 );
+                CREATE TABLE chatgpt_models (model_id TEXT);
+                CREATE TABLE chatgpt_model_catalog_state (fetched_at_unix_ms INTEGER);
                 INSERT INTO conversations (id) VALUES ('conversation');
                 INSERT INTO messages
                     (id, conversation_id, role, content, status, created_at)
@@ -2505,6 +2560,8 @@ mod tests {
                     tool_activities TEXT NOT NULL DEFAULT '[]',
                     PRIMARY KEY (conversation_id, id)
                 );
+                CREATE TABLE chatgpt_models (model_id TEXT);
+                CREATE TABLE chatgpt_model_catalog_state (fetched_at_unix_ms INTEGER);
                 CREATE TABLE openchat_backend_migrations (
                     version INTEGER PRIMARY KEY,
                     applied_at_unix_ms INTEGER NOT NULL
@@ -2635,9 +2692,12 @@ mod tests {
                     content TEXT NOT NULL,
                     status TEXT NOT NULL,
                     created_at INTEGER,
+                    output_tokens INTEGER,
                     tool_activities TEXT NOT NULL DEFAULT '[]',
                     PRIMARY KEY (conversation_id, id)
                 );
+                CREATE TABLE chatgpt_models (model_id TEXT);
+                CREATE TABLE chatgpt_model_catalog_state (fetched_at_unix_ms INTEGER);
                 CREATE VIRTUAL TABLE conversation_memory_fts USING fts5(
                     conversation_id UNINDEXED, message_id UNINDEXED, role UNINDEXED,
                     scope_token, content

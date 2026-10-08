@@ -961,6 +961,17 @@ class AppLocalizationsTr extends AppLocalizations {
       'Bu yanıt yeniden denenemiyor. Yeni bir mesaj gönder.';
 
   @override
+  String responseVersionCount(int current, int total) {
+    return 'Yanıt $current / $total';
+  }
+
+  @override
+  String get previousResponseVersion => 'Önceki yanıt';
+
+  @override
+  String get nextResponseVersion => 'Sonraki yanıt';
+
+  @override
   String get providerRateLimited =>
       'Sağlayıcı bir kullanım sınırı bildirdi. Daha sonra tekrar dene.';
 
@@ -1887,6 +1898,263 @@ class AppLocalizationsTr extends AppLocalizations {
   String get projectOptions => 'Proje seçenekleri';
 
   @override
+  String get projectToolRulesTitle => 'Proje araç izinleri';
+
+  @override
+  String get projectToolRulesDescription =>
+      'Her araç için bir kural seçin. Kural belirlenmeyen araçlar genel izin ayarını kullanır. İzin verme, dosya kapsamı ve işlem yalıtımı sınırlarına uymaya devam eder.';
+
+  @override
+  String get projectToolRuleInherit => 'Genel ayarı kullan';
+
+  @override
+  String get projectToolRuleAsk => 'Onay iste';
+
+  @override
+  String get projectToolRuleAllow => 'İzin ver';
+
+  @override
+  String get projectToolRuleDeny => 'Reddet';
+
+  @override
+  String get projectToolRulesLoadFailed =>
+      'Proje araç izinleri yüklenemedi. Yeni bir istek göndermeden önce kayıtlı ayarları kontrol edin.';
+
+  @override
+  String get projectToolRulesSaveFailed =>
+      'Proje araç izinleri kaydedilemedi. Önceki kurallar geçerli olmaya devam ediyor.';
+
+  @override
+  String get projectOptionsTitle => 'Proje seçenekleri';
+
+  @override
+  String get projectOptionsToolPermissions => 'Araç izinleri';
+
+  @override
+  String get projectOptionsWorktrees => 'Git worktree\'leri';
+
+  @override
+  String get projectWorktreesTitle => 'Yalıtılmış worktree\'ler';
+
+  @override
+  String get projectWorktreesDescription =>
+      'Mevcut commit\'ten ayrı bir klasörde dal oluşturun. Kaydedilmemiş değişiklikler kopyalanmaz.';
+
+  @override
+  String get projectWorktreesLoading => 'Worktree\'ler yükleniyor…';
+
+  @override
+  String get projectWorktreesEmpty =>
+      'Bu proje için henüz worktree oluşturulmadı.';
+
+  @override
+  String get projectWorktreeCreate => 'Worktree oluştur';
+
+  @override
+  String get projectWorktreeCreateFailed =>
+      'Worktree oluşturulamadı. Klasörün bir Git deposu olduğunu kontrol edin.';
+
+  @override
+  String get projectWorktreeLoadFailed => 'Proje worktree\'leri yüklenemedi.';
+
+  @override
+  String get projectWorktreeOperationFailed =>
+      'Git işlemi başarısız oldu. Depo durumunu kontrol edip yeniden deneyin.';
+
+  @override
+  String get projectWorktreeNotRepository =>
+      'Bu proje klasörü bir Git deposunun içinde değil.';
+
+  @override
+  String projectWorktreeBranch(String branch) {
+    return 'Dal: $branch';
+  }
+
+  @override
+  String projectWorktreePath(String path) {
+    return 'Klasör: $path';
+  }
+
+  @override
+  String get projectWorktreeStatusClean => 'Kaydedilmemiş değişiklik yok';
+
+  @override
+  String projectWorktreeStatusChanges(int count) {
+    return 'Değişen dosya: $count';
+  }
+
+  @override
+  String get projectWorktreeReview => 'Değişiklikleri incele';
+
+  @override
+  String get projectWorktreeUse => 'Proje olarak kullan';
+
+  @override
+  String get projectWorktreeRemove => 'Worktree\'yi kaldır';
+
+  @override
+  String get projectWorktreeRemoveTitle => 'Worktree kaldırılsın mı?';
+
+  @override
+  String projectWorktreeRemoveDescription(String branch) {
+    return '$branch dalındaki kaydedilmemiş ve izlenmeyen dosyalar silinir. Dal ve commit\'leri korunur.';
+  }
+
+  @override
+  String get projectWorktreeReviewTitle => 'Worktree değişiklikleri';
+
+  @override
+  String get projectWorktreeNoChanges =>
+      'Kaydedilmemiş değişiklik yok. Commit edilmiş değişiklikler bu dalda kalır.';
+
+  @override
+  String get projectWorktreeStagedDiff => 'Hazırlanmış değişiklikler';
+
+  @override
+  String get projectWorktreeUnstagedDiff => 'Hazırlanmamış değişiklikler';
+
+  @override
+  String get projectWorktreeListTruncated =>
+      'Yalnızca ilk 20 worktree gösteriliyor.';
+
+  @override
+  String get projectWorktreeCheckFailed => 'Worktree incelenemedi.';
+
+  @override
+  String get projectWorktreeRunCheck => 'Kontrolü çalıştır';
+
+  @override
+  String get projectWorktreeTaskPickerTitle => 'Adlandırılmış kontrolü seçin';
+
+  @override
+  String get projectWorktreeTaskEmpty =>
+      'Bu worktree için adlandırılmış kontrol yok. Projede `.openchat/tasks.json` dosyasına görev ekleyin.';
+
+  @override
+  String get projectWorktreeTaskLoadFailed =>
+      'Adlandırılmış kontroller bu worktree\'den yüklenemedi.';
+
+  @override
+  String get projectWorktreeTaskConfirmationTitle =>
+      'Bu kontrol çalıştırılsın mı?';
+
+  @override
+  String get projectWorktreeTaskCommand => 'Komut';
+
+  @override
+  String projectWorktreeTaskTimeout(int seconds) {
+    return 'Süre sınırı: $seconds saniye';
+  }
+
+  @override
+  String get projectWorktreeTaskRun => 'Kontrolü çalıştır';
+
+  @override
+  String projectWorktreeTaskRunning(String task) {
+    return 'Kontrol çalışıyor: $task';
+  }
+
+  @override
+  String get projectWorktreeTaskStopping => 'Kontrol durduruluyor…';
+
+  @override
+  String get projectWorktreeTaskStop => 'Kontrolü durdur';
+
+  @override
+  String get projectWorktreeTaskCancelled => 'Kontrol iptal edildi.';
+
+  @override
+  String get projectWorktreeTaskTimedOut => 'Kontrol süre sınırına ulaştı.';
+
+  @override
+  String projectWorktreeTaskExitCode(int code) {
+    return 'Kontrol $code çıkış koduyla tamamlandı.';
+  }
+
+  @override
+  String get projectWorktreeTaskExitCodeUnavailable =>
+      'Kontrol bir çıkış kodu bildirmeden tamamlandı.';
+
+  @override
+  String get projectWorktreeTaskOutputTruncated =>
+      'Çıktı ilk 128 KiB ile sınırlandırıldı.';
+
+  @override
+  String get projectWorktreeTaskRunFailed =>
+      'Kontrol worktree yalıtım alanında çalıştırılamadı.';
+
+  @override
+  String projectWorktreeTaskResultTitle(String task) {
+    return 'Kontrol sonucu: $task';
+  }
+
+  @override
+  String get projectWorktreeTaskOutput => 'Çıktı';
+
+  @override
+  String get projectWorktreeTaskNoOutput => 'Kontrol çıktı üretmedi.';
+
+  @override
+  String get projectWorktreeTaskDenied =>
+      'Proje izinleri adlandırılmış kontrolleri çalıştırmayı engelliyor.';
+
+  @override
+  String get agentRunManagerTitle => 'Çalışmalar';
+
+  @override
+  String get agentRunManagerDescription =>
+      'Sohbetlerde devam eden, duraklatılmış veya kesintiye uğramış çalışmaları görüntüleyin.';
+
+  @override
+  String get agentRunLoading => 'Çalışmalar yükleniyor';
+
+  @override
+  String get agentRunLoadFailed => 'Çalışma durumu yüklenemedi.';
+
+  @override
+  String get agentRunEmpty =>
+      'Devam eden, duraklatılmış veya kesintiye uğramış çalışma yok.';
+
+  @override
+  String get agentRunRefresh => 'Çalışma listesini yenile';
+
+  @override
+  String get agentRunOpenConversation => 'Sohbeti aç';
+
+  @override
+  String get agentRunStatusRunning => 'Devam ediyor';
+
+  @override
+  String get agentRunStatusPaused => 'Duraklatıldı';
+
+  @override
+  String get agentRunStatusInterrupted => 'Kesintiye uğradı';
+
+  @override
+  String get agentRunStatusUnavailable => 'Durum kullanılamıyor';
+
+  @override
+  String get agentRunStatusCompleted => 'Tamamlandı';
+
+  @override
+  String get agentRunStatusFailed => 'Başarısız';
+
+  @override
+  String get agentRunStatusCancelled => 'İptal edildi';
+
+  @override
+  String get agentRunSubagent => 'Alt görev';
+
+  @override
+  String agentRunSubagentTask(String objective) {
+    return 'Alt görev: $objective';
+  }
+
+  @override
+  String get agentRunEndedInAnotherChat =>
+      'Başka bir sohbetteki çalışma sona erdi.';
+
+  @override
   String get newProjectConversation => 'Projede yeni sohbet başlat';
 
   @override
@@ -2203,6 +2471,23 @@ class AppLocalizationsTr extends AppLocalizations {
   String get conversationTitleRequired => 'Sohbet başlığı boş olamaz.';
 
   @override
+  String get conversationBranchEditTitle => 'Mesajı düzenle ve yeni dal başlat';
+
+  @override
+  String get conversationBranchEditLabel => 'Mesaj';
+
+  @override
+  String get conversationBranchStart => 'Dal başlat';
+
+  @override
+  String conversationBranchTitle(String title) {
+    return '$title (dal)';
+  }
+
+  @override
+  String get conversationBranchCreateFailed => 'Mesaj dalı oluşturulamadı.';
+
+  @override
   String get conversationTitleSaveFailed => 'Sohbet başlığı kaydedilemedi.';
 
   @override
@@ -2319,6 +2604,14 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get chatRequestFailed =>
       'Yanıt tamamlanamadı. Kayıtlı mesajların kullanılabilir durumda.';
+
+  @override
+  String get goalAlreadyActive =>
+      'Bu sohbette yeni bir hedef başlatmadan önce etkin hedefi sürdür veya durdur.';
+
+  @override
+  String get goalStateUnavailable =>
+      'Bu sohbette etkin hedef olup olmadığı doğrulanamadı. Lütfen tekrar dene.';
 
   @override
   String get cachedCatalog => 'önbellekteki modeller';
@@ -2496,7 +2789,55 @@ class AppLocalizationsTr extends AppLocalizations {
   String get toolExecuteCommand => 'Komut çalıştır';
 
   @override
+  String get toolRunProjectTask => 'Proje görevini çalıştır';
+
+  @override
+  String get toolDelegateTask => 'Analizi alt göreve devret';
+
+  @override
+  String get toolPermissionTask => 'Görev';
+
+  @override
+  String get toolPermissionTimeout => 'Zaman aşımı (saniye)';
+
+  @override
   String get toolSendTerminalInput => 'Terminale girdi gönder';
+
+  @override
+  String get toolGitStatus => 'Git durumu';
+
+  @override
+  String get toolGitDiff => 'Git farkı';
+
+  @override
+  String get toolGitHistory => 'Git geçmişi';
+
+  @override
+  String get toolGitBranch => 'Dal';
+
+  @override
+  String get toolGitUpstream => 'Üst dal';
+
+  @override
+  String get toolGitAhead => 'İleride';
+
+  @override
+  String get toolGitBehind => 'Geride';
+
+  @override
+  String get toolGitStaged => 'Hazırlanmış';
+
+  @override
+  String get toolGitUnstaged => 'Hazırlanmamış';
+
+  @override
+  String get toolGitNoChanges => 'Çalışma ağacı temiz.';
+
+  @override
+  String get toolGitNoDiff => 'Gösterilecek fark yok.';
+
+  @override
+  String get toolGitNoHistory => 'Commit bulunamadı.';
 
   @override
   String get toolWebSearch => 'Web\'de ara';
@@ -2506,6 +2847,28 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get toolSearchQuery => 'Arama sorgusu';
+
+  @override
+  String get toolLocalWebSource => 'OpenChat web araması';
+
+  @override
+  String get toolLocalPageSource => 'OpenChat sayfa okuması';
+
+  @override
+  String get toolProviderSource => 'Sağlayıcı kaynağı';
+
+  @override
+  String toolSourceRetrievedAt(String time) {
+    return 'Alınma zamanı: $time';
+  }
+
+  @override
+  String get toolSourceDetails => 'Kaynak ayrıntıları';
+
+  @override
+  String toolCitationSource(String sourceId) {
+    return 'Kaynak $sourceId';
+  }
 
   @override
   String get toolWebSearchNoResults => 'Web sonucu bulunamadı.';
@@ -2707,6 +3070,383 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get usageQuotasDescription =>
       'Tüm bağlı ChatGPT hesaplarınızın kalan kotalarını, kullanım limitlerini ve sıfırlanma zamanlarını görüntüleyin.';
+
+  @override
+  String get statistics => 'İstatistikler';
+
+  @override
+  String get statisticsDescription =>
+      'Sağlayıcı, model ve sohbet bazında token kullanımını, istekleri ve ChatGPT kota geçmişini inceleyin.';
+
+  @override
+  String get statisticsLoadFailed => 'Kullanım istatistikleri yüklenemedi.';
+
+  @override
+  String get statisticsUnavailable =>
+      'Yerel kullanım istatistikleri şu anda kullanılamıyor.';
+
+  @override
+  String get statisticsRetry => 'Yeniden yükle';
+
+  @override
+  String get statisticsDateRange => 'Tarih aralığı';
+
+  @override
+  String get statisticsProvider => 'Sağlayıcı';
+
+  @override
+  String get statisticsRunId => 'Çalışma kimliği';
+
+  @override
+  String statisticsRunIdValue(String runId) {
+    return 'Çalışma kimliği: $runId';
+  }
+
+  @override
+  String get statisticsModel => 'Model';
+
+  @override
+  String get statisticsOperation => 'İşlem türü';
+
+  @override
+  String get statisticsReasoningEffort => 'Reasoning düzeyi';
+
+  @override
+  String get statisticsFastModeFilter => 'Fast modu';
+
+  @override
+  String get statisticsAll => 'Tümü';
+
+  @override
+  String get statisticsUnspecified => 'Belirtilmemiş';
+
+  @override
+  String get statisticsClearFilters => 'Filtreleri temizle';
+
+  @override
+  String get statisticsTotalTokens => 'Toplam token';
+
+  @override
+  String get statisticsInputTokens => 'Giriş tokenı';
+
+  @override
+  String get statisticsOutputTokens => 'Çıkış tokenı';
+
+  @override
+  String get statisticsReasoningTokens => 'Reasoning tokenı';
+
+  @override
+  String get statisticsCachedInputTokens => 'Önbellekten okunan token';
+
+  @override
+  String get statisticsCacheWriteTokens => 'Önbelleğe yazılan token';
+
+  @override
+  String get statisticsRequests => 'İstek';
+
+  @override
+  String get statisticsSuccessfulRequests => 'Başarılı';
+
+  @override
+  String get statisticsFailedRequests => 'Başarısız';
+
+  @override
+  String get statisticsCancelledRequests => 'Durdurulan';
+
+  @override
+  String get statisticsInterruptedRequests => 'Yarım kalan';
+
+  @override
+  String get statisticsPendingRequests => 'Devam ediyor';
+
+  @override
+  String get statisticsConversations => 'Sohbet';
+
+  @override
+  String get statisticsCoverage => 'Kullanım verisi kapsamı';
+
+  @override
+  String get statisticsInputCoverage => 'Giriş tokenı bildirilen istekler';
+
+  @override
+  String get statisticsOutputCoverage => 'Çıkış tokenı bildirilen istekler';
+
+  @override
+  String get statisticsReasoningCoverage =>
+      'Reasoning tokenı bildirilen istekler';
+
+  @override
+  String statisticsCoverageText(int total, int reported) {
+    return '$total isteğin $reported tanesinde sağlayıcı token verisi döndürdü.';
+  }
+
+  @override
+  String get statisticsProviderReportedCost => 'Sağlayıcının bildirdiği tutar';
+
+  @override
+  String statisticsCostCoverage(int reported) {
+    return 'Maliyet bilgisi $reported istekte mevcut.';
+  }
+
+  @override
+  String get statisticsModelsDevCatalogCost =>
+      'models.dev liste fiyatına göre hesaplanan tutar';
+
+  @override
+  String statisticsModelsDevCatalogCostCoverage(int priced) {
+    return '$priced istek için liste fiyatı karşılığı hesaplandı.';
+  }
+
+  @override
+  String statisticsModelsDevPricingCurrent(String date) {
+    return 'models.dev fiyat kataloğu $date tarihinde alındı.';
+  }
+
+  @override
+  String statisticsModelsDevPricingStale(String date) {
+    return 'models.dev erişilemiyor; $date tarihli önbellekteki fiyatlar kullanılıyor.';
+  }
+
+  @override
+  String get statisticsModelsDevPricingUnavailable =>
+      'models.dev fiyat kataloğuna erişilemiyor. Sağlayıcı ve model birebir eşleşmeyen kullanımlar için maliyet hesaplanmıyor.';
+
+  @override
+  String get statisticsUsageTrend => 'Zamana göre kullanım';
+
+  @override
+  String get statisticsDaily => 'Günlük';
+
+  @override
+  String get statisticsMonthly => 'Aylık';
+
+  @override
+  String get statisticsProviders => 'Sağlayıcı kullanımı';
+
+  @override
+  String get statisticsModels => 'Model kullanımı';
+
+  @override
+  String get statisticsReasoningLevels => 'Seçilen reasoning düzeyleri';
+
+  @override
+  String get statisticsOperations => 'İşlem türleri';
+
+  @override
+  String get statisticsFastModeUsage => 'Fast modu kullanımı';
+
+  @override
+  String get statisticsRequested => 'İstendi';
+
+  @override
+  String get statisticsNotRequested => 'İstenmedi';
+
+  @override
+  String get statisticsServiceTiers => 'Dönen hizmet katmanları';
+
+  @override
+  String get statisticsServiceTier => 'Hizmet katmanı';
+
+  @override
+  String get statisticsNoBreakdownData => 'Bu aralıkta gösterilecek veri yok.';
+
+  @override
+  String get statisticsNoConversationData =>
+      'Bu aralıkta sohbet kullanımı yok.';
+
+  @override
+  String get statisticsOpenConversation => 'Sohbeti aç';
+
+  @override
+  String get statisticsRequestDetails => 'İstek geçmişi';
+
+  @override
+  String get statisticsRequestPayload => 'Gönderilen istek verisi';
+
+  @override
+  String get statisticsRequestContextUnavailable =>
+      'Gönderilen istek özeti kullanılamıyor.';
+
+  @override
+  String statisticsRequestSourceMessages(String ids) {
+    return 'Dahil edilen ileti kimlikleri: $ids';
+  }
+
+  @override
+  String statisticsRequestArchivedMessages(String ids) {
+    return 'Getirilen ileti kimlikleri: $ids';
+  }
+
+  @override
+  String statisticsRequestSummaryBoundary(String id) {
+    return 'Özetin kapsadığı son ileti: $id';
+  }
+
+  @override
+  String statisticsRequestSourceAttachments(String files) {
+    return 'Gönderilen ekler: $files';
+  }
+
+  @override
+  String get statisticsRequestSourcesTruncated =>
+      'Bu kayıtta bazı kaynak ayrıntıları gösterilmiyor.';
+
+  @override
+  String statisticsRequestMessageCount(int count) {
+    return 'Gönderilen mesaj: $count';
+  }
+
+  @override
+  String statisticsRequestImageCount(int count) {
+    return 'Gönderilen görsel: $count';
+  }
+
+  @override
+  String statisticsRequestToolResultCount(int count) {
+    return 'Gönderilen araç sonucu: $count';
+  }
+
+  @override
+  String statisticsRequestInstructionBytes(int count) {
+    return 'Talimat boyutu: $count bayt';
+  }
+
+  @override
+  String statisticsRequestRoles(String roles) {
+    return 'Mesaj rolleri: $roles';
+  }
+
+  @override
+  String statisticsRequestTools(String names) {
+    return 'Araç şemaları: $names';
+  }
+
+  @override
+  String statisticsRequestCacheControls(String names) {
+    return 'Cache kontrolleri: $names';
+  }
+
+  @override
+  String get statisticsNone => 'Yok';
+
+  @override
+  String get statisticsRequestTime => 'İstek zamanı';
+
+  @override
+  String get statisticsConversationTitle => 'Sohbet başlığı';
+
+  @override
+  String get statisticsStatus => 'Durum';
+
+  @override
+  String get statisticsUsageSource => 'Kullanım verisi kaynağı';
+
+  @override
+  String get statisticsNoRequestData => 'Bu filtrelerle eşleşen istek yok.';
+
+  @override
+  String statisticsShowingRows(int start, int end, int total) {
+    return '$start - $end / $total';
+  }
+
+  @override
+  String get statisticsExportCsv => 'CSV dışa aktar';
+
+  @override
+  String get statisticsExporting => 'Dışa aktarılıyor';
+
+  @override
+  String get statisticsExported => 'İstatistikler CSV dosyasına aktarıldı.';
+
+  @override
+  String get statisticsExportFailed => 'İstatistikler dışa aktarılamadı.';
+
+  @override
+  String get statisticsQuotaHistory => 'ChatGPT kota geçmişi';
+
+  @override
+  String get statisticsQuotaSnapshot => 'Kota görüntüsü';
+
+  @override
+  String get statisticsNoQuotaHistory =>
+      'Seçili tarih aralığında kaydedilmiş ChatGPT kota görüntüsü yok.';
+
+  @override
+  String get statisticsUsed => 'Kullanılan';
+
+  @override
+  String get statisticsResetAt => 'Sıfırlanma';
+
+  @override
+  String get statisticsQuotaAllowed => 'İsteklere açık';
+
+  @override
+  String get statisticsQuotaBlocked => 'İsteklere kapalı';
+
+  @override
+  String get statisticsQuotaUnknown => 'Kullanım durumu bilinmiyor';
+
+  @override
+  String get statisticsQuotaFreshnessCurrent => 'Güncel veri';
+
+  @override
+  String get statisticsQuotaFreshnessStale => 'Önceki veri';
+
+  @override
+  String get statisticsQuotaFreshnessUnknown => 'Veri durumu bilinmiyor';
+
+  @override
+  String get statisticsNotReported => 'Bildirilmedi';
+
+  @override
+  String get statisticsLegacyDataNote =>
+      'Eski mesajlarda yalnızca çıkış tokenı saklanmış olabilir; eksik model ve giriş tokenı bilgileri tahmin edilmez.';
+
+  @override
+  String get statisticsModelsDevPricingNote =>
+      'Katalog karşılıkları güncel models.dev fiyatlarıyla hesaplanır ve sağlayıcı faturası değildir. ChatGPT OAuth aboneliği, Fast istekleri ve desteklenmeyen hizmet katmanları hesaplamaya dahil edilmez.';
+
+  @override
+  String get statisticsLegacyOutput => 'Eski mesajlardan gelen çıkış tokenı';
+
+  @override
+  String get statisticsChatGptOAuth => 'ChatGPT OAuth';
+
+  @override
+  String get statisticsChatGptApi => 'ChatGPT API';
+
+  @override
+  String get statisticsOperationChat => 'Sohbet';
+
+  @override
+  String get statisticsOperationToolFollowUp => 'Araç devam isteği';
+
+  @override
+  String get statisticsOperationCompaction => 'Bağlamı özetleme';
+
+  @override
+  String get statisticsOperationTitleGeneration => 'Sohbet başlığı oluşturma';
+
+  @override
+  String get statisticsOperationLegacy => 'Eski mesaj';
+
+  @override
+  String get statisticsStatusCompleted => 'Tamamlandı';
+
+  @override
+  String get statisticsStatusFailed => 'Başarısız';
+
+  @override
+  String get statisticsStatusCancelled => 'Durduruldu';
+
+  @override
+  String get statisticsStatusInterrupted => 'Yarım kaldı';
+
+  @override
+  String get statisticsStatusPending => 'Devam ediyor';
+
+  @override
+  String get statisticsStatusLegacy => 'Geçmiş veri';
 
   @override
   String get refreshAll => 'Tümünü yenile';
@@ -3050,4 +3790,63 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get fileChangesUnavailableTitle =>
       'Dosya değişiklikleri kullanılamıyor';
+
+  @override
+  String get goalSlashCommand => '/goal';
+
+  @override
+  String get goalCommandDescription =>
+      'Bu mesajı hedef olarak başlat ve tamamlanana ya da senden bilgi gerekene kadar çalışmayı sürdür.';
+
+  @override
+  String get goalObjectiveRequired => 'Hedefi /goal komutundan sonra yaz.';
+
+  @override
+  String get goalWorking => 'Hedef üzerinde çalışılıyor';
+
+  @override
+  String get goalPaused => 'Hedef duraklatıldı';
+
+  @override
+  String get goalInterrupted => 'Hedef kesintiye uğradı';
+
+  @override
+  String get goalCompleted => 'Hedef tamamlandı';
+
+  @override
+  String get goalStopped => 'Hedef durduruldu';
+
+  @override
+  String get goalFailed => 'Hedef başarısız oldu';
+
+  @override
+  String get goalPausedForQuota =>
+      'Model kotası veya hız sınırı nedeniyle duraklatıldı.';
+
+  @override
+  String get goalPausedForBlocker => 'Bir engel nedeniyle duraklatıldı.';
+
+  @override
+  String get goalPausedForUserInput =>
+      'Senden bilgi beklendiği için duraklatıldı.';
+
+  @override
+  String get goalPausedByUser => 'Sen duraklattın.';
+
+  @override
+  String get goalPausedAfterError => 'Bir istek hatası nedeniyle duraklatıldı.';
+
+  @override
+  String get goalPauseAction => 'Hedefi duraklat';
+
+  @override
+  String get goalResumeAction => 'Hedefi sürdür';
+
+  @override
+  String get goalStopAction => 'Hedefi durdur';
+
+  @override
+  String goalElapsedTime(String time) {
+    return 'Geçen süre: $time';
+  }
 }

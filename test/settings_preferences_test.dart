@@ -183,6 +183,39 @@ void main() {
     );
   });
 
+  test('project tool permission rules persist separately by project', () async {
+    final preferences = SharedPreferencesAsync();
+    final writer = SettingsPreferences(preferences);
+    expect(await writer.readProjectToolPermissionRules('project-1'), isEmpty);
+
+    await writer.writeProjectToolPermissionRules('project-1', {
+      'execute_command': ToolPermissionRule.ask,
+      'write_file': ToolPermissionRule.deny,
+      'read_file': ToolPermissionRule.inherit,
+    });
+    await writer.writeProjectToolPermissionRules('project-2', {
+      'read_file': ToolPermissionRule.allow,
+    });
+
+    final reader = SettingsPreferences(SharedPreferencesAsync());
+    expect(await reader.readProjectToolPermissionRules('project-1'), {
+      'execute_command': ToolPermissionRule.ask,
+      'write_file': ToolPermissionRule.deny,
+    });
+    expect(await reader.readProjectToolPermissionRules('project-2'), {
+      'read_file': ToolPermissionRule.allow,
+    });
+
+    await writer.writeProjectToolPermissionRules('project-1', const {});
+    expect(await reader.readProjectToolPermissionRules('project-1'), isEmpty);
+    await expectLater(
+      writer.writeProjectToolPermissionRules('project-1', {
+        'unknown_tool': ToolPermissionRule.allow,
+      }),
+      throwsArgumentError,
+    );
+  });
+
   test('appearance theme applies the saved width and app font', () {
     final theme = OpenChatTheme.withConversationStyle(
       OpenChatTheme.light,

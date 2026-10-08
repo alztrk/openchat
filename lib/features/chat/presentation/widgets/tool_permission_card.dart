@@ -202,22 +202,33 @@ class _RequestActions extends StatelessWidget {
   final VoidCallback? onDeny;
 
   @override
-  Widget build(BuildContext context) => Row(
-    mainAxisSize: MainAxisSize.min,
+  Widget build(BuildContext context) => Wrap(
+    alignment: WrapAlignment.end,
+    spacing: 8,
+    runSpacing: 8,
     children: [
-      TextButton(
-        onPressed: isResponding ? null : onDeny,
-        child: Text(denyLabel),
+      Semantics(
+        button: true,
+        label: denyLabel,
+        excludeSemantics: true,
+        child: TextButton(
+          onPressed: isResponding ? null : onDeny,
+          child: Text(denyLabel),
+        ),
       ),
-      const SizedBox(width: 8),
-      FilledButton(
-        onPressed: isResponding ? null : onApprove,
-        child: isResponding
-            ? const SizedBox.square(
-                dimension: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : Text(approveLabel),
+      Semantics(
+        button: true,
+        label: approveLabel,
+        excludeSemantics: true,
+        child: FilledButton(
+          onPressed: isResponding ? null : onApprove,
+          child: isResponding
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Text(approveLabel),
+        ),
       ),
     ],
   );
@@ -231,7 +242,11 @@ String _toolName(String name, AppLocalizations l10n) => switch (name) {
   'write_file' || 'write' => l10n.toolWriteFile,
   'edit_file' || 'edit' => l10n.toolEditFile,
   'execute_command' || 'bash' => l10n.toolExecuteCommand,
+  'run_project_task' => l10n.toolRunProjectTask,
   'send_terminal_input' => l10n.toolSendTerminalInput,
+  'git_status' => l10n.toolGitStatus,
+  'git_diff' => l10n.toolGitDiff,
+  'git_history' => l10n.toolGitHistory,
   'web_search' => l10n.toolWebSearch,
   'read_url_content' || 'read_url' => l10n.toolReadUrlContent,
   _ => name,
@@ -353,6 +368,14 @@ List<({String label, String value})> _requestDetails(
       detail(
         l10n.toolPermissionNewText,
         argument('newString') ?? argument('new_string'),
+      ),
+    ],
+    'run_project_task' => [
+      detail(l10n.toolPermissionTask, argument('task')),
+      detail(l10n.toolPermissionCommand, argument('command')),
+      detail(
+        l10n.toolPermissionTimeout,
+        scalar(request.arguments['timeout_seconds']),
       ),
     ],
     'execute_command' || 'bash' => [

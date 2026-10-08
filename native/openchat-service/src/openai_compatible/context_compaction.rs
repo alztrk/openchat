@@ -7,12 +7,13 @@ use crate::{
     context_compaction::{self, MIN_CONTEXT_WINDOW},
     protocol::ServiceError,
     storage::AppStorage,
+    usage_statistics::UsageRequestTracker,
 };
 
 use super::route::ChatRoute;
 use super::{
     cancelled_error, client, http_error, invalid_response_error, network_error,
-    opencode_free_tier_restricted,
+    opencode_free_tier_restricted, storage_error,
 };
 
 const MAX_COMPACTION_RESPONSE_BYTES: usize = 1024 * 1024;
@@ -32,6 +33,7 @@ pub(super) async fn summarize_history(
 ) -> Result<String, ServiceError> {
     summarize_history_with_storage(
         None,
+        None,
         route,
         api_key,
         session_id,
@@ -44,6 +46,7 @@ pub(super) async fn summarize_history(
 
 pub(super) async fn summarize_history_with_storage(
     storage: Option<&AppStorage>,
+    conversation_id: Option<&str>,
     route: &ChatRoute,
     api_key: Option<&str>,
     session_id: Option<&str>,
@@ -106,6 +109,7 @@ pub(super) async fn summarize_history_with_storage(
             summary = Some(
                 summarize_transcript_with_storage(
                     storage,
+                    conversation_id,
                     route,
                     api_key,
                     session_id,
@@ -127,6 +131,7 @@ pub(super) async fn summarize_history_with_storage(
         summary = Some(
             summarize_transcript_with_storage(
                 storage,
+                conversation_id,
                 route,
                 api_key,
                 session_id,
@@ -155,6 +160,7 @@ async fn summarize_transcript(
 ) -> Result<String, ServiceError> {
     summarize_transcript_with_storage(
         None,
+        None,
         route,
         api_key,
         session_id,
@@ -168,6 +174,7 @@ async fn summarize_transcript(
 
 async fn summarize_transcript_with_storage(
     storage: Option<&AppStorage>,
+    conversation_id: Option<&str>,
     route: &ChatRoute,
     api_key: Option<&str>,
     session_id: Option<&str>,
@@ -216,9 +223,41 @@ async fn summarize_transcript_with_storage(
         request = request.bearer_auth(api_key);
     }
 
+    let mut usage_request = match (storage, conversation_id) {
+        (Some(storage), Some(conversation_id)) => Some(
+            UsageRequestTracker::start(
+                storage,
+                conversation_id,
+                None,
+                route.provider_id.as_deref().unwrap_or("unknown"),
+                &route.model_id,
+                body.pointer("/reasoning/effort")
+                    .or_else(|| body.get("reasoning_effort"))
+                    .and_then(Value::as_str),
+                "compaction",
+                false,
+            )
+            .map_err(|_| {
+                ServiceError::new(
+                    "usage_statistics_unavailable",
+                    "The model request could not be recorded locally.",
+                    true,
+                )
+            })?,
+        ),
+        _ => None,
+    };
+    if let Some(usage_request) = usage_request.as_mut() {
+        usage_request
+            .record_request_manifest(&body, None)
+            .map_err(|_| storage_error())?;
+    }
     let response = tokio::select! {
         changed = cancellation.changed() => {
             let _ = changed;
+            if let Some(usage_request) = usage_request.as_mut() {
+                usage_request.cancel().map_err(|_| storage_error())?;
+            }
             return Err(cancelled_error());
         }
         response = request.json(&body).send() => response.map_err(|_| network_error())?,
@@ -259,7 +298,17 @@ async fn summarize_transcript_with_storage(
     }
     let value = serde_json::from_slice::<Value>(&bytes).map_err(|_| invalid_response_error())?;
     let mut request_usage = None;
-    super::stream::update_provider_request_usage(&value, &mut request_usage);
+    super::stream::update_provider_request_usage(
+        route.provider_id.as_deref().unwrap_or_default(),
+        &value,
+        &mut request_usage,
+    );
+    if let Some(usage_request) = usage_request.as_mut() {
+        let usage = request_usage.clone().unwrap_or_default().usage_data();
+        usage_request
+            .complete(&usage)
+            .map_err(|_| storage_error())?;
+    }
     if let (Some(storage), Some(provider_id)) = (
         storage,
         route

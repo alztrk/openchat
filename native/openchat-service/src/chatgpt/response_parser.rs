@@ -7,8 +7,14 @@ use crate::{
 };
 use reqwest::StatusCode;
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 use uuid::Uuid;
+
+const MAX_PROVIDER_CITATION_SOURCES: usize = 32;
+const MAX_PROVIDER_CITATION_TITLE_BYTES: usize = 512;
+const MAX_PROVIDER_CITATION_URL_BYTES: usize = 4096;
+const MAX_PROVIDER_CITATION_ANCHORS: usize = 128;
 
 pub(super) fn parse_models(value: &Value) -> Result<Vec<ChatGptModel>, ServiceError> {
     let models = value
@@ -331,6 +337,106 @@ pub(super) fn response_output_text(output_items: &[Value]) -> String {
     text
 }
 
+pub(super) fn attach_provider_citations(output_items: &[Value], text: &mut String) -> Vec<Value> {
+    let mut source_ids = HashMap::<(String, String), String>::new();
+    let mut sources = Vec::new();
+    let mut anchors = Vec::<(usize, String)>::new();
+    let mut part_offset = 0usize;
+
+    for item in output_items {
+        if item.get("type").and_then(Value::as_str) != Some("message") {
+            continue;
+        }
+        let Some(parts) = item.get("content").and_then(Value::as_array) else {
+            continue;
+        };
+        for part in parts {
+            let part_type = part.get("type").and_then(Value::as_str);
+            let Some(part_text) = part.get("text").and_then(Value::as_str) else {
+                continue;
+            };
+            let part_char_count = part_text.chars().count();
+            if part_type == Some("output_text")
+                && let Some(annotations) = part.get("annotations").and_then(Value::as_array)
+            {
+                for annotation in annotations {
+                    if anchors.len() >= MAX_PROVIDER_CITATION_ANCHORS {
+                        break;
+                    }
+                    if annotation.get("type").and_then(Value::as_str) != Some("url_citation") {
+                        continue;
+                    }
+                    let Some(url) = annotation
+                        .get("url")
+                        .and_then(Value::as_str)
+                        .filter(|value| value.len() <= MAX_PROVIDER_CITATION_URL_BYTES)
+                    else {
+                        continue;
+                    };
+                    let Ok(url) = url::Url::parse(url) else {
+                        continue;
+                    };
+                    if !matches!(url.scheme(), "http" | "https")
+                        || url.host_str().is_none()
+                        || !url.username().is_empty()
+                        || url.password().is_some()
+                    {
+                        continue;
+                    }
+                    let url = url.to_string();
+                    let Some(title) = annotation
+                        .get("title")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|value| {
+                            !value.is_empty() && value.len() <= MAX_PROVIDER_CITATION_TITLE_BYTES
+                        })
+                    else {
+                        continue;
+                    };
+                    let key = (url.clone(), title.to_owned());
+                    let source_id = match source_ids.get(&key) {
+                        Some(source_id) => source_id.clone(),
+                        None if sources.len() < MAX_PROVIDER_CITATION_SOURCES => {
+                            let source_id = format!("P{}", sources.len() + 1);
+                            source_ids.insert(key, source_id.clone());
+                            sources.push(json!({
+                                "id": source_id,
+                                "title": title,
+                                "url": url,
+                                "sourceType": "provider_native"
+                            }));
+                            source_id
+                        }
+                        None => continue,
+                    };
+                    let local_end = annotation
+                        .get("end_index")
+                        .and_then(Value::as_u64)
+                        .and_then(|value| usize::try_from(value).ok())
+                        .filter(|value| *value <= part_char_count)
+                        .unwrap_or(part_char_count);
+                    anchors.push((part_offset + local_end, source_id));
+                }
+            }
+            if matches!(part_type, Some("output_text" | "refusal")) {
+                part_offset = part_offset.saturating_add(part_char_count);
+            }
+        }
+    }
+
+    anchors.sort_by_key(|(position, _)| *position);
+    anchors.dedup();
+    for (position, source_id) in anchors.into_iter().rev() {
+        let byte_offset = text
+            .char_indices()
+            .nth(position)
+            .map_or(text.len(), |(byte_offset, _)| byte_offset);
+        text.insert_str(byte_offset, &format!(" [{source_id}]"));
+    }
+    sources
+}
+
 pub(super) fn empty_response_shape(output_items: &[Value]) -> &'static str {
     if output_items.is_empty() {
         return "no_output_items";
@@ -364,7 +470,66 @@ pub(super) fn responses_tool(tool: &ToolDefinition) -> Value {
 mod tests {
     use serde_json::json;
 
-    use super::{parse_models, parse_responses_tool_calls};
+    use super::{attach_provider_citations, parse_models, parse_responses_tool_calls};
+
+    #[test]
+    fn attaches_valid_provider_citations_to_the_annotated_text() {
+        let items = [json!({
+            "type": "message",
+            "content": [{
+                "type": "output_text",
+                "text": "Facts here.",
+                "annotations": [{
+                    "type": "url_citation",
+                    "start_index": 0,
+                    "end_index": 5,
+                    "url": "https://example.org/facts",
+                    "title": "Facts source"
+                }]
+            }]
+        })];
+        let mut text = "Facts here.".to_owned();
+
+        let sources = attach_provider_citations(&items, &mut text);
+
+        assert_eq!(text, "Facts [P1] here.");
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0]["id"], "P1");
+        assert_eq!(sources[0]["sourceType"], "provider_native");
+        assert_eq!(sources[0]["url"], "https://example.org/facts");
+        assert!(sources[0].get("retrievedAtUnixMs").is_none());
+    }
+
+    #[test]
+    fn ignores_unsafe_and_malformed_provider_citations() {
+        let items = [json!({
+            "type": "message",
+            "content": [{
+                "type": "output_text",
+                "text": "Text.",
+                "annotations": [
+                    {
+                        "type": "url_citation",
+                        "end_index": 5,
+                        "url": "file:///private/key",
+                        "title": "Private file"
+                    },
+                    {
+                        "type": "url_citation",
+                        "end_index": 5,
+                        "url": "https://example.org/",
+                        "title": "   "
+                    }
+                ]
+            }]
+        })];
+        let mut text = "Text.".to_owned();
+
+        let sources = attach_provider_citations(&items, &mut text);
+
+        assert!(sources.is_empty());
+        assert_eq!(text, "Text.");
+    }
 
     #[test]
     fn model_catalog_keeps_only_positive_context_windows() {

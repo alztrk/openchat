@@ -52,6 +52,15 @@ pub(crate) enum ToolOperation {
         url: String,
         max_chars: Option<usize>,
     },
+    DelegateTask {
+        task: String,
+        context: Option<String>,
+    },
+    GitStatus,
+    GitDiff,
+    GitHistory {
+        limit: usize,
+    },
     Info,
 }
 
@@ -59,7 +68,13 @@ impl ToolOperation {
     pub(crate) fn is_safe_for_auto_approval(&self) -> bool {
         matches!(
             self,
-            Self::List { .. } | Self::Search { .. } | Self::Read { .. } | Self::Info
+            Self::List { .. }
+                | Self::Search { .. }
+                | Self::Read { .. }
+                | Self::GitStatus
+                | Self::GitDiff
+                | Self::GitHistory { .. }
+                | Self::Info
         )
     }
 
@@ -99,6 +114,83 @@ impl ToolExecutor {
             ));
         };
         let operation = match call.name.as_str() {
+            "delegate_task" => {
+                if !only_keys(&call.arguments, &["task", "context"]) {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The delegated task arguments are invalid.",
+                    ));
+                }
+                let Some(task) = string_argument(&call.arguments, "task") else {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The delegated task is required.",
+                    ));
+                };
+                let context = string_argument(&call.arguments, "context");
+                if task.trim().is_empty()
+                    || task.len() > 4000
+                    || context.is_some_and(|value| value.len() > 8000)
+                {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The delegated task or context exceeds the supported limits.",
+                    ));
+                }
+                let root = self
+                    .project_root
+                    .clone()
+                    .unwrap_or_else(|| self.data_root.clone());
+                return Ok(PreparedToolCall {
+                    root: root.clone(),
+                    relative_path: String::new(),
+                    requested_path: "delegated analysis".to_owned(),
+                    target_path: root,
+                    scope: ToolPathScope::Project,
+                    operation: ToolOperation::DelegateTask {
+                        task: task.to_owned(),
+                        context: context.map(str::to_owned),
+                    },
+                });
+            }
+            "run_project_task" => {
+                if !only_keys(&call.arguments, &["task"]) {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The project task arguments are invalid.",
+                    ));
+                }
+                let Some(requested_task) = string_argument(&call.arguments, "task") else {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The project task id is required.",
+                    ));
+                };
+                let Some(root) = self.project_root.clone() else {
+                    return Err(tool_error(
+                        "project_required",
+                        "Named project tasks require an attached project.",
+                    ));
+                };
+                let task = crate::tools::project_tasks::load_project_task(&root, requested_task)
+                    .map_err(|error| tool_error(&error.code, &error.message))?;
+                let command = task.command;
+                return Ok(PreparedToolCall {
+                    root: root.clone(),
+                    relative_path: String::new(),
+                    requested_path: task.id,
+                    target_path: root,
+                    scope: ToolPathScope::Project,
+                    operation: ToolOperation::Bash {
+                        command: Some(command),
+                        terminal_id: None,
+                        input: None,
+                        action: None,
+                        timeout_seconds: Some(task.timeout_seconds),
+                        wait_ms: None,
+                    },
+                });
+            }
             "bash" | "execute_command" => {
                 let command = string_argument(&call.arguments, "command").map(str::to_owned);
                 let terminal_id = string_argument(&call.arguments, "terminal_id")
@@ -234,6 +326,40 @@ impl ToolExecutor {
                         url: url.to_owned(),
                         max_chars,
                     },
+                });
+            }
+            "git_status" | "git_diff" | "git_history" => {
+                let root = self
+                    .project_root
+                    .clone()
+                    .unwrap_or_else(|| self.data_root.clone());
+                let operation = match call.name.as_str() {
+                    "git_status" => ToolOperation::GitStatus,
+                    "git_diff" => ToolOperation::GitDiff,
+                    "git_history" => {
+                        let limit = usize_argument(&call.arguments, "limit").unwrap_or(20);
+                        if !(1..=100).contains(&limit) {
+                            return Err(tool_error(
+                                "invalid_tool_input",
+                                "The Git history limit must be between 1 and 100.",
+                            ));
+                        }
+                        ToolOperation::GitHistory { limit }
+                    }
+                    _ => {
+                        return Err(tool_error(
+                            "invalid_tool_input",
+                            "The Git operation is invalid.",
+                        ));
+                    }
+                };
+                return Ok(PreparedToolCall {
+                    root: root.clone(),
+                    relative_path: String::new(),
+                    requested_path: ".".to_owned(),
+                    target_path: root.clone(),
+                    scope: ToolPathScope::Project,
+                    operation,
                 });
             }
             "list_files" | "glob" | "list_directory" => {

@@ -21,10 +21,11 @@ import 'package:openchat/platform/windows/openchat_service_client.dart';
 import 'package:openchat/features/settings/presentation/chat_gpt_connection_section.dart';
 import 'package:openchat/features/settings/presentation/compatible_provider_connection_section.dart';
 import 'package:openchat/features/settings/presentation/conversation_archive_section.dart';
-import 'package:openchat/features/settings/presentation/profile_archive_section.dart';
 import 'package:openchat/features/settings/presentation/local_engines_settings_section.dart';
 import 'package:openchat/features/settings/presentation/models_settings_section.dart';
 import 'package:openchat/features/settings/presentation/open_code_connection_section.dart';
+import 'package:openchat/features/settings/presentation/profile_archive_section.dart';
+import 'package:openchat/features/settings/presentation/statistics_settings_section.dart';
 import 'package:openchat/features/settings/presentation/usage_quotas_settings_section.dart';
 
 const _sharedInstructionsMaxLength = 4096;
@@ -32,6 +33,7 @@ const _sharedInstructionsMaxLength = 4096;
 enum _SettingsSection {
   connections,
   usageQuotas,
+  statistics,
   models,
   localEngines,
   conversationMemory,
@@ -42,6 +44,7 @@ enum _SettingsSection {
   IconData get icon => switch (this) {
     connections => LucideIcons.link,
     usageQuotas => LucideIcons.chartNoAxesCombined,
+    statistics => LucideIcons.chartBarIncreasing,
     models => LucideIcons.network,
     localEngines => LucideIcons.microchip,
     conversationMemory => LucideIcons.brain,
@@ -77,6 +80,7 @@ class SettingsScreen extends StatefulWidget {
     this.chatRepository,
     this.onProviderStateChanged,
     this.onConnectionRemoved,
+    this.onOpenConversation,
     super.key,
   });
 
@@ -106,6 +110,7 @@ class SettingsScreen extends StatefulWidget {
   final ChatRepository? chatRepository;
   final Future<void> Function()? onProviderStateChanged;
   final Future<void> Function(String connectionId)? onConnectionRemoved;
+  final ValueChanged<String>? onOpenConversation;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -163,6 +168,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         final sectionTitle = switch (_selectedSection) {
           _SettingsSection.connections => l10n.connections,
           _SettingsSection.usageQuotas => l10n.usageQuotas,
+          _SettingsSection.statistics => l10n.statistics,
           _SettingsSection.models => l10n.models,
           _SettingsSection.localEngines => l10n.localEngines,
           _SettingsSection.conversationMemory => l10n.conversationMemory,
@@ -208,6 +214,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 () => _selectedSection =
                                     _SettingsSection.connections,
                               ),
+                            ),
+                          ),
+                          _buildSectionPage(
+                            section: _SettingsSection.statistics,
+                            horizontalInset: horizontalInset,
+                            child: StatisticsSettingsSection(
+                              serviceClient: widget.serviceClient,
+                              onOpenConversation: widget.onOpenConversation,
                             ),
                           ),
                           _buildSectionPage(
@@ -1042,6 +1056,7 @@ class _SettingsSidebar extends StatelessWidget {
     final entries = [
       (section: _SettingsSection.connections, label: l10n.connections),
       (section: _SettingsSection.usageQuotas, label: l10n.usageQuotas),
+      (section: _SettingsSection.statistics, label: l10n.statistics),
       (section: _SettingsSection.models, label: l10n.models),
       (section: _SettingsSection.localEngines, label: l10n.localEngines),
       (

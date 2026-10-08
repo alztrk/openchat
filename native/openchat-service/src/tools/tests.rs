@@ -17,8 +17,9 @@ struct TestDirectory(PathBuf);
 impl TestDirectory {
     fn new() -> Self {
         let id = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
-        let path =
-            std::env::temp_dir().join(format!("openchat-tools-test-{}-{id}", std::process::id()));
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join(format!("openchat-tools-test-{}-{id}", std::process::id()));
         fs::create_dir(&path).expect("create isolated test directory");
         Self(path)
     }
@@ -60,6 +61,29 @@ fn listing_hides_dot_directories_until_their_path_is_explicit() {
         private_listing["entries"],
         json!([{"path": ".private/secret.txt", "type": "file"}])
     );
+}
+
+#[test]
+fn named_project_task_is_loaded_as_a_bounded_terminal_command() {
+    let directory = TestDirectory::new();
+    directory.write(
+        ".openchat/tasks.json",
+        r#"{"version":1,"tasks":[{"id":"verify","command":"cargo test","timeoutSeconds":90}]}"#,
+    );
+
+    let task = super::project_tasks::load_project_task(Path::new(directory.root()), "verify")
+        .expect("load declared project task");
+    assert_eq!(task.id, "verify");
+    assert_eq!(task.command, "cargo test");
+    assert_eq!(task.timeout_seconds, 90);
+
+    let tasks = super::project_tasks::load_project_tasks(Path::new(directory.root()))
+        .expect("list declared project tasks");
+    assert_eq!(tasks, vec![task]);
+
+    let missing = super::project_tasks::load_project_task(Path::new(directory.root()), "build")
+        .expect_err("undeclared tasks must fail explicitly");
+    assert_eq!(missing.code, "project_task_not_found");
 }
 
 #[test]
@@ -1566,6 +1590,82 @@ async fn simulate_execute_command_with_user_permission_approval_flow() {
 
     let deny_result = deny_task.await.expect("join task").expect("execute_call");
     assert_eq!(deny_result.output["error"]["code"], "permission_denied");
+}
+
+#[tokio::test]
+async fn project_deny_rule_blocks_file_write_without_requesting_approval() {
+    use super::executor::{ToolExecutor, ToolPermissionMode, ToolPermissionRule};
+    use crate::{
+        permissions::ToolPermissionBroker,
+        protocol::EventSink,
+        provider_schema::{ChatStreamSnapshot, ToolCall},
+        storage::AppStorage,
+        user_question_broker::UserQuestionBroker,
+    };
+    use std::{collections::HashMap, sync::Arc};
+    use tokio::sync::watch;
+
+    let directory = TestDirectory::new();
+    let storage = Arc::new(
+        AppStorage::open_at(PathBuf::from(directory.root())).expect("open isolated test storage"),
+    );
+    storage
+        .connect()
+        .expect("connect isolated test storage")
+        .execute_batch(
+            "CREATE TABLE messages (
+                id TEXT NOT NULL,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at INTEGER,
+                tool_activities TEXT NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL,
+                UNIQUE(conversation_id, id)
+            );",
+        )
+        .expect("create assistant message activity schema");
+
+    let mut permission_rules = HashMap::new();
+    permission_rules.insert("write_file".to_owned(), ToolPermissionRule::Deny);
+    let executor = ToolExecutor::with_permission_rules(
+        Some(Path::new(directory.root())),
+        Path::new(directory.root()),
+        ToolPermissionMode::RequireApproval,
+        ["write_file".to_owned()],
+        permission_rules,
+    );
+    let call = ToolCall {
+        id: "write-blocked".to_owned(),
+        name: "write_file".to_owned(),
+        arguments: json!({"path": "blocked.txt", "content": "must not be written"}),
+    };
+    let broker = ToolPermissionBroker::default();
+    let events = EventSink::new();
+    let request_id = json!("test_request");
+    let snapshot = ChatStreamSnapshot::new("conversation", "message", "", 0);
+    let user_questions = UserQuestionBroker::default();
+    let (_cancellation_sender, mut cancellation) = watch::channel(false);
+
+    let result = executor
+        .execute_call(
+            &call,
+            &broker,
+            &request_id,
+            &snapshot,
+            &events,
+            &mut cancellation,
+            &storage,
+            "run",
+            "test-provider",
+            &user_questions,
+        )
+        .await
+        .expect("denied tool call returns a tool result");
+
+    assert_eq!(result.output["error"]["code"], "permission_denied");
+    assert!(!Path::new(directory.root()).join("blocked.txt").exists());
+    assert!(broker.pending.lock().await.is_empty());
 }
 
 #[test]

@@ -600,6 +600,16 @@ class _OpenChatAppState extends State<OpenChatApp> {
       maxWidth: _conversationWidth.maxWidth,
       fontFamily: _appFont.familyName,
     );
+    final highContrastTheme = OpenChatTheme.withConversationStyle(
+      OpenChatTheme.highContrastLight,
+      maxWidth: _conversationWidth.maxWidth,
+      fontFamily: _appFont.familyName,
+    );
+    final highContrastDarkTheme = OpenChatTheme.withConversationStyle(
+      OpenChatTheme.highContrastDark,
+      maxWidth: _conversationWidth.maxWidth,
+      fontFamily: _appFont.familyName,
+    );
 
     return ToastificationWrapper(
       child: MaterialApp(
@@ -607,6 +617,8 @@ class _OpenChatAppState extends State<OpenChatApp> {
         debugShowCheckedModeBanner: false,
         theme: lightTheme,
         darkTheme: darkTheme,
+        highContrastTheme: highContrastTheme,
+        highContrastDarkTheme: highContrastDarkTheme,
         themeMode: _themeMode,
         locale: _locale,
         localizationsDelegates: AppLocalizations.localizationsDelegates,

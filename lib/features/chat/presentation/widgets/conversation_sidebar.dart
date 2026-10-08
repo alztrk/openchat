@@ -15,6 +15,7 @@ class ConversationSidebar extends StatelessWidget {
     required this.searchController,
     this.isHistorySearchOpen = false,
     this.onOpenHistorySearch,
+    this.onOpenRunManager,
     this.onCloseHistorySearch,
     this.onSearchChanged,
     this.onSearchSubmitted,
@@ -59,6 +60,7 @@ class ConversationSidebar extends StatelessWidget {
   final TextEditingController searchController;
   final bool isHistorySearchOpen;
   final VoidCallback? onOpenHistorySearch;
+  final VoidCallback? onOpenRunManager;
   final VoidCallback? onCloseHistorySearch;
   final ValueChanged<String>? onSearchChanged;
   final ValueChanged<String>? onSearchSubmitted;
@@ -90,7 +92,8 @@ class ConversationSidebar extends StatelessWidget {
   final VoidCallback? onCreateProject;
   final bool projectsLoading;
   final String? projectLoadError;
-  final ValueChanged<String>? onOpenProjectOptions;
+  final void Function(String projectId, String projectRoot, String projectName)?
+  onOpenProjectOptions;
   final ValueChanged<String>? onCreateProjectConversation;
   final ValueChanged<String>? onShowMoreProjectConversations;
   final VoidCallback? onCreateConversation;
@@ -240,6 +243,22 @@ class ConversationSidebar extends StatelessWidget {
                                 ),
                         ),
                       ),
+                      if (onOpenRunManager != null)
+                        IconButton(
+                          tooltip: l10n.agentRunManagerTitle,
+                          onPressed: onOpenRunManager,
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 40,
+                            height: 40,
+                          ),
+                          padding: EdgeInsets.zero,
+                          icon: Icon(
+                            LucideIcons.activity,
+                            color: palette.secondaryIcon,
+                            size: 17,
+                          ),
+                        ),
                       IconButton(
                         tooltip: isHistorySearchOpen
                             ? l10n.close

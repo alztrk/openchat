@@ -21,6 +21,7 @@ Web Search & URL Reading tools:
   - Set `url` to the target HTTP/HTTPS webpage.
   - Set `max_chars` (default 6000, max 30000) to control response size.
   - Use to inspect documentation, articles, GitHub repositories, or search result targets in full context.
+  - Retrieved web sources include a stable `sourceId`, a local/provider source type, and their original retrieval time. When factual claims rely on these results, cite the exact identifier in square brackets, for example `[S1-call1234]`. Do not invent source identifiers or treat provider-hosted results as local OpenChat sources.
 
 Command Safety and Shell Conventions:
 - Never run destructive or irreversible commands (e.g. recursive force deletes, disk formatting, destructive git resets, deleting databases or system directories) without explicit instruction from the user.
@@ -53,7 +54,7 @@ pub fn shared_instructions(
                 instructions.push_str("Tool permission mode: Onay iste. Every supported local file, web, and terminal tool call requires the user's one-time approval before it runs. The approval prompt shows the operation and its relevant arguments.");
             }
             ToolPermissionMode::ApproveSafeOperations => {
-                instructions.push_str("Tool permission mode: Benim için onayla. Automatically run only read-only file listing, search, read, and file-information operations without asking. Require the user's one-time approval before file writes or edits, web searches or URL reads, and shell or terminal operations. Never change the requested operation to avoid an approval prompt.");
+                instructions.push_str("Tool permission mode: Benim için onayla. Automatically run only read-only file listing, search, read, file-information, and Git status, diff, or history operations without asking. Require the user's one-time approval before file writes or edits, web searches or URL reads, and shell or terminal operations. Never change the requested operation to avoid an approval prompt.");
             }
             ToolPermissionMode::FullAccess => {
                 instructions.push_str("Tool permission mode: Tam erişim. Supported file, web, and terminal tools can operate without asking for approval. File tools may use `desktop:/` for the current user's Desktop and absolute filesystem paths for other folders. Shell commands run with the current Windows account's permissions and are not sandboxed.");

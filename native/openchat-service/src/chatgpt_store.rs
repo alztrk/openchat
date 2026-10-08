@@ -144,6 +144,8 @@ pub struct StoredMessage {
 
 #[derive(Clone, Debug)]
 pub struct StoredAttachment {
+    pub id: String,
+    pub name: String,
     pub mime_type: String,
     pub kind: String,
     pub content: Option<Vec<u8>>,

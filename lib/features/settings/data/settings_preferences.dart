@@ -16,6 +16,52 @@ enum ToolPermissionMode {
   };
 }
 
+enum ToolPermissionRule {
+  inherit,
+  ask,
+  allow,
+  deny;
+
+  String get storageValue => switch (this) {
+    ToolPermissionRule.inherit => 'inherit',
+    ToolPermissionRule.ask => 'ask',
+    ToolPermissionRule.allow => 'allow',
+    ToolPermissionRule.deny => 'deny',
+  };
+
+  String? get serviceValue => switch (this) {
+    ToolPermissionRule.inherit => null,
+    ToolPermissionRule.ask => 'ask',
+    ToolPermissionRule.allow => 'allow',
+    ToolPermissionRule.deny => 'deny',
+  };
+
+  static ToolPermissionRule? fromStorageValue(Object? value) => switch (value) {
+    'ask' => ToolPermissionRule.ask,
+    'allow' => ToolPermissionRule.allow,
+    'deny' => ToolPermissionRule.deny,
+    _ => null,
+  };
+}
+
+const projectToolRuleNames = <String>{
+  'list_files',
+  'search_files',
+  'read_file',
+  'write_file',
+  'edit_file',
+  'get_file_info',
+  'execute_command',
+  'send_terminal_input',
+  'git_status',
+  'git_diff',
+  'git_history',
+  'web_search',
+  'read_url_content',
+  'delegate_task',
+  'run_project_task',
+};
+
 enum ConversationWidthPreference {
   narrow(760),
   normal(920),
@@ -54,6 +100,7 @@ class SettingsPreferences {
   static const _sharedInstructionsKey = 'chat.shared_instructions';
   static const _chatGptFastModeKey = 'chatgpt.fast_mode';
   static const _toolPermissionModeKey = 'tools.permission_mode';
+  static const _projectToolPermissionPrefix = 'tools.project_rules.';
   static const _conversationWidthKey = 'appearance.conversation_width';
   static const _conversationTextSizeKey = 'appearance.conversation_text_size';
   static const _appFontKey = 'appearance.conversation_font';
@@ -199,6 +246,73 @@ class SettingsPreferences {
     return _preferences.setString(_toolPermissionModeKey, mode.serviceValue);
   }
 
+  Future<Map<String, ToolPermissionRule>> readProjectToolPermissionRules(
+    String projectId,
+  ) async {
+    final key =
+        '$_projectToolPermissionPrefix${_validatedProjectId(projectId)}';
+    final raw = await _preferences.getString(key);
+    if (raw == null) return const <String, ToolPermissionRule>{};
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      throw const FormatException(
+        'Saved project tool permissions could not be read.',
+      );
+    }
+    if (decoded is! Map) {
+      throw const FormatException(
+        'Saved project tool permissions have an invalid shape.',
+      );
+    }
+    final rules = <String, ToolPermissionRule>{};
+    for (final entry in decoded.entries) {
+      final toolName = entry.key;
+      if (toolName is! String ||
+          !projectToolRuleNames.contains(toolName) ||
+          entry.value == 'inherit') {
+        throw const FormatException(
+          'Saved project tool permissions contain an invalid rule.',
+        );
+      }
+      final rule = ToolPermissionRule.fromStorageValue(entry.value);
+      if (rule == null) {
+        throw const FormatException(
+          'Saved project tool permissions contain an invalid rule.',
+        );
+      }
+      rules[toolName] = rule;
+    }
+    return rules;
+  }
+
+  Future<void> writeProjectToolPermissionRules(
+    String projectId,
+    Map<String, ToolPermissionRule> rules,
+  ) async {
+    final normalizedProjectId = _validatedProjectId(projectId);
+    final storedRules = <String, String>{};
+    for (final entry in rules.entries) {
+      if (!projectToolRuleNames.contains(entry.key)) {
+        throw ArgumentError.value(
+          entry.key,
+          'rules',
+          'The project tool rule name is unsupported.',
+        );
+      }
+      if (entry.value != ToolPermissionRule.inherit) {
+        storedRules[entry.key] = entry.value.storageValue;
+      }
+    }
+    final key = '$_projectToolPermissionPrefix$normalizedProjectId';
+    if (storedRules.isEmpty) {
+      await _preferences.remove(key);
+      return;
+    }
+    await _preferences.setString(key, jsonEncode(storedRules));
+  }
+
   Future<DefaultModelPreference?> readDefaultModel() async {
     final raw = await _preferences.getString(_defaultModelKey);
     if (raw == null || raw.trim().isEmpty) return null;
@@ -309,4 +423,18 @@ class SettingsPreferences {
       'The local engine is not supported.',
     ),
   };
+
+  String _validatedProjectId(String projectId) {
+    final normalized = projectId.trim();
+    if (normalized.isEmpty ||
+        normalized.length > 128 ||
+        normalized.contains('\u0000')) {
+      throw ArgumentError.value(
+        projectId,
+        'projectId',
+        'The project identifier is invalid.',
+      );
+    }
+    return normalized;
+  }
 }

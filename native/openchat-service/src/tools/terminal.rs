@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     path::{Path, PathBuf},
-    process::{ExitStatus, Stdio},
+    process::ExitStatus,
     sync::{
         Arc, OnceLock,
         atomic::{AtomicU64, Ordering},
@@ -9,18 +9,24 @@ use std::{
     time::{Duration, Instant},
 };
 
-#[cfg(windows)]
-use process_wrap::tokio::JobObject;
 #[cfg(unix)]
 use process_wrap::tokio::ProcessGroup;
+#[cfg(not(windows))]
 use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop};
 use serde_json::{Value, json};
+#[cfg(not(windows))]
+use tokio::process::{ChildStdin, Command};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
-    process::{ChildStdin, Command},
     sync::Mutex,
     time::sleep,
 };
+
+#[cfg(windows)]
+#[path = "terminal_windows.rs"]
+mod windows_sandbox;
+#[cfg(windows)]
+use windows_sandbox::SandboxedProcess;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 180;
 const MAX_TIMEOUT_SECONDS: u64 = 600;
@@ -37,27 +43,14 @@ pub struct TerminalSession {
     pub workdir: PathBuf,
     pub created_at: Instant,
     pub timeout: Duration,
+    idle_timeout: Option<Duration>,
+    #[cfg(windows)]
+    child: Arc<Mutex<SandboxedProcess>>,
+    #[cfg(not(windows))]
     child: Arc<Mutex<Box<dyn ChildWrapper>>>,
-    stdin: Arc<Mutex<Option<ChildStdin>>>,
+    stdin: Arc<Mutex<Option<TerminalStdin>>>,
     output_buffer: Arc<Mutex<Vec<u8>>>,
     last_activity: Arc<Mutex<Instant>>,
-}
-
-#[cfg(windows)]
-fn build_shell_command(command_str: &str) -> Command {
-    if Path::new(r"C:\Program Files\PowerShell\7\pwsh.exe").exists() {
-        let mut cmd = Command::new(r"C:\Program Files\PowerShell\7\pwsh.exe");
-        cmd.args(["-NoProfile", "-NonInteractive", "-Command", command_str]);
-        return cmd;
-    }
-    if Path::new(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe").exists() {
-        let mut cmd = Command::new(r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe");
-        cmd.args(["-NoProfile", "-NonInteractive", "-Command", command_str]);
-        return cmd;
-    }
-    let mut cmd = Command::new("cmd.exe");
-    cmd.args(["/C", command_str]);
-    cmd
 }
 
 #[cfg(not(windows))]
@@ -67,9 +60,25 @@ fn build_shell_command(command_str: &str) -> Command {
     cmd
 }
 
+enum TerminalStdin {
+    #[cfg(windows)]
+    Sandboxed(tokio::fs::File),
+    #[cfg(not(windows))]
+    Child(ChildStdin),
+}
+
 impl TerminalSession {
     async fn process_status(&self) -> Result<Option<ExitStatus>, String> {
-        let mut child = self.child.lock().await;
+        let child = self.child.lock().await;
+        #[cfg(windows)]
+        {
+            return child.try_wait().map_err(|error| {
+                format!("Could not check the sandboxed command process status: {error}")
+            });
+        }
+        #[cfg(not(windows))]
+        let mut child = child;
+        #[cfg(not(windows))]
         child
             .try_wait()
             .map_err(|error| format!("Could not check the command process status: {error}"))
@@ -84,6 +93,12 @@ impl TerminalSession {
         let stdin = stdin_guard
             .as_mut()
             .ok_or_else(|| "Terminal stdin is closed or unavailable.".to_owned())?;
+        let stdin = match stdin {
+            #[cfg(windows)]
+            TerminalStdin::Sandboxed(stdin) => stdin,
+            #[cfg(not(windows))]
+            TerminalStdin::Child(stdin) => stdin,
+        };
         stdin
             .write_all(input.as_bytes())
             .await
@@ -97,18 +112,36 @@ impl TerminalSession {
     }
 
     pub async fn kill(&self) -> Result<(), String> {
-        let mut child = self.child.lock().await;
-        if let Err(error) = child.start_kill() {
-            if matches!(child.try_wait(), Ok(Some(_))) {
-                return Ok(());
-            }
-            return Err(format!("Could not stop the command process: {error}"));
+        let child = self.child.lock().await;
+        #[cfg(windows)]
+        {
+            child.start_kill().map_err(|error| {
+                format!("Could not stop the sandboxed command process: {error}")
+            })?;
+            child.wait_for_job_exit().map_err(|error| {
+                format!("Could not stop the sandboxed command process tree: {error}")
+            })?;
+            return child
+                .wait()
+                .await
+                .map(|_| ())
+                .map_err(|error| format!("Could not stop the sandboxed command process: {error}"));
         }
-        child
-            .wait()
-            .await
-            .map(|_| ())
-            .map_err(|error| format!("Could not stop the command process: {error}"))
+        #[cfg(not(windows))]
+        {
+            let mut child = child;
+            if let Err(error) = child.start_kill() {
+                if matches!(child.try_wait(), Ok(Some(_))) {
+                    return Ok(());
+                }
+                return Err(format!("Could not stop the command process: {error}"));
+            }
+            child
+                .wait()
+                .await
+                .map(|_| ())
+                .map_err(|error| format!("Could not stop the command process: {error}"))
+        }
     }
 
     pub async fn read_output_from(&self, start_offset: usize) -> (String, usize, bool) {
@@ -196,10 +229,13 @@ impl TerminalSessionManager {
 
                 for (id, session) in guard.iter() {
                     let expired = session.created_at.elapsed() > session.timeout;
-                    let idle = {
-                        let last = *session.last_activity.lock().await;
-                        last.elapsed() > Duration::from_secs(120)
-                    };
+                    let idle = session
+                        .idle_timeout
+                        .is_some_and(|idle_timeout| session.created_at.elapsed() > idle_timeout)
+                        && {
+                            let last = *session.last_activity.lock().await;
+                            last.elapsed() > Duration::from_secs(120)
+                        };
 
                     match session.is_running().await {
                         Ok(false) => to_remove.push(id.clone()),
@@ -233,6 +269,22 @@ impl TerminalSessionManager {
         workdir: &Path,
         timeout_seconds: Option<u64>,
     ) -> Result<Arc<TerminalSession>, String> {
+        self.create_session_with_idle_timeout(
+            command_str,
+            workdir,
+            timeout_seconds,
+            Some(Duration::from_secs(120)),
+        )
+        .await
+    }
+
+    async fn create_session_with_idle_timeout(
+        &self,
+        command_str: &str,
+        workdir: &Path,
+        timeout_seconds: Option<u64>,
+        idle_timeout: Option<Duration>,
+    ) -> Result<Arc<TerminalSession>, String> {
         let id_num = self.counter.fetch_add(1, Ordering::Relaxed);
         let id = format!("term_{id_num}");
 
@@ -241,32 +293,37 @@ impl TerminalSessionManager {
             .clamp(5, MAX_TIMEOUT_SECONDS);
         let timeout = Duration::from_secs(timeout_secs);
 
-        let mut cmd = build_shell_command(command_str);
-
-        cmd.current_dir(workdir)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-
-        let mut wrapped_command = CommandWrap::from(cmd);
         #[cfg(windows)]
-        {
+        let (child, stdin, stdout, stderr) = {
+            let mut child = SandboxedProcess::spawn(command_str, workdir).map_err(|_| {
+                "The command could not start inside the Windows AppContainer sandbox. Check the project folder and Windows security settings.".to_owned()
+            })?;
+            let stdin = child.take_stdin().map(TerminalStdin::Sandboxed);
+            let stdout = child.take_stdout();
+            let stderr = child.take_stderr();
+            (child, stdin, stdout, stderr)
+        };
+
+        #[cfg(not(windows))]
+        let (child, stdin, stdout, stderr) = {
+            let mut cmd = build_shell_command(command_str);
+            cmd.current_dir(workdir)
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
+            let mut wrapped_command = CommandWrap::from(cmd);
             wrapped_command.wrap(KillOnDrop);
-            wrapped_command.wrap(JobObject);
-        }
-        #[cfg(unix)]
-        {
-            wrapped_command.wrap(KillOnDrop);
+            #[cfg(unix)]
             wrapped_command.wrap(ProcessGroup::leader());
-        }
 
-        let mut child = wrapped_command
-            .spawn()
-            .map_err(|e| format!("Failed to spawn command process: {e}"))?;
-
-        let stdin = child.stdin().take();
-        let stdout = child.stdout().take();
-        let stderr = child.stderr().take();
+            let mut child = wrapped_command
+                .spawn()
+                .map_err(|error| format!("Failed to spawn command process: {error}"))?;
+            let stdin = child.stdin().take().map(TerminalStdin::Child);
+            let stdout = child.stdout().take();
+            let stderr = child.stderr().take();
+            (child, stdin, stdout, stderr)
+        };
 
         let output_buffer = Arc::new(Mutex::new(Vec::new()));
         let last_activity = Arc::new(Mutex::new(Instant::now()));
@@ -331,6 +388,7 @@ impl TerminalSessionManager {
             workdir: workdir.to_path_buf(),
             created_at: Instant::now(),
             timeout,
+            idle_timeout,
             child: Arc::new(Mutex::new(child)),
             stdin: Arc::new(Mutex::new(stdin)),
             output_buffer,
@@ -387,6 +445,79 @@ impl TerminalSessionManager {
                 "truncated": truncated,
                 "message": "The command is still running and may be waiting for input. Use send_terminal_input with this terminal_id to send input or read more output."
             }))
+        }
+    }
+
+    pub async fn execute_to_completion(
+        &self,
+        command_str: &str,
+        workdir: &Path,
+        timeout_seconds: u64,
+        cancellation: &mut tokio::sync::watch::Receiver<bool>,
+    ) -> Result<Value, String> {
+        if !(5..=MAX_TIMEOUT_SECONDS).contains(&timeout_seconds) {
+            return Err("The named task timeout is outside the supported range.".to_owned());
+        }
+        if *cancellation.borrow() {
+            return Ok(
+                json!({"status": "cancelled", "exitCode": Value::Null, "output": "", "truncated": false}),
+            );
+        }
+
+        let session = self
+            .create_session_with_idle_timeout(command_str, workdir, Some(timeout_seconds), None)
+            .await?;
+        session.stdin.lock().await.take();
+        let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
+
+        loop {
+            tokio::select! {
+                changed = cancellation.changed() => {
+                    if changed.is_err() || *cancellation.borrow() {
+                        session.kill().await?;
+                        self.remove_session(&session.id).await;
+                        let (output, _, truncated) = session.read_output_from(0).await;
+                        return Ok(json!({
+                            "status": "cancelled",
+                            "exitCode": Value::Null,
+                            "output": output,
+                            "truncated": truncated,
+                        }));
+                    }
+                }
+                _ = sleep(Duration::from_millis(50)) => {
+                    match session.process_status().await {
+                        Ok(Some(status)) => {
+                            self.remove_session(&session.id).await;
+                            let (output, _, truncated) = session.read_output_from(0).await;
+                            return Ok(json!({
+                                "status": "completed",
+                                "exitCode": status.code(),
+                                "output": output,
+                                "truncated": truncated,
+                            }));
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            session.kill().await?;
+                            self.remove_session(&session.id).await;
+                            return Err(error);
+                        }
+                    }
+
+                    if Instant::now() >= deadline {
+                        session.kill().await?;
+                        self.remove_session(&session.id).await;
+                        let (output, _, truncated) = session.read_output_from(0).await;
+                        return Ok(json!({
+                            "status": "timed_out",
+                            "exitCode": Value::Null,
+                            "output": output,
+                            "truncated": truncated,
+                        }));
+                    }
+                }
+            }
         }
     }
 

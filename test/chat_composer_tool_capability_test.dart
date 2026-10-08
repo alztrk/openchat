@@ -229,7 +229,10 @@ void main() {
           .first,
     );
     expect(tooltip.message, contains(l10n.selectedModelToolSupportUnknown));
-    expect(tooltip.message, contains(l10n.toolPermissionRequireApproval));
+    expect(
+      tooltip.message,
+      contains(l10n.toolPermissionRequireApprovalDescription),
+    );
   });
 
   testWidgets('explains when the selected model does not support tool calls', (
@@ -263,7 +266,10 @@ void main() {
       tooltip.message,
       contains(l10n.selectedModelDoesNotSupportToolCalls),
     );
-    expect(tooltip.message, contains(l10n.toolPermissionRequireApproval));
+    expect(
+      tooltip.message,
+      contains(l10n.toolPermissionRequireApprovalDescription),
+    );
   });
 
   testWidgets('does not warn when the selected model reports tool support', (
@@ -290,7 +296,7 @@ void main() {
     final tooltip = tester.widget<Tooltip>(
       find.ancestor(of: permissionButton, matching: find.byType(Tooltip)),
     );
-    expect(tooltip.message, l10n.toolPermissionRequireApproval);
+    expect(tooltip.message, l10n.toolPermissionRequireApprovalDescription);
   });
 }
 

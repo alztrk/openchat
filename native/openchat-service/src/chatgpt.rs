@@ -16,7 +16,7 @@ use crate::{
     chat_operation::ChatSendContext,
     chatgpt_store::{self, ChatGptModel},
     credentials::{OAuthCredentialReference, OAuthTokenPair},
-    instructions,
+    goals, instructions,
     oauth::OAuthClient,
     protocol::ServiceError,
     provider_schema::ProviderChatRequest,
@@ -30,6 +30,7 @@ mod images;
 mod response_events;
 mod response_parser;
 mod streaming;
+pub(crate) mod subagents;
 mod title_generation;
 pub(super) use self::images::{
     ImageBackground, ImageGenerationAuth, ImageGenerationRequest, ImageQuality,
@@ -191,16 +192,29 @@ impl ChatGptService {
             .collect::<Vec<_>>();
         crate::history::validate_model_attachments(&messages, model.supports_images)?;
         let last_message_id = included_messages.last().map(|message| message.id.clone());
-        let tools = tools::definitions_for_chatgpt_model();
+        let mut tools = tools::definitions_for_chatgpt_model();
+        if project_root.is_some() && !tools.is_empty() {
+            tools.push(tools::project_tasks::tool_definition());
+        }
+        if !tools.is_empty() {
+            tools.extend(goals::control_tool_definitions());
+        }
+        let mut shared_instructions = instructions::shared_instructions(
+            custom_instructions,
+            context.permission_mode,
+            project_root.is_some(),
+            !tools.is_empty(),
+            "chatgpt",
+        );
+        if !tools.is_empty() {
+            goals::append_goal_tool_instructions(&mut shared_instructions);
+        }
+        if let Some(goal) = context.goal.as_ref() {
+            goals::append_goal_instructions(&mut shared_instructions, &goal.objective);
+        }
         let provider_request = ProviderChatRequest {
             model: model.id.clone(),
-            instructions: instructions::shared_instructions(
-                custom_instructions,
-                context.permission_mode,
-                project_root.is_some(),
-                !tools.is_empty(),
-                "chatgpt",
-            ),
+            instructions: shared_instructions,
             messages: Vec::new(),
             last_message_id,
             tools,

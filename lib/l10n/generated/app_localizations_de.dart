@@ -978,6 +978,17 @@ class AppLocalizationsDe extends AppLocalizations {
       'Diese Antwort kann nicht erneut versucht werden. Senden Sie stattdessen eine neue Nachricht.';
 
   @override
+  String responseVersionCount(int current, int total) {
+    return 'Antwort $current von $total';
+  }
+
+  @override
+  String get previousResponseVersion => 'Vorherige Antwort';
+
+  @override
+  String get nextResponseVersion => 'Nächste Antwort';
+
+  @override
   String get providerRateLimited =>
       'Der Anbieter meldet ein Nutzungslimit. Versuchen Sie es später erneut.';
 
@@ -1930,6 +1941,268 @@ class AppLocalizationsDe extends AppLocalizations {
   String get projectOptions => 'Projektoptionen';
 
   @override
+  String get projectToolRulesTitle => 'Projektberechtigungen für Tools';
+
+  @override
+  String get projectToolRulesDescription =>
+      'Wählen Sie für jedes Tool eine Regel. Tools ohne Regel verwenden die globale Berechtigungseinstellung. Zulassen beachtet weiterhin Dateibereiche und Prozessisolation.';
+
+  @override
+  String get projectToolRuleInherit => 'Globale Einstellung verwenden';
+
+  @override
+  String get projectToolRuleAsk => 'Genehmigung anfordern';
+
+  @override
+  String get projectToolRuleAllow => 'Zulassen';
+
+  @override
+  String get projectToolRuleDeny => 'Ablehnen';
+
+  @override
+  String get projectToolRulesLoadFailed =>
+      'Projektberechtigungen für Tools konnten nicht geladen werden. Prüfen Sie die gespeicherten Einstellungen, bevor Sie eine weitere Anfrage senden.';
+
+  @override
+  String get projectToolRulesSaveFailed =>
+      'Projektberechtigungen für Tools konnten nicht gespeichert werden. Die bisherigen Regeln bleiben aktiv.';
+
+  @override
+  String get projectOptionsTitle => 'Projektoptionen';
+
+  @override
+  String get projectOptionsToolPermissions => 'Tool-Berechtigungen';
+
+  @override
+  String get projectOptionsWorktrees => 'Git-Worktrees';
+
+  @override
+  String get projectWorktreesTitle => 'Isolierte Worktrees';
+
+  @override
+  String get projectWorktreesDescription =>
+      'Erstellen Sie einen Branch vom aktuellen Commit in einem separaten Ordner. Nicht gespeicherte Änderungen werden nicht kopiert.';
+
+  @override
+  String get projectWorktreesLoading => 'Worktrees werden geladen…';
+
+  @override
+  String get projectWorktreesEmpty =>
+      'Für dieses Projekt wurden noch keine Worktrees erstellt.';
+
+  @override
+  String get projectWorktreeCreate => 'Worktree erstellen';
+
+  @override
+  String get projectWorktreeCreateFailed =>
+      'Der Worktree konnte nicht erstellt werden. Prüfen Sie, ob der Ordner ein Git-Repository ist.';
+
+  @override
+  String get projectWorktreeLoadFailed =>
+      'Die Projekt-Worktrees konnten nicht geladen werden.';
+
+  @override
+  String get projectWorktreeOperationFailed =>
+      'Der Git-Vorgang ist fehlgeschlagen. Prüfen Sie den Repository-Status und versuchen Sie es erneut.';
+
+  @override
+  String get projectWorktreeNotRepository =>
+      'Dieser Projektordner liegt nicht in einem Git-Repository.';
+
+  @override
+  String projectWorktreeBranch(String branch) {
+    return 'Branch: $branch';
+  }
+
+  @override
+  String projectWorktreePath(String path) {
+    return 'Ordner: $path';
+  }
+
+  @override
+  String get projectWorktreeStatusClean =>
+      'Keine nicht gespeicherten Änderungen';
+
+  @override
+  String projectWorktreeStatusChanges(int count) {
+    return 'Geänderte Dateien: $count';
+  }
+
+  @override
+  String get projectWorktreeReview => 'Änderungen prüfen';
+
+  @override
+  String get projectWorktreeUse => 'Als Projekt verwenden';
+
+  @override
+  String get projectWorktreeRemove => 'Worktree entfernen';
+
+  @override
+  String get projectWorktreeRemoveTitle => 'Worktree entfernen?';
+
+  @override
+  String projectWorktreeRemoveDescription(String branch) {
+    return 'Nicht gespeicherte und nicht verfolgte Dateien in $branch werden verworfen. Branch und Commits bleiben erhalten.';
+  }
+
+  @override
+  String get projectWorktreeReviewTitle => 'Worktree-Änderungen';
+
+  @override
+  String get projectWorktreeNoChanges =>
+      'Keine nicht gespeicherten Änderungen. Commits bleiben auf diesem Branch.';
+
+  @override
+  String get projectWorktreeStagedDiff => 'Vorgemerkte Änderungen';
+
+  @override
+  String get projectWorktreeUnstagedDiff => 'Nicht vorgemerkte Änderungen';
+
+  @override
+  String get projectWorktreeListTruncated =>
+      'Nur die ersten 20 Worktrees werden angezeigt.';
+
+  @override
+  String get projectWorktreeCheckFailed =>
+      'Der Worktree konnte nicht geprüft werden.';
+
+  @override
+  String get projectWorktreeRunCheck => 'Prüfung ausführen';
+
+  @override
+  String get projectWorktreeTaskPickerTitle => 'Benannte Prüfung auswählen';
+
+  @override
+  String get projectWorktreeTaskEmpty =>
+      'Für diesen Worktree gibt es keine benannten Prüfungen. Fügen Sie Aufgaben in `.openchat/tasks.json` im Projekt hinzu.';
+
+  @override
+  String get projectWorktreeTaskLoadFailed =>
+      'Benannte Prüfungen konnten nicht aus diesem Worktree geladen werden.';
+
+  @override
+  String get projectWorktreeTaskConfirmationTitle => 'Diese Prüfung ausführen?';
+
+  @override
+  String get projectWorktreeTaskCommand => 'Befehl';
+
+  @override
+  String projectWorktreeTaskTimeout(int seconds) {
+    return 'Zeitlimit: $seconds Sekunden';
+  }
+
+  @override
+  String get projectWorktreeTaskRun => 'Prüfung ausführen';
+
+  @override
+  String projectWorktreeTaskRunning(String task) {
+    return 'Prüfung läuft: $task';
+  }
+
+  @override
+  String get projectWorktreeTaskStopping => 'Prüfung wird beendet…';
+
+  @override
+  String get projectWorktreeTaskStop => 'Prüfung stoppen';
+
+  @override
+  String get projectWorktreeTaskCancelled => 'Die Prüfung wurde abgebrochen.';
+
+  @override
+  String get projectWorktreeTaskTimedOut =>
+      'Die Prüfung hat das Zeitlimit erreicht.';
+
+  @override
+  String projectWorktreeTaskExitCode(int code) {
+    return 'Prüfung mit Exitcode $code beendet.';
+  }
+
+  @override
+  String get projectWorktreeTaskExitCodeUnavailable =>
+      'Die Prüfung wurde ohne Exitcode beendet.';
+
+  @override
+  String get projectWorktreeTaskOutputTruncated =>
+      'Die Ausgabe ist auf die ersten 128 KiB begrenzt.';
+
+  @override
+  String get projectWorktreeTaskRunFailed =>
+      'Die Prüfung konnte nicht in der Worktree-Sandbox ausgeführt werden.';
+
+  @override
+  String projectWorktreeTaskResultTitle(String task) {
+    return 'Prüfungsergebnis: $task';
+  }
+
+  @override
+  String get projectWorktreeTaskOutput => 'Ausgabe';
+
+  @override
+  String get projectWorktreeTaskNoOutput =>
+      'Die Prüfung hat keine Ausgabe erzeugt.';
+
+  @override
+  String get projectWorktreeTaskDenied =>
+      'Die Projektberechtigungen verbieten benannte Prüfungen.';
+
+  @override
+  String get agentRunManagerTitle => 'Läufe';
+
+  @override
+  String get agentRunManagerDescription =>
+      'Aktive, pausierte und unterbrochene Arbeit in allen Chats anzeigen.';
+
+  @override
+  String get agentRunLoading => 'Läufe werden geladen';
+
+  @override
+  String get agentRunLoadFailed =>
+      'Der Laufstatus konnte nicht geladen werden.';
+
+  @override
+  String get agentRunEmpty =>
+      'Es gibt keine aktiven, pausierten oder unterbrochenen Läufe.';
+
+  @override
+  String get agentRunRefresh => 'Laufliste aktualisieren';
+
+  @override
+  String get agentRunOpenConversation => 'Chat öffnen';
+
+  @override
+  String get agentRunStatusRunning => 'Läuft';
+
+  @override
+  String get agentRunStatusPaused => 'Pausiert';
+
+  @override
+  String get agentRunStatusInterrupted => 'Unterbrochen';
+
+  @override
+  String get agentRunStatusUnavailable => 'Status nicht verfügbar';
+
+  @override
+  String get agentRunStatusCompleted => 'Abgeschlossen';
+
+  @override
+  String get agentRunStatusFailed => 'Fehlgeschlagen';
+
+  @override
+  String get agentRunStatusCancelled => 'Abgebrochen';
+
+  @override
+  String get agentRunSubagent => 'Untergeordneter Lauf';
+
+  @override
+  String agentRunSubagentTask(String objective) {
+    return 'Untergeordnete Aufgabe: $objective';
+  }
+
+  @override
+  String get agentRunEndedInAnotherChat =>
+      'Ein Lauf in einem anderen Chat ist beendet.';
+
+  @override
   String get newProjectConversation => 'Neuen Projektchat starten';
 
   @override
@@ -2253,6 +2526,25 @@ class AppLocalizationsDe extends AppLocalizations {
       'Der Chat-Titel darf nicht leer sein.';
 
   @override
+  String get conversationBranchEditTitle =>
+      'Nachricht bearbeiten und Verzweigung starten';
+
+  @override
+  String get conversationBranchEditLabel => 'Nachricht';
+
+  @override
+  String get conversationBranchStart => 'Verzweigung starten';
+
+  @override
+  String conversationBranchTitle(String title) {
+    return '$title (Verzweigung)';
+  }
+
+  @override
+  String get conversationBranchCreateFailed =>
+      'Die Nachrichtenverzweigung konnte nicht erstellt werden.';
+
+  @override
   String get conversationTitleSaveFailed =>
       'Der Chat-Titel konnte nicht gespeichert werden.';
 
@@ -2372,6 +2664,14 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get chatRequestFailed =>
       'Die Antwort konnte nicht abgeschlossen werden. Ihre gespeicherten Nachrichten sind weiterhin verfügbar.';
+
+  @override
+  String get goalAlreadyActive =>
+      'Setzen Sie das aktive Ziel fort oder stoppen Sie es, bevor Sie in diesem Chat ein neues Ziel starten.';
+
+  @override
+  String get goalStateUnavailable =>
+      'OpenChat konnte nicht prüfen, ob in diesem Chat bereits ein aktives Ziel läuft. Versuchen Sie es erneut.';
 
   @override
   String get cachedCatalog => 'zwischengespeicherte Modelle';
@@ -2553,7 +2853,55 @@ class AppLocalizationsDe extends AppLocalizations {
   String get toolExecuteCommand => 'Befehl ausführen';
 
   @override
+  String get toolRunProjectTask => 'Projektaufgabe ausführen';
+
+  @override
+  String get toolDelegateTask => 'Analyse delegieren';
+
+  @override
+  String get toolPermissionTask => 'Aufgabe';
+
+  @override
+  String get toolPermissionTimeout => 'Zeitlimit (Sekunden)';
+
+  @override
   String get toolSendTerminalInput => 'Terminaleingabe senden';
+
+  @override
+  String get toolGitStatus => 'Git-Status';
+
+  @override
+  String get toolGitDiff => 'Git-Diff';
+
+  @override
+  String get toolGitHistory => 'Git-Verlauf';
+
+  @override
+  String get toolGitBranch => 'Branch';
+
+  @override
+  String get toolGitUpstream => 'Upstream';
+
+  @override
+  String get toolGitAhead => 'Voraus';
+
+  @override
+  String get toolGitBehind => 'Zurück';
+
+  @override
+  String get toolGitStaged => 'Vorgemerkt';
+
+  @override
+  String get toolGitUnstaged => 'Nicht vorgemerkt';
+
+  @override
+  String get toolGitNoChanges => 'Der Arbeitsbaum ist sauber.';
+
+  @override
+  String get toolGitNoDiff => 'Kein Diff zum Anzeigen.';
+
+  @override
+  String get toolGitNoHistory => 'Keine Commits gefunden.';
 
   @override
   String get toolWebSearch => 'Websuche';
@@ -2563,6 +2911,28 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get toolSearchQuery => 'Suchanfrage';
+
+  @override
+  String get toolLocalWebSource => 'OpenChat-Websuche';
+
+  @override
+  String get toolLocalPageSource => 'OpenChat-Seitenabruf';
+
+  @override
+  String get toolProviderSource => 'Anbieterquelle';
+
+  @override
+  String toolSourceRetrievedAt(String time) {
+    return 'Abgerufen: $time';
+  }
+
+  @override
+  String get toolSourceDetails => 'Quelldetails';
+
+  @override
+  String toolCitationSource(String sourceId) {
+    return 'Quelle $sourceId';
+  }
 
   @override
   String get toolWebSearchNoResults => 'Keine Webergebnisse gefunden.';
@@ -2769,6 +3139,389 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get usageQuotasDescription =>
       'Verbleibende Kontingente, Nutzungslimits und Rücksetzzeiten für alle verbundenen ChatGPT-Konten anzeigen.';
+
+  @override
+  String get statistics => 'Statistiken';
+
+  @override
+  String get statisticsDescription =>
+      'Tokenverbrauch, Anfragen und den ChatGPT-Kontingentverlauf nach Anbieter, Modell und Unterhaltung anzeigen.';
+
+  @override
+  String get statisticsLoadFailed =>
+      'Nutzungsstatistiken konnten nicht geladen werden.';
+
+  @override
+  String get statisticsUnavailable =>
+      'Lokale Nutzungsstatistiken sind derzeit nicht verfügbar.';
+
+  @override
+  String get statisticsRetry => 'Neu laden';
+
+  @override
+  String get statisticsDateRange => 'Zeitraum';
+
+  @override
+  String get statisticsProvider => 'Anbieter';
+
+  @override
+  String get statisticsRunId => 'Ausführungs-ID';
+
+  @override
+  String statisticsRunIdValue(String runId) {
+    return 'Ausführungs-ID: $runId';
+  }
+
+  @override
+  String get statisticsModel => 'Modell';
+
+  @override
+  String get statisticsOperation => 'Vorgangsart';
+
+  @override
+  String get statisticsReasoningEffort => 'Reasoning-Aufwand';
+
+  @override
+  String get statisticsFastModeFilter => 'Fast-Modus';
+
+  @override
+  String get statisticsAll => 'Alle';
+
+  @override
+  String get statisticsUnspecified => 'Nicht angegeben';
+
+  @override
+  String get statisticsClearFilters => 'Filter löschen';
+
+  @override
+  String get statisticsTotalTokens => 'Token gesamt';
+
+  @override
+  String get statisticsInputTokens => 'Eingabe-Token';
+
+  @override
+  String get statisticsOutputTokens => 'Ausgabe-Token';
+
+  @override
+  String get statisticsReasoningTokens => 'Reasoning-Token';
+
+  @override
+  String get statisticsCachedInputTokens => 'Gecachte Eingabe-Token';
+
+  @override
+  String get statisticsCacheWriteTokens => 'In den Cache geschriebene Token';
+
+  @override
+  String get statisticsRequests => 'Anfragen';
+
+  @override
+  String get statisticsSuccessfulRequests => 'Erfolgreich';
+
+  @override
+  String get statisticsFailedRequests => 'Fehlgeschlagen';
+
+  @override
+  String get statisticsCancelledRequests => 'Gestoppt';
+
+  @override
+  String get statisticsInterruptedRequests => 'Unterbrochen';
+
+  @override
+  String get statisticsPendingRequests => 'In Bearbeitung';
+
+  @override
+  String get statisticsConversations => 'Unterhaltungen';
+
+  @override
+  String get statisticsCoverage => 'Abdeckung der Nutzungsdaten';
+
+  @override
+  String get statisticsInputCoverage => 'Anfragen mit gemeldeten Eingabetoken';
+
+  @override
+  String get statisticsOutputCoverage => 'Anfragen mit gemeldeten Ausgabetoken';
+
+  @override
+  String get statisticsReasoningCoverage =>
+      'Anfragen mit gemeldeten Reasoning-Token';
+
+  @override
+  String statisticsCoverageText(int total, int reported) {
+    return 'Der Anbieter hat für $reported von $total Anfragen Tokenverbrauch gemeldet.';
+  }
+
+  @override
+  String get statisticsProviderReportedCost => 'Vom Anbieter gemeldete Kosten';
+
+  @override
+  String statisticsCostCoverage(int reported) {
+    return 'Für $reported Anfragen liegen Kostenangaben vor.';
+  }
+
+  @override
+  String get statisticsModelsDevCatalogCost =>
+      'Kosten zum Listenpreis von models.dev';
+
+  @override
+  String statisticsModelsDevCatalogCostCoverage(int priced) {
+    return 'Listenpreis-Äquivalent für $priced Anfragen berechnet.';
+  }
+
+  @override
+  String statisticsModelsDevPricingCurrent(String date) {
+    return 'Preiskatalog von models.dev abgerufen am $date.';
+  }
+
+  @override
+  String statisticsModelsDevPricingStale(String date) {
+    return 'models.dev ist nicht erreichbar; Preise aus dem Cache vom $date werden verwendet.';
+  }
+
+  @override
+  String get statisticsModelsDevPricingUnavailable =>
+      'Preisdaten von models.dev sind nicht verfügbar. Ohne exakte Übereinstimmung von Anbieter und Modell werden keine Kosten berechnet.';
+
+  @override
+  String get statisticsUsageTrend => 'Nutzung im Zeitverlauf';
+
+  @override
+  String get statisticsDaily => 'Täglich';
+
+  @override
+  String get statisticsMonthly => 'Monatlich';
+
+  @override
+  String get statisticsProviders => 'Nutzung nach Anbieter';
+
+  @override
+  String get statisticsModels => 'Nutzung nach Modell';
+
+  @override
+  String get statisticsReasoningLevels => 'Ausgewählter Reasoning-Aufwand';
+
+  @override
+  String get statisticsOperations => 'Vorgangsarten';
+
+  @override
+  String get statisticsFastModeUsage => 'Fast-Modus-Nutzung';
+
+  @override
+  String get statisticsRequested => 'Angefordert';
+
+  @override
+  String get statisticsNotRequested => 'Nicht angefordert';
+
+  @override
+  String get statisticsServiceTiers => 'Gemeldete Service-Stufen';
+
+  @override
+  String get statisticsServiceTier => 'Service-Stufe';
+
+  @override
+  String get statisticsNoBreakdownData =>
+      'Für diesen Zeitraum liegen keine Daten vor.';
+
+  @override
+  String get statisticsNoConversationData =>
+      'Für diesen Zeitraum liegt keine Nutzung nach Unterhaltung vor.';
+
+  @override
+  String get statisticsOpenConversation => 'Unterhaltung öffnen';
+
+  @override
+  String get statisticsRequestDetails => 'Anfrageverlauf';
+
+  @override
+  String get statisticsRequestPayload => 'Gesendete Anfragedaten';
+
+  @override
+  String get statisticsRequestContextUnavailable =>
+      'Die Zusammenfassung der gesendeten Anfrage ist nicht verfügbar.';
+
+  @override
+  String statisticsRequestSourceMessages(String ids) {
+    return 'Enthaltene Nachrichten-IDs: $ids';
+  }
+
+  @override
+  String statisticsRequestArchivedMessages(String ids) {
+    return 'Abgerufene Nachrichten-IDs: $ids';
+  }
+
+  @override
+  String statisticsRequestSummaryBoundary(String id) {
+    return 'Zusammenfassung umfasst Nachrichten bis: $id';
+  }
+
+  @override
+  String statisticsRequestSourceAttachments(String files) {
+    return 'Gesendete Anhänge: $files';
+  }
+
+  @override
+  String get statisticsRequestSourcesTruncated =>
+      'Einige Quelldetails sind in diesem Eintrag ausgelassen.';
+
+  @override
+  String statisticsRequestMessageCount(int count) {
+    return 'Gesendete Nachrichten: $count';
+  }
+
+  @override
+  String statisticsRequestImageCount(int count) {
+    return 'Gesendete Bilder: $count';
+  }
+
+  @override
+  String statisticsRequestToolResultCount(int count) {
+    return 'Gesendete Werkzeugergebnisse: $count';
+  }
+
+  @override
+  String statisticsRequestInstructionBytes(int count) {
+    return 'Anweisungsgröße: $count Byte';
+  }
+
+  @override
+  String statisticsRequestRoles(String roles) {
+    return 'Nachrichtenrollen: $roles';
+  }
+
+  @override
+  String statisticsRequestTools(String names) {
+    return 'Werkzeugdefinitionen: $names';
+  }
+
+  @override
+  String statisticsRequestCacheControls(String names) {
+    return 'Cache-Steuerungen: $names';
+  }
+
+  @override
+  String get statisticsNone => 'Keine';
+
+  @override
+  String get statisticsRequestTime => 'Anfragezeit';
+
+  @override
+  String get statisticsConversationTitle => 'Unterhaltungstitel';
+
+  @override
+  String get statisticsStatus => 'Status';
+
+  @override
+  String get statisticsUsageSource => 'Quelle der Nutzungsdaten';
+
+  @override
+  String get statisticsNoRequestData =>
+      'Keine Anfragen entsprechen diesen Filtern.';
+
+  @override
+  String statisticsShowingRows(int start, int end, int total) {
+    return '$start - $end von $total';
+  }
+
+  @override
+  String get statisticsExportCsv => 'CSV exportieren';
+
+  @override
+  String get statisticsExporting => 'Wird exportiert';
+
+  @override
+  String get statisticsExported =>
+      'Statistiken wurden als CSV-Datei exportiert.';
+
+  @override
+  String get statisticsExportFailed =>
+      'Statistiken konnten nicht exportiert werden.';
+
+  @override
+  String get statisticsQuotaHistory => 'ChatGPT-Kontingentverlauf';
+
+  @override
+  String get statisticsQuotaSnapshot => 'Kontingentaufnahme';
+
+  @override
+  String get statisticsNoQuotaHistory =>
+      'In diesem Zeitraum wurden keine ChatGPT-Kontingente gespeichert.';
+
+  @override
+  String get statisticsUsed => 'Verwendet';
+
+  @override
+  String get statisticsResetAt => 'Zurücksetzung';
+
+  @override
+  String get statisticsQuotaAllowed => 'Anfragen zulässig';
+
+  @override
+  String get statisticsQuotaBlocked => 'Anfragen blockiert';
+
+  @override
+  String get statisticsQuotaUnknown => 'Nutzungsstatus unbekannt';
+
+  @override
+  String get statisticsQuotaFreshnessCurrent => 'Aktuelle Daten';
+
+  @override
+  String get statisticsQuotaFreshnessStale => 'Veraltete Daten';
+
+  @override
+  String get statisticsQuotaFreshnessUnknown => 'Datenstatus unbekannt';
+
+  @override
+  String get statisticsNotReported => 'Nicht gemeldet';
+
+  @override
+  String get statisticsLegacyDataNote =>
+      'Ältere Nachrichten enthalten möglicherweise nur Ausgabe-Token; fehlende Modell- und Eingabe-Token-Angaben werden nicht abgeleitet.';
+
+  @override
+  String get statisticsModelsDevPricingNote =>
+      'Katalogpreis-Äquivalente verwenden die aktuellen Preise von models.dev und sind keine Anbieterrechnung. ChatGPT-OAuth-Abonnements, Fast-Anfragen und nicht unterstützte Dienstebenen sind ausgeschlossen.';
+
+  @override
+  String get statisticsLegacyOutput => 'Ausgabe-Token aus älteren Nachrichten';
+
+  @override
+  String get statisticsChatGptOAuth => 'ChatGPT OAuth';
+
+  @override
+  String get statisticsChatGptApi => 'ChatGPT API';
+
+  @override
+  String get statisticsOperationChat => 'Chat';
+
+  @override
+  String get statisticsOperationToolFollowUp => 'Tool-Folgeanfrage';
+
+  @override
+  String get statisticsOperationCompaction => 'Kontextverdichtung';
+
+  @override
+  String get statisticsOperationTitleGeneration =>
+      'Unterhaltungstitel erstellen';
+
+  @override
+  String get statisticsOperationLegacy => 'Ältere Nachricht';
+
+  @override
+  String get statisticsStatusCompleted => 'Abgeschlossen';
+
+  @override
+  String get statisticsStatusFailed => 'Fehlgeschlagen';
+
+  @override
+  String get statisticsStatusCancelled => 'Gestoppt';
+
+  @override
+  String get statisticsStatusInterrupted => 'Unterbrochen';
+
+  @override
+  String get statisticsStatusPending => 'In Bearbeitung';
+
+  @override
+  String get statisticsStatusLegacy => 'Verlaufsdaten';
 
   @override
   String get refreshAll => 'Alle aktualisieren';
@@ -3131,4 +3884,62 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get fileChangesUnavailableTitle => 'Dateiänderungen nicht verfügbar';
+
+  @override
+  String get goalSlashCommand => '/goal';
+
+  @override
+  String get goalCommandDescription =>
+      'Diese Nachricht als Ziel starten und weiterarbeiten, bis es erledigt ist oder deine Eingabe benötigt wird.';
+
+  @override
+  String get goalObjectiveRequired => 'Schreibe nach /goal ein Ziel.';
+
+  @override
+  String get goalWorking => 'Ziel wird bearbeitet';
+
+  @override
+  String get goalPaused => 'Ziel pausiert';
+
+  @override
+  String get goalInterrupted => 'Ziel unterbrochen';
+
+  @override
+  String get goalCompleted => 'Ziel abgeschlossen';
+
+  @override
+  String get goalStopped => 'Ziel gestoppt';
+
+  @override
+  String get goalFailed => 'Ziel fehlgeschlagen';
+
+  @override
+  String get goalPausedForQuota =>
+      'Wegen Modellkontingent oder Ratenlimit pausiert.';
+
+  @override
+  String get goalPausedForBlocker => 'Wegen eines Hindernisses pausiert.';
+
+  @override
+  String get goalPausedForUserInput => 'Pausiert, bis deine Eingabe vorliegt.';
+
+  @override
+  String get goalPausedByUser => 'Von dir pausiert.';
+
+  @override
+  String get goalPausedAfterError => 'Nach einem Anfragefehler pausiert.';
+
+  @override
+  String get goalPauseAction => 'Ziel pausieren';
+
+  @override
+  String get goalResumeAction => 'Ziel fortsetzen';
+
+  @override
+  String get goalStopAction => 'Ziel stoppen';
+
+  @override
+  String goalElapsedTime(String time) {
+    return 'Vergangen: $time';
+  }
 }

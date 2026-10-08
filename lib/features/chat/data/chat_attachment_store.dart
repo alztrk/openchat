@@ -195,6 +195,51 @@ class ChatAttachmentStore {
     return List<ChatAttachment>.unmodifiable(attachments);
   }
 
+  Future<void> copyMessageAttachments({
+    required String sourceConversationId,
+    required String sourceMessageId,
+    required String targetConversationId,
+    required String targetMessageId,
+    required List<ChatAttachment> expectedAttachments,
+  }) async {
+    if (expectedAttachments.isEmpty) return;
+    final sourceAttachments = await readMessageAttachments(
+      conversationId: sourceConversationId,
+      messageId: sourceMessageId,
+      expectedAttachments: expectedAttachments,
+    );
+    final copies = <ChatAttachment>[];
+    for (final attachment in sourceAttachments) {
+      final path = attachment.localPath;
+      if (!attachment.isAvailable || path == null) {
+        throw const ChatAttachmentStorageException(
+          'A saved attachment could not be copied because its file is unavailable.',
+        );
+      }
+      final bytes = await File(path).readAsBytes();
+      if (bytes.length != attachment.sizeBytes) {
+        throw const ChatAttachmentStorageException(
+          'A saved attachment changed while it was being copied.',
+        );
+      }
+      copies.add(
+        ChatAttachment(
+          id: attachment.id,
+          name: attachment.name,
+          mimeType: attachment.mimeType,
+          sizeBytes: attachment.sizeBytes,
+          kind: attachment.kind,
+          bytes: bytes,
+        ),
+      );
+    }
+    await saveMessageAttachments(
+      conversationId: targetConversationId,
+      messageId: targetMessageId,
+      attachments: copies,
+    );
+  }
+
   Future<void> deleteMessageAttachments({
     required String conversationId,
     required String messageId,

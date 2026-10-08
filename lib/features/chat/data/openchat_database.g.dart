@@ -1243,6 +1243,40 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     type: DriftSqlType.int,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _providerIdMeta = const VerificationMeta(
+    'providerId',
+  );
+  @override
+  late final GeneratedColumn<String> providerId = GeneratedColumn<String>(
+    'provider_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _modelIdMeta = const VerificationMeta(
+    'modelId',
+  );
+  @override
+  late final GeneratedColumn<String> modelId = GeneratedColumn<String>(
+    'model_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _citationSourcesMeta = const VerificationMeta(
+    'citationSources',
+  );
+  @override
+  late final GeneratedColumn<String> citationSources = GeneratedColumn<String>(
+    'citation_sources',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('[]'),
+  );
   static const VerificationMeta _reasoningSummariesMeta =
       const VerificationMeta('reasoningSummaries');
   @override
@@ -1297,6 +1331,9 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     outputTokens,
     tokensPerSecond,
     elapsedMicroseconds,
+    providerId,
+    modelId,
+    citationSources,
     reasoningSummaries,
     toolActivities,
     status,
@@ -1379,6 +1416,27 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         ),
       );
     }
+    if (data.containsKey('provider_id')) {
+      context.handle(
+        _providerIdMeta,
+        providerId.isAcceptableOrUnknown(data['provider_id']!, _providerIdMeta),
+      );
+    }
+    if (data.containsKey('model_id')) {
+      context.handle(
+        _modelIdMeta,
+        modelId.isAcceptableOrUnknown(data['model_id']!, _modelIdMeta),
+      );
+    }
+    if (data.containsKey('citation_sources')) {
+      context.handle(
+        _citationSourcesMeta,
+        citationSources.isAcceptableOrUnknown(
+          data['citation_sources']!,
+          _citationSourcesMeta,
+        ),
+      );
+    }
     if (data.containsKey('reasoning_summaries')) {
       context.handle(
         _reasoningSummariesMeta,
@@ -1455,6 +1513,18 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.int,
         data['${effectivePrefix}elapsed_microseconds'],
       ),
+      providerId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}provider_id'],
+      ),
+      modelId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}model_id'],
+      ),
+      citationSources: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}citation_sources'],
+      )!,
       reasoningSummaries: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}reasoning_summaries'],
@@ -1489,6 +1559,9 @@ class Message extends DataClass implements Insertable<Message> {
   final int? outputTokens;
   final double? tokensPerSecond;
   final int? elapsedMicroseconds;
+  final String? providerId;
+  final String? modelId;
+  final String citationSources;
   final String reasoningSummaries;
   final String toolActivities;
   final String status;
@@ -1502,6 +1575,9 @@ class Message extends DataClass implements Insertable<Message> {
     this.outputTokens,
     this.tokensPerSecond,
     this.elapsedMicroseconds,
+    this.providerId,
+    this.modelId,
+    required this.citationSources,
     required this.reasoningSummaries,
     required this.toolActivities,
     required this.status,
@@ -1526,6 +1602,13 @@ class Message extends DataClass implements Insertable<Message> {
     if (!nullToAbsent || elapsedMicroseconds != null) {
       map['elapsed_microseconds'] = Variable<int>(elapsedMicroseconds);
     }
+    if (!nullToAbsent || providerId != null) {
+      map['provider_id'] = Variable<String>(providerId);
+    }
+    if (!nullToAbsent || modelId != null) {
+      map['model_id'] = Variable<String>(modelId);
+    }
+    map['citation_sources'] = Variable<String>(citationSources);
     map['reasoning_summaries'] = Variable<String>(reasoningSummaries);
     map['tool_activities'] = Variable<String>(toolActivities);
     map['status'] = Variable<String>(status);
@@ -1553,6 +1636,13 @@ class Message extends DataClass implements Insertable<Message> {
       elapsedMicroseconds: elapsedMicroseconds == null && nullToAbsent
           ? const Value.absent()
           : Value(elapsedMicroseconds),
+      providerId: providerId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(providerId),
+      modelId: modelId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(modelId),
+      citationSources: Value(citationSources),
       reasoningSummaries: Value(reasoningSummaries),
       toolActivities: Value(toolActivities),
       status: Value(status),
@@ -1578,6 +1668,9 @@ class Message extends DataClass implements Insertable<Message> {
       elapsedMicroseconds: serializer.fromJson<int?>(
         json['elapsedMicroseconds'],
       ),
+      providerId: serializer.fromJson<String?>(json['providerId']),
+      modelId: serializer.fromJson<String?>(json['modelId']),
+      citationSources: serializer.fromJson<String>(json['citationSources']),
       reasoningSummaries: serializer.fromJson<String>(
         json['reasoningSummaries'],
       ),
@@ -1598,6 +1691,9 @@ class Message extends DataClass implements Insertable<Message> {
       'outputTokens': serializer.toJson<int?>(outputTokens),
       'tokensPerSecond': serializer.toJson<double?>(tokensPerSecond),
       'elapsedMicroseconds': serializer.toJson<int?>(elapsedMicroseconds),
+      'providerId': serializer.toJson<String?>(providerId),
+      'modelId': serializer.toJson<String?>(modelId),
+      'citationSources': serializer.toJson<String>(citationSources),
       'reasoningSummaries': serializer.toJson<String>(reasoningSummaries),
       'toolActivities': serializer.toJson<String>(toolActivities),
       'status': serializer.toJson<String>(status),
@@ -1614,6 +1710,9 @@ class Message extends DataClass implements Insertable<Message> {
     Value<int?> outputTokens = const Value.absent(),
     Value<double?> tokensPerSecond = const Value.absent(),
     Value<int?> elapsedMicroseconds = const Value.absent(),
+    Value<String?> providerId = const Value.absent(),
+    Value<String?> modelId = const Value.absent(),
+    String? citationSources,
     String? reasoningSummaries,
     String? toolActivities,
     String? status,
@@ -1631,6 +1730,9 @@ class Message extends DataClass implements Insertable<Message> {
     elapsedMicroseconds: elapsedMicroseconds.present
         ? elapsedMicroseconds.value
         : this.elapsedMicroseconds,
+    providerId: providerId.present ? providerId.value : this.providerId,
+    modelId: modelId.present ? modelId.value : this.modelId,
+    citationSources: citationSources ?? this.citationSources,
     reasoningSummaries: reasoningSummaries ?? this.reasoningSummaries,
     toolActivities: toolActivities ?? this.toolActivities,
     status: status ?? this.status,
@@ -1654,6 +1756,13 @@ class Message extends DataClass implements Insertable<Message> {
       elapsedMicroseconds: data.elapsedMicroseconds.present
           ? data.elapsedMicroseconds.value
           : this.elapsedMicroseconds,
+      providerId: data.providerId.present
+          ? data.providerId.value
+          : this.providerId,
+      modelId: data.modelId.present ? data.modelId.value : this.modelId,
+      citationSources: data.citationSources.present
+          ? data.citationSources.value
+          : this.citationSources,
       reasoningSummaries: data.reasoningSummaries.present
           ? data.reasoningSummaries.value
           : this.reasoningSummaries,
@@ -1678,6 +1787,9 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('outputTokens: $outputTokens, ')
           ..write('tokensPerSecond: $tokensPerSecond, ')
           ..write('elapsedMicroseconds: $elapsedMicroseconds, ')
+          ..write('providerId: $providerId, ')
+          ..write('modelId: $modelId, ')
+          ..write('citationSources: $citationSources, ')
           ..write('reasoningSummaries: $reasoningSummaries, ')
           ..write('toolActivities: $toolActivities, ')
           ..write('status: $status, ')
@@ -1696,6 +1808,9 @@ class Message extends DataClass implements Insertable<Message> {
     outputTokens,
     tokensPerSecond,
     elapsedMicroseconds,
+    providerId,
+    modelId,
+    citationSources,
     reasoningSummaries,
     toolActivities,
     status,
@@ -1713,6 +1828,9 @@ class Message extends DataClass implements Insertable<Message> {
           other.outputTokens == this.outputTokens &&
           other.tokensPerSecond == this.tokensPerSecond &&
           other.elapsedMicroseconds == this.elapsedMicroseconds &&
+          other.providerId == this.providerId &&
+          other.modelId == this.modelId &&
+          other.citationSources == this.citationSources &&
           other.reasoningSummaries == this.reasoningSummaries &&
           other.toolActivities == this.toolActivities &&
           other.status == this.status &&
@@ -1728,6 +1846,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<int?> outputTokens;
   final Value<double?> tokensPerSecond;
   final Value<int?> elapsedMicroseconds;
+  final Value<String?> providerId;
+  final Value<String?> modelId;
+  final Value<String> citationSources;
   final Value<String> reasoningSummaries;
   final Value<String> toolActivities;
   final Value<String> status;
@@ -1742,6 +1863,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.outputTokens = const Value.absent(),
     this.tokensPerSecond = const Value.absent(),
     this.elapsedMicroseconds = const Value.absent(),
+    this.providerId = const Value.absent(),
+    this.modelId = const Value.absent(),
+    this.citationSources = const Value.absent(),
     this.reasoningSummaries = const Value.absent(),
     this.toolActivities = const Value.absent(),
     this.status = const Value.absent(),
@@ -1757,6 +1881,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.outputTokens = const Value.absent(),
     this.tokensPerSecond = const Value.absent(),
     this.elapsedMicroseconds = const Value.absent(),
+    this.providerId = const Value.absent(),
+    this.modelId = const Value.absent(),
+    this.citationSources = const Value.absent(),
     this.reasoningSummaries = const Value.absent(),
     this.toolActivities = const Value.absent(),
     required String status,
@@ -1776,6 +1903,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<int>? outputTokens,
     Expression<double>? tokensPerSecond,
     Expression<int>? elapsedMicroseconds,
+    Expression<String>? providerId,
+    Expression<String>? modelId,
+    Expression<String>? citationSources,
     Expression<String>? reasoningSummaries,
     Expression<String>? toolActivities,
     Expression<String>? status,
@@ -1792,6 +1922,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (tokensPerSecond != null) 'tokens_per_second': tokensPerSecond,
       if (elapsedMicroseconds != null)
         'elapsed_microseconds': elapsedMicroseconds,
+      if (providerId != null) 'provider_id': providerId,
+      if (modelId != null) 'model_id': modelId,
+      if (citationSources != null) 'citation_sources': citationSources,
       if (reasoningSummaries != null) 'reasoning_summaries': reasoningSummaries,
       if (toolActivities != null) 'tool_activities': toolActivities,
       if (status != null) 'status': status,
@@ -1809,6 +1942,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<int?>? outputTokens,
     Value<double?>? tokensPerSecond,
     Value<int?>? elapsedMicroseconds,
+    Value<String?>? providerId,
+    Value<String?>? modelId,
+    Value<String>? citationSources,
     Value<String>? reasoningSummaries,
     Value<String>? toolActivities,
     Value<String>? status,
@@ -1824,6 +1960,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       outputTokens: outputTokens ?? this.outputTokens,
       tokensPerSecond: tokensPerSecond ?? this.tokensPerSecond,
       elapsedMicroseconds: elapsedMicroseconds ?? this.elapsedMicroseconds,
+      providerId: providerId ?? this.providerId,
+      modelId: modelId ?? this.modelId,
+      citationSources: citationSources ?? this.citationSources,
       reasoningSummaries: reasoningSummaries ?? this.reasoningSummaries,
       toolActivities: toolActivities ?? this.toolActivities,
       status: status ?? this.status,
@@ -1859,6 +1998,15 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (elapsedMicroseconds.present) {
       map['elapsed_microseconds'] = Variable<int>(elapsedMicroseconds.value);
     }
+    if (providerId.present) {
+      map['provider_id'] = Variable<String>(providerId.value);
+    }
+    if (modelId.present) {
+      map['model_id'] = Variable<String>(modelId.value);
+    }
+    if (citationSources.present) {
+      map['citation_sources'] = Variable<String>(citationSources.value);
+    }
     if (reasoningSummaries.present) {
       map['reasoning_summaries'] = Variable<String>(reasoningSummaries.value);
     }
@@ -1888,6 +2036,9 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('outputTokens: $outputTokens, ')
           ..write('tokensPerSecond: $tokensPerSecond, ')
           ..write('elapsedMicroseconds: $elapsedMicroseconds, ')
+          ..write('providerId: $providerId, ')
+          ..write('modelId: $modelId, ')
+          ..write('citationSources: $citationSources, ')
           ..write('reasoningSummaries: $reasoningSummaries, ')
           ..write('toolActivities: $toolActivities, ')
           ..write('status: $status, ')
@@ -3219,6 +3370,9 @@ typedef $$MessagesTableCreateCompanionBuilder = MessagesCompanion Function({
   Value<int?> outputTokens,
   Value<double?> tokensPerSecond,
   Value<int?> elapsedMicroseconds,
+  Value<String?> providerId,
+  Value<String?> modelId,
+  Value<String> citationSources,
   Value<String> reasoningSummaries,
   Value<String> toolActivities,
   required String status,
@@ -3234,6 +3388,9 @@ typedef $$MessagesTableUpdateCompanionBuilder = MessagesCompanion Function({
   Value<int?> outputTokens,
   Value<double?> tokensPerSecond,
   Value<int?> elapsedMicroseconds,
+  Value<String?> providerId,
+  Value<String?> modelId,
+  Value<String> citationSources,
   Value<String> reasoningSummaries,
   Value<String> toolActivities,
   Value<String> status,
@@ -3305,6 +3462,21 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<int> get elapsedMicroseconds => $composableBuilder(
     column: $table.elapsedMicroseconds,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get providerId => $composableBuilder(
+    column: $table.providerId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get modelId => $composableBuilder(
+    column: $table.modelId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get citationSources => $composableBuilder(
+    column: $table.citationSources,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3396,6 +3568,21 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get providerId => $composableBuilder(
+    column: $table.providerId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get modelId => $composableBuilder(
+    column: $table.modelId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get citationSources => $composableBuilder(
+    column: $table.citationSources,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get reasoningSummaries => $composableBuilder(
     column: $table.reasoningSummaries,
     builder: (column) => ColumnOrderings(column),
@@ -3473,6 +3660,19 @@ class $$MessagesTableAnnotationComposer
 
   GeneratedColumn<int> get elapsedMicroseconds => $composableBuilder(
     column: $table.elapsedMicroseconds,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get providerId => $composableBuilder(
+    column: $table.providerId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get modelId =>
+      $composableBuilder(column: $table.modelId, builder: (column) => column);
+
+  GeneratedColumn<String> get citationSources => $composableBuilder(
+    column: $table.citationSources,
     builder: (column) => column,
   );
 
@@ -3554,6 +3754,9 @@ class $$MessagesTableTableManager
                 Value<int?> outputTokens = const Value.absent(),
                 Value<double?> tokensPerSecond = const Value.absent(),
                 Value<int?> elapsedMicroseconds = const Value.absent(),
+                Value<String?> providerId = const Value.absent(),
+                Value<String?> modelId = const Value.absent(),
+                Value<String> citationSources = const Value.absent(),
                 Value<String> reasoningSummaries = const Value.absent(),
                 Value<String> toolActivities = const Value.absent(),
                 Value<String> status = const Value.absent(),
@@ -3568,6 +3771,9 @@ class $$MessagesTableTableManager
                 outputTokens: outputTokens,
                 tokensPerSecond: tokensPerSecond,
                 elapsedMicroseconds: elapsedMicroseconds,
+                providerId: providerId,
+                modelId: modelId,
+                citationSources: citationSources,
                 reasoningSummaries: reasoningSummaries,
                 toolActivities: toolActivities,
                 status: status,
@@ -3584,6 +3790,9 @@ class $$MessagesTableTableManager
                 Value<int?> outputTokens = const Value.absent(),
                 Value<double?> tokensPerSecond = const Value.absent(),
                 Value<int?> elapsedMicroseconds = const Value.absent(),
+                Value<String?> providerId = const Value.absent(),
+                Value<String?> modelId = const Value.absent(),
+                Value<String> citationSources = const Value.absent(),
                 Value<String> reasoningSummaries = const Value.absent(),
                 Value<String> toolActivities = const Value.absent(),
                 required String status,
@@ -3598,6 +3807,9 @@ class $$MessagesTableTableManager
                 outputTokens: outputTokens,
                 tokensPerSecond: tokensPerSecond,
                 elapsedMicroseconds: elapsedMicroseconds,
+                providerId: providerId,
+                modelId: modelId,
+                citationSources: citationSources,
                 reasoningSummaries: reasoningSummaries,
                 toolActivities: toolActivities,
                 status: status,

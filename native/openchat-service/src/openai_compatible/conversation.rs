@@ -8,10 +8,12 @@ use crate::{
     chatgpt::ChatGptService,
     chatgpt_store::{self, AssistantMessageWrite, ConversationContextState},
     context_compaction,
+    goals::{self, GoalExecution},
     protocol::ServiceError,
     provider_schema::{ChatStreamEvent, ChatStreamSnapshot, ProviderMessage},
     storage::AppStorage,
     tools::ToolExecutor,
+    usage_statistics::{RequestAttachmentSource, RequestDataSources, UsageRequestTracker},
 };
 
 use super::{
@@ -41,9 +43,11 @@ pub async fn send_message(
         data_root,
         storage: context_storage,
         permission_mode,
+        tool_permission_rules,
         permission_broker,
         user_question_broker,
         run_id,
+        mut goal,
         cancellation,
         events,
     } = context;
@@ -107,6 +111,7 @@ pub async fn send_message(
             has_project: project_root.is_some(),
             reasoning_effort,
             supports_tool_calls: route.supports_tool_calls,
+            goal_objective: goal.as_ref().map(|goal| goal.objective.as_str()),
         },
     )?;
     let active_compaction_matches = context_state.as_ref().is_some_and(|state| {
@@ -167,6 +172,7 @@ pub async fn send_message(
             .then(|| opencode_session_id_for_conversation(conversation_id, created_at));
         let summary = super::context_compaction::summarize_history_with_storage(
             Some(storage),
+            Some(conversation_id),
             &route,
             api_key,
             session_id.as_deref(),
@@ -215,6 +221,7 @@ pub async fn send_message(
                     .map(|message| (boundary_id.to_owned(), message.content.clone()))
             })
     });
+    let mut archived_message_ids = Vec::new();
     if summary_is_active {
         if let Some(summary) = context_state.as_ref().and_then(|state| {
             (state.compaction_kind.as_deref() == Some("summary"))
@@ -276,6 +283,10 @@ pub async fn send_message(
         )
         .await
         .map_err(|_| storage_error())?;
+        archived_message_ids = excerpts
+            .iter()
+            .map(|excerpt| excerpt.message_id.clone())
+            .collect();
         if let Some(content) = context_compaction::archived_memory_context(&excerpts) {
             let insertion_index = usize::from(!provider_request.messages.is_empty());
             provider_request.messages.insert(
@@ -284,6 +295,36 @@ pub async fn send_message(
             );
         }
     }
+    let request_sources = RequestDataSources {
+        message_ids: included_messages[history_start..]
+            .iter()
+            .map(|message| message.id.clone())
+            .collect(),
+        archived_message_ids,
+        summarized_through_message_id: summary_is_active
+            .then(|| {
+                context_state
+                    .as_ref()
+                    .and_then(|state| state.compacted_through_message_id.clone())
+            })
+            .flatten(),
+        attachments: included_messages[history_start..]
+            .iter()
+            .filter(|message| message.role == "user")
+            .flat_map(|message| {
+                message
+                    .attachments
+                    .iter()
+                    .map(|attachment| RequestAttachmentSource {
+                        id: attachment.id.clone(),
+                        message_id: message.id.clone(),
+                        name: attachment.name.clone(),
+                        kind: attachment.kind.clone(),
+                        mime_type: attachment.mime_type.clone(),
+                    })
+            })
+            .collect(),
+    };
     let mut content = String::new();
     let mut reasoning_content = String::new();
     let mut output_tokens = None;
@@ -330,7 +371,7 @@ pub async fn send_message(
     }
 
     let mut messages = request::completion_messages(&provider_request, provider_id);
-    let mut tool_executor = ToolExecutor::with_allowed_tool_names(
+    let mut tool_executor = ToolExecutor::with_permission_rules(
         project_root,
         data_root,
         permission_mode,
@@ -338,6 +379,7 @@ pub async fn send_message(
             .tools
             .iter()
             .map(|tool| tool.name.to_owned()),
+        tool_permission_rules,
     );
     let result = stream_conversation(
         &route,
@@ -348,6 +390,7 @@ pub async fn send_message(
         &mut tool_executor,
         api_key,
         fast_mode,
+        &mut goal,
         StreamConversationContext {
             request_id: &request_id,
             conversation_id,
@@ -364,11 +407,12 @@ pub async fn send_message(
             user_question_broker,
             cancellation,
             events: &events,
+            request_sources: &request_sources,
         },
     )
     .await;
 
-    let status = match result {
+    let message_status = match result {
         Ok(()) => "completed",
         Err(error) if is_cancelled(&error) => "stopped",
         Err(error) => {
@@ -387,6 +431,15 @@ pub async fn send_message(
             return Err(error);
         }
     };
+    let status = if message_status == "completed" {
+        match goal.as_ref().map(|goal| &goal.decision) {
+            Some(goals::GoalDecision::Paused) => "paused",
+            Some(goals::GoalDecision::Stopped) => "stopped",
+            _ => message_status,
+        }
+    } else {
+        message_status
+    };
     let elapsed = started.elapsed();
     save_message(
         storage,
@@ -394,7 +447,11 @@ pub async fn send_message(
             conversation_id,
             message_id: &message_id,
             content: &content,
-            status,
+            status: if status == "paused" {
+                message_status
+            } else {
+                status
+            },
             created_at_unix_ms: created_at,
             output_tokens,
             elapsed: Some(elapsed),
@@ -417,13 +474,12 @@ pub async fn send_message(
         )
         .map_err(|_| storage_error())?;
     }
-    Ok(terminal_result(
-        conversation_id,
-        &message_id,
-        status,
-        elapsed,
-        output_tokens,
-    ))
+    let mut response =
+        terminal_result(conversation_id, &message_id, status, elapsed, output_tokens);
+    if let Some(goal) = goal.as_ref() {
+        response["runId"] = Value::String(goal.run_id.clone());
+    }
+    Ok(response)
 }
 
 struct StreamConversationContext<'a> {
@@ -442,6 +498,7 @@ struct StreamConversationContext<'a> {
     user_question_broker: &'a crate::user_question_broker::UserQuestionBroker,
     cancellation: &'a mut tokio::sync::watch::Receiver<bool>,
     events: &'a crate::protocol::EventSink,
+    request_sources: &'a RequestDataSources,
 }
 
 async fn stream_conversation(
@@ -453,6 +510,7 @@ async fn stream_conversation(
     tool_executor: &mut ToolExecutor,
     api_key: Option<&str>,
     fast_mode: bool,
+    goal: &mut Option<GoalExecution>,
     context: StreamConversationContext<'_>,
 ) -> Result<(), ServiceError> {
     let session_id = route
@@ -481,7 +539,21 @@ async fn stream_conversation(
             context.conversation_id,
         );
         context_compaction::validate_request_context(&body, route.request_context_limit())?;
-        let turn = response_stream::receive(ResponseStreamRequest {
+        let mut usage_request = UsageRequestTracker::start(
+            context.storage,
+            context.conversation_id,
+            Some(context.message_id),
+            provider_id,
+            &route.model_id,
+            provider_request.reasoning_effort.as_deref(),
+            operation,
+            fast_mode,
+        )
+        .map_err(|_| storage_error())?;
+        usage_request
+            .record_request_manifest(&body, Some(context.request_sources))
+            .map_err(|_| storage_error())?;
+        let turn = match response_stream::receive(ResponseStreamRequest {
             route,
             api_key,
             session_id: session_id.as_deref(),
@@ -498,20 +570,36 @@ async fn stream_conversation(
             cancellation: context.cancellation,
             events: context.events,
         })
-        .await?;
+        .await
+        {
+            Ok(turn) => turn,
+            Err(error) if is_cancelled(&error) => {
+                usage_request.cancel().map_err(|_| storage_error())?;
+                return Err(error);
+            }
+            Err(error) => return Err(error),
+        };
+        let usage = turn
+            .provider_request_usage
+            .clone()
+            .unwrap_or_default()
+            .usage_data();
+        usage_request
+            .complete(&usage)
+            .map_err(|_| storage_error())?;
         if matches!(provider_id, "cerebras" | "mistral" | "openrouter") {
-            let usage = turn.provider_request_usage.unwrap_or_default();
+            let diagnostic_usage = turn.provider_request_usage.clone().unwrap_or_default();
             if context
                 .storage
                 .log_provider_request_usage(
                     provider_id,
                     &route.provider_model_id,
                     operation,
-                    usage.prompt_tokens,
-                    usage.completion_tokens,
-                    usage.cached_tokens,
-                    usage.cache_write_tokens,
-                    usage.cache_discount,
+                    diagnostic_usage.prompt_tokens,
+                    diagnostic_usage.completion_tokens,
+                    diagnostic_usage.cached_tokens,
+                    diagnostic_usage.cache_write_tokens,
+                    diagnostic_usage.cache_discount,
                     context_compaction::request_context_token_estimate(&body).saturating_add(1024),
                     context_compaction::request_image_count(&body),
                 )
@@ -521,11 +609,57 @@ async fn stream_conversation(
             }
         }
         if turn.tool_calls.is_empty() {
+            if goal
+                .as_ref()
+                .is_some_and(|goal| matches!(&goal.decision, goals::GoalDecision::Continue))
+            {
+                goals::append_continuation_message(messages);
+                tool_executor.reset_turn_limits();
+                operation = "chat";
+                continue;
+            }
             return Ok(());
         }
-
+        let (regular_calls, control_calls) = goals::split_control_calls(&turn.tool_calls);
+        goals::validate_control_call_mix(&control_calls, !regular_calls.is_empty())?;
+        if !matches!(
+            goal.as_ref().map(|goal| &goal.decision),
+            None | Some(goals::GoalDecision::Continue)
+        ) {
+            return Err(ServiceError::new(
+                "invalid_provider_response",
+                "The provider continued acting after closing the goal.",
+                false,
+            ));
+        }
+        let starting_goal = goal.is_none()
+            && control_calls
+                .iter()
+                .any(|call| call.name == goals::START_GOAL_TOOL_NAME);
+        let control_results = goals::process_control_calls(
+            &control_calls,
+            goal,
+            context.storage,
+            context.run_id,
+            context.conversation_id,
+            context.request_id,
+            context.events,
+        )
+        .await?;
+        if starting_goal && let Some(started_goal) = goal.as_ref() {
+            goals::append_goal_instructions_to_messages(messages, &started_goal.objective)?;
+        }
+        if regular_calls.is_empty() && control_calls.is_empty() {
+            return Err(ServiceError::new(
+                "invalid_provider_response",
+                "The provider returned an unsupported tool call.",
+                false,
+            ));
+        }
         tool_round::execute(
             &turn.tool_calls,
+            &regular_calls,
+            control_results,
             &turn.round_content,
             route.is_opencode,
             messages,
@@ -554,6 +688,9 @@ async fn stream_conversation(
             },
         )
         .await?;
+        if !control_calls.is_empty() {
+            tool_executor.reset_turn_limits();
+        }
         operation = "tool_follow_up";
     }
 }

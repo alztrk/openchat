@@ -186,6 +186,89 @@ class ChatReasoningSummary {
   }
 }
 
+class ChatCitationSource {
+  const ChatCitationSource({
+    required this.id,
+    required this.title,
+    required this.url,
+    required this.sourceType,
+    this.snippet,
+    this.retrievedAt,
+  });
+
+  final String id;
+  final String title;
+  final String url;
+  final String sourceType;
+  final String? snippet;
+  final DateTime? retrievedAt;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'id': id,
+    'title': title,
+    'url': url,
+    'sourceType': sourceType,
+    if (snippet != null) 'snippet': snippet,
+    if (retrievedAt case final timestamp?)
+      'retrievedAtUnixMs': timestamp.toUtc().millisecondsSinceEpoch,
+  };
+
+  static ChatCitationSource fromJson(Object? value) {
+    if (value is! Map<String, Object?>) {
+      throw const FormatException('A citation source was invalid.');
+    }
+    final id = value['id'];
+    final title = value['title'];
+    final rawUrl = value['url'];
+    final sourceType = value['sourceType'];
+    final snippet = value['snippet'];
+    final retrievedAtUnixMs = value['retrievedAtUnixMs'];
+    final uri = rawUrl is String ? Uri.tryParse(rawUrl) : null;
+    if (id is! String ||
+        !RegExp(r'^[PSU]\d+(?:-[A-Za-z0-9]+)?$').hasMatch(id) ||
+        title is! String ||
+        title.trim().isEmpty ||
+        title.length > 512 ||
+        rawUrl is! String ||
+        rawUrl.length > 4096 ||
+        uri == null ||
+        uri.host.isEmpty ||
+        uri.userInfo.isNotEmpty ||
+        (uri.scheme != 'https' && uri.scheme != 'http') ||
+        sourceType is! String ||
+        !const <String>{
+          'local_web_search',
+          'local_read_url',
+          'provider_native',
+        }.contains(sourceType) ||
+        (snippet != null && (snippet is! String || snippet.length > 8192)) ||
+        (retrievedAtUnixMs != null && retrievedAtUnixMs is! int)) {
+      throw const FormatException('A citation source was invalid.');
+    }
+    if (retrievedAtUnixMs case final int timestamp
+        when timestamp < 0 || timestamp > 8640000000000000) {
+      throw const FormatException('A citation source timestamp was invalid.');
+    }
+    return ChatCitationSource(
+      id: id,
+      title: title.trim(),
+      url: uri.toString(),
+      sourceType: sourceType,
+      snippet: snippet is String && snippet.isNotEmpty ? snippet : null,
+      retrievedAt: retrievedAtUnixMs is int
+          ? DateTime.fromMillisecondsSinceEpoch(retrievedAtUnixMs, isUtc: true)
+          : null,
+    );
+  }
+
+  static List<ChatCitationSource> listFromJson(Object? value) {
+    if (value is! List<Object?> || value.length > 32) {
+      throw const FormatException('The citation source list was invalid.');
+    }
+    return value.map(ChatCitationSource.fromJson).toList(growable: false);
+  }
+}
+
 class ChatMessage {
   const ChatMessage({
     required this.id,
@@ -196,6 +279,9 @@ class ChatMessage {
     this.outputTokens,
     this.tokensPerSecond,
     this.elapsed,
+    this.providerId,
+    this.modelId,
+    this.citationSources = const <ChatCitationSource>[],
     this.reasoningSummaries = const <ChatReasoningSummary>[],
     this.toolActivities = const <ChatToolActivity>[],
     this.status = ChatMessageStatus.completed,
@@ -210,6 +296,9 @@ class ChatMessage {
   final int? outputTokens;
   final double? tokensPerSecond;
   final Duration? elapsed;
+  final String? providerId;
+  final String? modelId;
+  final List<ChatCitationSource> citationSources;
   final List<ChatReasoningSummary> reasoningSummaries;
   final List<ChatToolActivity> toolActivities;
   final ChatMessageStatus status;

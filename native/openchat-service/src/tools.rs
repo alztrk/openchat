@@ -16,6 +16,7 @@ use crate::{protocol::ServiceError, provider_schema::ToolDefinition};
 
 mod search;
 pub use search::search_files;
+pub(crate) mod project_tasks;
 pub mod terminal;
 pub mod web_search;
 
@@ -365,6 +366,9 @@ pub fn opencode_wire_name(internal_name: &str) -> &'static str {
         "web_search" => "web_search",
         "read_url_content" | "read_url" => "read_url_content",
         "get_file_info" => "get_file_info",
+        "start_goal" => "start_goal",
+        "goal_update" => "goal_update",
+        "stop_goal" => "stop_goal",
         _ => "custom",
     }
 }
@@ -593,7 +597,25 @@ fn apply_tool_call_capability(
 }
 
 pub fn definitions_for_chatgpt_model() -> Vec<ToolDefinition> {
-    chatgpt_model_tool_definitions()
+    let mut definitions = chatgpt_model_tool_definitions();
+    definitions.push(delegate_task_tool_definition());
+    definitions
+}
+
+pub(crate) fn delegate_task_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "delegate_task",
+        description: "Run one bounded child analysis with the current ChatGPT model. The child can only use read-only project and web tools, and its work is reported back to this response.",
+        parameters: json!({
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "minLength": 1, "maxLength": 4000},
+                "context": {"type": "string", "maxLength": 8000}
+            },
+            "required": ["task"],
+            "additionalProperties": false
+        }),
+    }
 }
 
 fn chatgpt_model_tool_definitions() -> Vec<ToolDefinition> {
@@ -668,7 +690,10 @@ pub fn context_usage_definitions(
     uses_responses_api: bool,
     supports_tool_calls: Option<bool>,
 ) -> Vec<(String, Value)> {
-    let definitions = definitions_for_request(provider_id, supports_tool_calls);
+    let mut definitions = definitions_for_request(provider_id, supports_tool_calls);
+    if !definitions.is_empty() {
+        definitions.extend(crate::goals::control_tool_definitions());
+    }
     if provider_id == "opencode" {
         if definitions.is_empty() {
             return Vec::new();
@@ -817,6 +842,35 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "wait_ms": {"type": "integer", "minimum": 50, "maximum": 30000, "description": "Milliseconds to wait for output."}
                 },
                 "required": ["terminal_id"],
+                "additionalProperties": false
+            }),
+        ),
+        (
+            "git_status",
+            "Inspect the attached Git project and return the current branch, upstream counts, and changed file states. This read-only operation does not run a shell command.",
+            json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }),
+        ),
+        (
+            "git_diff",
+            "Read staged and unstaged Git diffs for the attached project. Output is bounded and external diff or text conversion drivers are disabled.",
+            json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }),
+        ),
+        (
+            "git_history",
+            "Read recent Git commit subjects and timestamps for the attached project.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100, "description": "Maximum number of recent commits. Defaults to 20."}
+                },
                 "additionalProperties": false
             }),
         ),
@@ -974,6 +1028,7 @@ mod executor;
 pub(crate) use executor::ImageGenerationContext;
 pub(crate) use executor::tool_call_limit_error;
 pub use executor::{ToolExecutor, ToolPermissionMode};
+pub(crate) use executor::{ToolPermissionRule, ToolPermissionRules, parse_tool_permission_rules};
 
 #[cfg(test)]
 mod image_tool_tests {

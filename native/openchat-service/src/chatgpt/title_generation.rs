@@ -11,6 +11,7 @@ use super::{
 use crate::{
     chatgpt_store::{self, ChatGptModel},
     protocol::{EventSink, Response as RpcResponse, ServiceError},
+    usage_statistics::{UsageData, UsageRequestTracker},
 };
 
 impl ChatGptService {
@@ -270,18 +271,33 @@ impl ChatGptService {
         }
         let started = Instant::now();
         self.record_chatgpt_event("request_started", "title_response", None, None, None, None);
+        let mut usage_request = UsageRequestTracker::start(
+            &self.storage,
+            conversation_id,
+            None,
+            "chatgpt",
+            &title_model.id,
+            None,
+            "title_generation",
+            false,
+        )
+        .map_err(database_error)?;
+        let body = json!({
+            "model": title_model.id,
+            "input": [{"role": "user", "content": context}],
+            "stream": true,
+            "store": false,
+        });
+        usage_request
+            .record_request_manifest(&body, None)
+            .map_err(database_error)?;
         let response = match self
             .authorized_request(
                 Method::POST,
                 format!("{CHATGPT_CODEX_BASE}/responses"),
                 &route.connection_id,
                 &workspace.external_id,
-                Some(json!({
-                    "model": title_model.id,
-                    "input": [{"role": "user", "content": context}],
-                    "stream": true,
-                    "store": false,
-                })),
+                Some(body),
                 Some(conversation_id),
             )
             .await
@@ -324,6 +340,7 @@ impl ChatGptService {
         let mut buffer = Vec::new();
         let mut data = Vec::<String>::new();
         let mut title = String::new();
+        let mut usage = UsageData::default();
         let mut completed = false;
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.map_err(|_| network_error())?;
@@ -342,6 +359,9 @@ impl ChatGptService {
                     data.clear();
                     let event: Value =
                         serde_json::from_str(&payload).map_err(|_| invalid_response_error())?;
+                    if event.get("response").is_some() {
+                        usage = UsageData::from_responses_event(&event, "chatgpt");
+                    }
                     match event.get("type").and_then(Value::as_str) {
                         Some("response.output_text.delta") => {
                             let delta = event
@@ -355,6 +375,7 @@ impl ChatGptService {
                             break;
                         }
                         Some("response.failed" | "response.incomplete" | "error") => {
+                            usage_request.fail(&usage).map_err(database_error)?;
                             return Err(ServiceError::new(
                                 "title_generation_failed",
                                 "ChatGPT could not generate a conversation title.",
@@ -381,6 +402,7 @@ impl ChatGptService {
                 false,
             ));
         }
+        usage_request.complete(&usage).map_err(database_error)?;
         let title = title.trim().trim_matches(['"', '\'']).trim();
         if title.is_empty() {
             return Err(invalid_response_error());

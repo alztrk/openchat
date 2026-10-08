@@ -7,6 +7,7 @@ use crate::{
     chatgpt_store::{self, AssistantMessageWrite},
     protocol::{EventSink, ServiceError},
     provider_schema::{ChatStreamEvent, ChatStreamSnapshot, ReasoningSummary},
+    usage_statistics::UsageData,
 };
 pub(super) struct ReasoningSummaryGroup {
     item_id: String,
@@ -21,6 +22,7 @@ pub(super) struct ResponseEventContext<'a> {
     pub(super) content: &'a mut String,
     pub(super) output_tokens: &'a mut Option<i64>,
     pub(super) input_tokens: &'a mut Option<i64>,
+    pub(super) usage: &'a mut UsageData,
     pub(super) reasoning_summaries: &'a mut Vec<ReasoningSummaryGroup>,
     pub(super) response_output_items: &'a mut Vec<Value>,
     pub(super) conversation_id: &'a str,
@@ -133,6 +135,7 @@ impl ChatGptService {
             content,
             output_tokens,
             input_tokens,
+            usage,
             reasoning_summaries,
             response_output_items,
             conversation_id,
@@ -291,15 +294,9 @@ impl ChatGptService {
             "response.completed" => {
                 finish_reasoning_summary_groups(reasoning_summaries);
                 if let Some(response) = event.get("response") {
-                    *output_tokens = response
-                        .get("usage")
-                        .and_then(|usage| usage.get("output_tokens"))
-                        .and_then(Value::as_i64);
-                    *input_tokens = response
-                        .get("usage")
-                        .and_then(|usage| usage.get("input_tokens"))
-                        .and_then(Value::as_i64)
-                        .filter(|tokens| *tokens >= 0);
+                    *usage = UsageData::from_responses_event(&event, "chatgpt");
+                    *output_tokens = usage.output_tokens;
+                    *input_tokens = usage.input_tokens;
                     if let Some(items) = response
                         .get("output")
                         .and_then(Value::as_array)
@@ -312,6 +309,11 @@ impl ChatGptService {
                 return Ok(true);
             }
             "response.failed" | "response.incomplete" | "error" => {
+                if event.get("response").is_some() {
+                    *usage = UsageData::from_responses_event(&event, "chatgpt");
+                    *output_tokens = usage.output_tokens;
+                    *input_tokens = usage.input_tokens;
+                }
                 return Err(ServiceError::new(
                     "provider_request_failed",
                     "ChatGPT could not complete the response. The partial answer was saved.",

@@ -15,6 +15,7 @@ import 'package:openchat/app/openchat_toast.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
 import 'package:openchat/features/chat/data/chat_file_changes_repository.dart';
 import 'package:openchat/features/chat/domain/agent_question.dart';
+import 'package:openchat/features/chat/domain/agent_goal.dart';
 import 'package:openchat/features/chat/domain/chat_file_change.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/domain/chat_attachment.dart';
@@ -30,6 +31,7 @@ import 'package:openchat/features/chat/presentation/widgets/chat_composer.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_file_changes_panel.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_surface_card.dart';
 import 'package:openchat/features/chat/presentation/widgets/file_changes_summary_card.dart';
+import 'package:openchat/features/chat/presentation/widgets/goal_status_bar.dart';
 import 'package:openchat/features/chat/presentation/widgets/tool_permission_card.dart';
 import 'package:openchat/features/chat/presentation/widgets/user_question_card.dart';
 
@@ -41,6 +43,7 @@ class ConversationPane extends StatelessWidget {
     this.historyButtonTooltip,
     required this.onSendMessage,
     this.onRetryResponse,
+    this.onBranchMessage,
     this.onStopMessage,
     this.canSendMessage = false,
     this.isSending = false,
@@ -110,6 +113,10 @@ class ConversationPane extends StatelessWidget {
     this.pendingQuestionError,
     this.onRetryPendingQuestions,
     this.onSubmitQuestionAnswers,
+    this.activeGoal,
+    this.isChangingGoal = false,
+    this.onPauseOrResumeGoal,
+    this.onStopGoal,
     this.messageScrollController,
     this.historySearchTargetMessageId,
     this.historySearchTargetRequestId = 0,
@@ -128,6 +135,8 @@ class ConversationPane extends StatelessWidget {
   final String? historyButtonTooltip;
   final VoidCallback onSendMessage;
   final ValueChanged<ChatMessage>? onRetryResponse;
+  final Future<void> Function(ChatMessage message, String editedContent)?
+  onBranchMessage;
   final VoidCallback? onStopMessage;
   final bool canSendMessage;
   final bool isSending;
@@ -209,6 +218,10 @@ class ConversationPane extends StatelessWidget {
     List<AgentQuestionAnswer> answers,
   )?
   onSubmitQuestionAnswers;
+  final AgentGoal? activeGoal;
+  final bool isChangingGoal;
+  final VoidCallback? onPauseOrResumeGoal;
+  final VoidCallback? onStopGoal;
 
   @override
   Widget build(BuildContext context) {
@@ -261,6 +274,7 @@ class ConversationPane extends StatelessWidget {
                 showAssistantLoading: showAssistantLoading,
                 assistantModelLabel: assistantModelLabel,
                 onRetryResponse: onRetryResponse,
+                onBranchMessage: onBranchMessage,
                 onOpenFileChanges: onOpenFileChanges,
                 latestFileChanges: latestFileChanges,
                 controller: messageScrollController,
@@ -346,6 +360,15 @@ class ConversationPane extends StatelessWidget {
                       errorMessage: toolPermissionError,
                       onApprove: onApproveToolPermission,
                       onDeny: onDenyToolPermission,
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+                  if (activeGoal case final goal?) ...[
+                    GoalStatusBar(
+                      goal: goal,
+                      isBusy: isChangingGoal,
+                      onPauseOrResume: onPauseOrResumeGoal ?? () {},
+                      onStop: onStopGoal ?? () {},
                     ),
                     const SizedBox(height: 10),
                   ],
@@ -494,6 +517,7 @@ class _ConversationHistory extends StatefulWidget {
     required this.showAssistantLoading,
     required this.assistantModelLabel,
     required this.onRetryResponse,
+    required this.onBranchMessage,
     required this.controller,
     required this.providerId,
     required this.onOpenFileChanges,
@@ -508,6 +532,8 @@ class _ConversationHistory extends StatefulWidget {
   final bool showAssistantLoading;
   final String? assistantModelLabel;
   final ValueChanged<ChatMessage>? onRetryResponse;
+  final Future<void> Function(ChatMessage message, String editedContent)?
+  onBranchMessage;
   final ScrollController? controller;
   final String providerId;
   final VoidCallback? onOpenFileChanges;
@@ -539,6 +565,7 @@ class _ConversationHistoryState extends State<_ConversationHistory> {
   String? _focusedMessageId;
   int? _handledTargetRequestId;
   int _targetAttemptGeneration = 0;
+  final Map<String, String> _selectedResponseVersions = <String, String>{};
 
   @override
   void initState() {
@@ -562,6 +589,21 @@ class _ConversationHistoryState extends State<_ConversationHistory> {
   @override
   void didUpdateWidget(covariant _ConversationHistory oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.messages, widget.messages)) {
+      for (var index = 0; index < widget.messages.length; index++) {
+        final group = _assistantResponseVersions(widget.messages, index);
+        if (group.length < 2 || group.first.id != widget.messages[index].id) {
+          continue;
+        }
+        final previousIds = oldWidget.messages
+            .where((message) => message.role == ChatMessageRole.assistant)
+            .map((message) => message.id)
+            .toSet();
+        if (group.any((message) => !previousIds.contains(message.id))) {
+          _selectedResponseVersions.remove(group.first.id);
+        }
+      }
+    }
     if (oldWidget.controller != widget.controller) {
       _attachScrollController(widget.controller);
     }
@@ -652,6 +694,23 @@ class _ConversationHistoryState extends State<_ConversationHistory> {
       return;
     }
 
+    final targetVersions = _assistantResponseVersions(
+      widget.messages,
+      targetIndex,
+    );
+    var visualTargetIndex = targetIndex;
+    if (targetVersions.length > 1) {
+      final targetVersionIndex = targetVersions.indexWhere(
+        (message) => message.id == messageId,
+      );
+      visualTargetIndex -= targetVersionIndex;
+      if (_selectedResponseVersions[targetVersions.first.id] != messageId) {
+        setState(
+          () => _selectedResponseVersions[targetVersions.first.id] = messageId,
+        );
+      }
+    }
+
     final attemptGeneration = ++_targetAttemptGeneration;
     _followLatestMessage = false;
     for (var attempt = 0; attempt < 24; attempt++) {
@@ -663,7 +722,7 @@ class _ConversationHistoryState extends State<_ConversationHistory> {
         return;
       }
 
-      final targetSliverIndex = targetIndex + 1;
+      final targetSliverIndex = visualTargetIndex + 1;
       final targetLayoutOffset = _targetLayoutOffset(targetSliverIndex);
       final controller = _historyController;
       if (targetLayoutOffset != null &&
@@ -698,7 +757,7 @@ class _ConversationHistoryState extends State<_ConversationHistory> {
         return;
       }
 
-      if (!_estimateScrollTowardMessage(targetIndex + 1)) break;
+      if (!_estimateScrollTowardMessage(visualTargetIndex + 1)) break;
     }
     _finishTargetRequest(messageId, requestId, found: false);
   }
@@ -953,12 +1012,42 @@ class _ConversationHistoryState extends State<_ConversationHistory> {
                           height: 24,
                         );
                       }
-                      final message = messages[messageIndex];
+                      final indexedMessage = messages[messageIndex];
+                      final responseVersions = _assistantResponseVersions(
+                        messages,
+                        messageIndex,
+                      );
+                      var responseVersionIndex = 0;
+                      var message = indexedMessage;
+                      if (responseVersions.length > 1) {
+                        final versionOffset = responseVersions.indexWhere(
+                          (version) => version.id == indexedMessage.id,
+                        );
+                        final groupStartIndex = messageIndex - versionOffset;
+                        if (messageIndex != groupStartIndex) {
+                          return SizedBox.shrink(
+                            key: ValueKey<String>(
+                              'conversation-response-version-${indexedMessage.id}',
+                            ),
+                          );
+                        }
+                        final selectedId =
+                            _selectedResponseVersions[responseVersions
+                                .first
+                                .id];
+                        responseVersionIndex = responseVersions.indexWhere(
+                          (version) => version.id == selectedId,
+                        );
+                        if (responseVersionIndex < 0) {
+                          responseVersionIndex = responseVersions.length - 1;
+                        }
+                        message = responseVersions[responseVersionIndex];
+                      }
                       final startsNewDay =
                           messageIndex == 0 ||
                           !_isSameDay(
-                            messages[messageIndex - 1].createdAt,
                             message.createdAt,
+                            messages[messageIndex - 1].createdAt,
                           );
                       final previousMessage = messageIndex == 0
                           ? null
@@ -1006,12 +1095,35 @@ class _ConversationHistoryState extends State<_ConversationHistory> {
                                 switch (message.role) {
                                   ChatMessageRole.user => _UserMessage(
                                     message: message,
+                                    onBranchMessage: widget.onBranchMessage,
                                   ),
                                   ChatMessageRole.assistant => AssistantMessage(
                                     message: message,
-                                    modelLabel: assistantModelLabel,
-                                    providerId: providerId,
-                                    onRetry: _canRetryMessage(messageIndex)
+                                    modelLabel:
+                                        message.modelId ?? assistantModelLabel,
+                                    providerId:
+                                        message.providerId ?? providerId,
+                                    responseVersionIndex:
+                                        responseVersions.length > 1
+                                        ? responseVersionIndex
+                                        : null,
+                                    responseVersionCount:
+                                        responseVersions.length > 1
+                                        ? responseVersions.length
+                                        : null,
+                                    onSelectResponseVersion:
+                                        responseVersions.length > 1
+                                        ? (index) => setState(
+                                            () =>
+                                                _selectedResponseVersions[responseVersions
+                                                        .first
+                                                        .id] =
+                                                    responseVersions[index].id,
+                                          )
+                                        : null,
+                                    onRetry:
+                                        responseVersions.length == 1 &&
+                                            _canRetryMessage(messageIndex)
                                         ? () => onRetryResponse?.call(message)
                                         : null,
                                   ),
@@ -1078,6 +1190,26 @@ List<ChatFileChange> _mergeConversationFileChanges(
     if (changesById.containsKey(change.id)) changesById[change.id] = change;
   }
   return changesById.values.toList(growable: false);
+}
+
+List<ChatMessage> _assistantResponseVersions(
+  List<ChatMessage> messages,
+  int index,
+) {
+  if (index < 0 || index >= messages.length) return const <ChatMessage>[];
+  if (messages[index].role != ChatMessageRole.assistant) {
+    return <ChatMessage>[messages[index]];
+  }
+  var start = index;
+  while (start > 0 && messages[start - 1].role == ChatMessageRole.assistant) {
+    start--;
+  }
+  var end = index;
+  while (end + 1 < messages.length &&
+      messages[end + 1].role == ChatMessageRole.assistant) {
+    end++;
+  }
+  return messages.sublist(start, end + 1);
 }
 
 class _FileChangesButton extends StatelessWidget {
@@ -1185,9 +1317,21 @@ class _ConversationDateLabel extends StatelessWidget {
 }
 
 class _UserMessage extends StatelessWidget {
-  const _UserMessage({required this.message});
+  const _UserMessage({required this.message, this.onBranchMessage});
 
   final ChatMessage message;
+  final Future<void> Function(ChatMessage message, String editedContent)?
+  onBranchMessage;
+
+  Future<void> _editAndBranch(BuildContext context) async {
+    final editedContent = await showDialog<String>(
+      context: context,
+      builder: (context) =>
+          _EditConversationBranchDialog(initialContent: message.content),
+    );
+    if (editedContent == null || !context.mounted) return;
+    await onBranchMessage?.call(message, editedContent.trim());
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1292,6 +1436,13 @@ class _UserMessage extends StatelessWidget {
                   ],
                   if (message.content.trim().isNotEmpty)
                     CopyMessageButton(content: message.content),
+                  if (onBranchMessage != null)
+                    IconButton(
+                      tooltip: l10n.conversationBranchEditTitle,
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _editAndBranch(context),
+                      icon: const Icon(LucideIcons.gitBranch, size: 15),
+                    ),
                 ],
               ),
             ),
@@ -1300,6 +1451,60 @@ class _UserMessage extends StatelessWidget {
       ),
     );
   }
+}
+
+class _EditConversationBranchDialog extends StatefulWidget {
+  const _EditConversationBranchDialog({required this.initialContent});
+
+  final String initialContent;
+
+  @override
+  State<_EditConversationBranchDialog> createState() =>
+      _EditConversationBranchDialogState();
+}
+
+class _EditConversationBranchDialogState
+    extends State<_EditConversationBranchDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initialContent,
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.of(context).pop(_controller.text);
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(context.openchatL10n.conversationBranchEditTitle),
+    content: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 520),
+      child: TextField(
+        controller: _controller,
+        autofocus: true,
+        minLines: 2,
+        maxLines: 8,
+        decoration: InputDecoration(
+          labelText: context.openchatL10n.conversationBranchEditLabel,
+          border: const OutlineInputBorder(),
+        ),
+        onSubmitted: (_) => _submit(),
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: Text(context.openchatL10n.cancel),
+      ),
+      FilledButton(
+        onPressed: _submit,
+        child: Text(context.openchatL10n.conversationBranchStart),
+      ),
+    ],
+  );
 }
 
 class _NewConversationEmptyState extends StatelessWidget {

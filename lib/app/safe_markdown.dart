@@ -39,10 +39,23 @@ String sanitizeMarkdownHtml(String source) {
       element.remove();
       continue;
     }
+    if (element.localName == 'a' &&
+        _isOpenChatCitationUri(element.attributes['href'])) {
+      element.attributes.removeWhere(
+        (name, _) => !const {'class', 'href'}.contains(name),
+      );
+      continue;
+    }
     element.attributes.removeWhere(
       (name, _) =>
           !const {'class', 'colspan', 'rowspan', 'start'}.contains(name),
     );
   }
   return fragment.outerHtml;
+}
+
+bool _isOpenChatCitationUri(String? value) {
+  final uri = value == null ? null : Uri.tryParse(value);
+  return uri?.scheme == 'openchat-source' &&
+      RegExp(r'^[PSU]\d+(?:-[A-Za-z0-9]+)?$').hasMatch(uri!.path);
 }

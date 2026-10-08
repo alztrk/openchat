@@ -16,6 +16,7 @@ import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_attachment_gallery.dart';
 import 'package:openchat/features/chat/presentation/widgets/provider_icon.dart';
 import 'package:openchat/features/chat/presentation/widgets/tool_activity.dart';
+import 'package:openchat/features/chat/presentation/widgets/tool_file_listing.dart';
 
 class AssistantMessage extends StatelessWidget {
   const AssistantMessage({
@@ -24,12 +25,18 @@ class AssistantMessage extends StatelessWidget {
     required this.modelLabel,
     required this.providerId,
     this.onRetry,
+    this.responseVersionIndex,
+    this.responseVersionCount,
+    this.onSelectResponseVersion,
   });
 
   final ChatMessage message;
   final String? modelLabel;
   final String providerId;
   final VoidCallback? onRetry;
+  final int? responseVersionIndex;
+  final int? responseVersionCount;
+  final ValueChanged<int>? onSelectResponseVersion;
 
   @override
   Widget build(BuildContext context) {
@@ -37,6 +44,7 @@ class AssistantMessage extends StatelessWidget {
     final conversationStyle = OpenChatConversationStyle.of(context);
     final l10n = context.openchatL10n;
     final localeName = l10n.localeName;
+    final citationSources = _citationSources(message);
     final metadata = <String>[
       if (message.tokensPerSecond case final rate?)
         l10n.responseTokenRate(NumberFormat('0.#', localeName).format(rate)),
@@ -67,6 +75,16 @@ class AssistantMessage extends StatelessWidget {
               modelLabel: modelLabel,
               providerId: providerId,
             ),
+            if (responseVersionIndex case final versionIndex?)
+              if (responseVersionCount case final versionCount?)
+                if (versionCount > 1 && onSelectResponseVersion != null) ...[
+                  const SizedBox(height: 4),
+                  _ResponseVersionSelector(
+                    index: versionIndex,
+                    count: versionCount,
+                    onSelected: onSelectResponseVersion!,
+                  ),
+                ],
             for (final summary in message.reasoningSummaries.where(
               (summary) => summary.content.trim().isNotEmpty,
             )) ...[
@@ -88,6 +106,7 @@ class AssistantMessage extends StatelessWidget {
                     content: message.content,
                     isStreaming: false,
                     palette: palette,
+                    citationSources: citationSources,
                   ),
                 ],
                 const SizedBox(height: 6),
@@ -100,6 +119,7 @@ class AssistantMessage extends StatelessWidget {
                   content: message.content,
                   isStreaming: message.status == ChatMessageStatus.streaming,
                   palette: palette,
+                  citationSources: citationSources,
                 ),
               ],
               if (message.attachments.isNotEmpty) ...[
@@ -249,6 +269,52 @@ class _AssistantFailureCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _ResponseVersionSelector extends StatelessWidget {
+  const _ResponseVersionSelector({
+    required this.index,
+    required this.count,
+    required this.onSelected,
+  });
+
+  final int index;
+  final int count;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
+    final versionLabel = l10n.responseVersionCount(index + 1, count);
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          tooltip: l10n.previousResponseVersion,
+          onPressed: index > 0 ? () => onSelected(index - 1) : null,
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(LucideIcons.chevronLeft, size: 16),
+        ),
+        Semantics(
+          liveRegion: true,
+          label: versionLabel,
+          child: Text(
+            versionLabel,
+            style: Theme.of(context).textTheme.bodySmall
+                ?.copyWith(color: palette.secondaryText),
+          ),
+        ),
+        IconButton(
+          tooltip: l10n.nextResponseVersion,
+          onPressed: index + 1 < count ? () => onSelected(index + 1) : null,
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(LucideIcons.chevronRight, size: 16),
+        ),
+      ],
     );
   }
 }
@@ -499,6 +565,7 @@ class _ReasoningSummaryAccordion extends StatelessWidget {
                     content: summary.content,
                     isStreaming: !summary.isComplete,
                     palette: palette,
+                    citationSources: const <String, ChatCitationSource>{},
                     textColor: palette.secondaryText,
                   ),
                 ),
@@ -525,12 +592,14 @@ class _AssistantResponseContent extends StatefulWidget {
     required this.content,
     required this.isStreaming,
     required this.palette,
+    required this.citationSources,
     this.textColor,
   });
 
   final String content;
   final bool isStreaming;
   final OpenChatPalette palette;
+  final Map<String, ChatCitationSource> citationSources;
   final Color? textColor;
 
   @override
@@ -545,7 +614,9 @@ class _AssistantResponseContentState extends State<_AssistantResponseContent> {
   @override
   void didUpdateWidget(covariant _AssistantResponseContent oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.content != widget.content) {
+    if (oldWidget.content != widget.content ||
+        _citationSignature(oldWidget.citationSources) !=
+            _citationSignature(widget.citationSources)) {
       _cachedContent = null;
       _cachedSafeHtml = null;
     }
@@ -569,7 +640,11 @@ class _AssistantResponseContentState extends State<_AssistantResponseContent> {
     if (_cachedContent == widget.content && cachedHtml != null) {
       return _buildHtmlWidget(cachedHtml, textStyle);
     }
-    final safeHtml = markdownToSafeHtml(widget.content);
+    final linkedContent = _linkCitations(
+      widget.content,
+      widget.citationSources,
+    );
+    final safeHtml = markdownToSafeHtml(linkedContent);
     _cachedContent = widget.content;
     _cachedSafeHtml = safeHtml;
 
@@ -582,7 +657,7 @@ class _AssistantResponseContentState extends State<_AssistantResponseContent> {
       enableCaching: !widget.isStreaming,
       renderMode: RenderMode.column,
       textStyle: textStyle,
-      onTapUrl: (_) => true,
+      onTapUrl: (url) => _openCitation(context, url, widget.citationSources),
       customStylesBuilder: (element) => switch (element.localName) {
         'pre' => {
           'background-color': _cssColor(widget.palette.composer),
@@ -602,6 +677,159 @@ class _AssistantResponseContentState extends State<_AssistantResponseContent> {
       },
     );
   }
+}
+
+Map<String, ChatCitationSource> _citationSources(ChatMessage message) {
+  final sources = <String, ChatCitationSource>{
+    for (final source in message.citationSources) source.id: source,
+  };
+  for (final activity in message.toolActivities) {
+    final output = toolActivityObjectMap(activity.output);
+    final rawResults = output?['results'];
+    if (activity.name == 'web_search' &&
+        output?['sourceType'] == 'local_web_search' &&
+        rawResults is List) {
+      final timestamp = _citationTime(output?['retrievedAtUnixMs']);
+      for (final raw in rawResults) {
+        final value = toolActivityObjectMap(raw);
+        final source = _citationSource(
+          id: value?['sourceId'],
+          title: value?['title'],
+          url: value?['url'],
+          sourceType: 'local_web_search',
+          snippet: value?['snippet'],
+          retrievedAt: timestamp,
+        );
+        if (source != null) sources[source.id] = source;
+      }
+    } else if ((activity.name == 'read_url_content' ||
+            activity.name == 'read_url') &&
+        output?['sourceType'] == 'local_read_url') {
+      final source = _citationSource(
+        id: output?['sourceId'],
+        title: output?['title'],
+        url: output?['url'],
+        sourceType: 'local_read_url',
+        snippet: output?['content'],
+        retrievedAt: _citationTime(output?['retrievedAtUnixMs']),
+      );
+      if (source != null) sources[source.id] = source;
+    }
+  }
+  return sources;
+}
+
+ChatCitationSource? _citationSource({
+  required Object? id,
+  required Object? title,
+  required Object? url,
+  required String sourceType,
+  required Object? snippet,
+  required DateTime? retrievedAt,
+}) {
+  if (id is! String ||
+      !RegExp(r'^[PSU]\d+(?:-[A-Za-z0-9]+)?$').hasMatch(id) ||
+      title is! String ||
+      url is! String) {
+    return null;
+  }
+  final uri = Uri.tryParse(url);
+  if (uri == null ||
+      uri.host.isEmpty ||
+      uri.userInfo.isNotEmpty ||
+      (uri.scheme != 'https' && uri.scheme != 'http')) {
+    return null;
+  }
+  return ChatCitationSource(
+    id: id,
+    title: title,
+    url: uri.toString(),
+    sourceType: sourceType,
+    snippet: snippet is String && snippet.isNotEmpty ? snippet : null,
+    retrievedAt: retrievedAt,
+  );
+}
+
+DateTime? _citationTime(Object? value) {
+  if (value is! int || value < 0 || value > 8640000000000000) return null;
+  return DateTime.fromMillisecondsSinceEpoch(value, isUtc: true);
+}
+
+String _citationSignature(Map<String, ChatCitationSource> sources) {
+  final entries =
+      sources.values
+          .map((source) => '${source.id}\n${source.url}\n${source.title}')
+          .toList()
+        ..sort();
+  return entries.join('\n');
+}
+
+String _linkCitations(
+  String content,
+  Map<String, ChatCitationSource> sources,
+) => content.replaceAllMapped(RegExp(r'\[([PSU]\d+(?:-[A-Za-z0-9]+)?)\]'), (
+  match,
+) {
+  final id = match[1];
+  if (id == null || !sources.containsKey(id)) return match[0]!;
+  return '[$id](openchat-source:${Uri.encodeComponent(id)})';
+});
+
+bool _openCitation(
+  BuildContext context,
+  String rawUrl,
+  Map<String, ChatCitationSource> sources,
+) {
+  final uri = Uri.tryParse(rawUrl);
+  if (uri?.scheme != 'openchat-source') return true;
+  final source = sources[uri!.path];
+  if (source == null) return true;
+  final l10n = context.openchatL10n;
+  final localSourceLabel = switch (source.sourceType) {
+    'local_web_search' => l10n.toolLocalWebSource,
+    'local_read_url' => l10n.toolLocalPageSource,
+    'provider_native' => l10n.toolProviderSource,
+    _ => l10n.toolSourceDetails,
+  };
+  showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(l10n.toolSourceDetails),
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(source.title, style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            Text(l10n.toolCitationSource(source.id)),
+            Text(localSourceLabel),
+            if (source.retrievedAt case final retrievedAt?)
+              Text(
+                l10n.toolSourceRetrievedAt(
+                  DateFormat.yMMMd(l10n.localeName)
+                      .add_jm()
+                      .format(retrievedAt.toLocal()),
+                ),
+              ),
+            const SizedBox(height: 8),
+            SelectableText(source.url),
+            if (source.snippet case final snippet?) ...[
+              const SizedBox(height: 8),
+              SelectableText(snippet),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: Text(l10n.close),
+        ),
+      ],
+    ),
+  );
+  return true;
 }
 
 final _streamingMarkdownSyntax = RegExp(

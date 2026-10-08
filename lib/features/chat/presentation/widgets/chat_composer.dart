@@ -174,59 +174,15 @@ class ChatComposer extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Focus(
-                        skipTraversal: true,
-                        onKeyEvent: (node, event) {
-                          if (isSending &&
-                              event is KeyDownEvent &&
-                              event.logicalKey == LogicalKeyboardKey.escape) {
-                            onStopMessage?.call();
-                            return KeyEventResult.handled;
-                          }
-                          if (event is KeyDownEvent &&
-                              (event.logicalKey == LogicalKeyboardKey.enter ||
-                                  event.logicalKey ==
-                                      LogicalKeyboardKey.numpadEnter) &&
-                              !HardwareKeyboard.instance.isShiftPressed) {
-                            if (canSendMessage &&
-                                (controller.text.trim().isNotEmpty ||
-                                    pendingAttachments.isNotEmpty)) {
-                              onSendMessage();
-                            }
-                            return KeyEventResult.handled;
-                          }
-                          return KeyEventResult.ignored;
-                        },
-                        child: TextField(
-                          controller: controller,
-                          minLines: 1,
-                          maxLines: 3,
-                          textCapitalization: TextCapitalization.sentences,
-                          textInputAction: TextInputAction.newline,
-                          cursorColor: focusRing,
-                          decoration: InputDecoration(
-                            hintText: context.openchatL10n.messageHint,
-                            hintStyle: TextStyle(
-                              color: palette.secondaryText,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w400,
-                              height: 20 / 15,
-                            ),
-                            filled: false,
-                            border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            contentPadding: EdgeInsets.zero,
-                            isDense: true,
-                            isCollapsed: true,
-                          ),
-                          style: TextStyle(
-                            color: palette.text,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w400,
-                            height: 20 / 15,
-                          ),
-                        ),
+                      _GoalSlashInput(
+                        controller: controller,
+                        onSendMessage: onSendMessage,
+                        canSendMessage: canSendMessage,
+                        isSending: isSending,
+                        onStopMessage: onStopMessage,
+                        hasPendingAttachments: pendingAttachments.isNotEmpty,
+                        focusRing: focusRing,
+                        palette: palette,
                       ),
                       if (pendingAttachments.isNotEmpty) ...[
                         const SizedBox(height: 12),
@@ -298,6 +254,193 @@ class ChatComposer extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _GoalSlashInput extends StatefulWidget {
+  const _GoalSlashInput({
+    required this.controller,
+    required this.onSendMessage,
+    required this.canSendMessage,
+    required this.isSending,
+    required this.onStopMessage,
+    required this.hasPendingAttachments,
+    required this.focusRing,
+    required this.palette,
+  });
+
+  final TextEditingController controller;
+  final VoidCallback onSendMessage;
+  final bool canSendMessage;
+  final bool isSending;
+  final VoidCallback? onStopMessage;
+  final bool hasPendingAttachments;
+  final Color focusRing;
+  final OpenChatPalette palette;
+
+  @override
+  State<_GoalSlashInput> createState() => _GoalSlashInputState();
+}
+
+class _GoalSlashInputState extends State<_GoalSlashInput> {
+  bool _showGoalSuggestion = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_handleTextChanged);
+    _showGoalSuggestion = _matchesGoalCommand(widget.controller.text);
+  }
+
+  @override
+  void didUpdateWidget(covariant _GoalSlashInput oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_handleTextChanged);
+      widget.controller.addListener(_handleTextChanged);
+      _updateSuggestionVisibility();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_handleTextChanged);
+    super.dispose();
+  }
+
+  bool _matchesGoalCommand(String value) {
+    if (value.contains(RegExp(r'\s'))) return false;
+    return '/goal'.startsWith(value.toLowerCase()) && value.startsWith('/');
+  }
+
+  void _handleTextChanged() => _updateSuggestionVisibility();
+
+  void _updateSuggestionVisibility() {
+    final shouldShow = _matchesGoalCommand(widget.controller.text);
+    if (shouldShow == _showGoalSuggestion || !mounted) return;
+    setState(() => _showGoalSuggestion = shouldShow);
+  }
+
+  void _insertGoalCommand() {
+    widget.controller.value = const TextEditingValue(
+      text: '/goal ',
+      selection: TextSelection.collapsed(offset: 6),
+    );
+    _updateSuggestionVisibility();
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+    if (_showGoalSuggestion &&
+        (event.logicalKey == LogicalKeyboardKey.arrowDown ||
+            event.logicalKey == LogicalKeyboardKey.tab ||
+            event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.numpadEnter)) {
+      _insertGoalCommand();
+      return KeyEventResult.handled;
+    }
+    if (widget.isSending && event.logicalKey == LogicalKeyboardKey.escape) {
+      widget.onStopMessage?.call();
+      return KeyEventResult.handled;
+    }
+    if ((event.logicalKey == LogicalKeyboardKey.enter ||
+            event.logicalKey == LogicalKeyboardKey.numpadEnter) &&
+        !HardwareKeyboard.instance.isShiftPressed) {
+      if (widget.canSendMessage &&
+          (widget.controller.text.trim().isNotEmpty ||
+              widget.hasPendingAttachments)) {
+        widget.onSendMessage();
+      }
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.openchatL10n;
+    final theme = Theme.of(context);
+    return Focus(
+      skipTraversal: true,
+      onKeyEvent: _handleKeyEvent,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_showGoalSuggestion) ...[
+            Semantics(
+              button: true,
+              label: '${l10n.goalSlashCommand}. ${l10n.goalCommandDescription}',
+              child: Material(
+                color: theme.colorScheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(OpenChatRadii.menu),
+                child: InkWell(
+                  onTap: _insertGoalCommand,
+                  borderRadius: BorderRadius.circular(OpenChatRadii.menu),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 9,
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l10n.goalSlashCommand,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: widget.palette.text,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            l10n.goalCommandDescription,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: widget.palette.secondaryText,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          TextField(
+            controller: widget.controller,
+            minLines: 1,
+            maxLines: 3,
+            textCapitalization: TextCapitalization.sentences,
+            textInputAction: TextInputAction.newline,
+            cursorColor: widget.focusRing,
+            decoration: InputDecoration(
+              hintText: l10n.messageHint,
+              hintStyle: TextStyle(
+                color: widget.palette.secondaryText,
+                fontSize: 15,
+                fontWeight: FontWeight.w400,
+                height: 20 / 15,
+              ),
+              filled: false,
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              contentPadding: EdgeInsets.zero,
+              isDense: true,
+              isCollapsed: true,
+            ),
+            style: TextStyle(
+              color: widget.palette.text,
+              fontSize: 15,
+              fontWeight: FontWeight.w400,
+              height: 20 / 15,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

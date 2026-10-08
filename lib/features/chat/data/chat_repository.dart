@@ -250,6 +250,123 @@ class ChatRepository {
     return row == null ? null : _conversationFromRow(row);
   }
 
+  Future<ChatConversation> createBranchFromUserMessage({
+    required String sourceConversationId,
+    required String throughUserMessageId,
+    required String branchId,
+    required String branchTitle,
+    required DateTime createdAt,
+    required String editedUserMessage,
+  }) async {
+    final sourceRow =
+        await (_database.select(_database.conversations)..where(
+              (conversation) => conversation.id.equals(sourceConversationId),
+            ))
+            .getSingleOrNull();
+    if (sourceRow == null) {
+      throw ConversationNotFoundException(sourceConversationId);
+    }
+    final sourceMessages = await getMessages(sourceConversationId);
+    final targetIndex = sourceMessages.indexWhere(
+      (message) => message.id == throughUserMessageId,
+    );
+    if (targetIndex < 0 ||
+        sourceMessages[targetIndex].role != domain.ChatMessageRole.user) {
+      throw MessageNotFoundException(
+        sourceConversationId,
+        throughUserMessageId,
+      );
+    }
+    if (editedUserMessage.trim().isEmpty &&
+        sourceMessages[targetIndex].attachments.isEmpty) {
+      throw ArgumentError.value(
+        editedUserMessage,
+        'editedUserMessage',
+        'A branched user message must contain text or an attachment.',
+      );
+    }
+
+    final normalizedBranchId = _requireValue(branchId, 'branchId');
+    if (normalizedBranchId.length > 96 ||
+        !_isValidBranchIdentifier(normalizedBranchId)) {
+      throw ArgumentError.value(branchId, 'branchId', 'Invalid branch ID.');
+    }
+    final branchMessages = sourceMessages.take(targetIndex + 1).toList();
+    await createConversation(
+      id: normalizedBranchId,
+      title: branchTitle,
+      createdAt: createdAt,
+      connectionId: sourceRow.connectionId,
+      workspaceId: sourceRow.workspaceId,
+      apiKeyConnectionId: sourceRow.apiKeyConnectionId,
+      providerId: sourceRow.providerId,
+      modelId: sourceRow.modelId,
+      projectId: sourceRow.projectId,
+    );
+
+    try {
+      for (var index = 0; index < branchMessages.length; index++) {
+        final sourceMessage = branchMessages[index];
+        final targetMessageId = '${normalizedBranchId}_m$index';
+        final attachments = sourceMessage.attachments;
+        if (attachments.isNotEmpty) {
+          final store = attachmentStore;
+          if (store == null) {
+            throw const ChatAttachmentStorageException(
+              'Attachments are unavailable in this storage location.',
+            );
+          }
+          await store.copyMessageAttachments(
+            sourceConversationId: sourceConversationId,
+            sourceMessageId: sourceMessage.id,
+            targetConversationId: normalizedBranchId,
+            targetMessageId: targetMessageId,
+            expectedAttachments: attachments,
+          );
+        }
+        await saveMessage(
+          conversationId: normalizedBranchId,
+          attachmentsAlreadyCopied: attachments.isNotEmpty,
+          message: domain.ChatMessage(
+            id: targetMessageId,
+            role: sourceMessage.role,
+            content: index == targetIndex
+                ? editedUserMessage
+                : sourceMessage.content,
+            attachments: attachments,
+            createdAt: sourceMessage.createdAt,
+            outputTokens: sourceMessage.outputTokens,
+            tokensPerSecond: sourceMessage.tokensPerSecond,
+            elapsed: sourceMessage.elapsed,
+            providerId: sourceMessage.providerId,
+            modelId: sourceMessage.modelId,
+            citationSources: sourceMessage.citationSources,
+            reasoningSummaries: sourceMessage.reasoningSummaries,
+            toolActivities: sourceMessage.toolActivities,
+            status: sourceMessage.status,
+            failureCode: sourceMessage.failureCode,
+          ),
+        );
+      }
+    } on Object catch (error, stackTrace) {
+      try {
+        await deleteConversation(normalizedBranchId);
+      } on Object catch (cleanupError) {
+        Error.throwWithStackTrace(
+          ConversationBranchCleanupException(error, cleanupError),
+          stackTrace,
+        );
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+
+    final branch = await getConversation(normalizedBranchId);
+    if (branch == null) {
+      throw ConversationNotFoundException(normalizedBranchId);
+    }
+    return branch;
+  }
+
   Stream<List<domain.ChatMessage>> watchMessages(String conversationId) {
     final query = _database.select(_database.messages)
       ..where((message) => message.conversationId.equals(conversationId))
@@ -283,6 +400,7 @@ class ChatRepository {
     String? apiKeyConnectionId,
     String? providerId,
     String? modelId,
+    String? projectId,
   }) async {
     final normalizedId = id.trim();
     final normalizedTitle = title.trim();
@@ -339,6 +457,7 @@ class ChatRepository {
             apiKeyConnectionId: Value(apiKeyConnectionId?.trim()),
             providerId: Value(selectedProvider),
             modelId: Value(modelId?.trim()),
+            projectId: Value(projectId),
             createdAt: timestamp,
             updatedAt: timestamp,
           ),
@@ -534,6 +653,7 @@ class ChatRepository {
     required String conversationId,
     required domain.ChatMessage message,
     bool updateConversationTimestamp = true,
+    bool attachmentsAlreadyCopied = false,
   }) async {
     if (message.id.trim().isEmpty) {
       throw ArgumentError.value(
@@ -551,12 +671,25 @@ class ChatRepository {
           'File attachments are unavailable in this storage location.',
         );
       }
-      await attachmentStore.saveMessageAttachments(
-        conversationId: conversationId,
-        messageId: message.id,
-        attachments: message.attachments,
-      );
-      attachmentsSaved = true;
+      if (attachmentsAlreadyCopied) {
+        final copiedAttachments = await attachmentStore.readMessageAttachments(
+          conversationId: conversationId,
+          messageId: message.id,
+          expectedAttachments: message.attachments,
+        );
+        if (copiedAttachments.any((attachment) => !attachment.isAvailable)) {
+          throw const ChatAttachmentStorageException(
+            'Copied message attachments were not available in the new conversation.',
+          );
+        }
+      } else {
+        await attachmentStore.saveMessageAttachments(
+          conversationId: conversationId,
+          messageId: message.id,
+          attachments: message.attachments,
+        );
+        attachmentsSaved = true;
+      }
     }
 
     try {
@@ -600,6 +733,15 @@ class ChatRepository {
                 outputTokens: Value(message.outputTokens),
                 tokensPerSecond: Value(message.tokensPerSecond),
                 elapsedMicroseconds: Value(message.elapsed?.inMicroseconds),
+                providerId: Value(message.providerId),
+                modelId: Value(message.modelId),
+                citationSources: Value(
+                  jsonEncode(
+                    message.citationSources
+                        .map((source) => source.toJson())
+                        .toList(growable: false),
+                  ),
+                ),
                 reasoningSummaries: Value(
                   jsonEncode(
                     message.reasoningSummaries
@@ -769,6 +911,15 @@ class ChatRepository {
     return normalizedValue;
   }
 
+  bool _isValidBranchIdentifier(String value) => value.codeUnits.every(
+    (unit) =>
+        (unit >= 48 && unit <= 57) ||
+        (unit >= 65 && unit <= 90) ||
+        (unit >= 97 && unit <= 122) ||
+        unit == 45 ||
+        unit == 95,
+  );
+
   Future<domain.ChatMessage> _messageFromRowWithAttachments(Message row) async {
     final message = _messageFromRow(row);
     final attachmentStore = this.attachmentStore;
@@ -811,6 +962,9 @@ class ChatRepository {
       outputTokens: message.outputTokens,
       tokensPerSecond: message.tokensPerSecond,
       elapsed: message.elapsed,
+      providerId: message.providerId,
+      modelId: message.modelId,
+      citationSources: message.citationSources,
       reasoningSummaries: message.reasoningSummaries,
       toolActivities: message.toolActivities,
       status: message.status,
@@ -833,6 +987,11 @@ class ChatRepository {
       elapsed: row.elapsedMicroseconds == null
           ? null
           : Duration(microseconds: row.elapsedMicroseconds!),
+      providerId: row.providerId,
+      modelId: row.modelId,
+      citationSources: domain.ChatCitationSource.listFromJson(
+        jsonDecode(row.citationSources),
+      ),
       reasoningSummaries: domain.ChatReasoningSummary.listFromJson(
         jsonDecode(row.reasoningSummaries),
       ),
@@ -863,6 +1022,16 @@ class MessageNotFoundException implements Exception {
   @override
   String toString() =>
       'Message "$messageId" was not found in conversation "$conversationId".';
+}
+
+class ConversationBranchCleanupException implements Exception {
+  const ConversationBranchCleanupException(this.cause, this.cleanupFailure);
+
+  final Object cause;
+  final Object cleanupFailure;
+
+  @override
+  String toString() => 'The conversation branch failed and cleanup failed.';
 }
 
 class ConversationProviderAlreadyBoundException implements Exception {

@@ -1469,7 +1469,7 @@ mod tests {
     use super::{export, prepare_restore};
     use crate::storage::AppStorage;
 
-    const CHAT_SCHEMA_VERSION: i64 = 10;
+    const CHAT_SCHEMA_VERSION: i64 = 11;
     const PASSPHRASE: &str = "profile-archive-test-passphrase";
     static RESTORE_TEST_LOCK: Mutex<()> = Mutex::new(());
 

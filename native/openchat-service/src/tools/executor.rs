@@ -10,8 +10,9 @@ use crate::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
+    sync::Mutex as StdMutex,
 };
 use tokio::sync::{Mutex, watch};
 
@@ -29,11 +30,82 @@ pub enum ToolPermissionMode {
     FullAccess,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ToolPermissionRule {
+    Ask,
+    Allow,
+    Deny,
+}
+
+pub(crate) type ToolPermissionRules = HashMap<String, ToolPermissionRule>;
+
+pub(crate) fn parse_tool_permission_rules(
+    value: Option<&Value>,
+) -> Result<ToolPermissionRules, ServiceError> {
+    let Some(value) = value else {
+        return Ok(ToolPermissionRules::new());
+    };
+    let Some(rules) = value.as_object() else {
+        return Err(invalid_tool_permission_rules());
+    };
+    if rules.len() > 32 {
+        return Err(invalid_tool_permission_rules());
+    }
+
+    let mut parsed = ToolPermissionRules::with_capacity(rules.len());
+    for (name, rule) in rules {
+        if !is_permission_rule_tool(name) {
+            return Err(invalid_tool_permission_rules());
+        }
+        let rule = match rule.as_str() {
+            Some("ask") => ToolPermissionRule::Ask,
+            Some("allow") => ToolPermissionRule::Allow,
+            Some("deny") => ToolPermissionRule::Deny,
+            _ => return Err(invalid_tool_permission_rules()),
+        };
+        parsed.insert(name.clone(), rule);
+    }
+    Ok(parsed)
+}
+
+fn is_permission_rule_tool(name: &str) -> bool {
+    matches!(
+        name,
+        "list_files"
+            | "search_files"
+            | "read_file"
+            | "write_file"
+            | "edit_file"
+            | "get_file_info"
+            | "execute_command"
+            | "send_terminal_input"
+            | "git_status"
+            | "git_diff"
+            | "git_history"
+            | "web_search"
+            | "read_url_content"
+            | "run_project_task"
+            | "delegate_task"
+    )
+}
+
+fn invalid_tool_permission_rules() -> ServiceError {
+    ServiceError::new(
+        "invalid_tool_permission_rules",
+        "One or more project tool permission rules are invalid.",
+        false,
+    )
+}
+
 pub(crate) enum ImageGenerationContext<'a> {
     ChatGptOAuth {
         service: &'a ChatGptService,
         connection_id: &'a str,
         workspace_id: &'a str,
+        external_workspace_id: &'a str,
+        model_id: &'a str,
+        reasoning_effort: Option<String>,
+        fast_mode: bool,
         turn_id: Option<&'a str>,
     },
     ApiKey {
@@ -69,11 +141,18 @@ pub struct ToolExecutor {
     project_root: Option<PathBuf>,
     data_root: PathBuf,
     permission_mode: ToolPermissionMode,
-    rounds: usize,
-    calls: usize,
-    current_round_id: Option<String>,
+    turn_state: StdMutex<ToolTurnState>,
     tool_activities: Mutex<Vec<ToolActivity>>,
     allowed_tool_names: HashSet<String>,
+    permission_rules: ToolPermissionRules,
+}
+
+#[derive(Default)]
+struct ToolTurnState {
+    rounds: usize,
+    calls: usize,
+    round_sequence: usize,
+    current_round_id: Option<String>,
 }
 
 enum PendingFileChangeCapture {
@@ -113,21 +192,37 @@ impl ToolExecutor {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn with_allowed_tool_names(
         project_root: Option<&Path>,
         data_root: &Path,
         permission_mode: ToolPermissionMode,
         allowed_tool_names: impl IntoIterator<Item = String>,
     ) -> Self {
+        Self::with_permission_rules(
+            project_root,
+            data_root,
+            permission_mode,
+            allowed_tool_names,
+            ToolPermissionRules::new(),
+        )
+    }
+
+    pub(crate) fn with_permission_rules(
+        project_root: Option<&Path>,
+        data_root: &Path,
+        permission_mode: ToolPermissionMode,
+        allowed_tool_names: impl IntoIterator<Item = String>,
+        permission_rules: ToolPermissionRules,
+    ) -> Self {
         Self {
             project_root: project_root.map(Path::to_path_buf),
             data_root: data_root.to_path_buf(),
             permission_mode,
-            rounds: 0,
-            calls: 0,
-            current_round_id: None,
+            turn_state: StdMutex::new(ToolTurnState::default()),
             tool_activities: Mutex::new(Vec::new()),
             allowed_tool_names: allowed_tool_names.into_iter().collect(),
+            permission_rules,
         }
     }
 
@@ -143,19 +238,45 @@ impl ToolExecutor {
         }
     }
 
-    pub fn begin_round(&mut self, calls: &[ToolCall]) -> Result<(), ServiceError> {
+    fn permission_rule(&self, tool_name: &str, operation: &ToolOperation) -> ToolPermissionRule {
+        self.permission_rules
+            .get(tool_name)
+            .copied()
+            .unwrap_or_else(|| {
+                if self.permission_mode.requires_approval(operation) {
+                    ToolPermissionRule::Ask
+                } else {
+                    ToolPermissionRule::Allow
+                }
+            })
+    }
+
+    pub fn begin_round(&self, calls: &[ToolCall]) -> Result<(), ServiceError> {
         if calls.is_empty() {
             return Ok(());
         }
-        if self.rounds >= MAX_TOOL_ROUNDS
-            || self.calls.saturating_add(calls.len()) > MAX_TOOL_CALLS_PER_TURN
+        let mut turn_state = self
+            .turn_state
+            .lock()
+            .map_err(|_| tool_call_limit_error())?;
+        if turn_state.rounds >= MAX_TOOL_ROUNDS
+            || turn_state.calls.saturating_add(calls.len()) > MAX_TOOL_CALLS_PER_TURN
         {
             return Err(tool_call_limit_error());
         }
-        self.rounds += 1;
-        self.calls += calls.len();
-        self.current_round_id = Some(format!("round-{}", self.rounds));
+        turn_state.rounds += 1;
+        turn_state.calls += calls.len();
+        turn_state.round_sequence += 1;
+        turn_state.current_round_id = Some(format!("round-{}", turn_state.round_sequence));
         Ok(())
+    }
+
+    pub(crate) fn reset_turn_limits(&self) {
+        let mut turn_state = self
+            .turn_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        *turn_state = ToolTurnState::default();
     }
 
     #[cfg(test)]
@@ -335,7 +456,44 @@ impl ToolExecutor {
             }
         };
 
-        if self.permission_mode.requires_approval(&prepared.operation) {
+        let mut activity_call = call.clone();
+        if call.name == "run_project_task"
+            && let ToolOperation::Bash {
+                command: Some(command),
+                timeout_seconds: Some(timeout_seconds),
+                ..
+            } = &prepared.operation
+        {
+            activity_call.arguments["command"] = json!(command);
+            activity_call.arguments["timeout_seconds"] = json!(timeout_seconds);
+        }
+        let call = &activity_call;
+
+        let rule = self.permission_rule(&call.name, &prepared.operation);
+        if rule == ToolPermissionRule::Deny {
+            let output = tool_error(
+                "permission_denied",
+                "This tool is denied by the project's permission rules.",
+            );
+            self.emit_activity(
+                storage,
+                ToolActivity::denied(
+                    call,
+                    prepared.target_path.to_string_lossy().into_owned(),
+                    output.clone(),
+                ),
+                request_id,
+                snapshot,
+                events,
+            )
+            .await?;
+            return Ok(ToolResult {
+                call_id: call.id.clone(),
+                output,
+            });
+        }
+
+        if rule == ToolPermissionRule::Ask {
             let approved_target = prepared.target_path.clone();
             let target_path = prepared.target_path.to_string_lossy().into_owned();
             self.emit_activity(
@@ -411,6 +569,7 @@ impl ToolExecutor {
                     | ToolOperation::SendTerminalInput { .. }
                     | ToolOperation::WebSearch { .. }
                     | ToolOperation::ReadUrlContent { .. }
+                    | ToolOperation::DelegateTask { .. }
             );
             if !is_non_fs {
                 match self.resolve_tool_path(
@@ -488,7 +647,55 @@ impl ToolExecutor {
             return Err(crate::permissions::operation_cancelled_error());
         }
         let file_change_capture = capture_file_change_before(&prepared);
-        let mut output = execute_model_tool(&prepared).await;
+        let mut output = match &prepared.operation {
+            ToolOperation::DelegateTask { task, context } => {
+                if let Some(ImageGenerationContext::ChatGptOAuth {
+                    service,
+                    connection_id,
+                    workspace_id,
+                    external_workspace_id,
+                    model_id,
+                    reasoning_effort,
+                    fast_mode,
+                    turn_id,
+                }) = image_generation
+                {
+                    crate::chatgpt::subagents::run_child_analysis(
+                        service,
+                        call,
+                        task,
+                        context.as_deref(),
+                        connection_id,
+                        workspace_id,
+                        external_workspace_id,
+                        model_id,
+                        reasoning_effort.as_deref(),
+                        *fast_mode,
+                        turn_id.unwrap_or(&snapshot.message_id),
+                        self.project_root.as_deref(),
+                        permissions,
+                        request_id,
+                        snapshot,
+                        events,
+                        cancellation,
+                        storage,
+                        run_id,
+                        self,
+                        user_questions,
+                    )
+                    .await
+                } else {
+                    json!({"error": {"code": "subagent_unavailable", "message": "Delegated analysis is unavailable for this provider route."}})
+                }
+            }
+            _ => execute_model_tool(&prepared).await,
+        };
+        if matches!(
+            call.name.as_str(),
+            "web_search" | "read_url_content" | "read_url"
+        ) {
+            qualify_citation_source_ids(&mut output, &call.id);
+        }
         qualify_output_paths(&mut output, &prepared);
         let (file_changes, file_changes_error) = finish_file_change_capture(
             storage,
@@ -601,6 +808,7 @@ impl ToolExecutor {
                 connection_id,
                 workspace_id,
                 turn_id,
+                ..
             } => {
                 service
                     .generate_image(
@@ -766,7 +974,12 @@ impl ToolExecutor {
         mut activity: ToolActivity,
         snapshot: &ChatStreamSnapshot,
     ) -> ToolActivity {
-        activity.round_id.clone_from(&self.current_round_id);
+        activity.round_id = self
+            .turn_state
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .current_round_id
+            .clone();
         activity.assistant_text_before_byte_offset = Some(snapshot.content.len());
         activity
     }
@@ -797,6 +1010,33 @@ impl ToolExecutor {
         }
         .into_rpc(request_id.clone());
         events.send(&event).await.map_err(|_| protocol_error())
+    }
+}
+
+fn qualify_citation_source_ids(output: &mut Value, call_id: &str) {
+    let suffix = call_id
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .take(8)
+        .collect::<String>();
+    if suffix.is_empty() {
+        return;
+    }
+    let qualify = |source_id: &mut Value| {
+        let Some(id) = source_id.as_str() else {
+            return;
+        };
+        *source_id = json!(format!("{id}-{suffix}"));
+    };
+    if let Some(results) = output.get_mut("results").and_then(Value::as_array_mut) {
+        for result in results {
+            if let Some(source_id) = result.get_mut("sourceId") {
+                qualify(source_id);
+            }
+        }
+    }
+    if let Some(source_id) = output.get_mut("sourceId") {
+        qualify(source_id);
     }
 }
 
@@ -881,7 +1121,13 @@ fn tracking_error_code(error: crate::file_changes::TrackingError) -> &'static st
 mod policy_tests {
     use std::path::Path;
 
-    use super::{ToolExecutor, ToolPermissionMode};
+    use serde_json::json;
+
+    use super::{
+        ToolExecutor, ToolPermissionMode, ToolPermissionRule, ToolPermissionRules,
+        parse_tool_permission_rules, qualify_citation_source_ids,
+    };
+    use crate::tools::executor::validation::ToolOperation;
 
     #[test]
     fn rejects_calls_that_were_not_advertised_to_the_model() {
@@ -899,6 +1145,72 @@ mod policy_tests {
                 .expect_err("unadvertised question tool must be rejected")
                 .code,
             "invalid_provider_response"
+        );
+    }
+
+    #[test]
+    fn citation_source_ids_are_unique_to_the_tool_call() {
+        let mut output = json!({
+            "sourceId": "U1",
+            "results": [{"sourceId": "S1"}, {"sourceId": "S2"}]
+        });
+
+        qualify_citation_source_ids(&mut output, "call_1234abcd");
+
+        assert_eq!(output["sourceId"], "U1-call1234");
+        assert_eq!(output["results"][0]["sourceId"], "S1-call1234");
+        assert_eq!(output["results"][1]["sourceId"], "S2-call1234");
+    }
+
+    #[test]
+    fn project_tool_rules_override_the_global_mode_without_changing_its_default() {
+        let operation = ToolOperation::Write {
+            content: "content".to_owned(),
+        };
+        let mut rules = ToolPermissionRules::new();
+        rules.insert("write_file".to_owned(), ToolPermissionRule::Allow);
+        rules.insert("execute_command".to_owned(), ToolPermissionRule::Deny);
+        let executor = ToolExecutor::with_permission_rules(
+            None,
+            Path::new("."),
+            ToolPermissionMode::RequireApproval,
+            ["write_file".to_owned(), "execute_command".to_owned()],
+            rules,
+        );
+
+        assert_eq!(
+            executor.permission_rule("write_file", &operation),
+            ToolPermissionRule::Allow
+        );
+        assert_eq!(
+            executor.permission_rule("execute_command", &operation),
+            ToolPermissionRule::Deny
+        );
+        assert_eq!(
+            executor.permission_rule("read_file", &operation),
+            ToolPermissionRule::Ask
+        );
+    }
+
+    #[test]
+    fn permission_rule_parser_rejects_unknown_tools_and_values() {
+        let valid = json!({"execute_command": "ask", "git_diff": "allow"});
+        let rules = parse_tool_permission_rules(Some(&valid)).expect("valid rules");
+        assert_eq!(rules["execute_command"], ToolPermissionRule::Ask);
+
+        let invalid_tool = json!({"custom_command": "allow"});
+        assert_eq!(
+            parse_tool_permission_rules(Some(&invalid_tool))
+                .expect_err("unknown tools must be rejected")
+                .code,
+            "invalid_tool_permission_rules"
+        );
+        let invalid_value = json!({"execute_command": "inherit"});
+        assert_eq!(
+            parse_tool_permission_rules(Some(&invalid_value))
+                .expect_err("unknown rule values must be rejected")
+                .code,
+            "invalid_tool_permission_rules"
         );
     }
 }

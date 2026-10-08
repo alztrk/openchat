@@ -963,6 +963,17 @@ class AppLocalizationsEn extends AppLocalizations {
       'This response cannot be retried. Start a new message instead.';
 
   @override
+  String responseVersionCount(int current, int total) {
+    return 'Response $current of $total';
+  }
+
+  @override
+  String get previousResponseVersion => 'Previous response';
+
+  @override
+  String get nextResponseVersion => 'Next response';
+
+  @override
   String get providerRateLimited =>
       'The provider reported a usage limit. Try again later.';
 
@@ -1897,6 +1908,263 @@ class AppLocalizationsEn extends AppLocalizations {
   String get projectOptions => 'Project options';
 
   @override
+  String get projectToolRulesTitle => 'Project tool permissions';
+
+  @override
+  String get projectToolRulesDescription =>
+      'Choose a rule for each tool. Unset tools use the global permission mode. Allow still follows file scope and process sandbox limits.';
+
+  @override
+  String get projectToolRuleInherit => 'Use global setting';
+
+  @override
+  String get projectToolRuleAsk => 'Ask for approval';
+
+  @override
+  String get projectToolRuleAllow => 'Allow';
+
+  @override
+  String get projectToolRuleDeny => 'Deny';
+
+  @override
+  String get projectToolRulesLoadFailed =>
+      'Project tool permissions could not be loaded. Check the saved settings before sending another request.';
+
+  @override
+  String get projectToolRulesSaveFailed =>
+      'Project tool permissions could not be saved. Your previous rules are still active.';
+
+  @override
+  String get projectOptionsTitle => 'Project options';
+
+  @override
+  String get projectOptionsToolPermissions => 'Tool permissions';
+
+  @override
+  String get projectOptionsWorktrees => 'Git worktrees';
+
+  @override
+  String get projectWorktreesTitle => 'Isolated worktrees';
+
+  @override
+  String get projectWorktreesDescription =>
+      'Create a branch from the current commit in a separate folder. Uncommitted changes are not copied.';
+
+  @override
+  String get projectWorktreesLoading => 'Loading worktrees…';
+
+  @override
+  String get projectWorktreesEmpty =>
+      'No worktrees have been created for this project.';
+
+  @override
+  String get projectWorktreeCreate => 'Create worktree';
+
+  @override
+  String get projectWorktreeCreateFailed =>
+      'A worktree could not be created. Check that this folder is a Git repository.';
+
+  @override
+  String get projectWorktreeLoadFailed =>
+      'The project worktrees could not be loaded.';
+
+  @override
+  String get projectWorktreeOperationFailed =>
+      'The Git operation failed. Check the repository state and try again.';
+
+  @override
+  String get projectWorktreeNotRepository =>
+      'This project folder is not inside a Git repository.';
+
+  @override
+  String projectWorktreeBranch(String branch) {
+    return 'Branch: $branch';
+  }
+
+  @override
+  String projectWorktreePath(String path) {
+    return 'Folder: $path';
+  }
+
+  @override
+  String get projectWorktreeStatusClean => 'No uncommitted changes';
+
+  @override
+  String projectWorktreeStatusChanges(int count) {
+    return 'Changed files: $count';
+  }
+
+  @override
+  String get projectWorktreeReview => 'Review changes';
+
+  @override
+  String get projectWorktreeUse => 'Use as project';
+
+  @override
+  String get projectWorktreeRemove => 'Remove worktree';
+
+  @override
+  String get projectWorktreeRemoveTitle => 'Remove worktree?';
+
+  @override
+  String projectWorktreeRemoveDescription(String branch) {
+    return 'This discards uncommitted and untracked files in $branch. The branch and its commits are kept.';
+  }
+
+  @override
+  String get projectWorktreeReviewTitle => 'Worktree changes';
+
+  @override
+  String get projectWorktreeNoChanges =>
+      'There are no uncommitted changes. Committed changes are on this branch.';
+
+  @override
+  String get projectWorktreeStagedDiff => 'Staged changes';
+
+  @override
+  String get projectWorktreeUnstagedDiff => 'Unstaged changes';
+
+  @override
+  String get projectWorktreeListTruncated =>
+      'Only the first 20 worktrees are shown.';
+
+  @override
+  String get projectWorktreeCheckFailed =>
+      'The worktree could not be inspected.';
+
+  @override
+  String get projectWorktreeRunCheck => 'Run check';
+
+  @override
+  String get projectWorktreeTaskPickerTitle => 'Choose a named check';
+
+  @override
+  String get projectWorktreeTaskEmpty =>
+      'This worktree has no named checks. Add tasks to `.openchat/tasks.json` in the project.';
+
+  @override
+  String get projectWorktreeTaskLoadFailed =>
+      'Named checks could not be loaded from this worktree.';
+
+  @override
+  String get projectWorktreeTaskConfirmationTitle => 'Run this check?';
+
+  @override
+  String get projectWorktreeTaskCommand => 'Command';
+
+  @override
+  String projectWorktreeTaskTimeout(int seconds) {
+    return 'Time limit: $seconds seconds';
+  }
+
+  @override
+  String get projectWorktreeTaskRun => 'Run check';
+
+  @override
+  String projectWorktreeTaskRunning(String task) {
+    return 'Check running: $task';
+  }
+
+  @override
+  String get projectWorktreeTaskStopping => 'Stopping check…';
+
+  @override
+  String get projectWorktreeTaskStop => 'Stop check';
+
+  @override
+  String get projectWorktreeTaskCancelled => 'The check was cancelled.';
+
+  @override
+  String get projectWorktreeTaskTimedOut => 'The check reached its time limit.';
+
+  @override
+  String projectWorktreeTaskExitCode(int code) {
+    return 'Check finished with exit code $code.';
+  }
+
+  @override
+  String get projectWorktreeTaskExitCodeUnavailable =>
+      'The check finished without an exit code.';
+
+  @override
+  String get projectWorktreeTaskOutputTruncated =>
+      'The output is truncated to the first 128 KiB.';
+
+  @override
+  String get projectWorktreeTaskRunFailed =>
+      'The check could not run in the worktree sandbox.';
+
+  @override
+  String projectWorktreeTaskResultTitle(String task) {
+    return 'Check result: $task';
+  }
+
+  @override
+  String get projectWorktreeTaskOutput => 'Output';
+
+  @override
+  String get projectWorktreeTaskNoOutput => 'The check did not produce output.';
+
+  @override
+  String get projectWorktreeTaskDenied =>
+      'Project permissions deny running named checks.';
+
+  @override
+  String get agentRunManagerTitle => 'Runs';
+
+  @override
+  String get agentRunManagerDescription =>
+      'Review active, paused, or interrupted work across conversations.';
+
+  @override
+  String get agentRunLoading => 'Loading runs';
+
+  @override
+  String get agentRunLoadFailed => 'Run status could not be loaded.';
+
+  @override
+  String get agentRunEmpty =>
+      'There are no active, paused, or interrupted runs.';
+
+  @override
+  String get agentRunRefresh => 'Refresh run list';
+
+  @override
+  String get agentRunOpenConversation => 'Open chat';
+
+  @override
+  String get agentRunStatusRunning => 'Running';
+
+  @override
+  String get agentRunStatusPaused => 'Paused';
+
+  @override
+  String get agentRunStatusInterrupted => 'Interrupted';
+
+  @override
+  String get agentRunStatusUnavailable => 'Status unavailable';
+
+  @override
+  String get agentRunStatusCompleted => 'Completed';
+
+  @override
+  String get agentRunStatusFailed => 'Failed';
+
+  @override
+  String get agentRunStatusCancelled => 'Cancelled';
+
+  @override
+  String get agentRunSubagent => 'Child run';
+
+  @override
+  String agentRunSubagentTask(String objective) {
+    return 'Child task: $objective';
+  }
+
+  @override
+  String get agentRunEndedInAnotherChat => 'A run in another chat ended.';
+
+  @override
   String get newProjectConversation => 'Start a new project chat';
 
   @override
@@ -2217,6 +2485,24 @@ class AppLocalizationsEn extends AppLocalizations {
   String get conversationTitleRequired => 'Chat title cannot be empty.';
 
   @override
+  String get conversationBranchEditTitle => 'Edit message and start a branch';
+
+  @override
+  String get conversationBranchEditLabel => 'Message';
+
+  @override
+  String get conversationBranchStart => 'Start branch';
+
+  @override
+  String conversationBranchTitle(String title) {
+    return '$title (branch)';
+  }
+
+  @override
+  String get conversationBranchCreateFailed =>
+      'The message branch could not be created.';
+
+  @override
   String get conversationTitleSaveFailed => 'Chat title could not be saved.';
 
   @override
@@ -2333,6 +2619,14 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get chatRequestFailed =>
       'The response could not be completed. Your saved messages are still available.';
+
+  @override
+  String get goalAlreadyActive =>
+      'Resume or stop the active goal before starting another one in this chat.';
+
+  @override
+  String get goalStateUnavailable =>
+      'OpenChat could not check whether this chat already has an active goal. Try again.';
 
   @override
   String get cachedCatalog => 'cached models';
@@ -2512,7 +2806,55 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolExecuteCommand => 'Execute command';
 
   @override
+  String get toolRunProjectTask => 'Run project task';
+
+  @override
+  String get toolDelegateTask => 'Delegate analysis';
+
+  @override
+  String get toolPermissionTask => 'Task';
+
+  @override
+  String get toolPermissionTimeout => 'Timeout (seconds)';
+
+  @override
   String get toolSendTerminalInput => 'Send terminal input';
+
+  @override
+  String get toolGitStatus => 'Git status';
+
+  @override
+  String get toolGitDiff => 'Git diff';
+
+  @override
+  String get toolGitHistory => 'Git history';
+
+  @override
+  String get toolGitBranch => 'Branch';
+
+  @override
+  String get toolGitUpstream => 'Upstream';
+
+  @override
+  String get toolGitAhead => 'Ahead';
+
+  @override
+  String get toolGitBehind => 'Behind';
+
+  @override
+  String get toolGitStaged => 'Staged';
+
+  @override
+  String get toolGitUnstaged => 'Unstaged';
+
+  @override
+  String get toolGitNoChanges => 'The working tree is clean.';
+
+  @override
+  String get toolGitNoDiff => 'There is no diff to show.';
+
+  @override
+  String get toolGitNoHistory => 'No commits were found.';
 
   @override
   String get toolWebSearch => 'Web search';
@@ -2522,6 +2864,28 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolSearchQuery => 'Search query';
+
+  @override
+  String get toolLocalWebSource => 'Local web search';
+
+  @override
+  String get toolLocalPageSource => 'Local page read';
+
+  @override
+  String get toolProviderSource => 'Provider source';
+
+  @override
+  String toolSourceRetrievedAt(String time) {
+    return 'Retrieved $time';
+  }
+
+  @override
+  String get toolSourceDetails => 'Source details';
+
+  @override
+  String toolCitationSource(String sourceId) {
+    return 'Source $sourceId';
+  }
 
   @override
   String get toolWebSearchNoResults => 'No web results found.';
@@ -2722,6 +3086,383 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get usageQuotasDescription =>
       'View remaining quotas, usage limits, and reset times for all your connected ChatGPT accounts.';
+
+  @override
+  String get statistics => 'Statistics';
+
+  @override
+  String get statisticsDescription =>
+      'Explore token usage, requests, and ChatGPT quota history by provider, model, and conversation.';
+
+  @override
+  String get statisticsLoadFailed => 'Usage statistics could not be loaded.';
+
+  @override
+  String get statisticsUnavailable =>
+      'Local usage statistics are not available right now.';
+
+  @override
+  String get statisticsRetry => 'Reload';
+
+  @override
+  String get statisticsDateRange => 'Date range';
+
+  @override
+  String get statisticsProvider => 'Provider';
+
+  @override
+  String get statisticsRunId => 'Run ID';
+
+  @override
+  String statisticsRunIdValue(String runId) {
+    return 'Run ID: $runId';
+  }
+
+  @override
+  String get statisticsModel => 'Model';
+
+  @override
+  String get statisticsOperation => 'Operation type';
+
+  @override
+  String get statisticsReasoningEffort => 'Reasoning effort';
+
+  @override
+  String get statisticsFastModeFilter => 'Fast mode';
+
+  @override
+  String get statisticsAll => 'All';
+
+  @override
+  String get statisticsUnspecified => 'Unspecified';
+
+  @override
+  String get statisticsClearFilters => 'Clear filters';
+
+  @override
+  String get statisticsTotalTokens => 'Total tokens';
+
+  @override
+  String get statisticsInputTokens => 'Input tokens';
+
+  @override
+  String get statisticsOutputTokens => 'Output tokens';
+
+  @override
+  String get statisticsReasoningTokens => 'Reasoning tokens';
+
+  @override
+  String get statisticsCachedInputTokens => 'Cached input tokens';
+
+  @override
+  String get statisticsCacheWriteTokens => 'Cache write tokens';
+
+  @override
+  String get statisticsRequests => 'Requests';
+
+  @override
+  String get statisticsSuccessfulRequests => 'Successful';
+
+  @override
+  String get statisticsFailedRequests => 'Failed';
+
+  @override
+  String get statisticsCancelledRequests => 'Stopped';
+
+  @override
+  String get statisticsInterruptedRequests => 'Interrupted';
+
+  @override
+  String get statisticsPendingRequests => 'In progress';
+
+  @override
+  String get statisticsConversations => 'Conversations';
+
+  @override
+  String get statisticsCoverage => 'Usage data coverage';
+
+  @override
+  String get statisticsInputCoverage => 'Requests with reported input tokens';
+
+  @override
+  String get statisticsOutputCoverage => 'Requests with reported output tokens';
+
+  @override
+  String get statisticsReasoningCoverage =>
+      'Requests with reported reasoning tokens';
+
+  @override
+  String statisticsCoverageText(int total, int reported) {
+    return 'The provider returned token usage for $reported of $total requests.';
+  }
+
+  @override
+  String get statisticsProviderReportedCost => 'Provider reported cost';
+
+  @override
+  String statisticsCostCoverage(int reported) {
+    return 'Cost information is available for $reported requests.';
+  }
+
+  @override
+  String get statisticsModelsDevCatalogCost => 'Cost at models.dev list prices';
+
+  @override
+  String statisticsModelsDevCatalogCostCoverage(int priced) {
+    return 'List-price equivalent calculated for $priced requests.';
+  }
+
+  @override
+  String statisticsModelsDevPricingCurrent(String date) {
+    return 'models.dev pricing catalog fetched $date.';
+  }
+
+  @override
+  String statisticsModelsDevPricingStale(String date) {
+    return 'models.dev is unreachable; cached prices from $date are being used.';
+  }
+
+  @override
+  String get statisticsModelsDevPricingUnavailable =>
+      'models.dev pricing is unavailable. Costs are not calculated without an exact provider and model match.';
+
+  @override
+  String get statisticsUsageTrend => 'Usage over time';
+
+  @override
+  String get statisticsDaily => 'Daily';
+
+  @override
+  String get statisticsMonthly => 'Monthly';
+
+  @override
+  String get statisticsProviders => 'Provider usage';
+
+  @override
+  String get statisticsModels => 'Model usage';
+
+  @override
+  String get statisticsReasoningLevels => 'Selected reasoning effort';
+
+  @override
+  String get statisticsOperations => 'Operation types';
+
+  @override
+  String get statisticsFastModeUsage => 'Fast mode usage';
+
+  @override
+  String get statisticsRequested => 'Requested';
+
+  @override
+  String get statisticsNotRequested => 'Not requested';
+
+  @override
+  String get statisticsServiceTiers => 'Returned service tiers';
+
+  @override
+  String get statisticsServiceTier => 'Service tier';
+
+  @override
+  String get statisticsNoBreakdownData => 'No data to show for this period.';
+
+  @override
+  String get statisticsNoConversationData =>
+      'No conversation usage for this period.';
+
+  @override
+  String get statisticsOpenConversation => 'Open conversation';
+
+  @override
+  String get statisticsRequestDetails => 'Request history';
+
+  @override
+  String get statisticsRequestPayload => 'Sent request data';
+
+  @override
+  String get statisticsRequestContextUnavailable =>
+      'The sent request summary is unavailable.';
+
+  @override
+  String statisticsRequestSourceMessages(String ids) {
+    return 'Included message IDs: $ids';
+  }
+
+  @override
+  String statisticsRequestArchivedMessages(String ids) {
+    return 'Retrieved message IDs: $ids';
+  }
+
+  @override
+  String statisticsRequestSummaryBoundary(String id) {
+    return 'Summary includes messages through: $id';
+  }
+
+  @override
+  String statisticsRequestSourceAttachments(String files) {
+    return 'Attachments sent: $files';
+  }
+
+  @override
+  String get statisticsRequestSourcesTruncated =>
+      'Some source details are omitted from this record.';
+
+  @override
+  String statisticsRequestMessageCount(int count) {
+    return 'Messages sent: $count';
+  }
+
+  @override
+  String statisticsRequestImageCount(int count) {
+    return 'Images sent: $count';
+  }
+
+  @override
+  String statisticsRequestToolResultCount(int count) {
+    return 'Tool results sent: $count';
+  }
+
+  @override
+  String statisticsRequestInstructionBytes(int count) {
+    return 'Instruction bytes: $count';
+  }
+
+  @override
+  String statisticsRequestRoles(String roles) {
+    return 'Message roles: $roles';
+  }
+
+  @override
+  String statisticsRequestTools(String names) {
+    return 'Tool definitions: $names';
+  }
+
+  @override
+  String statisticsRequestCacheControls(String names) {
+    return 'Cache controls: $names';
+  }
+
+  @override
+  String get statisticsNone => 'None';
+
+  @override
+  String get statisticsRequestTime => 'Request time';
+
+  @override
+  String get statisticsConversationTitle => 'Conversation title';
+
+  @override
+  String get statisticsStatus => 'Status';
+
+  @override
+  String get statisticsUsageSource => 'Usage data source';
+
+  @override
+  String get statisticsNoRequestData => 'No requests match these filters.';
+
+  @override
+  String statisticsShowingRows(int start, int end, int total) {
+    return '$start - $end of $total';
+  }
+
+  @override
+  String get statisticsExportCsv => 'Export CSV';
+
+  @override
+  String get statisticsExporting => 'Exporting';
+
+  @override
+  String get statisticsExported => 'Statistics were exported to a CSV file.';
+
+  @override
+  String get statisticsExportFailed => 'Statistics could not be exported.';
+
+  @override
+  String get statisticsQuotaHistory => 'ChatGPT quota history';
+
+  @override
+  String get statisticsQuotaSnapshot => 'Quota snapshot';
+
+  @override
+  String get statisticsNoQuotaHistory =>
+      'No ChatGPT quota snapshots were saved in this date range.';
+
+  @override
+  String get statisticsUsed => 'Used';
+
+  @override
+  String get statisticsResetAt => 'Resets';
+
+  @override
+  String get statisticsQuotaAllowed => 'Requests allowed';
+
+  @override
+  String get statisticsQuotaBlocked => 'Requests blocked';
+
+  @override
+  String get statisticsQuotaUnknown => 'Usage status unknown';
+
+  @override
+  String get statisticsQuotaFreshnessCurrent => 'Current data';
+
+  @override
+  String get statisticsQuotaFreshnessStale => 'Stale data';
+
+  @override
+  String get statisticsQuotaFreshnessUnknown => 'Data status unknown';
+
+  @override
+  String get statisticsNotReported => 'Not reported';
+
+  @override
+  String get statisticsLegacyDataNote =>
+      'Older messages may contain only output tokens; missing model and input token details are not inferred.';
+
+  @override
+  String get statisticsModelsDevPricingNote =>
+      'Catalog-price equivalents use current models.dev prices and are not provider invoices. ChatGPT OAuth subscription usage, Fast requests, and unsupported service tiers are excluded.';
+
+  @override
+  String get statisticsLegacyOutput => 'Output tokens from older messages';
+
+  @override
+  String get statisticsChatGptOAuth => 'ChatGPT OAuth';
+
+  @override
+  String get statisticsChatGptApi => 'ChatGPT API';
+
+  @override
+  String get statisticsOperationChat => 'Chat';
+
+  @override
+  String get statisticsOperationToolFollowUp => 'Tool follow-up';
+
+  @override
+  String get statisticsOperationCompaction => 'Context compaction';
+
+  @override
+  String get statisticsOperationTitleGeneration =>
+      'Conversation title generation';
+
+  @override
+  String get statisticsOperationLegacy => 'Older message';
+
+  @override
+  String get statisticsStatusCompleted => 'Completed';
+
+  @override
+  String get statisticsStatusFailed => 'Failed';
+
+  @override
+  String get statisticsStatusCancelled => 'Stopped';
+
+  @override
+  String get statisticsStatusInterrupted => 'Interrupted';
+
+  @override
+  String get statisticsStatusPending => 'In progress';
+
+  @override
+  String get statisticsStatusLegacy => 'Historical data';
 
   @override
   String get refreshAll => 'Refresh all';
@@ -3078,4 +3819,62 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get fileChangesUnavailableTitle => 'File changes unavailable';
+
+  @override
+  String get goalSlashCommand => '/goal';
+
+  @override
+  String get goalCommandDescription =>
+      'Start this message as a goal and keep working until it is complete or needs your input.';
+
+  @override
+  String get goalObjectiveRequired => 'Write a goal after /goal.';
+
+  @override
+  String get goalWorking => 'Working on goal';
+
+  @override
+  String get goalPaused => 'Goal paused';
+
+  @override
+  String get goalInterrupted => 'Goal interrupted';
+
+  @override
+  String get goalCompleted => 'Goal completed';
+
+  @override
+  String get goalStopped => 'Goal stopped';
+
+  @override
+  String get goalFailed => 'Goal failed';
+
+  @override
+  String get goalPausedForQuota =>
+      'Paused because the model quota or rate limit was reached.';
+
+  @override
+  String get goalPausedForBlocker => 'Paused because progress is blocked.';
+
+  @override
+  String get goalPausedForUserInput => 'Paused while waiting for your input.';
+
+  @override
+  String get goalPausedByUser => 'Paused by you.';
+
+  @override
+  String get goalPausedAfterError => 'Paused after a request error.';
+
+  @override
+  String get goalPauseAction => 'Pause goal';
+
+  @override
+  String get goalResumeAction => 'Resume goal';
+
+  @override
+  String get goalStopAction => 'Stop goal';
+
+  @override
+  String goalElapsedTime(String time) {
+    return 'Elapsed: $time';
+  }
 }

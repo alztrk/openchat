@@ -54,6 +54,9 @@ class Messages extends Table {
   IntColumn get outputTokens => integer().nullable()();
   RealColumn get tokensPerSecond => real().nullable()();
   IntColumn get elapsedMicroseconds => integer().nullable()();
+  TextColumn get providerId => text().nullable()();
+  TextColumn get modelId => text().nullable()();
+  TextColumn get citationSources => text().withDefault(const Constant('[]'))();
   TextColumn get reasoningSummaries =>
       text().withDefault(const Constant('[]'))();
   TextColumn get toolActivities => text().withDefault(const Constant('[]'))();
@@ -83,7 +86,7 @@ class OpenChatDatabase extends _$OpenChatDatabase {
   OpenChatDatabase.atPath(String databasePath)
     : super(_databaseAtPath(databasePath));
 
-  static const currentSchemaVersion = 11;
+  static const currentSchemaVersion = 12;
   static const minimumSqliteVersionNumber = 3051003;
 
   static bool supportsSqliteRuntime(int versionNumber) =>
@@ -266,6 +269,11 @@ class OpenChatDatabase extends _$OpenChatDatabase {
         conversations,
         conversations.isArchived,
       );
+    }
+    if (from < 12 && to >= 12) {
+      await _addColumnIfMissing(migrator, messages, messages.providerId);
+      await _addColumnIfMissing(migrator, messages, messages.modelId);
+      await _addColumnIfMissing(migrator, messages, messages.citationSources);
     }
   }
 

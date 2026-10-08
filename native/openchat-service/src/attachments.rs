@@ -691,6 +691,8 @@ pub(crate) fn decode_message_content(
             effective_content.push_str(&format!("\n\n[Attached image: {}]", metadata.name));
         }
         attachments.push(StoredAttachment {
+            id: metadata.id,
+            name: metadata.name,
             mime_type: metadata.mime_type,
             kind: metadata.kind,
             content: attachment_content,

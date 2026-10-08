@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:intl/intl.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/presentation/widgets/tool_file_listing.dart';
@@ -65,6 +66,8 @@ class ToolWebSearchResult extends StatelessWidget {
         palette: palette,
       );
     }
+    final sourceType = _stringField(output, 'sourceType');
+    final retrievedAt = _retrievedAt(output?['retrievedAtUnixMs']);
     final results = <_WebSearchResultItem>[];
     for (final raw in rawResults) {
       final item = toolActivityObjectMap(raw);
@@ -84,6 +87,9 @@ class ToolWebSearchResult extends StatelessWidget {
           url: url,
           snippet: snippet,
           engine: engine,
+          sourceId: _stringField(item, 'sourceId'),
+          retrievedAt: sourceType == 'local_web_search' ? retrievedAt : null,
+          isLocalSource: sourceType == 'local_web_search',
         ),
       );
     }
@@ -151,12 +157,18 @@ class _WebSearchResultItem {
     required this.url,
     required this.snippet,
     required this.engine,
+    required this.sourceId,
+    required this.retrievedAt,
+    required this.isLocalSource,
   });
 
   final String title;
   final String url;
   final String snippet;
   final String engine;
+  final String? sourceId;
+  final DateTime? retrievedAt;
+  final bool isLocalSource;
 }
 
 class _WebSearchResultCard extends StatelessWidget {
@@ -261,6 +273,40 @@ class _WebSearchResultCard extends StatelessWidget {
               ),
             ),
           ],
+          if (item.isLocalSource ||
+              item.sourceId != null ||
+              item.retrievedAt != null) ...[
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 7,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (item.sourceId case final sourceId?)
+                  _SourceMetadataTag(
+                    label: context.openchatL10n.toolCitationSource(sourceId),
+                    palette: palette,
+                  ),
+                if (item.isLocalSource)
+                  _SourceMetadataTag(
+                    label: context.openchatL10n.toolLocalWebSource,
+                    palette: palette,
+                  ),
+                if (item.retrievedAt case final retrievedAt?)
+                  Text(
+                    context.openchatL10n.toolSourceRetrievedAt(
+                      DateFormat.yMMMd(context.openchatL10n.localeName)
+                          .add_jm()
+                          .format(retrievedAt.toLocal()),
+                    ),
+                    style: TextStyle(
+                      color: palette.secondaryText,
+                      fontSize: 10,
+                    ),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -323,6 +369,9 @@ class ToolReadUrlResult extends StatelessWidget {
     final content = _stringField(output, 'content');
     final length = output?['length'];
     final truncated = output?['truncated'];
+    final sourceType = _stringField(output, 'sourceType');
+    final sourceId = _stringField(output, 'sourceId');
+    final retrievedAt = _retrievedAt(output?['retrievedAtUnixMs']);
     if (targetUrl == null ||
         targetUrl.isEmpty ||
         title == null ||
@@ -444,6 +493,40 @@ class ToolReadUrlResult extends StatelessWidget {
               ),
             ],
           ),
+          if (sourceType == 'local_read_url' ||
+              sourceId != null ||
+              retrievedAt != null) ...[
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 7,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (sourceId case final id?)
+                  _SourceMetadataTag(
+                    label: l10n.toolCitationSource(id),
+                    palette: palette,
+                  ),
+                if (sourceType == 'local_read_url')
+                  _SourceMetadataTag(
+                    label: l10n.toolLocalPageSource,
+                    palette: palette,
+                  ),
+                if (retrievedAt case final timestamp?)
+                  Text(
+                    l10n.toolSourceRetrievedAt(
+                      DateFormat.yMMMd(l10n.localeName)
+                          .add_jm()
+                          .format(timestamp.toLocal()),
+                    ),
+                    style: TextStyle(
+                      color: palette.secondaryText,
+                      fontSize: 10,
+                    ),
+                  ),
+              ],
+            ),
+          ],
           if (content.isNotEmpty) ...[
             const SizedBox(height: 8),
             Container(
@@ -476,6 +559,31 @@ class ToolReadUrlResult extends StatelessWidget {
 String? _stringField(Map<String, Object?>? value, String key) {
   final field = value?[key];
   return field is String ? field : null;
+}
+
+DateTime? _retrievedAt(Object? value) {
+  if (value is! int || value < 0 || value > 8640000000000000) return null;
+  return DateTime.fromMillisecondsSinceEpoch(value, isUtc: true);
+}
+
+class _SourceMetadataTag extends StatelessWidget {
+  const _SourceMetadataTag({required this.label, required this.palette});
+
+  final String label;
+  final OpenChatPalette palette;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+    decoration: BoxDecoration(
+      color: palette.selected,
+      borderRadius: BorderRadius.circular(6),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(color: palette.secondaryText, fontSize: 9),
+    ),
+  );
 }
 
 Future<void> _copyText(BuildContext context, String value) async {

@@ -1724,6 +1724,24 @@ abstract class AppLocalizations {
   /// **'This response cannot be retried. Start a new message instead.'**
   String get responseRetryUnavailable;
 
+  /// No description provided for @responseVersionCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Response {current} of {total}'**
+  String responseVersionCount(int current, int total);
+
+  /// No description provided for @previousResponseVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous response'**
+  String get previousResponseVersion;
+
+  /// No description provided for @nextResponseVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Next response'**
+  String get nextResponseVersion;
+
   /// No description provided for @providerRateLimited.
   ///
   /// In en, this message translates to:
@@ -3268,6 +3286,444 @@ abstract class AppLocalizations {
   /// **'Project options'**
   String get projectOptions;
 
+  /// No description provided for @projectToolRulesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Project tool permissions'**
+  String get projectToolRulesTitle;
+
+  /// No description provided for @projectToolRulesDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a rule for each tool. Unset tools use the global permission mode. Allow still follows file scope and process sandbox limits.'**
+  String get projectToolRulesDescription;
+
+  /// No description provided for @projectToolRuleInherit.
+  ///
+  /// In en, this message translates to:
+  /// **'Use global setting'**
+  String get projectToolRuleInherit;
+
+  /// No description provided for @projectToolRuleAsk.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask for approval'**
+  String get projectToolRuleAsk;
+
+  /// No description provided for @projectToolRuleAllow.
+  ///
+  /// In en, this message translates to:
+  /// **'Allow'**
+  String get projectToolRuleAllow;
+
+  /// No description provided for @projectToolRuleDeny.
+  ///
+  /// In en, this message translates to:
+  /// **'Deny'**
+  String get projectToolRuleDeny;
+
+  /// No description provided for @projectToolRulesLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Project tool permissions could not be loaded. Check the saved settings before sending another request.'**
+  String get projectToolRulesLoadFailed;
+
+  /// No description provided for @projectToolRulesSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Project tool permissions could not be saved. Your previous rules are still active.'**
+  String get projectToolRulesSaveFailed;
+
+  /// No description provided for @projectOptionsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Project options'**
+  String get projectOptionsTitle;
+
+  /// No description provided for @projectOptionsToolPermissions.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool permissions'**
+  String get projectOptionsToolPermissions;
+
+  /// No description provided for @projectOptionsWorktrees.
+  ///
+  /// In en, this message translates to:
+  /// **'Git worktrees'**
+  String get projectOptionsWorktrees;
+
+  /// No description provided for @projectWorktreesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Isolated worktrees'**
+  String get projectWorktreesTitle;
+
+  /// No description provided for @projectWorktreesDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Create a branch from the current commit in a separate folder. Uncommitted changes are not copied.'**
+  String get projectWorktreesDescription;
+
+  /// No description provided for @projectWorktreesLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading worktrees…'**
+  String get projectWorktreesLoading;
+
+  /// No description provided for @projectWorktreesEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No worktrees have been created for this project.'**
+  String get projectWorktreesEmpty;
+
+  /// No description provided for @projectWorktreeCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'Create worktree'**
+  String get projectWorktreeCreate;
+
+  /// No description provided for @projectWorktreeCreateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'A worktree could not be created. Check that this folder is a Git repository.'**
+  String get projectWorktreeCreateFailed;
+
+  /// No description provided for @projectWorktreeLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The project worktrees could not be loaded.'**
+  String get projectWorktreeLoadFailed;
+
+  /// No description provided for @projectWorktreeOperationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The Git operation failed. Check the repository state and try again.'**
+  String get projectWorktreeOperationFailed;
+
+  /// No description provided for @projectWorktreeNotRepository.
+  ///
+  /// In en, this message translates to:
+  /// **'This project folder is not inside a Git repository.'**
+  String get projectWorktreeNotRepository;
+
+  /// No description provided for @projectWorktreeBranch.
+  ///
+  /// In en, this message translates to:
+  /// **'Branch: {branch}'**
+  String projectWorktreeBranch(String branch);
+
+  /// No description provided for @projectWorktreePath.
+  ///
+  /// In en, this message translates to:
+  /// **'Folder: {path}'**
+  String projectWorktreePath(String path);
+
+  /// No description provided for @projectWorktreeStatusClean.
+  ///
+  /// In en, this message translates to:
+  /// **'No uncommitted changes'**
+  String get projectWorktreeStatusClean;
+
+  /// No description provided for @projectWorktreeStatusChanges.
+  ///
+  /// In en, this message translates to:
+  /// **'Changed files: {count}'**
+  String projectWorktreeStatusChanges(int count);
+
+  /// No description provided for @projectWorktreeReview.
+  ///
+  /// In en, this message translates to:
+  /// **'Review changes'**
+  String get projectWorktreeReview;
+
+  /// No description provided for @projectWorktreeUse.
+  ///
+  /// In en, this message translates to:
+  /// **'Use as project'**
+  String get projectWorktreeUse;
+
+  /// No description provided for @projectWorktreeRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove worktree'**
+  String get projectWorktreeRemove;
+
+  /// No description provided for @projectWorktreeRemoveTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove worktree?'**
+  String get projectWorktreeRemoveTitle;
+
+  /// No description provided for @projectWorktreeRemoveDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'This discards uncommitted and untracked files in {branch}. The branch and its commits are kept.'**
+  String projectWorktreeRemoveDescription(String branch);
+
+  /// No description provided for @projectWorktreeReviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Worktree changes'**
+  String get projectWorktreeReviewTitle;
+
+  /// No description provided for @projectWorktreeNoChanges.
+  ///
+  /// In en, this message translates to:
+  /// **'There are no uncommitted changes. Committed changes are on this branch.'**
+  String get projectWorktreeNoChanges;
+
+  /// No description provided for @projectWorktreeStagedDiff.
+  ///
+  /// In en, this message translates to:
+  /// **'Staged changes'**
+  String get projectWorktreeStagedDiff;
+
+  /// No description provided for @projectWorktreeUnstagedDiff.
+  ///
+  /// In en, this message translates to:
+  /// **'Unstaged changes'**
+  String get projectWorktreeUnstagedDiff;
+
+  /// No description provided for @projectWorktreeListTruncated.
+  ///
+  /// In en, this message translates to:
+  /// **'Only the first 20 worktrees are shown.'**
+  String get projectWorktreeListTruncated;
+
+  /// No description provided for @projectWorktreeCheckFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The worktree could not be inspected.'**
+  String get projectWorktreeCheckFailed;
+
+  /// No description provided for @projectWorktreeRunCheck.
+  ///
+  /// In en, this message translates to:
+  /// **'Run check'**
+  String get projectWorktreeRunCheck;
+
+  /// No description provided for @projectWorktreeTaskPickerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a named check'**
+  String get projectWorktreeTaskPickerTitle;
+
+  /// No description provided for @projectWorktreeTaskEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'This worktree has no named checks. Add tasks to `.openchat/tasks.json` in the project.'**
+  String get projectWorktreeTaskEmpty;
+
+  /// No description provided for @projectWorktreeTaskLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Named checks could not be loaded from this worktree.'**
+  String get projectWorktreeTaskLoadFailed;
+
+  /// No description provided for @projectWorktreeTaskConfirmationTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Run this check?'**
+  String get projectWorktreeTaskConfirmationTitle;
+
+  /// No description provided for @projectWorktreeTaskCommand.
+  ///
+  /// In en, this message translates to:
+  /// **'Command'**
+  String get projectWorktreeTaskCommand;
+
+  /// No description provided for @projectWorktreeTaskTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'Time limit: {seconds} seconds'**
+  String projectWorktreeTaskTimeout(int seconds);
+
+  /// No description provided for @projectWorktreeTaskRun.
+  ///
+  /// In en, this message translates to:
+  /// **'Run check'**
+  String get projectWorktreeTaskRun;
+
+  /// No description provided for @projectWorktreeTaskRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Check running: {task}'**
+  String projectWorktreeTaskRunning(String task);
+
+  /// No description provided for @projectWorktreeTaskStopping.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopping check…'**
+  String get projectWorktreeTaskStopping;
+
+  /// No description provided for @projectWorktreeTaskStop.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop check'**
+  String get projectWorktreeTaskStop;
+
+  /// No description provided for @projectWorktreeTaskCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'The check was cancelled.'**
+  String get projectWorktreeTaskCancelled;
+
+  /// No description provided for @projectWorktreeTaskTimedOut.
+  ///
+  /// In en, this message translates to:
+  /// **'The check reached its time limit.'**
+  String get projectWorktreeTaskTimedOut;
+
+  /// No description provided for @projectWorktreeTaskExitCode.
+  ///
+  /// In en, this message translates to:
+  /// **'Check finished with exit code {code}.'**
+  String projectWorktreeTaskExitCode(int code);
+
+  /// No description provided for @projectWorktreeTaskExitCodeUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The check finished without an exit code.'**
+  String get projectWorktreeTaskExitCodeUnavailable;
+
+  /// No description provided for @projectWorktreeTaskOutputTruncated.
+  ///
+  /// In en, this message translates to:
+  /// **'The output is truncated to the first 128 KiB.'**
+  String get projectWorktreeTaskOutputTruncated;
+
+  /// No description provided for @projectWorktreeTaskRunFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The check could not run in the worktree sandbox.'**
+  String get projectWorktreeTaskRunFailed;
+
+  /// No description provided for @projectWorktreeTaskResultTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Check result: {task}'**
+  String projectWorktreeTaskResultTitle(String task);
+
+  /// No description provided for @projectWorktreeTaskOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'Output'**
+  String get projectWorktreeTaskOutput;
+
+  /// No description provided for @projectWorktreeTaskNoOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'The check did not produce output.'**
+  String get projectWorktreeTaskNoOutput;
+
+  /// No description provided for @projectWorktreeTaskDenied.
+  ///
+  /// In en, this message translates to:
+  /// **'Project permissions deny running named checks.'**
+  String get projectWorktreeTaskDenied;
+
+  /// No description provided for @agentRunManagerTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Runs'**
+  String get agentRunManagerTitle;
+
+  /// No description provided for @agentRunManagerDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Review active, paused, or interrupted work across conversations.'**
+  String get agentRunManagerDescription;
+
+  /// No description provided for @agentRunLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading runs'**
+  String get agentRunLoading;
+
+  /// No description provided for @agentRunLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Run status could not be loaded.'**
+  String get agentRunLoadFailed;
+
+  /// No description provided for @agentRunEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'There are no active, paused, or interrupted runs.'**
+  String get agentRunEmpty;
+
+  /// No description provided for @agentRunRefresh.
+  ///
+  /// In en, this message translates to:
+  /// **'Refresh run list'**
+  String get agentRunRefresh;
+
+  /// No description provided for @agentRunOpenConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Open chat'**
+  String get agentRunOpenConversation;
+
+  /// No description provided for @agentRunStatusRunning.
+  ///
+  /// In en, this message translates to:
+  /// **'Running'**
+  String get agentRunStatusRunning;
+
+  /// No description provided for @agentRunStatusPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused'**
+  String get agentRunStatusPaused;
+
+  /// No description provided for @agentRunStatusInterrupted.
+  ///
+  /// In en, this message translates to:
+  /// **'Interrupted'**
+  String get agentRunStatusInterrupted;
+
+  /// No description provided for @agentRunStatusUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Status unavailable'**
+  String get agentRunStatusUnavailable;
+
+  /// No description provided for @agentRunStatusCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get agentRunStatusCompleted;
+
+  /// No description provided for @agentRunStatusFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get agentRunStatusFailed;
+
+  /// No description provided for @agentRunStatusCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancelled'**
+  String get agentRunStatusCancelled;
+
+  /// No description provided for @agentRunSubagent.
+  ///
+  /// In en, this message translates to:
+  /// **'Child run'**
+  String get agentRunSubagent;
+
+  /// No description provided for @agentRunSubagentTask.
+  ///
+  /// In en, this message translates to:
+  /// **'Child task: {objective}'**
+  String agentRunSubagentTask(String objective);
+
+  /// No description provided for @agentRunEndedInAnotherChat.
+  ///
+  /// In en, this message translates to:
+  /// **'A run in another chat ended.'**
+  String get agentRunEndedInAnotherChat;
+
   /// No description provided for @newProjectConversation.
   ///
   /// In en, this message translates to:
@@ -3746,6 +4202,36 @@ abstract class AppLocalizations {
   /// **'Chat title cannot be empty.'**
   String get conversationTitleRequired;
 
+  /// No description provided for @conversationBranchEditTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit message and start a branch'**
+  String get conversationBranchEditTitle;
+
+  /// No description provided for @conversationBranchEditLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Message'**
+  String get conversationBranchEditLabel;
+
+  /// No description provided for @conversationBranchStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Start branch'**
+  String get conversationBranchStart;
+
+  /// No description provided for @conversationBranchTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'{title} (branch)'**
+  String conversationBranchTitle(String title);
+
+  /// No description provided for @conversationBranchCreateFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The message branch could not be created.'**
+  String get conversationBranchCreateFailed;
+
   /// No description provided for @conversationTitleSaveFailed.
   ///
   /// In en, this message translates to:
@@ -3961,6 +4447,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The response could not be completed. Your saved messages are still available.'**
   String get chatRequestFailed;
+
+  /// No description provided for @goalAlreadyActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume or stop the active goal before starting another one in this chat.'**
+  String get goalAlreadyActive;
+
+  /// No description provided for @goalStateUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenChat could not check whether this chat already has an active goal. Try again.'**
+  String get goalStateUnavailable;
 
   /// No description provided for @cachedCatalog.
   ///
@@ -4274,11 +4772,107 @@ abstract class AppLocalizations {
   /// **'Execute command'**
   String get toolExecuteCommand;
 
+  /// No description provided for @toolRunProjectTask.
+  ///
+  /// In en, this message translates to:
+  /// **'Run project task'**
+  String get toolRunProjectTask;
+
+  /// No description provided for @toolDelegateTask.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegate analysis'**
+  String get toolDelegateTask;
+
+  /// No description provided for @toolPermissionTask.
+  ///
+  /// In en, this message translates to:
+  /// **'Task'**
+  String get toolPermissionTask;
+
+  /// No description provided for @toolPermissionTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'Timeout (seconds)'**
+  String get toolPermissionTimeout;
+
   /// No description provided for @toolSendTerminalInput.
   ///
   /// In en, this message translates to:
   /// **'Send terminal input'**
   String get toolSendTerminalInput;
+
+  /// No description provided for @toolGitStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Git status'**
+  String get toolGitStatus;
+
+  /// No description provided for @toolGitDiff.
+  ///
+  /// In en, this message translates to:
+  /// **'Git diff'**
+  String get toolGitDiff;
+
+  /// No description provided for @toolGitHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'Git history'**
+  String get toolGitHistory;
+
+  /// No description provided for @toolGitBranch.
+  ///
+  /// In en, this message translates to:
+  /// **'Branch'**
+  String get toolGitBranch;
+
+  /// No description provided for @toolGitUpstream.
+  ///
+  /// In en, this message translates to:
+  /// **'Upstream'**
+  String get toolGitUpstream;
+
+  /// No description provided for @toolGitAhead.
+  ///
+  /// In en, this message translates to:
+  /// **'Ahead'**
+  String get toolGitAhead;
+
+  /// No description provided for @toolGitBehind.
+  ///
+  /// In en, this message translates to:
+  /// **'Behind'**
+  String get toolGitBehind;
+
+  /// No description provided for @toolGitStaged.
+  ///
+  /// In en, this message translates to:
+  /// **'Staged'**
+  String get toolGitStaged;
+
+  /// No description provided for @toolGitUnstaged.
+  ///
+  /// In en, this message translates to:
+  /// **'Unstaged'**
+  String get toolGitUnstaged;
+
+  /// No description provided for @toolGitNoChanges.
+  ///
+  /// In en, this message translates to:
+  /// **'The working tree is clean.'**
+  String get toolGitNoChanges;
+
+  /// No description provided for @toolGitNoDiff.
+  ///
+  /// In en, this message translates to:
+  /// **'There is no diff to show.'**
+  String get toolGitNoDiff;
+
+  /// No description provided for @toolGitNoHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'No commits were found.'**
+  String get toolGitNoHistory;
 
   /// No description provided for @toolWebSearch.
   ///
@@ -4297,6 +4891,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Search query'**
   String get toolSearchQuery;
+
+  /// No description provided for @toolLocalWebSource.
+  ///
+  /// In en, this message translates to:
+  /// **'Local web search'**
+  String get toolLocalWebSource;
+
+  /// No description provided for @toolLocalPageSource.
+  ///
+  /// In en, this message translates to:
+  /// **'Local page read'**
+  String get toolLocalPageSource;
+
+  /// No description provided for @toolProviderSource.
+  ///
+  /// In en, this message translates to:
+  /// **'Provider source'**
+  String get toolProviderSource;
+
+  /// No description provided for @toolSourceRetrievedAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Retrieved {time}'**
+  String toolSourceRetrievedAt(String time);
+
+  /// No description provided for @toolSourceDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Source details'**
+  String get toolSourceDetails;
+
+  /// No description provided for @toolCitationSource.
+  ///
+  /// In en, this message translates to:
+  /// **'Source {sourceId}'**
+  String toolCitationSource(String sourceId);
 
   /// No description provided for @toolWebSearchNoResults.
   ///
@@ -4591,6 +5221,666 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'View remaining quotas, usage limits, and reset times for all your connected ChatGPT accounts.'**
   String get usageQuotasDescription;
+
+  /// No description provided for @statistics.
+  ///
+  /// In en, this message translates to:
+  /// **'Statistics'**
+  String get statistics;
+
+  /// No description provided for @statisticsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Explore token usage, requests, and ChatGPT quota history by provider, model, and conversation.'**
+  String get statisticsDescription;
+
+  /// No description provided for @statisticsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Usage statistics could not be loaded.'**
+  String get statisticsLoadFailed;
+
+  /// No description provided for @statisticsUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Local usage statistics are not available right now.'**
+  String get statisticsUnavailable;
+
+  /// No description provided for @statisticsRetry.
+  ///
+  /// In en, this message translates to:
+  /// **'Reload'**
+  String get statisticsRetry;
+
+  /// No description provided for @statisticsDateRange.
+  ///
+  /// In en, this message translates to:
+  /// **'Date range'**
+  String get statisticsDateRange;
+
+  /// No description provided for @statisticsProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Provider'**
+  String get statisticsProvider;
+
+  /// No description provided for @statisticsRunId.
+  ///
+  /// In en, this message translates to:
+  /// **'Run ID'**
+  String get statisticsRunId;
+
+  /// No description provided for @statisticsRunIdValue.
+  ///
+  /// In en, this message translates to:
+  /// **'Run ID: {runId}'**
+  String statisticsRunIdValue(String runId);
+
+  /// No description provided for @statisticsModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model'**
+  String get statisticsModel;
+
+  /// No description provided for @statisticsOperation.
+  ///
+  /// In en, this message translates to:
+  /// **'Operation type'**
+  String get statisticsOperation;
+
+  /// No description provided for @statisticsReasoningEffort.
+  ///
+  /// In en, this message translates to:
+  /// **'Reasoning effort'**
+  String get statisticsReasoningEffort;
+
+  /// No description provided for @statisticsFastModeFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'Fast mode'**
+  String get statisticsFastModeFilter;
+
+  /// No description provided for @statisticsAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get statisticsAll;
+
+  /// No description provided for @statisticsUnspecified.
+  ///
+  /// In en, this message translates to:
+  /// **'Unspecified'**
+  String get statisticsUnspecified;
+
+  /// No description provided for @statisticsClearFilters.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear filters'**
+  String get statisticsClearFilters;
+
+  /// No description provided for @statisticsTotalTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'Total tokens'**
+  String get statisticsTotalTokens;
+
+  /// No description provided for @statisticsInputTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'Input tokens'**
+  String get statisticsInputTokens;
+
+  /// No description provided for @statisticsOutputTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'Output tokens'**
+  String get statisticsOutputTokens;
+
+  /// No description provided for @statisticsReasoningTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'Reasoning tokens'**
+  String get statisticsReasoningTokens;
+
+  /// No description provided for @statisticsCachedInputTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'Cached input tokens'**
+  String get statisticsCachedInputTokens;
+
+  /// No description provided for @statisticsCacheWriteTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'Cache write tokens'**
+  String get statisticsCacheWriteTokens;
+
+  /// No description provided for @statisticsRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'Requests'**
+  String get statisticsRequests;
+
+  /// No description provided for @statisticsSuccessfulRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'Successful'**
+  String get statisticsSuccessfulRequests;
+
+  /// No description provided for @statisticsFailedRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get statisticsFailedRequests;
+
+  /// No description provided for @statisticsCancelledRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped'**
+  String get statisticsCancelledRequests;
+
+  /// No description provided for @statisticsInterruptedRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'Interrupted'**
+  String get statisticsInterruptedRequests;
+
+  /// No description provided for @statisticsPendingRequests.
+  ///
+  /// In en, this message translates to:
+  /// **'In progress'**
+  String get statisticsPendingRequests;
+
+  /// No description provided for @statisticsConversations.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversations'**
+  String get statisticsConversations;
+
+  /// No description provided for @statisticsCoverage.
+  ///
+  /// In en, this message translates to:
+  /// **'Usage data coverage'**
+  String get statisticsCoverage;
+
+  /// No description provided for @statisticsInputCoverage.
+  ///
+  /// In en, this message translates to:
+  /// **'Requests with reported input tokens'**
+  String get statisticsInputCoverage;
+
+  /// No description provided for @statisticsOutputCoverage.
+  ///
+  /// In en, this message translates to:
+  /// **'Requests with reported output tokens'**
+  String get statisticsOutputCoverage;
+
+  /// No description provided for @statisticsReasoningCoverage.
+  ///
+  /// In en, this message translates to:
+  /// **'Requests with reported reasoning tokens'**
+  String get statisticsReasoningCoverage;
+
+  /// No description provided for @statisticsCoverageText.
+  ///
+  /// In en, this message translates to:
+  /// **'The provider returned token usage for {reported} of {total} requests.'**
+  String statisticsCoverageText(int total, int reported);
+
+  /// No description provided for @statisticsProviderReportedCost.
+  ///
+  /// In en, this message translates to:
+  /// **'Provider reported cost'**
+  String get statisticsProviderReportedCost;
+
+  /// No description provided for @statisticsCostCoverage.
+  ///
+  /// In en, this message translates to:
+  /// **'Cost information is available for {reported} requests.'**
+  String statisticsCostCoverage(int reported);
+
+  /// No description provided for @statisticsModelsDevCatalogCost.
+  ///
+  /// In en, this message translates to:
+  /// **'Cost at models.dev list prices'**
+  String get statisticsModelsDevCatalogCost;
+
+  /// No description provided for @statisticsModelsDevCatalogCostCoverage.
+  ///
+  /// In en, this message translates to:
+  /// **'List-price equivalent calculated for {priced} requests.'**
+  String statisticsModelsDevCatalogCostCoverage(int priced);
+
+  /// No description provided for @statisticsModelsDevPricingCurrent.
+  ///
+  /// In en, this message translates to:
+  /// **'models.dev pricing catalog fetched {date}.'**
+  String statisticsModelsDevPricingCurrent(String date);
+
+  /// No description provided for @statisticsModelsDevPricingStale.
+  ///
+  /// In en, this message translates to:
+  /// **'models.dev is unreachable; cached prices from {date} are being used.'**
+  String statisticsModelsDevPricingStale(String date);
+
+  /// No description provided for @statisticsModelsDevPricingUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'models.dev pricing is unavailable. Costs are not calculated without an exact provider and model match.'**
+  String get statisticsModelsDevPricingUnavailable;
+
+  /// No description provided for @statisticsUsageTrend.
+  ///
+  /// In en, this message translates to:
+  /// **'Usage over time'**
+  String get statisticsUsageTrend;
+
+  /// No description provided for @statisticsDaily.
+  ///
+  /// In en, this message translates to:
+  /// **'Daily'**
+  String get statisticsDaily;
+
+  /// No description provided for @statisticsMonthly.
+  ///
+  /// In en, this message translates to:
+  /// **'Monthly'**
+  String get statisticsMonthly;
+
+  /// No description provided for @statisticsProviders.
+  ///
+  /// In en, this message translates to:
+  /// **'Provider usage'**
+  String get statisticsProviders;
+
+  /// No description provided for @statisticsModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Model usage'**
+  String get statisticsModels;
+
+  /// No description provided for @statisticsReasoningLevels.
+  ///
+  /// In en, this message translates to:
+  /// **'Selected reasoning effort'**
+  String get statisticsReasoningLevels;
+
+  /// No description provided for @statisticsOperations.
+  ///
+  /// In en, this message translates to:
+  /// **'Operation types'**
+  String get statisticsOperations;
+
+  /// No description provided for @statisticsFastModeUsage.
+  ///
+  /// In en, this message translates to:
+  /// **'Fast mode usage'**
+  String get statisticsFastModeUsage;
+
+  /// No description provided for @statisticsRequested.
+  ///
+  /// In en, this message translates to:
+  /// **'Requested'**
+  String get statisticsRequested;
+
+  /// No description provided for @statisticsNotRequested.
+  ///
+  /// In en, this message translates to:
+  /// **'Not requested'**
+  String get statisticsNotRequested;
+
+  /// No description provided for @statisticsServiceTiers.
+  ///
+  /// In en, this message translates to:
+  /// **'Returned service tiers'**
+  String get statisticsServiceTiers;
+
+  /// No description provided for @statisticsServiceTier.
+  ///
+  /// In en, this message translates to:
+  /// **'Service tier'**
+  String get statisticsServiceTier;
+
+  /// No description provided for @statisticsNoBreakdownData.
+  ///
+  /// In en, this message translates to:
+  /// **'No data to show for this period.'**
+  String get statisticsNoBreakdownData;
+
+  /// No description provided for @statisticsNoConversationData.
+  ///
+  /// In en, this message translates to:
+  /// **'No conversation usage for this period.'**
+  String get statisticsNoConversationData;
+
+  /// No description provided for @statisticsOpenConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Open conversation'**
+  String get statisticsOpenConversation;
+
+  /// No description provided for @statisticsRequestDetails.
+  ///
+  /// In en, this message translates to:
+  /// **'Request history'**
+  String get statisticsRequestDetails;
+
+  /// No description provided for @statisticsRequestPayload.
+  ///
+  /// In en, this message translates to:
+  /// **'Sent request data'**
+  String get statisticsRequestPayload;
+
+  /// No description provided for @statisticsRequestContextUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The sent request summary is unavailable.'**
+  String get statisticsRequestContextUnavailable;
+
+  /// No description provided for @statisticsRequestSourceMessages.
+  ///
+  /// In en, this message translates to:
+  /// **'Included message IDs: {ids}'**
+  String statisticsRequestSourceMessages(String ids);
+
+  /// No description provided for @statisticsRequestArchivedMessages.
+  ///
+  /// In en, this message translates to:
+  /// **'Retrieved message IDs: {ids}'**
+  String statisticsRequestArchivedMessages(String ids);
+
+  /// No description provided for @statisticsRequestSummaryBoundary.
+  ///
+  /// In en, this message translates to:
+  /// **'Summary includes messages through: {id}'**
+  String statisticsRequestSummaryBoundary(String id);
+
+  /// No description provided for @statisticsRequestSourceAttachments.
+  ///
+  /// In en, this message translates to:
+  /// **'Attachments sent: {files}'**
+  String statisticsRequestSourceAttachments(String files);
+
+  /// No description provided for @statisticsRequestSourcesTruncated.
+  ///
+  /// In en, this message translates to:
+  /// **'Some source details are omitted from this record.'**
+  String get statisticsRequestSourcesTruncated;
+
+  /// No description provided for @statisticsRequestMessageCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages sent: {count}'**
+  String statisticsRequestMessageCount(int count);
+
+  /// No description provided for @statisticsRequestImageCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Images sent: {count}'**
+  String statisticsRequestImageCount(int count);
+
+  /// No description provided for @statisticsRequestToolResultCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool results sent: {count}'**
+  String statisticsRequestToolResultCount(int count);
+
+  /// No description provided for @statisticsRequestInstructionBytes.
+  ///
+  /// In en, this message translates to:
+  /// **'Instruction bytes: {count}'**
+  String statisticsRequestInstructionBytes(int count);
+
+  /// No description provided for @statisticsRequestRoles.
+  ///
+  /// In en, this message translates to:
+  /// **'Message roles: {roles}'**
+  String statisticsRequestRoles(String roles);
+
+  /// No description provided for @statisticsRequestTools.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool definitions: {names}'**
+  String statisticsRequestTools(String names);
+
+  /// No description provided for @statisticsRequestCacheControls.
+  ///
+  /// In en, this message translates to:
+  /// **'Cache controls: {names}'**
+  String statisticsRequestCacheControls(String names);
+
+  /// No description provided for @statisticsNone.
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get statisticsNone;
+
+  /// No description provided for @statisticsRequestTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Request time'**
+  String get statisticsRequestTime;
+
+  /// No description provided for @statisticsConversationTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation title'**
+  String get statisticsConversationTitle;
+
+  /// No description provided for @statisticsStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get statisticsStatus;
+
+  /// No description provided for @statisticsUsageSource.
+  ///
+  /// In en, this message translates to:
+  /// **'Usage data source'**
+  String get statisticsUsageSource;
+
+  /// No description provided for @statisticsNoRequestData.
+  ///
+  /// In en, this message translates to:
+  /// **'No requests match these filters.'**
+  String get statisticsNoRequestData;
+
+  /// No description provided for @statisticsShowingRows.
+  ///
+  /// In en, this message translates to:
+  /// **'{start} - {end} of {total}'**
+  String statisticsShowingRows(int start, int end, int total);
+
+  /// No description provided for @statisticsExportCsv.
+  ///
+  /// In en, this message translates to:
+  /// **'Export CSV'**
+  String get statisticsExportCsv;
+
+  /// No description provided for @statisticsExporting.
+  ///
+  /// In en, this message translates to:
+  /// **'Exporting'**
+  String get statisticsExporting;
+
+  /// No description provided for @statisticsExported.
+  ///
+  /// In en, this message translates to:
+  /// **'Statistics were exported to a CSV file.'**
+  String get statisticsExported;
+
+  /// No description provided for @statisticsExportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Statistics could not be exported.'**
+  String get statisticsExportFailed;
+
+  /// No description provided for @statisticsQuotaHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'ChatGPT quota history'**
+  String get statisticsQuotaHistory;
+
+  /// No description provided for @statisticsQuotaSnapshot.
+  ///
+  /// In en, this message translates to:
+  /// **'Quota snapshot'**
+  String get statisticsQuotaSnapshot;
+
+  /// No description provided for @statisticsNoQuotaHistory.
+  ///
+  /// In en, this message translates to:
+  /// **'No ChatGPT quota snapshots were saved in this date range.'**
+  String get statisticsNoQuotaHistory;
+
+  /// No description provided for @statisticsUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'Used'**
+  String get statisticsUsed;
+
+  /// No description provided for @statisticsResetAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Resets'**
+  String get statisticsResetAt;
+
+  /// No description provided for @statisticsQuotaAllowed.
+  ///
+  /// In en, this message translates to:
+  /// **'Requests allowed'**
+  String get statisticsQuotaAllowed;
+
+  /// No description provided for @statisticsQuotaBlocked.
+  ///
+  /// In en, this message translates to:
+  /// **'Requests blocked'**
+  String get statisticsQuotaBlocked;
+
+  /// No description provided for @statisticsQuotaUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Usage status unknown'**
+  String get statisticsQuotaUnknown;
+
+  /// No description provided for @statisticsQuotaFreshnessCurrent.
+  ///
+  /// In en, this message translates to:
+  /// **'Current data'**
+  String get statisticsQuotaFreshnessCurrent;
+
+  /// No description provided for @statisticsQuotaFreshnessStale.
+  ///
+  /// In en, this message translates to:
+  /// **'Stale data'**
+  String get statisticsQuotaFreshnessStale;
+
+  /// No description provided for @statisticsQuotaFreshnessUnknown.
+  ///
+  /// In en, this message translates to:
+  /// **'Data status unknown'**
+  String get statisticsQuotaFreshnessUnknown;
+
+  /// No description provided for @statisticsNotReported.
+  ///
+  /// In en, this message translates to:
+  /// **'Not reported'**
+  String get statisticsNotReported;
+
+  /// No description provided for @statisticsLegacyDataNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Older messages may contain only output tokens; missing model and input token details are not inferred.'**
+  String get statisticsLegacyDataNote;
+
+  /// No description provided for @statisticsModelsDevPricingNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Catalog-price equivalents use current models.dev prices and are not provider invoices. ChatGPT OAuth subscription usage, Fast requests, and unsupported service tiers are excluded.'**
+  String get statisticsModelsDevPricingNote;
+
+  /// No description provided for @statisticsLegacyOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'Output tokens from older messages'**
+  String get statisticsLegacyOutput;
+
+  /// No description provided for @statisticsChatGptOAuth.
+  ///
+  /// In en, this message translates to:
+  /// **'ChatGPT OAuth'**
+  String get statisticsChatGptOAuth;
+
+  /// No description provided for @statisticsChatGptApi.
+  ///
+  /// In en, this message translates to:
+  /// **'ChatGPT API'**
+  String get statisticsChatGptApi;
+
+  /// No description provided for @statisticsOperationChat.
+  ///
+  /// In en, this message translates to:
+  /// **'Chat'**
+  String get statisticsOperationChat;
+
+  /// No description provided for @statisticsOperationToolFollowUp.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool follow-up'**
+  String get statisticsOperationToolFollowUp;
+
+  /// No description provided for @statisticsOperationCompaction.
+  ///
+  /// In en, this message translates to:
+  /// **'Context compaction'**
+  String get statisticsOperationCompaction;
+
+  /// No description provided for @statisticsOperationTitleGeneration.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation title generation'**
+  String get statisticsOperationTitleGeneration;
+
+  /// No description provided for @statisticsOperationLegacy.
+  ///
+  /// In en, this message translates to:
+  /// **'Older message'**
+  String get statisticsOperationLegacy;
+
+  /// No description provided for @statisticsStatusCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get statisticsStatusCompleted;
+
+  /// No description provided for @statisticsStatusFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get statisticsStatusFailed;
+
+  /// No description provided for @statisticsStatusCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped'**
+  String get statisticsStatusCancelled;
+
+  /// No description provided for @statisticsStatusInterrupted.
+  ///
+  /// In en, this message translates to:
+  /// **'Interrupted'**
+  String get statisticsStatusInterrupted;
+
+  /// No description provided for @statisticsStatusPending.
+  ///
+  /// In en, this message translates to:
+  /// **'In progress'**
+  String get statisticsStatusPending;
+
+  /// No description provided for @statisticsStatusLegacy.
+  ///
+  /// In en, this message translates to:
+  /// **'Historical data'**
+  String get statisticsStatusLegacy;
 
   /// No description provided for @refreshAll.
   ///
@@ -5185,6 +6475,114 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'File changes unavailable'**
   String get fileChangesUnavailableTitle;
+
+  /// No description provided for @goalSlashCommand.
+  ///
+  /// In en, this message translates to:
+  /// **'/goal'**
+  String get goalSlashCommand;
+
+  /// No description provided for @goalCommandDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Start this message as a goal and keep working until it is complete or needs your input.'**
+  String get goalCommandDescription;
+
+  /// No description provided for @goalObjectiveRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Write a goal after /goal.'**
+  String get goalObjectiveRequired;
+
+  /// No description provided for @goalWorking.
+  ///
+  /// In en, this message translates to:
+  /// **'Working on goal'**
+  String get goalWorking;
+
+  /// No description provided for @goalPaused.
+  ///
+  /// In en, this message translates to:
+  /// **'Goal paused'**
+  String get goalPaused;
+
+  /// No description provided for @goalInterrupted.
+  ///
+  /// In en, this message translates to:
+  /// **'Goal interrupted'**
+  String get goalInterrupted;
+
+  /// No description provided for @goalCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Goal completed'**
+  String get goalCompleted;
+
+  /// No description provided for @goalStopped.
+  ///
+  /// In en, this message translates to:
+  /// **'Goal stopped'**
+  String get goalStopped;
+
+  /// No description provided for @goalFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Goal failed'**
+  String get goalFailed;
+
+  /// No description provided for @goalPausedForQuota.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused because the model quota or rate limit was reached.'**
+  String get goalPausedForQuota;
+
+  /// No description provided for @goalPausedForBlocker.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused because progress is blocked.'**
+  String get goalPausedForBlocker;
+
+  /// No description provided for @goalPausedForUserInput.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused while waiting for your input.'**
+  String get goalPausedForUserInput;
+
+  /// No description provided for @goalPausedByUser.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused by you.'**
+  String get goalPausedByUser;
+
+  /// No description provided for @goalPausedAfterError.
+  ///
+  /// In en, this message translates to:
+  /// **'Paused after a request error.'**
+  String get goalPausedAfterError;
+
+  /// No description provided for @goalPauseAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Pause goal'**
+  String get goalPauseAction;
+
+  /// No description provided for @goalResumeAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Resume goal'**
+  String get goalResumeAction;
+
+  /// No description provided for @goalStopAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop goal'**
+  String get goalStopAction;
+
+  /// No description provided for @goalElapsedTime.
+  ///
+  /// In en, this message translates to:
+  /// **'Elapsed: {time}'**
+  String goalElapsedTime(String time);
 }
 
 class _AppLocalizationsDelegate

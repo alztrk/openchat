@@ -1,0 +1,62 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/features/chat/presentation/widgets/project_tool_permissions_dialog.dart';
+import 'package:openchat/features/settings/data/settings_preferences.dart';
+import 'package:openchat/l10n/generated/app_localizations.dart';
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('project tool rules can be changed and saved accessibly', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1100, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    Map<String, ToolPermissionRule>? savedRules;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OpenChatTheme.light,
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showDialog<void>(
+                context: context,
+                builder: (context) => ProjectToolPermissionsDialog(
+                  initialRules: const <String, ToolPermissionRule>{},
+                  onSave: (rules) async {
+                    savedRules = rules;
+                  },
+                ),
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open'));
+    await tester.pumpAndSettle();
+    expect(find.text('Project tool permissions'), findsOneWidget);
+    expect(find.text('Use global setting'), findsWidgets);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('project-tool-rule-list_files')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Allow').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Save'));
+    await tester.pumpAndSettle();
+
+    expect(savedRules?['list_files'], ToolPermissionRule.allow);
+    expect(find.byType(ProjectToolPermissionsDialog), findsNothing);
+  });
+}

@@ -1,7 +1,7 @@
 use std::{
     collections::HashSet,
     sync::{Arc, LazyLock},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 mod url_fetch;
@@ -67,6 +67,7 @@ pub struct SearchResultItem {
 struct CacheEntry<T> {
     data: T,
     timestamp: Instant,
+    retrieved_at_unix_ms: i64,
 }
 
 struct SearchCache {
@@ -614,7 +615,11 @@ pub async fn execute_web_search(query: &str, limit_opt: Option<usize>) -> Result
         if let Some((_, entry)) = cache.searches.iter().find(|(q, _)| q == query_trimmed)
             && entry.timestamp.elapsed() < Duration::from_secs(CACHE_TTL_SECS)
         {
-            return Ok(format_search_response(query_trimmed, &entry.data));
+            return Ok(format_search_response(
+                query_trimmed,
+                &entry.data,
+                entry.retrieved_at_unix_ms,
+            ));
         }
     }
 
@@ -689,6 +694,8 @@ pub async fn execute_web_search(query: &str, limit_opt: Option<usize>) -> Result
 
     let final_results: Vec<SearchResultItem> = combined.into_iter().take(limit).collect();
 
+    let retrieved_at_unix_ms = now_unix_millis()?;
+
     // Store in cache
     {
         let mut cache = CACHE.lock().await;
@@ -700,18 +707,30 @@ pub async fn execute_web_search(query: &str, limit_opt: Option<usize>) -> Result
             CacheEntry {
                 data: final_results.clone(),
                 timestamp: Instant::now(),
+                retrieved_at_unix_ms,
             },
         ));
     }
 
-    Ok(format_search_response(query_trimmed, &final_results))
+    Ok(format_search_response(
+        query_trimmed,
+        &final_results,
+        retrieved_at_unix_ms,
+    ))
 }
 
-fn format_search_response(query: &str, results: &[SearchResultItem]) -> Value {
+fn format_search_response(
+    query: &str,
+    results: &[SearchResultItem],
+    retrieved_at_unix_ms: i64,
+) -> Value {
     json!({
         "query": query,
+        "sourceType": "local_web_search",
+        "retrievedAtUnixMs": retrieved_at_unix_ms,
         "total_results": results.len(),
-        "results": results.iter().map(|item| json!({
+        "results": results.iter().enumerate().map(|(index, item)| json!({
+            "sourceId": format!("S{}", index + 1),
             "title": item.title,
             "url": item.url,
             "snippet": item.snippet,
@@ -753,7 +772,7 @@ pub async fn execute_read_url(
     let page = url_fetch::fetch_public_page(parsed_url, byte_limit).await?;
     let raw_text = String::from_utf8_lossy(&page.bytes).to_string();
 
-    let result = if page.content_type.contains("text/plain")
+    let mut result = if page.content_type.contains("text/plain")
         || page.content_type.contains("application/json")
     {
         let truncated = page.truncated || raw_text.len() > max_chars;
@@ -786,6 +805,13 @@ pub async fn execute_read_url(
         })
     };
 
+    let retrieved_at_unix_ms = now_unix_millis()?;
+    if let Some(result) = result.as_object_mut() {
+        result.insert("sourceType".to_owned(), json!("local_read_url"));
+        result.insert("sourceId".to_owned(), json!("U1"));
+        result.insert("retrievedAtUnixMs".to_owned(), json!(retrieved_at_unix_ms));
+    }
+
     // Store in cache
     {
         let mut cache = CACHE.lock().await;
@@ -797,11 +823,20 @@ pub async fn execute_read_url(
             CacheEntry {
                 data: result.clone(),
                 timestamp: Instant::now(),
+                retrieved_at_unix_ms,
             },
         ));
     }
 
     Ok(result)
+}
+
+fn now_unix_millis() -> Result<i64, String> {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| "The system clock is invalid.".to_owned())?;
+    i64::try_from(elapsed.as_millis())
+        .map_err(|_| "The system clock is outside the supported range.".to_owned())
 }
 
 fn extract_title(html: &str) -> Option<String> {
@@ -929,7 +964,9 @@ fn normalize_markdown_newlines(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_ddg_target_url;
+    use serde_json::json;
+
+    use super::{SearchResultItem, extract_ddg_target_url, format_search_response};
 
     #[test]
     fn keeps_direct_urls_without_redirect_parameters() {
@@ -955,6 +992,28 @@ mod tests {
         assert_eq!(
             extract_ddg_target_url(url),
             "https://example.org/articles?q=rust"
+        );
+    }
+
+    #[test]
+    fn search_response_keeps_source_type_retrieval_time_and_source_ids() {
+        let result = format_search_response(
+            "test query",
+            &[SearchResultItem {
+                title: "OpenChat docs".to_owned(),
+                url: "https://example.org/docs".to_owned(),
+                snippet: "Documentation".to_owned(),
+                engine: "bing".to_owned(),
+            }],
+            1_800_000_000_000,
+        );
+
+        assert_eq!(result["sourceType"], "local_web_search");
+        assert_eq!(result["retrievedAtUnixMs"], 1_800_000_000_000i64);
+        assert_eq!(result["results"][0]["sourceId"], "S1");
+        assert_eq!(
+            result["results"][0]["url"],
+            json!("https://example.org/docs")
         );
     }
 }

@@ -162,6 +162,11 @@ async fn receive_with_client(
             };
 
             if request.route.uses_responses_api {
+                update_provider_request_usage(
+                    request.route.provider_id.as_deref().unwrap_or_default(),
+                    &value,
+                    &mut provider_request_usage,
+                );
                 if let Some(tokens) = value
                     .pointer("/response/usage/input_tokens")
                     .and_then(Value::as_i64)
@@ -290,7 +295,11 @@ async fn receive_with_client(
                     .await;
             }
             update_chat_completion_usage(&value, request.input_tokens, request.output_tokens);
-            update_provider_request_usage(&value, &mut provider_request_usage);
+            update_provider_request_usage(
+                request.route.provider_id.as_deref().unwrap_or_default(),
+                &value,
+                &mut provider_request_usage,
+            );
             if let Some(deltas) = value
                 .pointer("/choices/0/delta/tool_calls")
                 .and_then(Value::as_array)

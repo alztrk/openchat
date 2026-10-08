@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde_json::{Value, json};
 
 use crate::{
@@ -29,38 +31,52 @@ pub(super) struct ToolRoundContext<'a> {
 
 pub(super) async fn execute(
     calls: &[ToolCall],
+    executable_calls: &[ToolCall],
+    precomputed_results: Vec<crate::provider_schema::ToolResult>,
     round_content: &str,
     is_opencode: bool,
     messages: &mut Vec<Value>,
     tool_executor: &mut ToolExecutor,
     context: ToolRoundContext<'_>,
 ) -> Result<(), ServiceError> {
-    tool_executor.begin_round(calls)?;
-    let mut results = Vec::with_capacity(calls.len());
-    for call in calls {
+    tool_executor.begin_round(executable_calls)?;
+    let mut results_by_id = HashMap::with_capacity(calls.len());
+    for result in precomputed_results {
+        if results_by_id
+            .insert(result.call_id, result.output)
+            .is_some()
+        {
+            return Err(invalid_response_error());
+        }
+    }
+    for call in executable_calls {
         let snapshot = ChatStreamSnapshot::new(
             context.conversation_id,
             context.message_id,
             context.content,
             context.created_at,
         );
-        results.push(
-            tool_executor
-                .execute_call_with_image_context(
-                    call,
-                    context.permission_broker,
-                    context.request_id,
-                    &snapshot,
-                    context.events,
-                    context.cancellation,
-                    context.storage,
-                    context.run_id,
-                    context.provider_id,
-                    context.user_question_broker,
-                    context.image_generation.as_ref(),
-                )
-                .await?,
-        );
+        let result = tool_executor
+            .execute_call_with_image_context(
+                call,
+                context.permission_broker,
+                context.request_id,
+                &snapshot,
+                context.events,
+                context.cancellation,
+                context.storage,
+                context.run_id,
+                context.provider_id,
+                context.user_question_broker,
+                context.image_generation.as_ref(),
+            )
+            .await?;
+        if results_by_id
+            .insert(result.call_id, result.output)
+            .is_some()
+        {
+            return Err(invalid_response_error());
+        }
     }
 
     let assistant_calls = calls
@@ -86,11 +102,14 @@ pub(super) async fn execute(
         "content": if round_content.is_empty() { Value::Null } else { json!(round_content) },
         "tool_calls": assistant_calls
     }));
-    for result in results {
-        let output = serde_json::to_string(&result.output).map_err(|_| invalid_response_error())?;
+    for call in calls {
+        let output = results_by_id
+            .remove(&call.id)
+            .ok_or_else(invalid_response_error)?;
+        let output = serde_json::to_string(&output).map_err(|_| invalid_response_error())?;
         messages.push(json!({
             "role": "tool",
-            "tool_call_id": result.call_id,
+            "tool_call_id": call.id,
             "content": output
         }));
     }

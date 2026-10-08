@@ -73,6 +73,38 @@ class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
     accentIcon: Color(0xFF70A1FF),
   );
 
+  static const highContrastLight = OpenChatPalette(
+    navigation: Color(0xFFFFFFFF),
+    surface: Color(0xFFFFFFFF),
+    composer: Color(0xFFF4F4F4),
+    selected: Color(0xFFD9D9D9),
+    hover: Color(0xFFE8E8E8),
+    border: Color(0xFF595959),
+    controlBorder: Color(0xFF404040),
+    text: Color(0xFF000000),
+    brandInk: Color(0xFF000000),
+    secondaryText: Color(0xFF404040),
+    secondaryIcon: Color(0xFF404040),
+    accent: Color(0xFF0033B8),
+    accentIcon: Color(0xFF0033B8),
+  );
+
+  static const highContrastDark = OpenChatPalette(
+    navigation: Color(0xFF000000),
+    surface: Color(0xFF000000),
+    composer: Color(0xFF111111),
+    selected: Color(0xFF333333),
+    hover: Color(0xFF252525),
+    border: Color(0xFFB8B8B8),
+    controlBorder: Color(0xFFD9D9D9),
+    text: Color(0xFFFFFFFF),
+    brandInk: Color(0xFFFFFFFF),
+    secondaryText: Color(0xFFE6E6E6),
+    secondaryIcon: Color(0xFFE6E6E6),
+    accent: Color(0xFF91BEFF),
+    accentIcon: Color(0xFF91BEFF),
+  );
+
   static OpenChatPalette of(BuildContext context) {
     final palette = Theme.of(context).extension<OpenChatPalette>();
     if (palette == null) {
@@ -227,6 +259,50 @@ class OpenChatSemanticColors extends ThemeExtension<OpenChatSemanticColors> {
     success: Color(0xFF71D6A1),
     info: Color(0xFF7CC4FF),
     focusRing: Color(0xFF8BB5FF),
+  );
+
+  static const highContrastLight = OpenChatSemanticColors(
+    background: Color(0xFFFFFFFF),
+    foreground: Color(0xFF000000),
+    muted: Color(0xFFE8E8E8),
+    mutedForeground: Color(0xFF404040),
+    surface: Color(0xFFFFFFFF),
+    elevatedSurface: Color(0xFFFFFFFF),
+    border: Color(0xFF595959),
+    subtleBorder: Color(0xFF767676),
+    primary: Color(0xFF0033B8),
+    primaryHover: Color(0xFF00258A),
+    primaryActive: Color(0xFF001B66),
+    primaryForeground: Color(0xFFFFFFFF),
+    secondary: Color(0xFFD9D9D9),
+    accent: Color(0xFF0033B8),
+    destructive: Color(0xFF9B0000),
+    warning: Color(0xFF754300),
+    success: Color(0xFF005A2B),
+    info: Color(0xFF00527A),
+    focusRing: Color(0xFF0033B8),
+  );
+
+  static const highContrastDark = OpenChatSemanticColors(
+    background: Color(0xFF000000),
+    foreground: Color(0xFFFFFFFF),
+    muted: Color(0xFF252525),
+    mutedForeground: Color(0xFFE6E6E6),
+    surface: Color(0xFF000000),
+    elevatedSurface: Color(0xFF111111),
+    border: Color(0xFFB8B8B8),
+    subtleBorder: Color(0xFF999999),
+    primary: Color(0xFF91BEFF),
+    primaryHover: Color(0xFFB0D0FF),
+    primaryActive: Color(0xFFD0E2FF),
+    primaryForeground: Color(0xFF000000),
+    secondary: Color(0xFF333333),
+    accent: Color(0xFF91BEFF),
+    destructive: Color(0xFFFF9999),
+    warning: Color(0xFFFFD080),
+    success: Color(0xFF8AE6B2),
+    info: Color(0xFF91D9FF),
+    focusRing: Color(0xFFFFFF00),
   );
 
   static OpenChatSemanticColors of(BuildContext context) {
@@ -396,15 +472,28 @@ abstract final class OpenChatTheme {
     Brightness.light,
   );
   static final ThemeData dark = _create(OpenChatPalette.dark, Brightness.dark);
+  static final ThemeData highContrastLight = _create(
+    OpenChatPalette.highContrastLight,
+    Brightness.light,
+    semanticOverride: OpenChatSemanticColors.highContrastLight,
+  );
+  static final ThemeData highContrastDark = _create(
+    OpenChatPalette.highContrastDark,
+    Brightness.dark,
+    semanticOverride: OpenChatSemanticColors.highContrastDark,
+  );
 
   static ThemeData _create(
     OpenChatPalette palette,
     Brightness brightness, {
     String fontFamily = 'Manrope',
+    OpenChatSemanticColors? semanticOverride,
   }) {
-    final semantic = brightness == Brightness.light
-        ? OpenChatSemanticColors.light
-        : OpenChatSemanticColors.dark;
+    final semantic =
+        semanticOverride ??
+        (brightness == Brightness.light
+            ? OpenChatSemanticColors.light
+            : OpenChatSemanticColors.dark);
     final colorScheme = ColorScheme.fromSeed(
       seedColor: semantic.primary,
       brightness: brightness,

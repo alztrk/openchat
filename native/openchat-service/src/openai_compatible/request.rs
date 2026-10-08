@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::{
-    chatgpt_store, history, instructions,
+    chatgpt_store, goals, history, instructions,
     protocol::ServiceError,
     provider_schema::ProviderChatRequest,
     storage::AppStorage,
@@ -20,6 +20,7 @@ pub(super) struct ProviderRequestOptions<'a> {
     pub(super) has_project: bool,
     pub(super) reasoning_effort: Option<&'a str>,
     pub(super) supports_tool_calls: Option<bool>,
+    pub(super) goal_objective: Option<&'a str>,
 }
 
 pub(super) fn build_provider_request(
@@ -36,6 +37,7 @@ pub(super) fn build_provider_request(
         has_project,
         reasoning_effort,
         supports_tool_calls,
+        goal_objective,
     } = options;
     history::validate_attachments(stored_messages)?;
     let reasoning_effort = match (provider_id, reasoning_effort) {
@@ -89,17 +91,37 @@ pub(super) fn build_provider_request(
         ));
     }
 
-    let tools = tools::definitions_for_request(provider_id, supports_tool_calls);
+    let mut tools = tools::definitions_for_request(provider_id, supports_tool_calls);
+    if has_project && !tools.is_empty() {
+        tools.push(tools::project_tasks::tool_definition());
+    }
+    if goal_objective.is_some() && tools.is_empty() {
+        return Err(ServiceError::new(
+            "goal_tool_calls_unavailable",
+            "Goal mode requires a model that supports tool calling. Select a model with tool support.",
+            false,
+        ));
+    }
+    if !tools.is_empty() {
+        tools.extend(goals::control_tool_definitions());
+    }
+    let mut shared_instructions = instructions::shared_instructions(
+        custom_instructions,
+        permission_mode,
+        has_project,
+        !tools.is_empty(),
+        provider_id,
+    );
+    if !tools.is_empty() {
+        goals::append_goal_tool_instructions(&mut shared_instructions);
+    }
+    if let Some(objective) = goal_objective {
+        goals::append_goal_instructions(&mut shared_instructions, objective);
+    }
 
     Ok(ProviderChatRequest {
         model: model_id,
-        instructions: instructions::shared_instructions(
-            custom_instructions,
-            permission_mode,
-            has_project,
-            !tools.is_empty(),
-            provider_id,
-        ),
+        instructions: shared_instructions,
         messages,
         last_message_id,
         tools,

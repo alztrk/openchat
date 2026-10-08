@@ -224,4 +224,45 @@ void main() {
       expect(find.text('y'), findsOneWidget);
     },
   );
+
+  testWidgets('shows a named task command before approval', (tester) async {
+    const locale = Locale('tr');
+    final l10n = await AppLocalizations.delegate.load(locale);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: locale,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.light,
+        home: const Scaffold(
+          body: Padding(
+            padding: EdgeInsets.all(16),
+            child: ToolPermissionCard(
+              request: ToolPermissionRequest(
+                id: 'approval-project-task',
+                toolName: 'run_project_task',
+                targetPath: r'C:\project',
+                arguments: <String, Object?>{
+                  'task': 'verify',
+                  'command': 'cargo test --workspace',
+                  'timeout_seconds': 120,
+                },
+              ),
+              isResponding: false,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(l10n.toolRunProjectTask), findsOneWidget);
+    expect(find.text(l10n.toolPermissionTask), findsOneWidget);
+    expect(find.text('verify'), findsOneWidget);
+    expect(find.text(l10n.toolPermissionCommand), findsOneWidget);
+    expect(find.text('cargo test --workspace'), findsOneWidget);
+    expect(find.text(l10n.toolPermissionTimeout), findsOneWidget);
+    expect(find.text('120'), findsOneWidget);
+  });
 }

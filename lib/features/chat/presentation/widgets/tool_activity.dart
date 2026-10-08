@@ -114,6 +114,7 @@ class ToolActivityAccordion extends StatelessWidget {
     final isTerminal =
         activity.name == 'execute_command' ||
         activity.name == 'bash' ||
+        activity.name == 'run_project_task' ||
         activity.name == 'send_terminal_input';
     final terminalData = isTerminal
         ? ToolTerminalData.fromActivity(activity)
@@ -245,7 +246,12 @@ class ToolActivityAccordion extends StatelessWidget {
         'write_file' || 'write' => l10n.toolWriteFile,
         'edit_file' || 'edit' => l10n.toolEditFile,
         'execute_command' || 'bash' => l10n.toolExecuteCommand,
+        'run_project_task' => l10n.toolRunProjectTask,
+        'delegate_task' => l10n.toolDelegateTask,
         'send_terminal_input' => l10n.toolSendTerminalInput,
+        'git_status' => l10n.toolGitStatus,
+        'git_diff' => l10n.toolGitDiff,
+        'git_history' => l10n.toolGitHistory,
         'web_search' => l10n.toolWebSearch,
         'read_url_content' || 'read_url' => l10n.toolReadUrlContent,
         _ => name,

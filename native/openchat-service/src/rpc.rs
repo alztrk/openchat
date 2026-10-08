@@ -4,6 +4,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::{SystemTime, UNIX_EPOCH},
 };
 
 use rusqlite::OptionalExtension;
@@ -14,13 +15,14 @@ use zeroize::Zeroizing;
 use crate::{
     chat_operation::ChatSendContext,
     chatgpt::ChatGptService,
-    chatgpt_store, conversation_archive, hugging_face, instructions, local_engines, openai_api,
-    openai_compatible,
+    chatgpt_store, conversation_archive, goals, hugging_face, instructions, local_engines,
+    openai_api, openai_compatible,
     permissions::ToolPermissionBroker,
     profile_archive,
     protocol::{EventSink, Request, Response, ServiceError},
     storage::AppStorage,
     tools::{self, ToolPermissionMode},
+    usage_statistics,
     user_question_broker::{self, RunOutcome, UserQuestionBroker},
 };
 pub(crate) async fn dispatch(
@@ -72,6 +74,13 @@ pub(crate) async fn dispatch(
                     "storage_initialization_failed",
                     "Local conversation storage could not be initialized.",
                     false,
+                )
+            })?;
+            usage_statistics::mark_interrupted_requests(storage).map_err(|_| {
+                ServiceError::new(
+                    "usage_statistics_unavailable",
+                    "Local usage statistics could not be recovered.",
+                    true,
                 )
             })?;
             if startup_recovered
@@ -150,6 +159,127 @@ pub(crate) async fn dispatch(
             crate::file_changes::delete_all_changes(storage).map_err(file_changes_unavailable)?;
             Ok(json!({"deleted": true}))
         }
+        "project.worktrees.list" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let project_root = required_string(&request.params, "projectRoot")?;
+            crate::git_worktrees::list(storage, project_id, project_root)
+                .await
+                .map_err(git_worktree_error)
+        }
+        "project.worktrees.create" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let project_root = required_string(&request.params, "projectRoot")?;
+            crate::git_worktrees::create(storage, project_id, project_root)
+                .await
+                .map_err(git_worktree_error)
+        }
+        "project.worktrees.review" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let project_root = required_string(&request.params, "projectRoot")?;
+            let worktree_id = required_string(&request.params, "worktreeId")?;
+            crate::git_worktrees::review(storage, project_id, project_root, worktree_id)
+                .await
+                .map_err(git_worktree_error)
+        }
+        "project.worktrees.tasks" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let project_root = required_string(&request.params, "projectRoot")?;
+            let worktree_id = required_string(&request.params, "worktreeId")?;
+            let task_root = crate::git_worktrees::project_root_for_worktree(
+                storage,
+                project_id,
+                project_root,
+                worktree_id,
+            )
+            .await
+            .map_err(git_worktree_error)?;
+            let tasks = crate::tools::project_tasks::load_project_tasks(&task_root)?;
+            Ok(json!({"tasks": tasks}))
+        }
+        "project.worktrees.run_task" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let project_root = required_string(&request.params, "projectRoot")?;
+            let worktree_id = required_string(&request.params, "worktreeId")?;
+            let task_id = required_string(&request.params, "taskId")?;
+            let expected_command = required_string(&request.params, "expectedCommand")?;
+            let permission_mode = crate::tools::ToolPermissionMode::from_rpc(optional_string(
+                &request.params,
+                "toolPermissionMode",
+            )?)?;
+            let permission_rules = crate::tools::parse_tool_permission_rules(
+                request.params.get("toolPermissionRules"),
+            )?;
+            let confirmed = request
+                .params
+                .get("confirmed")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            match permission_rules.get("run_project_task") {
+                Some(crate::tools::ToolPermissionRule::Deny) => {
+                    return Err(ServiceError::new(
+                        "permission_denied",
+                        "The project permission rules deny named task execution.",
+                        false,
+                    ));
+                }
+                Some(crate::tools::ToolPermissionRule::Ask) if !confirmed => {
+                    return Err(tool_permission_confirmation_required());
+                }
+                Some(crate::tools::ToolPermissionRule::Ask)
+                | Some(crate::tools::ToolPermissionRule::Allow) => {}
+                None if permission_mode != crate::tools::ToolPermissionMode::FullAccess
+                    && !confirmed =>
+                {
+                    return Err(tool_permission_confirmation_required());
+                }
+                None => {}
+            }
+            let expected_timeout = request
+                .params
+                .get("expectedTimeoutSeconds")
+                .and_then(Value::as_u64)
+                .filter(|seconds| (5..=600).contains(seconds))
+                .ok_or_else(invalid_request_params)?;
+            let task_root = crate::git_worktrees::project_root_for_worktree(
+                storage,
+                project_id,
+                project_root,
+                worktree_id,
+            )
+            .await
+            .map_err(git_worktree_error)?;
+            let task = crate::tools::project_tasks::load_project_task(&task_root, task_id)?;
+            if task.command != expected_command || task.timeout_seconds != expected_timeout {
+                return Err(ServiceError::new(
+                    "project_task_changed",
+                    "The named task changed after it was displayed. Reload the task list and review it again.",
+                    false,
+                ));
+            }
+            crate::tools::terminal::TerminalSessionManager::global()
+                .execute_to_completion(
+                    &task.command,
+                    &task_root,
+                    task.timeout_seconds,
+                    &mut cancellation,
+                )
+                .await
+                .map_err(|_| {
+                    ServiceError::new(
+                        "project_task_execution_failed",
+                        "The named task could not run inside the process sandbox.",
+                        true,
+                    )
+                })
+        }
+        "project.worktrees.remove" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let project_root = required_string(&request.params, "projectRoot")?;
+            let worktree_id = required_string(&request.params, "worktreeId")?;
+            crate::git_worktrees::remove(storage, project_id, project_root, worktree_id)
+                .await
+                .map_err(git_worktree_error)
+        }
         "chatgpt.oauth.start" => service.oauth_sign_in(&mut cancellation).await,
         "chatgpt.connections.list" => service.list_connections(),
         "chatgpt.connections.delete" => {
@@ -203,6 +333,10 @@ pub(crate) async fn dispatch(
             service
                 .usage(connection_id, workspace_id, &mut cancellation)
                 .await
+        }
+        "statistics.get" => {
+            let query = statistics_query(&request.params)?;
+            usage_statistics::get_statistics(storage, &query, &mut cancellation).await
         }
         "chatgpt.reset_credits.consume" => {
             let connection_id = required_string(&request.params, "connectionId")?;
@@ -697,14 +831,33 @@ pub(crate) async fn dispatch(
             let api_key_connection_id = optional_string(&request.params, "apiKeyConnectionId")?;
             let requested_reasoning_effort = optional_string(&request.params, "reasoningEffort")?;
             let requested_fast_mode = optional_bool(&request.params, "fastMode")?.unwrap_or(false);
+            let goal_requested = optional_bool(&request.params, "goal")?.unwrap_or(false);
+            let requested_goal_objective = if goal_requested {
+                Some(goals::validate_objective(
+                    optional_string(&request.params, "goalObjective")?
+                        .ok_or_else(|| invalid_chat_goal_request("goal objective"))?,
+                )?)
+            } else {
+                if optional_string(&request.params, "goalObjective")?.is_some() {
+                    return Err(invalid_chat_goal_request("goal objective"));
+                }
+                None
+            };
             let requested_custom_instructions =
                 optional_string(&request.params, "customInstructions")?;
             let permission_mode = ToolPermissionMode::from_rpc(optional_string(
                 &request.params,
                 "toolPermissionMode",
             )?)?;
+            let tool_permission_rules =
+                tools::parse_tool_permission_rules(request.params.get("toolPermissionRules"))?;
             let excluded_assistant_message_id =
                 optional_string(&request.params, "excludedAssistantMessageId")?;
+            if (resume_run_id.is_some() && goal_requested)
+                || (goal_requested && excluded_assistant_message_id.is_some())
+            {
+                return Err(invalid_chat_goal_request("goal start parameters"));
+            }
             let connection = storage.connect().map_err(|_| {
                 ServiceError::new(
                     "storage_unavailable",
@@ -748,6 +901,34 @@ pub(crate) async fn dispatch(
                 connection_id,
                 workspace_id,
             ) = route.unwrap_or((None, None, None, None, None, None));
+            if let Some(objective) = requested_goal_objective {
+                let messages = chatgpt_store::conversation_messages(storage, conversation_id)
+                    .map_err(|_| {
+                        ServiceError::new(
+                            "storage_unavailable",
+                            "Chat history could not be read.",
+                            false,
+                        )
+                    })?;
+                if messages.last().is_none_or(|message| {
+                    message.role != "user" || message.content.trim() != objective
+                }) {
+                    return Err(invalid_chat_goal_request("goal objective"));
+                }
+                if crate::storage::user_questions::latest_active_goal_run(
+                    &connection,
+                    conversation_id,
+                )
+                .map_err(map_question_storage_error)?
+                .is_some()
+                {
+                    return Err(ServiceError::new(
+                        "goal_already_active",
+                        "Resume or stop the active goal before starting another goal in this chat.",
+                        false,
+                    ));
+                }
+            }
             if requested_fast_mode
                 && !matches!(provider_id.as_deref(), Some("chatgpt" | "chatgpt_api"))
             {
@@ -758,124 +939,172 @@ pub(crate) async fn dispatch(
                 ));
             }
             let resuming_question_run = resume_run_id.is_some();
-            let (run_id, custom_instructions, reasoning_effort, fast_mode) = if let Some(run_id) =
-                resume_run_id
-            {
-                let run = crate::storage::user_questions::load_run_for_conversation(
-                    &connection,
-                    conversation_id,
-                    run_id,
-                )
-                .map_err(map_question_storage_error)?;
-                let checkpoint = run.checkpoint.as_ref().ok_or_else(|| {
-                    ServiceError::new(
-                        "question_run_checkpoint_missing",
-                        "The pending AI response has no saved continuation data.",
-                        false,
+            let (run_id, custom_instructions, reasoning_effort, fast_mode, goal_execution) =
+                if let Some(run_id) = resume_run_id {
+                    let run = crate::storage::user_questions::load_run_for_conversation(
+                        &connection,
+                        conversation_id,
+                        run_id,
                     )
-                })?;
-                if checkpoint.get("providerId").and_then(Value::as_str) != provider_id.as_deref()
-                    || checkpoint.get("modelId").and_then(Value::as_str) != model_id.as_deref()
-                    || checkpoint.get("connectionId").and_then(Value::as_str)
-                        != connection_id.as_deref()
-                    || checkpoint.get("workspaceId").and_then(Value::as_str)
-                        != workspace_id.as_deref()
-                    || checkpoint
-                        .get("providerConnectionId")
-                        .or_else(|| checkpoint.get("apiKeyConnectionId"))
-                        .and_then(Value::as_str)
-                        != stored_api_key_connection_id.as_deref()
-                {
-                    return Err(ServiceError::new(
-                        "question_route_changed",
-                        "The conversation model changed while the AI was waiting. Restore the original model to continue.",
-                        false,
-                    ));
-                }
-                let custom_instructions = checkpoint
-                    .get("customInstructions")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned);
-                let reasoning_effort = checkpoint
-                    .get("reasoningEffort")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned);
-                let fast_mode = match checkpoint.get("fastMode") {
-                    None => false,
-                    Some(Value::Bool(enabled)) => *enabled,
-                    _ => {
+                    .map_err(map_question_storage_error)?;
+                    let checkpoint = run.checkpoint.as_ref().ok_or_else(|| {
+                        ServiceError::new(
+                            "question_run_checkpoint_missing",
+                            "The pending AI response has no saved continuation data.",
+                            false,
+                        )
+                    })?;
+                    if checkpoint.get("providerId").and_then(Value::as_str)
+                        != provider_id.as_deref()
+                        || checkpoint.get("modelId").and_then(Value::as_str) != model_id.as_deref()
+                        || checkpoint.get("connectionId").and_then(Value::as_str)
+                            != connection_id.as_deref()
+                        || checkpoint.get("workspaceId").and_then(Value::as_str)
+                            != workspace_id.as_deref()
+                        || checkpoint
+                            .get("providerConnectionId")
+                            .or_else(|| checkpoint.get("apiKeyConnectionId"))
+                            .and_then(Value::as_str)
+                            != stored_api_key_connection_id.as_deref()
+                    {
                         return Err(ServiceError::new(
-                            "question_run_checkpoint_invalid",
-                            "The saved Fast mode setting is invalid.",
+                            "question_route_changed",
+                            "The conversation model changed while the AI was waiting. Restore the original model to continue.",
                             false,
                         ));
                     }
+                    let custom_instructions = checkpoint
+                        .get("customInstructions")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned);
+                    let reasoning_effort = checkpoint
+                        .get("reasoningEffort")
+                        .and_then(Value::as_str)
+                        .map(str::to_owned);
+                    let fast_mode = match checkpoint.get("fastMode") {
+                        None => false,
+                        Some(Value::Bool(enabled)) => *enabled,
+                        _ => {
+                            return Err(ServiceError::new(
+                                "question_run_checkpoint_invalid",
+                                "The saved Fast mode setting is invalid.",
+                                false,
+                            ));
+                        }
+                    };
+                    if fast_mode
+                        && !matches!(provider_id.as_deref(), Some("chatgpt" | "chatgpt_api"))
+                    {
+                        return Err(ServiceError::new(
+                            "question_run_checkpoint_invalid",
+                            "The saved Fast mode setting does not match the selected provider.",
+                            false,
+                        ));
+                    }
+                    instructions::validate_custom_instructions(custom_instructions.as_deref())
+                        .map_err(|message| {
+                            ServiceError::new("question_run_checkpoint_invalid", message, false)
+                        })?;
+                    let mut goal_execution = if checkpoint.get("goal").is_some() {
+                        Some(goals::execution_from_run(run.clone())?)
+                    } else {
+                        None
+                    };
+                    crate::storage::user_questions::claim_run_resume(
+                        &connection,
+                        conversation_id,
+                        run_id,
+                    )
+                    .map_err(map_question_storage_error)?;
+                    if let Some(goal) = goal_execution.as_mut() {
+                        goals::set_running(storage, goal)?;
+                    }
+                    (
+                        run_id.to_owned(),
+                        custom_instructions,
+                        reasoning_effort,
+                        fast_mode,
+                        goal_execution,
+                    )
+                } else {
+                    let run_id = uuid::Uuid::new_v4().simple().to_string();
+                    crate::storage::user_questions::create_run(
+                        &connection,
+                        &crate::storage::user_questions::NewAgentRun {
+                            run_id: run_id.clone(),
+                            conversation_id: conversation_id.to_owned(),
+                        },
+                    )
+                    .map_err(map_question_storage_error)?;
+                    instructions::validate_custom_instructions(requested_custom_instructions)
+                        .map_err(|message| {
+                            ServiceError::new("invalid_request_params", message, false)
+                        })?;
+                    let mut checkpoint = json!({
+                        "version": 1,
+                        "providerId": provider_id,
+                        "modelId": model_id,
+                        "connectionId": connection_id,
+                        "workspaceId": workspace_id,
+                        "providerConnectionId": stored_api_key_connection_id,
+                        "customInstructions": requested_custom_instructions,
+                        "reasoningEffort": requested_reasoning_effort,
+                        "fastMode": requested_fast_mode,
+                    });
+                    if let Some(objective) = requested_goal_objective {
+                        goals::initial_checkpoint(
+                            &mut checkpoint,
+                            objective,
+                            current_time_unix_ms()?,
+                        );
+                    }
+                    crate::storage::user_questions::save_checkpoint(
+                        &connection,
+                        conversation_id,
+                        &run_id,
+                        0,
+                        &checkpoint,
+                    )
+                    .map_err(map_question_storage_error)?;
+                    let goal_execution = if requested_goal_objective.is_some() {
+                        let run = crate::storage::user_questions::load_run_for_conversation(
+                            &connection,
+                            conversation_id,
+                            &run_id,
+                        )
+                        .map_err(map_question_storage_error)?;
+                        Some(goals::execution_from_run(run)?)
+                    } else {
+                        None
+                    };
+                    (
+                        run_id,
+                        requested_custom_instructions.map(str::to_owned),
+                        requested_reasoning_effort.map(str::to_owned),
+                        requested_fast_mode,
+                        goal_execution,
+                    )
                 };
-                if fast_mode && !matches!(provider_id.as_deref(), Some("chatgpt" | "chatgpt_api")) {
-                    return Err(ServiceError::new(
-                        "question_run_checkpoint_invalid",
-                        "The saved Fast mode setting does not match the selected provider.",
-                        false,
-                    ));
-                }
-                instructions::validate_custom_instructions(custom_instructions.as_deref())
-                    .map_err(|message| {
-                        ServiceError::new("question_run_checkpoint_invalid", message, false)
+            if let Some(goal) = goal_execution.as_ref() {
+                events
+                    .send(&Response::event(
+                        request.id.clone(),
+                        "chat.goal.updated",
+                        goals::goal_value(goal, "running", None),
+                    ))
+                    .await
+                    .map_err(|_| {
+                        ServiceError::new(
+                            "protocol_unavailable",
+                            "The active goal could not be shown in the application.",
+                            true,
+                        )
                     })?;
-                crate::storage::user_questions::claim_run_resume(
-                    &connection,
-                    conversation_id,
-                    run_id,
-                )
-                .map_err(map_question_storage_error)?;
-                (
-                    run_id.to_owned(),
-                    custom_instructions,
-                    reasoning_effort,
-                    fast_mode,
-                )
-            } else {
-                let run_id = uuid::Uuid::new_v4().simple().to_string();
-                crate::storage::user_questions::create_run(
-                    &connection,
-                    &crate::storage::user_questions::NewAgentRun {
-                        run_id: run_id.clone(),
-                        conversation_id: conversation_id.to_owned(),
-                    },
-                )
-                .map_err(map_question_storage_error)?;
-                instructions::validate_custom_instructions(requested_custom_instructions).map_err(
-                    |message| ServiceError::new("invalid_request_params", message, false),
-                )?;
-                let checkpoint = json!({
-                    "version": 1,
-                    "providerId": provider_id,
-                    "modelId": model_id,
-                    "connectionId": connection_id,
-                    "workspaceId": workspace_id,
-                    "providerConnectionId": stored_api_key_connection_id,
-                    "customInstructions": requested_custom_instructions,
-                    "reasoningEffort": requested_reasoning_effort,
-                    "fastMode": requested_fast_mode,
-                });
-                crate::storage::user_questions::save_checkpoint(
-                    &connection,
-                    conversation_id,
-                    &run_id,
-                    0,
-                    &checkpoint,
-                )
-                .map_err(map_question_storage_error)?;
-                (
-                    run_id,
-                    requested_custom_instructions.map(str::to_owned),
-                    requested_reasoning_effort.map(str::to_owned),
-                    requested_fast_mode,
-                )
-            };
+            }
             let context = ChatSendContext {
                 request_id: request.id,
                 run_id: run_id.clone(),
+                goal: goal_execution,
                 conversation_id,
                 excluded_assistant_message_id,
                 custom_instructions: custom_instructions.as_deref(),
@@ -883,6 +1112,7 @@ pub(crate) async fn dispatch(
                 data_root: storage.root(),
                 storage,
                 permission_mode,
+                tool_permission_rules,
                 permission_broker: &permission_broker,
                 user_question_broker: &user_question_broker,
                 cancellation: &mut cancellation,
@@ -911,19 +1141,83 @@ pub(crate) async fn dispatch(
                         .await
                 }
             };
+            let current_run = crate::storage::user_questions::load_run_for_conversation(
+                &connection,
+                conversation_id,
+                &run_id,
+            )
+            .map_err(map_question_storage_error)?;
+            let is_goal_run = current_run
+                .checkpoint
+                .as_ref()
+                .and_then(|checkpoint| checkpoint.get("goal"))
+                .is_some();
             let outcome = match &result {
+                Ok(_)
+                    if is_goal_run
+                        && current_run.status
+                            == crate::storage::user_questions::AgentRunStatus::Paused =>
+                {
+                    RunOutcome::Paused
+                }
+                Ok(_)
+                    if is_goal_run
+                        && current_run.status
+                            == crate::storage::user_questions::AgentRunStatus::Cancelled =>
+                {
+                    RunOutcome::Cancelled
+                }
+                Err(_)
+                    if is_goal_run
+                        && current_run.status
+                            == crate::storage::user_questions::AgentRunStatus::Paused =>
+                {
+                    RunOutcome::Paused
+                }
+                Err(_)
+                    if is_goal_run
+                        && current_run.status
+                            == crate::storage::user_questions::AgentRunStatus::Cancelled =>
+                {
+                    RunOutcome::Cancelled
+                }
+                Ok(response)
+                    if response
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .is_some_and(|status| status == "paused") =>
+                {
+                    RunOutcome::Paused
+                }
                 Ok(response)
                     if response
                         .get("status")
                         .and_then(Value::as_str)
                         .is_some_and(|status| status == "stopped") =>
                 {
-                    RunOutcome::Cancelled
+                    if is_goal_run
+                        && current_run.status
+                            == crate::storage::user_questions::AgentRunStatus::Paused
+                    {
+                        RunOutcome::Paused
+                    } else {
+                        RunOutcome::Cancelled
+                    }
                 }
                 Ok(_) => RunOutcome::Completed,
+                Err(error)
+                    if is_goal_run && (is_quota_or_rate_limit_error(error) || error.retryable) =>
+                {
+                    RunOutcome::Paused
+                }
                 Err(error) if error.code == "operation_cancelled" => {
                     if shutdown_requested.load(Ordering::SeqCst) {
                         RunOutcome::Interrupted
+                    } else if is_goal_run
+                        && current_run.status
+                            == crate::storage::user_questions::AgentRunStatus::Paused
+                    {
+                        RunOutcome::Paused
                     } else {
                         RunOutcome::Cancelled
                     }
@@ -938,10 +1232,83 @@ pub(crate) async fn dispatch(
                 Err(_) if resuming_question_run => RunOutcome::Interrupted,
                 Err(_) => RunOutcome::Failed,
             };
+            if is_goal_run
+                && current_run.status == crate::storage::user_questions::AgentRunStatus::Running
+            {
+                let mut goal = goals::execution_from_run(current_run.clone())?;
+                let (state, reason) = match outcome {
+                    RunOutcome::Completed => ("completed", None),
+                    RunOutcome::Paused => {
+                        let reason = result
+                            .as_ref()
+                            .err()
+                            .map(|error| {
+                                if is_quota_or_rate_limit_error(error) {
+                                    "quota"
+                                } else {
+                                    "request_failed"
+                                }
+                            })
+                            .or_else(|| {
+                                current_run
+                                    .checkpoint
+                                    .as_ref()
+                                    .and_then(|checkpoint| checkpoint.pointer("/goal/pauseReason"))
+                                    .and_then(Value::as_str)
+                            });
+                        ("paused", reason)
+                    }
+                    RunOutcome::Cancelled => ("cancelled", Some("stopped_by_user")),
+                    RunOutcome::Interrupted => ("interrupted", Some("interrupted")),
+                    RunOutcome::Failed => ("failed", Some("request_failed")),
+                };
+                goals::save_final_state(storage, &mut goal, state, reason)?;
+            }
             user_question_broker
                 .finish_run(storage, conversation_id, &run_id, outcome)
                 .await?;
             result
+        }
+        "chat.goal.active" => {
+            let conversation_id = required_string(&request.params, "conversationId")?;
+            let goal = goals::latest_active_goal(storage, conversation_id)?;
+            Ok(json!({"goal": goal}))
+        }
+        "chat.runs.list" => {
+            let requested_limit = match request.params.get("limit") {
+                Some(value) => value.as_u64().ok_or_else(invalid_run_list_request)?,
+                None => 50,
+            };
+            let limit = usize::try_from(requested_limit)
+                .ok()
+                .filter(|limit| (1..=50).contains(limit))
+                .ok_or_else(invalid_run_list_request)?;
+            let connection = storage.connect().map_err(|_| {
+                ServiceError::new(
+                    "agent_runs_unavailable",
+                    "Run status could not be loaded.",
+                    true,
+                )
+            })?;
+            let runs = crate::storage::user_questions::list_run_summaries(&connection, limit)
+                .map_err(|_| {
+                    ServiceError::new(
+                        "agent_runs_unavailable",
+                        "Run status could not be loaded.",
+                        true,
+                    )
+                })?;
+            Ok(json!({"runs": runs}))
+        }
+        "chat.goal.pause" => {
+            let conversation_id = required_string(&request.params, "conversationId")?;
+            let run_id = required_string(&request.params, "runId")?;
+            goals::pause_run(storage, conversation_id, run_id, "user_paused")
+        }
+        "chat.goal.stop" => {
+            let conversation_id = required_string(&request.params, "conversationId")?;
+            let run_id = required_string(&request.params, "runId")?;
+            goals::stop_run(storage, conversation_id, run_id)
         }
         "chat.questions.list" => {
             let conversation_id = required_string(&request.params, "conversationId")?;
@@ -1129,12 +1496,61 @@ fn invalid_request_params() -> ServiceError {
     )
 }
 
+fn tool_permission_confirmation_required() -> ServiceError {
+    ServiceError::new(
+        "tool_permission_confirmation_required",
+        "Confirm the displayed named task before running it.",
+        false,
+    )
+}
+
 fn file_changes_unavailable<T>(_: T) -> ServiceError {
     ServiceError::new(
         "file_changes_unavailable",
         "Conversation file changes could not be loaded or updated.",
         true,
     )
+}
+
+fn git_worktree_error(error: crate::git_worktrees::GitWorktreeError) -> ServiceError {
+    use crate::git_worktrees::GitWorktreeError;
+    match error {
+        GitWorktreeError::InvalidInput => ServiceError::new(
+            "invalid_request_params",
+            "The project worktree request is invalid.",
+            false,
+        ),
+        GitWorktreeError::ProjectUnavailable => ServiceError::new(
+            "project_unavailable",
+            "The project folder or selected worktree is unavailable.",
+            false,
+        ),
+        GitWorktreeError::NotRepository => ServiceError::new(
+            "project_not_git_repository",
+            "This project folder is not inside a Git repository.",
+            false,
+        ),
+        GitWorktreeError::UnsafePath => ServiceError::new(
+            "project_worktree_path_unsafe",
+            "The project worktree path failed a safety check.",
+            false,
+        ),
+        GitWorktreeError::GitFailed => ServiceError::new(
+            "project_worktree_operation_failed",
+            "Git could not complete the worktree operation. Check the repository state and try again.",
+            false,
+        ),
+        GitWorktreeError::TimedOut => ServiceError::new(
+            "project_worktree_timed_out",
+            "Git did not finish the worktree operation before the time limit.",
+            true,
+        ),
+        GitWorktreeError::Unavailable => ServiceError::new(
+            "project_worktree_unavailable",
+            "The Git worktree service is unavailable.",
+            true,
+        ),
+    }
 }
 
 fn required_non_zero_u32(params: &Value, name: &str) -> Result<u32, ServiceError> {
@@ -1216,6 +1632,14 @@ fn invalid_context_usage_params() -> ServiceError {
     )
 }
 
+fn invalid_run_list_request() -> ServiceError {
+    ServiceError::new(
+        "invalid_request_params",
+        "The run list limit must be between 1 and 50.",
+        false,
+    )
+}
+
 fn map_question_storage_error(
     error: crate::storage::user_questions::UserQuestionError,
 ) -> ServiceError {
@@ -1274,6 +1698,99 @@ fn optional_bool(params: &Value, name: &str) -> Result<Option<bool>, ServiceErro
             false,
         )),
     }
+}
+
+fn current_time_unix_ms() -> Result<i64, ServiceError> {
+    let elapsed = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|_| {
+        ServiceError::new("clock_unavailable", "System time is unavailable.", false)
+    })?;
+    i64::try_from(elapsed.as_millis())
+        .map_err(|_| ServiceError::new("clock_unavailable", "System time is out of range.", false))
+}
+
+fn invalid_chat_goal_request(field: &str) -> ServiceError {
+    ServiceError::new(
+        "invalid_request_params",
+        format!("The {field} is invalid."),
+        false,
+    )
+}
+
+fn is_quota_or_rate_limit_error(error: &ServiceError) -> bool {
+    matches!(
+        error.code,
+        "rate_limited" | "quota_exceeded" | "insufficient_quota" | "resource_exhausted"
+    )
+}
+
+fn statistics_query(params: &Value) -> Result<usage_statistics::StatisticsQuery, ServiceError> {
+    let from_unix_ms = params
+        .get("fromUnixMs")
+        .and_then(Value::as_i64)
+        .filter(|value| *value >= 0)
+        .ok_or_else(invalid_request_params)?;
+    let to_unix_ms = params
+        .get("toUnixMs")
+        .and_then(Value::as_i64)
+        .filter(|value| *value > from_unix_ms)
+        .ok_or_else(invalid_request_params)?;
+    let provider_id = optional_statistics_filter(params, "providerId")?;
+    let model_id = optional_statistics_filter(params, "modelId")?;
+    let operation = optional_statistics_filter(params, "operation")?;
+    let reasoning_effort = optional_statistics_filter(params, "reasoningEffort")?;
+    if operation.as_deref().is_some_and(|value| {
+        !matches!(
+            value,
+            "chat" | "tool_follow_up" | "compaction" | "title_generation"
+        )
+    }) || reasoning_effort.as_deref().is_some_and(|value| {
+        !matches!(
+            value,
+            "none"
+                | "minimal"
+                | "low"
+                | "medium"
+                | "high"
+                | "xhigh"
+                | "max"
+                | "ultra"
+                | "unspecified"
+        )
+    }) {
+        return Err(invalid_request_params());
+    }
+    let fast_mode = optional_bool(params, "fastMode")?;
+    let offset = params.get("offset").and_then(Value::as_i64).unwrap_or(0);
+    let limit = params.get("limit").and_then(Value::as_i64).unwrap_or(100);
+    if !(0..=100_000_000).contains(&offset) || !(1..=200).contains(&limit) {
+        return Err(invalid_request_params());
+    }
+    Ok(usage_statistics::StatisticsQuery {
+        from_unix_ms,
+        to_unix_ms,
+        provider_id,
+        model_id,
+        operation,
+        reasoning_effort,
+        fast_mode,
+        offset,
+        limit,
+    })
+}
+
+fn optional_statistics_filter(params: &Value, name: &str) -> Result<Option<String>, ServiceError> {
+    optional_string(params, name)?
+        .map(|value| {
+            if value == value.trim()
+                && value.chars().count() <= 256
+                && !value.chars().any(char::is_control)
+            {
+                Ok(value.to_owned())
+            } else {
+                Err(invalid_request_params())
+            }
+        })
+        .transpose()
 }
 
 fn optional_api_key<'a>(
@@ -1384,6 +1901,7 @@ mod tests {
                     content TEXT NOT NULL,
                     status TEXT NOT NULL,
                     created_at INTEGER,
+                    output_tokens INTEGER,
                     tool_activities TEXT NOT NULL DEFAULT '[]',
                     UNIQUE (conversation_id, id)
                  );",
@@ -1451,6 +1969,96 @@ mod tests {
         assert!(checkpoint.get("apiKeyConnectionId").is_none());
 
         drop(connection);
+        drop(service);
+        drop(storage);
+    }
+
+    #[tokio::test]
+    async fn chat_run_list_rpc_returns_recoverable_runs() {
+        let directory = TestDirectory::new();
+        let storage =
+            Arc::new(AppStorage::open_at(directory.0.clone()).expect("open test storage"));
+        let connection = storage.connect().expect("connect test storage");
+        connection
+            .execute_batch(
+                "CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL, title TEXT);
+                 ALTER TABLE conversations ADD COLUMN project_id TEXT;
+                 ALTER TABLE conversations ADD COLUMN model_id TEXT;
+                 ALTER TABLE conversations ADD COLUMN connection_id TEXT;
+                 ALTER TABLE conversations ADD COLUMN workspace_id TEXT;
+                 CREATE TABLE projects (id TEXT PRIMARY KEY, folder_path TEXT);
+                 CREATE TABLE messages (
+                    rowid INTEGER PRIMARY KEY,
+                    id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at INTEGER,
+                    output_tokens INTEGER,
+                    tool_activities TEXT NOT NULL DEFAULT '[]',
+                    UNIQUE (conversation_id, id)
+                 );",
+            )
+            .expect("create desktop conversation schema");
+        drop(connection);
+        storage
+            .initialize_backend_schema()
+            .expect("initialize native conversation schema");
+        let connection = storage.connect().expect("connect initialized storage");
+        connection
+            .execute(
+                "INSERT INTO conversations (id, title) VALUES ('conversation', 'Background task')",
+                [],
+            )
+            .expect("insert conversation");
+        user_questions::create_run(
+            &connection,
+            &user_questions::NewAgentRun {
+                run_id: "active-run".to_owned(),
+                conversation_id: "conversation".to_owned(),
+            },
+        )
+        .expect("create active run");
+        user_questions::save_checkpoint(
+            &connection,
+            "conversation",
+            "active-run",
+            0,
+            &json!({"providerId": "gemini", "modelId": "gemini-pro"}),
+        )
+        .expect("save run route");
+        drop(connection);
+
+        let service = Arc::new(
+            ChatGptService::new(Arc::clone(&storage)).expect("initialize ChatGPT service"),
+        );
+        let request = Request {
+            id: json!(1),
+            method: "chat.runs.list".to_owned(),
+            params: json!({}),
+        };
+        let (_cancel_sender, cancellation) = watch::channel(false);
+        let response = dispatch(
+            &storage,
+            &service,
+            request,
+            cancellation,
+            EventSink::new(),
+            ToolPermissionBroker::default(),
+            UserQuestionBroker::default(),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(true)),
+        )
+        .await
+        .expect("list runs");
+
+        assert_eq!(response["runs"][0]["runId"], "active-run");
+        assert_eq!(response["runs"][0]["conversationId"], "conversation");
+        assert_eq!(response["runs"][0]["conversationTitle"], "Background task");
+        assert_eq!(response["runs"][0]["providerId"], "gemini");
+        assert_eq!(response["runs"][0]["modelId"], "gemini-pro");
+
         drop(service);
         drop(storage);
     }

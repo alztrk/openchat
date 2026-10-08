@@ -268,7 +268,11 @@ pub(super) fn qualify_output_paths(output: &mut Value, prepared: &PreparedToolCa
         ToolOperation::Bash { .. }
         | ToolOperation::SendTerminalInput { .. }
         | ToolOperation::WebSearch { .. }
-        | ToolOperation::ReadUrlContent { .. } => {}
+        | ToolOperation::ReadUrlContent { .. }
+        | ToolOperation::DelegateTask { .. }
+        | ToolOperation::GitStatus
+        | ToolOperation::GitDiff
+        | ToolOperation::GitHistory { .. } => {}
     }
 }
 

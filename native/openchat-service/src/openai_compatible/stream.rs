@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use serde_json::Value;
 
+use crate::usage_statistics::UsageData;
 use crate::{protocol::ServiceError, provider_schema::ToolCall, tools};
 
 use super::invalid_response_error;
@@ -13,13 +14,30 @@ pub(super) struct StreamedToolCall {
     pub(super) arguments: String,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 pub(super) struct ProviderRequestUsage {
     pub(super) prompt_tokens: Option<i64>,
     pub(super) completion_tokens: Option<i64>,
     pub(super) cached_tokens: Option<i64>,
     pub(super) cache_write_tokens: Option<i64>,
     pub(super) cache_discount: Option<f64>,
+    pub(super) reasoning_tokens: Option<i64>,
+    pub(super) reported_cost_usd: Option<f64>,
+    pub(super) service_tier: Option<String>,
+}
+
+impl ProviderRequestUsage {
+    pub(super) fn usage_data(self) -> UsageData {
+        UsageData {
+            input_tokens: self.prompt_tokens,
+            output_tokens: self.completion_tokens,
+            reasoning_tokens: self.reasoning_tokens,
+            cached_input_tokens: self.cached_tokens,
+            cache_write_tokens: self.cache_write_tokens,
+            reported_cost_usd: self.reported_cost_usd,
+            service_tier: self.service_tier,
+        }
+    }
 }
 
 pub(super) enum SseLine {
@@ -95,57 +113,68 @@ pub(super) fn update_chat_completion_usage(
 }
 
 pub(super) fn update_provider_request_usage(
+    provider_id: &str,
     value: &Value,
     usage: &mut Option<ProviderRequestUsage>,
 ) {
+    let usage_data = if value.get("response").is_some() {
+        UsageData::from_responses_event(value, provider_id)
+    } else {
+        UsageData::from_chat_completion_event(value, provider_id)
+    };
     let current = ProviderRequestUsage {
-        prompt_tokens: value
-            .pointer("/usage/prompt_tokens")
-            .and_then(Value::as_i64)
-            .filter(|tokens| *tokens >= 0),
-        completion_tokens: value
-            .pointer("/usage/completion_tokens")
-            .and_then(Value::as_i64)
-            .filter(|tokens| *tokens >= 0),
-        cached_tokens: value
-            .pointer("/usage/prompt_tokens_details/cached_tokens")
-            .and_then(Value::as_i64)
-            .filter(|tokens| *tokens >= 0),
-        cache_write_tokens: value
-            .pointer("/usage/prompt_tokens_details/cache_write_tokens")
-            .and_then(Value::as_i64)
-            .filter(|tokens| *tokens >= 0),
+        prompt_tokens: usage_data.input_tokens,
+        completion_tokens: usage_data.output_tokens,
+        cached_tokens: usage_data.cached_input_tokens,
+        cache_write_tokens: usage_data.cache_write_tokens,
         cache_discount: value
             .get("cache_discount")
             .and_then(Value::as_f64)
             .filter(|discount| discount.is_finite()),
+        reasoning_tokens: usage_data.reasoning_tokens,
+        reported_cost_usd: usage_data.reported_cost_usd,
+        service_tier: usage_data.service_tier,
     };
     if current.prompt_tokens.is_none()
         && current.completion_tokens.is_none()
         && current.cached_tokens.is_none()
         && current.cache_write_tokens.is_none()
         && current.cache_discount.is_none()
+        && current.reasoning_tokens.is_none()
+        && current.reported_cost_usd.is_none()
+        && current.service_tier.is_none()
     {
         return;
     }
 
-    let previous = *usage;
+    let previous = usage.clone();
     *usage = Some(ProviderRequestUsage {
         prompt_tokens: current
             .prompt_tokens
-            .or_else(|| previous.and_then(|usage| usage.prompt_tokens)),
+            .or_else(|| previous.as_ref().and_then(|usage| usage.prompt_tokens)),
         completion_tokens: current
             .completion_tokens
-            .or_else(|| previous.and_then(|usage| usage.completion_tokens)),
+            .or_else(|| previous.as_ref().and_then(|usage| usage.completion_tokens)),
         cached_tokens: current
             .cached_tokens
-            .or_else(|| previous.and_then(|usage| usage.cached_tokens)),
+            .or_else(|| previous.as_ref().and_then(|usage| usage.cached_tokens)),
         cache_write_tokens: current
             .cache_write_tokens
-            .or_else(|| previous.and_then(|usage| usage.cache_write_tokens)),
+            .or_else(|| previous.as_ref().and_then(|usage| usage.cache_write_tokens)),
         cache_discount: current
             .cache_discount
-            .or_else(|| previous.and_then(|usage| usage.cache_discount)),
+            .or_else(|| previous.as_ref().and_then(|usage| usage.cache_discount)),
+        reasoning_tokens: current
+            .reasoning_tokens
+            .or_else(|| previous.as_ref().and_then(|usage| usage.reasoning_tokens)),
+        reported_cost_usd: current
+            .reported_cost_usd
+            .or_else(|| previous.as_ref().and_then(|usage| usage.reported_cost_usd)),
+        service_tier: current.service_tier.or_else(|| {
+            previous
+                .as_ref()
+                .and_then(|usage| usage.service_tier.clone())
+        }),
     });
 }
 

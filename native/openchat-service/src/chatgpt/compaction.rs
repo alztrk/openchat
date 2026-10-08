@@ -11,6 +11,7 @@ use crate::{
     protocol::ServiceError,
     provider_schema::ToolDefinition,
     storage::AppStorage,
+    usage_statistics::{UsageData, UsageRequestTracker},
 };
 
 use super::{
@@ -303,7 +304,21 @@ async fn request_remote_compaction(
         request.reasoning_effort,
         request.supports_reasoning_summary_parameter,
     )?;
-    let response = request
+    let mut usage_request = UsageRequestTracker::start(
+        &request.service.storage,
+        request.conversation_id,
+        None,
+        "chatgpt",
+        request.model_id,
+        request.reasoning_effort,
+        "compaction",
+        false,
+    )
+    .map_err(database_error)?;
+    usage_request
+        .record_request_manifest(&body, None)
+        .map_err(database_error)?;
+    let response = match request
         .service
         .authorized_stream_request(
             StreamRequest {
@@ -316,13 +331,29 @@ async fn request_remote_compaction(
             },
             cancellation,
         )
-        .await?
-        .ok_or_else(request_cancelled)?;
+        .await
+    {
+        Ok(Some(response)) => response,
+        Ok(None) => {
+            usage_request.cancel().map_err(database_error)?;
+            return Err(request_cancelled());
+        }
+        Err(error) => return Err(error),
+    };
     if !response.status().is_success() {
         return Err(http_error(response.status()));
     }
 
-    parse_remote_compaction_stream(response, cancellation).await
+    let mut usage = UsageData::default();
+    let result = parse_remote_compaction_stream(response, cancellation, &mut usage).await;
+    if result.is_ok() {
+        usage_request.complete(&usage).map_err(database_error)?;
+    } else if matches!(&result, Err(error) if error.code == "request_cancelled") {
+        usage_request.cancel().map_err(database_error)?;
+    } else {
+        usage_request.fail(&usage).map_err(database_error)?;
+    }
+    result
 }
 
 fn fit_compaction_request_body(
@@ -442,6 +473,7 @@ fn truncate_tool_output(output: &str, max_bytes: usize) -> String {
 async fn parse_remote_compaction_stream(
     response: reqwest::Response,
     cancellation: &mut watch::Receiver<bool>,
+    usage: &mut UsageData,
 ) -> Result<Value, ServiceError> {
     let mut stream = response.bytes_stream();
     let mut pending = Vec::new();
@@ -473,6 +505,9 @@ async fn parse_remote_compaction_stream(
             }
             let event =
                 serde_json::from_slice::<Value>(data).map_err(|_| invalid_response_error())?;
+            if event.get("response").is_some() {
+                *usage = UsageData::from_responses_event(&event, "chatgpt");
+            }
             if apply_compaction_event(&event, &mut output_items)? {
                 completed = true;
                 break;
@@ -631,6 +666,7 @@ mod tests {
     use crate::{
         chatgpt_store::{ConversationContextState, StoredMessage},
         context_compaction,
+        usage_statistics::UsageData,
     };
 
     use super::{
@@ -1093,8 +1129,9 @@ mod tests {
             .await
             .expect("send local compaction request");
         let (_cancel_sender, mut cancellation) = watch::channel(false);
+        let mut usage = UsageData::default();
 
-        let checkpoint = parse_remote_compaction_stream(response, &mut cancellation)
+        let checkpoint = parse_remote_compaction_stream(response, &mut cancellation, &mut usage)
             .await
             .expect("parse completed checkpoint stream");
         server.await.expect("mock Responses API completed");

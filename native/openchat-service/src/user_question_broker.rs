@@ -258,6 +258,9 @@ impl UserQuestionBroker {
             RunOutcome::Cancelled => {
                 user_questions::mark_run_cancelled(&connection, conversation_id, run_id)
             }
+            RunOutcome::Paused => {
+                user_questions::mark_run_paused(&connection, conversation_id, run_id)
+            }
             RunOutcome::Interrupted => {
                 user_questions::mark_run_interrupted(&connection, conversation_id, run_id)
             }
@@ -310,6 +313,7 @@ mod tests {
                     content TEXT NOT NULL,
                     status TEXT NOT NULL,
                     created_at INTEGER,
+                    output_tokens INTEGER,
                     tool_activities TEXT NOT NULL DEFAULT '[]',
                     UNIQUE(conversation_id, id)
                  );",
@@ -708,6 +712,7 @@ mod tests {
 pub(crate) enum RunOutcome {
     Completed,
     Cancelled,
+    Paused,
     Interrupted,
     Failed,
 }

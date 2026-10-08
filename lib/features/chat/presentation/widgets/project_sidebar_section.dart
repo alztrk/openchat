@@ -44,7 +44,8 @@ class ProjectSidebarSection extends StatelessWidget {
   final String? selectedConversationId;
   final ValueChanged<String>? onSelectProject;
   final ValueChanged<String>? onSelectConversation;
-  final ValueChanged<String>? onOpenProjectOptions;
+  final void Function(String projectId, String projectRoot, String projectName)?
+  onOpenProjectOptions;
   final ValueChanged<String>? onCreateProjectConversation;
   final ValueChanged<String>? onShowMoreProjectConversations;
   final void Function(String conversationId, String projectId)?
@@ -127,7 +128,11 @@ class ProjectSidebarSection extends StatelessWidget {
                           : () => onSelectProject!(entry.project.id),
                       onOpenOptions: onOpenProjectOptions == null
                           ? null
-                          : () => onOpenProjectOptions!(entry.project.id),
+                          : () => onOpenProjectOptions!(
+                              entry.project.id,
+                              entry.project.folderPath,
+                              entry.project.title,
+                            ),
                       onCreateConversation: onCreateProjectConversation == null
                           ? null
                           : () =>
@@ -271,8 +276,17 @@ class _ProjectsHeading extends StatefulWidget {
 }
 
 class _ProjectsHeadingState extends State<_ProjectsHeading> {
+  late final FocusNode _createProjectFocusNode = FocusNode(
+    debugLabel: 'create project',
+  );
   bool _hovered = false;
   bool _focused = false;
+
+  @override
+  void dispose() {
+    _createProjectFocusNode.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -310,6 +324,7 @@ class _ProjectsHeadingState extends State<_ProjectsHeading> {
                         opacity: showAction ? 1 : 0,
                         child: IconButton(
                           key: const ValueKey<String>('project-create-button'),
+                          focusNode: _createProjectFocusNode,
                           tooltip: widget.createProjectLabel,
                           onPressed: widget.onCreateProject,
                           visualDensity: VisualDensity.standard,
