@@ -141,6 +141,59 @@ void main() {
   });
 
   testWidgets(
+    'tool approval and denial actions work from the keyboard in every locale',
+    (tester) async {
+      for (final locale in AppLocalizations.supportedLocales) {
+        var approved = 0;
+        var denied = 0;
+        await tester.pumpWidget(
+          MaterialApp(
+            key: ValueKey<String>('tool-permission-${locale.languageCode}'),
+            locale: locale,
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            theme: OpenChatTheme.dark,
+            home: Scaffold(
+              body: FocusTraversalGroup(
+                child: Column(
+                  children: [
+                    TextButton(onPressed: () {}, child: const Text('Before')),
+                    ToolPermissionCard(
+                      request: const ToolPermissionRequest(
+                        id: 'keyboard-permission',
+                        toolName: 'write_file',
+                        targetPath: 'notes.txt',
+                        arguments: <String, Object?>{
+                          'path': 'notes.txt',
+                          'content': 'reviewed content',
+                        },
+                      ),
+                      isResponding: false,
+                      onApprove: () => approved++,
+                      onDeny: () => denied++,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        expect(denied, 1, reason: 'deny ${locale.languageCode}');
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+        await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+        expect(approved, 1, reason: 'approve ${locale.languageCode}');
+        expect(tester.takeException(), isNull);
+      }
+    },
+  );
+
+  testWidgets(
     'conversation selection stays labeled across locales, widths, and text scales',
     (tester) async {
       addTearDown(tester.view.resetPhysicalSize);
