@@ -7,12 +7,12 @@ build = "build.rs"
 description = "Single-file Windows launcher for OpenChat"
 
 [dependencies]
-sha2 = "0.10"
+sha2 = "0.11"
 uuid = { version = "1", features = ["v4"] }
 zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [build-dependencies]
-sha2 = "0.10"
+sha2 = "0.11"
 winres = "0.1.12"
 
 [package.metadata.winres]
