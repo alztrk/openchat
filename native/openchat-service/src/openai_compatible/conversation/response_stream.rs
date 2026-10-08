@@ -130,7 +130,7 @@ async fn receive_with_client(
     let mut tool_calls = BTreeMap::<usize, StreamedToolCall>::new();
     let supports_provider_citations = matches!(
         request.route.provider_id.as_deref(),
-        Some("openrouter" | "groq")
+        Some("openai" | "openrouter" | "groq")
     );
     let mut provider_citation_sources = Vec::<Value>::new();
     let mut provider_citation_ids = BTreeMap::<(String, String), String>::new();
@@ -420,7 +420,8 @@ fn collect_provider_citations(
         {
             continue;
         }
-        let Some(raw_url) = annotation
+        let citation = annotation.get("url_citation").unwrap_or(annotation);
+        let Some(raw_url) = citation
             .get("url")
             .and_then(Value::as_str)
             .filter(|url| url.len() <= 4096)
@@ -437,7 +438,7 @@ fn collect_provider_citations(
         {
             continue;
         }
-        let Some(title) = annotation
+        let Some(title) = citation
             .get("title")
             .and_then(Value::as_str)
             .map(str::trim)
@@ -936,6 +937,32 @@ mod tests {
         append_provider_citation_anchors(&mut content, &mut round_content, &sources);
         assert_eq!(content, "A sourced claim. [P1]");
         assert_eq!(round_content, content);
+    }
+
+    #[test]
+    fn parses_openai_nested_url_citations() {
+        let value = json!({
+            "choices": [{
+                "message": {
+                    "annotations": [{
+                        "type": "url_citation",
+                        "url_citation": {
+                            "url": "https://example.org/article",
+                            "title": "Example article",
+                            "start_index": 4,
+                            "end_index": 18
+                        }
+                    }]
+                }
+            }]
+        });
+        let mut ids = std::collections::BTreeMap::new();
+        let mut sources = Vec::new();
+        collect_provider_citations(&value, &mut ids, &mut sources);
+        assert_eq!(sources.len(), 1);
+        assert_eq!(sources[0]["title"], "Example article");
+        assert_eq!(sources[0]["url"], "https://example.org/article");
+        assert_eq!(sources[0]["sourceType"], "provider_native");
     }
 
     fn route(provider_id: &str) -> ChatRoute {
