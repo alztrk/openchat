@@ -1134,9 +1134,9 @@ async fn simulate_real_world_agent_terminal_and_file_flow() {
 
     // Step 1: Write a workflow script file
     #[cfg(windows)]
-    let script_name = "workflow.bat";
+    let script_name = "workflow.ps1";
     #[cfg(windows)]
-    let script_content = "@echo off\r\necho STEP1_INIT_DONE\r\nset /p CODE=ENTER_CODE:\r\necho STEP2_CODE_IS:%CODE%\r\n";
+    let script_content = "Write-Output STEP1_INIT_DONE\r\nWrite-Output ENTER_CODE:\r\n$code = [Console]::In.ReadLine()\r\nWrite-Output \"STEP2_CODE_IS:$code\"\r\n";
 
     #[cfg(not(windows))]
     let script_name = "workflow.sh";
@@ -1183,7 +1183,7 @@ async fn simulate_real_world_agent_terminal_and_file_flow() {
     // Step 3: Execute the script interactively via execute_command / bash
     #[cfg(windows)]
     let run_cmd = format!(
-        "cmd.exe /c \"{}\"",
+        "& '{}'",
         Path::new(directory.root()).join(script_name).display()
     );
     #[cfg(not(windows))]
@@ -1211,7 +1211,7 @@ async fn simulate_real_world_agent_terminal_and_file_flow() {
 
     let term_id = exec_result["terminal_id"]
         .as_str()
-        .expect("terminal_id should be returned for interactive process")
+        .unwrap_or_else(|| panic!("terminal_id should be returned: {exec_result}"))
         .to_owned();
     let initial_output = exec_result["output"].as_str().unwrap_or("");
     assert!(
@@ -1351,7 +1351,7 @@ async fn simulate_terminal_edge_cases_and_exit_codes() {
 
     // 2. Reading output from an existing active terminal session
     #[cfg(windows)]
-    let pause_cmd = "cmd.exe /c \"echo READY_FOR_READ & pause > nul\"";
+    let pause_cmd = "Write-Output READY_FOR_READ; [void][Console]::In.ReadLine()";
     #[cfg(not(windows))]
     let pause_cmd = "sh -c \"echo READY_FOR_READ; read -r dummy\"";
 
@@ -1409,7 +1409,10 @@ async fn simulate_terminal_edge_cases_and_exit_codes() {
     let prepared_finish = executor.prepare_call(&send_finish).expect("prepare finish");
     let finish_result = execute_model_tool(&prepared_finish).await;
     assert_eq!(finish_result["is_running"], false);
-    assert_eq!(finish_result["exit_code"], 0);
+    assert_eq!(
+        finish_result["exit_code"], 0,
+        "finish result: {finish_result}"
+    );
 
     // 4. Invalid terminal session id error handling
     let stale_call = ToolCall {
