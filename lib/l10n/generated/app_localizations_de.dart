@@ -19,6 +19,121 @@ class AppLocalizationsDe extends AppLocalizations {
   String get chats => 'Chats';
 
   @override
+  String get workspaces => 'Arbeitsbereiche';
+
+  @override
+  String get workspacesDescription =>
+      'Zusammengehörige Unterhaltungen an einem Ort sammeln.';
+
+  @override
+  String get workspaceCreate => 'Neuer Arbeitsbereich';
+
+  @override
+  String get workspaceCreateAction => 'Arbeitsbereich erstellen';
+
+  @override
+  String get workspaceName => 'Name des Arbeitsbereichs';
+
+  @override
+  String get workspaceNameRequired =>
+      'Geben Sie einen Namen für den Arbeitsbereich ein.';
+
+  @override
+  String get workspaceEmptyTitle => 'Noch keine Arbeitsbereiche';
+
+  @override
+  String get workspaceEmptyDescription =>
+      'Erstellen Sie einen Arbeitsbereich, um Unterhaltungen zu gruppieren.';
+
+  @override
+  String get workspaceNoConversations =>
+      'In diesem Arbeitsbereich gibt es noch keine Unterhaltungen.';
+
+  @override
+  String get workspaceMoveConversation => 'Unterhaltung verschieben';
+
+  @override
+  String get workspaceUnassignedChats => 'Chats ohne Arbeitsbereich';
+
+  @override
+  String get workspaceNoWorkspace => 'Kein Arbeitsbereich';
+
+  @override
+  String workspaceConversationCount(int count) {
+    return 'Unterhaltungen: $count';
+  }
+
+  @override
+  String get workspaceRename => 'Arbeitsbereich umbenennen';
+
+  @override
+  String get workspaceDelete => 'Arbeitsbereich löschen';
+
+  @override
+  String workspaceDeleteConfirmation(String name) {
+    return '„$name“ löschen? Die Unterhaltungen bleiben unter Chats erhalten.';
+  }
+
+  @override
+  String get workspaceLoadFailed =>
+      'Arbeitsbereiche konnten nicht geladen werden.';
+
+  @override
+  String get workspaceSaveFailed =>
+      'Der Arbeitsbereich konnte nicht gespeichert werden.';
+
+  @override
+  String get workspaceDeleteFailed =>
+      'Der Arbeitsbereich konnte nicht gelöscht werden.';
+
+  @override
+  String get workspaceMoveFailed =>
+      'Die Unterhaltung konnte nicht verschoben werden.';
+
+  @override
+  String get outputs => 'Ausgaben';
+
+  @override
+  String get outputsDescription =>
+      'Speichern Sie hilfreiche Antworten und öffnen Sie sie hier erneut.';
+
+  @override
+  String get outputsEmptyTitle => 'Noch keine gespeicherten Antworten';
+
+  @override
+  String get outputsEmptyDescription =>
+      'Wählen Sie unter einer Antwort „Antwort speichern“, um sie hier abzulegen.';
+
+  @override
+  String get outputsLoadFailed =>
+      'Gespeicherte Antworten konnten nicht geladen werden.';
+
+  @override
+  String get saveResponse => 'Antwort speichern';
+
+  @override
+  String get removeSavedResponse => 'Gespeicherte Antwort entfernen';
+
+  @override
+  String get outputSaveFailed => 'Die Antwort konnte nicht gespeichert werden.';
+
+  @override
+  String get outputRemoveFailed =>
+      'Die gespeicherte Antwort konnte nicht entfernt werden.';
+
+  @override
+  String get outputOpenConversation => 'Unterhaltung öffnen';
+
+  @override
+  String get outputConversationUnavailable =>
+      'Unterhaltung ist nicht mehr verfügbar';
+
+  @override
+  String outputSavedAt(String date) {
+    return 'Gespeichert am $date';
+  }
+
+  @override
   String get collapseSidebars => 'Seitenleisten einklappen';
 
   @override
@@ -1375,11 +1490,11 @@ class AppLocalizationsDe extends AppLocalizations {
   String get textSizeLarge => 'Groß';
 
   @override
-  String get appFont => 'App-Schrift';
+  String get appFont => 'Schrift für Antworten';
 
   @override
   String get appFontDescription =>
-      'Wählen Sie die in OpenChat verwendete Schriftart.';
+      'Wählen Sie die Schriftart für Assistentenantworten.';
 
   @override
   String get appearancePreferenceSaveFailed =>
@@ -3186,6 +3301,11 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get toolRunProjectTask => 'Projektaufgabe ausführen';
+
+  @override
+  String toolConfiguredProjectTool(String name) {
+    return 'Projektwerkzeug: $name';
+  }
 
   @override
   String get toolDelegateTask => 'Analyse delegieren';

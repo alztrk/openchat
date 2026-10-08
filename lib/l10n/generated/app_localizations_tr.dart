@@ -19,6 +19,112 @@ class AppLocalizationsTr extends AppLocalizations {
   String get chats => 'Sohbetler';
 
   @override
+  String get workspaces => 'Çalışma alanları';
+
+  @override
+  String get workspacesDescription => 'İlgili sohbetleri bir arada tutun.';
+
+  @override
+  String get workspaceCreate => 'Yeni çalışma alanı';
+
+  @override
+  String get workspaceCreateAction => 'Çalışma alanı oluştur';
+
+  @override
+  String get workspaceName => 'Çalışma alanı adı';
+
+  @override
+  String get workspaceNameRequired => 'Bir çalışma alanı adı girin.';
+
+  @override
+  String get workspaceEmptyTitle => 'Henüz çalışma alanı yok';
+
+  @override
+  String get workspaceEmptyDescription =>
+      'İlgili sohbetleri gruplamak için bir çalışma alanı oluşturun.';
+
+  @override
+  String get workspaceNoConversations =>
+      'Bu çalışma alanında henüz sohbet yok.';
+
+  @override
+  String get workspaceMoveConversation => 'Sohbeti taşı';
+
+  @override
+  String get workspaceUnassignedChats => 'Çalışma alanına eklenmemiş sohbetler';
+
+  @override
+  String get workspaceNoWorkspace => 'Çalışma alanı yok';
+
+  @override
+  String workspaceConversationCount(int count) {
+    return 'Sohbet sayısı: $count';
+  }
+
+  @override
+  String get workspaceRename => 'Çalışma alanını yeniden adlandır';
+
+  @override
+  String get workspaceDelete => 'Çalışma alanını sil';
+
+  @override
+  String workspaceDeleteConfirmation(String name) {
+    return '“$name” silinsin mi? Sohbetleri Sohbetler bölümünde kalır.';
+  }
+
+  @override
+  String get workspaceLoadFailed => 'Çalışma alanları yüklenemedi.';
+
+  @override
+  String get workspaceSaveFailed => 'Çalışma alanı kaydedilemedi.';
+
+  @override
+  String get workspaceDeleteFailed => 'Çalışma alanı silinemedi.';
+
+  @override
+  String get workspaceMoveFailed => 'Sohbet taşınamadı.';
+
+  @override
+  String get outputs => 'Çıktılar';
+
+  @override
+  String get outputsDescription =>
+      'Yararlı yanıtları kaydedin ve buradan yeniden açın.';
+
+  @override
+  String get outputsEmptyTitle => 'Henüz kaydedilmiş yanıt yok';
+
+  @override
+  String get outputsEmptyDescription =>
+      'Bir yanıtı burada tutmak için altındaki Yanıtı kaydet seçeneğini kullanın.';
+
+  @override
+  String get outputsLoadFailed => 'Kaydedilmiş yanıtlar yüklenemedi.';
+
+  @override
+  String get saveResponse => 'Yanıtı kaydet';
+
+  @override
+  String get removeSavedResponse => 'Kaydedilmiş yanıtı kaldır';
+
+  @override
+  String get outputSaveFailed => 'Yanıt kaydedilemedi.';
+
+  @override
+  String get outputRemoveFailed => 'Kaydedilmiş yanıt kaldırılamadı.';
+
+  @override
+  String get outputOpenConversation => 'Sohbeti aç';
+
+  @override
+  String get outputConversationUnavailable => 'Sohbet artık kullanılamıyor';
+
+  @override
+  String outputSavedAt(String date) {
+    return 'Kaydedilme tarihi: $date';
+  }
+
+  @override
   String get collapseSidebars => 'Kenar çubuklarını daralt';
 
   @override
@@ -1343,11 +1449,11 @@ class AppLocalizationsTr extends AppLocalizations {
   String get textSizeLarge => 'Büyük';
 
   @override
-  String get appFont => 'Uygulama yazı tipi';
+  String get appFont => 'Yanıt yazı tipi';
 
   @override
   String get appFontDescription =>
-      'OpenChat genelinde kullanılacak yazı tipini seçin.';
+      'Asistan yanıtlarında kullanılacak yazı tipini seçin.';
 
   @override
   String get appearancePreferenceSaveFailed =>
@@ -3117,6 +3223,11 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get toolRunProjectTask => 'Proje görevini çalıştır';
+
+  @override
+  String toolConfiguredProjectTool(String name) {
+    return 'Proje aracı: $name';
+  }
 
   @override
   String get toolDelegateTask => 'Analizi alt göreve devret';

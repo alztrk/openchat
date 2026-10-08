@@ -45,6 +45,7 @@ IconData toolOperationIcon(String name) => switch (name) {
   'git_diff' => LucideIcons.gitCompare,
   'git_history' => LucideIcons.history,
   'read_url_content' || 'read_url' => LucideIcons.globe,
+  _ when name.startsWith('project_tool__') => LucideIcons.wrench,
   _ => LucideIcons.wrench,
 };
 
@@ -174,7 +175,7 @@ class ToolSearchResult extends StatelessWidget {
                               maxLines: 1,
                               style: TextStyle(
                                 color: palette.secondaryText,
-                                fontSize: 11,
+                                fontSize: OpenChatTypography.metadata,
                               ),
                             ),
                           ),
@@ -189,9 +190,9 @@ class ToolSearchResult extends StatelessWidget {
                           match.text,
                           style: TextStyle(
                             color: palette.text,
-                            fontFamily: 'monospace',
-                            fontSize: 11,
-                            height: 16 / 11,
+                            fontFamily: OpenChatTypography.codeFontFamily,
+                            fontSize: OpenChatTypography.code,
+                            height: 20 / OpenChatTypography.code,
                           ),
                         ),
                       ),
@@ -313,8 +314,8 @@ class ToolReadResult extends StatelessWidget {
                           textAlign: TextAlign.right,
                           style: TextStyle(
                             color: palette.secondaryIcon,
-                            fontFamily: 'monospace',
-                            fontSize: 10,
+                            fontFamily: OpenChatTypography.codeFontFamily,
+                            fontSize: OpenChatTypography.metadata,
                             height: 18 / 10,
                           ),
                         ),
@@ -325,9 +326,9 @@ class ToolReadResult extends StatelessWidget {
                           line.text.isEmpty ? ' ' : line.text,
                           style: TextStyle(
                             color: palette.text,
-                            fontFamily: 'monospace',
-                            fontSize: 11,
-                            height: 18 / 11,
+                            fontFamily: OpenChatTypography.codeFontFamily,
+                            fontSize: OpenChatTypography.code,
+                            height: 20 / OpenChatTypography.code,
                           ),
                         ),
                       ),
@@ -427,7 +428,7 @@ class ToolFileInfoResult extends StatelessWidget {
                       maxLines: 2,
                       style: TextStyle(
                         color: palette.secondaryText,
-                        fontSize: 11,
+                        fontSize: OpenChatTypography.metadata,
                       ),
                     ),
                   ],
@@ -669,7 +670,7 @@ class _ToolResultMessage extends StatelessWidget {
             message,
             style: TextStyle(
               color: palette.secondaryText,
-              fontSize: 11,
+              fontSize: OpenChatTypography.metadata,
               height: 16 / 11,
             ),
           ),
@@ -737,7 +738,7 @@ class _ToolResultState extends StatelessWidget {
                     message,
                     style: TextStyle(
                       color: isError ? errorColor : palette.text,
-                      fontSize: 11,
+                      fontSize: OpenChatTypography.metadata,
                       height: 16 / 11,
                     ),
                   ),
@@ -748,7 +749,7 @@ class _ToolResultState extends StatelessWidget {
                       maxLines: 2,
                       style: TextStyle(
                         color: palette.secondaryText,
-                        fontSize: 10,
+                        fontSize: OpenChatTypography.metadata,
                       ),
                     ),
                   ],
@@ -789,7 +790,7 @@ class _SuccessPanel extends StatelessWidget {
             title,
             style: TextStyle(
               color: palette.text,
-              fontSize: 11,
+              fontSize: OpenChatTypography.metadata,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -820,7 +821,10 @@ class _PathHeading extends StatelessWidget {
         child: SelectableText(
           path,
           maxLines: 2,
-          style: TextStyle(color: palette.secondaryText, fontSize: 11),
+          style: TextStyle(
+            color: palette.secondaryText,
+            fontSize: OpenChatTypography.metadata,
+          ),
         ),
       ),
     ],
@@ -857,7 +861,7 @@ class _PreviewBlock extends StatelessWidget {
           label,
           style: TextStyle(
             color: palette.secondaryText,
-            fontSize: 10,
+            fontSize: OpenChatTypography.metadata,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -866,9 +870,9 @@ class _PreviewBlock extends StatelessWidget {
           value,
           style: TextStyle(
             color: palette.text,
-            fontFamily: 'monospace',
-            fontSize: 10,
-            height: 15 / 10,
+            fontFamily: OpenChatTypography.codeFontFamily,
+            fontSize: OpenChatTypography.code,
+            height: 20 / OpenChatTypography.code,
           ),
         ),
       ],
@@ -893,7 +897,7 @@ class _CountBadge extends StatelessWidget {
       label,
       style: TextStyle(
         color: palette.secondaryText,
-        fontSize: 10,
+        fontSize: OpenChatTypography.metadata,
         fontWeight: FontWeight.w500,
       ),
     ),
@@ -917,8 +921,8 @@ class _LineBadge extends StatelessWidget {
       '$line',
       style: TextStyle(
         color: palette.secondaryText,
-        fontFamily: 'monospace',
-        fontSize: 10,
+        fontFamily: OpenChatTypography.codeFontFamily,
+        fontSize: OpenChatTypography.metadata,
       ),
     ),
   );
@@ -950,7 +954,10 @@ class _MetadataChip extends StatelessWidget {
         const SizedBox(width: 5),
         Text(
           label,
-          style: TextStyle(color: palette.secondaryText, fontSize: 10),
+          style: TextStyle(
+            color: palette.secondaryText,
+            fontSize: OpenChatTypography.metadata,
+          ),
         ),
       ],
     ),
@@ -973,7 +980,7 @@ class _ResultFootnote extends StatelessWidget {
           message,
           style: TextStyle(
             color: palette.secondaryText,
-            fontSize: 10,
+            fontSize: OpenChatTypography.metadata,
             height: 15 / 10,
           ),
         ),

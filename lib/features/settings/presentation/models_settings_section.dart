@@ -728,7 +728,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                           l10n.defaultModel,
                           style: TextStyle(
                             color: palette.accent,
-                            fontSize: 11,
+                            fontSize: OpenChatTypography.metadata,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -748,7 +748,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                           l10n.hiddenModel,
                           style: TextStyle(
                             color: palette.secondaryText,
-                            fontSize: 11,
+                            fontSize: OpenChatTypography.metadata,
                           ),
                         ),
                       ),
@@ -766,7 +766,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                           openCodeTier,
                           style: TextStyle(
                             color: palette.secondaryText,
-                            fontSize: 11,
+                            fontSize: OpenChatTypography.metadata,
                           ),
                         ),
                       ),
@@ -784,7 +784,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                           model.sourceLabel!,
                           style: TextStyle(
                             color: palette.secondaryText,
-                            fontSize: 11,
+                            fontSize: OpenChatTypography.metadata,
                           ),
                         ),
                       ),
@@ -793,7 +793,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                         contextWindowText,
                         style: TextStyle(
                           color: palette.secondaryText,
-                          fontSize: 11,
+                          fontSize: OpenChatTypography.metadata,
                         ),
                       ),
                   ],
@@ -802,9 +802,9 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                 Text(
                   model.id,
                   style: TextStyle(
-                    fontFamily: 'monospace',
+                    fontFamily: OpenChatTypography.codeFontFamily,
                     color: palette.secondaryText,
-                    fontSize: 11,
+                    fontSize: OpenChatTypography.code,
                   ),
                 ),
               ],
@@ -823,7 +823,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                   )
                 : null,
             icon: Icon(
-              isFavorite ? LucideIcons.star : LucideIcons.star,
+              isFavorite ? LucideIcons.star : LucideIcons.starOff,
               color: isFavorite ? palette.accent : palette.secondaryIcon,
               size: 18,
             ),

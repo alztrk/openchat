@@ -19,6 +19,113 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chats => 'Chats';
 
   @override
+  String get workspaces => 'Workspaces';
+
+  @override
+  String get workspacesDescription => 'Keep related conversations together.';
+
+  @override
+  String get workspaceCreate => 'New workspace';
+
+  @override
+  String get workspaceCreateAction => 'Create workspace';
+
+  @override
+  String get workspaceName => 'Workspace name';
+
+  @override
+  String get workspaceNameRequired => 'Enter a workspace name.';
+
+  @override
+  String get workspaceEmptyTitle => 'No workspaces yet';
+
+  @override
+  String get workspaceEmptyDescription =>
+      'Create a workspace to group related conversations.';
+
+  @override
+  String get workspaceNoConversations =>
+      'No conversations in this workspace yet.';
+
+  @override
+  String get workspaceMoveConversation => 'Move conversation';
+
+  @override
+  String get workspaceUnassignedChats => 'Chats without a workspace';
+
+  @override
+  String get workspaceNoWorkspace => 'No workspace';
+
+  @override
+  String workspaceConversationCount(int count) {
+    return 'Conversations: $count';
+  }
+
+  @override
+  String get workspaceRename => 'Rename workspace';
+
+  @override
+  String get workspaceDelete => 'Delete workspace';
+
+  @override
+  String workspaceDeleteConfirmation(String name) {
+    return 'Delete “$name”? Its conversations will stay in Chats.';
+  }
+
+  @override
+  String get workspaceLoadFailed => 'Workspaces could not be loaded.';
+
+  @override
+  String get workspaceSaveFailed => 'The workspace could not be saved.';
+
+  @override
+  String get workspaceDeleteFailed => 'The workspace could not be deleted.';
+
+  @override
+  String get workspaceMoveFailed => 'The conversation could not be moved.';
+
+  @override
+  String get outputs => 'Outputs';
+
+  @override
+  String get outputsDescription =>
+      'Save useful responses and return to them here.';
+
+  @override
+  String get outputsEmptyTitle => 'No saved responses yet';
+
+  @override
+  String get outputsEmptyDescription =>
+      'Use Save response under an answer to keep it here.';
+
+  @override
+  String get outputsLoadFailed => 'Saved responses could not be loaded.';
+
+  @override
+  String get saveResponse => 'Save response';
+
+  @override
+  String get removeSavedResponse => 'Remove saved response';
+
+  @override
+  String get outputSaveFailed => 'The response could not be saved.';
+
+  @override
+  String get outputRemoveFailed => 'The saved response could not be removed.';
+
+  @override
+  String get outputOpenConversation => 'Open conversation';
+
+  @override
+  String get outputConversationUnavailable =>
+      'Conversation is no longer available';
+
+  @override
+  String outputSavedAt(String date) {
+    return 'Saved $date';
+  }
+
+  @override
   String get collapseSidebars => 'Collapse sidebars';
 
   @override
@@ -1351,11 +1458,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get textSizeLarge => 'Large';
 
   @override
-  String get appFont => 'App font';
+  String get appFont => 'Response font';
 
   @override
   String get appFontDescription =>
-      'Choose the typeface used throughout OpenChat.';
+      'Choose the typeface used for assistant responses.';
 
   @override
   String get appearancePreferenceSaveFailed =>
@@ -3136,6 +3243,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolRunProjectTask => 'Run project task';
+
+  @override
+  String toolConfiguredProjectTool(String name) {
+    return 'Project tool: $name';
+  }
 
   @override
   String get toolDelegateTask => 'Delegate analysis';

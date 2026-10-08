@@ -1057,7 +1057,7 @@ async fn terminal_manager_runs_command_and_handles_input_and_kill() {
             "echo openchat_terminal_ok",
             Path::new(directory.root()),
             Some(10),
-            Some(3000),
+            Some(10000),
         )
         .await
         .expect("execute command");
@@ -1076,7 +1076,7 @@ async fn terminal_manager_runs_command_and_handles_input_and_kill() {
             failing_command,
             Path::new(directory.root()),
             Some(10),
-            Some(3000),
+            Some(10000),
         )
         .await
         .expect("execute nonzero command");

@@ -272,7 +272,7 @@ class _ChatAttachmentGalleryState extends State<ChatAttachmentGallery> {
                     color: attachment.isAvailable
                         ? widget.palette.secondaryText
                         : widget.palette.accentIcon,
-                    fontSize: 11,
+                    fontSize: OpenChatTypography.metadata,
                   ),
                 ),
               ],

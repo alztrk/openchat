@@ -19,6 +19,117 @@ class AppLocalizationsEs extends AppLocalizations {
   String get chats => 'Chats';
 
   @override
+  String get workspaces => 'Espacios de trabajo';
+
+  @override
+  String get workspacesDescription => 'Agrupa conversaciones relacionadas.';
+
+  @override
+  String get workspaceCreate => 'Nuevo espacio de trabajo';
+
+  @override
+  String get workspaceCreateAction => 'Crear espacio de trabajo';
+
+  @override
+  String get workspaceName => 'Nombre del espacio de trabajo';
+
+  @override
+  String get workspaceNameRequired =>
+      'Escribe un nombre para el espacio de trabajo.';
+
+  @override
+  String get workspaceEmptyTitle => 'Todavía no hay espacios de trabajo';
+
+  @override
+  String get workspaceEmptyDescription =>
+      'Crea un espacio de trabajo para agrupar conversaciones relacionadas.';
+
+  @override
+  String get workspaceNoConversations =>
+      'Todavía no hay conversaciones en este espacio de trabajo.';
+
+  @override
+  String get workspaceMoveConversation => 'Mover conversación';
+
+  @override
+  String get workspaceUnassignedChats => 'Chats sin espacio de trabajo';
+
+  @override
+  String get workspaceNoWorkspace => 'Sin espacio de trabajo';
+
+  @override
+  String workspaceConversationCount(int count) {
+    return 'Conversaciones: $count';
+  }
+
+  @override
+  String get workspaceRename => 'Cambiar nombre del espacio de trabajo';
+
+  @override
+  String get workspaceDelete => 'Eliminar espacio de trabajo';
+
+  @override
+  String workspaceDeleteConfirmation(String name) {
+    return '¿Eliminar «$name»? Sus conversaciones seguirán en Chats.';
+  }
+
+  @override
+  String get workspaceLoadFailed =>
+      'No se pudieron cargar los espacios de trabajo.';
+
+  @override
+  String get workspaceSaveFailed => 'No se pudo guardar el espacio de trabajo.';
+
+  @override
+  String get workspaceDeleteFailed =>
+      'No se pudo eliminar el espacio de trabajo.';
+
+  @override
+  String get workspaceMoveFailed => 'No se pudo mover la conversación.';
+
+  @override
+  String get outputs => 'Resultados';
+
+  @override
+  String get outputsDescription =>
+      'Guarda respuestas útiles para volver a ellas aquí.';
+
+  @override
+  String get outputsEmptyTitle => 'Todavía no hay respuestas guardadas';
+
+  @override
+  String get outputsEmptyDescription =>
+      'Usa Guardar respuesta debajo de una respuesta para conservarla aquí.';
+
+  @override
+  String get outputsLoadFailed =>
+      'No se pudieron cargar las respuestas guardadas.';
+
+  @override
+  String get saveResponse => 'Guardar respuesta';
+
+  @override
+  String get removeSavedResponse => 'Quitar respuesta guardada';
+
+  @override
+  String get outputSaveFailed => 'No se pudo guardar la respuesta.';
+
+  @override
+  String get outputRemoveFailed => 'No se pudo quitar la respuesta guardada.';
+
+  @override
+  String get outputOpenConversation => 'Abrir conversación';
+
+  @override
+  String get outputConversationUnavailable =>
+      'La conversación ya no está disponible';
+
+  @override
+  String outputSavedAt(String date) {
+    return 'Guardada $date';
+  }
+
+  @override
   String get collapseSidebars => 'Contraer barras laterales';
 
   @override
@@ -1370,10 +1481,11 @@ class AppLocalizationsEs extends AppLocalizations {
   String get textSizeLarge => 'Grande';
 
   @override
-  String get appFont => 'Fuente de la aplicación';
+  String get appFont => 'Fuente de las respuestas';
 
   @override
-  String get appFontDescription => 'Elige el tipo de letra usado en OpenChat.';
+  String get appFontDescription =>
+      'Elige el tipo de letra para las respuestas del asistente.';
 
   @override
   String get appearancePreferenceSaveFailed =>
@@ -3183,6 +3295,11 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get toolRunProjectTask => 'Ejecutar tarea del proyecto';
+
+  @override
+  String toolConfiguredProjectTool(String name) {
+    return 'Herramienta del proyecto: $name';
+  }
 
   @override
   String get toolDelegateTask => 'Delegar análisis';

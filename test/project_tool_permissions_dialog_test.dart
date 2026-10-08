@@ -31,8 +31,10 @@ void main() {
                 builder: (context) => ProjectToolPermissionsDialog(
                   initialRules: const <String, ToolPermissionRule>{
                     'run_project_task__removed': ToolPermissionRule.deny,
+                    'project_tool__removed': ToolPermissionRule.deny,
                   },
                   namedTaskIds: const <String>['verify'],
+                  configuredToolIds: const <String>['lint'],
                   onSave: (rules) async {
                     savedRules = rules;
                   },
@@ -57,6 +59,14 @@ void main() {
           .namedTaskIds,
       <String>['verify'],
     );
+    expect(
+      tester
+          .widget<ProjectToolPermissionsDialog>(
+            find.byType(ProjectToolPermissionsDialog),
+          )
+          .configuredToolIds,
+      <String>['lint'],
+    );
     await tester.scrollUntilVisible(
       find.byKey(
         const ValueKey<String>('project-tool-rule-run_project_task__verify'),
@@ -67,6 +77,32 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Run project task: verify'), findsOneWidget);
 
+    await tester.scrollUntilVisible(
+      find.byKey(
+        const ValueKey<String>('project-tool-rule-project_tool__lint'),
+      ),
+      240,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Project tool: lint'), findsOneWidget);
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('project-tool-rule-project_tool__lint'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Allow').last);
+    await tester.pumpAndSettle();
+
+    await tester.scrollUntilVisible(
+      find.byKey(
+        const ValueKey<String>('project-tool-rule-run_project_task__verify'),
+      ),
+      240,
+      scrollable: find.byType(Scrollable).last,
+    );
+    await tester.pumpAndSettle();
     await tester.tap(
       find.byKey(
         const ValueKey<String>('project-tool-rule-run_project_task__verify'),
@@ -79,7 +115,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(savedRules?['run_project_task__verify'], ToolPermissionRule.deny);
+    expect(savedRules?['project_tool__lint'], ToolPermissionRule.allow);
     expect(savedRules?.containsKey('run_project_task__removed'), isFalse);
+    expect(savedRules?.containsKey('project_tool__removed'), isFalse);
     expect(find.byType(ProjectToolPermissionsDialog), findsNothing);
   });
 }

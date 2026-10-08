@@ -142,7 +142,9 @@ class ChatComposer extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final narrow = constraints.maxWidth <= 600;
+        final narrow =
+            constraints.maxWidth <= 600 ||
+            MediaQuery.textScalerOf(context).scale(16) > 18;
         final touchTargets = _usesTouchTargets(context);
         final focusRing = _focusRingColor(context);
         final horizontalPadding = narrow ? 12.0 : 16.0;

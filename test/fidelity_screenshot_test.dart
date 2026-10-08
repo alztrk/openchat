@@ -59,6 +59,12 @@ void main() {
     final fontLoader = FontLoader('Manrope')
       ..addFont(rootBundle.load('assets/fonts/Manrope[wght].ttf'));
     await fontLoader.load();
+    final uiFontLoader = FontLoader(OpenChatTypography.uiFontFamily)
+      ..addFont(rootBundle.load('assets/fonts/SourceSans3VF-Upright.ttf'));
+    await uiFontLoader.load();
+    final codeFontLoader = FontLoader(OpenChatTypography.codeFontFamily)
+      ..addFont(rootBundle.load('assets/fonts/SourceCodeVF-Upright.ttf'));
+    await codeFontLoader.load();
   });
   tearDownAll(() {
     goldenFileComparator = _previousGoldenComparator;
@@ -214,7 +220,6 @@ void main() {
               settingsSelected: false,
               onOpenChat: () {},
               onOpenModels: () {},
-              onOpenLocalModels: () {},
               onOpenSettings: () {},
               onToggleTheme: () {},
               onToggleSidebars: () {},
@@ -573,6 +578,7 @@ void main() {
               settingsPreferences: SettingsPreferences(
                 SharedPreferencesAsync(),
               ),
+              onOpenLocalModels: () {},
             ),
           ),
         );
@@ -1088,7 +1094,6 @@ Future<void> _expectCompactNavigationRailMatchesFigma(
             settingsSelected: false,
             onOpenChat: _ignoreThemeToggle,
             onOpenModels: _ignoreThemeToggle,
-            onOpenLocalModels: _ignoreThemeToggle,
             onOpenSettings: _ignoreThemeToggle,
             onToggleTheme: _ignoreThemeToggle,
             onToggleSidebars: _ignoreThemeToggle,
@@ -1100,8 +1105,8 @@ Future<void> _expectCompactNavigationRailMatchesFigma(
   await tester.pumpAndSettle();
 
   expect(
-    tester.getRect(find.byTooltip('Anasayfa')),
-    const Rect.fromLTWH(8, 78, 36, 36),
+    tester.getRect(find.byTooltip('Sohbetler')),
+    const Rect.fromLTWH(4, 78, 44, 46),
   );
   expect(
     tester.getRect(find.byType(ChatNavigationRail)),
@@ -1349,7 +1354,6 @@ Future<void> _expectActiveScreenMatchesFigma(
                       settingsSelected: false,
                       onOpenChat: () {},
                       onOpenModels: () {},
-                      onOpenLocalModels: () {},
                       onOpenSettings: () {},
                       onToggleTheme: () {},
                       onToggleSidebars: () {},

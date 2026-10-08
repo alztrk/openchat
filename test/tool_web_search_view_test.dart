@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
@@ -115,6 +116,45 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text(l10n.toolWebSearchNoResults), findsAtLeastNWidgets(1));
+    });
+
+    testWidgets('renders sanitized provider search attribution', (
+      tester,
+    ) async {
+      final l10n = await AppLocalizations.delegate.load(const Locale('tr'));
+      final activity = ChatToolActivity(
+        callId: 'call_search_grounded',
+        name: 'web_search',
+        status: ChatToolActivityStatus.completed,
+        arguments: const <String, Object?>{'query': 'query'},
+        output: const <String, Object?>{
+          'sourceType': 'provider_native',
+          'attributionHtml': '<div>Google Search <script>bad()</script></div>',
+          'results': [
+            {
+              'title': 'Example',
+              'url': 'https://example.org',
+              'snippet': '',
+              'engine': 'google',
+            },
+          ],
+        },
+      );
+      await tester.pumpWidget(
+        buildTestableWidget(
+          child: ToolActivityAccordion(
+            activity: activity,
+            palette: OpenChatPalette.light,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(l10n.toolWebSearch));
+      await tester.pumpAndSettle();
+
+      final attribution = tester.widget<HtmlWidget>(find.byType(HtmlWidget));
+      expect(attribution.html, contains('Google Search'));
+      expect(attribution.html, isNot(contains('<script')));
     });
   });
 

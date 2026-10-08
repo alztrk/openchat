@@ -540,7 +540,7 @@ class _UsageQuotasSettingsSectionState
                                 l10n.activeAccountBadge,
                                 style: TextStyle(
                                   color: theme.colorScheme.primary,
-                                  fontSize: 11,
+                                  fontSize: OpenChatTypography.metadata,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -707,7 +707,10 @@ class _UsageQuotasSettingsSectionState
                 l10n.usageUpdatedAt(
                   _localizedTimestamp(context, snapshot.fetchedAtUnixMs),
                 ),
-                style: TextStyle(color: palette.secondaryText, fontSize: 11),
+                style: TextStyle(
+                  color: palette.secondaryText,
+                  fontSize: OpenChatTypography.metadata,
+                ),
               ),
             ],
           ),
@@ -748,7 +751,10 @@ class _UsageQuotasSettingsSectionState
               padding: const EdgeInsets.only(top: 4),
               child: Text(
                 l10n.quotaResetsAt(_localizedTimestamp(context, resetAt)),
-                style: TextStyle(color: palette.secondaryText, fontSize: 11),
+                style: TextStyle(
+                  color: palette.secondaryText,
+                  fontSize: OpenChatTypography.metadata,
+                ),
               ),
             ),
         ],
@@ -828,7 +834,10 @@ class _UsageQuotasSettingsSectionState
               padding: const EdgeInsets.only(top: 8),
               child: Text(
                 l10n.resetCreditRefreshRequired,
-                style: TextStyle(color: theme.colorScheme.error, fontSize: 11),
+                style: TextStyle(
+                  color: theme.colorScheme.error,
+                  fontSize: OpenChatTypography.metadata,
+                ),
               ),
             ),
         ],
@@ -878,7 +887,10 @@ class _UsageQuotasSettingsSectionState
                 const SizedBox(height: 2),
                 Text(
                   metadata.join(' · '),
-                  style: TextStyle(color: palette.secondaryText, fontSize: 11),
+                  style: TextStyle(
+                    color: palette.secondaryText,
+                    fontSize: OpenChatTypography.metadata,
+                  ),
                 ),
               ],
             ],

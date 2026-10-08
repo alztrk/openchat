@@ -355,7 +355,7 @@ class _ChatFileChangesPanelState extends State<ChatFileChangesPanel> {
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   color: palette.text,
-                                  fontSize: 11,
+                                  fontSize: OpenChatTypography.metadata,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -415,7 +415,10 @@ class _ChatFileChangesPanelState extends State<ChatFileChangesPanel> {
             padding: const EdgeInsets.all(10),
             child: Text(
               l10n.fileChangesDiffTruncated,
-              style: TextStyle(color: palette.secondaryText, fontSize: 11),
+              style: TextStyle(
+                color: palette.secondaryText,
+                fontSize: OpenChatTypography.metadata,
+              ),
             ),
           );
         }
@@ -431,9 +434,9 @@ class _ChatFileChangesPanelState extends State<ChatFileChangesPanel> {
             line.isEmpty ? ' ' : line,
             style: TextStyle(
               color: color,
-              fontFamily: 'monospace',
-              fontSize: 11,
-              height: 16 / 11,
+              fontFamily: OpenChatTypography.codeFontFamily,
+              fontSize: OpenChatTypography.code,
+              height: 20 / OpenChatTypography.code,
             ),
           ),
         );
@@ -492,7 +495,7 @@ class _FileChangeRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: palette.text,
-                        fontSize: 11,
+                        fontSize: OpenChatTypography.metadata,
                         fontWeight: FontWeight.w500,
                         height: 16 / 11,
                       ),
@@ -510,7 +513,7 @@ class _FileChangeRow extends StatelessWidget {
                         color: change.status == ChatFileChangeState.conflict
                             ? Theme.of(context).colorScheme.error
                             : palette.secondaryText,
-                        fontSize: 10,
+                        fontSize: OpenChatTypography.metadata,
                         height: 14 / 10,
                       ),
                     ),
@@ -584,9 +587,8 @@ class _LineCount extends StatelessWidget {
     label,
     style: TextStyle(
       color: color,
-      fontSize: 11,
+      fontSize: OpenChatTypography.metadata,
       fontWeight: FontWeight.w600,
-      fontFamily: 'monospace',
     ),
   );
 }
@@ -633,7 +635,7 @@ class _InlineMessage extends StatelessWidget {
       message,
       style: TextStyle(
         color: isError ? Theme.of(context).colorScheme.error : null,
-        fontSize: 11,
+        fontSize: OpenChatTypography.metadata,
         height: 16 / 11,
       ),
     ),

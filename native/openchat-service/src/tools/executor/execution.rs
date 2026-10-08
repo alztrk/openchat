@@ -148,6 +148,13 @@ pub(crate) async fn execute_model_tool(prepared: &PreparedToolCall) -> Value {
                 "message": "Delegated analysis could not be started in this execution context."
             }});
         }
+        #[cfg(windows)]
+        ToolOperation::ProjectTool { .. } => {
+            return json!({"error": {
+                "code": "project_tool_unavailable",
+                "message": "Configured project tools must run through the approved sandboxed executor."
+            }});
+        }
         ToolOperation::GitStatus => {
             return git_inspection_result(crate::git_inspection::status(&prepared.root).await);
         }

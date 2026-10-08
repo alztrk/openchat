@@ -1328,7 +1328,7 @@ class _LocalEnginesSettingsSectionState
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: palette.secondaryText,
-                        fontSize: 11,
+                        fontSize: OpenChatTypography.metadata,
                       ),
                     ),
                   ),
@@ -1574,7 +1574,10 @@ class _LocalEnginesSettingsSectionState
           const SizedBox(height: 6),
           Text(
             _progressDetails(l10n, latest),
-            style: TextStyle(color: palette.secondaryText, fontSize: 11),
+            style: TextStyle(
+              color: palette.secondaryText,
+              fontSize: OpenChatTypography.metadata,
+            ),
           ),
         ],
         if (assetProgress.length > 1) ...[
@@ -1621,7 +1624,10 @@ class _LocalEnginesSettingsSectionState
           child: Text(
             progress.assetName,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: palette.secondaryText, fontSize: 11),
+            style: TextStyle(
+              color: palette.secondaryText,
+              fontSize: OpenChatTypography.metadata,
+            ),
           ),
         ),
         const SizedBox(width: 8),
@@ -1723,7 +1729,7 @@ class _LocalEnginesSettingsSectionState
           label,
           style: TextStyle(
             color: emphasized ? palette.accent : palette.secondaryText,
-            fontSize: 11,
+            fontSize: OpenChatTypography.metadata,
             fontWeight: FontWeight.w600,
           ),
         ),

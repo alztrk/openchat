@@ -30,20 +30,25 @@ class OpenChatWindowTitleBar extends StatelessWidget {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final showIdentity = constraints.maxWidth >= 240;
+              final showBrandName =
+                  showIdentity &&
+                  MediaQuery.textScalerOf(context).scale(14) <= 20;
               final showWindowControls = constraints.maxWidth >= 128;
               return Row(
                 children: [
                   if (showIdentity) ...[
                     const SizedBox(width: 12),
                     ExcludeSemantics(child: OpenChatBrandMark(size: 24)),
-                    const SizedBox(width: 9),
-                    Text(
-                      'OpenChat',
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: palette.text,
-                        fontWeight: FontWeight.w600,
+                    if (showBrandName) ...[
+                      const SizedBox(width: 9),
+                      Text(
+                        'OpenChat',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: palette.text,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
-                    ),
+                    ],
                   ] else
                     SizedBox(width: constraints.maxWidth >= 8 ? 8 : 0),
                   Expanded(

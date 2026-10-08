@@ -20,9 +20,9 @@ class ChatSurfaceCard extends StatelessWidget {
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: palette.selected,
+        color: palette.surface,
         borderRadius: radius,
-        border: Border.all(color: palette.border),
+        border: Border.all(color: palette.subtleBorder),
       ),
       child: Padding(padding: padding, child: child),
     );

@@ -71,6 +71,11 @@ bool _isProjectToolRuleName(String name) {
     return RegExp(r'^[a-z0-9_-]{1,64}$')
         .hasMatch(name.substring(taskPrefix.length));
   }
+  const configuredToolPrefix = 'project_tool__';
+  if (name.startsWith(configuredToolPrefix)) {
+    return RegExp(r'^[a-z0-9_-]{1,48}$')
+        .hasMatch(name.substring(configuredToolPrefix.length));
+  }
   const prefix = 'mcp__';
   if (!name.startsWith(prefix) || name.length > 64) return false;
   final suffix = name.substring(prefix.length);
@@ -102,6 +107,7 @@ enum ConversationTextSizePreference {
 }
 
 enum AppFontPreference {
+  sourceSans3('Source Sans 3'),
   manrope('Manrope'),
   segoeUi('Segoe UI'),
   georgia('Georgia');
@@ -219,7 +225,8 @@ class SettingsPreferences {
   Future<AppFontPreference> readAppFont() async {
     final value = await _preferences.getString(_appFontKey);
     return switch (value) {
-      null || 'manrope' => AppFontPreference.manrope,
+      null || 'sourceSans3' => AppFontPreference.sourceSans3,
+      'manrope' => AppFontPreference.manrope,
       'segoeUi' => AppFontPreference.segoeUi,
       'georgia' => AppFontPreference.georgia,
       _ => throw const FormatException(

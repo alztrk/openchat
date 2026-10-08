@@ -27,6 +27,12 @@ void main() {
     final fontLoader = FontLoader('Manrope')
       ..addFont(rootBundle.load('assets/fonts/Manrope[wght].ttf'));
     await fontLoader.load();
+    final uiFontLoader = FontLoader(OpenChatTypography.uiFontFamily)
+      ..addFont(rootBundle.load('assets/fonts/SourceSans3VF-Upright.ttf'));
+    await uiFontLoader.load();
+    final codeFontLoader = FontLoader(OpenChatTypography.codeFontFamily)
+      ..addFont(rootBundle.load('assets/fonts/SourceCodeVF-Upright.ttf'));
+    await codeFontLoader.load();
   });
 
   setUp(() {
@@ -76,7 +82,7 @@ void main() {
         await writer.readConversationTextSize(),
         ConversationTextSizePreference.normal,
       );
-      expect(await writer.readAppFont(), AppFontPreference.manrope);
+      expect(await writer.readAppFont(), AppFontPreference.sourceSans3);
 
       await writer.writeConversationWidth(ConversationWidthPreference.wide);
       await writer.writeConversationTextSize(
@@ -218,6 +224,7 @@ void main() {
       'execute_command': ToolPermissionRule.ask,
       'write_file': ToolPermissionRule.deny,
       'run_project_task__verify': ToolPermissionRule.deny,
+      'project_tool__lint': ToolPermissionRule.allow,
       'mcp__local_docs__*': ToolPermissionRule.allow,
       'mcp__local_docs__read-file': ToolPermissionRule.deny,
       'read_file': ToolPermissionRule.inherit,
@@ -231,6 +238,7 @@ void main() {
       'execute_command': ToolPermissionRule.ask,
       'write_file': ToolPermissionRule.deny,
       'run_project_task__verify': ToolPermissionRule.deny,
+      'project_tool__lint': ToolPermissionRule.allow,
       'mcp__local_docs__*': ToolPermissionRule.allow,
       'mcp__local_docs__read-file': ToolPermissionRule.deny,
     });

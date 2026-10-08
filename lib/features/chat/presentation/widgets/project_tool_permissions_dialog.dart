@@ -2,22 +2,36 @@ import 'package:flutter/material.dart';
 
 import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
+import 'package:openchat/l10n/generated/app_localizations.dart';
 
 class ProjectToolPermissionsDialog extends StatefulWidget {
   const ProjectToolPermissionsDialog({
     super.key,
     required this.initialRules,
     this.namedTaskIds = const <String>[],
+    this.configuredToolIds = const <String>[],
     required this.onSave,
   });
 
   final Map<String, ToolPermissionRule> initialRules;
   final List<String> namedTaskIds;
+  final List<String> configuredToolIds;
   final Future<void> Function(Map<String, ToolPermissionRule> rules) onSave;
 
   @override
   State<ProjectToolPermissionsDialog> createState() =>
       _ProjectToolPermissionsDialogState();
+}
+
+String _dynamicToolLabel(AppLocalizations l10n, String name) {
+  const taskPrefix = 'run_project_task__';
+  if (name.startsWith(taskPrefix)) {
+    return '${l10n.toolRunProjectTask}: ${name.substring(taskPrefix.length)}';
+  }
+  const configuredPrefix = 'project_tool__';
+  return l10n.toolConfiguredProjectTool(
+    name.substring(configuredPrefix.length),
+  );
 }
 
 class _ProjectToolPermissionsDialogState
@@ -26,10 +40,18 @@ class _ProjectToolPermissionsDialogState
       Map<String, ToolPermissionRule>.fromEntries(
         widget.initialRules.entries.where((entry) {
           const prefix = 'run_project_task__';
-          if (!entry.key.startsWith(prefix)) return true;
-          return widget.namedTaskIds.contains(
-            entry.key.substring(prefix.length),
-          );
+          if (entry.key.startsWith(prefix)) {
+            return widget.namedTaskIds.contains(
+              entry.key.substring(prefix.length),
+            );
+          }
+          const configuredPrefix = 'project_tool__';
+          if (entry.key.startsWith(configuredPrefix)) {
+            return widget.configuredToolIds.contains(
+              entry.key.substring(configuredPrefix.length),
+            );
+          }
+          return true;
         }),
       );
   bool _saving = false;
@@ -58,6 +80,7 @@ class _ProjectToolPermissionsDialogState
     final ruleNames = <String>{
       ...projectToolRuleNames,
       ...widget.namedTaskIds.map((id) => 'run_project_task__$id'),
+      ...widget.configuredToolIds.map((id) => 'project_tool__$id'),
     };
 
     return AlertDialog(
@@ -77,9 +100,7 @@ class _ProjectToolPermissionsDialogState
                   initialValue: _rules[name] ?? ToolPermissionRule.inherit,
                   isExpanded: true,
                   decoration: InputDecoration(
-                    labelText:
-                        labels[name] ??
-                        '${l10n.toolRunProjectTask}: ${name.substring('run_project_task__'.length)}',
+                    labelText: labels[name] ?? _dynamicToolLabel(l10n, name),
                   ),
                   items: [
                     DropdownMenuItem(

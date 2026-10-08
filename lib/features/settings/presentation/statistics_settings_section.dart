@@ -1066,7 +1066,10 @@ class _StatisticsSettingsSectionState extends State<StatisticsSettingsSection> {
                   if (values[index].modelsDevCatalogCostRequests > 0)
                     '${l10n.statisticsModelsDevCatalogCost}: ${_formatCostUsd(values[index].modelsDevCatalogCostUsd, locale)} · ${l10n.statisticsModelsDevCatalogCostCoverage(values[index].modelsDevCatalogCostRequests)}',
                 ].join(' · '),
-                style: TextStyle(color: palette.secondaryText, fontSize: 11),
+                style: TextStyle(
+                  color: palette.secondaryText,
+                  fontSize: OpenChatTypography.metadata,
+                ),
               ),
             ],
         ],
@@ -1445,7 +1448,10 @@ class _StatisticsMetricCard extends StatelessWidget {
               data.detail,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: palette.secondaryText, fontSize: 11),
+              style: TextStyle(
+                color: palette.secondaryText,
+                fontSize: OpenChatTypography.metadata,
+              ),
             ),
           ],
         ),
@@ -1479,7 +1485,10 @@ class _StatisticsCountPill extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       child: Text(
         '$label: ${number.format(count)}',
-        style: TextStyle(color: palette.text, fontSize: 11),
+        style: TextStyle(
+          color: palette.text,
+          fontSize: OpenChatTypography.metadata,
+        ),
       ),
     );
   }
@@ -1687,7 +1696,7 @@ class _TrendBar extends StatelessWidget {
                         overflow: TextOverflow.clip,
                         style: TextStyle(
                           color: palette.secondaryText,
-                          fontSize: 9,
+                          fontSize: OpenChatTypography.metadata,
                         ),
                       )
                     : null,
@@ -1735,7 +1744,10 @@ class _TrendLegend extends StatelessWidget {
         const SizedBox(width: 6),
         Text(
           label,
-          style: TextStyle(color: palette.secondaryText, fontSize: 11),
+          style: TextStyle(
+            color: palette.secondaryText,
+            fontSize: OpenChatTypography.metadata,
+          ),
         ),
       ],
     );
@@ -1872,7 +1884,10 @@ class _StatisticsBreakdownRow extends StatelessWidget {
             ].join(' · '),
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: palette.secondaryText, fontSize: 10),
+            style: TextStyle(
+              color: palette.secondaryText,
+              fontSize: OpenChatTypography.metadata,
+            ),
           ),
         ],
       ),
@@ -1938,7 +1953,7 @@ class _ConversationUsageRow extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: palette.secondaryText,
-                        fontSize: 11,
+                        fontSize: OpenChatTypography.metadata,
                       ),
                     ),
                     if (catalogCostLabel != null) ...[
@@ -1949,7 +1964,7 @@ class _ConversationUsageRow extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: palette.secondaryText,
-                          fontSize: 11,
+                          fontSize: OpenChatTypography.metadata,
                         ),
                       ),
                     ],
@@ -2033,26 +2048,44 @@ class _QuotaHistorySnapshotCard extends StatelessWidget {
             if (account != null && account.isNotEmpty)
               Text(
                 account,
-                style: TextStyle(color: palette.secondaryText, fontSize: 11),
+                style: TextStyle(
+                  color: palette.secondaryText,
+                  fontSize: OpenChatTypography.metadata,
+                ),
               ),
             if (workspace != null && workspace.isNotEmpty)
               Text(
                 workspace,
-                style: TextStyle(color: palette.secondaryText, fontSize: 11),
+                style: TextStyle(
+                  color: palette.secondaryText,
+                  fontSize: OpenChatTypography.metadata,
+                ),
               ),
-            Text(switch (snapshot.freshness) {
-              'current' => l10n.statisticsQuotaFreshnessCurrent,
-              'stale' => l10n.statisticsQuotaFreshnessStale,
-              _ => l10n.statisticsQuotaFreshnessUnknown,
-            }, style: TextStyle(color: palette.secondaryText, fontSize: 11)),
+            Text(
+              switch (snapshot.freshness) {
+                'current' => l10n.statisticsQuotaFreshnessCurrent,
+                'stale' => l10n.statisticsQuotaFreshnessStale,
+                _ => l10n.statisticsQuotaFreshnessUnknown,
+              },
+              style: TextStyle(
+                color: palette.secondaryText,
+                fontSize: OpenChatTypography.metadata,
+              ),
+            ),
             Text(
               statusLabel,
-              style: TextStyle(color: palette.secondaryText, fontSize: 11),
+              style: TextStyle(
+                color: palette.secondaryText,
+                fontSize: OpenChatTypography.metadata,
+              ),
             ),
             if (resetCreditCount != null)
               Text(
                 l10n.resetCreditsAvailable(resetCreditCount),
-                style: TextStyle(color: palette.secondaryText, fontSize: 11),
+                style: TextStyle(
+                  color: palette.secondaryText,
+                  fontSize: OpenChatTypography.metadata,
+                ),
               ),
           ],
         ),
@@ -2124,7 +2157,7 @@ class _QuotaHistoryBucket extends StatelessWidget {
                   : percentFormat.format((percent / 100).clamp(0.0, 1.0)),
               style: TextStyle(
                 color: palette.secondaryText,
-                fontSize: 11,
+                fontSize: OpenChatTypography.metadata,
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
@@ -2145,7 +2178,10 @@ class _QuotaHistoryBucket extends StatelessWidget {
           const SizedBox(height: 3),
           Text(
             '${l10n.statisticsResetAt}: $resetLabel',
-            style: TextStyle(color: palette.secondaryText, fontSize: 10),
+            style: TextStyle(
+              color: palette.secondaryText,
+              fontSize: OpenChatTypography.metadata,
+            ),
           ),
         ],
       ],
@@ -2236,7 +2272,10 @@ class _UsageRequestDetail extends StatelessWidget {
             '$dateLabel · ${metadata.join(' · ')}',
             maxLines: 3,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: palette.secondaryText, fontSize: 10),
+            style: TextStyle(
+              color: palette.secondaryText,
+              fontSize: OpenChatTypography.metadata,
+            ),
           ),
           const SizedBox(height: 5),
           Wrap(
@@ -2248,19 +2287,25 @@ class _UsageRequestDetail extends StatelessWidget {
                   token,
                   style: TextStyle(
                     color: palette.text,
-                    fontSize: 11,
+                    fontSize: OpenChatTypography.metadata,
                     fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
               if (request.providerReportedCostUsd case final cost?)
                 Text(
                   '${l10n.statisticsProviderReportedCost}: ${_formatCostUsd(cost, Localizations.localeOf(context).toString())}',
-                  style: TextStyle(color: palette.secondaryText, fontSize: 11),
+                  style: TextStyle(
+                    color: palette.secondaryText,
+                    fontSize: OpenChatTypography.metadata,
+                  ),
                 ),
               if (request.modelsDevCatalogCostUsd case final cost?)
                 Text(
                   '${l10n.statisticsModelsDevCatalogCost}: ${_formatCostUsd(cost, Localizations.localeOf(context).toString())}',
-                  style: TextStyle(color: palette.secondaryText, fontSize: 11),
+                  style: TextStyle(
+                    color: palette.secondaryText,
+                    fontSize: OpenChatTypography.metadata,
+                  ),
                 ),
             ],
           ),
@@ -2391,7 +2436,10 @@ class _UsageRequestManifestView extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: Text(
             l10n.statisticsRequestContextUnavailable,
-            style: TextStyle(color: palette.secondaryText, fontSize: 11),
+            style: TextStyle(
+              color: palette.secondaryText,
+              fontSize: OpenChatTypography.metadata,
+            ),
           ),
         ),
     ],
@@ -2417,7 +2465,10 @@ class _ManifestLine extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 4),
       child: Text(
         label,
-        style: TextStyle(color: palette.secondaryText, fontSize: 11),
+        style: TextStyle(
+          color: palette.secondaryText,
+          fontSize: OpenChatTypography.metadata,
+        ),
       ),
     ),
   );
@@ -2447,7 +2498,10 @@ class _StatusLabel extends StatelessWidget {
         borderRadius: BorderRadius.circular(5),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      child: Text(label, style: TextStyle(color: color, fontSize: 10)),
+      child: Text(
+        label,
+        style: TextStyle(color: color, fontSize: OpenChatTypography.metadata),
+      ),
     );
   }
 }

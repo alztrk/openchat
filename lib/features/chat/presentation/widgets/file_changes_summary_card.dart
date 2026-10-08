@@ -113,7 +113,7 @@ class FileChangesSummaryCard extends StatelessWidget {
                               : l10n.fileChangesLineCounts(added, removed),
                           style: TextStyle(
                             color: palette.secondaryText,
-                            fontSize: 11,
+                            fontSize: OpenChatTypography.metadata,
                             height: 16 / 11,
                           ),
                         ),
@@ -159,7 +159,7 @@ class FileChangesSummaryCard extends StatelessWidget {
                         '+$addedLines',
                         style: TextStyle(
                           color: _additionColor(context),
-                          fontSize: 11,
+                          fontSize: OpenChatTypography.metadata,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -169,7 +169,7 @@ class FileChangesSummaryCard extends StatelessWidget {
                         '-$removedLines',
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.error,
-                          fontSize: 11,
+                          fontSize: OpenChatTypography.metadata,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -184,7 +184,7 @@ class FileChangesSummaryCard extends StatelessWidget {
                   l10n.fileChangesMoreFiles(activeChanges.length - 3),
                   style: TextStyle(
                     color: palette.secondaryText,
-                    fontSize: 11,
+                    fontSize: OpenChatTypography.metadata,
                     height: 16 / 11,
                   ),
                 ),
@@ -201,7 +201,7 @@ class FileChangesSummaryCard extends StatelessWidget {
                     : l10n.fileChangesReverted,
                 style: TextStyle(
                   color: palette.secondaryText,
-                  fontSize: 11,
+                  fontSize: OpenChatTypography.metadata,
                   height: 16 / 11,
                 ),
               ),
@@ -223,7 +223,7 @@ class FileChangesSummaryCard extends StatelessWidget {
                       l10n.fileChangesTrackingFailed,
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.error,
-                        fontSize: 11,
+                        fontSize: OpenChatTypography.metadata,
                         height: 16 / 11,
                       ),
                     ),

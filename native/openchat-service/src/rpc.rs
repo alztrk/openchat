@@ -293,6 +293,14 @@ pub(crate) async fn dispatch(
             let tasks = project_tasks_for_project(storage, project_id)?;
             Ok(json!({"tasks": tasks}))
         }
+        "project.tools.list" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let root = project_root_for_mcp(storage, project_id)?;
+            let tools = crate::tools::project_tools::load_if_present(&root)?;
+            Ok(
+                json!({"tools": tools.iter().map(|tool| json!({"id": tool.id, "description": tool.description})).collect::<Vec<_>>()}),
+            )
+        }
         "project.worktrees.run_task" => {
             let project_id = required_string(&request.params, "projectId")?;
             let project_root = required_string(&request.params, "projectRoot")?;

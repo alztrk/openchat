@@ -119,6 +119,15 @@ pub async fn send_message(
         project_root,
         cfg!(windows) && route.supports_tool_calls != Some(false),
     )?;
+    #[cfg(windows)]
+    let project_tools = if route.supports_tool_calls != Some(false) {
+        project_root
+            .map(crate::tools::project_tools::load_if_present)
+            .transpose()?
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
     let included_messages = stored_messages
         .iter()
         .filter(|message| Some(message.id.as_str()) != excluded_assistant_message_id)
@@ -148,6 +157,10 @@ pub async fn send_message(
             .tools
             .extend(registry.definitions().iter().cloned());
     }
+    #[cfg(windows)]
+    provider_request
+        .tools
+        .extend(project_tools.iter().map(|tool| tool.definition()));
     let active_compaction_matches = context_state.as_ref().is_some_and(|state| {
         context_compaction::compaction_payload_matches_route(
             state,
@@ -415,9 +428,21 @@ pub async fn send_message(
             .map(|tool| tool.name.to_owned()),
         tool_permission_rules,
     );
+    if provider_id == "mistral"
+        && let Some(api_key) = api_key
+    {
+        tool_executor = tool_executor.with_mistral_search(api_key, &route.provider_model_id);
+    }
+    if provider_id == "gemini"
+        && let Some(api_key) = api_key
+    {
+        tool_executor = tool_executor.with_gemini_search(api_key, &route.provider_model_id);
+    }
     #[cfg(windows)]
     {
-        tool_executor = tool_executor.with_mcp_registry(mcp_registry);
+        tool_executor = tool_executor
+            .with_mcp_registry(mcp_registry)
+            .with_project_tools(project_tools);
     }
     let result = stream_conversation(
         &route,

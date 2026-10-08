@@ -19,6 +19,119 @@ class AppLocalizationsFr extends AppLocalizations {
   String get chats => 'Discussions';
 
   @override
+  String get workspaces => 'Espaces de travail';
+
+  @override
+  String get workspacesDescription => 'Regroupez les conversations liées.';
+
+  @override
+  String get workspaceCreate => 'Nouvel espace de travail';
+
+  @override
+  String get workspaceCreateAction => 'Créer un espace de travail';
+
+  @override
+  String get workspaceName => 'Nom de l’espace de travail';
+
+  @override
+  String get workspaceNameRequired =>
+      'Saisissez un nom pour l’espace de travail.';
+
+  @override
+  String get workspaceEmptyTitle => 'Aucun espace de travail pour le moment';
+
+  @override
+  String get workspaceEmptyDescription =>
+      'Créez un espace de travail pour regrouper les conversations liées.';
+
+  @override
+  String get workspaceNoConversations =>
+      'Aucune conversation dans cet espace de travail pour le moment.';
+
+  @override
+  String get workspaceMoveConversation => 'Déplacer la conversation';
+
+  @override
+  String get workspaceUnassignedChats => 'Discussions sans espace de travail';
+
+  @override
+  String get workspaceNoWorkspace => 'Aucun espace de travail';
+
+  @override
+  String workspaceConversationCount(int count) {
+    return 'Conversations : $count';
+  }
+
+  @override
+  String get workspaceRename => 'Renommer l’espace de travail';
+
+  @override
+  String get workspaceDelete => 'Supprimer l’espace de travail';
+
+  @override
+  String workspaceDeleteConfirmation(String name) {
+    return 'Supprimer « $name » ? Ses conversations resteront dans Discussions.';
+  }
+
+  @override
+  String get workspaceLoadFailed =>
+      'Impossible de charger les espaces de travail.';
+
+  @override
+  String get workspaceSaveFailed =>
+      'Impossible d’enregistrer l’espace de travail.';
+
+  @override
+  String get workspaceDeleteFailed =>
+      'Impossible de supprimer l’espace de travail.';
+
+  @override
+  String get workspaceMoveFailed => 'Impossible de déplacer la conversation.';
+
+  @override
+  String get outputs => 'Réponses enregistrées';
+
+  @override
+  String get outputsDescription =>
+      'Enregistrez les réponses utiles pour les retrouver ici.';
+
+  @override
+  String get outputsEmptyTitle => 'Aucune réponse enregistrée pour le moment';
+
+  @override
+  String get outputsEmptyDescription =>
+      'Utilisez Enregistrer la réponse sous une réponse pour la conserver ici.';
+
+  @override
+  String get outputsLoadFailed =>
+      'Impossible de charger les réponses enregistrées.';
+
+  @override
+  String get saveResponse => 'Enregistrer la réponse';
+
+  @override
+  String get removeSavedResponse => 'Supprimer la réponse enregistrée';
+
+  @override
+  String get outputSaveFailed => 'Impossible d’enregistrer la réponse.';
+
+  @override
+  String get outputRemoveFailed =>
+      'Impossible de supprimer la réponse enregistrée.';
+
+  @override
+  String get outputOpenConversation => 'Ouvrir la conversation';
+
+  @override
+  String get outputConversationUnavailable =>
+      'La conversation n’est plus disponible';
+
+  @override
+  String outputSavedAt(String date) {
+    return 'Enregistrée le $date';
+  }
+
+  @override
   String get collapseSidebars => 'Réduire les barres latérales';
 
   @override
@@ -1376,11 +1489,11 @@ class AppLocalizationsFr extends AppLocalizations {
   String get textSizeLarge => 'Grande';
 
   @override
-  String get appFont => 'Police de l\'application';
+  String get appFont => 'Police des réponses';
 
   @override
   String get appFontDescription =>
-      'Choisissez la police utilisée dans OpenChat.';
+      'Choisissez la police des réponses de l’assistant.';
 
   @override
   String get appearancePreferenceSaveFailed =>
@@ -3202,6 +3315,11 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get toolRunProjectTask => 'Exécuter la tâche du projet';
+
+  @override
+  String toolConfiguredProjectTool(String name) {
+    return 'Outil du projet : $name';
+  }
 
   @override
   String get toolDelegateTask => 'Déléguer l’analyse';

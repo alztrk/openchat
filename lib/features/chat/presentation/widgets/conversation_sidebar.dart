@@ -155,10 +155,16 @@ class ConversationSidebar extends StatelessWidget {
               icon: const Icon(LucideIcons.x),
             )
           else
-            TextButton.icon(
-              onPressed: onToggleSelectionMode,
-              icon: const Icon(LucideIcons.listChecks, size: 16),
-              label: Text(l10n.selectConversations),
+            Expanded(
+              child: TextButton.icon(
+                onPressed: onToggleSelectionMode,
+                icon: const Icon(LucideIcons.listChecks, size: 16),
+                label: Text(
+                  l10n.selectConversations,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ),
           if (selectionMode) ...[
             const SizedBox(width: 8),

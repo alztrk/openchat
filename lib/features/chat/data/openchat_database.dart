@@ -20,6 +20,16 @@ class Projects extends Table {
   Set<Column<Object>> get primaryKey => {id};
 }
 
+class Workspaces extends Table {
+  TextColumn get id => text()();
+  TextColumn get name => text()();
+  IntColumn get createdAt => integer()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {id};
+}
+
 class Conversations extends Table {
   TextColumn get id => text()();
   TextColumn get title => text()();
@@ -32,6 +42,11 @@ class Conversations extends Table {
   TextColumn get modelId => text().nullable()();
   TextColumn get projectId => text().nullable().references(
     Projects,
+    #id,
+    onDelete: KeyAction.setNull,
+  )();
+  TextColumn get productWorkspaceId => text().nullable().references(
+    Workspaces,
     #id,
     onDelete: KeyAction.setNull,
   )();
@@ -80,7 +95,29 @@ class ModelFavorites extends Table {
   Set<Column<Object>> get primaryKey => {providerId, modelId};
 }
 
-@DriftDatabase(tables: [Projects, Conversations, Messages, ModelFavorites])
+class SavedOutputs extends Table {
+  TextColumn get conversationId => text()();
+  TextColumn get messageId => text()();
+  TextColumn get conversationTitle => text()();
+  TextColumn get content => text()();
+  TextColumn get providerId => text().nullable()();
+  TextColumn get modelId => text().nullable()();
+  IntColumn get savedAt => integer()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {conversationId, messageId};
+}
+
+@DriftDatabase(
+  tables: [
+    Projects,
+    Workspaces,
+    Conversations,
+    Messages,
+    ModelFavorites,
+    SavedOutputs,
+  ],
+)
 class OpenChatDatabase extends _$OpenChatDatabase {
   OpenChatDatabase([QueryExecutor? executor])
     : super(executor ?? _defaultDatabase());
@@ -88,7 +125,7 @@ class OpenChatDatabase extends _$OpenChatDatabase {
   OpenChatDatabase.atPath(String databasePath)
     : super(_databaseAtPath(databasePath));
 
-  static const currentSchemaVersion = 14;
+  static const currentSchemaVersion = 15;
   static const minimumSqliteVersionNumber = 3051003;
 
   static bool supportsSqliteRuntime(int versionNumber) =>
@@ -286,6 +323,15 @@ class OpenChatDatabase extends _$OpenChatDatabase {
         conversations,
         conversations.isBookmarked,
       );
+    }
+    if (from < 15 && to >= 15) {
+      await migrator.createTable(workspaces);
+      await _addColumnIfMissing(
+        migrator,
+        conversations,
+        conversations.productWorkspaceId,
+      );
+      await migrator.createTable(savedOutputs);
     }
   }
 

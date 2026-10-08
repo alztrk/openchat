@@ -129,7 +129,7 @@ class ToolTerminalResult extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: palette.secondaryText,
-                    fontSize: 11,
+                    fontSize: OpenChatTypography.metadata,
                     height: 16 / 11,
                   ),
                 ),
@@ -180,8 +180,8 @@ class ToolTerminalResult extends StatelessWidget {
                     '\$',
                     style: TextStyle(
                       color: palette.accent,
-                      fontFamily: 'monospace',
-                      fontSize: 12,
+                      fontFamily: OpenChatTypography.codeFontFamily,
+                      fontSize: OpenChatTypography.code,
                       fontWeight: FontWeight.w700,
                       height: 18 / 12,
                     ),
@@ -192,9 +192,9 @@ class ToolTerminalResult extends StatelessWidget {
                       command,
                       style: TextStyle(
                         color: palette.text,
-                        fontFamily: 'monospace',
-                        fontSize: 12,
-                        height: 18 / 12,
+                        fontFamily: OpenChatTypography.codeFontFamily,
+                        fontSize: OpenChatTypography.code,
+                        height: 20 / OpenChatTypography.code,
                       ),
                     ),
                   ),
@@ -220,8 +220,8 @@ class ToolTerminalResult extends StatelessWidget {
                     '>',
                     style: TextStyle(
                       color: palette.secondaryIcon,
-                      fontFamily: 'monospace',
-                      fontSize: 12,
+                      fontFamily: OpenChatTypography.codeFontFamily,
+                      fontSize: OpenChatTypography.code,
                       fontWeight: FontWeight.w600,
                       height: 18 / 12,
                     ),
@@ -232,9 +232,9 @@ class ToolTerminalResult extends StatelessWidget {
                       input.trimRight(),
                       style: TextStyle(
                         color: palette.text,
-                        fontFamily: 'monospace',
-                        fontSize: 12,
-                        height: 18 / 12,
+                        fontFamily: OpenChatTypography.codeFontFamily,
+                        fontSize: OpenChatTypography.code,
+                        height: 20 / OpenChatTypography.code,
                       ),
                     ),
                   ),
@@ -259,9 +259,9 @@ class ToolTerminalResult extends StatelessWidget {
                         data.errorMessage!,
                         style: TextStyle(
                           color: theme.colorScheme.error,
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                          height: 18 / 12,
+                          fontFamily: OpenChatTypography.codeFontFamily,
+                          fontSize: OpenChatTypography.code,
+                          height: 20 / OpenChatTypography.code,
                         ),
                       )
                     : cleanedOutput.isNotEmpty
@@ -269,9 +269,9 @@ class ToolTerminalResult extends StatelessWidget {
                         cleanedOutput,
                         style: TextStyle(
                           color: palette.text,
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                          height: 18 / 12,
+                          fontFamily: OpenChatTypography.codeFontFamily,
+                          fontSize: OpenChatTypography.code,
+                          height: 20 / OpenChatTypography.code,
                         ),
                       )
                     : data.isRunning
@@ -290,7 +290,7 @@ class ToolTerminalResult extends StatelessWidget {
                             l10n.toolTerminalWaitingOutput,
                             style: TextStyle(
                               color: palette.secondaryText,
-                              fontSize: 11,
+                              fontSize: OpenChatTypography.metadata,
                               fontStyle: FontStyle.italic,
                             ),
                           ),
@@ -300,7 +300,7 @@ class ToolTerminalResult extends StatelessWidget {
                         l10n.toolTerminalNoOutput,
                         style: TextStyle(
                           color: palette.secondaryText,
-                          fontSize: 11,
+                          fontSize: OpenChatTypography.metadata,
                           fontStyle: FontStyle.italic,
                         ),
                       ),
@@ -318,7 +318,7 @@ class ToolTerminalResult extends StatelessWidget {
                     l10n.toolListingIncomplete,
                     style: TextStyle(
                       color: palette.secondaryText,
-                      fontSize: 11,
+                      fontSize: OpenChatTypography.metadata,
                       height: 16 / 11,
                     ),
                   ),
@@ -354,7 +354,7 @@ class _TerminalStatusBadge extends StatelessWidget {
           l10n.toolTerminalTerminated,
           style: TextStyle(
             color: palette.secondaryText,
-            fontSize: 10,
+            fontSize: OpenChatTypography.metadata,
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -385,7 +385,7 @@ class _TerminalStatusBadge extends StatelessWidget {
                   : l10n.toolTerminalRunning,
               style: TextStyle(
                 color: palette.accent,
-                fontSize: 10,
+                fontSize: OpenChatTypography.metadata,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -409,7 +409,7 @@ class _TerminalStatusBadge extends StatelessWidget {
           l10n.toolTerminalExitCode(code),
           style: TextStyle(
             color: badgeColor,
-            fontSize: 10,
+            fontSize: OpenChatTypography.metadata,
             fontWeight: FontWeight.w600,
           ),
         ),

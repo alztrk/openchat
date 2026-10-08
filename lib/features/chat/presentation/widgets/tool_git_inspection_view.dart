@@ -163,7 +163,10 @@ class ToolGitInspectionResult extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             l10n.toolOperationTruncated,
-            style: TextStyle(color: palette.secondaryText, fontSize: 11),
+            style: TextStyle(
+              color: palette.secondaryText,
+              fontSize: OpenChatTypography.metadata,
+            ),
           ),
         ],
       ],
@@ -264,8 +267,8 @@ class ToolGitInspectionResult extends StatelessWidget {
                     ),
                     style: TextStyle(
                       color: palette.secondaryText,
-                      fontFamily: 'monospace',
-                      fontSize: 10,
+                      fontFamily: OpenChatTypography.codeFontFamily,
+                      fontSize: OpenChatTypography.code,
                     ),
                   ),
                 ),
@@ -281,7 +284,10 @@ class ToolGitInspectionResult extends StatelessWidget {
                     parsedEntries[index].timestamp * 1000,
                     isUtc: true,
                   ).toLocal().toString().substring(0, 16),
-                  style: TextStyle(color: palette.secondaryText, fontSize: 10),
+                  style: TextStyle(
+                    color: palette.secondaryText,
+                    fontSize: OpenChatTypography.metadata,
+                  ),
                 ),
               ],
             ),
@@ -313,7 +319,10 @@ class _GitMeta extends StatelessWidget {
       const SizedBox(width: 5),
       Text(
         '$label: ',
-        style: TextStyle(color: palette.secondaryText, fontSize: 11),
+        style: TextStyle(
+          color: palette.secondaryText,
+          fontSize: OpenChatTypography.metadata,
+        ),
       ),
       ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 220),
@@ -323,8 +332,8 @@ class _GitMeta extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
             color: palette.text,
-            fontFamily: 'monospace',
-            fontSize: 11,
+            fontFamily: OpenChatTypography.codeFontFamily,
+            fontSize: OpenChatTypography.code,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -354,7 +363,10 @@ class _GitCount extends StatelessWidget {
       const SizedBox(width: 3),
       Text(
         '$label $count',
-        style: TextStyle(color: palette.text, fontSize: 11),
+        style: TextStyle(
+          color: palette.text,
+          fontSize: OpenChatTypography.metadata,
+        ),
       ),
     ],
   );
@@ -382,8 +394,8 @@ class _GitFileRow extends StatelessWidget {
                 file.status,
                 style: TextStyle(
                   color: palette.accentIcon,
-                  fontFamily: 'monospace',
-                  fontSize: 11,
+                  fontFamily: OpenChatTypography.codeFontFamily,
+                  fontSize: OpenChatTypography.code,
                   fontWeight: FontWeight.w700,
                 ),
               ),
@@ -397,8 +409,8 @@ class _GitFileRow extends StatelessWidget {
                   file.path,
                   style: TextStyle(
                     color: palette.text,
-                    fontFamily: 'monospace',
-                    fontSize: 11,
+                    fontFamily: OpenChatTypography.codeFontFamily,
+                    fontSize: OpenChatTypography.code,
                   ),
                 ),
                 if (file.staged || file.unstaged) ...[
@@ -438,7 +450,10 @@ class _GitTag extends StatelessWidget {
     ),
     child: Text(
       label,
-      style: TextStyle(color: palette.secondaryText, fontSize: 9),
+      style: TextStyle(
+        color: palette.secondaryText,
+        fontSize: OpenChatTypography.metadata,
+      ),
     ),
   );
 }
@@ -466,7 +481,7 @@ class _GitDiffSection extends StatelessWidget {
           title,
           style: TextStyle(
             color: palette.secondaryText,
-            fontSize: 11,
+            fontSize: OpenChatTypography.metadata,
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -485,8 +500,8 @@ class _GitDiffSection extends StatelessWidget {
             value,
             style: TextStyle(
               color: palette.text,
-              fontFamily: 'monospace',
-              fontSize: 10,
+              fontFamily: OpenChatTypography.codeFontFamily,
+              fontSize: OpenChatTypography.code,
               height: 1.45,
             ),
           ),
@@ -496,7 +511,10 @@ class _GitDiffSection extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           context.openchatL10n.toolOperationTruncated,
-          style: TextStyle(color: palette.secondaryText, fontSize: 10),
+          style: TextStyle(
+            color: palette.secondaryText,
+            fontSize: OpenChatTypography.metadata,
+          ),
         ),
       ],
     ],

@@ -195,7 +195,7 @@ class ToolActivityAccordion extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: statusColor,
-                          fontSize: 10,
+                          fontSize: OpenChatTypography.metadata,
                           fontWeight: FontWeight.w500,
                           height: 14 / 10,
                         ),
@@ -247,6 +247,10 @@ class ToolActivityAccordion extends StatelessWidget {
         'edit_file' || 'edit' => l10n.toolEditFile,
         'execute_command' || 'bash' => l10n.toolExecuteCommand,
         'run_project_task' => l10n.toolRunProjectTask,
+        _ when name.startsWith('project_tool__') =>
+          l10n.toolConfiguredProjectTool(
+            name.substring('project_tool__'.length),
+          ),
         'delegate_task' => l10n.toolDelegateTask,
         'send_terminal_input' => l10n.toolSendTerminalInput,
         'git_status' => l10n.toolGitStatus,
@@ -284,7 +288,7 @@ class _ToolActivityTechnicalDetails extends StatelessWidget {
           l10n.toolTechnicalDetails,
           style: TextStyle(
             color: palette.secondaryText,
-            fontSize: 11,
+            fontSize: OpenChatTypography.metadata,
             fontWeight: FontWeight.w500,
             height: 16 / 11,
           ),
@@ -363,7 +367,7 @@ class _ToolActivityValue extends StatelessWidget {
             label,
             style: TextStyle(
               color: palette.secondaryText,
-              fontSize: 11,
+              fontSize: OpenChatTypography.metadata,
               fontWeight: FontWeight.w500,
               height: 16 / 11,
             ),
@@ -381,9 +385,9 @@ class _ToolActivityValue extends StatelessWidget {
             formattedValue,
             style: TextStyle(
               color: palette.text,
-              fontFamily: 'monospace',
-              fontSize: 12,
-              height: 18 / 12,
+              fontFamily: OpenChatTypography.codeFontFamily,
+              fontSize: OpenChatTypography.code,
+              height: 20 / OpenChatTypography.code,
             ),
           ),
         ),

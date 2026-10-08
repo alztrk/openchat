@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import 'package:openchat/app/openchat_brand_mark.dart';
 import 'package:openchat/app/openchat_theme.dart';
@@ -10,12 +9,14 @@ class ChatNavigationRail extends StatelessWidget {
   const ChatNavigationRail({
     required this.expanded,
     required this.settingsSelected,
+    this.workspacesSelected = false,
+    this.outputsSelected = false,
     this.modelsSelected = false,
-    this.localModelsSelected = false,
     this.showBrand = true,
     required this.onOpenChat,
+    this.onOpenWorkspaces,
+    this.onOpenOutputs,
     this.onOpenModels,
-    this.onOpenLocalModels,
     required this.onOpenSettings,
     required this.onToggleTheme,
     this.sidebarsCompact = false,
@@ -25,12 +26,14 @@ class ChatNavigationRail extends StatelessWidget {
 
   final bool expanded;
   final bool settingsSelected;
+  final bool workspacesSelected;
+  final bool outputsSelected;
   final bool modelsSelected;
-  final bool localModelsSelected;
   final bool showBrand;
   final VoidCallback onOpenChat;
+  final VoidCallback? onOpenWorkspaces;
+  final VoidCallback? onOpenOutputs;
   final VoidCallback? onOpenModels;
-  final VoidCallback? onOpenLocalModels;
   final VoidCallback onOpenSettings;
   final VoidCallback onToggleTheme;
   final bool sidebarsCompact;
@@ -41,15 +44,12 @@ class ChatNavigationRail extends StatelessWidget {
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final touch = switch (Theme.of(context).platform) {
-      TargetPlatform.android || TargetPlatform.iOS => true,
-      _ => false,
-    };
-    final railContentWidth = expanded
-        ? 226.0
-        : touch
-        ? 44.0
-        : 36.0;
+    final railContentWidth = expanded ? 226.0 : 44.0;
+    final chatsSelected =
+        !settingsSelected &&
+        !workspacesSelected &&
+        !outputsSelected &&
+        !modelsSelected;
 
     return Container(
       width: expanded
@@ -84,23 +84,52 @@ class ChatNavigationRail extends StatelessWidget {
                         children: [
                           _RailNavigationButton(
                             expanded: expanded,
-                            label: l10n.home,
-                            selected:
-                                !settingsSelected &&
-                                !modelsSelected &&
-                                !localModelsSelected,
-                            icon: _RailIcon(
-                              assetPath: 'assets/icons/home.svg',
-                              color:
-                                  settingsSelected ||
-                                      modelsSelected ||
-                                      localModelsSelected
-                                  ? palette.secondaryIcon
-                                  : palette.text,
+                            label: l10n.chats,
+                            selected: chatsSelected,
+                            icon: Icon(
+                              LucideIcons.messageCircle,
+                              color: chatsSelected
+                                  ? palette.accentIcon
+                                  : palette.secondaryIcon,
+                              size: 20,
                             ),
                             palette: palette,
                             onPressed: onOpenChat,
                           ),
+                          if (onOpenWorkspaces case final openWorkspaces?) ...[
+                            const SizedBox(height: 8),
+                            _RailNavigationButton(
+                              expanded: expanded,
+                              label: l10n.workspaces,
+                              selected: workspacesSelected,
+                              icon: Icon(
+                                LucideIcons.folder,
+                                color: workspacesSelected
+                                    ? palette.accentIcon
+                                    : palette.secondaryIcon,
+                                size: 20,
+                              ),
+                              palette: palette,
+                              onPressed: openWorkspaces,
+                            ),
+                          ],
+                          if (onOpenOutputs case final openOutputs?) ...[
+                            const SizedBox(height: 8),
+                            _RailNavigationButton(
+                              expanded: expanded,
+                              label: l10n.outputs,
+                              selected: outputsSelected,
+                              icon: Icon(
+                                LucideIcons.bookmark,
+                                color: outputsSelected
+                                    ? palette.accentIcon
+                                    : palette.secondaryIcon,
+                                size: 20,
+                              ),
+                              palette: palette,
+                              onPressed: openOutputs,
+                            ),
+                          ],
                           if (onOpenModels case final openModels?) ...[
                             const SizedBox(height: 8),
                             _RailNavigationButton(
@@ -108,32 +137,14 @@ class ChatNavigationRail extends StatelessWidget {
                               label: l10n.models,
                               selected: modelsSelected,
                               icon: Icon(
-                                LucideIcons.network,
+                                LucideIcons.brain,
                                 color: modelsSelected
-                                    ? palette.text
+                                    ? palette.accentIcon
                                     : palette.secondaryIcon,
                                 size: 19,
                               ),
                               palette: palette,
                               onPressed: openModels,
-                            ),
-                          ],
-                          if (onOpenLocalModels
-                              case final openLocalModels?) ...[
-                            const SizedBox(height: 8),
-                            _RailNavigationButton(
-                              expanded: expanded,
-                              label: l10n.localModelsPageTitle,
-                              selected: localModelsSelected,
-                              icon: Icon(
-                                LucideIcons.database,
-                                color: localModelsSelected
-                                    ? palette.text
-                                    : palette.secondaryIcon,
-                                size: 19,
-                              ),
-                              palette: palette,
-                              onPressed: openLocalModels,
                             ),
                           ],
                         ],
@@ -171,11 +182,12 @@ class ChatNavigationRail extends StatelessWidget {
                             expanded: expanded,
                             label: l10n.settings,
                             selected: settingsSelected,
-                            icon: _RailIcon(
-                              assetPath: 'assets/icons/settings.svg',
+                            icon: Icon(
+                              LucideIcons.settings,
                               color: settingsSelected
-                                  ? palette.text
+                                  ? palette.accentIcon
                                   : palette.secondaryIcon,
+                              size: 20,
                             ),
                             palette: palette,
                             onPressed: onOpenSettings,
@@ -243,9 +255,9 @@ class _Brand extends StatelessWidget {
                   'OpenChat',
                   style: TextStyle(
                     color: palette.text,
-                    fontSize: 17.6,
+                    fontSize: OpenChatTypography.componentTitle,
                     fontWeight: FontWeight.w600,
-                    letterSpacing: 0.112,
+                    letterSpacing: 0,
                     height: 1.2,
                   ),
                 ),
@@ -265,30 +277,8 @@ class _CompactBrand extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRRect(
       key: const ValueKey<String>('compact-brand'),
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(OpenChatRadii.control),
       child: const OpenChatBrandMark(size: 44),
-    );
-  }
-}
-
-class _RailIcon extends StatelessWidget {
-  const _RailIcon({required this.assetPath, required this.color});
-
-  final String assetPath;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 20,
-      height: 20,
-      child: Center(
-        child: SvgPicture.asset(
-          assetPath,
-          colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
-          excludeFromSemantics: true,
-        ),
-      ),
     );
   }
 }
@@ -315,16 +305,13 @@ class _RailNavigationButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final foreground = selected ? palette.text : palette.secondaryText;
-    final touch = switch (Theme.of(context).platform) {
-      TargetPlatform.android || TargetPlatform.iOS => true,
-      _ => false,
-    };
     final reducedMotion = MediaQuery.disableAnimationsOf(context);
     final item = Semantics(
       button: true,
       enabled: enabled,
       selected: selected,
       label: label,
+      onTap: onPressed,
       child: ExcludeSemantics(
         child: AnimatedContainer(
           duration: reducedMotion
@@ -334,6 +321,7 @@ class _RailNavigationButton extends StatelessWidget {
           decoration: BoxDecoration(
             color: selected ? palette.selected : Colors.transparent,
             borderRadius: BorderRadius.circular(OpenChatRadii.control),
+            border: selected ? Border.all(color: palette.border) : null,
           ),
           child: Material(
             color: Colors.transparent,
@@ -345,7 +333,7 @@ class _RailNavigationButton extends StatelessWidget {
               focusColor: OpenChatSemanticColors.of(context).focusRing
                   .withValues(alpha: 0.24),
               child: SizedBox(
-                height: touch || expanded ? 44 : 36,
+                height: 44,
                 child: Padding(
                   padding: EdgeInsets.symmetric(horizontal: expanded ? 12 : 0),
                   child: Row(
@@ -399,20 +387,18 @@ class _ThemeButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final touch = switch (Theme.of(context).platform) {
-      TargetPlatform.android || TargetPlatform.iOS => true,
-      _ => false,
-    };
     return SizedBox(
       width: double.infinity,
-      height: touch || expanded ? 44 : 36,
+      height: 44,
       child: TextButton(
         onPressed: onPressed,
         style: TextButton.styleFrom(
           alignment: expanded ? Alignment.centerLeft : Alignment.center,
           foregroundColor: palette.secondaryText,
           padding: EdgeInsets.symmetric(horizontal: expanded ? 12 : 0),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(OpenChatRadii.control),
+          ),
         ),
         child: Row(
           mainAxisAlignment: expanded

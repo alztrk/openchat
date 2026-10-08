@@ -1,7 +1,7 @@
 name: openchat
 description: "A cross-platform AI chat application."
 publish_to: 'none'
-version: 0.1.1+2
+version: 0.1.2+3
 
 environment:
   sdk: ^3.13.1
@@ -51,3 +51,19 @@ flutter:
     - family: Manrope
       fonts:
         - asset: assets/fonts/Manrope[wght].ttf
+    - family: Source Sans 3
+      fonts:
+        - asset: assets/fonts/SourceSans3VF-Upright.ttf
+          weight: 400
+        - asset: assets/fonts/SourceSans3VF-Upright.ttf
+          weight: 500
+        - asset: assets/fonts/SourceSans3VF-Upright.ttf
+          weight: 600
+        - asset: assets/fonts/SourceSans3VF-Upright.ttf
+          weight: 700
+    - family: Source Code Pro
+      fonts:
+        - asset: assets/fonts/SourceCodeVF-Upright.ttf
+          weight: 400
+        - asset: assets/fonts/SourceCodeVF-Upright.ttf
+          weight: 600

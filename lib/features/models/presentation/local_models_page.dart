@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/local_engine_icon.dart';
+import 'package:openchat/app/openchat_page_header.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_surface_card.dart';
 import 'package:openchat/features/settings/data/local_engines_models.dart';
@@ -94,21 +95,6 @@ class _LocalModelsPageState extends State<LocalModelsPage> {
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
     final compact = MediaQuery.sizeOf(context).width < 640;
-    final heading = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          l10n.localModelsPageTitle,
-          style: Theme.of(context).textTheme.headlineSmall,
-        ),
-        const SizedBox(height: 6),
-        Text(
-          l10n.localModelsPageDescription,
-          style: Theme.of(context).textTheme.bodyMedium
-              ?.copyWith(color: palette.secondaryText),
-        ),
-      ],
-    );
     final reloadButton = OutlinedButton.icon(
       onPressed: _pageState == _LocalModelsLoadState.loading
           ? null
@@ -130,27 +116,18 @@ class _LocalModelsPageState extends State<LocalModelsPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (compact)
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    heading,
-                    const SizedBox(height: 12),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: reloadButton,
-                    ),
-                  ],
-                )
-              else
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: heading),
-                    const SizedBox(width: 12),
-                    reloadButton,
-                  ],
-                ),
+              OpenChatPageHeader(
+                title: l10n.localModelsPageTitle,
+                description: l10n.localModelsPageDescription,
+                actions: [
+                  TextButton.icon(
+                    onPressed: widget.onOpenModelCatalog,
+                    icon: const Icon(LucideIcons.arrowLeft),
+                    label: Text(l10n.models),
+                  ),
+                  reloadButton,
+                ],
+              ),
               const SizedBox(height: 20),
               ChatSurfaceCard(
                 child: switch (_pageState) {

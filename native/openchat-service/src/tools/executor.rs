@@ -106,6 +106,9 @@ fn is_permission_rule_tool(name: &str) -> bool {
     if super::project_tasks::is_permission_rule_name(name) {
         return true;
     }
+    if super::project_tools::is_permission_rule_name(name) {
+        return true;
+    }
     if let Some(mcp_tool_prefix) = name.strip_prefix("mcp__") {
         #[cfg(windows)]
         return super::mcp::valid_permission_rule_suffix(mcp_tool_prefix);
@@ -209,6 +212,10 @@ pub struct ToolExecutor {
     tool_activities: Mutex<Vec<ToolActivity>>,
     allowed_tool_names: HashSet<String>,
     permission_rules: ToolPermissionRules,
+    mistral_search: Option<super::mistral_search::MistralSearchConfig>,
+    gemini_search: Option<super::gemini_search::GeminiSearchConfig>,
+    #[cfg(windows)]
+    project_tools: Vec<super::project_tools::ProjectTool>,
     #[cfg(windows)]
     mcp_registry: Option<std::sync::Arc<super::mcp::McpRegistry>>,
 }
@@ -289,9 +296,36 @@ impl ToolExecutor {
             tool_activities: Mutex::new(Vec::new()),
             allowed_tool_names: allowed_tool_names.into_iter().collect(),
             permission_rules,
+            mistral_search: None,
+            gemini_search: None,
+            #[cfg(windows)]
+            project_tools: Vec::new(),
             #[cfg(windows)]
             mcp_registry: None,
         }
+    }
+
+    pub(crate) fn with_mistral_search(mut self, api_key: &str, model_id: &str) -> Self {
+        self.mistral_search = Some(super::mistral_search::MistralSearchConfig::new(
+            api_key, model_id,
+        ));
+        self
+    }
+
+    pub(crate) fn with_gemini_search(mut self, api_key: &str, model_id: &str) -> Self {
+        self.gemini_search = Some(super::gemini_search::GeminiSearchConfig::new(
+            api_key, model_id,
+        ));
+        self
+    }
+
+    #[cfg(windows)]
+    pub(crate) fn with_project_tools(
+        mut self,
+        project_tools: Vec<super::project_tools::ProjectTool>,
+    ) -> Self {
+        self.project_tools = project_tools;
+        self
     }
 
     #[cfg(windows)]
@@ -671,6 +705,7 @@ impl ToolExecutor {
                     | ToolOperation::WebSearch { .. }
                     | ToolOperation::ReadUrlContent { .. }
                     | ToolOperation::DelegateTask { .. }
+                    | ToolOperation::ProjectTool { .. }
             );
             if !is_non_fs {
                 match self.resolve_tool_path(
@@ -717,6 +752,39 @@ impl ToolExecutor {
                         });
                     }
                 }
+            }
+        }
+
+        #[cfg(windows)]
+        if let ToolOperation::ProjectTool { executable, .. } = &prepared.operation {
+            let current = self
+                .project_tools
+                .iter()
+                .find(|tool| tool.tool_name() == call.name)
+                .and_then(|tool| tool.executable_path(&prepared.root).ok());
+            if current.as_ref() != Some(executable)
+                || current.as_ref() != Some(&prepared.target_path)
+            {
+                let output = tool_error(
+                    "permission_target_changed",
+                    "The configured tool changed before execution. Request permission again.",
+                );
+                self.emit_activity(
+                    storage,
+                    ToolActivity::finished(
+                        call,
+                        Some(prepared.target_path.to_string_lossy().into_owned()),
+                        output.clone(),
+                    ),
+                    request_id,
+                    snapshot,
+                    events,
+                )
+                .await?;
+                return Ok(ToolResult {
+                    call_id: call.id.clone(),
+                    output,
+                });
             }
         }
 
@@ -881,6 +949,56 @@ impl ToolExecutor {
                     json!({"error": {"code": "subagent_unavailable", "message": "Delegated analysis is unavailable for this provider route."}})
                 }
             }
+            ToolOperation::WebSearch { query, limit } => {
+                if let Some(config) = self.gemini_search.as_ref() {
+                    match super::gemini_search::execute(config, query, *limit, cancellation).await {
+                        Ok(output) => output,
+                        Err(message) => {
+                            json!({"error":{"code":"gemini_search_failed","message":message}})
+                        }
+                    }
+                } else if let Some(config) = self.mistral_search.as_ref() {
+                    match super::mistral_search::execute(config, query, *limit, cancellation).await
+                    {
+                        Ok(output) => output,
+                        Err(message) => json!({
+                            "error": {
+                                "code": "mistral_search_failed",
+                                "message": message,
+                            }
+                        }),
+                    }
+                } else {
+                    execute_model_tool(&prepared).await
+                }
+            }
+            #[cfg(windows)]
+            ToolOperation::ProjectTool {
+                executable,
+                input,
+                timeout_seconds,
+                output_limit_bytes,
+            } => match serde_json::to_string(input) {
+                Ok(serialized_input) => match super::terminal::TerminalSessionManager::global()
+                    .execute_project_tool(
+                        executable,
+                        &prepared.root,
+                        &serialized_input,
+                        *timeout_seconds,
+                        *output_limit_bytes,
+                        cancellation,
+                    )
+                    .await
+                {
+                    Ok(output) => output,
+                    Err(message) => {
+                        json!({"error":{"code":"project_tool_failed","message":message}})
+                    }
+                },
+                Err(_) => {
+                    json!({"error":{"code":"project_tool_failed","message":"The configured tool input could not be encoded."}})
+                }
+            },
             _ => execute_model_tool(&prepared).await,
         };
         if matches!(
@@ -896,15 +1014,25 @@ impl ToolExecutor {
             &prepared,
             file_change_capture,
         );
-        let mut activity = ToolActivity::finished(
-            call,
-            Some(prepared.target_path.to_string_lossy().into_owned()),
-            output.clone(),
-        );
+        let target = prepared.target_path.to_string_lossy().into_owned();
+        #[cfg(windows)]
+        let is_cancelled = output.get("status").and_then(Value::as_str) == Some("cancelled");
+        #[cfg(windows)]
+        let mut activity = if is_cancelled {
+            ToolActivity::cancelled(call, target, output.clone())
+        } else {
+            ToolActivity::finished(call, Some(target), output.clone())
+        };
+        #[cfg(not(windows))]
+        let mut activity = ToolActivity::finished(call, Some(target), output.clone());
         activity.file_changes = file_changes;
         activity.file_changes_error = file_changes_error;
         self.emit_activity(storage, activity, request_id, snapshot, events)
             .await?;
+        #[cfg(windows)]
+        if is_cancelled {
+            return Err(crate::permissions::operation_cancelled_error());
+        }
         Ok(ToolResult {
             call_id: call.id.clone(),
             output,
@@ -1671,9 +1799,14 @@ mod policy_tests {
 
     #[test]
     fn permission_rule_parser_rejects_unknown_tools_and_values() {
-        let valid = json!({"execute_command": "ask", "git_diff": "allow"});
+        let valid = json!({
+            "execute_command": "ask",
+            "git_diff": "allow",
+            "project_tool__lint": "deny"
+        });
         let rules = parse_tool_permission_rules(Some(&valid)).expect("valid rules");
         assert_eq!(rules["execute_command"], ToolPermissionRule::Ask);
+        assert_eq!(rules["project_tool__lint"], ToolPermissionRule::Deny);
 
         #[cfg(windows)]
         {

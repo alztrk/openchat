@@ -69,6 +69,9 @@ class ConversationPane extends StatelessWidget {
     this.showReasoningSelector = false,
     this.onReasoningSelected,
     this.messages = const <ChatMessage>[],
+    this.savedOutputMessageIds = const <String>{},
+    this.pendingSavedOutputMessageIds = const <String>{},
+    this.onToggleSavedOutput,
     this.messagesLoading = false,
     this.showAssistantLoading = false,
     this.messagesErrorDescription,
@@ -169,6 +172,9 @@ class ConversationPane extends StatelessWidget {
   final bool showReasoningSelector;
   final ValueChanged<String?>? onReasoningSelected;
   final List<ChatMessage> messages;
+  final Set<String> savedOutputMessageIds;
+  final Set<String> pendingSavedOutputMessageIds;
+  final ValueChanged<ChatMessage>? onToggleSavedOutput;
   final bool messagesLoading;
   final bool showAssistantLoading;
   final String? messagesErrorDescription;
@@ -279,6 +285,9 @@ class ConversationPane extends StatelessWidget {
                 latestFileChanges: latestFileChanges,
                 controller: messageScrollController,
                 providerId: providerId,
+                savedOutputMessageIds: savedOutputMessageIds,
+                pendingSavedOutputMessageIds: pendingSavedOutputMessageIds,
+                onToggleSavedOutput: onToggleSavedOutput,
                 targetMessageId: historySearchTargetMessageId,
                 targetRequestId: historySearchTargetRequestId,
                 onTargetHandled: onHistorySearchTargetHandled,
@@ -520,6 +529,9 @@ class _ConversationHistory extends StatefulWidget {
     required this.onBranchMessage,
     required this.controller,
     required this.providerId,
+    required this.savedOutputMessageIds,
+    required this.pendingSavedOutputMessageIds,
+    required this.onToggleSavedOutput,
     required this.onOpenFileChanges,
     required this.latestFileChanges,
     required this.targetMessageId,
@@ -536,6 +548,9 @@ class _ConversationHistory extends StatefulWidget {
   onBranchMessage;
   final ScrollController? controller;
   final String providerId;
+  final Set<String> savedOutputMessageIds;
+  final Set<String> pendingSavedOutputMessageIds;
+  final ValueChanged<ChatMessage>? onToggleSavedOutput;
   final VoidCallback? onOpenFileChanges;
   final List<ChatFileChange> latestFileChanges;
   final String? targetMessageId;
@@ -1099,6 +1114,17 @@ class _ConversationHistoryState extends State<_ConversationHistory> {
                                   ),
                                   ChatMessageRole.assistant => AssistantMessage(
                                     message: message,
+                                    isSavedOutput: widget.savedOutputMessageIds
+                                        .contains(message.id),
+                                    isSavingSavedOutput: widget
+                                        .pendingSavedOutputMessageIds
+                                        .contains(message.id),
+                                    onToggleSavedOutput:
+                                        widget.onToggleSavedOutput == null
+                                        ? null
+                                        : () => widget.onToggleSavedOutput!(
+                                            message,
+                                          ),
                                     modelLabel:
                                         message.modelId ?? assistantModelLabel,
                                     providerId:

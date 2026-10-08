@@ -28,6 +28,9 @@ class AssistantMessage extends StatelessWidget {
     this.responseVersionIndex,
     this.responseVersionCount,
     this.onSelectResponseVersion,
+    this.isSavedOutput = false,
+    this.isSavingSavedOutput = false,
+    this.onToggleSavedOutput,
   });
 
   final ChatMessage message;
@@ -37,6 +40,9 @@ class AssistantMessage extends StatelessWidget {
   final int? responseVersionIndex;
   final int? responseVersionCount;
   final ValueChanged<int>? onSelectResponseVersion;
+  final bool isSavedOutput;
+  final bool isSavingSavedOutput;
+  final VoidCallback? onToggleSavedOutput;
 
   @override
   Widget build(BuildContext context) {
@@ -167,6 +173,31 @@ class AssistantMessage extends StatelessWidget {
                     ),
                   if (message.content.trim().isNotEmpty)
                     CopyMessageButton(content: message.content),
+                  if (message.status == ChatMessageStatus.completed &&
+                      message.content.trim().isNotEmpty &&
+                      onToggleSavedOutput != null)
+                    IconButton(
+                      tooltip: isSavedOutput
+                          ? l10n.removeSavedResponse
+                          : l10n.saveResponse,
+                      onPressed: isSavingSavedOutput
+                          ? null
+                          : onToggleSavedOutput,
+                      icon: isSavingSavedOutput
+                          ? const SizedBox.square(
+                              dimension: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              isSavedOutput
+                                  ? LucideIcons.bookmarkCheck
+                                  : LucideIcons.bookmarkPlus,
+                              size: 16,
+                            ),
+                      color: isSavedOutput
+                          ? palette.accentIcon
+                          : palette.secondaryIcon,
+                    ),
                 ],
               ),
             ],
@@ -731,8 +762,13 @@ Map<String, ChatCitationSource> _citationSources(ChatMessage message) {
   for (final activity in message.toolActivities) {
     final output = toolActivityObjectMap(activity.output);
     final rawResults = output?['results'];
+    final webSearchSourceType = output?['sourceType'];
     if (activity.name == 'web_search' &&
-        output?['sourceType'] == 'local_web_search' &&
+        webSearchSourceType is String &&
+        const {
+          'local_web_search',
+          'provider_native',
+        }.contains(webSearchSourceType) &&
         rawResults is List) {
       final timestamp = _citationTime(output?['retrievedAtUnixMs']);
       for (final raw in rawResults) {
@@ -741,7 +777,7 @@ Map<String, ChatCitationSource> _citationSources(ChatMessage message) {
           id: value?['sourceId'],
           title: value?['title'],
           url: value?['url'],
-          sourceType: 'local_web_search',
+          sourceType: webSearchSourceType,
           snippet: value?['snippet'],
           retrievedAt: timestamp,
         );

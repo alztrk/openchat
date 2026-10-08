@@ -8,6 +8,8 @@ import 'package:openchat/features/chat/domain/chat_conversation.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart' as domain;
 import 'package:openchat/features/chat/domain/model_favorite.dart';
 import 'package:openchat/features/chat/domain/chat_project.dart';
+import 'package:openchat/features/chat/domain/chat_saved_output.dart';
+import 'package:openchat/features/chat/domain/chat_workspace.dart';
 
 import 'package:openchat/features/chat/data/openchat_database.dart';
 
@@ -89,6 +91,218 @@ class ChatRepository {
           )
           .toList(growable: false),
     );
+  }
+
+  Stream<List<ChatWorkspace>> watchWorkspaces() {
+    final query = _database.select(_database.workspaces)
+      ..orderBy([
+        (workspace) => OrderingTerm.asc(workspace.name),
+        (workspace) => OrderingTerm.asc(workspace.id),
+      ]);
+    return query.watch().map(
+      (rows) => rows
+          .map(
+            (row) => ChatWorkspace(
+              id: row.id,
+              name: row.name,
+              createdAt: DateTime.fromMillisecondsSinceEpoch(
+                row.createdAt,
+                isUtc: true,
+              ),
+              updatedAt: DateTime.fromMillisecondsSinceEpoch(
+                row.updatedAt,
+                isUtc: true,
+              ),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  Stream<List<ChatSavedOutput>> watchSavedOutputs() {
+    final query = _database.select(_database.savedOutputs)
+      ..orderBy([
+        (output) => OrderingTerm.desc(output.savedAt),
+        (output) => OrderingTerm.asc(output.conversationId),
+        (output) => OrderingTerm.asc(output.messageId),
+      ]);
+    return query.watch().map(
+      (rows) => rows
+          .map(
+            (row) => ChatSavedOutput(
+              conversationId: row.conversationId,
+              messageId: row.messageId,
+              conversationTitle: row.conversationTitle,
+              content: row.content,
+              providerId: row.providerId,
+              modelId: row.modelId,
+              savedAt: DateTime.fromMillisecondsSinceEpoch(
+                row.savedAt,
+                isUtc: true,
+              ),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  Future<void> saveOutput({
+    required String conversationId,
+    required String messageId,
+  }) async {
+    final normalizedConversationId = _requireValue(
+      conversationId,
+      'conversationId',
+    );
+    final normalizedMessageId = _requireValue(messageId, 'messageId');
+    await _database.transaction(() async {
+      final conversation =
+          await (_database.select(_database.conversations)
+                ..where((row) => row.id.equals(normalizedConversationId)))
+              .getSingleOrNull();
+      if (conversation == null) {
+        throw ConversationNotFoundException(normalizedConversationId);
+      }
+      final message =
+          await (_database.select(_database.messages)..where(
+                (row) =>
+                    row.conversationId.equals(normalizedConversationId) &
+                    row.id.equals(normalizedMessageId),
+              ))
+              .getSingleOrNull();
+      if (message == null) {
+        throw MessageNotFoundException(
+          normalizedConversationId,
+          normalizedMessageId,
+        );
+      }
+      if (message.role != domain.ChatMessageRole.assistant.name ||
+          message.status != domain.ChatMessageStatus.completed.name ||
+          message.content.trim().isEmpty) {
+        throw const InvalidOutputSaveException();
+      }
+
+      await _database
+          .into(_database.savedOutputs)
+          .insertOnConflictUpdate(
+            SavedOutputsCompanion.insert(
+              conversationId: normalizedConversationId,
+              messageId: normalizedMessageId,
+              conversationTitle: conversation.title,
+              content: message.content,
+              providerId: Value(message.providerId),
+              modelId: Value(message.modelId),
+              savedAt: DateTime.now().toUtc().millisecondsSinceEpoch,
+            ),
+          );
+    });
+  }
+
+  Future<void> removeSavedOutput({
+    required String conversationId,
+    required String messageId,
+  }) async {
+    final normalizedConversationId = _requireValue(
+      conversationId,
+      'conversationId',
+    );
+    final normalizedMessageId = _requireValue(messageId, 'messageId');
+    await (_database.delete(_database.savedOutputs)..where(
+          (row) =>
+              row.conversationId.equals(normalizedConversationId) &
+              row.messageId.equals(normalizedMessageId),
+        ))
+        .go();
+  }
+
+  Future<void> createWorkspace({
+    required String id,
+    required String name,
+    required DateTime createdAt,
+  }) async {
+    final normalizedId = _requireValue(id, 'id');
+    final normalizedName = _requireWorkspaceName(name);
+    final timestamp = createdAt.toUtc().millisecondsSinceEpoch;
+    await _database
+        .into(_database.workspaces)
+        .insert(
+          WorkspacesCompanion.insert(
+            id: normalizedId,
+            name: normalizedName,
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          ),
+        );
+  }
+
+  Future<void> renameWorkspace({
+    required String workspaceId,
+    required String name,
+  }) async {
+    final normalizedId = _requireValue(workspaceId, 'workspaceId');
+    final normalizedName = _requireWorkspaceName(name);
+    await _database.transaction(() async {
+      final workspace = await (_database.select(
+        _database.workspaces,
+      )..where((row) => row.id.equals(normalizedId))).getSingleOrNull();
+      if (workspace == null) throw WorkspaceNotFoundException(normalizedId);
+      await (_database.update(
+        _database.workspaces,
+      )..where((row) => row.id.equals(normalizedId))).write(
+        WorkspacesCompanion(
+          name: Value(normalizedName),
+          updatedAt: Value(DateTime.now().toUtc().millisecondsSinceEpoch),
+        ),
+      );
+    });
+  }
+
+  Future<void> deleteWorkspace(String workspaceId) async {
+    final normalizedId = _requireValue(workspaceId, 'workspaceId');
+    final deletedRows = await (_database.delete(
+      _database.workspaces,
+    )..where((row) => row.id.equals(normalizedId))).go();
+    if (deletedRows == 0) throw WorkspaceNotFoundException(normalizedId);
+  }
+
+  Future<void> setConversationWorkspace({
+    required String conversationId,
+    required String? workspaceId,
+  }) async {
+    final normalizedConversationId = _requireValue(
+      conversationId,
+      'conversationId',
+    );
+    final normalizedWorkspaceId = workspaceId == null
+        ? null
+        : _requireValue(workspaceId, 'workspaceId');
+    await _database.transaction(() async {
+      final conversation =
+          await (_database.select(_database.conversations)
+                ..where((row) => row.id.equals(normalizedConversationId)))
+              .getSingleOrNull();
+      if (conversation == null) {
+        throw ConversationNotFoundException(normalizedConversationId);
+      }
+      if (normalizedWorkspaceId != null) {
+        final workspace =
+            await (_database.select(_database.workspaces)
+                  ..where((row) => row.id.equals(normalizedWorkspaceId)))
+                .getSingleOrNull();
+        if (workspace == null) {
+          throw WorkspaceNotFoundException(normalizedWorkspaceId);
+        }
+      }
+      if (conversation.productWorkspaceId == normalizedWorkspaceId) return;
+      await (_database.update(
+        _database.conversations,
+      )..where((row) => row.id.equals(normalizedConversationId))).write(
+        ConversationsCompanion(
+          productWorkspaceId: Value(normalizedWorkspaceId),
+          updatedAt: Value(DateTime.now().toUtc().millisecondsSinceEpoch),
+        ),
+      );
+    });
   }
 
   Stream<List<FavoriteModel>> watchModelFavorites() {
@@ -352,6 +566,7 @@ class ChatRepository {
       createdAt: createdAt,
       connectionId: sourceRow.connectionId,
       workspaceId: sourceRow.workspaceId,
+      productWorkspaceId: sourceRow.productWorkspaceId,
       apiKeyConnectionId: sourceRow.apiKeyConnectionId,
       providerId: sourceRow.providerId,
       modelId: sourceRow.modelId,
@@ -451,6 +666,7 @@ class ChatRepository {
     required DateTime createdAt,
     String? connectionId,
     String? workspaceId,
+    String? productWorkspaceId,
     String? apiKeyConnectionId,
     String? providerId,
     String? modelId,
@@ -500,6 +716,18 @@ class ChatRepository {
     }
 
     final timestamp = createdAt.toUtc().millisecondsSinceEpoch;
+    final normalizedProductWorkspaceId = productWorkspaceId == null
+        ? null
+        : _requireValue(productWorkspaceId, 'productWorkspaceId');
+    if (normalizedProductWorkspaceId != null) {
+      final productWorkspace =
+          await (_database.select(_database.workspaces)
+                ..where((row) => row.id.equals(normalizedProductWorkspaceId)))
+              .getSingleOrNull();
+      if (productWorkspace == null) {
+        throw WorkspaceNotFoundException(normalizedProductWorkspaceId);
+      }
+    }
     await _database
         .into(_database.conversations)
         .insert(
@@ -512,6 +740,7 @@ class ChatRepository {
             providerId: Value(selectedProvider),
             modelId: Value(modelId?.trim()),
             projectId: Value(projectId),
+            productWorkspaceId: Value(normalizedProductWorkspaceId),
             createdAt: timestamp,
             updatedAt: timestamp,
           ),
@@ -1028,6 +1257,7 @@ class ChatRepository {
       titleSource: ChatConversationTitleSource.values.byName(row.titleSource),
       connectionId: row.connectionId,
       workspaceId: row.workspaceId,
+      productWorkspaceId: row.productWorkspaceId,
       apiKeyConnectionId: row.apiKeyConnectionId,
       providerId: row.providerId,
       modelId: row.modelId,
@@ -1074,6 +1304,18 @@ class ChatRepository {
       );
     }
     return normalizedValue;
+  }
+
+  String _requireWorkspaceName(String value) {
+    final normalizedName = value.trim();
+    if (normalizedName.isEmpty || normalizedName.length > 80) {
+      throw ArgumentError.value(
+        value,
+        'name',
+        'Workspace names must contain between 1 and 80 characters.',
+      );
+    }
+    return normalizedName;
   }
 
   bool _isValidBranchIdentifier(String value) => value.codeUnits.every(
@@ -1216,4 +1458,20 @@ class ProjectNotFoundException implements Exception {
 
   @override
   String toString() => 'Project "$projectId" was not found.';
+}
+
+class WorkspaceNotFoundException implements Exception {
+  const WorkspaceNotFoundException(this.workspaceId);
+
+  final String workspaceId;
+
+  @override
+  String toString() => 'Workspace "$workspaceId" was not found.';
+}
+
+class InvalidOutputSaveException implements Exception {
+  const InvalidOutputSaveException();
+
+  @override
+  String toString() => 'Only completed assistant responses can be saved.';
 }

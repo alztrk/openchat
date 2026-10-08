@@ -744,7 +744,7 @@ class _ModelSection extends StatelessWidget {
         label,
         style: TextStyle(
           color: palette.secondaryText,
-          fontSize: 11,
+          fontSize: OpenChatTypography.metadata,
           fontWeight: FontWeight.w600,
         ),
       ),
@@ -887,7 +887,7 @@ class _ModelOptionState extends State<_ModelOption> {
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
                                       color: widget.palette.secondaryText,
-                                      fontSize: 11,
+                                      fontSize: OpenChatTypography.metadata,
                                     ),
                                   ),
                                 ),
@@ -902,7 +902,7 @@ class _ModelOptionState extends State<_ModelOption> {
                                       label,
                                       style: TextStyle(
                                         color: widget.palette.secondaryText,
-                                        fontSize: 11,
+                                        fontSize: OpenChatTypography.metadata,
                                         fontWeight: FontWeight.w600,
                                       ),
                                     ),
@@ -943,7 +943,9 @@ class _ModelOptionState extends State<_ModelOption> {
                           ? widget.palette.disabledIcon
                           : widget.palette.secondaryIcon,
                       icon: Icon(
-                        widget.isFavorite ? LucideIcons.star : LucideIcons.star,
+                        widget.isFavorite
+                            ? LucideIcons.star
+                            : LucideIcons.starOff,
                       ),
                     ),
                   ),

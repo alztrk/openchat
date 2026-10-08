@@ -45,7 +45,7 @@ class _OpenChatAppState extends State<OpenChatApp> {
       ConversationWidthPreference.normal;
   ConversationTextSizePreference _conversationTextSize =
       ConversationTextSizePreference.normal;
-  AppFontPreference _appFont = AppFontPreference.manrope;
+  AppFontPreference _appFont = AppFontPreference.sourceSans3;
   late final ChatGptApiKeyStore _chatGptApiKeyStore;
   late final ApiCompatibleProviderKeyStore _apiCompatibleProviderKeyStore;
   late final OpenCodeApiKeyStore _openCodeApiKeyStore;

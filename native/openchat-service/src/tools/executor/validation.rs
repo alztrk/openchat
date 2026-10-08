@@ -52,6 +52,13 @@ pub(crate) enum ToolOperation {
         url: String,
         max_chars: Option<usize>,
     },
+    #[cfg(windows)]
+    ProjectTool {
+        executable: PathBuf,
+        input: Value,
+        timeout_seconds: u64,
+        output_limit_bytes: usize,
+    },
     DelegateTask {
         task: String,
         context: Option<String>,
@@ -113,6 +120,33 @@ impl ToolExecutor {
                 "The tool arguments must be a JSON object.",
             ));
         };
+        #[cfg(windows)]
+        if let Some(tool) = super::super::project_tools::find(&self.project_tools, &call.name) {
+            tool.validate_arguments(&call.arguments)
+                .map_err(|error| tool_error(&error.code, &error.message))?;
+            let Some(root) = self.project_root.clone() else {
+                return Err(tool_error(
+                    "project_required",
+                    "Configured project tools require an attached project.",
+                ));
+            };
+            let executable = tool
+                .executable_path(&root)
+                .map_err(|error| tool_error(&error.code, &error.message))?;
+            return Ok(PreparedToolCall {
+                root: root.clone(),
+                relative_path: String::new(),
+                requested_path: tool.id.clone(),
+                target_path: executable.clone(),
+                scope: ToolPathScope::Project,
+                operation: ToolOperation::ProjectTool {
+                    executable,
+                    input: call.arguments.clone(),
+                    timeout_seconds: tool.timeout_seconds,
+                    output_limit_bytes: tool.output_limit_bytes,
+                },
+            });
+        }
         let operation = match call.name.as_str() {
             "delegate_task" => {
                 if !only_keys(&call.arguments, &["task", "context"]) {

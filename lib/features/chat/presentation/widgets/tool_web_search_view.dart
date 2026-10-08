@@ -2,6 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
+import 'package:html/dom.dart' as html_dom;
+import 'package:html/parser.dart' as html_parser;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:intl/intl.dart';
 import 'package:openchat/app/openchat_theme.dart';
@@ -67,6 +70,9 @@ class ToolWebSearchResult extends StatelessWidget {
       );
     }
     final sourceType = _stringField(output, 'sourceType');
+    final attributionHtml = sourceType == 'provider_native'
+        ? _safeGoogleAttribution(_stringField(output, 'attributionHtml'))
+        : null;
     final retrievedAt = _retrievedAt(output?['retrievedAtUnixMs']);
     final results = <_WebSearchResultItem>[];
     for (final raw in rawResults) {
@@ -95,6 +101,25 @@ class ToolWebSearchResult extends StatelessWidget {
     }
 
     if (results.isEmpty) {
+      if (attributionHtml != null) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            HtmlWidget(
+              attributionHtml,
+              onTapUrl: (url) async {
+                await _openUrlOrCopy(context, url);
+                return true;
+              },
+            ),
+            const SizedBox(height: 8),
+            ToolActivityNotice(
+              message: l10n.toolWebSearchNoResults,
+              palette: palette,
+            ),
+          ],
+        );
+      }
       return ToolActivityNotice(
         message: l10n.toolWebSearchNoResults,
         palette: palette,
@@ -104,6 +129,16 @@ class ToolWebSearchResult extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (attributionHtml != null) ...[
+          HtmlWidget(
+            attributionHtml,
+            onTapUrl: (url) async {
+              await _openUrlOrCopy(context, url);
+              return true;
+            },
+          ),
+          const SizedBox(height: 8),
+        ],
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: Row(
@@ -117,7 +152,7 @@ class ToolWebSearchResult extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: palette.secondaryText,
-                    fontSize: 11,
+                    fontSize: OpenChatTypography.metadata,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -134,7 +169,7 @@ class ToolWebSearchResult extends StatelessWidget {
                   l10n.toolWebSearchResultCount(results.length),
                   style: TextStyle(
                     color: palette.secondaryText,
-                    fontSize: 10,
+                    fontSize: OpenChatTypography.metadata,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -149,6 +184,65 @@ class ToolWebSearchResult extends StatelessWidget {
       ],
     );
   }
+}
+
+String? _safeGoogleAttribution(String? rawHtml) {
+  if (rawHtml == null || rawHtml.isEmpty || rawHtml.length > 32 * 1024) {
+    return null;
+  }
+  final fragment = html_parser.parseFragment(rawHtml);
+  final safeRoot = html_dom.Element.tag('div');
+  void copyChildren(html_dom.Node source, html_dom.Node target) {
+    for (final child in source.nodes) {
+      if (child is html_dom.Text) {
+        target.append(html_dom.Text(child.data));
+      } else if (child is html_dom.Element) {
+        final tag = child.localName?.toLowerCase();
+        if (tag == 'style') {
+          final css = child.text;
+          if (css.length <= 16 * 1024 &&
+              !RegExp(
+                r'@import|url\s*\(|expression\s*\(',
+                caseSensitive: false,
+              ).hasMatch(css)) {
+            final style = html_dom.Element.tag('style')..text = css;
+            target.append(style);
+          }
+          continue;
+        }
+        if (!const {
+          'div',
+          'span',
+          'p',
+          'a',
+          'b',
+          'strong',
+          'br',
+        }.contains(tag)) {
+          continue;
+        }
+        final element = html_dom.Element.tag(tag!);
+        final className = child.attributes['class'];
+        if (className != null && className.length <= 256) {
+          element.attributes['class'] = className;
+        }
+        if (tag == 'a') {
+          final href = Uri.tryParse(child.attributes['href'] ?? '');
+          if (href != null &&
+              href.host.isNotEmpty &&
+              (href.scheme == 'http' || href.scheme == 'https')) {
+            element.attributes['href'] = href.toString();
+          }
+        }
+        target.append(element);
+        if (tag != 'br') copyChildren(child, element);
+      }
+    }
+  }
+
+  copyChildren(fragment, safeRoot);
+  final sanitized = safeRoot.innerHtml;
+  return sanitized.isEmpty ? null : sanitized;
 }
 
 class _WebSearchResultItem {
@@ -205,7 +299,7 @@ class _WebSearchResultCard extends StatelessWidget {
                   item.engine.toUpperCase(),
                   style: TextStyle(
                     color: palette.accentIcon,
-                    fontSize: 9,
+                    fontSize: OpenChatTypography.metadata,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -218,7 +312,7 @@ class _WebSearchResultCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: palette.secondaryText,
-                    fontSize: 10,
+                    fontSize: OpenChatTypography.metadata,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -268,7 +362,7 @@ class _WebSearchResultCard extends StatelessWidget {
               item.snippet,
               style: TextStyle(
                 color: palette.secondaryText,
-                fontSize: 11,
+                fontSize: OpenChatTypography.metadata,
                 height: 15 / 11,
               ),
             ),
@@ -301,7 +395,7 @@ class _WebSearchResultCard extends StatelessWidget {
                     ),
                     style: TextStyle(
                       color: palette.secondaryText,
-                      fontSize: 10,
+                      fontSize: OpenChatTypography.metadata,
                     ),
                   ),
               ],
@@ -427,7 +521,7 @@ class ToolReadUrlResult extends StatelessWidget {
                   l10n.toolReadUrlLength(length),
                   style: TextStyle(
                     color: palette.secondaryText,
-                    fontSize: 10,
+                    fontSize: OpenChatTypography.metadata,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -447,7 +541,7 @@ class ToolReadUrlResult extends StatelessWidget {
                     l10n.toolOperationTruncated,
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.error,
-                      fontSize: 10,
+                      fontSize: OpenChatTypography.metadata,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
@@ -465,8 +559,8 @@ class ToolReadUrlResult extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: palette.secondaryText,
-                    fontSize: 10,
-                    fontFamily: 'monospace',
+                    fontSize: OpenChatTypography.metadata,
+                    fontFamily: OpenChatTypography.codeFontFamily,
                   ),
                 ),
               ),
@@ -521,7 +615,7 @@ class ToolReadUrlResult extends StatelessWidget {
                     ),
                     style: TextStyle(
                       color: palette.secondaryText,
-                      fontSize: 10,
+                      fontSize: OpenChatTypography.metadata,
                     ),
                   ),
               ],
@@ -543,7 +637,7 @@ class ToolReadUrlResult extends StatelessWidget {
                   content,
                   style: TextStyle(
                     color: palette.text,
-                    fontSize: 11,
+                    fontSize: OpenChatTypography.metadata,
                     height: 16 / 11,
                   ),
                 ),
@@ -581,7 +675,10 @@ class _SourceMetadataTag extends StatelessWidget {
     ),
     child: Text(
       label,
-      style: TextStyle(color: palette.secondaryText, fontSize: 9),
+      style: TextStyle(
+        color: palette.secondaryText,
+        fontSize: OpenChatTypography.metadata,
+      ),
     ),
   );
 }

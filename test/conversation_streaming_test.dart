@@ -19,6 +19,12 @@ void main() {
     final fontLoader = FontLoader('Manrope')
       ..addFont(rootBundle.load('assets/fonts/Manrope[wght].ttf'));
     await fontLoader.load();
+    final uiFontLoader = FontLoader(OpenChatTypography.uiFontFamily)
+      ..addFont(rootBundle.load('assets/fonts/SourceSans3VF-Upright.ttf'));
+    await uiFontLoader.load();
+    final codeFontLoader = FontLoader(OpenChatTypography.codeFontFamily)
+      ..addFont(rootBundle.load('assets/fonts/SourceCodeVF-Upright.ttf'));
+    await codeFontLoader.load();
   });
 
   testWidgets('formats Markdown while an assistant response is streaming', (

@@ -656,7 +656,7 @@ class _ContextUsagePopover extends StatelessWidget {
     );
     final mutedStyle = theme.textTheme.bodySmall?.copyWith(
       color: palette.secondaryText,
-      fontSize: 11,
+      fontSize: OpenChatTypography.metadata,
       height: 1.35,
     );
     final contentWidth = (MediaQuery.sizeOf(context).width - 64)

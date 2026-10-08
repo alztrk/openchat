@@ -364,6 +364,314 @@ class ProjectsCompanion extends UpdateCompanion<Project> {
   }
 }
 
+class $WorkspacesTable extends Workspaces
+    with TableInfo<$WorkspacesTable, Workspace> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $WorkspacesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [id, name, createdAt, updatedAt];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'workspaces';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<Workspace> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  Workspace map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return Workspace(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $WorkspacesTable createAlias(String alias) {
+    return $WorkspacesTable(attachedDatabase, alias);
+  }
+}
+
+class Workspace extends DataClass implements Insertable<Workspace> {
+  final String id;
+  final String name;
+  final int createdAt;
+  final int updatedAt;
+  const Workspace({
+    required this.id,
+    required this.name,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['name'] = Variable<String>(name);
+    map['created_at'] = Variable<int>(createdAt);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  WorkspacesCompanion toCompanion(bool nullToAbsent) {
+    return WorkspacesCompanion(
+      id: Value(id),
+      name: Value(name),
+      createdAt: Value(createdAt),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory Workspace.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return Workspace(
+      id: serializer.fromJson<String>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'name': serializer.toJson<String>(name),
+      'createdAt': serializer.toJson<int>(createdAt),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  Workspace copyWith({
+    String? id,
+    String? name,
+    int? createdAt,
+    int? updatedAt,
+  }) => Workspace(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    createdAt: createdAt ?? this.createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  Workspace copyWithCompanion(WorkspacesCompanion data) {
+    return Workspace(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('Workspace(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(id, name, createdAt, updatedAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is Workspace &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.createdAt == this.createdAt &&
+          other.updatedAt == this.updatedAt);
+}
+
+class WorkspacesCompanion extends UpdateCompanion<Workspace> {
+  final Value<String> id;
+  final Value<String> name;
+  final Value<int> createdAt;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const WorkspacesCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  WorkspacesCompanion.insert({
+    required String id,
+    required String name,
+    required int createdAt,
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       name = Value(name),
+       createdAt = Value(createdAt),
+       updatedAt = Value(updatedAt);
+  static Insertable<Workspace> custom({
+    Expression<String>? id,
+    Expression<String>? name,
+    Expression<int>? createdAt,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (createdAt != null) 'created_at': createdAt,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  WorkspacesCompanion copyWith({
+    Value<String>? id,
+    Value<String>? name,
+    Value<int>? createdAt,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return WorkspacesCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('WorkspacesCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('createdAt: $createdAt, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $ConversationsTable extends Conversations
     with TableInfo<$ConversationsTable, Conversation> {
   @override
@@ -469,6 +777,20 @@ class $ConversationsTable extends Conversations
       'REFERENCES projects (id) ON DELETE SET NULL',
     ),
   );
+  static const VerificationMeta _productWorkspaceIdMeta =
+      const VerificationMeta('productWorkspaceId');
+  @override
+  late final GeneratedColumn<String> productWorkspaceId =
+      GeneratedColumn<String>(
+        'product_workspace_id',
+        aliasedName,
+        true,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'REFERENCES workspaces (id) ON DELETE SET NULL',
+        ),
+      );
   static const VerificationMeta _isPinnedMeta = const VerificationMeta(
     'isPinned',
   );
@@ -557,6 +879,7 @@ class $ConversationsTable extends Conversations
     providerId,
     modelId,
     projectId,
+    productWorkspaceId,
     isPinned,
     isArchived,
     isBookmarked,
@@ -641,6 +964,15 @@ class $ConversationsTable extends Conversations
       context.handle(
         _projectIdMeta,
         projectId.isAcceptableOrUnknown(data['project_id']!, _projectIdMeta),
+      );
+    }
+    if (data.containsKey('product_workspace_id')) {
+      context.handle(
+        _productWorkspaceIdMeta,
+        productWorkspaceId.isAcceptableOrUnknown(
+          data['product_workspace_id']!,
+          _productWorkspaceIdMeta,
+        ),
       );
     }
     if (data.containsKey('is_pinned')) {
@@ -731,6 +1063,10 @@ class $ConversationsTable extends Conversations
         DriftSqlType.string,
         data['${effectivePrefix}project_id'],
       ),
+      productWorkspaceId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}product_workspace_id'],
+      ),
       isPinned: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
         data['${effectivePrefix}is_pinned'],
@@ -774,6 +1110,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
   final String? providerId;
   final String? modelId;
   final String? projectId;
+  final String? productWorkspaceId;
   final bool isPinned;
   final bool isArchived;
   final bool isBookmarked;
@@ -790,6 +1127,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     this.providerId,
     this.modelId,
     this.projectId,
+    this.productWorkspaceId,
     required this.isPinned,
     required this.isArchived,
     required this.isBookmarked,
@@ -820,6 +1158,9 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     }
     if (!nullToAbsent || projectId != null) {
       map['project_id'] = Variable<String>(projectId);
+    }
+    if (!nullToAbsent || productWorkspaceId != null) {
+      map['product_workspace_id'] = Variable<String>(productWorkspaceId);
     }
     map['is_pinned'] = Variable<bool>(isPinned);
     map['is_archived'] = Variable<bool>(isArchived);
@@ -853,6 +1194,9 @@ class Conversation extends DataClass implements Insertable<Conversation> {
       projectId: projectId == null && nullToAbsent
           ? const Value.absent()
           : Value(projectId),
+      productWorkspaceId: productWorkspaceId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(productWorkspaceId),
       isPinned: Value(isPinned),
       isArchived: Value(isArchived),
       isBookmarked: Value(isBookmarked),
@@ -879,6 +1223,9 @@ class Conversation extends DataClass implements Insertable<Conversation> {
       providerId: serializer.fromJson<String?>(json['providerId']),
       modelId: serializer.fromJson<String?>(json['modelId']),
       projectId: serializer.fromJson<String?>(json['projectId']),
+      productWorkspaceId: serializer.fromJson<String?>(
+        json['productWorkspaceId'],
+      ),
       isPinned: serializer.fromJson<bool>(json['isPinned']),
       isArchived: serializer.fromJson<bool>(json['isArchived']),
       isBookmarked: serializer.fromJson<bool>(json['isBookmarked']),
@@ -900,6 +1247,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
       'providerId': serializer.toJson<String?>(providerId),
       'modelId': serializer.toJson<String?>(modelId),
       'projectId': serializer.toJson<String?>(projectId),
+      'productWorkspaceId': serializer.toJson<String?>(productWorkspaceId),
       'isPinned': serializer.toJson<bool>(isPinned),
       'isArchived': serializer.toJson<bool>(isArchived),
       'isBookmarked': serializer.toJson<bool>(isBookmarked),
@@ -919,6 +1267,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     Value<String?> providerId = const Value.absent(),
     Value<String?> modelId = const Value.absent(),
     Value<String?> projectId = const Value.absent(),
+    Value<String?> productWorkspaceId = const Value.absent(),
     bool? isPinned,
     bool? isArchived,
     bool? isBookmarked,
@@ -937,6 +1286,9 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     providerId: providerId.present ? providerId.value : this.providerId,
     modelId: modelId.present ? modelId.value : this.modelId,
     projectId: projectId.present ? projectId.value : this.projectId,
+    productWorkspaceId: productWorkspaceId.present
+        ? productWorkspaceId.value
+        : this.productWorkspaceId,
     isPinned: isPinned ?? this.isPinned,
     isArchived: isArchived ?? this.isArchived,
     isBookmarked: isBookmarked ?? this.isBookmarked,
@@ -965,6 +1317,9 @@ class Conversation extends DataClass implements Insertable<Conversation> {
           : this.providerId,
       modelId: data.modelId.present ? data.modelId.value : this.modelId,
       projectId: data.projectId.present ? data.projectId.value : this.projectId,
+      productWorkspaceId: data.productWorkspaceId.present
+          ? data.productWorkspaceId.value
+          : this.productWorkspaceId,
       isPinned: data.isPinned.present ? data.isPinned.value : this.isPinned,
       isArchived: data.isArchived.present
           ? data.isArchived.value
@@ -990,6 +1345,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
           ..write('providerId: $providerId, ')
           ..write('modelId: $modelId, ')
           ..write('projectId: $projectId, ')
+          ..write('productWorkspaceId: $productWorkspaceId, ')
           ..write('isPinned: $isPinned, ')
           ..write('isArchived: $isArchived, ')
           ..write('isBookmarked: $isBookmarked, ')
@@ -1011,6 +1367,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
     providerId,
     modelId,
     projectId,
+    productWorkspaceId,
     isPinned,
     isArchived,
     isBookmarked,
@@ -1031,6 +1388,7 @@ class Conversation extends DataClass implements Insertable<Conversation> {
           other.providerId == this.providerId &&
           other.modelId == this.modelId &&
           other.projectId == this.projectId &&
+          other.productWorkspaceId == this.productWorkspaceId &&
           other.isPinned == this.isPinned &&
           other.isArchived == this.isArchived &&
           other.isBookmarked == this.isBookmarked &&
@@ -1049,6 +1407,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
   final Value<String?> providerId;
   final Value<String?> modelId;
   final Value<String?> projectId;
+  final Value<String?> productWorkspaceId;
   final Value<bool> isPinned;
   final Value<bool> isArchived;
   final Value<bool> isBookmarked;
@@ -1066,6 +1425,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     this.providerId = const Value.absent(),
     this.modelId = const Value.absent(),
     this.projectId = const Value.absent(),
+    this.productWorkspaceId = const Value.absent(),
     this.isPinned = const Value.absent(),
     this.isArchived = const Value.absent(),
     this.isBookmarked = const Value.absent(),
@@ -1084,6 +1444,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     this.providerId = const Value.absent(),
     this.modelId = const Value.absent(),
     this.projectId = const Value.absent(),
+    this.productWorkspaceId = const Value.absent(),
     this.isPinned = const Value.absent(),
     this.isArchived = const Value.absent(),
     this.isBookmarked = const Value.absent(),
@@ -1105,6 +1466,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     Expression<String>? providerId,
     Expression<String>? modelId,
     Expression<String>? projectId,
+    Expression<String>? productWorkspaceId,
     Expression<bool>? isPinned,
     Expression<bool>? isArchived,
     Expression<bool>? isBookmarked,
@@ -1124,6 +1486,8 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
       if (providerId != null) 'provider_id': providerId,
       if (modelId != null) 'model_id': modelId,
       if (projectId != null) 'project_id': projectId,
+      if (productWorkspaceId != null)
+        'product_workspace_id': productWorkspaceId,
       if (isPinned != null) 'is_pinned': isPinned,
       if (isArchived != null) 'is_archived': isArchived,
       if (isBookmarked != null) 'is_bookmarked': isBookmarked,
@@ -1144,6 +1508,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     Value<String?>? providerId,
     Value<String?>? modelId,
     Value<String?>? projectId,
+    Value<String?>? productWorkspaceId,
     Value<bool>? isPinned,
     Value<bool>? isArchived,
     Value<bool>? isBookmarked,
@@ -1162,6 +1527,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
       providerId: providerId ?? this.providerId,
       modelId: modelId ?? this.modelId,
       projectId: projectId ?? this.projectId,
+      productWorkspaceId: productWorkspaceId ?? this.productWorkspaceId,
       isPinned: isPinned ?? this.isPinned,
       isArchived: isArchived ?? this.isArchived,
       isBookmarked: isBookmarked ?? this.isBookmarked,
@@ -1202,6 +1568,9 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
     if (projectId.present) {
       map['project_id'] = Variable<String>(projectId.value);
     }
+    if (productWorkspaceId.present) {
+      map['product_workspace_id'] = Variable<String>(productWorkspaceId.value);
+    }
     if (isPinned.present) {
       map['is_pinned'] = Variable<bool>(isPinned.value);
     }
@@ -1238,6 +1607,7 @@ class ConversationsCompanion extends UpdateCompanion<Conversation> {
           ..write('providerId: $providerId, ')
           ..write('modelId: $modelId, ')
           ..write('projectId: $projectId, ')
+          ..write('productWorkspaceId: $productWorkspaceId, ')
           ..write('isPinned: $isPinned, ')
           ..write('isArchived: $isArchived, ')
           ..write('isBookmarked: $isBookmarked, ')
@@ -2543,28 +2913,523 @@ class ModelFavoritesCompanion extends UpdateCompanion<ModelFavorite> {
   }
 }
 
+class $SavedOutputsTable extends SavedOutputs
+    with TableInfo<$SavedOutputsTable, SavedOutput> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SavedOutputsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _conversationIdMeta = const VerificationMeta(
+    'conversationId',
+  );
+  @override
+  late final GeneratedColumn<String> conversationId = GeneratedColumn<String>(
+    'conversation_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _messageIdMeta = const VerificationMeta(
+    'messageId',
+  );
+  @override
+  late final GeneratedColumn<String> messageId = GeneratedColumn<String>(
+    'message_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _conversationTitleMeta = const VerificationMeta(
+    'conversationTitle',
+  );
+  @override
+  late final GeneratedColumn<String> conversationTitle =
+      GeneratedColumn<String>(
+        'conversation_title',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      );
+  static const VerificationMeta _contentMeta = const VerificationMeta(
+    'content',
+  );
+  @override
+  late final GeneratedColumn<String> content = GeneratedColumn<String>(
+    'content',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _providerIdMeta = const VerificationMeta(
+    'providerId',
+  );
+  @override
+  late final GeneratedColumn<String> providerId = GeneratedColumn<String>(
+    'provider_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _modelIdMeta = const VerificationMeta(
+    'modelId',
+  );
+  @override
+  late final GeneratedColumn<String> modelId = GeneratedColumn<String>(
+    'model_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _savedAtMeta = const VerificationMeta(
+    'savedAt',
+  );
+  @override
+  late final GeneratedColumn<int> savedAt = GeneratedColumn<int>(
+    'saved_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    conversationId,
+    messageId,
+    conversationTitle,
+    content,
+    providerId,
+    modelId,
+    savedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'saved_outputs';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SavedOutput> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('conversation_id')) {
+      context.handle(
+        _conversationIdMeta,
+        conversationId.isAcceptableOrUnknown(
+          data['conversation_id']!,
+          _conversationIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_conversationIdMeta);
+    }
+    if (data.containsKey('message_id')) {
+      context.handle(
+        _messageIdMeta,
+        messageId.isAcceptableOrUnknown(data['message_id']!, _messageIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_messageIdMeta);
+    }
+    if (data.containsKey('conversation_title')) {
+      context.handle(
+        _conversationTitleMeta,
+        conversationTitle.isAcceptableOrUnknown(
+          data['conversation_title']!,
+          _conversationTitleMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_conversationTitleMeta);
+    }
+    if (data.containsKey('content')) {
+      context.handle(
+        _contentMeta,
+        content.isAcceptableOrUnknown(data['content']!, _contentMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_contentMeta);
+    }
+    if (data.containsKey('provider_id')) {
+      context.handle(
+        _providerIdMeta,
+        providerId.isAcceptableOrUnknown(data['provider_id']!, _providerIdMeta),
+      );
+    }
+    if (data.containsKey('model_id')) {
+      context.handle(
+        _modelIdMeta,
+        modelId.isAcceptableOrUnknown(data['model_id']!, _modelIdMeta),
+      );
+    }
+    if (data.containsKey('saved_at')) {
+      context.handle(
+        _savedAtMeta,
+        savedAt.isAcceptableOrUnknown(data['saved_at']!, _savedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_savedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {conversationId, messageId};
+  @override
+  SavedOutput map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SavedOutput(
+      conversationId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}conversation_id'],
+      )!,
+      messageId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}message_id'],
+      )!,
+      conversationTitle: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}conversation_title'],
+      )!,
+      content: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}content'],
+      )!,
+      providerId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}provider_id'],
+      ),
+      modelId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}model_id'],
+      ),
+      savedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}saved_at'],
+      )!,
+    );
+  }
+
+  @override
+  $SavedOutputsTable createAlias(String alias) {
+    return $SavedOutputsTable(attachedDatabase, alias);
+  }
+}
+
+class SavedOutput extends DataClass implements Insertable<SavedOutput> {
+  final String conversationId;
+  final String messageId;
+  final String conversationTitle;
+  final String content;
+  final String? providerId;
+  final String? modelId;
+  final int savedAt;
+  const SavedOutput({
+    required this.conversationId,
+    required this.messageId,
+    required this.conversationTitle,
+    required this.content,
+    this.providerId,
+    this.modelId,
+    required this.savedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['conversation_id'] = Variable<String>(conversationId);
+    map['message_id'] = Variable<String>(messageId);
+    map['conversation_title'] = Variable<String>(conversationTitle);
+    map['content'] = Variable<String>(content);
+    if (!nullToAbsent || providerId != null) {
+      map['provider_id'] = Variable<String>(providerId);
+    }
+    if (!nullToAbsent || modelId != null) {
+      map['model_id'] = Variable<String>(modelId);
+    }
+    map['saved_at'] = Variable<int>(savedAt);
+    return map;
+  }
+
+  SavedOutputsCompanion toCompanion(bool nullToAbsent) {
+    return SavedOutputsCompanion(
+      conversationId: Value(conversationId),
+      messageId: Value(messageId),
+      conversationTitle: Value(conversationTitle),
+      content: Value(content),
+      providerId: providerId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(providerId),
+      modelId: modelId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(modelId),
+      savedAt: Value(savedAt),
+    );
+  }
+
+  factory SavedOutput.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SavedOutput(
+      conversationId: serializer.fromJson<String>(json['conversationId']),
+      messageId: serializer.fromJson<String>(json['messageId']),
+      conversationTitle: serializer.fromJson<String>(json['conversationTitle']),
+      content: serializer.fromJson<String>(json['content']),
+      providerId: serializer.fromJson<String?>(json['providerId']),
+      modelId: serializer.fromJson<String?>(json['modelId']),
+      savedAt: serializer.fromJson<int>(json['savedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'conversationId': serializer.toJson<String>(conversationId),
+      'messageId': serializer.toJson<String>(messageId),
+      'conversationTitle': serializer.toJson<String>(conversationTitle),
+      'content': serializer.toJson<String>(content),
+      'providerId': serializer.toJson<String?>(providerId),
+      'modelId': serializer.toJson<String?>(modelId),
+      'savedAt': serializer.toJson<int>(savedAt),
+    };
+  }
+
+  SavedOutput copyWith({
+    String? conversationId,
+    String? messageId,
+    String? conversationTitle,
+    String? content,
+    Value<String?> providerId = const Value.absent(),
+    Value<String?> modelId = const Value.absent(),
+    int? savedAt,
+  }) => SavedOutput(
+    conversationId: conversationId ?? this.conversationId,
+    messageId: messageId ?? this.messageId,
+    conversationTitle: conversationTitle ?? this.conversationTitle,
+    content: content ?? this.content,
+    providerId: providerId.present ? providerId.value : this.providerId,
+    modelId: modelId.present ? modelId.value : this.modelId,
+    savedAt: savedAt ?? this.savedAt,
+  );
+  SavedOutput copyWithCompanion(SavedOutputsCompanion data) {
+    return SavedOutput(
+      conversationId: data.conversationId.present
+          ? data.conversationId.value
+          : this.conversationId,
+      messageId: data.messageId.present ? data.messageId.value : this.messageId,
+      conversationTitle: data.conversationTitle.present
+          ? data.conversationTitle.value
+          : this.conversationTitle,
+      content: data.content.present ? data.content.value : this.content,
+      providerId: data.providerId.present
+          ? data.providerId.value
+          : this.providerId,
+      modelId: data.modelId.present ? data.modelId.value : this.modelId,
+      savedAt: data.savedAt.present ? data.savedAt.value : this.savedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SavedOutput(')
+          ..write('conversationId: $conversationId, ')
+          ..write('messageId: $messageId, ')
+          ..write('conversationTitle: $conversationTitle, ')
+          ..write('content: $content, ')
+          ..write('providerId: $providerId, ')
+          ..write('modelId: $modelId, ')
+          ..write('savedAt: $savedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    conversationId,
+    messageId,
+    conversationTitle,
+    content,
+    providerId,
+    modelId,
+    savedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SavedOutput &&
+          other.conversationId == this.conversationId &&
+          other.messageId == this.messageId &&
+          other.conversationTitle == this.conversationTitle &&
+          other.content == this.content &&
+          other.providerId == this.providerId &&
+          other.modelId == this.modelId &&
+          other.savedAt == this.savedAt);
+}
+
+class SavedOutputsCompanion extends UpdateCompanion<SavedOutput> {
+  final Value<String> conversationId;
+  final Value<String> messageId;
+  final Value<String> conversationTitle;
+  final Value<String> content;
+  final Value<String?> providerId;
+  final Value<String?> modelId;
+  final Value<int> savedAt;
+  final Value<int> rowid;
+  const SavedOutputsCompanion({
+    this.conversationId = const Value.absent(),
+    this.messageId = const Value.absent(),
+    this.conversationTitle = const Value.absent(),
+    this.content = const Value.absent(),
+    this.providerId = const Value.absent(),
+    this.modelId = const Value.absent(),
+    this.savedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SavedOutputsCompanion.insert({
+    required String conversationId,
+    required String messageId,
+    required String conversationTitle,
+    required String content,
+    this.providerId = const Value.absent(),
+    this.modelId = const Value.absent(),
+    required int savedAt,
+    this.rowid = const Value.absent(),
+  }) : conversationId = Value(conversationId),
+       messageId = Value(messageId),
+       conversationTitle = Value(conversationTitle),
+       content = Value(content),
+       savedAt = Value(savedAt);
+  static Insertable<SavedOutput> custom({
+    Expression<String>? conversationId,
+    Expression<String>? messageId,
+    Expression<String>? conversationTitle,
+    Expression<String>? content,
+    Expression<String>? providerId,
+    Expression<String>? modelId,
+    Expression<int>? savedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (conversationId != null) 'conversation_id': conversationId,
+      if (messageId != null) 'message_id': messageId,
+      if (conversationTitle != null) 'conversation_title': conversationTitle,
+      if (content != null) 'content': content,
+      if (providerId != null) 'provider_id': providerId,
+      if (modelId != null) 'model_id': modelId,
+      if (savedAt != null) 'saved_at': savedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SavedOutputsCompanion copyWith({
+    Value<String>? conversationId,
+    Value<String>? messageId,
+    Value<String>? conversationTitle,
+    Value<String>? content,
+    Value<String?>? providerId,
+    Value<String?>? modelId,
+    Value<int>? savedAt,
+    Value<int>? rowid,
+  }) {
+    return SavedOutputsCompanion(
+      conversationId: conversationId ?? this.conversationId,
+      messageId: messageId ?? this.messageId,
+      conversationTitle: conversationTitle ?? this.conversationTitle,
+      content: content ?? this.content,
+      providerId: providerId ?? this.providerId,
+      modelId: modelId ?? this.modelId,
+      savedAt: savedAt ?? this.savedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (conversationId.present) {
+      map['conversation_id'] = Variable<String>(conversationId.value);
+    }
+    if (messageId.present) {
+      map['message_id'] = Variable<String>(messageId.value);
+    }
+    if (conversationTitle.present) {
+      map['conversation_title'] = Variable<String>(conversationTitle.value);
+    }
+    if (content.present) {
+      map['content'] = Variable<String>(content.value);
+    }
+    if (providerId.present) {
+      map['provider_id'] = Variable<String>(providerId.value);
+    }
+    if (modelId.present) {
+      map['model_id'] = Variable<String>(modelId.value);
+    }
+    if (savedAt.present) {
+      map['saved_at'] = Variable<int>(savedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SavedOutputsCompanion(')
+          ..write('conversationId: $conversationId, ')
+          ..write('messageId: $messageId, ')
+          ..write('conversationTitle: $conversationTitle, ')
+          ..write('content: $content, ')
+          ..write('providerId: $providerId, ')
+          ..write('modelId: $modelId, ')
+          ..write('savedAt: $savedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 abstract class _$OpenChatDatabase extends GeneratedDatabase {
   _$OpenChatDatabase(QueryExecutor e) : super(e);
   $OpenChatDatabaseManager get managers => $OpenChatDatabaseManager(this);
   late final $ProjectsTable projects = $ProjectsTable(this);
+  late final $WorkspacesTable workspaces = $WorkspacesTable(this);
   late final $ConversationsTable conversations = $ConversationsTable(this);
   late final $MessagesTable messages = $MessagesTable(this);
   late final $ModelFavoritesTable modelFavorites = $ModelFavoritesTable(this);
+  late final $SavedOutputsTable savedOutputs = $SavedOutputsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
   @override
   List<DatabaseSchemaEntity> get allSchemaEntities => [
     projects,
+    workspaces,
     conversations,
     messages,
     modelFavorites,
+    savedOutputs,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
     WritePropagation(
       on: TableUpdateQuery.onTableName(
         'projects',
+        limitUpdateKind: UpdateKind.delete,
+      ),
+      result: [TableUpdate('conversations', kind: UpdateKind.update)],
+    ),
+    WritePropagation(
+      on: TableUpdateQuery.onTableName(
+        'workspaces',
         limitUpdateKind: UpdateKind.delete,
       ),
       result: [TableUpdate('conversations', kind: UpdateKind.update)],
@@ -2882,6 +3747,291 @@ typedef $$ProjectsTableProcessedTableManager =
       Project,
       PrefetchHooks Function({bool conversationsRefs})
     >;
+typedef $$WorkspacesTableCreateCompanionBuilder = WorkspacesCompanion Function({
+  required String id,
+  required String name,
+  required int createdAt,
+  required int updatedAt,
+  Value<int> rowid,
+});
+typedef $$WorkspacesTableUpdateCompanionBuilder = WorkspacesCompanion Function({
+  Value<String> id,
+  Value<String> name,
+  Value<int> createdAt,
+  Value<int> updatedAt,
+  Value<int> rowid,
+});
+
+final class $$WorkspacesTableReferences
+    extends BaseReferences<_$OpenChatDatabase, $WorkspacesTable, Workspace> {
+  $$WorkspacesTableReferences(super.$_db, super.$_table, super.$_typedResult);
+
+  static MultiTypedResultKey<$ConversationsTable, List<Conversation>>
+  _conversationsRefsTable(_$OpenChatDatabase db) =>
+      MultiTypedResultKey.fromTable(
+        db.conversations,
+        aliasName: 'workspaces__id__conversations__product_workspace_id',
+      );
+
+  $$ConversationsTableProcessedTableManager get conversationsRefs {
+    final manager = $$ConversationsTableTableManager($_db, $_db.conversations)
+        .filter(
+          (f) => f.productWorkspaceId.id.sqlEquals($_itemColumn<String>('id')!),
+        );
+
+    final cache = $_typedResult.readTableOrNull(_conversationsRefsTable($_db));
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: cache),
+    );
+  }
+}
+
+class $$WorkspacesTableFilterComposer
+    extends Composer<_$OpenChatDatabase, $WorkspacesTable> {
+  $$WorkspacesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  Expression<bool> conversationsRefs(
+    Expression<bool> Function($$ConversationsTableFilterComposer f) f,
+  ) {
+    final $$ConversationsTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.conversations,
+      getReferencedColumn: (t) => t.productWorkspaceId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ConversationsTableFilterComposer(
+            $db: $db,
+            $table: $db.conversations,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$WorkspacesTableOrderingComposer
+    extends Composer<_$OpenChatDatabase, $WorkspacesTable> {
+  $$WorkspacesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$WorkspacesTableAnnotationComposer
+    extends Composer<_$OpenChatDatabase, $WorkspacesTable> {
+  $$WorkspacesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+
+  Expression<T> conversationsRefs<T extends Object>(
+    Expression<T> Function($$ConversationsTableAnnotationComposer a) f,
+  ) {
+    final $$ConversationsTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.id,
+      referencedTable: $db.conversations,
+      getReferencedColumn: (t) => t.productWorkspaceId,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$ConversationsTableAnnotationComposer(
+            $db: $db,
+            $table: $db.conversations,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return f(composer);
+  }
+}
+
+class $$WorkspacesTableTableManager
+    extends
+        RootTableManager<
+          _$OpenChatDatabase,
+          $WorkspacesTable,
+          Workspace,
+          $$WorkspacesTableFilterComposer,
+          $$WorkspacesTableOrderingComposer,
+          $$WorkspacesTableAnnotationComposer,
+          $$WorkspacesTableCreateCompanionBuilder,
+          $$WorkspacesTableUpdateCompanionBuilder,
+          (Workspace, $$WorkspacesTableReferences),
+          Workspace,
+          PrefetchHooks Function({bool conversationsRefs})
+        > {
+  $$WorkspacesTableTableManager(_$OpenChatDatabase db, $WorkspacesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$WorkspacesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$WorkspacesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$WorkspacesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => WorkspacesCompanion(
+                id: id,
+                name: name,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String name,
+                required int createdAt,
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => WorkspacesCompanion.insert(
+                id: id,
+                name: name,
+                createdAt: createdAt,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$WorkspacesTable, Workspace>(table),
+                  $$WorkspacesTableReferences(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: ({conversationsRefs = false}) {
+            return PrefetchHooks(
+              db: db,
+              explicitlyWatchedTables: [
+                if (conversationsRefs) db.conversations,
+              ],
+              addJoins: null,
+              getPrefetchedDataCallback: (items) async {
+                return [
+                  if (conversationsRefs)
+                    await $_getPrefetchedData<
+                      Workspace,
+                      $WorkspacesTable,
+                      Conversation
+                    >(
+                      currentTable: table,
+                      referencedTable: $$WorkspacesTableReferences
+                          ._conversationsRefsTable(db),
+                      managerFromTypedResult: (p0) =>
+                          $$WorkspacesTableReferences(
+                            db,
+                            table,
+                            p0,
+                          ).conversationsRefs,
+                      referencedItemsForCurrentItem: (item, referencedItems) =>
+                          referencedItems.where(
+                            (e) => e.productWorkspaceId == item.id,
+                          ),
+                      typedResults: items,
+                    ),
+                ];
+              },
+            );
+          },
+        ),
+      );
+}
+
+typedef $$WorkspacesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$OpenChatDatabase,
+      $WorkspacesTable,
+      Workspace,
+      $$WorkspacesTableFilterComposer,
+      $$WorkspacesTableOrderingComposer,
+      $$WorkspacesTableAnnotationComposer,
+      $$WorkspacesTableCreateCompanionBuilder,
+      $$WorkspacesTableUpdateCompanionBuilder,
+      (Workspace, $$WorkspacesTableReferences),
+      Workspace,
+      PrefetchHooks Function({bool conversationsRefs})
+    >;
 typedef $$ConversationsTableCreateCompanionBuilder =
     ConversationsCompanion Function({
       required String id,
@@ -2893,6 +4043,7 @@ typedef $$ConversationsTableCreateCompanionBuilder =
       Value<String?> providerId,
       Value<String?> modelId,
       Value<String?> projectId,
+      Value<String?> productWorkspaceId,
       Value<bool> isPinned,
       Value<bool> isArchived,
       Value<bool> isBookmarked,
@@ -2912,6 +4063,7 @@ typedef $$ConversationsTableUpdateCompanionBuilder =
       Value<String?> providerId,
       Value<String?> modelId,
       Value<String?> projectId,
+      Value<String?> productWorkspaceId,
       Value<bool> isPinned,
       Value<bool> isArchived,
       Value<bool> isBookmarked,
@@ -2941,6 +4093,24 @@ final class $$ConversationsTableReferences
       $_db.projects,
     ).filter((f) => f.id.sqlEquals($_column));
     final item = $_typedResult.readTableOrNull(_projectIdTable($_db));
+    if (item == null) return manager;
+    return ProcessedTableManager(
+      manager.$state.copyWith(prefetchedData: [item]),
+    );
+  }
+
+  static $WorkspacesTable _productWorkspaceIdTable(_$OpenChatDatabase db) => db
+      .workspaces
+      .createAlias('conversations__product_workspace_id__workspaces__id');
+
+  $$WorkspacesTableProcessedTableManager? get productWorkspaceId {
+    final $_column = $_itemColumn<String>('product_workspace_id');
+    if ($_column == null) return null;
+    final manager = $$WorkspacesTableTableManager(
+      $_db,
+      $_db.workspaces,
+    ).filter((f) => f.id.sqlEquals($_column));
+    final item = $_typedResult.readTableOrNull(_productWorkspaceIdTable($_db));
     if (item == null) return manager;
     return ProcessedTableManager(
       manager.$state.copyWith(prefetchedData: [item]),
@@ -3060,6 +4230,29 @@ class $$ConversationsTableFilterComposer
           }) => $$ProjectsTableFilterComposer(
             $db: $db,
             $table: $db.projects,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
+  $$WorkspacesTableFilterComposer get productWorkspaceId {
+    final $$WorkspacesTableFilterComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.productWorkspaceId,
+      referencedTable: $db.workspaces,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WorkspacesTableFilterComposer(
+            $db: $db,
+            $table: $db.workspaces,
             $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
             joinBuilder: joinBuilder,
             $removeJoinBuilderFromRootComposer:
@@ -3196,6 +4389,29 @@ class $$ConversationsTableOrderingComposer
     );
     return composer;
   }
+
+  $$WorkspacesTableOrderingComposer get productWorkspaceId {
+    final $$WorkspacesTableOrderingComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.productWorkspaceId,
+      referencedTable: $db.workspaces,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WorkspacesTableOrderingComposer(
+            $db: $db,
+            $table: $db.workspaces,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
 }
 
 class $$ConversationsTableAnnotationComposer
@@ -3286,6 +4502,29 @@ class $$ConversationsTableAnnotationComposer
     return composer;
   }
 
+  $$WorkspacesTableAnnotationComposer get productWorkspaceId {
+    final $$WorkspacesTableAnnotationComposer composer = $composerBuilder(
+      composer: this,
+      getCurrentColumn: (t) => t.productWorkspaceId,
+      referencedTable: $db.workspaces,
+      getReferencedColumn: (t) => t.id,
+      builder:
+          (
+            joinBuilder, {
+            $addJoinBuilderToRootComposer,
+            $removeJoinBuilderFromRootComposer,
+          }) => $$WorkspacesTableAnnotationComposer(
+            $db: $db,
+            $table: $db.workspaces,
+            $addJoinBuilderToRootComposer: $addJoinBuilderToRootComposer,
+            joinBuilder: joinBuilder,
+            $removeJoinBuilderFromRootComposer:
+                $removeJoinBuilderFromRootComposer,
+          ),
+    );
+    return composer;
+  }
+
   Expression<T> messagesRefs<T extends Object>(
     Expression<T> Function($$MessagesTableAnnotationComposer a) f,
   ) {
@@ -3325,7 +4564,11 @@ class $$ConversationsTableTableManager
           $$ConversationsTableUpdateCompanionBuilder,
           (Conversation, $$ConversationsTableReferences),
           Conversation,
-          PrefetchHooks Function({bool projectId, bool messagesRefs})
+          PrefetchHooks Function({
+            bool projectId,
+            bool productWorkspaceId,
+            bool messagesRefs,
+          })
         > {
   $$ConversationsTableTableManager(
     _$OpenChatDatabase db,
@@ -3351,6 +4594,7 @@ class $$ConversationsTableTableManager
                 Value<String?> providerId = const Value.absent(),
                 Value<String?> modelId = const Value.absent(),
                 Value<String?> projectId = const Value.absent(),
+                Value<String?> productWorkspaceId = const Value.absent(),
                 Value<bool> isPinned = const Value.absent(),
                 Value<bool> isArchived = const Value.absent(),
                 Value<bool> isBookmarked = const Value.absent(),
@@ -3368,6 +4612,7 @@ class $$ConversationsTableTableManager
                 providerId: providerId,
                 modelId: modelId,
                 projectId: projectId,
+                productWorkspaceId: productWorkspaceId,
                 isPinned: isPinned,
                 isArchived: isArchived,
                 isBookmarked: isBookmarked,
@@ -3387,6 +4632,7 @@ class $$ConversationsTableTableManager
                 Value<String?> providerId = const Value.absent(),
                 Value<String?> modelId = const Value.absent(),
                 Value<String?> projectId = const Value.absent(),
+                Value<String?> productWorkspaceId = const Value.absent(),
                 Value<bool> isPinned = const Value.absent(),
                 Value<bool> isArchived = const Value.absent(),
                 Value<bool> isBookmarked = const Value.absent(),
@@ -3404,6 +4650,7 @@ class $$ConversationsTableTableManager
                 providerId: providerId,
                 modelId: modelId,
                 projectId: projectId,
+                productWorkspaceId: productWorkspaceId,
                 isPinned: isPinned,
                 isArchived: isArchived,
                 isBookmarked: isBookmarked,
@@ -3420,67 +4667,83 @@ class $$ConversationsTableTableManager
                 ),
               )
               .toList(),
-          prefetchHooksCallback: ({projectId = false, messagesRefs = false}) {
-            return PrefetchHooks(
-              db: db,
-              explicitlyWatchedTables: [if (messagesRefs) db.messages],
-              addJoins:
-                  <
-                    T extends TableManagerState<
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic,
-                      dynamic
-                    >
-                  >(state) {
-                    if (projectId) {
-                      state = state.withJoin(
-                        currentTable: table,
-                        currentColumn: table.projectId,
-                        referencedTable: $$ConversationsTableReferences
-                            ._projectIdTable(db),
-                        referencedColumn: $$ConversationsTableReferences
-                            ._projectIdTable(db)
-                            .id,
-                      ) as T;
-                    }
+          prefetchHooksCallback:
+              ({
+                projectId = false,
+                productWorkspaceId = false,
+                messagesRefs = false,
+              }) {
+                return PrefetchHooks(
+                  db: db,
+                  explicitlyWatchedTables: [if (messagesRefs) db.messages],
+                  addJoins:
+                      <
+                        T extends TableManagerState<
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic,
+                          dynamic
+                        >
+                      >(state) {
+                        if (projectId) {
+                          state = state.withJoin(
+                            currentTable: table,
+                            currentColumn: table.projectId,
+                            referencedTable: $$ConversationsTableReferences
+                                ._projectIdTable(db),
+                            referencedColumn: $$ConversationsTableReferences
+                                ._projectIdTable(db)
+                                .id,
+                          ) as T;
+                        }
+                        if (productWorkspaceId) {
+                          state = state.withJoin(
+                            currentTable: table,
+                            currentColumn: table.productWorkspaceId,
+                            referencedTable: $$ConversationsTableReferences
+                                ._productWorkspaceIdTable(db),
+                            referencedColumn: $$ConversationsTableReferences
+                                ._productWorkspaceIdTable(db)
+                                .id,
+                          ) as T;
+                        }
 
-                    return state;
+                        return state;
+                      },
+                  getPrefetchedDataCallback: (items) async {
+                    return [
+                      if (messagesRefs)
+                        await $_getPrefetchedData<
+                          Conversation,
+                          $ConversationsTable,
+                          Message
+                        >(
+                          currentTable: table,
+                          referencedTable: $$ConversationsTableReferences
+                              ._messagesRefsTable(db),
+                          managerFromTypedResult: (p0) =>
+                              $$ConversationsTableReferences(
+                                db,
+                                table,
+                                p0,
+                              ).messagesRefs,
+                          referencedItemsForCurrentItem:
+                              (item, referencedItems) => referencedItems.where(
+                                (e) => e.conversationId == item.id,
+                              ),
+                          typedResults: items,
+                        ),
+                    ];
                   },
-              getPrefetchedDataCallback: (items) async {
-                return [
-                  if (messagesRefs)
-                    await $_getPrefetchedData<
-                      Conversation,
-                      $ConversationsTable,
-                      Message
-                    >(
-                      currentTable: table,
-                      referencedTable: $$ConversationsTableReferences
-                          ._messagesRefsTable(db),
-                      managerFromTypedResult: (p0) =>
-                          $$ConversationsTableReferences(
-                            db,
-                            table,
-                            p0,
-                          ).messagesRefs,
-                      referencedItemsForCurrentItem: (item, referencedItems) =>
-                          referencedItems.where(
-                            (e) => e.conversationId == item.id,
-                          ),
-                      typedResults: items,
-                    ),
-                ];
+                );
               },
-            );
-          },
         ),
       );
 }
@@ -3497,7 +4760,11 @@ typedef $$ConversationsTableProcessedTableManager =
       $$ConversationsTableUpdateCompanionBuilder,
       (Conversation, $$ConversationsTableReferences),
       Conversation,
-      PrefetchHooks Function({bool projectId, bool messagesRefs})
+      PrefetchHooks Function({
+        bool projectId,
+        bool productWorkspaceId,
+        bool messagesRefs,
+      })
     >;
 typedef $$MessagesTableCreateCompanionBuilder = MessagesCompanion Function({
   required String id,
@@ -4242,16 +5509,275 @@ typedef $$ModelFavoritesTableProcessedTableManager =
       ModelFavorite,
       PrefetchHooks Function()
     >;
+typedef $$SavedOutputsTableCreateCompanionBuilder =
+    SavedOutputsCompanion Function({
+      required String conversationId,
+      required String messageId,
+      required String conversationTitle,
+      required String content,
+      Value<String?> providerId,
+      Value<String?> modelId,
+      required int savedAt,
+      Value<int> rowid,
+    });
+typedef $$SavedOutputsTableUpdateCompanionBuilder =
+    SavedOutputsCompanion Function({
+      Value<String> conversationId,
+      Value<String> messageId,
+      Value<String> conversationTitle,
+      Value<String> content,
+      Value<String?> providerId,
+      Value<String?> modelId,
+      Value<int> savedAt,
+      Value<int> rowid,
+    });
+
+class $$SavedOutputsTableFilterComposer
+    extends Composer<_$OpenChatDatabase, $SavedOutputsTable> {
+  $$SavedOutputsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get conversationId => $composableBuilder(
+    column: $table.conversationId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get messageId => $composableBuilder(
+    column: $table.messageId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get conversationTitle => $composableBuilder(
+    column: $table.conversationTitle,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get providerId => $composableBuilder(
+    column: $table.providerId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get modelId => $composableBuilder(
+    column: $table.modelId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get savedAt => $composableBuilder(
+    column: $table.savedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SavedOutputsTableOrderingComposer
+    extends Composer<_$OpenChatDatabase, $SavedOutputsTable> {
+  $$SavedOutputsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get conversationId => $composableBuilder(
+    column: $table.conversationId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get messageId => $composableBuilder(
+    column: $table.messageId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get conversationTitle => $composableBuilder(
+    column: $table.conversationTitle,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get providerId => $composableBuilder(
+    column: $table.providerId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get modelId => $composableBuilder(
+    column: $table.modelId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get savedAt => $composableBuilder(
+    column: $table.savedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SavedOutputsTableAnnotationComposer
+    extends Composer<_$OpenChatDatabase, $SavedOutputsTable> {
+  $$SavedOutputsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get conversationId => $composableBuilder(
+    column: $table.conversationId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get messageId =>
+      $composableBuilder(column: $table.messageId, builder: (column) => column);
+
+  GeneratedColumn<String> get conversationTitle => $composableBuilder(
+    column: $table.conversationTitle,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get content =>
+      $composableBuilder(column: $table.content, builder: (column) => column);
+
+  GeneratedColumn<String> get providerId => $composableBuilder(
+    column: $table.providerId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get modelId =>
+      $composableBuilder(column: $table.modelId, builder: (column) => column);
+
+  GeneratedColumn<int> get savedAt =>
+      $composableBuilder(column: $table.savedAt, builder: (column) => column);
+}
+
+class $$SavedOutputsTableTableManager
+    extends
+        RootTableManager<
+          _$OpenChatDatabase,
+          $SavedOutputsTable,
+          SavedOutput,
+          $$SavedOutputsTableFilterComposer,
+          $$SavedOutputsTableOrderingComposer,
+          $$SavedOutputsTableAnnotationComposer,
+          $$SavedOutputsTableCreateCompanionBuilder,
+          $$SavedOutputsTableUpdateCompanionBuilder,
+          (
+            SavedOutput,
+            BaseReferences<_$OpenChatDatabase, $SavedOutputsTable, SavedOutput>,
+          ),
+          SavedOutput,
+          PrefetchHooks Function()
+        > {
+  $$SavedOutputsTableTableManager(
+    _$OpenChatDatabase db,
+    $SavedOutputsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SavedOutputsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SavedOutputsTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$SavedOutputsTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> conversationId = const Value.absent(),
+                Value<String> messageId = const Value.absent(),
+                Value<String> conversationTitle = const Value.absent(),
+                Value<String> content = const Value.absent(),
+                Value<String?> providerId = const Value.absent(),
+                Value<String?> modelId = const Value.absent(),
+                Value<int> savedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SavedOutputsCompanion(
+                conversationId: conversationId,
+                messageId: messageId,
+                conversationTitle: conversationTitle,
+                content: content,
+                providerId: providerId,
+                modelId: modelId,
+                savedAt: savedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String conversationId,
+                required String messageId,
+                required String conversationTitle,
+                required String content,
+                Value<String?> providerId = const Value.absent(),
+                Value<String?> modelId = const Value.absent(),
+                required int savedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => SavedOutputsCompanion.insert(
+                conversationId: conversationId,
+                messageId: messageId,
+                conversationTitle: conversationTitle,
+                content: content,
+                providerId: providerId,
+                modelId: modelId,
+                savedAt: savedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$SavedOutputsTable, SavedOutput>(table),
+                  BaseReferences<
+                    _$OpenChatDatabase,
+                    $SavedOutputsTable,
+                    SavedOutput
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SavedOutputsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$OpenChatDatabase,
+      $SavedOutputsTable,
+      SavedOutput,
+      $$SavedOutputsTableFilterComposer,
+      $$SavedOutputsTableOrderingComposer,
+      $$SavedOutputsTableAnnotationComposer,
+      $$SavedOutputsTableCreateCompanionBuilder,
+      $$SavedOutputsTableUpdateCompanionBuilder,
+      (
+        SavedOutput,
+        BaseReferences<_$OpenChatDatabase, $SavedOutputsTable, SavedOutput>,
+      ),
+      SavedOutput,
+      PrefetchHooks Function()
+    >;
 
 class $OpenChatDatabaseManager {
   final _$OpenChatDatabase _db;
   $OpenChatDatabaseManager(this._db);
   $$ProjectsTableTableManager get projects =>
       $$ProjectsTableTableManager(_db, _db.projects);
+  $$WorkspacesTableTableManager get workspaces =>
+      $$WorkspacesTableTableManager(_db, _db.workspaces);
   $$ConversationsTableTableManager get conversations =>
       $$ConversationsTableTableManager(_db, _db.conversations);
   $$MessagesTableTableManager get messages =>
       $$MessagesTableTableManager(_db, _db.messages);
   $$ModelFavoritesTableTableManager get modelFavorites =>
       $$ModelFavoritesTableTableManager(_db, _db.modelFavorites);
+  $$SavedOutputsTableTableManager get savedOutputs =>
+      $$SavedOutputsTableTableManager(_db, _db.savedOutputs);
 }

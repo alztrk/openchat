@@ -19,7 +19,7 @@ use tokio::process::{ChildStdin, Command};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::Mutex,
-    time::sleep,
+    time::{sleep, sleep_until},
 };
 
 #[cfg(windows)]
@@ -521,6 +521,106 @@ impl TerminalSessionManager {
         }
     }
 
+    #[cfg(windows)]
+    pub async fn execute_project_tool(
+        &self,
+        program: &Path,
+        workdir: &Path,
+        input: &str,
+        timeout_seconds: u64,
+        output_limit_bytes: usize,
+        cancellation: &mut tokio::sync::watch::Receiver<bool>,
+    ) -> Result<Value, String> {
+        if !(5..=MAX_TIMEOUT_SECONDS).contains(&timeout_seconds)
+            || !(1..=MAX_BUFFER_BYTES).contains(&output_limit_bytes)
+            || input.len() > 16 * 1024
+        {
+            return Err("The configured project tool is outside its execution limits.".to_owned());
+        }
+        if *cancellation.borrow() {
+            return Ok(
+                json!({"status":"cancelled","exit_code":Value::Null,"output":"","truncated":false}),
+            );
+        }
+
+        let mut process = SandboxedProcess::spawn_program(program, &[], workdir).map_err(|_| {
+            "The configured tool could not start inside the Windows AppContainer.".to_owned()
+        })?;
+        let capture = Arc::new(Mutex::new(ProjectToolOutput::new(output_limit_bytes)));
+        let stdout = process
+            .take_stdout()
+            .ok_or_else(|| "The configured tool output could not be captured.".to_owned())?;
+        let stderr = process
+            .take_stderr()
+            .ok_or_else(|| "The configured tool errors could not be captured.".to_owned())?;
+        let stdout_task =
+            tokio::spawn(drain_project_tool_pipe(stdout, Arc::clone(&capture), false));
+        let stderr_task = tokio::spawn(drain_project_tool_pipe(stderr, Arc::clone(&capture), true));
+        let mut stdin = process
+            .take_stdin()
+            .ok_or_else(|| "The configured tool input could not be sent.".to_owned())?;
+        stdin
+            .write_all(input.as_bytes())
+            .await
+            .map_err(|_| "The configured tool input could not be sent.".to_owned())?;
+        stdin
+            .write_all(b"\n")
+            .await
+            .map_err(|_| "The configured tool input could not be sent.".to_owned())?;
+        stdin
+            .flush()
+            .await
+            .map_err(|_| "The configured tool input could not be sent.".to_owned())?;
+        drop(stdin);
+
+        let deadline = Instant::now() + Duration::from_secs(timeout_seconds);
+        let (status, result_status) = loop {
+            tokio::select! {
+                changed = cancellation.changed() => {
+                    if changed.is_err() || *cancellation.borrow() {
+                        process.start_kill().map_err(|_| "The cancelled project tool could not be stopped.".to_owned())?;
+                        process.wait_for_job_exit().map_err(|_| "The cancelled project tool process tree did not stop in time.".to_owned())?;
+                        let _ = process.wait().await;
+                        break (None, "cancelled");
+                    }
+                }
+                result = process.wait() => {
+                    let status = result.map_err(|_| "The configured project tool process status could not be read.".to_owned())?;
+                    break (Some(status.code()), "completed");
+                }
+                _ = sleep_until(deadline.into()) => {
+                    process.start_kill().map_err(|_| "The timed-out project tool could not be stopped.".to_owned())?;
+                    process.wait_for_job_exit().map_err(|_| "The timed-out project tool process tree did not stop in time.".to_owned())?;
+                    let _ = process.wait().await;
+                    break (None, "timed_out");
+                }
+            }
+        };
+        stdout_task
+            .await
+            .map_err(|_| "The configured tool output reader stopped unexpectedly.".to_owned())?
+            .map_err(|_| "The configured tool output could not be read.".to_owned())?;
+        stderr_task
+            .await
+            .map_err(|_| "The configured tool error reader stopped unexpectedly.".to_owned())?
+            .map_err(|_| "The configured tool errors could not be read.".to_owned())?;
+        let capture = capture.lock().await;
+        let mut output = String::from_utf8_lossy(&capture.stdout).into_owned();
+        if !capture.stderr.is_empty() {
+            if !output.is_empty() {
+                output.push('\n');
+            }
+            output.push_str("[stderr]\n");
+            output.push_str(&String::from_utf8_lossy(&capture.stderr));
+        }
+        Ok(json!({
+            "status": result_status,
+            "exit_code": status,
+            "output": output,
+            "truncated": capture.truncated,
+        }))
+    }
+
     pub async fn send_input_to(
         &self,
         terminal_id: &str,
@@ -637,5 +737,51 @@ impl TerminalSessionManager {
             Some(manager) => manager.stop_all().await,
             None => Ok(()),
         }
+    }
+}
+
+#[cfg(windows)]
+struct ProjectToolOutput {
+    stdout: Vec<u8>,
+    stderr: Vec<u8>,
+    used: usize,
+    limit: usize,
+    truncated: bool,
+}
+
+#[cfg(windows)]
+impl ProjectToolOutput {
+    fn new(limit: usize) -> Self {
+        Self {
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+            used: 0,
+            limit,
+            truncated: false,
+        }
+    }
+}
+
+#[cfg(windows)]
+async fn drain_project_tool_pipe(
+    mut reader: tokio::fs::File,
+    capture: Arc<Mutex<ProjectToolOutput>>,
+    is_stderr: bool,
+) -> std::io::Result<()> {
+    let mut chunk = [0_u8; 4096];
+    loop {
+        let bytes_read = reader.read(&mut chunk).await?;
+        if bytes_read == 0 {
+            return Ok(());
+        }
+        let mut capture = capture.lock().await;
+        let keep = bytes_read.min(capture.limit.saturating_sub(capture.used));
+        if is_stderr {
+            capture.stderr.extend_from_slice(&chunk[..keep]);
+        } else {
+            capture.stdout.extend_from_slice(&chunk[..keep]);
+        }
+        capture.used = capture.used.saturating_add(keep);
+        capture.truncated |= keep < bytes_read;
     }
 }

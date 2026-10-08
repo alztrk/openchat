@@ -155,6 +155,7 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
           ...widget.conversation.tags,
           if (widget.conversation.isBookmarked) l10n.conversationBookmarked,
         ].join(', '),
+        onTap: widget.onPressed,
         child: Material(
           color: widget.selected ? palette.selected : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
@@ -166,9 +167,7 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                 .withValues(alpha: 0.24),
             borderRadius: BorderRadius.circular(6),
             child: ConstrainedBox(
-              constraints: BoxConstraints(
-                minHeight: hasActions ? 32 : widget.height,
-              ),
+              constraints: BoxConstraints(minHeight: 44),
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: widget.inset),
                 child: Row(
@@ -254,21 +253,21 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                                     visualDensity: VisualDensity.compact,
                                     padding: EdgeInsets.zero,
                                     constraints: const BoxConstraints.tightFor(
-                                      width: 32,
-                                      height: 32,
+                                      width: 44,
+                                      height: 44,
                                     ),
                                     onPressed: widget.onTogglePinned,
                                     icon: Icon(
                                       widget.conversation.isPinned
                                           ? LucideIcons.pin
-                                          : LucideIcons.pin,
+                                          : LucideIcons.pinOff,
                                       size: 15,
                                     ),
                                   ),
                                 if (hasMenuAction)
                                   SizedBox(
-                                    width: 32,
-                                    height: 32,
+                                    width: 44,
+                                    height: 44,
                                     child: OpenChatDropdown(
                                       palette: palette,
                                       alignmentOffset: const Offset(-152, 6),
@@ -334,8 +333,8 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                                             padding: EdgeInsets.zero,
                                             constraints:
                                                 const BoxConstraints.tightFor(
-                                                  width: 32,
-                                                  height: 32,
+                                                  width: 44,
+                                                  height: 44,
                                                 ),
                                             onPressed: () => controller.isOpen
                                                 ? controller.close()

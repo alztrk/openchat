@@ -147,6 +147,83 @@ void main() {
     expect(find.text('https://example.org/article'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('provider-native web-search results back inline citations', (
+    tester,
+  ) async {
+    const locale = Locale('en');
+    final l10n = await AppLocalizations.delegate.load(locale);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: locale,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.dark,
+        home: Scaffold(
+          body: SizedBox(
+            width: 900,
+            height: 700,
+            child: const AssistantMessage(
+              message: ChatMessage(
+                id: 'assistant-mistral-search-citation',
+                role: ChatMessageRole.assistant,
+                content: 'A searched answer [S1-call1234].',
+                providerId: 'mistral',
+                modelId: 'mistral-medium-latest',
+                toolActivities: <ChatToolActivity>[
+                  ChatToolActivity(
+                    callId: 'call1234',
+                    name: 'web_search',
+                    arguments: <String, Object?>{'query': 'OpenChat'},
+                    status: ChatToolActivityStatus.completed,
+                    output: <String, Object?>{
+                      'sourceType': 'provider_native',
+                      'results': <Object?>[
+                        <String, Object?>{
+                          'sourceId': 'S1-call1234',
+                          'title': 'OpenChat source',
+                          'url': 'https://example.org/openchat',
+                          'snippet': 'Search result summary',
+                        },
+                      ],
+                    },
+                  ),
+                ],
+              ),
+              modelLabel: 'mistral-medium-latest',
+              providerId: 'mistral',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final citation = find.byWidgetPredicate(
+      (widget) =>
+          widget is RichText &&
+          widget.text.toPlainText().contains('A searched answer S1-call1234.'),
+    );
+    expect(citation, findsOneWidget);
+    final richText = tester.widget<RichText>(citation);
+    final citationStart = richText.text.toPlainText().indexOf('S1-call1234');
+    final paragraph = tester.renderObject<RenderParagraph>(citation);
+    final caretOffset = paragraph.getOffsetForCaret(
+      TextPosition(offset: citationStart),
+      Rect.zero,
+    );
+    final bounds = tester.getRect(citation);
+    await tester.tapAt(
+      Offset(bounds.left + caretOffset.dx + 2, bounds.top + bounds.height / 2),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('OpenChat source'), findsOneWidget);
+    expect(find.text(l10n.toolProviderSource), findsOneWidget);
+    expect(find.text('https://example.org/openchat'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 Finder _assistantText(String value) => find.byWidgetPredicate(

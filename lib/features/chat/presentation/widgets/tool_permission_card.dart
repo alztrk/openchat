@@ -243,6 +243,9 @@ String _toolName(String name, AppLocalizations l10n) => switch (name) {
   'edit_file' || 'edit' => l10n.toolEditFile,
   'execute_command' || 'bash' => l10n.toolExecuteCommand,
   'run_project_task' => l10n.toolRunProjectTask,
+  _ when name.startsWith('project_tool__') => l10n.toolConfiguredProjectTool(
+    name.substring('project_tool__'.length),
+  ),
   'send_terminal_input' => l10n.toolSendTerminalInput,
   'git_status' => l10n.toolGitStatus,
   'git_diff' => l10n.toolGitDiff,

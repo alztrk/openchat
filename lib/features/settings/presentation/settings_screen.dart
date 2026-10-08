@@ -67,7 +67,7 @@ class SettingsScreen extends StatefulWidget {
     this.locale,
     this.conversationWidth = ConversationWidthPreference.normal,
     this.conversationTextSize = ConversationTextSizePreference.normal,
-    this.appFont = AppFontPreference.manrope,
+    this.appFont = AppFontPreference.sourceSans3,
     this.onLocaleChanged,
     this.onConversationWidthChanged,
     this.onConversationTextSizeChanged,
@@ -1016,18 +1016,16 @@ class _SettingsHeader extends StatelessWidget {
         padding: EdgeInsets.symmetric(horizontal: horizontalInset, vertical: 8),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: palette.secondaryIcon),
-            const SizedBox(width: 10),
+            Icon(icon, size: 20, color: palette.secondaryIcon),
+            const SizedBox(width: OpenChatSpacing.sm),
             Expanded(
               child: Text(
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
+                style: Theme.of(context).textTheme.titleMedium?.copyWith(
                   color: palette.text,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  height: 20 / 13,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),

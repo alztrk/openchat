@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
@@ -160,7 +161,7 @@ class _ProjectMcpServersDialogState extends State<ProjectMcpServersDialog> {
         if (!_isLoading && !_loadFailed)
           TextButton.icon(
             onPressed: _isSaving ? null : _addServer,
-            icon: const Icon(Icons.add),
+            icon: const Icon(LucideIcons.plus),
             label: Text(l10n.projectMcpAdd),
           ),
         if (!_isLoading && !_loadFailed)
@@ -264,7 +265,7 @@ class _ProjectMcpServersDialogState extends State<ProjectMcpServersDialog> {
                 ? null
                 : () => _manageCredentials(server),
             tooltip: l10n.projectMcpCredentials,
-            icon: const Icon(Icons.key_outlined),
+            icon: const Icon(LucideIcons.keyRound),
           ),
           IconButton(
             key: ValueKey<String>('project-mcp-check-server-${server.id}'),
@@ -280,17 +281,17 @@ class _ProjectMcpServersDialogState extends State<ProjectMcpServersDialog> {
                     dimension: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.wifi_tethering_outlined),
+                : const Icon(LucideIcons.radio),
           ),
           IconButton(
             tooltip: l10n.projectMcpEdit,
             onPressed: _isSaving ? null : () => _editServer(index),
-            icon: const Icon(Icons.edit_outlined),
+            icon: const Icon(LucideIcons.pencil),
           ),
           IconButton(
             tooltip: l10n.projectMcpRemove,
             onPressed: _isSaving ? null : () => _removeServer(index),
-            icon: const Icon(Icons.delete_outline),
+            icon: const Icon(LucideIcons.trash2),
           ),
         ],
       ),

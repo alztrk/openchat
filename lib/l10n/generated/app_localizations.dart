@@ -122,6 +122,198 @@ abstract class AppLocalizations {
   /// **'Chats'**
   String get chats;
 
+  /// No description provided for @workspaces.
+  ///
+  /// In en, this message translates to:
+  /// **'Workspaces'**
+  String get workspaces;
+
+  /// No description provided for @workspacesDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep related conversations together.'**
+  String get workspacesDescription;
+
+  /// No description provided for @workspaceCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'New workspace'**
+  String get workspaceCreate;
+
+  /// No description provided for @workspaceCreateAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Create workspace'**
+  String get workspaceCreateAction;
+
+  /// No description provided for @workspaceName.
+  ///
+  /// In en, this message translates to:
+  /// **'Workspace name'**
+  String get workspaceName;
+
+  /// No description provided for @workspaceNameRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a workspace name.'**
+  String get workspaceNameRequired;
+
+  /// No description provided for @workspaceEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No workspaces yet'**
+  String get workspaceEmptyTitle;
+
+  /// No description provided for @workspaceEmptyDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Create a workspace to group related conversations.'**
+  String get workspaceEmptyDescription;
+
+  /// No description provided for @workspaceNoConversations.
+  ///
+  /// In en, this message translates to:
+  /// **'No conversations in this workspace yet.'**
+  String get workspaceNoConversations;
+
+  /// No description provided for @workspaceMoveConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Move conversation'**
+  String get workspaceMoveConversation;
+
+  /// No description provided for @workspaceUnassignedChats.
+  ///
+  /// In en, this message translates to:
+  /// **'Chats without a workspace'**
+  String get workspaceUnassignedChats;
+
+  /// No description provided for @workspaceNoWorkspace.
+  ///
+  /// In en, this message translates to:
+  /// **'No workspace'**
+  String get workspaceNoWorkspace;
+
+  /// No description provided for @workspaceConversationCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversations: {count}'**
+  String workspaceConversationCount(int count);
+
+  /// No description provided for @workspaceRename.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename workspace'**
+  String get workspaceRename;
+
+  /// No description provided for @workspaceDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete workspace'**
+  String get workspaceDelete;
+
+  /// No description provided for @workspaceDeleteConfirmation.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete “{name}”? Its conversations will stay in Chats.'**
+  String workspaceDeleteConfirmation(String name);
+
+  /// No description provided for @workspaceLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Workspaces could not be loaded.'**
+  String get workspaceLoadFailed;
+
+  /// No description provided for @workspaceSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The workspace could not be saved.'**
+  String get workspaceSaveFailed;
+
+  /// No description provided for @workspaceDeleteFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The workspace could not be deleted.'**
+  String get workspaceDeleteFailed;
+
+  /// No description provided for @workspaceMoveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The conversation could not be moved.'**
+  String get workspaceMoveFailed;
+
+  /// No description provided for @outputs.
+  ///
+  /// In en, this message translates to:
+  /// **'Outputs'**
+  String get outputs;
+
+  /// No description provided for @outputsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Save useful responses and return to them here.'**
+  String get outputsDescription;
+
+  /// No description provided for @outputsEmptyTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'No saved responses yet'**
+  String get outputsEmptyTitle;
+
+  /// No description provided for @outputsEmptyDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Use Save response under an answer to keep it here.'**
+  String get outputsEmptyDescription;
+
+  /// No description provided for @outputsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved responses could not be loaded.'**
+  String get outputsLoadFailed;
+
+  /// No description provided for @saveResponse.
+  ///
+  /// In en, this message translates to:
+  /// **'Save response'**
+  String get saveResponse;
+
+  /// No description provided for @removeSavedResponse.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove saved response'**
+  String get removeSavedResponse;
+
+  /// No description provided for @outputSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The response could not be saved.'**
+  String get outputSaveFailed;
+
+  /// No description provided for @outputRemoveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The saved response could not be removed.'**
+  String get outputRemoveFailed;
+
+  /// No description provided for @outputOpenConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Open conversation'**
+  String get outputOpenConversation;
+
+  /// No description provided for @outputConversationUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation is no longer available'**
+  String get outputConversationUnavailable;
+
+  /// No description provided for @outputSavedAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved {date}'**
+  String outputSavedAt(String date);
+
   /// No description provided for @collapseSidebars.
   ///
   /// In en, this message translates to:
@@ -2381,13 +2573,13 @@ abstract class AppLocalizations {
   /// No description provided for @appFont.
   ///
   /// In en, this message translates to:
-  /// **'App font'**
+  /// **'Response font'**
   String get appFont;
 
   /// No description provided for @appFontDescription.
   ///
   /// In en, this message translates to:
-  /// **'Choose the typeface used throughout OpenChat.'**
+  /// **'Choose the typeface used for assistant responses.'**
   String get appFontDescription;
 
   /// No description provided for @appearancePreferenceSaveFailed.
@@ -5353,6 +5545,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Run project task'**
   String get toolRunProjectTask;
+
+  /// No description provided for @toolConfiguredProjectTool.
+  ///
+  /// In en, this message translates to:
+  /// **'Project tool: {name}'**
+  String toolConfiguredProjectTool(String name);
 
   /// No description provided for @toolDelegateTask.
   ///

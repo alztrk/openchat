@@ -7,6 +7,7 @@ import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart
 import 'package:intl/intl.dart';
 
 import 'package:openchat/app/local_engine_icon.dart';
+import 'package:openchat/app/openchat_page_header.dart';
 import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/safe_markdown.dart';
@@ -21,12 +22,14 @@ class ModelsPage extends StatefulWidget {
     required this.serviceClient,
     required this.downloadController,
     required this.settingsPreferences,
+    required this.onOpenLocalModels,
     super.key,
   });
 
   final OpenChatServiceClient? serviceClient;
   final HuggingFaceDownloadController? downloadController;
   final SettingsPreferences settingsPreferences;
+  final VoidCallback onOpenLocalModels;
 
   @override
   State<ModelsPage> createState() => _ModelsPageState();
@@ -382,12 +385,17 @@ class _ModelsPageState extends State<ModelsPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                l10n.models,
-                style: Theme.of(context).textTheme.headlineSmall,
+              OpenChatPageHeader(
+                title: l10n.models,
+                description: l10n.modelsPageDescription,
+                actions: [
+                  OutlinedButton.icon(
+                    onPressed: widget.onOpenLocalModels,
+                    icon: const Icon(LucideIcons.microchip),
+                    label: Text(l10n.localModelsPageTitle),
+                  ),
+                ],
               ),
-              const SizedBox(height: 4),
-              Text(l10n.modelsPageDescription),
               const SizedBox(height: 20),
               _formatSelector(palette),
               const SizedBox(height: 14),
@@ -698,7 +706,7 @@ class _ModelsPageState extends State<ModelsPage> {
                 publisher.substring(0, 1).toUpperCase(),
                 style: TextStyle(
                   color: palette.secondaryText,
-                  fontSize: 11,
+                  fontSize: OpenChatTypography.metadata,
                   fontWeight: FontWeight.w600,
                 ),
               ),

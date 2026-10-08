@@ -77,7 +77,6 @@ impl SandboxedProcess {
         Self::spawn_in_sandbox(sandbox, application, arguments, workdir, &[])
     }
 
-    #[cfg(test)]
     pub(crate) fn spawn_program(
         program: &Path,
         arguments: &[std::ffi::OsString],

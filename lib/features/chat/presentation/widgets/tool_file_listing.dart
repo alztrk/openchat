@@ -91,7 +91,7 @@ class ToolFileListingResult extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: palette.secondaryText,
-                      fontSize: 11,
+                      fontSize: OpenChatTypography.metadata,
                       height: 16 / 11,
                     ),
                   ),
@@ -102,7 +102,7 @@ class ToolFileListingResult extends StatelessWidget {
                 l10n.toolFileCount(listing.entries.length),
                 style: TextStyle(
                   color: palette.secondaryText,
-                  fontSize: 11,
+                  fontSize: OpenChatTypography.metadata,
                   fontWeight: FontWeight.w500,
                   height: 16 / 11,
                 ),
@@ -207,7 +207,7 @@ class _ToolListingFootnote extends StatelessWidget {
             message,
             style: TextStyle(
               color: palette.secondaryText,
-              fontSize: 11,
+              fontSize: OpenChatTypography.metadata,
               height: 16 / 11,
             ),
           ),

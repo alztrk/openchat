@@ -155,6 +155,112 @@ void main() {
     },
   );
 
+  test(
+    'workspaces group chats and saved responses keep a local snapshot',
+    () async {
+      final database = OpenChatDatabase(NativeDatabase.memory());
+      addTearDown(database.close);
+      final repository = ChatRepository(database);
+      final createdAt = DateTime.utc(2026, 10, 9, 12);
+
+      await repository.createWorkspace(
+        id: 'product-workspace',
+        name: 'Research',
+        createdAt: createdAt,
+      );
+      await repository.createConversation(
+        id: 'conversation-1',
+        title: 'Research notes',
+        createdAt: createdAt,
+        connectionId: 'connection-1',
+        workspaceId: 'provider-workspace',
+        providerId: 'chatgpt',
+        productWorkspaceId: 'product-workspace',
+      );
+      await repository.saveMessage(
+        conversationId: 'conversation-1',
+        message: ChatMessage(
+          id: 'assistant-answer',
+          role: ChatMessageRole.assistant,
+          content: 'A saved answer',
+          createdAt: createdAt,
+          providerId: 'chatgpt',
+          modelId: 'model-1',
+          status: ChatMessageStatus.completed,
+        ),
+      );
+      await repository.renameWorkspace(
+        workspaceId: 'product-workspace',
+        name: 'Project research',
+      );
+
+      final conversation = await repository.getConversation('conversation-1');
+      expect(conversation?.workspaceId, 'provider-workspace');
+      expect(conversation?.productWorkspaceId, 'product-workspace');
+      expect(
+        (await repository.watchWorkspaces().first).single.name,
+        'Project research',
+      );
+
+      await repository.saveOutput(
+        conversationId: 'conversation-1',
+        messageId: 'assistant-answer',
+      );
+      final savedOutput = (await repository.watchSavedOutputs().first).single;
+      expect(savedOutput.conversationTitle, 'Research notes');
+      expect(savedOutput.content, 'A saved answer');
+      expect(savedOutput.providerId, 'chatgpt');
+      expect(savedOutput.modelId, 'model-1');
+
+      await repository.deleteWorkspace('product-workspace');
+      expect(
+        (await repository.getConversation('conversation-1'))
+            ?.productWorkspaceId,
+        isNull,
+      );
+      expect(
+        (await repository.getConversation('conversation-1'))?.workspaceId,
+        'provider-workspace',
+      );
+
+      await repository.deleteConversation('conversation-1');
+      expect(await repository.watchSavedOutputs().first, hasLength(1));
+      await repository.removeSavedOutput(
+        conversationId: 'conversation-1',
+        messageId: 'assistant-answer',
+      );
+      expect(await repository.watchSavedOutputs().first, isEmpty);
+    },
+  );
+
+  test('only completed assistant responses can be saved as outputs', () async {
+    final database = OpenChatDatabase(NativeDatabase.memory());
+    addTearDown(database.close);
+    final repository = ChatRepository(database);
+    await repository.createConversation(
+      id: 'conversation-1',
+      title: 'Conversation',
+      createdAt: DateTime.utc(2026, 10, 9),
+    );
+    await repository.saveMessage(
+      conversationId: 'conversation-1',
+      message: const ChatMessage(
+        id: 'user-message',
+        role: ChatMessageRole.user,
+        content: 'Question',
+        status: ChatMessageStatus.completed,
+      ),
+    );
+
+    await expectLater(
+      repository.saveOutput(
+        conversationId: 'conversation-1',
+        messageId: 'user-message',
+      ),
+      throwsA(isA<InvalidOutputSaveException>()),
+    );
+  });
+
   test('adds archive, tag, and bookmark state when upgrading a version ten database', () async {
     final directory = await Directory.systemTemp.createTemp(
       'openchat-archive-migration-',
@@ -189,7 +295,7 @@ void main() {
     expect(conversation?.isArchived, isFalse);
     expect(conversation?.tags, isEmpty);
     expect(conversation?.isBookmarked, isFalse);
-    expect(OpenChatDatabase.currentSchemaVersion, 14);
+    expect(OpenChatDatabase.currentSchemaVersion, 15);
   });
 
   test('does not save a message without its conversation', () async {

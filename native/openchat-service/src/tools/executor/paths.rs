@@ -270,6 +270,7 @@ pub(super) fn qualify_output_paths(output: &mut Value, prepared: &PreparedToolCa
         | ToolOperation::WebSearch { .. }
         | ToolOperation::ReadUrlContent { .. }
         | ToolOperation::DelegateTask { .. }
+        | ToolOperation::ProjectTool { .. }
         | ToolOperation::GitStatus
         | ToolOperation::GitDiff
         | ToolOperation::GitHistory { .. } => {}

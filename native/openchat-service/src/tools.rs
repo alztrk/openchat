@@ -14,11 +14,14 @@ use serde_json::{Value, json};
 
 use crate::{protocol::ServiceError, provider_schema::ToolDefinition};
 
+pub(crate) mod gemini_search;
 mod search;
 pub use search::search_files;
 #[cfg(windows)]
 pub(crate) mod mcp;
+pub(crate) mod mistral_search;
 pub(crate) mod project_tasks;
+pub(crate) mod project_tools;
 pub mod terminal;
 pub mod web_search;
 
