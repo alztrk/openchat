@@ -2104,7 +2104,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get projectMcpNoCredentials =>
-      'Fügen Sie keine Zugangsdaten zu den Argumenten hinzu. Die sichere Speicherung von MCP-Zugangsdaten wird noch nicht unterstützt.';
+      'Fügen Sie keine Zugangsdaten zu Argumenten hinzu. Ergänzen Sie Umgebungsvariablennamen und speichern Sie die Werte anschließend über die Schaltfläche mit dem Schlüssel sicher.';
 
   @override
   String get projectMcpEmpty =>
@@ -2169,6 +2169,83 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get projectMcpProgramRequired =>
       'Geben Sie einen absoluten Pfad zum Serverprogramm ein.';
+
+  @override
+  String get projectMcpTransport => 'Verbindungstyp';
+
+  @override
+  String get projectMcpTransportStdio => 'Lokaler Prozess (stdio)';
+
+  @override
+  String get projectMcpTransportHttp => 'Remoteserver (Streamable HTTP)';
+
+  @override
+  String get projectMcpEndpoint => 'HTTPS-Endpunkt';
+
+  @override
+  String get projectMcpEndpointHint =>
+      'Verwenden Sie den HTTPS-Endpunkt des MCP-Remoteservers. Private und lokale Netzwerkadressen werden blockiert.';
+
+  @override
+  String get projectMcpEndpointRequired =>
+      'Geben Sie einen gültigen öffentlichen HTTPS-Endpunkt ein.';
+
+  @override
+  String get projectMcpAuthVariable => 'Name der sicheren Anmeldedaten';
+
+  @override
+  String get projectMcpAuthVariableHint =>
+      'Optional. Speichern Sie den Wert nach dem Hinzufügen des Servers über die Schaltfläche mit dem Schlüssel.';
+
+  @override
+  String get projectMcpEnvironmentVariables =>
+      'Umgebungsvariablen für Zugangsdaten';
+
+  @override
+  String get projectMcpEnvironmentVariablesHint =>
+      'Geben Sie einen Variablennamen pro Zeile ein. Speichern Sie den Server und hinterlegen Sie die Werte danach über die Schaltfläche mit dem Schlüssel sicher.';
+
+  @override
+  String get projectMcpEnvironmentVariablesInvalid =>
+      'Geben Sie bis zu 32 eindeutige Variablennamen aus Buchstaben, Ziffern und Unterstrichen ein.';
+
+  @override
+  String get projectMcpCredentials => 'MCP-Zugangsdaten';
+
+  @override
+  String get projectMcpEnvironmentVariablesRequired =>
+      'Bearbeiten Sie den Server und fügen Sie Variablennamen hinzu, bevor Sie Zugangsdaten speichern.';
+
+  @override
+  String get projectMcpCredentialHint =>
+      'Werte werden in der Windows-Anmeldeinformationsverwaltung gespeichert und nur an diesen Serverprozess übergeben.';
+
+  @override
+  String get projectMcpSecret => 'Geheimer Wert';
+
+  @override
+  String get projectMcpCredentialStored => 'Ein Wert ist sicher gespeichert.';
+
+  @override
+  String get projectMcpCredentialMissing => 'Es ist kein Wert gespeichert.';
+
+  @override
+  String get projectMcpCredentialSave => 'Sicher speichern';
+
+  @override
+  String get projectMcpCredentialRemove => 'Gespeicherten Wert entfernen';
+
+  @override
+  String get projectMcpCredentialUnavailable =>
+      'Die Zugangsdaten sind nicht verfügbar. Prüfen Sie die Windows-Anmeldeinformationsverwaltung und versuchen Sie es erneut.';
+
+  @override
+  String get projectMcpSecretRequired =>
+      'Geben Sie vor dem Speichern einen Wert ein.';
+
+  @override
+  String get projectMcpSecretTooLarge =>
+      'Der Wert darf höchstens 2.500 Byte groß sein.';
 
   @override
   String get projectWorktreesTitle => 'Isolierte Worktrees';

@@ -187,10 +187,11 @@ pub(crate) async fn dispatch(
                 .params
                 .get("server")
                 .ok_or_else(invalid_request_params)?;
-            let config = tools::mcp::parse_server_config(&project_root, server)?;
+            let config = tools::mcp::parse_server_config(&project_root, project_id, server)?;
             if !config.enabled {
-                return Ok(json!({"status": "disabled", "toolCount": 0}));
+                return Ok(json!({"status": "disabled", "toolCount": 0, "toolNames": []}));
             }
+            let server_id = config.id.clone();
             let registry = tools::mcp::McpRegistry::connect(vec![config])
                 .await
                 .map_err(|_| {
@@ -200,11 +201,62 @@ pub(crate) async fn dispatch(
                         true,
                     )
                 })?;
-            let tool_count = registry
+            let tool_names = registry
                 .as_ref()
-                .map(|registry| registry.definitions().len())
+                .map(|registry| registry.tool_names_for_server(&server_id))
                 .unwrap_or_default();
-            Ok(json!({"status": "connected", "toolCount": tool_count}))
+            Ok(
+                json!({"status": "connected", "toolCount": tool_names.len(), "toolNames": tool_names}),
+            )
+        }
+        "project.mcp.credential.set" => {
+            let project_id = required_string(&request.params, "projectId")?.to_owned();
+            let server_id = required_string(&request.params, "serverId")?.to_owned();
+            let environment_name = required_string(&request.params, "environmentName")?.to_owned();
+            let secret = required_secret_string(&mut request.params, "secret")?;
+            project_root_for_mcp(storage, &project_id)?;
+            let reference = crate::credentials::McpCredentialReference::new(
+                project_id,
+                server_id,
+                environment_name,
+            )
+            .map_err(|_| invalid_request_params())?;
+            crate::credentials::CredentialStore
+                .store_mcp_secret(&reference, secret)
+                .map_err(mcp_credential_error)?;
+            Ok(json!({"stored": true}))
+        }
+        "project.mcp.credential.remove" => {
+            let project_id = required_string(&request.params, "projectId")?.to_owned();
+            let server_id = required_string(&request.params, "serverId")?.to_owned();
+            let environment_name = required_string(&request.params, "environmentName")?.to_owned();
+            project_root_for_mcp(storage, &project_id)?;
+            let reference = crate::credentials::McpCredentialReference::new(
+                project_id,
+                server_id,
+                environment_name,
+            )
+            .map_err(|_| invalid_request_params())?;
+            crate::credentials::CredentialStore
+                .delete_mcp_secret(&reference)
+                .map_err(mcp_credential_error)?;
+            Ok(json!({"removed": true}))
+        }
+        "project.mcp.credential.status" => {
+            let project_id = required_string(&request.params, "projectId")?.to_owned();
+            let server_id = required_string(&request.params, "serverId")?.to_owned();
+            let environment_name = required_string(&request.params, "environmentName")?.to_owned();
+            project_root_for_mcp(storage, &project_id)?;
+            let reference = crate::credentials::McpCredentialReference::new(
+                project_id,
+                server_id,
+                environment_name,
+            )
+            .map_err(|_| invalid_request_params())?;
+            let stored = crate::credentials::CredentialStore
+                .has_mcp_secret(&reference)
+                .map_err(mcp_credential_error)?;
+            Ok(json!({"stored": stored}))
         }
         "project.worktrees.create" => {
             let project_id = required_string(&request.params, "projectId")?;
@@ -941,7 +993,7 @@ pub(crate) async fn dispatch(
             })?;
             let route = connection
                 .query_row(
-                    "SELECT conversations.provider_id, projects.folder_path,
+                    "SELECT conversations.provider_id, projects.folder_path, projects.id,
                             conversations.api_key_connection_id, conversations.model_id,
                             conversations.connection_id, conversations.workspace_id
                      FROM conversations
@@ -956,6 +1008,7 @@ pub(crate) async fn dispatch(
                             row.get::<_, Option<String>>(3)?,
                             row.get::<_, Option<String>>(4)?,
                             row.get::<_, Option<String>>(5)?,
+                            row.get::<_, Option<String>>(6)?,
                         ))
                     },
                 )
@@ -970,11 +1023,12 @@ pub(crate) async fn dispatch(
             let (
                 provider_id,
                 project_root,
+                project_id,
                 stored_api_key_connection_id,
                 model_id,
                 connection_id,
                 workspace_id,
-            ) = route.unwrap_or((None, None, None, None, None, None));
+            ) = route.unwrap_or((None, None, None, None, None, None, None));
             if let Some(objective) = requested_goal_objective {
                 let messages = chatgpt_store::conversation_messages(storage, conversation_id)
                     .map_err(|_| {
@@ -1194,7 +1248,10 @@ pub(crate) async fn dispatch(
             ) {
                 match project_root.as_deref() {
                     Some(project_root) => {
-                        match tools::mcp::load_server_configs(Path::new(project_root)) {
+                        match tools::mcp::load_server_configs(
+                            Path::new(project_root),
+                            project_id.as_deref().unwrap_or_default(),
+                        ) {
                             Ok(configs) => configs,
                             Err(error) => {
                                 crate::storage::user_questions::mark_run_failed(
@@ -1658,6 +1715,29 @@ fn invalid_request_params() -> ServiceError {
         "A required local service parameter is missing or invalid.",
         false,
     )
+}
+
+fn mcp_credential_error(error: crate::credentials::CredentialStoreError) -> ServiceError {
+    use crate::credentials::CredentialStoreError;
+
+    match error {
+        CredentialStoreError::InvalidReference => invalid_request_params(),
+        CredentialStoreError::EmptyToken => ServiceError::new(
+            "mcp_credential_empty",
+            "Enter a non-empty MCP credential value.",
+            false,
+        ),
+        CredentialStoreError::TokenTooLarge => ServiceError::new(
+            "mcp_credential_too_large",
+            "An MCP credential exceeds the 2,500-byte limit.",
+            false,
+        ),
+        _ => ServiceError::new(
+            "mcp_credential_storage_unavailable",
+            "The MCP credential could not be accessed in Windows Credential Manager.",
+            true,
+        ),
+    }
 }
 
 fn tool_permission_confirmation_required() -> ServiceError {

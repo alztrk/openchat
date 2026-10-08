@@ -98,9 +98,9 @@ Users can save up to 20 named history searches, including their query, route/pro
 
 Conversations can be bookmarked from the sidebar menu. Bookmarks persist with the local conversation database and appear in the sidebar with an accessible status label. Selection mode can move multiple active conversations into a project or back to the general chat list, or archive them in one transaction. The encrypted conversation archive can export multiple selected conversations and their attachments.
 
-Provider citations are saved as source records for ChatGPT Responses, Mistral references when their source mapping is unambiguous, and OpenRouter/Groq citation annotations. Provider sources do not have a local retrieval timestamp unless the provider supplies one.
+Provider citations are saved as source records for ChatGPT Responses, Mistral reference chunks when one prior tool result gives an unambiguous index map, and OpenRouter/Groq citation annotations. When a provider supplies citation text offsets, inline source links are placed after the cited text; missing or out-of-range offsets place the link at the end of the response. Provider sources do not have a local retrieval timestamp unless the provider supplies one.
 
-Assistant citations link to source cards when the message has a valid stored source. Mistral reference chunks can point to local sources from one unambiguous prior tool result; the current Chat Completions route does not enable Mistral-hosted web search.
+Assistant citations link to source cards when the message has a valid stored source. Mistral reference chunks can point to local sources from one unambiguous prior tool result; Mistral's hosted Web Search tool uses its Agents API and does not return search references through Chat Completions.
 
 People can delete individual conversations after confirmation, export a conversation with its exposed reasoning summaries and tool activity as Markdown, and retry the latest assistant response. A retry keeps the previous response until the replacement completes successfully and uses the conversation's saved provider and model route.
 

@@ -134,6 +134,7 @@ async fn receive_with_client(
     );
     let mut provider_citation_sources = Vec::<Value>::new();
     let mut provider_citation_ids = BTreeMap::<(String, String), String>::new();
+    let mut provider_citation_positions = BTreeMap::<String, usize>::new();
     let mistral_reference_sources = if request.route.provider_id.as_deref() == Some("mistral") {
         mistral_reference_sources(request.body)
     } else {
@@ -178,6 +179,7 @@ async fn receive_with_client(
                         &value,
                         &mut provider_citation_ids,
                         &mut provider_citation_sources,
+                        &mut provider_citation_positions,
                     );
                 }
                 update_provider_request_usage(
@@ -255,6 +257,7 @@ async fn receive_with_client(
                     &value,
                     &mut provider_citation_ids,
                     &mut provider_citation_sources,
+                    &mut provider_citation_positions,
                 );
             }
 
@@ -378,6 +381,7 @@ async fn receive_with_client(
             request.content,
             &mut round_content,
             &provider_citation_sources,
+            &provider_citation_positions,
         );
         request
             .events
@@ -407,6 +411,7 @@ fn collect_provider_citations(
     value: &Value,
     ids: &mut BTreeMap<(String, String), String>,
     sources: &mut Vec<Value>,
+    positions: &mut BTreeMap<String, usize>,
 ) {
     let mut annotation_groups = Vec::new();
     if let Some(annotations) = value
@@ -474,6 +479,13 @@ fn collect_provider_citations(
         }
         let id = format!("P{}", sources.len() + 1);
         ids.insert(key, id.clone());
+        if let Some(end_index) = citation
+            .get("end_index")
+            .and_then(Value::as_u64)
+            .and_then(|index| usize::try_from(index).ok())
+        {
+            positions.insert(id.clone(), end_index.saturating_add(1));
+        }
         sources.push(serde_json::json!({
             "id": id,
             "title": title,
@@ -487,14 +499,39 @@ fn append_provider_citation_anchors(
     content: &mut String,
     round_content: &mut String,
     sources: &[Value],
+    positions: &BTreeMap<String, usize>,
 ) {
-    for source in sources {
-        let Some(id) = source.get("id").and_then(Value::as_str) else {
-            continue;
-        };
-        let reference = format!(" [{id}]");
-        content.push_str(&reference);
-        round_content.push_str(&reference);
+    let round_length = round_content.chars().count();
+    let content_prefix_length = content.chars().count().saturating_sub(round_length);
+    let mut insertions = sources
+        .iter()
+        .filter_map(|source| {
+            let Some(id) = source.get("id").and_then(Value::as_str) else {
+                return None;
+            };
+            Some((
+                positions
+                    .get(id)
+                    .copied()
+                    .unwrap_or(round_length)
+                    .min(round_length),
+                format!(" [{id}]"),
+            ))
+        })
+        .collect::<Vec<_>>();
+    insertions.sort_by_key(|(index, _)| *index);
+    for (index, reference) in insertions.into_iter().rev() {
+        let round_byte = round_content
+            .char_indices()
+            .nth(index)
+            .map_or(round_content.len(), |(byte, _)| byte);
+        round_content.insert_str(round_byte, &reference);
+        let content_index = content_prefix_length.saturating_add(index);
+        let content_byte = content
+            .char_indices()
+            .nth(content_index)
+            .map_or(content.len(), |(byte, _)| byte);
+        content.insert_str(content_byte, &reference);
     }
 }
 
@@ -948,14 +985,15 @@ mod tests {
         });
         let mut ids = std::collections::BTreeMap::new();
         let mut sources = Vec::new();
-        collect_provider_citations(&value, &mut ids, &mut sources);
+        let mut positions = std::collections::BTreeMap::new();
+        collect_provider_citations(&value, &mut ids, &mut sources, &mut positions);
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0]["id"], "P1");
         assert_eq!(sources[0]["sourceType"], "provider_native");
 
         let mut content = "A sourced claim.".to_owned();
         let mut round_content = "A sourced claim.".to_owned();
-        append_provider_citation_anchors(&mut content, &mut round_content, &sources);
+        append_provider_citation_anchors(&mut content, &mut round_content, &sources, &positions);
         assert_eq!(content, "A sourced claim. [P1]");
         assert_eq!(round_content, content);
     }
@@ -979,11 +1017,71 @@ mod tests {
         });
         let mut ids = std::collections::BTreeMap::new();
         let mut sources = Vec::new();
-        collect_provider_citations(&value, &mut ids, &mut sources);
+        let mut positions = std::collections::BTreeMap::new();
+        collect_provider_citations(&value, &mut ids, &mut sources, &mut positions);
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0]["title"], "Example article");
         assert_eq!(sources[0]["url"], "https://example.org/article");
         assert_eq!(sources[0]["sourceType"], "provider_native");
+    }
+
+    #[test]
+    fn places_provider_citations_at_valid_unicode_text_offsets() {
+        let value = json!({
+            "choices": [{
+                "message": {
+                    "annotations": [{
+                        "type": "url_citation",
+                        "url_citation": {
+                            "url": "https://example.org/article",
+                            "title": "Example article",
+                            "start_index": 0,
+                            "end_index": 2
+                        }
+                    }]
+                }
+            }]
+        });
+        let mut ids = std::collections::BTreeMap::new();
+        let mut sources = Vec::new();
+        let mut positions = std::collections::BTreeMap::new();
+        collect_provider_citations(&value, &mut ids, &mut sources, &mut positions);
+
+        let mut content = "Earlier. Été is warm.".to_owned();
+        let mut round_content = "Été is warm.".to_owned();
+        append_provider_citation_anchors(&mut content, &mut round_content, &sources, &positions);
+
+        assert_eq!(content, "Earlier. Été [P1] is warm.");
+        assert_eq!(round_content, "Été [P1] is warm.");
+    }
+
+    #[test]
+    fn appends_provider_citations_when_offsets_are_missing_or_out_of_range() {
+        let value = json!({
+            "choices": [{
+                "message": {
+                    "annotations": [{
+                        "type": "url_citation",
+                        "url_citation": {
+                            "url": "https://example.org/article",
+                            "title": "Example article",
+                            "end_index": 9000
+                        }
+                    }]
+                }
+            }]
+        });
+        let mut ids = std::collections::BTreeMap::new();
+        let mut sources = Vec::new();
+        let mut positions = std::collections::BTreeMap::new();
+        collect_provider_citations(&value, &mut ids, &mut sources, &mut positions);
+
+        let mut content = "Answer.".to_owned();
+        let mut round_content = "Answer.".to_owned();
+        append_provider_citation_anchors(&mut content, &mut round_content, &sources, &positions);
+
+        assert_eq!(content, "Answer. [P1]");
+        assert_eq!(round_content, "Answer. [P1]");
     }
 
     #[test]
@@ -1007,8 +1105,9 @@ mod tests {
         });
         let mut ids = std::collections::BTreeMap::new();
         let mut sources = Vec::new();
+        let mut positions = std::collections::BTreeMap::new();
 
-        collect_provider_citations(&value, &mut ids, &mut sources);
+        collect_provider_citations(&value, &mut ids, &mut sources, &mut positions);
 
         assert_eq!(sources.len(), 1);
         assert_eq!(sources[0]["url"], "https://example.org/source");

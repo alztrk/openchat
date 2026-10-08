@@ -62,14 +62,18 @@ const projectToolRuleNames = <String>{
   'delegate_task',
   'run_project_task',
 };
+const _maxProjectToolPermissionRules = 1048;
 
 bool _isProjectToolRuleName(String name) {
   if (projectToolRuleNames.contains(name)) return true;
   const prefix = 'mcp__';
-  const suffix = '__*';
-  if (!name.startsWith(prefix) || !name.endsWith(suffix)) return false;
-  final serverId = name.substring(prefix.length, name.length - suffix.length);
-  return RegExp(r'^[a-z0-9_]{1,24}$').hasMatch(serverId);
+  if (!name.startsWith(prefix) || name.length > 64) return false;
+  final suffix = name.substring(prefix.length);
+  if (suffix.endsWith('__*')) {
+    return RegExp(r'^[a-z0-9_]{1,24}$')
+        .hasMatch(suffix.substring(0, suffix.length - 3));
+  }
+  return RegExp(r'^[a-z0-9_]{1,24}__[A-Za-z0-9_-]+$').hasMatch(suffix);
 }
 
 enum ConversationWidthPreference {
@@ -315,7 +319,7 @@ class SettingsPreferences {
         'Saved project tool permissions have an invalid shape.',
       );
     }
-    if (decoded.length > 32) {
+    if (decoded.length > _maxProjectToolPermissionRules) {
       throw const FormatException(
         'Saved project tool permissions exceed the supported limit.',
       );
@@ -358,6 +362,13 @@ class SettingsPreferences {
       if (entry.value != ToolPermissionRule.inherit) {
         storedRules[entry.key] = entry.value.storageValue;
       }
+    }
+    if (storedRules.length > _maxProjectToolPermissionRules) {
+      throw ArgumentError.value(
+        rules,
+        'rules',
+        'The project tool rule count exceeds the supported limit.',
+      );
     }
     final key = '$_projectToolPermissionPrefix$normalizedProjectId';
     if (storedRules.isEmpty) {

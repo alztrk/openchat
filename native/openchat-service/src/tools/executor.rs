@@ -38,6 +38,7 @@ pub enum ToolPermissionRule {
 }
 
 pub(crate) type ToolPermissionRules = HashMap<String, ToolPermissionRule>;
+const MAX_TOOL_PERMISSION_RULES: usize = 1048;
 
 #[cfg(windows)]
 fn mcp_server_permission_rule(rules: &ToolPermissionRules, server_id: &str) -> ToolPermissionRule {
@@ -45,6 +46,22 @@ fn mcp_server_permission_rule(rules: &ToolPermissionRules, server_id: &str) -> T
         .get(&format!("mcp__{server_id}__*"))
         .copied()
         .unwrap_or(ToolPermissionRule::Ask)
+}
+
+#[cfg(windows)]
+fn mcp_tool_permission_rule(
+    rules: &ToolPermissionRules,
+    server_id: &str,
+    tool_name: &str,
+) -> ToolPermissionRule {
+    let server_rule = mcp_server_permission_rule(rules, server_id);
+    if server_rule == ToolPermissionRule::Deny {
+        return ToolPermissionRule::Deny;
+    }
+    rules
+        .get(&format!("mcp__{server_id}__{tool_name}"))
+        .copied()
+        .unwrap_or(server_rule)
 }
 
 pub(crate) fn parse_tool_permission_rules(
@@ -56,7 +73,7 @@ pub(crate) fn parse_tool_permission_rules(
     let Some(rules) = value.as_object() else {
         return Err(invalid_tool_permission_rules());
     };
-    if rules.len() > 32 {
+    if rules.len() > MAX_TOOL_PERMISSION_RULES {
         return Err(invalid_tool_permission_rules());
     }
 
@@ -78,14 +95,11 @@ pub(crate) fn parse_tool_permission_rules(
 
 fn is_permission_rule_tool(name: &str) -> bool {
     if let Some(mcp_tool_prefix) = name.strip_prefix("mcp__") {
-        let Some(server_id) = mcp_tool_prefix.strip_suffix("__*") else {
-            return false;
-        };
         #[cfg(windows)]
-        return super::mcp::valid_server_id(server_id);
+        return super::mcp::valid_permission_rule_suffix(mcp_tool_prefix);
         #[cfg(not(windows))]
         return {
-            let _ = server_id;
+            let _ = mcp_tool_prefix;
             false
         };
     }
@@ -131,6 +145,22 @@ pub(crate) enum ImageGenerationContext<'a> {
     ApiKey {
         service: &'a ChatGptService,
         api_key: &'a str,
+        model_id: &'a str,
+        reasoning_effort: Option<String>,
+    },
+    CompatibleApiKey {
+        service: &'a ChatGptService,
+        api_key: &'a str,
+        provider_id: &'a str,
+        endpoint: &'a str,
+        model_id: &'a str,
+        reasoning_effort: Option<String>,
+    },
+    LocalEndpoint {
+        service: &'a ChatGptService,
+        api_key: Option<&'a str>,
+        provider_id: &'a str,
+        endpoint: &'a str,
         model_id: &'a str,
         reasoning_effort: Option<String>,
     },
@@ -761,6 +791,70 @@ impl ToolExecutor {
                         user_questions,
                     )
                     .await
+                } else if let Some(ImageGenerationContext::CompatibleApiKey {
+                    service,
+                    api_key,
+                    provider_id,
+                    endpoint,
+                    model_id,
+                    reasoning_effort,
+                }) = image_generation
+                {
+                    crate::chatgpt::subagents::run_child_analysis_compatible_endpoint(
+                        service,
+                        Some(api_key),
+                        provider_id,
+                        endpoint,
+                        call,
+                        task,
+                        context.as_deref(),
+                        model_id,
+                        reasoning_effort.as_deref(),
+                        &snapshot.message_id,
+                        self.project_root.as_deref(),
+                        permissions,
+                        request_id,
+                        snapshot,
+                        events,
+                        cancellation,
+                        storage,
+                        run_id,
+                        self,
+                        user_questions,
+                    )
+                    .await
+                } else if let Some(ImageGenerationContext::LocalEndpoint {
+                    service,
+                    api_key,
+                    provider_id,
+                    endpoint,
+                    model_id,
+                    reasoning_effort,
+                }) = image_generation
+                {
+                    crate::chatgpt::subagents::run_child_analysis_compatible_endpoint(
+                        service,
+                        *api_key,
+                        provider_id,
+                        endpoint,
+                        call,
+                        task,
+                        context.as_deref(),
+                        model_id,
+                        reasoning_effort.as_deref(),
+                        &snapshot.message_id,
+                        self.project_root.as_deref(),
+                        permissions,
+                        request_id,
+                        snapshot,
+                        events,
+                        cancellation,
+                        storage,
+                        run_id,
+                        self,
+                        user_questions,
+                    )
+                    .await
                 } else {
                     json!({"error": {"code": "subagent_unavailable", "message": "Delegated analysis is unavailable for this provider route."}})
                 }
@@ -820,12 +914,19 @@ impl ToolExecutor {
                 false,
             ));
         };
-        let target = format!("MCP server {server_id}");
-        let server_rule = mcp_server_permission_rule(&self.permission_rules, server_id);
-        if server_rule == ToolPermissionRule::Deny {
+        let Some(tool_name) = registry.tool_name_for_tool(&call.name) else {
+            return Err(ServiceError::new(
+                "invalid_provider_response",
+                "The provider requested an MCP tool that is not active for this request.",
+                false,
+            ));
+        };
+        let target = format!("MCP server {server_id}, tool {tool_name}");
+        let tool_rule = mcp_tool_permission_rule(&self.permission_rules, server_id, tool_name);
+        if tool_rule == ToolPermissionRule::Deny {
             let output = tool_error(
                 "permission_denied",
-                "This MCP server is denied by the project's permission rules.",
+                "This MCP tool is denied by the project's permission rules.",
             );
             self.emit_activity(
                 storage,
@@ -840,7 +941,7 @@ impl ToolExecutor {
                 output,
             });
         }
-        if server_rule != ToolPermissionRule::Allow {
+        if tool_rule != ToolPermissionRule::Allow {
             self.emit_activity(
                 storage,
                 ToolActivity::awaiting_approval(call, target.clone()),
@@ -1109,6 +1210,16 @@ impl ToolExecutor {
                     )
                     .await
             }
+            ImageGenerationContext::CompatibleApiKey { .. } => Err(ServiceError::new(
+                "image_generation_unavailable",
+                "Image generation is unavailable for this provider route.",
+                false,
+            )),
+            ImageGenerationContext::LocalEndpoint { .. } => Err(ServiceError::new(
+                "image_generation_unavailable",
+                "Image generation is unavailable for this local route.",
+                false,
+            )),
         };
         let result = match result {
             Ok(result) => result,
@@ -1477,12 +1588,25 @@ mod policy_tests {
 
         #[cfg(windows)]
         {
-            let mcp = json!({"mcp__local_docs__*": "allow"});
+            let mcp = json!({
+                "mcp__local_docs__*": "allow",
+                "mcp__local_docs__read-file": "deny"
+            });
             let rules = parse_tool_permission_rules(Some(&mcp)).expect("valid MCP rule");
             assert_eq!(rules["mcp__local_docs__*"], ToolPermissionRule::Allow);
+            assert_eq!(
+                rules["mcp__local_docs__read-file"],
+                ToolPermissionRule::Deny
+            );
             assert!(
                 parse_tool_permission_rules(Some(&json!({
                     "mcp__Invalid__*": "allow"
+                })))
+                .is_err()
+            );
+            assert!(
+                parse_tool_permission_rules(Some(&json!({
+                    "mcp__local_docs__read/file": "allow"
                 })))
                 .is_err()
             );
@@ -1506,6 +1630,45 @@ mod policy_tests {
 
     #[cfg(windows)]
     #[test]
+    fn permission_rule_parser_accepts_the_full_mcp_tool_limit_and_rejects_more() {
+        let mut rules = serde_json::Map::new();
+        for server in 0..8 {
+            rules.insert(format!("mcp__server_{server}__*"), json!("ask"));
+            for tool in 0..128 {
+                rules.insert(format!("mcp__server_{server}__tool_{tool}"), json!("deny"));
+            }
+        }
+        for tool in [
+            "list_files",
+            "search_files",
+            "read_file",
+            "write_file",
+            "edit_file",
+            "get_file_info",
+            "execute_command",
+            "send_terminal_input",
+            "git_status",
+            "git_diff",
+            "git_history",
+            "web_search",
+            "read_url_content",
+            "delegate_task",
+            "run_project_task",
+        ] {
+            rules.insert(tool.to_owned(), json!("ask"));
+        }
+        rules.insert("mcp__legacy_server__*".to_owned(), json!("allow"));
+        assert_eq!(rules.len(), super::MAX_TOOL_PERMISSION_RULES);
+        assert!(
+            parse_tool_permission_rules(Some(&serde_json::Value::Object(rules.clone()))).is_ok()
+        );
+
+        rules.insert("mcp__overflow_server__*".to_owned(), json!("allow"));
+        assert!(parse_tool_permission_rules(Some(&serde_json::Value::Object(rules))).is_err());
+    }
+
+    #[cfg(windows)]
+    #[test]
     fn mcp_server_permission_defaults_to_ask_and_uses_local_project_override() {
         let mut rules = ToolPermissionRules::new();
         assert_eq!(
@@ -1520,6 +1683,27 @@ mod policy_tests {
         );
         assert_eq!(
             super::mcp_server_permission_rule(&rules, "remote_docs"),
+            ToolPermissionRule::Deny
+        );
+        assert_eq!(
+            super::mcp_tool_permission_rule(&rules, "local_docs", "read-file"),
+            ToolPermissionRule::Allow
+        );
+        rules.insert(
+            "mcp__local_docs__read-file".to_owned(),
+            ToolPermissionRule::Deny,
+        );
+        assert_eq!(
+            super::mcp_tool_permission_rule(&rules, "local_docs", "read-file"),
+            ToolPermissionRule::Deny
+        );
+        assert_eq!(
+            super::mcp_tool_permission_rule(&rules, "local_docs", "write-file"),
+            ToolPermissionRule::Allow
+        );
+        rules.insert("mcp__local_docs__*".to_owned(), ToolPermissionRule::Deny);
+        assert_eq!(
+            super::mcp_tool_permission_rule(&rules, "local_docs", "write-file"),
             ToolPermissionRule::Deny
         );
     }

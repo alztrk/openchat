@@ -12,7 +12,10 @@ use rmcp::{
     RoleClient, ServiceExt,
     model::{CallToolRequestParams, CallToolResult, Tool},
     service::RunningService,
-    transport::{Transport, async_rw::AsyncRwTransport},
+    transport::{
+        StreamableHttpClientTransport, Transport, async_rw::AsyncRwTransport,
+        streamable_http_client::StreamableHttpClientTransportConfig,
+    },
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -44,6 +47,10 @@ pub(crate) struct StdioServerConfig {
     pub(crate) enabled: bool,
     pub(crate) program: PathBuf,
     pub(crate) arguments: Vec<OsString>,
+    pub(crate) environment_variables: Vec<String>,
+    pub(crate) endpoint: Option<url::Url>,
+    pub(crate) auth_environment_variable: Option<String>,
+    pub(crate) project_id: String,
     pub(crate) working_directory: PathBuf,
 }
 
@@ -68,9 +75,22 @@ pub(crate) fn filter_denied_servers(
 struct StdioServerSettings {
     id: String,
     enabled: bool,
-    program: String,
+    #[serde(default = "stdio_transport")]
+    transport: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    program: Option<String>,
     #[serde(default)]
     arguments: Vec<String>,
+    #[serde(default)]
+    environment_variables: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    endpoint: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    auth_environment_variable: Option<String>,
+}
+
+fn stdio_transport() -> String {
+    "stdio".to_owned()
 }
 
 #[derive(Deserialize, Serialize)]
@@ -96,12 +116,13 @@ fn parse_server_configs(
                 false,
             )
         })?;
-    parse_server_settings(settings, working_directory)
+    parse_server_settings(settings, working_directory, "test-project")
 }
 
 fn parse_server_settings(
     settings: Vec<StdioServerSettings>,
     working_directory: &Path,
+    project_id: &str,
 ) -> Result<Vec<StdioServerConfig>, crate::protocol::ServiceError> {
     if settings.len() > MAX_MCP_SERVERS_PER_REQUEST {
         return Err(invalid_mcp_servers());
@@ -110,52 +131,126 @@ fn parse_server_settings(
     let mut seen_ids = HashSet::with_capacity(settings.len());
     let mut servers = Vec::with_capacity(settings.len());
     for setting in settings {
-        if !valid_server_id(&setting.id)
-            || !seen_ids.insert(setting.id.clone())
-            || setting.program.is_empty()
-            || setting.program.len() > 4096
-            || setting.program.contains('\0')
-            || !Path::new(&setting.program).is_absolute()
-            || setting.arguments.len() > MAX_MCP_ARGUMENTS_PER_SERVER
-        {
+        if !valid_server_id(&setting.id) || !seen_ids.insert(setting.id.clone()) {
             return Err(invalid_mcp_servers());
         }
-        let arguments_within_limit = setting
-            .arguments
-            .iter()
-            .try_fold(0usize, |total, argument| {
-                (!argument.contains('\0')).then(|| total.saturating_add(argument.len()))
-            })
-            .is_some_and(|total| total <= MAX_MCP_ARGUMENT_BYTES_PER_SERVER);
-        if !arguments_within_limit {
-            return Err(invalid_mcp_servers());
-        }
+        let (program, endpoint, auth_environment_variable) = match setting.transport.as_str() {
+            "stdio" => {
+                let program = setting
+                    .program
+                    .as_deref()
+                    .filter(|program| {
+                        !program.is_empty()
+                            && program.len() <= 4096
+                            && !program.contains('\0')
+                            && Path::new(program).is_absolute()
+                    })
+                    .ok_or_else(invalid_mcp_servers)?;
+                if setting.endpoint.is_some() || setting.auth_environment_variable.is_some() {
+                    return Err(invalid_mcp_servers());
+                }
+                validate_stdio_settings(&setting)?;
+                (PathBuf::from(program), None, None)
+            }
+            "streamableHttp" => {
+                if setting.program.is_some()
+                    || !setting.arguments.is_empty()
+                    || !setting.environment_variables.is_empty()
+                {
+                    return Err(invalid_mcp_servers());
+                }
+                let endpoint = setting
+                    .endpoint
+                    .as_deref()
+                    .ok_or_else(invalid_mcp_servers)?;
+                let endpoint =
+                    validate_remote_endpoint(endpoint).map_err(|_| invalid_mcp_servers())?;
+                if setting
+                    .auth_environment_variable
+                    .as_deref()
+                    .is_some_and(|name| !crate::credentials::is_valid_environment_name(name))
+                {
+                    return Err(invalid_mcp_servers());
+                }
+                (
+                    PathBuf::new(),
+                    Some(endpoint),
+                    setting.auth_environment_variable,
+                )
+            }
+            _ => return Err(invalid_mcp_servers()),
+        };
         servers.push(StdioServerConfig {
             id: setting.id,
             enabled: setting.enabled,
-            program: PathBuf::from(setting.program),
+            program,
             arguments: setting.arguments.into_iter().map(OsString::from).collect(),
+            environment_variables: setting.environment_variables,
+            endpoint,
+            auth_environment_variable,
+            project_id: project_id.to_owned(),
             working_directory: working_directory.to_path_buf(),
         });
     }
     Ok(servers)
 }
 
+fn validate_stdio_settings(
+    setting: &StdioServerSettings,
+) -> Result<(), crate::protocol::ServiceError> {
+    if setting.arguments.len() > MAX_MCP_ARGUMENTS_PER_SERVER
+        || setting.environment_variables.len() > 32
+    {
+        return Err(invalid_mcp_servers());
+    }
+    let arguments_within_limit = setting
+        .arguments
+        .iter()
+        .try_fold(0usize, |total, argument| {
+            (!argument.contains('\0')).then(|| total.saturating_add(argument.len()))
+        })
+        .is_some_and(|total| total <= MAX_MCP_ARGUMENT_BYTES_PER_SERVER);
+    if !arguments_within_limit {
+        return Err(invalid_mcp_servers());
+    }
+    let mut environment_names = HashSet::with_capacity(setting.environment_variables.len());
+    if setting.environment_variables.iter().any(|name| {
+        !crate::credentials::is_valid_environment_name(name)
+            || !environment_names.insert(name.clone())
+    }) {
+        return Err(invalid_mcp_servers());
+    }
+    Ok(())
+}
+
+fn validate_remote_endpoint(value: &str) -> Result<url::Url, String> {
+    let endpoint =
+        url::Url::parse(value).map_err(|_| "The remote MCP endpoint URL is invalid.".to_owned())?;
+    if endpoint.scheme() != "https" || endpoint.query().is_some() || endpoint.fragment().is_some() {
+        return Err(
+            "Remote MCP endpoints must use HTTPS without query or fragment data.".to_owned(),
+        );
+    }
+    crate::tools::web_search::url_fetch::validate_http_url(endpoint)
+}
+
 pub(crate) fn load_server_configs(
     project_root: &Path,
+    project_id: &str,
 ) -> Result<Vec<StdioServerConfig>, crate::protocol::ServiceError> {
     let (root, catalog) = read_server_catalog(project_root)?;
-    parse_server_settings(catalog.servers, &root)
+    parse_server_settings(catalog.servers, &root, project_id)
 }
 
 pub(crate) fn parse_server_config(
     project_root: &Path,
+    project_id: &str,
     value: &Value,
 ) -> Result<StdioServerConfig, crate::protocol::ServiceError> {
     let root = fs::canonicalize(project_root).map_err(|_| invalid_mcp_servers())?;
     let setting: StdioServerSettings =
         serde_json::from_value(value.clone()).map_err(|_| invalid_mcp_servers())?;
-    parse_server_settings(vec![setting], &root)?
+    parse_server_settings(vec![setting], &root, project_id)?
         .into_iter()
         .next()
         .ok_or_else(invalid_mcp_servers)
@@ -176,7 +271,7 @@ pub(crate) fn save_server_catalog(
     if catalog.version != 1 {
         return Err(invalid_mcp_servers());
     }
-    parse_server_settings(catalog.servers.clone(), &root)?;
+    parse_server_settings(catalog.servers.clone(), &root, "validation")?;
 
     let directory = root.join(MCP_CATALOG_DIRECTORY);
     match fs::symlink_metadata(&directory) {
@@ -334,7 +429,7 @@ fn read_server_catalog(
     if catalog.version != 1 {
         return Err(invalid_mcp_servers());
     }
-    parse_server_settings(catalog.servers.clone(), &root)?;
+    parse_server_settings(catalog.servers.clone(), &root, "validation")?;
     Ok((root, catalog))
 }
 
@@ -352,7 +447,7 @@ pub(crate) struct McpToolRoute {
 }
 
 pub(crate) struct McpRegistry {
-    clients: HashMap<String, StdioClient>,
+    clients: HashMap<String, McpClient>,
     definitions: Vec<ToolDefinition>,
     routes: HashMap<String, McpToolRoute>,
 }
@@ -372,7 +467,7 @@ impl McpRegistry {
                     "The configured MCP server identifiers are invalid or duplicated.".to_owned(),
                 );
             }
-            let client = StdioClient::connect(&config).await?;
+            let client = McpClient::connect(&config).await?;
             let tools = client.list_tools().await?;
             let (server_definitions, server_routes) = tool_definitions(&config.id, tools)?;
             if definitions.len().saturating_add(server_definitions.len())
@@ -403,10 +498,25 @@ impl McpRegistry {
         &self.definitions
     }
 
+    pub(crate) fn tool_names_for_server(&self, server_id: &str) -> Vec<String> {
+        let prefix = format!("mcp__{server_id}__");
+        self.definitions
+            .iter()
+            .filter_map(|tool| tool.name.strip_prefix(&prefix))
+            .map(str::to_owned)
+            .collect()
+    }
+
     pub(crate) fn server_id_for_tool(&self, provider_tool_name: &str) -> Option<&str> {
         self.routes
             .get(provider_tool_name)
             .map(|route| route.server_id.as_str())
+    }
+
+    pub(crate) fn tool_name_for_tool(&self, provider_tool_name: &str) -> Option<&str> {
+        self.routes
+            .get(provider_tool_name)
+            .map(|route| route.tool_name.as_str())
     }
 
     pub(crate) async fn call_tool(
@@ -509,19 +619,76 @@ pub(crate) fn valid_tool_name(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
-pub(crate) struct StdioClient {
+pub(crate) fn valid_permission_rule_suffix(value: &str) -> bool {
+    if value.len().saturating_add("mcp__".len()) > MAX_PROVIDER_TOOL_NAME_BYTES {
+        return false;
+    }
+    if let Some(server_id) = value.strip_suffix("__*") {
+        return valid_server_id(server_id);
+    }
+    value.match_indices("__").any(|(separator, _)| {
+        valid_server_id(&value[..separator]) && valid_tool_name(&value[separator + 2..])
+    })
+}
+
+pub(crate) struct McpClient {
     service: RunningService<RoleClient, ()>,
 }
 
-impl StdioClient {
+impl McpClient {
     pub(crate) async fn connect(config: &StdioServerConfig) -> Result<Self, String> {
-        let transport = SandboxedStdioTransport::spawn(config)?;
-        let service = timeout(MCP_STARTUP_TIMEOUT, ().serve(transport))
-            .await
-            .map_err(|_| {
-                "The MCP server did not initialize before the startup timeout.".to_owned()
-            })?
-            .map_err(|_| "The MCP server could not complete protocol initialization.".to_owned())?;
+        let service = if let Some(endpoint) = &config.endpoint {
+            let client =
+                crate::tools::web_search::url_fetch::pinned_public_http_client(endpoint, None)
+                    .await
+                    .map_err(|_| {
+                        "The remote MCP endpoint could not be reached safely.".to_owned()
+                    })?;
+            let auth_token = if let Some(name) = &config.auth_environment_variable {
+                let reference = crate::credentials::McpCredentialReference::new(
+                    config.project_id.clone(),
+                    config.id.clone(),
+                    name.clone(),
+                )
+                .map_err(|_| "The remote MCP credential name is invalid.".to_owned())?;
+                let secret = crate::credentials::CredentialStore
+                    .load_mcp_secret(&reference)
+                    .map_err(|_| "The remote MCP credential is unavailable.".to_owned())?;
+                Some(secret)
+            } else {
+                None
+            };
+            start_streamable_http_service(endpoint, client, auth_token).await?
+        } else {
+            let credentials = crate::credentials::CredentialStore;
+            let environment = config
+                .environment_variables
+                .iter()
+                .map(|name| {
+                    let reference = crate::credentials::McpCredentialReference::new(
+                        config.project_id.clone(),
+                        config.id.clone(),
+                        name.clone(),
+                    )
+                    .map_err(|_| "An MCP environment variable name is invalid.".to_owned())?;
+                    let secret = credentials.load_mcp_secret(&reference).map_err(|_| {
+                        format!(
+                            "The MCP credential for environment variable {name} is unavailable."
+                        )
+                    })?;
+                    Ok((name.clone(), secret))
+                })
+                .collect::<Result<Vec<_>, String>>()?;
+            let transport = SandboxedStdioTransport::spawn(config, &environment)?;
+            timeout(MCP_STARTUP_TIMEOUT, ().serve(transport))
+                .await
+                .map_err(|_| {
+                    "The MCP server did not initialize before the startup timeout.".to_owned()
+                })?
+                .map_err(|_| {
+                    "The MCP server could not complete protocol initialization.".to_owned()
+                })?
+        };
         Ok(Self { service })
     }
 
@@ -568,17 +735,40 @@ impl StdioClient {
     }
 }
 
+async fn start_streamable_http_service(
+    endpoint: &url::Url,
+    client: reqwest::Client,
+    auth_token: Option<zeroize::Zeroizing<String>>,
+) -> Result<RunningService<RoleClient, ()>, String> {
+    let mut transport_config = StreamableHttpClientTransportConfig::with_uri(endpoint.as_str())
+        .max_sse_event_size(MAX_MCP_RESULT_BYTES);
+    if let Some(auth_token) = auth_token {
+        transport_config.auth_header = Some(auth_token.to_string());
+    }
+    let transport = StreamableHttpClientTransport::with_client(client, transport_config);
+    timeout(MCP_STARTUP_TIMEOUT, ().serve(transport))
+        .await
+        .map_err(|_| {
+            "The remote MCP server did not initialize before the startup timeout.".to_owned()
+        })?
+        .map_err(|_| "The remote MCP server could not complete protocol initialization.".to_owned())
+}
+
 struct SandboxedStdioTransport {
     transport: AsyncRwTransport<RoleClient, File, File>,
     process: SandboxedProcess,
 }
 
 impl SandboxedStdioTransport {
-    fn spawn(config: &StdioServerConfig) -> Result<Self, String> {
-        let mut process = SandboxedProcess::spawn_program(
+    fn spawn(
+        config: &StdioServerConfig,
+        environment: &[(String, zeroize::Zeroizing<String>)],
+    ) -> Result<Self, String> {
+        let mut process = SandboxedProcess::spawn_program_with_environment(
             &config.program,
             &config.arguments,
             &config.working_directory,
+            environment,
         )
         .map_err(|_| {
             "The MCP server could not start inside the Windows AppContainer.".to_owned()
@@ -632,12 +822,21 @@ impl Transport<RoleClient> for SandboxedStdioTransport {
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_MCP_ARGUMENTS_PER_SERVER, load_server_configs, parse_server_config,
-        parse_server_configs, save_server_catalog, server_catalog, tool_definitions,
+        MAX_MCP_ARGUMENTS_PER_SERVER, McpRegistry, load_server_configs, parse_server_config,
+        parse_server_configs, save_server_catalog, server_catalog, start_streamable_http_service,
+        tool_definitions, valid_permission_rule_suffix,
     };
     use rmcp::model::Tool;
+    use serde_json::{Value, json};
     use std::collections::HashMap;
-    use std::path::{Path, PathBuf};
+    use std::{
+        path::{Path, PathBuf},
+        time::Duration,
+    };
+    use tokio::{
+        io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+        net::TcpListener,
+    };
 
     fn tool(name: &str) -> Tool {
         serde_json::from_value(serde_json::json!({
@@ -692,7 +891,8 @@ mod tests {
                 "id": "local_docs",
                 "enabled": true,
                 "program": r"C:\tools\mcp-server.exe",
-                "arguments": ["--mode", "read-only"]
+                "arguments": ["--mode", "read-only"],
+                "environmentVariables": ["API_TOKEN", "_PRIVATE_KEY"]
             },
             {
                 "id": "disabled_server",
@@ -706,6 +906,11 @@ mod tests {
         assert_eq!(parsed.len(), 2);
         assert!(parsed[0].enabled);
         assert_eq!(parsed[0].arguments.len(), 2);
+        assert_eq!(
+            parsed[0].environment_variables,
+            ["API_TOKEN", "_PRIVATE_KEY"]
+        );
+        assert_eq!(parsed[0].project_id, "test-project");
         assert!(!parsed[1].enabled);
         assert_eq!(parsed[0].working_directory, working_directory);
         assert!(
@@ -713,6 +918,121 @@ mod tests {
                 .expect("missing settings disable MCP")
                 .is_empty()
         );
+        assert!(
+            parse_server_configs(
+                Some(&serde_json::json!([{
+                    "id": "invalid_environment",
+                    "enabled": true,
+                    "program": r"C:\tools\mcp-server.exe",
+                    "environmentVariables": ["PATH"]
+                }])),
+                working_directory,
+            )
+            .is_err()
+        );
+        assert!(
+            parse_server_configs(
+                Some(&serde_json::json!([{
+                    "id": "duplicate_environment",
+                    "enabled": true,
+                    "program": r"C:\tools\mcp-server.exe",
+                    "environmentVariables": ["API_TOKEN", "API_TOKEN"]
+                }])),
+                working_directory,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn validates_remote_streamable_http_endpoints_and_secure_credential_names() {
+        let root = Path::new(r"C:\workspace");
+        let config = parse_server_configs(
+            Some(&serde_json::json!([{
+                "id": "remote_docs",
+                "enabled": true,
+                "transport": "streamableHttp",
+                "endpoint": "https://mcp.example.org/v1",
+                "authEnvironmentVariable": "MCP_TOKEN"
+            }])),
+            root,
+        )
+        .expect("valid remote MCP config");
+        assert_eq!(
+            config[0].endpoint.as_ref().map(url::Url::as_str),
+            Some("https://mcp.example.org/v1")
+        );
+        assert_eq!(
+            config[0].auth_environment_variable.as_deref(),
+            Some("MCP_TOKEN")
+        );
+
+        for endpoint in [
+            "http://mcp.example.org/v1",
+            "https://127.0.0.1/mcp",
+            "https://mcp.example.org/mcp?token=private",
+            "https://user:password@mcp.example.org/mcp",
+        ] {
+            assert!(
+                parse_server_configs(
+                    Some(&serde_json::json!([{
+                        "id": "remote_docs",
+                        "enabled": true,
+                        "transport": "streamableHttp",
+                        "endpoint": endpoint
+                    }])),
+                    root,
+                )
+                .is_err(),
+                "accepted unsafe endpoint {endpoint}"
+            );
+        }
+        assert!(
+            parse_server_configs(
+                Some(&serde_json::json!([{
+                    "id": "remote_docs",
+                    "enabled": true,
+                    "transport": "streamableHttp",
+                    "endpoint": "https://mcp.example.org/mcp",
+                    "authEnvironmentVariable": "PATH"
+                }])),
+                root,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn validates_per_tool_permission_namespaces() {
+        assert!(valid_permission_rule_suffix("local_docs__*"));
+        assert!(valid_permission_rule_suffix("local__docs__read-file"));
+        assert!(!valid_permission_rule_suffix("local_docs__read/file"));
+        assert!(!valid_permission_rule_suffix("Invalid__read"));
+        assert!(!valid_permission_rule_suffix("local_docs__"));
+    }
+
+    #[test]
+    fn registry_lists_only_the_selected_server_tool_names() {
+        let (first_definitions, first_routes) =
+            tool_definitions("local_docs", vec![tool("read-file"), tool("search")])
+                .expect("valid local tool catalog");
+        let (second_definitions, second_routes) =
+            tool_definitions("other_docs", vec![tool("open")]).expect("valid other tool catalog");
+        let mut definitions = first_definitions;
+        definitions.extend(second_definitions);
+        let mut routes = first_routes;
+        routes.extend(second_routes);
+        let registry = McpRegistry {
+            clients: HashMap::new(),
+            definitions,
+            routes,
+        };
+
+        assert_eq!(
+            registry.tool_names_for_server("local_docs"),
+            vec!["read-file", "search"]
+        );
+        assert_eq!(registry.tool_names_for_server("other_docs"), vec!["open"]);
     }
 
     #[test]
@@ -744,6 +1064,7 @@ mod tests {
             .into_owned();
         let config = parse_server_config(
             &project,
+            "project-id",
             &serde_json::json!({
                 "id": "unsaved_server",
                 "enabled": true,
@@ -762,6 +1083,7 @@ mod tests {
         assert!(
             parse_server_config(
                 &project,
+                "project-id",
                 &serde_json::json!({
                     "id": "invalid_server",
                     "enabled": true,
@@ -789,6 +1111,126 @@ mod tests {
             .await
             .expect("disabled servers should not be started");
         assert!(registry.is_none());
+    }
+
+    #[tokio::test]
+    async fn streamable_http_client_negotiates_lists_tools_and_sends_bearer_auth() {
+        let listener = TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .expect("bind local MCP fixture");
+        let address = listener.local_addr().expect("read fixture address");
+        let server = tokio::spawn(async move {
+            let mut methods = Vec::new();
+            let mut auth_headers = Vec::new();
+            for _ in 0..3 {
+                let (stream, _) = listener.accept().await.expect("accept HTTP request");
+                let mut reader = BufReader::new(stream);
+                let mut request_line = String::new();
+                reader
+                    .read_line(&mut request_line)
+                    .await
+                    .expect("read request line");
+                let mut content_length = 0;
+                let mut authorization = None;
+                loop {
+                    let mut header = String::new();
+                    reader
+                        .read_line(&mut header)
+                        .await
+                        .expect("read HTTP header");
+                    if header == "\r\n" {
+                        break;
+                    }
+                    if let Some((name, value)) = header.split_once(':') {
+                        if name.eq_ignore_ascii_case("content-length") {
+                            content_length = value.trim().parse::<usize>().expect("valid length");
+                        }
+                        if name.eq_ignore_ascii_case("authorization") {
+                            authorization = Some(value.trim().to_owned());
+                        }
+                    }
+                }
+                let mut body = vec![0; content_length];
+                reader
+                    .read_exact(&mut body)
+                    .await
+                    .expect("read JSON-RPC body");
+                let request: Value = serde_json::from_slice(&body).expect("valid JSON-RPC body");
+                let method = request["method"].as_str().expect("request method");
+                methods.push(method.to_owned());
+                auth_headers.push(authorization);
+                let response = match method {
+                    "initialize" => Some(json!({
+                        "jsonrpc": "2.0",
+                        "id": request["id"],
+                        "result": {
+                            "protocolVersion": "2025-06-18",
+                            "capabilities": {"tools": {}},
+                            "serverInfo": {"name": "fixture", "version": "1"}
+                        }
+                    })),
+                    "tools/list" => Some(json!({
+                        "jsonrpc": "2.0",
+                        "id": request["id"],
+                        "result": {
+                            "tools": [{
+                                "name": "lookup",
+                                "description": "Read one fixture value.",
+                                "inputSchema": {"type": "object", "properties": {}}
+                            }]
+                        }
+                    })),
+                    "notifications/initialized" => None,
+                    other => panic!("unexpected MCP request {other}"),
+                };
+                let body = response.map(|value| value.to_string()).unwrap_or_default();
+                let status = if body.is_empty() {
+                    "202 Accepted"
+                } else {
+                    "200 OK"
+                };
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                reader
+                    .get_mut()
+                    .write_all(response.as_bytes())
+                    .await
+                    .expect("write HTTP response");
+            }
+            (methods, auth_headers)
+        });
+
+        let endpoint =
+            url::Url::parse(&format!("http://{address}/mcp")).expect("valid local fixture URL");
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .expect("build fixture HTTP client");
+        let service = start_streamable_http_service(
+            &endpoint,
+            client,
+            Some(zeroize::Zeroizing::new("fixture-token".to_owned())),
+        )
+        .await
+        .expect("initialize streamable HTTP MCP connection");
+        let tools = tokio::time::timeout(Duration::from_secs(5), service.peer().list_all_tools())
+            .await
+            .expect("list tools before the timeout")
+            .expect("valid tools response");
+        assert_eq!(tools.len(), 1);
+        assert_eq!(tools[0].name.as_ref(), "lookup");
+
+        let (methods, auth_headers) = server.await.expect("fixture server completes");
+        assert!(methods.contains(&"initialize".to_owned()));
+        assert!(methods.contains(&"notifications/initialized".to_owned()));
+        assert!(methods.contains(&"tools/list".to_owned()));
+        assert!(
+            auth_headers
+                .iter()
+                .all(|value| { value.as_deref() == Some("Bearer fixture-token") })
+        );
     }
 
     #[test]
@@ -833,7 +1275,7 @@ mod tests {
         );
         std::fs::create_dir(&project.0).expect("create temporary project");
         assert!(
-            load_server_configs(&project.0)
+            load_server_configs(&project.0, "project-id")
                 .expect("missing catalog disables MCP")
                 .is_empty()
         );
@@ -854,7 +1296,7 @@ mod tests {
         )
         .expect("write catalog");
 
-        let configs = load_server_configs(&project.0).expect("load project catalog");
+        let configs = load_server_configs(&project.0, "project-id").expect("load project catalog");
         assert_eq!(configs.len(), 1);
         assert!(!configs[0].enabled);
         assert_eq!(
@@ -864,7 +1306,7 @@ mod tests {
 
         std::fs::write(catalog_directory.join("mcp.json"), b"{invalid")
             .expect("replace catalog with invalid data");
-        assert!(load_server_configs(&project.0).is_err());
+        assert!(load_server_configs(&project.0, "project-id").is_err());
     }
 
     #[test]
@@ -894,8 +1336,10 @@ mod tests {
             "servers": [{
                 "id": "local_docs",
                 "enabled": false,
+                "transport": "stdio",
                 "program": program.clone(),
-                "arguments": ["--read-only"]
+                "arguments": ["--read-only"],
+                "environmentVariables": []
             }]
         });
         save_server_catalog(&project.0, &catalog).expect("save valid catalog");
@@ -908,8 +1352,10 @@ mod tests {
             "servers": [{
                 "id": "local_docs",
                 "enabled": true,
+                "transport": "stdio",
                 "program": program.clone(),
-                "arguments": ["--updated"]
+                "arguments": ["--updated"],
+                "environmentVariables": []
             }]
         });
         save_server_catalog(&project.0, &updated_catalog).expect("replace valid catalog");

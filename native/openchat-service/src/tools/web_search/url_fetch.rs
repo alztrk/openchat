@@ -27,7 +27,7 @@ pub(super) async fn fetch_public_page(
     let mut url = validate_http_url(original_url)?;
 
     for redirect_number in 0..=MAX_REDIRECTS {
-        let client = pinned_client(&url).await?;
+        let client = pinned_public_http_client(&url, Some(REQUEST_TIMEOUT)).await?;
         let response = client
             .get(url.clone())
             .send()
@@ -69,7 +69,7 @@ pub(super) async fn fetch_public_page(
     Err("The requested web page could not be reached.".to_owned())
 }
 
-pub(super) fn validate_http_url(url: Url) -> Result<Url, String> {
+pub(crate) fn validate_http_url(url: Url) -> Result<Url, String> {
     if !matches!(url.scheme(), "http" | "https") {
         return Err("Only http and https protocols are supported.".to_owned());
     }
@@ -117,7 +117,10 @@ fn redirect_url(current_url: &Url, location: &str) -> Result<Url, String> {
     validate_http_url(target)
 }
 
-async fn pinned_client(url: &Url) -> Result<Client, String> {
+pub(crate) async fn pinned_public_http_client(
+    url: &Url,
+    request_timeout: Option<Duration>,
+) -> Result<Client, String> {
     let host = url
         .host()
         .ok_or_else(|| "The URL must include a host name.".to_owned())?;
@@ -152,8 +155,10 @@ async fn pinned_client(url: &Url) -> Result<Client, String> {
     let mut builder = Client::builder()
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(CONNECT_TIMEOUT)
-        .timeout(REQUEST_TIMEOUT);
+        .connect_timeout(CONNECT_TIMEOUT);
+    if let Some(request_timeout) = request_timeout {
+        builder = builder.timeout(request_timeout);
+    }
     if let Host::Domain(domain) = host {
         builder = builder.resolve_to_addrs(domain, &addresses);
     }

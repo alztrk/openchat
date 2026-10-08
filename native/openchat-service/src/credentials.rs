@@ -9,8 +9,10 @@ use serde::Deserialize;
 use zeroize::Zeroizing;
 
 const CREDENTIAL_SERVICE: &str = "OpenChat.ChatGPT.OAuth";
+const MCP_CREDENTIAL_SERVICE: &str = "OpenChat.MCP";
 const MAX_CREDENTIAL_BYTES: usize = 2560;
 const MAX_REFERENCE_PART_BYTES: usize = 128;
+const MAX_MCP_SECRET_BYTES: usize = 2500;
 static OPERATION_LOCK: Mutex<()> = Mutex::new(());
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -47,6 +49,81 @@ impl OAuthCredentialReference {
     pub fn generation_id(&self) -> &str {
         &self.generation_id
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpCredentialReference {
+    project_id: String,
+    server_id: String,
+    environment_name: String,
+}
+
+impl McpCredentialReference {
+    pub fn new(
+        project_id: impl Into<String>,
+        server_id: impl Into<String>,
+        environment_name: impl Into<String>,
+    ) -> Result<Self, CredentialStoreError> {
+        let project_id = project_id.into();
+        let server_id = server_id.into();
+        let environment_name = environment_name.into();
+        if project_id.is_empty()
+            || project_id.len() > 256
+            || project_id.chars().any(char::is_control)
+            || !is_valid_mcp_reference_part(&server_id)
+            || !is_valid_environment_name(&environment_name)
+        {
+            return Err(CredentialStoreError::InvalidReference);
+        }
+        Ok(Self {
+            project_id,
+            server_id,
+            environment_name,
+        })
+    }
+
+    fn username(&self) -> String {
+        use sha2::{Digest, Sha256};
+
+        let mut digest = Sha256::new();
+        digest.update(self.project_id.as_bytes());
+        digest.update([0]);
+        digest.update(self.server_id.as_bytes());
+        digest.update([0]);
+        digest.update(self.environment_name.as_bytes());
+        format!("mcp:{}", URL_SAFE_NO_PAD.encode(digest.finalize()))
+    }
+}
+
+fn is_valid_mcp_reference_part(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 24
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+}
+
+pub(crate) fn is_valid_environment_name(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    let syntax_is_valid = bytes
+        .next()
+        .is_some_and(|byte| byte.is_ascii_alphabetic() || byte == b'_')
+        && bytes.all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        && value.len() <= 128;
+    syntax_is_valid
+        && !matches!(
+            value.to_ascii_uppercase().as_str(),
+            "PATH"
+                | "SYSTEMROOT"
+                | "WINDIR"
+                | "PATHEXT"
+                | "COMSPEC"
+                | "USERPROFILE"
+                | "APPDATA"
+                | "LOCALAPPDATA"
+                | "TEMP"
+                | "TMP"
+        )
 }
 
 pub struct OAuthTokenPair {
@@ -115,6 +192,64 @@ fn access_token_expiration(access_token: &str) -> Option<u64> {
 pub struct CredentialStore;
 
 impl CredentialStore {
+    pub fn store_mcp_secret(
+        &self,
+        reference: &McpCredentialReference,
+        secret: Zeroizing<String>,
+    ) -> Result<(), CredentialStoreError> {
+        if secret.is_empty() {
+            return Err(CredentialStoreError::EmptyToken);
+        }
+        if secret.len() > MAX_MCP_SECRET_BYTES || secret.contains('\0') {
+            return Err(CredentialStoreError::TokenTooLarge);
+        }
+        let _guard = OPERATION_LOCK
+            .lock()
+            .map_err(|_| CredentialStoreError::LockUnavailable)?;
+        mcp_entry(reference)?
+            .set_secret(secret.as_bytes())
+            .map_err(write_error)
+    }
+
+    pub fn load_mcp_secret(
+        &self,
+        reference: &McpCredentialReference,
+    ) -> Result<Zeroizing<String>, CredentialStoreError> {
+        let _guard = OPERATION_LOCK
+            .lock()
+            .map_err(|_| CredentialStoreError::LockUnavailable)?;
+        let secret = mcp_entry(reference)?
+            .get_secret()
+            .map_err(|error| match error {
+                KeyringError::NoEntry => CredentialStoreError::TokenPairMissing,
+                _ => CredentialStoreError::StorageReadFailed,
+            })?;
+        let secret = Zeroizing::new(secret);
+        let secret = std::str::from_utf8(secret.as_slice())
+            .map_err(|_| CredentialStoreError::InvalidStoredToken)?;
+        Ok(Zeroizing::new(secret.to_owned()))
+    }
+
+    pub fn has_mcp_secret(
+        &self,
+        reference: &McpCredentialReference,
+    ) -> Result<bool, CredentialStoreError> {
+        let _guard = OPERATION_LOCK
+            .lock()
+            .map_err(|_| CredentialStoreError::LockUnavailable)?;
+        credential_exists(&mcp_entry(reference)?)
+    }
+
+    pub fn delete_mcp_secret(
+        &self,
+        reference: &McpCredentialReference,
+    ) -> Result<(), CredentialStoreError> {
+        let _guard = OPERATION_LOCK
+            .lock()
+            .map_err(|_| CredentialStoreError::LockUnavailable)?;
+        delete_if_present(&mcp_entry(reference)?)
+    }
+
     pub fn store_new_token_pair(
         &self,
         reference: &OAuthCredentialReference,
@@ -179,6 +314,11 @@ impl CredentialStore {
         }
         Ok(())
     }
+}
+
+fn mcp_entry(reference: &McpCredentialReference) -> Result<Entry, CredentialStoreError> {
+    Entry::new(MCP_CREDENTIAL_SERVICE, &reference.username())
+        .map_err(|_| CredentialStoreError::StorageUnavailable)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -307,4 +447,70 @@ fn is_valid_reference_part(value: &str) -> bool {
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+}
+
+#[cfg(test)]
+mod mcp_credential_tests {
+    use super::{CredentialStore, McpCredentialReference, is_valid_environment_name};
+
+    #[test]
+    fn mcp_credentials_are_scoped_to_project_server_and_environment_name() {
+        let reference = McpCredentialReference::new("project-1", "private_api", "API_TOKEN")
+            .expect("valid credential reference");
+        let same_reference = McpCredentialReference::new("project-1", "private_api", "API_TOKEN")
+            .expect("valid credential reference");
+        let other_project = McpCredentialReference::new("project-2", "private_api", "API_TOKEN")
+            .expect("valid credential reference");
+        let other_server = McpCredentialReference::new("project-1", "other_server", "API_TOKEN")
+            .expect("valid credential reference");
+        let other_name = McpCredentialReference::new("project-1", "private_api", "OTHER_TOKEN")
+            .expect("valid credential reference");
+
+        assert_eq!(reference.username(), same_reference.username());
+        assert_ne!(reference.username(), other_project.username());
+        assert_ne!(reference.username(), other_server.username());
+        assert_ne!(reference.username(), other_name.username());
+        assert!(McpCredentialReference::new("project-1", "private-api", "API_TOKEN").is_err());
+        assert!(McpCredentialReference::new("project-1", "private_api", "1_TOKEN").is_err());
+    }
+
+    #[test]
+    fn mcp_environment_names_are_bounded_and_cannot_replace_sandbox_variables() {
+        assert!(is_valid_environment_name("API_TOKEN"));
+        assert!(is_valid_environment_name("_PRIVATE_KEY"));
+        assert!(!is_valid_environment_name("1_API_TOKEN"));
+        assert!(!is_valid_environment_name("API-TOKEN"));
+        assert!(!is_valid_environment_name("PATH"));
+        assert!(!is_valid_environment_name("systemroot"));
+        assert!(!is_valid_environment_name(&"A".repeat(129)));
+    }
+
+    #[test]
+    fn mcp_credential_store_round_trips_and_removes_a_secret() {
+        let reference = McpCredentialReference::new(
+            uuid::Uuid::new_v4().to_string(),
+            "credential_test",
+            "API_TOKEN",
+        )
+        .expect("valid credential reference");
+        let store = CredentialStore;
+        let secret = format!("test-{}", uuid::Uuid::new_v4());
+
+        assert!(!store.has_mcp_secret(&reference).expect("query credential"));
+        store
+            .store_mcp_secret(&reference, zeroize::Zeroizing::new(secret.clone()))
+            .expect("store credential");
+        assert!(store.has_mcp_secret(&reference).expect("query credential"));
+        assert_eq!(
+            store
+                .load_mcp_secret(&reference)
+                .expect("load credential")
+                .as_str(),
+            secret
+        );
+        store
+            .delete_mcp_secret(&reference)
+            .expect("remove credential");
+        assert!(!store.has_mcp_secret(&reference).expect("query credential"));
+    }
 }

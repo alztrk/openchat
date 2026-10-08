@@ -124,7 +124,8 @@ void main() {
 
     final citation = find.byWidgetPredicate(
       (widget) =>
-          widget is RichText && widget.text.toPlainText().contains('P1'),
+          widget is RichText &&
+          widget.text.toPlainText().contains('A sourced answer P1.'),
     );
     expect(citation, findsOneWidget);
     final richText = tester.widget<RichText>(citation);

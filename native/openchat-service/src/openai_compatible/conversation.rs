@@ -713,6 +713,29 @@ async fn stream_conversation(
                         model_id: &route.model_id,
                         reasoning_effort: provider_request.reasoning_effort.clone(),
                     })
+                } else if matches!(provider_id, "llama_cpp" | "vllm" | "exllama")
+                    && route.supports_tool_calls != Some(false)
+                {
+                    Some(crate::tools::ImageGenerationContext::LocalEndpoint {
+                        service: image_service,
+                        api_key: route.local_api_key.as_deref().map(|key| key.as_str()),
+                        provider_id,
+                        endpoint: &route.chat_url,
+                        model_id: &route.model_id,
+                        reasoning_effort: provider_request.reasoning_effort.clone(),
+                    })
+                } else if route.supports_tool_calls != Some(false)
+                    && let (Some(api_key), Some(provider)) =
+                        (api_key, super::api_compatible_provider(provider_id))
+                {
+                    Some(crate::tools::ImageGenerationContext::CompatibleApiKey {
+                        service: image_service,
+                        api_key,
+                        provider_id: provider.id,
+                        endpoint: &route.chat_url,
+                        model_id: &route.model_id,
+                        reasoning_effort: provider_request.reasoning_effort.clone(),
+                    })
                 } else {
                     None
                 },

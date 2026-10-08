@@ -54,6 +54,7 @@ use windows_sys::Win32::{
         },
     },
 };
+use zeroize::Zeroizing;
 
 const MAX_ACL_ENTRIES: usize = 20_000;
 const WAIT_INTERVAL: Duration = Duration::from_millis(25);
@@ -73,13 +74,23 @@ impl SandboxedProcess {
         let sandbox = AppContainerSandbox::create(workdir)?;
         let workdir = sandbox.working_directory.clone();
         let (application, arguments) = shell_invocation(command, &workdir);
-        Self::spawn_in_sandbox(sandbox, application, arguments, workdir)
+        Self::spawn_in_sandbox(sandbox, application, arguments, workdir, &[])
     }
 
+    #[cfg(test)]
     pub(crate) fn spawn_program(
         program: &Path,
         arguments: &[std::ffi::OsString],
         workdir: &Path,
+    ) -> io::Result<Self> {
+        Self::spawn_program_with_environment(program, arguments, workdir, &[])
+    }
+
+    pub(crate) fn spawn_program_with_environment(
+        program: &Path,
+        arguments: &[std::ffi::OsString],
+        workdir: &Path,
+        additional_environment: &[(String, Zeroizing<String>)],
     ) -> io::Result<Self> {
         let program = fs::canonicalize(program)?;
         if !program.is_file() {
@@ -90,7 +101,13 @@ impl SandboxedProcess {
         }
         let sandbox = AppContainerSandbox::create(workdir)?;
         let working_directory = sandbox.working_directory.clone();
-        Self::spawn_in_sandbox(sandbox, program, arguments.to_vec(), working_directory)
+        Self::spawn_in_sandbox(
+            sandbox,
+            program,
+            arguments.to_vec(),
+            working_directory,
+            additional_environment,
+        )
     }
 
     fn spawn_in_sandbox(
@@ -98,6 +115,7 @@ impl SandboxedProcess {
         application: PathBuf,
         arguments: Vec<std::ffi::OsString>,
         workdir: PathBuf,
+        additional_environment: &[(String, Zeroizing<String>)],
     ) -> io::Result<Self> {
         let security_attributes = SECURITY_ATTRIBUTES {
             nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
@@ -189,7 +207,8 @@ impl SandboxedProcess {
         let application_wide = wide(application.as_os_str());
         let mut command_line = wide_command_line(&application, &arguments);
         let workdir_wide = wide(workdir.as_os_str());
-        let mut environment = sandbox.environment_block(&workdir)?;
+        let mut environment =
+            Zeroizing::new(sandbox.environment_block(&workdir, additional_environment)?);
         let created = unsafe {
             CreateProcessW(
                 application_wide.as_ptr(),
@@ -423,7 +442,11 @@ impl AppContainerSandbox {
         Ok(sandbox)
     }
 
-    fn environment_block(&self, working_directory: &Path) -> io::Result<Vec<u16>> {
+    fn environment_block(
+        &self,
+        working_directory: &Path,
+        additional_environment: &[(String, Zeroizing<String>)],
+    ) -> io::Result<Vec<u16>> {
         let mut variables = BTreeMap::new();
         for (key, value) in std::env::vars_os() {
             let Some(key_text) = key.to_str() else {
@@ -440,7 +463,10 @@ impl AppContainerSandbox {
                     | "APPDATA"
                     | "LOCALAPPDATA"
             ) {
-                variables.insert(key_text.to_ascii_uppercase(), value);
+                variables.insert(
+                    key_text.to_ascii_uppercase(),
+                    Zeroizing::new(value.encode_wide().collect::<Vec<_>>()),
+                );
             }
         }
         let working_directory = shell_path(working_directory);
@@ -449,24 +475,69 @@ impl AppContainerSandbox {
         if let (Some(drive), Some(':')) = (drive_characters.next(), drive_characters.next()) {
             if drive.is_ascii_alphabetic() {
                 let drive = drive.to_ascii_uppercase();
-                variables.insert(format!("={drive}:"), working_directory.into_os_string());
+                variables.insert(
+                    format!("={drive}:"),
+                    Zeroizing::new(
+                        working_directory
+                            .as_os_str()
+                            .encode_wide()
+                            .collect::<Vec<_>>(),
+                    ),
+                );
             }
         }
         fs::create_dir_all(&self.temp_directory)?;
         variables.insert(
             "TEMP".to_owned(),
-            self.temp_directory.clone().into_os_string(),
+            Zeroizing::new(
+                self.temp_directory
+                    .as_os_str()
+                    .encode_wide()
+                    .collect::<Vec<_>>(),
+            ),
         );
         variables.insert(
             "TMP".to_owned(),
-            self.temp_directory.clone().into_os_string(),
+            Zeroizing::new(
+                self.temp_directory
+                    .as_os_str()
+                    .encode_wide()
+                    .collect::<Vec<_>>(),
+            ),
         );
+        for (key, value) in additional_environment {
+            let normalized_key = key.to_ascii_uppercase();
+            if !crate::credentials::is_valid_environment_name(key)
+                || matches!(
+                    normalized_key.as_str(),
+                    "PATH"
+                        | "SYSTEMROOT"
+                        | "WINDIR"
+                        | "PATHEXT"
+                        | "COMSPEC"
+                        | "USERPROFILE"
+                        | "APPDATA"
+                        | "LOCALAPPDATA"
+                        | "TEMP"
+                        | "TMP"
+                )
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "The sandbox environment variable name is invalid.",
+                ));
+            }
+            variables.insert(
+                normalized_key,
+                Zeroizing::new(value.encode_utf16().collect::<Vec<_>>()),
+            );
+        }
 
         let mut block = Vec::new();
         for (key, value) in variables {
             block.extend(std::ffi::OsStr::new(&key).encode_wide());
             block.push(b'=' as u16);
-            block.extend(value.encode_wide());
+            block.extend(value.iter().copied());
             block.push(0);
         }
         block.push(0);
@@ -857,7 +928,7 @@ unsafe fn wide_os_string(value: windows_sys::core::PWSTR) -> std::ffi::OsString 
 
 #[cfg(test)]
 mod tests {
-    use super::{SandboxedProcess, shell_invocation};
+    use super::{SandboxedProcess, Zeroizing, shell_invocation};
     use std::{
         fs,
         io::ErrorKind,
@@ -941,6 +1012,28 @@ mod tests {
 
         assert_eq!(exit_code, 0, "stdout: {stdout}; stderr: {stderr}");
         assert!(stdout.contains("configured_program_ok"), "{stdout}");
+    }
+
+    #[tokio::test]
+    async fn configured_program_receives_only_explicit_additional_environment_values() {
+        let workspace = TestWorkspace::new();
+        let (program, arguments) =
+            shell_invocation("Write-Output $env:OPENCHAT_TEST_SECRET", workspace.path());
+        let environment = vec![(
+            "OPENCHAT_TEST_SECRET".to_owned(),
+            Zeroizing::new("temporary_test_value".to_owned()),
+        )];
+        let process = SandboxedProcess::spawn_program_with_environment(
+            &program,
+            &arguments,
+            workspace.path(),
+            &environment,
+        )
+        .expect("start configured program with an explicit environment value");
+        let (exit_code, stdout, stderr) = capture(process).await;
+
+        assert_eq!(exit_code, 0, "stdout: {stdout}; stderr: {stderr}");
+        assert_eq!(stdout.trim(), "temporary_test_value");
     }
 
     #[tokio::test]

@@ -614,7 +614,7 @@ pub fn definitions_for_chatgpt_model() -> Vec<ToolDefinition> {
 pub(crate) fn delegate_task_tool_definition() -> ToolDefinition {
     ToolDefinition {
         name: "delegate_task".to_owned(),
-        description: "Run one bounded child analysis with the current ChatGPT model. The child can only use read-only project and web tools, and its work is reported back to this response.".to_owned(),
+        description: "Run one bounded child analysis with the current model. The child can only use read-only project and web tools, and its work is reported back to this response.".to_owned(),
         parameters: json!({
             "type": "object",
             "properties": {

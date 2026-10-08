@@ -291,7 +291,7 @@ class _ResponseVersionSelector extends StatelessWidget {
     final versionLabel = l10n.responseVersionCount(index + 1, count);
 
     return Row(
-      mainAxisSize: MainAxisSize.min,
+      mainAxisSize: MainAxisSize.max,
       children: [
         IconButton(
           tooltip: l10n.previousResponseVersion,
@@ -299,13 +299,21 @@ class _ResponseVersionSelector extends StatelessWidget {
           visualDensity: VisualDensity.compact,
           icon: const Icon(LucideIcons.chevronLeft, size: 16),
         ),
-        Semantics(
-          liveRegion: true,
-          label: versionLabel,
-          child: Text(
-            versionLabel,
-            style: Theme.of(context).textTheme.bodySmall
-                ?.copyWith(color: palette.secondaryText),
+        Expanded(
+          child: Semantics(
+            liveRegion: true,
+            label: versionLabel,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Text(
+                versionLabel,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: palette.secondaryText),
+              ),
+            ),
           ),
         ),
         IconButton(
@@ -633,7 +641,7 @@ class _AssistantResponseContentState extends State<_AssistantResponseContent> {
       height: 22 / 14,
     );
     if (widget.isStreaming && !_containsMarkdownSyntax(widget.content)) {
-      return Text(widget.content, style: textStyle);
+      return _withCitationActions(Text(widget.content, style: textStyle));
     }
 
     final cachedHtml = _cachedSafeHtml;
@@ -652,29 +660,66 @@ class _AssistantResponseContentState extends State<_AssistantResponseContent> {
   }
 
   Widget _buildHtmlWidget(String safeHtml, TextStyle textStyle) {
-    return HtmlWidget(
-      safeHtml,
-      enableCaching: !widget.isStreaming,
-      renderMode: RenderMode.column,
-      textStyle: textStyle,
-      onTapUrl: (url) => _openCitation(context, url, widget.citationSources),
-      customStylesBuilder: (element) => switch (element.localName) {
-        'pre' => {
-          'background-color': _cssColor(widget.palette.composer),
-          'padding': '12px',
-          'white-space': 'pre-wrap',
+    return _withCitationActions(
+      HtmlWidget(
+        safeHtml,
+        enableCaching: !widget.isStreaming,
+        renderMode: RenderMode.column,
+        textStyle: textStyle,
+        onTapUrl: (url) => _openCitation(context, url, widget.citationSources),
+        customStylesBuilder: (element) => switch (element.localName) {
+          'pre' => {
+            'background-color': _cssColor(widget.palette.composer),
+            'padding': '12px',
+            'white-space': 'pre-wrap',
+          },
+          'code' => {
+            'background-color': _cssColor(widget.palette.composer),
+            'font-family': 'monospace',
+          },
+          'blockquote' => {
+            'border-left': '2px solid ${_cssColor(widget.palette.border)}',
+            'padding-left': '12px',
+            'color': _cssColor(widget.palette.secondaryText),
+          },
+          _ => null,
         },
-        'code' => {
-          'background-color': _cssColor(widget.palette.composer),
-          'font-family': 'monospace',
-        },
-        'blockquote' => {
-          'border-left': '2px solid ${_cssColor(widget.palette.border)}',
-          'padding-left': '12px',
-          'color': _cssColor(widget.palette.secondaryText),
-        },
-        _ => null,
-      },
+      ),
+    );
+  }
+
+  Widget _withCitationActions(Widget content) {
+    if (widget.citationSources.isEmpty) return content;
+    final l10n = context.openchatL10n;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        content,
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 4,
+          runSpacing: 0,
+          children: [
+            for (final source in widget.citationSources.values)
+              Tooltip(
+                message: source.title,
+                child: TextButton(
+                  onPressed: () => _openCitation(
+                    context,
+                    'openchat-source:${Uri.encodeComponent(source.id)}',
+                    widget.citationSources,
+                  ),
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    minimumSize: const Size(0, 36),
+                  ),
+                  child: Text(l10n.toolCitationSource(source.id)),
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 }

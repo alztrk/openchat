@@ -3577,7 +3577,7 @@ abstract class AppLocalizations {
   /// No description provided for @projectMcpNoCredentials.
   ///
   /// In en, this message translates to:
-  /// **'Do not put credentials in arguments. Secure MCP credential storage is not available yet.'**
+  /// **'Never put credentials in arguments. Add environment variable names, then store their values with the key button.'**
   String get projectMcpNoCredentials;
 
   /// No description provided for @projectMcpEmpty.
@@ -3687,6 +3687,138 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Enter an absolute path to the server program.'**
   String get projectMcpProgramRequired;
+
+  /// No description provided for @projectMcpTransport.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection type'**
+  String get projectMcpTransport;
+
+  /// No description provided for @projectMcpTransportStdio.
+  ///
+  /// In en, this message translates to:
+  /// **'Local process (stdio)'**
+  String get projectMcpTransportStdio;
+
+  /// No description provided for @projectMcpTransportHttp.
+  ///
+  /// In en, this message translates to:
+  /// **'Remote server (Streamable HTTP)'**
+  String get projectMcpTransportHttp;
+
+  /// No description provided for @projectMcpEndpoint.
+  ///
+  /// In en, this message translates to:
+  /// **'HTTPS endpoint'**
+  String get projectMcpEndpoint;
+
+  /// No description provided for @projectMcpEndpointHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the remote MCP server\'s HTTPS endpoint. Private and local network addresses are blocked.'**
+  String get projectMcpEndpointHint;
+
+  /// No description provided for @projectMcpEndpointRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid public HTTPS endpoint.'**
+  String get projectMcpEndpointRequired;
+
+  /// No description provided for @projectMcpAuthVariable.
+  ///
+  /// In en, this message translates to:
+  /// **'Secure credential name'**
+  String get projectMcpAuthVariable;
+
+  /// No description provided for @projectMcpAuthVariableHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Optional. Save its value with the key button after adding the server.'**
+  String get projectMcpAuthVariableHint;
+
+  /// No description provided for @projectMcpEnvironmentVariables.
+  ///
+  /// In en, this message translates to:
+  /// **'Credential environment variables'**
+  String get projectMcpEnvironmentVariables;
+
+  /// No description provided for @projectMcpEnvironmentVariablesHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter one variable name per line. Save the server, then use its key button to store values securely.'**
+  String get projectMcpEnvironmentVariablesHint;
+
+  /// No description provided for @projectMcpEnvironmentVariablesInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter up to 32 unique environment variable names using letters, digits, and underscores.'**
+  String get projectMcpEnvironmentVariablesInvalid;
+
+  /// No description provided for @projectMcpCredentials.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP credentials'**
+  String get projectMcpCredentials;
+
+  /// No description provided for @projectMcpEnvironmentVariablesRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit the server and add environment variable names before storing credentials.'**
+  String get projectMcpEnvironmentVariablesRequired;
+
+  /// No description provided for @projectMcpCredentialHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Values are stored in Windows Credential Manager and passed only to this server process.'**
+  String get projectMcpCredentialHint;
+
+  /// No description provided for @projectMcpSecret.
+  ///
+  /// In en, this message translates to:
+  /// **'Secret value'**
+  String get projectMcpSecret;
+
+  /// No description provided for @projectMcpCredentialStored.
+  ///
+  /// In en, this message translates to:
+  /// **'A value is stored securely.'**
+  String get projectMcpCredentialStored;
+
+  /// No description provided for @projectMcpCredentialMissing.
+  ///
+  /// In en, this message translates to:
+  /// **'No value is stored.'**
+  String get projectMcpCredentialMissing;
+
+  /// No description provided for @projectMcpCredentialSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save securely'**
+  String get projectMcpCredentialSave;
+
+  /// No description provided for @projectMcpCredentialRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove stored value'**
+  String get projectMcpCredentialRemove;
+
+  /// No description provided for @projectMcpCredentialUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The credential could not be accessed. Check Windows Credential Manager and try again.'**
+  String get projectMcpCredentialUnavailable;
+
+  /// No description provided for @projectMcpSecretRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a value before saving.'**
+  String get projectMcpSecretRequired;
+
+  /// No description provided for @projectMcpSecretTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'The value must be 2,500 bytes or smaller.'**
+  String get projectMcpSecretTooLarge;
 
   /// No description provided for @projectWorktreesTitle.
   ///

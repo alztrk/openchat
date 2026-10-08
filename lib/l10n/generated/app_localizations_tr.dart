@@ -2060,7 +2060,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get projectMcpNoCredentials =>
-      'Kimlik bilgilerini argümanlara yazmayın. Güvenli MCP kimlik bilgisi saklama henüz desteklenmiyor.';
+      'Kimlik bilgilerini bağımsız değişkenlere yazmayın. Ortam değişkeni adlarını ekleyin, ardından değerleri anahtar düğmesinden güvenli biçimde saklayın.';
 
   @override
   String get projectMcpEmpty => 'Bu proje için MCP sunucusu yapılandırılmadı.';
@@ -2124,6 +2124,83 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get projectMcpProgramRequired =>
       'Sunucu programının mutlak yolunu girin.';
+
+  @override
+  String get projectMcpTransport => 'Bağlantı türü';
+
+  @override
+  String get projectMcpTransportStdio => 'Yerel işlem (stdio)';
+
+  @override
+  String get projectMcpTransportHttp => 'Uzak sunucu (Streamable HTTP)';
+
+  @override
+  String get projectMcpEndpoint => 'HTTPS uç noktası';
+
+  @override
+  String get projectMcpEndpointHint =>
+      'Uzak MCP sunucusunun HTTPS uç noktasını kullanın. Özel ve yerel ağ adresleri engellenir.';
+
+  @override
+  String get projectMcpEndpointRequired =>
+      'Geçerli bir genel HTTPS uç noktası girin.';
+
+  @override
+  String get projectMcpAuthVariable => 'Güvenli kimlik bilgisi adı';
+
+  @override
+  String get projectMcpAuthVariableHint =>
+      'İsteğe bağlıdır. Sunucuyu ekledikten sonra anahtar düğmesiyle değerini kaydedin.';
+
+  @override
+  String get projectMcpEnvironmentVariables =>
+      'Kimlik bilgisi ortam değişkenleri';
+
+  @override
+  String get projectMcpEnvironmentVariablesHint =>
+      'Her satıra bir değişken adı yazın. Sunucuyu kaydedin, ardından anahtar düğmesinden değerleri güvenli biçimde saklayın.';
+
+  @override
+  String get projectMcpEnvironmentVariablesInvalid =>
+      'Harf, rakam ve alt çizgi kullanarak en fazla 32 benzersiz ortam değişkeni adı girin.';
+
+  @override
+  String get projectMcpCredentials => 'MCP kimlik bilgileri';
+
+  @override
+  String get projectMcpEnvironmentVariablesRequired =>
+      'Kimlik bilgilerini saklamadan önce sunucuyu düzenleyip ortam değişkeni adlarını ekleyin.';
+
+  @override
+  String get projectMcpCredentialHint =>
+      'Değerler Windows Kimlik Bilgisi Yöneticisi\'nde saklanır ve yalnızca bu sunucu sürecine aktarılır.';
+
+  @override
+  String get projectMcpSecret => 'Gizli değer';
+
+  @override
+  String get projectMcpCredentialStored =>
+      'Bir değer güvenli biçimde saklanıyor.';
+
+  @override
+  String get projectMcpCredentialMissing => 'Saklanmış değer yok.';
+
+  @override
+  String get projectMcpCredentialSave => 'Güvenli sakla';
+
+  @override
+  String get projectMcpCredentialRemove => 'Saklanan değeri kaldır';
+
+  @override
+  String get projectMcpCredentialUnavailable =>
+      'Kimlik bilgisine erişilemedi. Windows Kimlik Bilgisi Yöneticisi\'ni kontrol edip yeniden deneyin.';
+
+  @override
+  String get projectMcpSecretRequired => 'Saklamadan önce bir değer girin.';
+
+  @override
+  String get projectMcpSecretTooLarge =>
+      'Değer 2.500 bayt veya daha küçük olmalıdır.';
 
   @override
   String get projectWorktreesTitle => 'Yalıtılmış worktree\'ler';

@@ -2102,7 +2102,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get projectMcpNoCredentials =>
-      'No incluyas credenciales en los argumentos. El almacenamiento seguro de credenciales MCP aún no está disponible.';
+      'No incluyas credenciales en los argumentos. Añade nombres de variables de entorno y guarda sus valores de forma segura con el botón de llave.';
 
   @override
   String get projectMcpEmpty =>
@@ -2166,6 +2166,83 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get projectMcpProgramRequired =>
       'Introduce una ruta absoluta al programa del servidor.';
+
+  @override
+  String get projectMcpTransport => 'Tipo de conexión';
+
+  @override
+  String get projectMcpTransportStdio => 'Proceso local (stdio)';
+
+  @override
+  String get projectMcpTransportHttp => 'Servidor remoto (Streamable HTTP)';
+
+  @override
+  String get projectMcpEndpoint => 'Punto de conexión HTTPS';
+
+  @override
+  String get projectMcpEndpointHint =>
+      'Usa el punto HTTPS del servidor MCP remoto. Se bloquean las direcciones de redes privadas y locales.';
+
+  @override
+  String get projectMcpEndpointRequired =>
+      'Introduce un punto HTTPS público válido.';
+
+  @override
+  String get projectMcpAuthVariable => 'Nombre de la credencial segura';
+
+  @override
+  String get projectMcpAuthVariableHint =>
+      'Opcional. Guarda su valor con el botón de llave después de añadir el servidor.';
+
+  @override
+  String get projectMcpEnvironmentVariables =>
+      'Variables de entorno de credenciales';
+
+  @override
+  String get projectMcpEnvironmentVariablesHint =>
+      'Introduce un nombre de variable por línea. Guarda el servidor y usa después el botón de llave para guardar los valores de forma segura.';
+
+  @override
+  String get projectMcpEnvironmentVariablesInvalid =>
+      'Introduce hasta 32 nombres de variable únicos con letras, números y guiones bajos.';
+
+  @override
+  String get projectMcpCredentials => 'Credenciales MCP';
+
+  @override
+  String get projectMcpEnvironmentVariablesRequired =>
+      'Edita el servidor y añade nombres de variables antes de guardar credenciales.';
+
+  @override
+  String get projectMcpCredentialHint =>
+      'Los valores se guardan en el Administrador de credenciales de Windows y solo se pasan a este proceso del servidor.';
+
+  @override
+  String get projectMcpSecret => 'Valor secreto';
+
+  @override
+  String get projectMcpCredentialStored =>
+      'Hay un valor guardado de forma segura.';
+
+  @override
+  String get projectMcpCredentialMissing => 'No hay ningún valor guardado.';
+
+  @override
+  String get projectMcpCredentialSave => 'Guardar de forma segura';
+
+  @override
+  String get projectMcpCredentialRemove => 'Eliminar valor guardado';
+
+  @override
+  String get projectMcpCredentialUnavailable =>
+      'No se pudo acceder a la credencial. Comprueba el Administrador de credenciales de Windows e inténtalo de nuevo.';
+
+  @override
+  String get projectMcpSecretRequired => 'Introduce un valor antes de guardar.';
+
+  @override
+  String get projectMcpSecretTooLarge =>
+      'El valor debe ocupar 2.500 bytes o menos.';
 
   @override
   String get projectWorktreesTitle => 'Worktrees aislados';

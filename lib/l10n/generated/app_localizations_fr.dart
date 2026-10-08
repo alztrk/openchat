@@ -2115,7 +2115,7 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get projectMcpNoCredentials =>
-      'N’ajoutez pas d’identifiants aux arguments. Le stockage sécurisé des identifiants MCP n’est pas encore disponible.';
+      'N’ajoutez pas d’identifiants aux arguments. Ajoutez des noms de variables d’environnement, puis stockez leurs valeurs de manière sécurisée avec le bouton de clé.';
 
   @override
   String get projectMcpEmpty =>
@@ -2179,6 +2179,84 @@ class AppLocalizationsFr extends AppLocalizations {
   @override
   String get projectMcpProgramRequired =>
       'Saisissez un chemin absolu vers le programme du serveur.';
+
+  @override
+  String get projectMcpTransport => 'Type de connexion';
+
+  @override
+  String get projectMcpTransportStdio => 'Processus local (stdio)';
+
+  @override
+  String get projectMcpTransportHttp => 'Serveur distant (Streamable HTTP)';
+
+  @override
+  String get projectMcpEndpoint => 'Point de terminaison HTTPS';
+
+  @override
+  String get projectMcpEndpointHint =>
+      'Utilisez le point HTTPS du serveur MCP distant. Les adresses privées et locales sont bloquées.';
+
+  @override
+  String get projectMcpEndpointRequired =>
+      'Saisissez un point de terminaison HTTPS public valide.';
+
+  @override
+  String get projectMcpAuthVariable => 'Nom de l’identifiant sécurisé';
+
+  @override
+  String get projectMcpAuthVariableHint =>
+      'Facultatif. Enregistrez sa valeur avec le bouton de clé après avoir ajouté le serveur.';
+
+  @override
+  String get projectMcpEnvironmentVariables =>
+      'Variables d’environnement des identifiants';
+
+  @override
+  String get projectMcpEnvironmentVariablesHint =>
+      'Saisissez un nom de variable par ligne. Enregistrez le serveur, puis utilisez le bouton avec la clé pour stocker les valeurs de manière sécurisée.';
+
+  @override
+  String get projectMcpEnvironmentVariablesInvalid =>
+      'Saisissez jusqu’à 32 noms de variable uniques avec des lettres, chiffres et traits de soulignement.';
+
+  @override
+  String get projectMcpCredentials => 'Identifiants MCP';
+
+  @override
+  String get projectMcpEnvironmentVariablesRequired =>
+      'Modifiez le serveur et ajoutez des noms de variables avant de stocker des identifiants.';
+
+  @override
+  String get projectMcpCredentialHint =>
+      'Les valeurs sont stockées dans le Gestionnaire d’informations d’identification Windows et transmises uniquement à ce processus serveur.';
+
+  @override
+  String get projectMcpSecret => 'Valeur secrète';
+
+  @override
+  String get projectMcpCredentialStored =>
+      'Une valeur est stockée de manière sécurisée.';
+
+  @override
+  String get projectMcpCredentialMissing => 'Aucune valeur n’est stockée.';
+
+  @override
+  String get projectMcpCredentialSave => 'Stocker de manière sécurisée';
+
+  @override
+  String get projectMcpCredentialRemove => 'Supprimer la valeur stockée';
+
+  @override
+  String get projectMcpCredentialUnavailable =>
+      'Impossible d’accéder à l’identifiant. Vérifiez le Gestionnaire d’informations d’identification Windows et réessayez.';
+
+  @override
+  String get projectMcpSecretRequired =>
+      'Saisissez une valeur avant de l’enregistrer.';
+
+  @override
+  String get projectMcpSecretTooLarge =>
+      'La valeur doit faire 2 500 octets ou moins.';
 
   @override
   String get projectWorktreesTitle => 'Worktrees isolés';

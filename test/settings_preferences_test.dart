@@ -218,6 +218,7 @@ void main() {
       'execute_command': ToolPermissionRule.ask,
       'write_file': ToolPermissionRule.deny,
       'mcp__local_docs__*': ToolPermissionRule.allow,
+      'mcp__local_docs__read-file': ToolPermissionRule.deny,
       'read_file': ToolPermissionRule.inherit,
     });
     await writer.writeProjectToolPermissionRules('project-2', {
@@ -229,6 +230,7 @@ void main() {
       'execute_command': ToolPermissionRule.ask,
       'write_file': ToolPermissionRule.deny,
       'mcp__local_docs__*': ToolPermissionRule.allow,
+      'mcp__local_docs__read-file': ToolPermissionRule.deny,
     });
     expect(await reader.readProjectToolPermissionRules('project-2'), {
       'read_file': ToolPermissionRule.allow,
@@ -243,6 +245,37 @@ void main() {
       throwsArgumentError,
     );
   });
+
+  test(
+    'MCP tool permission rules persist up to the configured server limit',
+    () async {
+      final preferences = SettingsPreferences(SharedPreferencesAsync());
+      final rules = <String, ToolPermissionRule>{};
+      for (var server = 0; server < 8; server++) {
+        rules['mcp__server_${server}__*'] = ToolPermissionRule.ask;
+        for (var tool = 0; tool < 128; tool++) {
+          rules['mcp__server_${server}__tool_$tool'] = ToolPermissionRule.deny;
+        }
+      }
+      for (final tool in projectToolRuleNames) {
+        rules[tool] = ToolPermissionRule.ask;
+      }
+      rules['mcp__legacy_server__*'] = ToolPermissionRule.allow;
+
+      expect(rules, hasLength(1048));
+      await preferences.writeProjectToolPermissionRules('project-large', rules);
+      expect(
+        await preferences.readProjectToolPermissionRules('project-large'),
+        rules,
+      );
+
+      rules['mcp__overflow_server__*'] = ToolPermissionRule.allow;
+      await expectLater(
+        preferences.writeProjectToolPermissionRules('project-overflow', rules),
+        throwsArgumentError,
+      );
+    },
+  );
 
   test('appearance theme applies the saved width and app font', () {
     final theme = OpenChatTheme.withConversationStyle(

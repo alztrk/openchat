@@ -60,6 +60,86 @@ void main() {
   );
 
   testWidgets(
+    'assistant response actions stay labeled and operable at enlarged text in every locale',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      tester.view.physicalSize = const Size(320, 640);
+      tester.view.devicePixelRatio = 1;
+      try {
+        for (final locale in AppLocalizations.supportedLocales) {
+          var selectedVersion = -1;
+          await tester.pumpWidget(
+            MaterialApp(
+              key: ValueKey<String>('assistant-actions-${locale.languageCode}'),
+              locale: locale,
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              theme: OpenChatTheme.dark,
+              home: MediaQuery(
+                data: const MediaQueryData(
+                  size: Size(320, 640),
+                  textScaler: TextScaler.linear(2),
+                  disableAnimations: true,
+                ),
+                child: Scaffold(
+                  body: SingleChildScrollView(
+                    child: AssistantMessage(
+                      message: const ChatMessage(
+                        id: 'assistant-a11y',
+                        role: ChatMessageRole.assistant,
+                        content:
+                            'A readable response for assistive technology.',
+                        providerId: 'chatgpt',
+                        modelId: 'model-1',
+                      ),
+                      modelLabel: 'model-1',
+                      providerId: 'chatgpt',
+                      onRetry: () {},
+                      responseVersionIndex: 0,
+                      responseVersionCount: 2,
+                      onSelectResponseVersion: (index) {
+                        selectedVersion = index;
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          final l10n = AppLocalizations.of(
+            tester.element(find.byType(AssistantMessage)),
+          )!;
+          expect(
+            find.bySemanticsLabel(
+              'A readable response for assistive technology.',
+            ),
+            findsOneWidget,
+          );
+          _expectAccessibleButton(tester, find.byTooltip(l10n.copyMessage));
+          _expectAccessibleButton(tester, find.byTooltip(l10n.retry));
+          _expectAccessibleButton(
+            tester,
+            find.byTooltip(l10n.previousResponseVersion),
+          );
+          _expectAccessibleButton(
+            tester,
+            find.byTooltip(l10n.nextResponseVersion),
+          );
+          await tester.tap(find.byTooltip(l10n.nextResponseVersion));
+          expect(selectedVersion, 1, reason: locale.languageCode);
+          expect(tester.takeException(), isNull);
+        }
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets(
     'chat composer sends from the keyboard in every supported locale',
     (tester) async {
       final controller = TextEditingController();
@@ -194,6 +274,72 @@ void main() {
   );
 
   testWidgets(
+    'provider citation source actions are keyboard accessible in every locale',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        for (final locale in AppLocalizations.supportedLocales) {
+          final l10n = await AppLocalizations.delegate.load(locale);
+          await tester.pumpWidget(
+            MaterialApp(
+              key: ValueKey<String>('citation-keyboard-${locale.languageCode}'),
+              locale: locale,
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              theme: OpenChatTheme.dark,
+              home: Scaffold(
+                body: FocusTraversalGroup(
+                  child: Column(
+                    children: [
+                      TextButton(onPressed: () {}, child: const Text('Before')),
+                      const AssistantMessage(
+                        message: ChatMessage(
+                          id: 'citation-keyboard',
+                          role: ChatMessageRole.assistant,
+                          content: 'Claim supported by [P1].',
+                          providerId: 'gemini',
+                          modelId: 'selected-model',
+                          citationSources: <ChatCitationSource>[
+                            ChatCitationSource(
+                              id: 'P1',
+                              title: 'Provider source title',
+                              url: 'https://example.org/source',
+                              sourceType: 'provider_native',
+                            ),
+                          ],
+                        ),
+                        modelLabel: 'selected-model',
+                        providerId: 'gemini',
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(
+            find.bySemanticsLabel(l10n.toolCitationSource('P1')),
+            findsOneWidget,
+            reason: locale.languageCode,
+          );
+          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+          await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+          await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+          await tester.pumpAndSettle();
+
+          expect(find.text('Provider source title'), findsOneWidget);
+          expect(find.text('https://example.org/source'), findsOneWidget);
+          expect(tester.takeException(), isNull);
+        }
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets(
     'conversation selection stays labeled across locales, widths, and text scales',
     (tester) async {
       addTearDown(tester.view.resetPhysicalSize);
@@ -286,7 +432,8 @@ void main() {
       final semantics = tester.ensureSemantics();
       try {
         for (final locale in AppLocalizations.supportedLocales) {
-          for (final width in <double>[480, 1200]) {
+          final localizations = await AppLocalizations.delegate.load(locale);
+          for (final width in <double>[320, 480, 1200]) {
             for (final scale in <double>[1, 1.5, 2]) {
               for (final ratio in <double>[1, 1.5, 2]) {
                 tester.view.devicePixelRatio = ratio;
@@ -339,9 +486,17 @@ void main() {
                 final citations = find.byWidgetPredicate(
                   (widget) =>
                       widget is RichText &&
-                      widget.text.toPlainText().contains('P1'),
+                      widget.text.toPlainText().contains(
+                        'Kaynaklandırılmış yanıt P1.',
+                      ),
                 );
                 expect(citations, findsOneWidget);
+                expect(
+                  find.bySemanticsLabel(localizations.toolCitationSource('P1')),
+                  findsOneWidget,
+                  reason:
+                      '${locale.languageCode}, width $width, scale $scale, ratio $ratio',
+                );
                 expect(tester.takeException(), isNull);
               }
             }
@@ -546,6 +701,14 @@ void main() {
         semantics.dispose();
       }
     },
+  );
+}
+
+void _expectAccessibleButton(WidgetTester tester, Finder finder) {
+  expect(finder, findsOneWidget);
+  expect(
+    tester.getSemantics(finder).getSemanticsData().flagsCollection.isButton,
+    isTrue,
   );
 }
 

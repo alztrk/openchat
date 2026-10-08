@@ -19,7 +19,7 @@ use super::{
 use crate::{
     permissions::ToolPermissionBroker,
     protocol::{EventSink, Response, ServiceError},
-    provider_schema::{ChatStreamSnapshot, ToolCall},
+    provider_schema::{ChatStreamSnapshot, ToolCall, ToolDefinition},
     storage::{AppStorage, user_questions},
     tools::{self, ToolExecutor},
     usage_statistics::{UsageData, UsageRequestTracker},
@@ -53,10 +53,14 @@ enum ChildRunAuth<'a> {
         external_workspace_id: &'a str,
     },
     OpenAiApiKey(&'a str),
+    CompatibleEndpoint {
+        api_key: Option<&'a str>,
+        endpoint: &'a str,
+    },
 }
 
 struct ChildRunRoute<'a> {
-    provider_id: &'static str,
+    provider_id: &'a str,
     model_id: &'a str,
     reasoning_effort: Option<&'a str>,
     fast_mode: bool,
@@ -166,6 +170,56 @@ pub(crate) async fn run_child_analysis_api_key(
 }
 
 #[allow(clippy::too_many_arguments)]
+pub(crate) async fn run_child_analysis_compatible_endpoint(
+    service: &ChatGptService,
+    api_key: Option<&str>,
+    provider_id: &str,
+    endpoint: &str,
+    call: &ToolCall,
+    task: &str,
+    additional_context: Option<&str>,
+    model_id: &str,
+    reasoning_effort: Option<&str>,
+    parent_message_id: &str,
+    project_root: Option<&Path>,
+    permission_broker: &ToolPermissionBroker,
+    request_id: &Value,
+    snapshot: &ChatStreamSnapshot,
+    events: &EventSink,
+    cancellation: &mut tokio::sync::watch::Receiver<bool>,
+    storage: &AppStorage,
+    parent_run_id: &str,
+    tool_executor: &ToolExecutor,
+    user_questions: &UserQuestionBroker,
+) -> Value {
+    run_child_analysis_for_route(
+        service,
+        ChildRunRoute {
+            provider_id,
+            model_id,
+            reasoning_effort,
+            fast_mode: false,
+            auth: ChildRunAuth::CompatibleEndpoint { api_key, endpoint },
+        },
+        call,
+        task,
+        additional_context,
+        parent_message_id,
+        project_root,
+        permission_broker,
+        request_id,
+        snapshot,
+        events,
+        cancellation,
+        storage,
+        parent_run_id,
+        tool_executor,
+        user_questions,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn run_child_analysis_for_route(
     service: &ChatGptService,
     route: ChildRunRoute<'_>,
@@ -198,7 +252,7 @@ async fn run_child_analysis_for_route(
     let child_run_id = Uuid::new_v4().simple().to_string();
     let workspace_id = match route.auth {
         ChildRunAuth::ChatGptOAuth { workspace_id, .. } => Some(workspace_id),
-        ChildRunAuth::OpenAiApiKey(_) => None,
+        ChildRunAuth::OpenAiApiKey(_) | ChildRunAuth::CompatibleEndpoint { .. } => None,
     };
     let checkpoint = json!({
         "version": 1,
@@ -544,20 +598,32 @@ async fn run_child_requests(
         }
         None => format!("Delegated task:\n{task}"),
     };
-    let mut payload = json!({
-        "model": route.model_id,
-        "input": [{"role": "user", "content": user_input}],
-        "instructions": instructions,
-        "max_output_tokens": CHILD_MAX_OUTPUT_TOKENS,
-        "stream": false,
-        "store": false,
-        "tools": definitions.iter().map(responses_tool).collect::<Vec<_>>(),
-        "parallel_tool_calls": false,
-    });
-    if route.fast_mode {
+    let responses_api = !matches!(route.auth, ChildRunAuth::CompatibleEndpoint { .. });
+    let mut payload = if responses_api {
+        json!({
+            "model": route.model_id,
+            "input": [{"role": "user", "content": user_input}],
+            "instructions": instructions,
+            "max_output_tokens": CHILD_MAX_OUTPUT_TOKENS,
+            "stream": false,
+            "store": false,
+            "tools": definitions.iter().map(responses_tool).collect::<Vec<_>>(),
+            "parallel_tool_calls": false,
+        })
+    } else {
+        chat_completion_child_payload(
+            route.provider_id,
+            route.model_id,
+            route.reasoning_effort,
+            &definitions,
+            &instructions,
+            &user_input,
+        )
+    };
+    if responses_api && route.fast_mode {
         payload["service_tier"] = json!(super::CHATGPT_FAST_SERVICE_TIER);
     }
-    if let Some(reasoning_effort) = route.reasoning_effort {
+    if responses_api && let Some(reasoning_effort) = route.reasoning_effort {
         payload["reasoning"] = json!({"effort": reasoning_effort, "summary": "auto"});
     }
     let allowed_tools = definitions
@@ -631,6 +697,19 @@ async fn run_child_requests(
                 )
                 .await
             }
+            ChildRunAuth::CompatibleEndpoint { api_key, endpoint } => {
+                timeout_at(
+                    deadline,
+                    send_api_key_child_request_to(
+                        &service.http,
+                        endpoint,
+                        api_key,
+                        &payload,
+                        cancellation,
+                    ),
+                )
+                .await
+            }
         };
         let response = match response_result {
             Ok(Ok(Some(response))) => response,
@@ -679,19 +758,33 @@ async fn run_child_requests(
                 return Err(subagent_timeout());
             }
         };
-        let usage = UsageData::from_responses_event(&response_value, route.provider_id);
+        let usage = if responses_api {
+            UsageData::from_responses_event(&response_value, route.provider_id)
+        } else {
+            UsageData::from_chat_completion_event(&response_value, route.provider_id)
+        };
         usage_request
             .complete(&usage)
             .map_err(|_| subagent_storage_error())?;
         add_usage(&mut total_usage, &usage);
 
-        let output_items = response_value
-            .get("output")
-            .and_then(Value::as_array)
-            .ok_or_else(subagent_response_error)?;
-        let calls = parse_responses_tool_calls(output_items)?;
+        let (calls, summary, responses_output, assistant_message) = if responses_api {
+            let output_items = response_value
+                .get("output")
+                .and_then(Value::as_array)
+                .ok_or_else(subagent_response_error)?;
+            (
+                parse_responses_tool_calls(output_items)?,
+                response_output_text(output_items),
+                Some(output_items.clone()),
+                None,
+            )
+        } else {
+            let (calls, summary, assistant_message) =
+                parse_chat_completion_child_response(&response_value)?;
+            (calls, summary, None, Some(assistant_message))
+        };
         if calls.is_empty() {
-            let summary = response_output_text(output_items);
             if summary.trim().is_empty() {
                 return Err(subagent_response_error());
             }
@@ -703,11 +796,20 @@ async fn run_child_requests(
             return Err(subagent_limit_error());
         }
         tool_executor.begin_round(&calls)?;
-        let input = payload
-            .get_mut("input")
-            .and_then(Value::as_array_mut)
-            .ok_or_else(subagent_response_error)?;
-        input.extend(output_items.iter().cloned());
+        if responses_api {
+            let input = payload
+                .get_mut("input")
+                .and_then(Value::as_array_mut)
+                .ok_or_else(subagent_response_error)?;
+            input.extend(responses_output.ok_or_else(subagent_response_error)?);
+        } else {
+            payload
+                .get_mut("messages")
+                .and_then(Value::as_array_mut)
+                .ok_or_else(subagent_response_error)?
+                .push(assistant_message.ok_or_else(subagent_response_error)?);
+        }
+        let mut tool_outputs = Vec::with_capacity(calls.len());
         for call in &calls {
             if Instant::now() >= deadline {
                 return Err(subagent_timeout());
@@ -745,11 +847,28 @@ async fn run_child_requests(
                 )
             };
             let output = serde_json::to_string(&output).map_err(|_| subagent_response_error())?;
-            input.push(json!({
-                "type": "function_call_output",
-                "call_id": call.id,
-                "output": truncate_text(&output, CHILD_MAX_OUTPUT_BYTES),
-            }));
+            tool_outputs.push((call, truncate_text(&output, CHILD_MAX_OUTPUT_BYTES)));
+        }
+        for (call, output) in tool_outputs {
+            if responses_api {
+                payload["input"]
+                    .as_array_mut()
+                    .ok_or_else(subagent_response_error)?
+                    .push(json!({
+                        "type": "function_call_output",
+                        "call_id": call.id,
+                        "output": output,
+                    }));
+            } else {
+                payload["messages"]
+                    .as_array_mut()
+                    .ok_or_else(subagent_response_error)?
+                    .push(json!({
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "content": output,
+                    }));
+            }
         }
     }
 
@@ -779,17 +898,135 @@ async fn send_api_key_child_request(
     send_api_key_child_request_to(
         &service.http,
         "https://api.openai.com/v1/responses",
-        api_key,
+        Some(api_key),
         payload,
         cancellation,
     )
     .await
 }
 
+fn chat_completion_tool(tool: &ToolDefinition) -> Value {
+    json!({
+        "type": "function",
+        "function": {
+            "name": tool.name,
+            "description": tool.description,
+            "parameters": tool.parameters,
+        }
+    })
+}
+
+fn chat_completion_child_payload(
+    provider_id: &str,
+    model_id: &str,
+    reasoning_effort: Option<&str>,
+    definitions: &[ToolDefinition],
+    instructions: &str,
+    user_input: &str,
+) -> Value {
+    let max_tokens_field = if matches!(provider_id, "gemini" | "mistral") {
+        "max_tokens"
+    } else {
+        "max_completion_tokens"
+    };
+    let mut payload = json!({
+        "model": model_id,
+        "messages": [
+            {"role": "system", "content": instructions},
+            {"role": "user", "content": user_input}
+        ],
+        "stream": false,
+        "tools": definitions.iter().map(chat_completion_tool).collect::<Vec<_>>(),
+        "tool_choice": "auto",
+        "parallel_tool_calls": false,
+    });
+    payload[max_tokens_field] = json!(CHILD_MAX_OUTPUT_TOKENS);
+    if provider_id == "mistral"
+        && let Some(reasoning_effort) = reasoning_effort
+    {
+        payload["reasoning_effort"] = json!(reasoning_effort);
+    }
+    payload
+}
+
+fn parse_chat_completion_child_response(
+    value: &Value,
+) -> Result<(Vec<ToolCall>, String, Value), ServiceError> {
+    let message = value
+        .pointer("/choices/0/message")
+        .ok_or_else(subagent_response_error)?;
+    let summary = message
+        .get("content")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+    let raw_calls = message
+        .get("tool_calls")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    if raw_calls.len() > CHILD_MAX_TOOL_CALLS {
+        return Err(subagent_limit_error());
+    }
+    let mut calls = Vec::with_capacity(raw_calls.len());
+    for raw_call in raw_calls {
+        let id = raw_call
+            .get("id")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty() && id.len() <= 128)
+            .ok_or_else(subagent_response_error)?;
+        let function = raw_call
+            .get("function")
+            .ok_or_else(subagent_response_error)?;
+        let name = function
+            .get("name")
+            .and_then(Value::as_str)
+            .filter(|name| !name.is_empty() && name.len() <= 128)
+            .ok_or_else(subagent_response_error)?;
+        let arguments = function
+            .get("arguments")
+            .and_then(Value::as_str)
+            .filter(|arguments| arguments.len() <= tools::MAX_TOOL_ARGUMENT_BYTES)
+            .and_then(|arguments| serde_json::from_str::<Value>(arguments).ok())
+            .filter(Value::is_object)
+            .ok_or_else(subagent_response_error)?;
+        calls.push(ToolCall {
+            id: id.to_owned(),
+            name: name.to_owned(),
+            arguments,
+        });
+    }
+    let assistant_message = json!({
+        "role": "assistant",
+        "content": if summary.is_empty() { Value::Null } else { json!(summary) },
+        "tool_calls": raw_tool_calls_for_history(message),
+    });
+    Ok((calls, summary, assistant_message))
+}
+
+fn raw_tool_calls_for_history(message: &Value) -> Vec<Value> {
+    message
+        .get("tool_calls")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|call| {
+            json!({
+                "id": call.get("id"),
+                "type": "function",
+                "function": {
+                    "name": call.pointer("/function/name"),
+                    "arguments": call.pointer("/function/arguments"),
+                }
+            })
+        })
+        .collect()
+}
+
 async fn send_api_key_child_request_to(
     http: &Client,
     endpoint: &str,
-    api_key: &str,
+    api_key: Option<&str>,
     payload: &Value,
     cancellation: &mut tokio::sync::watch::Receiver<bool>,
 ) -> Result<Option<HttpResponse>, ServiceError> {
@@ -798,15 +1035,18 @@ async fn send_api_key_child_request_to(
             let _ = changed;
             Ok(None)
         }
-        response = http
-            .post(endpoint)
-            .bearer_auth(api_key)
-            .json(payload)
-            .send() => response
+        response = async {
+            let request = http.post(endpoint);
+            let request = match api_key {
+                Some(api_key) => request.bearer_auth(api_key),
+                None => request,
+            };
+            request.json(payload).send().await
+        } => response
             .map(Some)
             .map_err(|_| ServiceError::new(
                 "network_unavailable",
-                "OpenAI could not be reached. Check the internet connection and try again.",
+                "The selected provider endpoint could not be reached.",
                 true,
             )),
     }
@@ -944,7 +1184,13 @@ fn tool_error(code: &str, message: &str) -> Value {
 
 #[cfg(test)]
 mod tests {
-    use super::{Client, child_tool_names, send_api_key_child_request_to, truncate_text};
+    use super::{
+        CHILD_MAX_OUTPUT_TOKENS, Client, chat_completion_child_payload, chat_completion_tool,
+        child_tool_names, parse_chat_completion_child_response, send_api_key_child_request_to,
+        truncate_text,
+    };
+    use crate::provider_schema::ToolDefinition;
+    use serde_json::Value;
     use serde_json::json;
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
@@ -995,6 +1241,128 @@ mod tests {
         assert!(truncated.ends_with("[Child output truncated.]"));
     }
 
+    #[test]
+    fn chat_completion_child_tool_uses_the_supported_function_schema() {
+        let definition = ToolDefinition {
+            name: "read_file".to_owned(),
+            description: "Read a project file".to_owned(),
+            parameters: json!({"type": "object", "properties": {"path": {"type": "string"}}}),
+        };
+
+        assert_eq!(
+            chat_completion_tool(&definition),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "description": "Read a project file",
+                    "parameters": {"type": "object", "properties": {"path": {"type": "string"}}}
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn chat_completion_child_payload_keeps_the_allowlist_and_output_cap() {
+        let definitions = crate::tools::definitions_for_chatgpt_model()
+            .into_iter()
+            .filter(|tool| tool.name == "read_file" || tool.name == "web_search")
+            .collect::<Vec<_>>();
+        let payload = chat_completion_child_payload(
+            "gemini",
+            "selected-model",
+            None,
+            &definitions,
+            "Read-only instructions",
+            "Delegated question",
+        );
+
+        assert_eq!(payload["model"], "selected-model");
+        assert_eq!(payload["stream"], false);
+        assert_eq!(payload["max_tokens"], CHILD_MAX_OUTPUT_TOKENS);
+        assert!(payload.get("max_completion_tokens").is_none());
+        assert!(payload.get("input").is_none());
+        assert_eq!(payload["messages"][0]["role"], "system");
+        assert_eq!(payload["messages"][1]["role"], "user");
+        assert_eq!(payload["tool_choice"], "auto");
+        let mut names = payload["tools"]
+            .as_array()
+            .expect("tool definitions")
+            .iter()
+            .filter_map(|tool| tool.pointer("/function/name").and_then(Value::as_str))
+            .collect::<Vec<_>>();
+        names.sort_unstable();
+        assert_eq!(names, vec!["read_file", "web_search"]);
+    }
+
+    #[test]
+    fn mistral_child_payload_carries_the_supported_reasoning_setting() {
+        let payload = chat_completion_child_payload(
+            "mistral",
+            "selected-model",
+            Some("high"),
+            &[],
+            "instructions",
+            "task",
+        );
+
+        assert_eq!(payload["max_tokens"], CHILD_MAX_OUTPUT_TOKENS);
+        assert_eq!(payload["reasoning_effort"], "high");
+    }
+
+    #[test]
+    fn parses_chat_completion_child_text_and_tool_calls() {
+        let value = json!({
+            "choices": [{
+                "message": {
+                    "role": "assistant",
+                    "content": "I will inspect the files.",
+                    "tool_calls": [{
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                            "name": "read_file",
+                            "arguments": "{\"path\":\"README.md\"}"
+                        }
+                    }]
+                }
+            }]
+        });
+
+        let (calls, summary, assistant_message) =
+            parse_chat_completion_child_response(&value).expect("valid child response");
+
+        assert_eq!(summary, "I will inspect the files.");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "call_1");
+        assert_eq!(calls[0].name, "read_file");
+        assert_eq!(calls[0].arguments, json!({"path": "README.md"}));
+        assert_eq!(assistant_message["tool_calls"][0]["id"], "call_1");
+    }
+
+    #[test]
+    fn rejects_malformed_or_non_object_chat_completion_tool_arguments() {
+        for arguments in ["{", "[]"] {
+            let value = json!({
+                "choices": [{
+                    "message": {
+                        "tool_calls": [{
+                            "id": "call_1",
+                            "function": {"name": "read_file", "arguments": arguments}
+                        }]
+                    }
+                }]
+            });
+
+            assert_eq!(
+                parse_chat_completion_child_response(&value)
+                    .expect_err("invalid function arguments should be rejected")
+                    .code,
+                "invalid_provider_response"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn api_key_child_request_sends_credentials_only_as_bearer_auth() {
         let listener = TcpListener::bind("127.0.0.1:0")
@@ -1041,7 +1409,7 @@ mod tests {
         let response = send_api_key_child_request_to(
             &http,
             &endpoint,
-            "test-api-key",
+            Some("test-api-key"),
             &json!({"model": "test-model", "input": "hello"}),
             &mut cancellation,
         )
@@ -1054,6 +1422,64 @@ mod tests {
         assert!(headers.contains("authorization: bearer test-api-key"));
         assert!(!body.contains("test-api-key"));
         assert!(body.contains("test-model"));
+    }
+
+    #[tokio::test]
+    async fn local_child_request_can_use_a_loopback_endpoint_without_credentials() {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind local request listener");
+        let endpoint = format!(
+            "http://{}/v1/chat/completions",
+            listener.local_addr().expect("read listener address")
+        );
+        let request = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("accept local request");
+            let mut bytes = Vec::new();
+            let header_end = loop {
+                let mut chunk = [0u8; 2048];
+                let read = stream.read(&mut chunk).await.expect("read request");
+                assert_ne!(read, 0, "request closed before its headers arrived");
+                bytes.extend_from_slice(&chunk[..read]);
+                if let Some(index) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
+                    break index + 4;
+                }
+            };
+            let headers = String::from_utf8_lossy(&bytes[..header_end]).to_ascii_lowercase();
+            let content_length = headers
+                .lines()
+                .find_map(|line| line.strip_prefix("content-length: "))
+                .and_then(|length| length.trim().parse::<usize>().ok())
+                .expect("JSON request content length");
+            while bytes.len() < header_end + content_length {
+                let mut chunk = [0u8; 2048];
+                let read = stream.read(&mut chunk).await.expect("read request body");
+                assert_ne!(read, 0, "request closed before its body arrived");
+                bytes.extend_from_slice(&chunk[..read]);
+            }
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+                .await
+                .expect("send local response");
+            headers
+        });
+
+        let http = Client::new();
+        let (_cancel, mut cancellation) = watch::channel(false);
+        let response = send_api_key_child_request_to(
+            &http,
+            &endpoint,
+            None,
+            &json!({"model": "local-model", "messages": [{"role": "user", "content": "hello"}]}),
+            &mut cancellation,
+        )
+        .await
+        .expect("send local request")
+        .expect("request was not cancelled");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+        let headers = request.await.expect("finish local request capture");
+        assert!(!headers.contains("authorization:"));
     }
 }
 
