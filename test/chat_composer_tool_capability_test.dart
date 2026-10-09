@@ -139,7 +139,7 @@ void main() {
           expect(tester.takeException(), isNull);
           await tester.tap(find.byTooltip(modelTitle).first);
           await tester.pumpAndSettle();
-          expect(find.text(l10n.reasoning), findsOneWidget);
+          expect(find.byIcon(LucideIcons.brain), findsOneWidget);
           expect(tester.takeException(), isNull);
           await tester.tap(find.byType(OpenChatSelect<String?>));
           await tester.pumpAndSettle();

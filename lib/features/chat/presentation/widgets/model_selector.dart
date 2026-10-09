@@ -229,7 +229,10 @@ class _ModelSelectorState extends State<ModelSelector> {
       menuWidth * 0.36,
       menuWidth < 420 ? 112.0 : 152.0,
     );
-    final reasoningWidth = math.max(0.0, menuWidth - providerWidth - 25);
+    final reasoningWidth = math.max(
+      0.0,
+      math.min(128.0, menuWidth - providerWidth - 25),
+    );
 
     return OpenChatDropdown(
       palette: widget.palette,
@@ -304,6 +307,16 @@ class _ModelSelectorState extends State<ModelSelector> {
                     children: [
                       Row(
                         children: [
+                          if (widget.showReasoningSelector) ...[
+                            _ReasoningControl(
+                              palette: widget.palette,
+                              level: widget.reasoningLevel,
+                              options: widget.reasoningOptions,
+                              availableWidth: reasoningWidth,
+                              onSelected: widget.onReasoningSelected,
+                            ),
+                            const SizedBox(width: 4),
+                          ],
                           Expanded(
                             child: ConstrainedBox(
                               constraints: const BoxConstraints(minHeight: 40),
@@ -356,17 +369,6 @@ class _ModelSelectorState extends State<ModelSelector> {
                           ],
                         ],
                       ),
-                      if (widget.showReasoningSelector) ...[
-                        const SizedBox(height: 12),
-                        _ReasoningControl(
-                          palette: widget.palette,
-                          level: widget.reasoningLevel,
-                          options: widget.reasoningOptions,
-                          availableWidth: reasoningWidth,
-                          onSelected: widget.onReasoningSelected,
-                        ),
-                        const Divider(height: 17),
-                      ],
                       const SizedBox(height: 8),
                       Expanded(
                         child: shownCount == 0
@@ -790,14 +792,15 @@ class _ReasoningControl extends StatelessWidget {
       value: level,
       onChanged: onSelected,
       palette: palette,
-      width: double.infinity,
-      menuWidth: math.min(260, availableWidth),
+      width: math.min(128, availableWidth),
+      menuWidth: math.min(260, math.max(0, availableWidth)),
       height: composerControlHeight(context),
-      horizontalPadding: 10,
+      horizontalPadding: 6,
+      borderless: true,
       selectedContent: Row(
         children: [
           Icon(LucideIcons.brain, size: 16, color: palette.secondaryIcon),
-          const SizedBox(width: 6),
+          const SizedBox(width: 5),
           Flexible(
             child: Text(
               selectedLabel,
@@ -815,54 +818,7 @@ class _ReasoningControl extends StatelessWidget {
       ),
     );
 
-    if (availableWidth >= 300) {
-      return Row(
-        children: [
-          Icon(LucideIcons.brain, size: 16, color: palette.secondaryIcon),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              l10n.reasoning,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: palette.secondaryText,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(child: selector),
-        ],
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Icon(LucideIcons.brain, size: 16, color: palette.secondaryIcon),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                l10n.reasoning,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: palette.secondaryText,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        SizedBox(width: availableWidth, child: selector),
-      ],
-    );
+    return selector;
   }
 }
 
