@@ -132,6 +132,8 @@ pub(crate) struct RequestDataSources {
 pub(crate) fn instruction_source_categories(
     custom_instructions: Option<&str>,
     project_instructions: Option<&str>,
+    project_skills: &[crate::project_skills::ProjectSkill],
+    project_index_context: Option<&str>,
     goal_mode: bool,
 ) -> Vec<String> {
     let mut sources = Vec::new();
@@ -140,6 +142,12 @@ pub(crate) fn instruction_source_categories(
     }
     if project_instructions.is_some_and(|value| !value.trim().is_empty()) {
         sources.push("project_instructions".to_owned());
+    }
+    if !project_skills.is_empty() {
+        sources.push("project_skills".to_owned());
+    }
+    if project_index_context.is_some_and(|value| !value.trim().is_empty()) {
+        sources.push("project_index".to_owned());
     }
     if goal_mode {
         sources.push("goal_mode".to_owned());
@@ -365,7 +373,11 @@ fn request_data_manifest(payload: &Value, sources: Option<&RequestDataSources>) 
         for source in sources.instruction_sources.iter().take(8) {
             if matches!(
                 source.as_str(),
-                "shared_preferences" | "project_instructions" | "goal_mode"
+                "shared_preferences"
+                    | "project_instructions"
+                    | "project_skills"
+                    | "project_index"
+                    | "goal_mode"
             ) && !instruction_sources.contains(&source.as_str())
             {
                 instruction_sources.push(source.as_str());
@@ -945,10 +957,30 @@ mod request_manifest_tests {
     #[test]
     fn instruction_source_categories_exclude_empty_and_unconfigured_sources() {
         assert_eq!(
-            instruction_source_categories(Some("shared"), Some("project"), true),
+            instruction_source_categories(Some("shared"), Some("project"), &[], None, true),
             ["shared_preferences", "project_instructions", "goal_mode"]
         );
-        assert!(instruction_source_categories(Some(" \n"), None, false).is_empty());
+        assert!(instruction_source_categories(Some(" \n"), None, &[], None, false).is_empty());
+    }
+
+    #[test]
+    fn instruction_source_categories_record_project_skills_separately() {
+        let skills = [crate::project_skills::ProjectSkill {
+            id: "rust-style".to_owned(),
+            content: "Use rustfmt.".to_owned(),
+        }];
+        assert_eq!(
+            instruction_source_categories(None, None, &skills, None, false),
+            ["project_skills"]
+        );
+    }
+
+    #[test]
+    fn instruction_source_categories_record_project_index_separately() {
+        assert_eq!(
+            instruction_source_categories(None, None, &[], Some("excerpt"), false),
+            ["project_index"]
+        );
     }
 
     #[test]

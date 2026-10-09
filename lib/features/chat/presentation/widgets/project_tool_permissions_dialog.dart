@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:openchat/features/chat/presentation/widgets/project_tool_permission_select.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
@@ -95,35 +96,13 @@ class _ProjectToolPermissionsDialogState
             for (final name in ruleNames)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
-                child: DropdownButtonFormField<ToolPermissionRule>(
+                child: ProjectToolPermissionSelect(
                   key: ValueKey<String>('project-tool-rule-$name'),
-                  initialValue: _rules[name] ?? ToolPermissionRule.inherit,
-                  isExpanded: true,
-                  decoration: InputDecoration(
-                    labelText: labels[name] ?? _dynamicToolLabel(l10n, name),
-                  ),
-                  items: [
-                    DropdownMenuItem(
-                      value: ToolPermissionRule.inherit,
-                      child: Text(l10n.projectToolRuleInherit),
-                    ),
-                    DropdownMenuItem(
-                      value: ToolPermissionRule.ask,
-                      child: Text(l10n.projectToolRuleAsk),
-                    ),
-                    DropdownMenuItem(
-                      value: ToolPermissionRule.allow,
-                      child: Text(l10n.projectToolRuleAllow),
-                    ),
-                    DropdownMenuItem(
-                      value: ToolPermissionRule.deny,
-                      child: Text(l10n.projectToolRuleDeny),
-                    ),
-                  ],
+                  label: labels[name] ?? _dynamicToolLabel(l10n, name),
+                  value: _rules[name] ?? ToolPermissionRule.inherit,
                   onChanged: _saving
                       ? null
                       : (value) {
-                          if (value == null) return;
                           setState(() {
                             if (value == ToolPermissionRule.inherit) {
                               _rules.remove(name);

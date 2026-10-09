@@ -30,6 +30,64 @@ class OpenChatSelectOption<T> {
   final bool enabled;
 }
 
+class OpenChatSelectField<T> extends StatelessWidget {
+  const OpenChatSelectField({
+    required this.label,
+    required this.options,
+    required this.value,
+    required this.onChanged,
+    required this.palette,
+    this.height = 44,
+    super.key,
+  });
+
+  final String label;
+  final List<OpenChatSelectOption<T>> options;
+  final T? value;
+  final ValueChanged<T>? onChanged;
+  final OpenChatPalette palette;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return MergeSemantics(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 2, bottom: 4),
+            child: Text(
+              label,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: palette.secondaryText,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final menuWidth = constraints.maxWidth.isFinite
+                  ? constraints.maxWidth
+                  : 240.0;
+              return OpenChatSelect<T>(
+                options: options,
+                value: value,
+                onChanged: onChanged,
+                palette: palette,
+                width: double.infinity,
+                menuWidth: menuWidth,
+                height: height,
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class OpenChatSelect<T> extends StatelessWidget {
   const OpenChatSelect({
     required this.options,

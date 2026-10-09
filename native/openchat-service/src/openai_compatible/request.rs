@@ -17,6 +17,8 @@ pub(super) struct ProviderRequestOptions<'a> {
     pub(super) excluded_assistant_message_id: Option<&'a str>,
     pub(super) custom_instructions: Option<&'a str>,
     pub(super) project_instructions: Option<&'a str>,
+    pub(super) project_skills: &'a [crate::project_skills::ProjectSkill],
+    pub(super) project_index_context: Option<&'a str>,
     pub(super) permission_mode: ToolPermissionMode,
     pub(super) has_project: bool,
     pub(super) project_task_ids: &'a [String],
@@ -36,6 +38,8 @@ pub(super) fn build_provider_request(
         excluded_assistant_message_id,
         custom_instructions,
         project_instructions,
+        project_skills,
+        project_index_context,
         permission_mode,
         has_project,
         project_task_ids,
@@ -109,9 +113,14 @@ pub(super) fn build_provider_request(
     if !tools.is_empty() {
         tools.extend(goals::control_tool_definitions());
     }
+    if permission_mode == ToolPermissionMode::Plan {
+        tools::apply_plan_mode_allowlist(&mut tools);
+    }
     let mut shared_instructions = instructions::shared_instructions(
         custom_instructions,
         project_instructions,
+        project_skills,
+        project_index_context,
         permission_mode,
         has_project,
         !tools.is_empty(),

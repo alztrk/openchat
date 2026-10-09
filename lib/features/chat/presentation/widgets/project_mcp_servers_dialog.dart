@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:openchat/app/openchat_select.dart';
+import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/features/chat/presentation/widgets/project_tool_permission_select.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
@@ -196,43 +199,21 @@ class _ProjectMcpServersDialogState extends State<ProjectMcpServersDialog> {
           ),
           for (final toolName
               in _serverToolNames[server.id] ?? const <String>[])
-            DropdownButtonFormField<ToolPermissionRule>(
+            ProjectToolPermissionSelect(
               key: ValueKey<String>(
                 'project-mcp-tool-rule-${server.id}-$toolName',
               ),
-              initialValue:
+              label: '$toolName · ${l10n.projectMcpPermissionScope}',
+              value:
                   _toolPermissionRules[_toolPermissionKey(
                     server.id,
                     toolName,
                   )] ??
                   ToolPermissionRule.inherit,
-              isExpanded: true,
-              decoration: InputDecoration(
-                labelText: '$toolName · ${l10n.projectMcpPermissionScope}',
-              ),
-              items: [
-                DropdownMenuItem(
-                  value: ToolPermissionRule.inherit,
-                  child: Text(l10n.projectToolRuleInherit),
-                ),
-                DropdownMenuItem(
-                  value: ToolPermissionRule.ask,
-                  child: Text(l10n.projectToolRuleAsk),
-                ),
-                DropdownMenuItem(
-                  value: ToolPermissionRule.allow,
-                  child: Text(l10n.projectToolRuleAllow),
-                ),
-                DropdownMenuItem(
-                  value: ToolPermissionRule.deny,
-                  child: Text(l10n.projectToolRuleDeny),
-                ),
-              ],
               onChanged:
                   _isSaving || server.permissionRule == ToolPermissionRule.deny
                   ? null
                   : (value) {
-                      if (value == null) return;
                       final key = _toolPermissionKey(server.id, toolName);
                       setState(() {
                         if (value == ToolPermissionRule.inherit) {
@@ -735,26 +716,22 @@ class _McpServerEditorState extends State<_McpServerEditor> {
                       : l10n.projectMcpInvalidId;
                 },
               ),
-              DropdownButtonFormField<String>(
+              OpenChatSelectField<String>(
                 key: const ValueKey<String>('project-mcp-transport'),
-                initialValue: _transport,
-                isExpanded: true,
-                decoration: InputDecoration(
-                  labelText: l10n.projectMcpTransport,
-                ),
-                items: [
-                  DropdownMenuItem(
+                label: l10n.projectMcpTransport,
+                value: _transport,
+                palette: OpenChatPalette.of(context),
+                options: [
+                  OpenChatSelectOption<String>(
                     value: 'stdio',
-                    child: Text(l10n.projectMcpTransportStdio),
+                    label: l10n.projectMcpTransportStdio,
                   ),
-                  DropdownMenuItem(
+                  OpenChatSelectOption<String>(
                     value: 'streamableHttp',
-                    child: Text(l10n.projectMcpTransportHttp),
+                    label: l10n.projectMcpTransportHttp,
                   ),
                 ],
-                onChanged: (value) {
-                  if (value != null) setState(() => _transport = value);
-                },
+                onChanged: (value) => setState(() => _transport = value),
               ),
               if (_transport == 'stdio') ...[
                 TextFormField(
@@ -836,34 +813,11 @@ class _McpServerEditorState extends State<_McpServerEditor> {
                 value: _enabled,
                 onChanged: (value) => setState(() => _enabled = value),
               ),
-              DropdownButtonFormField<ToolPermissionRule>(
+              ProjectToolPermissionSelect(
                 key: const ValueKey<String>('project-mcp-permission-rule'),
-                initialValue: _permissionRule,
-                isExpanded: true,
-                decoration: InputDecoration(
-                  labelText: l10n.projectMcpPermissionScope,
-                ),
-                items: [
-                  DropdownMenuItem(
-                    value: ToolPermissionRule.inherit,
-                    child: Text(l10n.projectToolRuleInherit),
-                  ),
-                  DropdownMenuItem(
-                    value: ToolPermissionRule.ask,
-                    child: Text(l10n.projectToolRuleAsk),
-                  ),
-                  DropdownMenuItem(
-                    value: ToolPermissionRule.allow,
-                    child: Text(l10n.projectToolRuleAllow),
-                  ),
-                  DropdownMenuItem(
-                    value: ToolPermissionRule.deny,
-                    child: Text(l10n.projectToolRuleDeny),
-                  ),
-                ],
-                onChanged: (value) {
-                  if (value != null) setState(() => _permissionRule = value);
-                },
+                label: l10n.projectMcpPermissionScope,
+                value: _permissionRule,
+                onChanged: (value) => setState(() => _permissionRule = value),
               ),
             ],
           ),

@@ -46,7 +46,7 @@ void main() {
     SharedPreferencesAsyncPlatform.instance =
         InMemorySharedPreferencesAsync.empty();
     _previousGoldenComparator = goldenFileComparator;
-    goldenFileComparator = _FigmaRenderingComparator(
+    goldenFileComparator = _OpenChatRenderingComparator(
       Uri.parse('test/fidelity_screenshot_test.dart'),
     );
     final iconFont = FontLoader('MaterialIcons')
@@ -70,6 +70,46 @@ void main() {
   tearDownAll(() {
     goldenFileComparator = _previousGoldenComparator;
     SharedPreferencesAsyncPlatform.instance = null;
+  });
+
+  testWidgets('asks for a model before inviting a user to send', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1100, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('tr'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
+        home: Scaffold(
+          body: ConversationPane(
+            messageController: controller,
+            showHistoryButton: false,
+            onOpenHistory: () {},
+            onSendMessage: () {},
+            canSendMessage: false,
+            hasAvailableModels: true,
+            hasSelectedModel: false,
+            providerId: 'opencode',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Başlamak için bir model seç'), findsOneWidget);
+    expect(
+      find.text('Aşağıdaki model menüsünden seçim yap; ardından mesajını yaz.'),
+      findsOneWidget,
+    );
+    expect(find.text('Nereden başlayalım?'), findsNothing);
   });
 
   testWidgets('keeps the app title bar within a narrow restored window', (
@@ -97,6 +137,35 @@ void main() {
     expect(titleBar.height, OpenChatSpacing.appTitleBarHeight);
     expect(controls.top, 4);
     expect(controls.bottom, titleBar.bottom - 4);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('does not overflow when the desktop viewport is minimized', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(160, 28);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('tr'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
+        home: const ChatScreen(
+          themeMode: ThemeMode.dark,
+          onThemeModeChanged: _ignoreThemeMode,
+          onToggleTheme: _ignoreThemeToggle,
+          historyStorageStatus: HistoryStorageStatus.available,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byType(ChatComposer), findsNothing);
+    expect(find.byType(OpenChatWindowTitleBar), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -355,95 +424,98 @@ void main() {
     (name: 'light', theme: OpenChatTheme.light),
     (name: 'dark', theme: OpenChatTheme.dark),
   ]) {
-    testWidgets('matches the empty ${appearance.name} Figma pane', (
+    testWidgets('matches the empty ${appearance.name} OpenChat pane', (
       tester,
     ) async {
-      await _expectPaneMatchesFigma(
+      await _expectPaneMatchesOpenChat(
         tester,
         theme: appearance.theme,
         selectedModelLabel: 'Örnek 1',
-        goldenPath: 'goldens/figma-empty-pane-${appearance.name}.png',
+        goldenPath: 'goldens/openchat-empty-pane-${appearance.name}.png',
       );
     });
 
-    testWidgets('matches the active ${appearance.name} Figma pane', (
+    testWidgets('matches the active ${appearance.name} OpenChat pane', (
       tester,
     ) async {
-      await _expectPaneMatchesFigma(
+      await _expectPaneMatchesOpenChat(
         tester,
         theme: appearance.theme,
         messages: figmaChatMessages,
         conversationTitle: 'OpenChat sohbeti',
         selectedModelLabel: 'Örnek 1',
         reasoningLevel: 'Orta',
-        goldenPath: 'goldens/figma-active-pane-${appearance.name}.png',
+        goldenPath: 'goldens/openchat-active-pane-${appearance.name}.png',
       );
     });
 
-    testWidgets('matches the active ${appearance.name} Figma screen', (
+    testWidgets('matches the active ${appearance.name} OpenChat screen', (
       tester,
     ) async {
-      await _expectActiveScreenMatchesFigma(
+      await _expectActiveScreenMatchesOpenChat(
         tester,
         theme: appearance.theme,
-        goldenPath: 'goldens/figma-active-screen-${appearance.name}.png',
+        goldenPath: 'goldens/openchat-active-screen-${appearance.name}.png',
       );
     });
 
-    testWidgets('matches the narrow active ${appearance.name} Figma screen', (
+    testWidgets(
+      'matches the narrow active ${appearance.name} OpenChat screen',
+      (tester) async {
+        await _expectActiveScreenMatchesOpenChat(
+          tester,
+          theme: appearance.theme,
+          size: const Size(1280, 720),
+          expandedRail: false,
+          sidebarWidth: OpenChatSpacing.compactSidebarWidth,
+          goldenPath: 'goldens/openchat-active-narrow-${appearance.name}.png',
+        );
+      },
+    );
+
+    testWidgets(
+      'matches the compact active ${appearance.name} OpenChat screen',
+      (tester) async {
+        await _expectActiveScreenMatchesOpenChat(
+          tester,
+          theme: appearance.theme,
+          size: const Size(1492, 900),
+          expandedRail: false,
+          sidebarWidth: OpenChatSpacing.sidebarWidth,
+          goldenPath: 'goldens/openchat-active-compact-${appearance.name}.png',
+        );
+      },
+    );
+
+    testWidgets('matches the empty ${appearance.name} OpenChat screen', (
       tester,
     ) async {
-      await _expectActiveScreenMatchesFigma(
+      await _expectEmptyScreenMatchesOpenChat(
         tester,
         theme: appearance.theme,
-        size: const Size(1280, 720),
-        expandedRail: false,
-        sidebarWidth: OpenChatSpacing.compactSidebarWidth,
-        goldenPath: 'goldens/figma-active-narrow-${appearance.name}.png',
+        goldenPath: 'goldens/openchat-empty-screen-${appearance.name}.png',
       );
     });
 
-    testWidgets('matches the compact active ${appearance.name} Figma screen', (
-      tester,
-    ) async {
-      await _expectActiveScreenMatchesFigma(
-        tester,
-        theme: appearance.theme,
-        size: const Size(1492, 900),
-        expandedRail: false,
-        sidebarWidth: OpenChatSpacing.sidebarWidth,
-        goldenPath: 'goldens/figma-active-compact-${appearance.name}.png',
-      );
-    });
+    testWidgets(
+      'matches the compact empty ${appearance.name} OpenChat screen',
+      (tester) async {
+        await _expectEmptyScreenMatchesOpenChat(
+          tester,
+          theme: appearance.theme,
+          size: const Size(1492, 900),
+          goldenPath: 'goldens/openchat-empty-compact-${appearance.name}.png',
+        );
+      },
+    );
 
-    testWidgets('matches the empty ${appearance.name} Figma screen', (
+    testWidgets('matches the ${appearance.name} OpenChat settings screen', (
       tester,
     ) async {
-      await _expectEmptyScreenMatchesFigma(
+      await _expectSettingsScreenMatchesOpenChat(
         tester,
         theme: appearance.theme,
-        goldenPath: 'goldens/figma-empty-screen-${appearance.name}.png',
-      );
-    });
-
-    testWidgets('matches the compact empty ${appearance.name} Figma screen', (
-      tester,
-    ) async {
-      await _expectEmptyScreenMatchesFigma(
-        tester,
-        theme: appearance.theme,
-        size: const Size(1492, 900),
-        goldenPath: 'goldens/figma-empty-compact-${appearance.name}.png',
-      );
-    });
-
-    testWidgets('matches the ${appearance.name} Figma settings screen', (
-      tester,
-    ) async {
-      await _expectSettingsScreenMatchesFigma(
-        tester,
-        theme: appearance.theme,
-        goldenPath: 'goldens/figma-settings-screen-${appearance.name}.png',
+        goldenPath: 'goldens/openchat-settings-screen-${appearance.name}.png',
       );
     });
 
@@ -456,20 +528,26 @@ void main() {
     testWidgets('matches the compact ${appearance.name} navigation rail', (
       tester,
     ) async {
-      await _expectCompactNavigationRailMatchesFigma(
+      await _expectCompactNavigationRailMatchesOpenChat(
         tester,
         theme: appearance.theme,
-        goldenPath: 'goldens/figma-compact-rail-${appearance.name}.png',
+        goldenPath: 'goldens/openchat-compact-rail-${appearance.name}.png',
       );
     });
   }
 
   for (final layout in [
-    (name: 'wide', width: 1680.0, height: 900.0, rail: 52.0, sidebar: 320.0),
+    (
+      name: 'wide',
+      width: 1680.0,
+      height: 900.0,
+      rail: OpenChatSpacing.expandedRailWidth,
+      sidebar: 320.0,
+    ),
     (name: 'compact', width: 1492.0, height: 900.0, rail: 52.0, sidebar: 320.0),
     (name: 'narrow', width: 1280.0, height: 720.0, rail: 52.0, sidebar: 300.0),
   ]) {
-    testWidgets('matches the ${layout.name} Figma composition geometry', (
+    testWidgets('matches the ${layout.name} OpenChat composition geometry', (
       tester,
     ) async {
       await _expectCompositionGeometry(
@@ -1152,7 +1230,7 @@ void main() {
   });
 }
 
-Future<void> _expectCompactNavigationRailMatchesFigma(
+Future<void> _expectCompactNavigationRailMatchesOpenChat(
   WidgetTester tester, {
   required ThemeData theme,
   required String goldenPath,
@@ -1260,6 +1338,10 @@ Future<void> _expectCompositionGeometry(
   expect(sidebarHeader.height, conversationHeader.height);
   expect(find.byType(WindowControlBar), findsOneWidget);
   expect(
+    tester.widget<ChatNavigationRail>(find.byType(ChatNavigationRail)).expanded,
+    width >= OpenChatSpacing.expandedRailBreakpoint,
+  );
+  expect(
     find.descendant(
       of: find.byType(ConversationPane),
       matching: find.byType(WindowControlBar),
@@ -1294,10 +1376,15 @@ Future<void> _expectCompositionGeometry(
   final composer = tester.getRect(find.byType(ChatComposer));
   expect(composer.width, OpenChatSpacing.composerMaxWidth);
   expect(composer.center.dx, pane.center.dx);
+  if (pane.height >= 720) {
+    expect(composer.center.dy, lessThan(pane.center.dy + 120));
+  } else {
+    expect(composer.bottom, lessThanOrEqualTo(pane.bottom));
+  }
   _expectComposerControls(tester, outlinedButtonCount: 2);
 }
 
-Future<void> _expectEmptyScreenMatchesFigma(
+Future<void> _expectEmptyScreenMatchesOpenChat(
   WidgetTester tester, {
   required ThemeData theme,
   required String goldenPath,
@@ -1335,7 +1422,7 @@ Future<void> _expectEmptyScreenMatchesFigma(
   );
 }
 
-Future<void> _expectSettingsScreenMatchesFigma(
+Future<void> _expectSettingsScreenMatchesOpenChat(
   WidgetTester tester, {
   required ThemeData theme,
   required String goldenPath,
@@ -1390,13 +1477,20 @@ Future<void> _pumpSettingsScreen(
     ),
   );
   await tester.pumpAndSettle();
-  await tester.ensureVisible(find.byTooltip('Ayarlar'));
+  final context = tester.element(find.byType(ChatScreen));
+  final l10n = AppLocalizations.of(context);
+  if (l10n == null) throw StateError('Settings localization is missing.');
+  final settingsTooltip = find.byTooltip(l10n.settings);
+  final settingsTarget = settingsTooltip.evaluate().isNotEmpty
+      ? settingsTooltip
+      : find.text(l10n.settings).first;
+  await tester.ensureVisible(settingsTarget);
   await tester.pumpAndSettle();
-  await tester.tap(find.byTooltip('Ayarlar'));
+  await tester.tap(settingsTarget);
   await tester.pumpAndSettle();
 }
 
-Future<void> _expectActiveScreenMatchesFigma(
+Future<void> _expectActiveScreenMatchesOpenChat(
   WidgetTester tester, {
   required ThemeData theme,
   required String goldenPath,
@@ -1479,11 +1573,11 @@ Future<void> _expectActiveScreenMatchesFigma(
   );
   await tester.pumpAndSettle();
   if (expandedRail) {
-    _expectFigmaSidebarGeometry(tester);
+    _expectOpenChatSidebarGeometry(tester);
   } else if (sidebarWidth == OpenChatSpacing.compactSidebarWidth) {
-    _expectNarrowFigmaSidebarGeometry(tester);
+    _expectNarrowOpenChatSidebarGeometry(tester);
   } else {
-    _expectCompactFigmaSidebarGeometry(tester);
+    _expectCompactOpenChatSidebarGeometry(tester);
   }
   final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
   addTearDown(mouse.removePointer);
@@ -1501,7 +1595,7 @@ Future<void> _expectActiveScreenMatchesFigma(
   );
 }
 
-void _expectNarrowFigmaSidebarGeometry(WidgetTester tester) {
+void _expectNarrowOpenChatSidebarGeometry(WidgetTester tester) {
   expect(
     tester.getRect(find.byType(ChatNavigationRail)),
     Rect.fromLTWH(
@@ -1523,7 +1617,7 @@ void _expectNarrowFigmaSidebarGeometry(WidgetTester tester) {
   _expectSidebarContentFits(tester);
 }
 
-void _expectCompactFigmaSidebarGeometry(WidgetTester tester) {
+void _expectCompactOpenChatSidebarGeometry(WidgetTester tester) {
   expect(
     tester.getRect(find.byType(ChatNavigationRail)),
     Rect.fromLTWH(
@@ -1545,7 +1639,7 @@ void _expectCompactFigmaSidebarGeometry(WidgetTester tester) {
   _expectSidebarContentFits(tester);
 }
 
-void _expectFigmaSidebarGeometry(WidgetTester tester) {
+void _expectOpenChatSidebarGeometry(WidgetTester tester) {
   expect(
     tester.getRect(find.byType(ConversationSidebar)),
     Rect.fromLTWH(
@@ -1638,7 +1732,7 @@ Future<void> _expectNarrowComposerGeometry(
   _expectComposerControls(tester, outlinedButtonCount: 2);
 }
 
-Future<void> _expectPaneMatchesFigma(
+Future<void> _expectPaneMatchesOpenChat(
   WidgetTester tester, {
   required ThemeData theme,
   required String goldenPath,
@@ -1672,6 +1766,8 @@ Future<void> _expectPaneMatchesFigma(
               onOpenHistory: () {},
               onSendMessage: () {},
               providerId: 'chatgpt',
+              hasAvailableModels: selectedModelLabel != null,
+              hasSelectedModel: selectedModelLabel != null,
               messages: messages,
               conversationTitle: conversationTitle,
               selectedModelLabel: selectedModelLabel,
@@ -1742,10 +1838,11 @@ void _expectComposerControls(
   }
 }
 
+// These app-rendered images are regression baselines, not Figma exports.
 // Keep screenshot comparison pixel-exact; geometry assertions identify layout
 // mismatches separately from differences in text rasterization.
-class _FigmaRenderingComparator extends LocalFileComparator {
-  _FigmaRenderingComparator(super.testFile);
+class _OpenChatRenderingComparator extends LocalFileComparator {
+  _OpenChatRenderingComparator(super.testFile);
 
   @override
   Future<bool> compare(Uint8List imageBytes, Uri golden) async {

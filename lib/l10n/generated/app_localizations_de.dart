@@ -1027,6 +1027,13 @@ class AppLocalizationsDe extends AppLocalizations {
       'Legen Sie fest, wo die Dateitools der KI arbeiten dürfen und ob jeder Aufruf Ihre Zustimmung erfordert.';
 
   @override
+  String get toolPermissionPlan => 'Planungsmodus';
+
+  @override
+  String get toolPermissionPlanDescription =>
+      'Nur lesen und recherchieren. Dateiänderungen, Terminalbefehle, Projektwerkzeuge und Integrationen sind gesperrt.';
+
+  @override
   String get toolPermissionRequireApproval => 'Zustimmung anfordern';
 
   @override
@@ -2177,7 +2184,7 @@ class AppLocalizationsDe extends AppLocalizations {
       'Diese Nachricht ist nicht mehr verfügbar.';
 
   @override
-  String get projects => 'Codeprojekte';
+  String get projects => 'Projekte';
 
   @override
   String get noProjects => 'Noch keine Projekte';
@@ -2219,7 +2226,7 @@ class AppLocalizationsDe extends AppLocalizations {
   String get projectLoadFailed => 'Projekte konnten nicht geladen werden.';
 
   @override
-  String get projectLoading => 'Codeprojekte werden geladen…';
+  String get projectLoading => 'Projekte werden geladen…';
 
   @override
   String get projectMoveFailed =>
@@ -2277,6 +2284,33 @@ class AppLocalizationsDe extends AppLocalizations {
   String get projectOptionsTitle => 'Projektoptionen';
 
   @override
+  String get projectDefaultModelSourceLabel => 'Projektstandard';
+
+  @override
+  String get projectDefaultModelUseCurrent =>
+      'Aktuelles Modell für dieses Projekt verwenden';
+
+  @override
+  String get projectDefaultModelClear => 'Projektstandardmodell zurücksetzen';
+
+  @override
+  String get projectDefaultModelSelectFirst =>
+      'Wähle zuerst ein Modell aus, bevor du einen Projektstandard festlegst.';
+
+  @override
+  String get projectDefaultModelSaveFailed =>
+      'Das Projektstandardmodell konnte nicht gespeichert werden.';
+
+  @override
+  String projectDefaultModelSaved(String model) {
+    return 'Projektstandardmodell auf $model festgelegt.';
+  }
+
+  @override
+  String get projectDefaultModelCleared =>
+      'Projektstandardmodell zurückgesetzt.';
+
+  @override
   String get projectOptionsToolPermissions => 'Tool-Berechtigungen';
 
   @override
@@ -2287,6 +2321,9 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get projectOptionsInstructions => 'Projektanweisungen';
+
+  @override
+  String get projectOptionsSkills => 'Projekt-Skills';
 
   @override
   String get projectInstructionsTitle => 'Projektanweisungen';
@@ -2313,6 +2350,65 @@ class AppLocalizationsDe extends AppLocalizations {
   String projectInstructionsSize(int bytes, int maxBytes) {
     return '$bytes / $maxBytes Bytes';
   }
+
+  @override
+  String get projectIndexTitle => 'Projektindex';
+
+  @override
+  String get projectIndexDescription =>
+      'Indiziert Projekttextdateien lokal. Der Index beachtet .gitignore und wird außerhalb des Projektordners gespeichert.';
+
+  @override
+  String get projectIndexEnable => 'Projektindex im Chat verwenden';
+
+  @override
+  String get projectIndexSync => 'Synchronisieren';
+
+  @override
+  String get projectIndexClear => 'Index löschen';
+
+  @override
+  String get projectIndexLoadFailed =>
+      'Der Status des Projektindex konnte nicht geladen werden.';
+
+  @override
+  String get projectIndexActionFailed =>
+      'Der Vorgang für den Projektindex ist fehlgeschlagen.';
+
+  @override
+  String get projectIndexStale =>
+      'Der Projektindex ist unvollständig. Synchronisieren Sie ihn in den Projektoptionen oder deaktivieren Sie ihn.';
+
+  @override
+  String projectIndexStatus(Object status, Object files, Object bytes) {
+    return 'Status: $status. Dateien: $files. Indexierte Bytes: $bytes.';
+  }
+
+  @override
+  String get projectSkillsTitle => 'Projekt-Skills';
+
+  @override
+  String get projectSkillsDescription =>
+      'Wähle Projekt-Skills aus .openchat/skills/<id>/SKILL.md aus. Der ausgewählte Inhalt wird mit neuen Antworten gesendet. Die Auswahl wird lokal für dieses Projekt gespeichert.';
+
+  @override
+  String get projectSkillsEmpty =>
+      'Keine Skills gefunden. Füge eine SKILL.md-Datei unter .openchat/skills/<id>/ hinzu.';
+
+  @override
+  String get projectSkillsLoadFailed =>
+      'Projekt-Skills konnten nicht geladen werden. Prüfe die Projektdateien und versuche es erneut.';
+
+  @override
+  String get projectSkillsSaveFailed =>
+      'Die Auswahl der Projekt-Skills konnte nicht gespeichert werden.';
+
+  @override
+  String get projectSkillsClearSelection => 'Auswahl löschen';
+
+  @override
+  String get projectSkillsStale =>
+      'Dieser ausgewählte Skill ist nicht mehr verfügbar. Deaktiviere ihn, um die gespeicherte Auswahl zu entfernen.';
 
   @override
   String get projectMcpTitle => 'MCP-Server des Projekts';
@@ -3133,11 +3229,19 @@ class AppLocalizationsDe extends AppLocalizations {
   String get moreOptions => 'Weitere Optionen';
 
   @override
-  String get emptyChatWelcomeTitle => 'Wie kann ich helfen?';
+  String get emptyChatWelcomeTitle => 'Womit möchtest du anfangen?';
 
   @override
   String get emptyChatWelcomeBody =>
-      'Stellen Sie eine Frage, um den Chat zu starten.';
+      'Stelle eine Frage oder beschreibe, worum es geht.';
+
+  @override
+  String get emptyChatSelectModelTitle =>
+      'Wähle ein Modell aus, um zu beginnen';
+
+  @override
+  String get emptyChatSelectModelBody =>
+      'Wähle unten ein Modell aus und schreibe anschließend deine Nachricht.';
 
   @override
   String get switchToDarkMode => 'Zum dunklen Theme wechseln';

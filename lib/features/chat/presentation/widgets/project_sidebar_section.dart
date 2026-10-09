@@ -36,6 +36,7 @@ class ProjectSidebarSection extends StatelessWidget {
     required this.errorMessage,
     this.onRetry,
     required this.emptyMessage,
+    this.showEmptyMessage = true,
   });
 
   final List<
@@ -72,6 +73,7 @@ class ProjectSidebarSection extends StatelessWidget {
   final String? errorMessage;
   final VoidCallback? onRetry;
   final String emptyMessage;
+  final bool showEmptyMessage;
 
   @override
   Widget build(BuildContext context) {
@@ -134,7 +136,7 @@ class ProjectSidebarSection extends StatelessWidget {
                         ],
                       ),
                     )
-                  else if (projects.isEmpty)
+                  else if (projects.isEmpty && showEmptyMessage)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(0, 6, 0, 2),
                       child: Text(

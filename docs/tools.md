@@ -1,5 +1,7 @@
 # Workspace tools
 
+The composer offers `Plan mode` alongside approval modes. It allows read-only file, Git, and web research. The service sends only those tool schemas and `ask_user`, skips project-task and MCP discovery, and rejects other operations while the mode is active, even when project rules contain `Allow`. Project `Deny` rules still apply to otherwise read-only tools. The mode is sent with each run and persisted as the shared tool-access preference.
+
 For optional project prompt guidance, see [project instructions](project-instructions.md). OpenChat reads `.openchat/instructions.md` at the start of a response run and keeps that snapshot for run continuation.
 
 Windows AppContainer setup grants traversal on the path to the working tree and access only to validated workspace entries. ACL updates use a non-propagating DACL write; existing descendants are checked and updated individually so a temporary sandbox permission does not trigger recursive ACL rewriting across unrelated files.

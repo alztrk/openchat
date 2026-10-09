@@ -157,6 +157,24 @@ void main() {
     expect(savedModel?.displayName, 'Big Pickle');
     expect(savedModel?.routeKey, 'opencode:::big-pickle');
 
+    const chatGptApiPreference = DefaultModelPreference(
+      providerId: 'chatgpt_api',
+      modelId: 'gpt-4.1',
+      displayName: 'GPT-4.1',
+      apiKeyConnectionId: 'key-connection-1',
+    );
+    expect(
+      chatGptApiPreference.routeKey,
+      'chatgpt_api:key-connection-1::gpt-4.1',
+    );
+    const geminiPreference = DefaultModelPreference(
+      providerId: 'gemini',
+      modelId: 'gemini-2.5-pro',
+      displayName: 'Gemini 2.5 Pro',
+      connectionId: 'gemini',
+    );
+    expect(geminiPreference.routeKey, 'gemini:gemini::gemini-2.5-pro');
+
     final savedHidden = await reopenedReader.readHiddenModelKeys();
     expect(savedHidden, contains('opencode:::mimo-v2.5-free'));
     expect(savedHidden, contains('opencode:::space-bunny-free'));
@@ -168,6 +186,56 @@ void main() {
     await writer.writeHiddenModelKeys({});
     expect(await reopenedReader.readHiddenModelKeys(), isEmpty);
   });
+
+  test(
+    'project model defaults persist independently and can be cleared',
+    () async {
+      final writer = SettingsPreferences(SharedPreferencesAsync());
+      final reader = SettingsPreferences(SharedPreferencesAsync());
+      const globalPreference = DefaultModelPreference(
+        providerId: 'opencode',
+        modelId: 'global-model',
+        displayName: 'Global model',
+      );
+      const preference = DefaultModelPreference(
+        providerId: 'chatgpt_api',
+        modelId: 'gpt-4.1',
+        displayName: 'GPT-4.1',
+        reasoningEffort: 'high',
+        apiKeyConnectionId: 'openai-key-1',
+      );
+
+      expect(await reader.readProjectDefaultModel('project-1'), isNull);
+      await writer.writeDefaultModel(globalPreference);
+      await writer.writeProjectDefaultModel('project-1', preference);
+
+      expect(await reader.readProjectDefaultModel('project-1'), preference);
+      final projectDefault = await reader.readDefaultModelForProject(
+        'project-1',
+      );
+      expect(projectDefault.preference, preference);
+      expect(projectDefault.isProjectSpecific, isTrue);
+      final forcedGlobalDefault = await reader.readDefaultModelForProject(
+        'project-1',
+        useProjectDefault: false,
+      );
+      expect(forcedGlobalDefault.preference, globalPreference);
+      expect(forcedGlobalDefault.isProjectSpecific, isFalse);
+      final otherProjectDefault = await reader.readDefaultModelForProject(
+        'project-2',
+      );
+      expect(otherProjectDefault.preference, globalPreference);
+      expect(otherProjectDefault.isProjectSpecific, isFalse);
+
+      await writer.writeProjectDefaultModel('project-1', null);
+      expect(await reader.readProjectDefaultModel('project-1'), isNull);
+      final clearedProjectDefault = await reader.readDefaultModelForProject(
+        'project-1',
+      );
+      expect(clearedProjectDefault.preference, globalPreference);
+      expect(clearedProjectDefault.isProjectSpecific, isFalse);
+    },
+  );
 
   test(
     'local engine model directories persist and reset to defaults',
@@ -194,6 +262,28 @@ void main() {
     },
   );
 
+  test('project Skill selections persist locally and independently', () async {
+    final writer = SettingsPreferences(SharedPreferencesAsync());
+    await writer.writeProjectSkillIds('project-1', <String>{
+      'rust-style',
+      'api-contract',
+    });
+
+    final reader = SettingsPreferences(SharedPreferencesAsync());
+    expect(await reader.readProjectSkillIds('project-1'), {
+      'api-contract',
+      'rust-style',
+    });
+    expect(await reader.readProjectSkillIds('project-2'), isEmpty);
+
+    await writer.writeProjectSkillIds('project-1', <String>{});
+    expect(await reader.readProjectSkillIds('project-1'), isEmpty);
+    await expectLater(
+      reader.writeProjectSkillIds('project-1', <String>{'../outside'}),
+      throwsArgumentError,
+    );
+  });
+
   test('shared instructions and tool permission mode persist', () async {
     final writer = SettingsPreferences(SharedPreferencesAsync());
     expect(await writer.readSharedInstructions(), isEmpty);
@@ -202,6 +292,7 @@ void main() {
       ToolPermissionMode.requireApproval,
     );
     expect(ToolPermissionMode.requireApproval.serviceValue, 'require_approval');
+    expect(ToolPermissionMode.plan.serviceValue, 'plan');
     expect(ToolPermissionMode.fullAccess.serviceValue, 'full_access');
 
     await writer.writeSharedInstructions('Keep answers concise.');
@@ -213,6 +304,9 @@ void main() {
       await reader.readToolPermissionMode(),
       ToolPermissionMode.fullAccess,
     );
+
+    await writer.writeToolPermissionMode(ToolPermissionMode.plan);
+    expect(await reader.readToolPermissionMode(), ToolPermissionMode.plan);
   });
 
   test('project tool permission rules persist separately by project', () async {

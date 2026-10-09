@@ -23,6 +23,8 @@ const _compatibleProviderIds = <String>{
 
 const _localEngineProviderIds = <String>{'llama_cpp', 'vllm', 'exllama'};
 
+typedef SavedOutputMessageKey = ({String conversationId, String messageId});
+
 bool _isLocalEngineProvider(String? providerId) =>
     providerId != null && _localEngineProviderIds.contains(providerId);
 
@@ -144,6 +146,24 @@ class ChatRepository {
           )
           .toList(growable: false),
     );
+  }
+
+  Stream<Set<SavedOutputMessageKey>> watchSavedOutputMessageKeys() {
+    final conversationId = _database.savedOutputs.conversationId;
+    final messageId = _database.savedOutputs.messageId;
+    final query = _database.selectOnly(_database.savedOutputs)
+      ..addColumns([conversationId, messageId]);
+
+    return query.watch().map((rows) {
+      return rows.map((row) {
+        final savedConversationId = row.read(conversationId);
+        final savedMessageId = row.read(messageId);
+        if (savedConversationId == null || savedMessageId == null) {
+          throw StateError('A saved output is missing its message key.');
+        }
+        return (conversationId: savedConversationId, messageId: savedMessageId);
+      }).toSet();
+    });
   }
 
   Future<void> saveOutput({

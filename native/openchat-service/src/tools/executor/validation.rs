@@ -85,6 +85,21 @@ impl ToolOperation {
         )
     }
 
+    pub(crate) fn is_read_only_for_plan(&self) -> bool {
+        matches!(
+            self,
+            Self::List { .. }
+                | Self::Search { .. }
+                | Self::Read { .. }
+                | Self::WebSearch { .. }
+                | Self::ReadUrlContent { .. }
+                | Self::GitStatus
+                | Self::GitDiff
+                | Self::GitHistory { .. }
+                | Self::Info
+        )
+    }
+
     pub(crate) fn targets_directory(&self) -> bool {
         matches!(self, Self::List { .. } | Self::Search { .. })
     }

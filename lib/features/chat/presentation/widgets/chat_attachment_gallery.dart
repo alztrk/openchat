@@ -32,6 +32,8 @@ class ChatAttachmentGallery extends StatefulWidget {
 }
 
 class _ChatAttachmentGalleryState extends State<ChatAttachmentGallery> {
+  static const _thumbnailDecodeScale = 3.0;
+
   final ScrollController _scrollController = ScrollController();
 
   @override
@@ -166,6 +168,19 @@ class _ChatAttachmentGalleryState extends State<ChatAttachmentGallery> {
     required double height,
   }) {
     final l10n = context.openchatL10n;
+    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final thumbnailImageProvider = ResizeImage(
+      imageProvider,
+      width: math.max(
+        1,
+        (width * devicePixelRatio * _thumbnailDecodeScale).ceil(),
+      ),
+      height: math.max(
+        1,
+        (height * devicePixelRatio * _thumbnailDecodeScale).ceil(),
+      ),
+      policy: ResizeImagePolicy.fit,
+    );
     return SizedBox(
       width: width,
       height: height,
@@ -188,7 +203,7 @@ class _ChatAttachmentGalleryState extends State<ChatAttachmentGallery> {
                       attachment.name,
                     ),
                     child: Image(
-                      image: imageProvider,
+                      image: thumbnailImageProvider,
                       width: width,
                       height: height,
                       fit: BoxFit.cover,
@@ -321,62 +336,66 @@ class _ChatAttachmentGalleryState extends State<ChatAttachmentGallery> {
     BuildContext context,
     ImageProvider<Object> imageProvider,
     String imageName,
-  ) {
+  ) async {
     final l10n = context.openchatL10n;
     final size = MediaQuery.sizeOf(context);
     final width = math.max(0.0, size.width - 48).toDouble();
     final height = math.max(0.0, size.height - 48).toDouble();
-    return showDialog<void>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.84),
-      builder: (dialogContext) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(24),
-        constraints: BoxConstraints(maxWidth: width, maxHeight: height),
-        child: SizedBox(
-          width: width,
-          height: height,
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: InteractiveViewer(
-                  minScale: 0.75,
-                  maxScale: 6,
-                  child: Semantics(
-                    image: true,
-                    label: imageName,
-                    child: Image(
-                      image: imageProvider,
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) => Center(
-                        child: Text(
-                          l10n.attachmentUnavailable,
-                          style: TextStyle(color: widget.palette.text),
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.84),
+        builder: (dialogContext) => Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.all(24),
+          constraints: BoxConstraints(maxWidth: width, maxHeight: height),
+          child: SizedBox(
+            width: width,
+            height: height,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: InteractiveViewer(
+                    minScale: 0.75,
+                    maxScale: 6,
+                    child: Semantics(
+                      image: true,
+                      label: imageName,
+                      child: Image(
+                        image: imageProvider,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) => Center(
+                          child: Text(
+                            l10n.attachmentUnavailable,
+                            style: TextStyle(color: widget.palette.text),
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-              Positioned(
-                top: 8,
-                right: 8,
-                child: IconButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  tooltip: l10n.close,
-                  style: IconButton.styleFrom(
-                    backgroundColor: widget.palette.surface.withValues(
-                      alpha: 0.94,
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: IconButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(),
+                    tooltip: l10n.close,
+                    style: IconButton.styleFrom(
+                      backgroundColor: widget.palette.surface.withValues(
+                        alpha: 0.94,
+                      ),
+                      foregroundColor: widget.palette.text,
                     ),
-                    foregroundColor: widget.palette.text,
+                    icon: const Icon(LucideIcons.x),
                   ),
-                  icon: const Icon(LucideIcons.x),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
-    );
+      );
+    } finally {
+      await imageProvider.evict();
+    }
   }
 }

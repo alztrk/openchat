@@ -67,11 +67,13 @@ class ChatNavigationRail extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   SizedBox(height: expanded ? 20 : 4),
-                  if (expanded)
-                    _Brand(palette: palette)
-                  else if (showBrand) ...[
-                    const _CompactBrand(),
-                    const SizedBox(height: 24),
+                  if (showBrand) ...[
+                    if (expanded)
+                      _Brand(palette: palette)
+                    else ...[
+                      const _CompactBrand(),
+                      const SizedBox(height: 24),
+                    ],
                   ] else
                     const SizedBox(height: 4),
                   SizedBox(height: expanded ? 10 : 6),
@@ -103,7 +105,7 @@ class ChatNavigationRail extends StatelessWidget {
                               label: l10n.workspaces,
                               selected: workspacesSelected,
                               icon: Icon(
-                                LucideIcons.messagesSquare,
+                                LucideIcons.folder,
                                 color: workspacesSelected
                                     ? palette.accentIcon
                                     : palette.secondaryIcon,
@@ -137,7 +139,7 @@ class ChatNavigationRail extends StatelessWidget {
                               label: l10n.modelLibrary,
                               selected: modelsSelected,
                               icon: Icon(
-                                LucideIcons.library,
+                                LucideIcons.brain,
                                 color: modelsSelected
                                     ? palette.accentIcon
                                     : palette.secondaryIcon,
@@ -385,9 +387,7 @@ class _RailNavigationButtonState extends State<_RailNavigationButton> {
       ),
     );
 
-    return widget.expanded
-        ? item
-        : Tooltip(message: widget.label, child: item);
+    return widget.expanded ? item : Tooltip(message: widget.label, child: item);
   }
 }
 

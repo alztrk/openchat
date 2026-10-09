@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
 import 'package:openchat/features/chat/domain/history_search_result.dart';
 import 'package:openchat/features/chat/presentation/widgets/project_sidebar_section.dart';
-import 'package:openchat/features/chat/presentation/widgets/sidebar_collapsible_heading.dart';
+import 'package:openchat/features/chat/presentation/widgets/sidebar_section_heading.dart';
 import 'package:openchat/features/chat/presentation/widgets/sidebar_conversation_section.dart';
 
 class ConversationSidebar extends StatelessWidget {
@@ -165,6 +166,11 @@ class ConversationSidebar extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
+                style: TextButton.styleFrom(
+                  alignment: Alignment.centerLeft,
+                  minimumSize: const Size.fromHeight(40),
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
               ),
             ),
           if (selectionMode) ...[
@@ -232,178 +238,181 @@ class ConversationSidebar extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       builder: (sheetContext) => StatefulBuilder(
-        builder: (context, setSheetState) => SafeArea(
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              20,
-              20,
-              20,
-              20 + MediaQuery.viewInsetsOf(context).bottom,
-            ),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    l10n.historySearchFiltersTitle,
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    l10n.historySearchRouteFilterNote,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                  if (isLoadingHistorySearchFilterOptions) ...[
-                    const SizedBox(height: 12),
-                    Semantics(
-                      liveRegion: true,
-                      label: l10n.historySearchFiltersLoading,
-                      child: ExcludeSemantics(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            const LinearProgressIndicator(),
-                            const SizedBox(height: 6),
-                            Text(l10n.historySearchFiltersLoading),
-                          ],
+        builder: (context, setSheetState) {
+          final palette = OpenChatPalette.of(context);
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                20,
+                20,
+                20 + MediaQuery.viewInsetsOf(context).bottom,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      l10n.historySearchFiltersTitle,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      l10n.historySearchRouteFilterNote,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    if (isLoadingHistorySearchFilterOptions) ...[
+                      const SizedBox(height: 12),
+                      Semantics(
+                        liveRegion: true,
+                        label: l10n.historySearchFiltersLoading,
+                        child: ExcludeSemantics(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              const LinearProgressIndicator(),
+                              const SizedBox(height: 6),
+                              Text(l10n.historySearchFiltersLoading),
+                            ],
+                          ),
                         ),
                       ),
+                    ],
+                    const SizedBox(height: 16),
+                    OpenChatSelectField<String?>(
+                      label: l10n.historySearchProviderFilter,
+                      options: [
+                        OpenChatSelectOption<String?>(
+                          value: null,
+                          label: l10n.historySearchAllProviders,
+                        ),
+                        for (final id
+                            in options?.providerIds ?? const <String>[])
+                          OpenChatSelectOption<String?>(value: id, label: id),
+                      ],
+                      value: providerId,
+                      palette: palette,
+                      onChanged: options == null
+                          ? null
+                          : (value) => setSheetState(() => providerId = value),
+                    ),
+                    const SizedBox(height: 12),
+                    OpenChatSelectField<String?>(
+                      label: l10n.historySearchModelFilter,
+                      options: [
+                        OpenChatSelectOption<String?>(
+                          value: null,
+                          label: l10n.historySearchAllModels,
+                        ),
+                        for (final id in options?.modelIds ?? const <String>[])
+                          OpenChatSelectOption<String?>(value: id, label: id),
+                      ],
+                      value: modelId,
+                      palette: palette,
+                      onChanged: options == null
+                          ? null
+                          : (value) => setSheetState(() => modelId = value),
+                    ),
+                    const SizedBox(height: 12),
+                    OpenChatSelectField<String?>(
+                      label: l10n.historySearchProjectFilter,
+                      options: [
+                        OpenChatSelectOption<String?>(
+                          value: null,
+                          label: l10n.historySearchAllProjects,
+                        ),
+                        for (final project in projects)
+                          OpenChatSelectOption<String?>(
+                            value: project.id,
+                            label: project.title,
+                          ),
+                      ],
+                      value: projectId,
+                      palette: palette,
+                      onChanged: (value) =>
+                          setSheetState(() => projectId = value),
+                    ),
+                    const SizedBox(height: 12),
+                    OpenChatSelectField<String?>(
+                      label: l10n.historySearchTagFilter,
+                      options: [
+                        OpenChatSelectOption<String?>(
+                          value: null,
+                          label: l10n.historySearchAllTags,
+                        ),
+                        for (final value in options?.tags ?? const <String>[])
+                          OpenChatSelectOption<String?>(
+                            value: value,
+                            label: value,
+                          ),
+                      ],
+                      value: tag,
+                      palette: palette,
+                      onChanged: (value) => setSheetState(() => tag = value),
+                    ),
+                    const SizedBox(height: 12),
+                    OpenChatSelectField<String>(
+                      label: l10n.historySearchArchiveFilter,
+                      options: [
+                        OpenChatSelectOption<String>(
+                          value: 'all',
+                          label: l10n.historySearchAllStatuses,
+                        ),
+                        OpenChatSelectOption<String>(
+                          value: 'active',
+                          label: l10n.historySearchActiveConversations,
+                        ),
+                        OpenChatSelectOption<String>(
+                          value: 'archived',
+                          label: l10n.historySearchArchivedConversations,
+                        ),
+                      ],
+                      value: archiveState,
+                      palette: palette,
+                      onChanged: (value) =>
+                          setSheetState(() => archiveState = value),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            onApplyHistorySearchFilters?.call(
+                              const HistorySearchFilters(),
+                            );
+                            Navigator.of(sheetContext).pop();
+                          },
+                          child: Text(l10n.historySearchClearFilters),
+                        ),
+                        const Spacer(),
+                        FilledButton(
+                          onPressed: () {
+                            onApplyHistorySearchFilters?.call(
+                              HistorySearchFilters(
+                                providerId: providerId,
+                                modelId: modelId,
+                                projectId: projectId,
+                                tag: tag,
+                                isArchived: switch (archiveState) {
+                                  'active' => false,
+                                  'archived' => true,
+                                  _ => null,
+                                },
+                              ),
+                            );
+                            Navigator.of(sheetContext).pop();
+                          },
+                          child: Text(l10n.historySearchApplyFilters),
+                        ),
+                      ],
                     ),
                   ],
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String?>(
-                    initialValue: providerId,
-                    decoration: InputDecoration(
-                      labelText: l10n.historySearchProviderFilter,
-                    ),
-                    items: [
-                      DropdownMenuItem<String?>(
-                        child: Text(l10n.historySearchAllProviders),
-                      ),
-                      for (final id in options?.providerIds ?? const <String>[])
-                        DropdownMenuItem<String?>(value: id, child: Text(id)),
-                    ],
-                    onChanged: options == null
-                        ? null
-                        : (value) => setSheetState(() => providerId = value),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String?>(
-                    initialValue: modelId,
-                    decoration: InputDecoration(
-                      labelText: l10n.historySearchModelFilter,
-                    ),
-                    items: [
-                      DropdownMenuItem<String?>(
-                        child: Text(l10n.historySearchAllModels),
-                      ),
-                      for (final id in options?.modelIds ?? const <String>[])
-                        DropdownMenuItem<String?>(value: id, child: Text(id)),
-                    ],
-                    onChanged: options == null
-                        ? null
-                        : (value) => setSheetState(() => modelId = value),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String?>(
-                    initialValue: projectId,
-                    decoration: InputDecoration(
-                      labelText: l10n.historySearchProjectFilter,
-                    ),
-                    items: [
-                      DropdownMenuItem<String?>(
-                        child: Text(l10n.historySearchAllProjects),
-                      ),
-                      for (final project in projects)
-                        DropdownMenuItem<String?>(
-                          value: project.id,
-                          child: Text(project.title),
-                        ),
-                    ],
-                    onChanged: (value) =>
-                        setSheetState(() => projectId = value),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String?>(
-                    initialValue: tag,
-                    decoration: InputDecoration(
-                      labelText: l10n.historySearchTagFilter,
-                    ),
-                    items: [
-                      DropdownMenuItem<String?>(
-                        child: Text(l10n.historySearchAllTags),
-                      ),
-                      for (final value in options?.tags ?? const <String>[])
-                        DropdownMenuItem<String?>(
-                          value: value,
-                          child: Text(value),
-                        ),
-                    ],
-                    onChanged: (value) => setSheetState(() => tag = value),
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: archiveState,
-                    decoration: InputDecoration(
-                      labelText: l10n.historySearchArchiveFilter,
-                    ),
-                    items: [
-                      DropdownMenuItem(
-                        value: 'all',
-                        child: Text(l10n.historySearchAllStatuses),
-                      ),
-                      DropdownMenuItem(
-                        value: 'active',
-                        child: Text(l10n.historySearchActiveConversations),
-                      ),
-                      DropdownMenuItem(
-                        value: 'archived',
-                        child: Text(l10n.historySearchArchivedConversations),
-                      ),
-                    ],
-                    onChanged: (value) =>
-                        setSheetState(() => archiveState = value ?? 'all'),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      TextButton(
-                        onPressed: () {
-                          onApplyHistorySearchFilters?.call(
-                            const HistorySearchFilters(),
-                          );
-                          Navigator.of(sheetContext).pop();
-                        },
-                        child: Text(l10n.historySearchClearFilters),
-                      ),
-                      const Spacer(),
-                      FilledButton(
-                        onPressed: () {
-                          onApplyHistorySearchFilters?.call(
-                            HistorySearchFilters(
-                              providerId: providerId,
-                              modelId: modelId,
-                              projectId: projectId,
-                              tag: tag,
-                              isArchived: switch (archiveState) {
-                                'active' => false,
-                                'archived' => true,
-                                _ => null,
-                              },
-                            ),
-                          );
-                          Navigator.of(sheetContext).pop();
-                        },
-                        child: Text(l10n.historySearchApplyFilters),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -529,7 +538,7 @@ class ConversationSidebar extends StatelessWidget {
                                   ),
                                   alignment: Alignment.centerLeft,
                                   child: Text(
-                                    'OpenChat',
+                                    l10n.conversationHistory,
                                     style: TextStyle(
                                       color: palette.text,
                                       fontSize: 16,
@@ -624,7 +633,7 @@ class ConversationSidebar extends StatelessWidget {
                           ),
                           padding: EdgeInsets.zero,
                           icon: Icon(
-                            LucideIcons.activity,
+                            LucideIcons.listChecks,
                             color: palette.secondaryIcon,
                             size: 17,
                           ),
@@ -793,39 +802,171 @@ class ConversationSidebar extends StatelessWidget {
                                 bottom: 12,
                               ),
                               children: [
-                                _buildBatchSelectionBar(context),
-                                SidebarConversationSection(
-                                  title: l10n.pinnedChats,
-                                  emptyMessage: hasQuery
-                                      ? l10n.noChatsSearchTitle
-                                      : l10n.noPinnedChats,
-                                  conversations: visiblePinnedConversations,
-                                  selectedConversationId:
-                                      selectedConversationId,
-                                  itemHeight: 32,
-                                  dropIcon: LucideIcons.pin,
-                                  onSelectConversation: onSelectConversation,
-                                  onTogglePinned: onToggleConversationPinned,
-                                  onRenameConversation: onRenameConversation,
-                                  onDeleteConversation: onDeleteConversation,
-                                  onExportConversation: onExportConversation,
-                                  onArchiveConversation: onArchiveConversation,
-                                  onEditConversationTags:
-                                      onEditConversationTags,
-                                  onToggleConversationBookmark:
-                                      onToggleConversationBookmark,
-                                  onDropConversation: onPinConversation,
-                                  selectionMode: selectionMode,
-                                  selectedConversationIds:
-                                      selectedConversationIds,
-                                  onToggleBatchSelection:
-                                      onToggleBatchSelection,
-                                  collapsed: _isCollapsed('pinned'),
-                                  onToggleCollapsed: _toggleSection('pinned'),
-                                ),
-                                const SizedBox(height: 16),
+                                if (conversations.isNotEmpty || selectionMode)
+                                  _buildBatchSelectionBar(context),
+                                if (visiblePinnedConversations.isNotEmpty)
+                                  SidebarConversationSection(
+                                    title: l10n.pinnedChats,
+                                    emptyMessage: hasQuery
+                                        ? l10n.noChatsSearchTitle
+                                        : l10n.noPinnedChats,
+                                    conversations: visiblePinnedConversations,
+                                    selectedConversationId:
+                                        selectedConversationId,
+                                    itemHeight: 32,
+                                    dropIcon: LucideIcons.pin,
+                                    onSelectConversation: onSelectConversation,
+                                    onTogglePinned: onToggleConversationPinned,
+                                    onRenameConversation: onRenameConversation,
+                                    onDeleteConversation: onDeleteConversation,
+                                    onExportConversation: onExportConversation,
+                                    onArchiveConversation:
+                                        onArchiveConversation,
+                                    onEditConversationTags:
+                                        onEditConversationTags,
+                                    onToggleConversationBookmark:
+                                        onToggleConversationBookmark,
+                                    onDropConversation: onPinConversation,
+                                    selectionMode: selectionMode,
+                                    selectedConversationIds:
+                                        selectedConversationIds,
+                                    onToggleBatchSelection:
+                                        onToggleBatchSelection,
+                                    collapsed: _isCollapsed('pinned'),
+                                    onToggleCollapsed: _toggleSection('pinned'),
+                                  ),
+                                if (visiblePinnedConversations.isNotEmpty)
+                                  const SizedBox(height: 16),
+                                if (visibleProjects.isNotEmpty ||
+                                    !hasQuery ||
+                                    projectsLoading ||
+                                    projectLoadError != null)
+                                  ProjectSidebarSection(
+                                    projects: visibleProjects,
+                                    collapsed: _isCollapsed('projects'),
+                                    onToggleCollapsed: _toggleSection(
+                                      'projects',
+                                    ),
+                                    selectedProjectId: selectedProjectId,
+                                    selectedConversationId:
+                                        selectedConversationId,
+                                    onSelectProject: onSelectProject,
+                                    onSelectConversation: onSelectConversation,
+                                    onOpenProjectOptions: onOpenProjectOptions,
+                                    onCreateProjectConversation:
+                                        onCreateProjectConversation,
+                                    onShowMoreProjectConversations:
+                                        onShowMoreProjectConversations,
+                                    onMoveConversationToProject:
+                                        onMoveConversationToProject,
+                                    onToggleConversationPinned:
+                                        onToggleConversationPinned,
+                                    onRenameConversation: onRenameConversation,
+                                    onDeleteConversation: onDeleteConversation,
+                                    onExportConversation: onExportConversation,
+                                    onArchiveConversation:
+                                        onArchiveConversation,
+                                    onEditConversationTags:
+                                        onEditConversationTags,
+                                    onToggleConversationBookmark:
+                                        onToggleConversationBookmark,
+                                    selectionMode: selectionMode,
+                                    selectedConversationIds:
+                                        selectedConversationIds,
+                                    onToggleBatchSelection:
+                                        onToggleBatchSelection,
+                                    onCreateProject: onCreateProject,
+                                    loading: projectsLoading,
+                                    errorMessage: projectLoadError,
+                                    onRetry: onRetryProjects,
+                                    showEmptyMessage: false,
+                                    emptyMessage: hasQuery
+                                        ? l10n.noChatsSearchTitle
+                                        : l10n.noProjects,
+                                  ),
+                                if (visibleProjects.isNotEmpty &&
+                                    visibleConversations.isNotEmpty)
+                                  const SizedBox(height: 16),
+                                if (visibleConversations.isNotEmpty)
+                                  SidebarConversationSection(
+                                    title: l10n.chats,
+                                    emptyMessage: hasQuery
+                                        ? l10n.noChatsSearchTitle
+                                        : l10n.noChatsTitle,
+                                    conversations: visibleConversations,
+                                    selectedConversationId:
+                                        selectedConversationId,
+                                    itemHeight: 32,
+                                    dropIcon: LucideIcons.messageCircle,
+                                    onSelectConversation: onSelectConversation,
+                                    onTogglePinned: onToggleConversationPinned,
+                                    onRenameConversation: onRenameConversation,
+                                    onDeleteConversation: onDeleteConversation,
+                                    onExportConversation: onExportConversation,
+                                    onArchiveConversation:
+                                        onArchiveConversation,
+                                    onEditConversationTags:
+                                        onEditConversationTags,
+                                    onToggleConversationBookmark:
+                                        onToggleConversationBookmark,
+                                    onDropConversation:
+                                        onMoveConversationToChats,
+                                    selectionMode: selectionMode,
+                                    selectedConversationIds:
+                                        selectedConversationIds,
+                                    onToggleBatchSelection:
+                                        onToggleBatchSelection,
+                                    collapsed: _isCollapsed('chats'),
+                                    onToggleCollapsed: _toggleSection('chats'),
+                                  ),
+                                if ((visiblePinnedConversations.isNotEmpty ||
+                                        visibleProjects.isNotEmpty) &&
+                                    visibleArchivedConversations.isNotEmpty)
+                                  const SizedBox(height: 16),
+                                if (visibleArchivedConversations.isNotEmpty)
+                                  SidebarConversationSection(
+                                    title: l10n.archivedChats,
+                                    emptyMessage: hasQuery
+                                        ? l10n.noChatsSearchTitle
+                                        : l10n.noArchivedChats,
+                                    conversations: visibleArchivedConversations,
+                                    selectedConversationId:
+                                        selectedConversationId,
+                                    itemHeight: 32,
+                                    dropIcon: LucideIcons.archive,
+                                    onSelectConversation: onSelectConversation,
+                                    onTogglePinned: null,
+                                    onRenameConversation: onRenameConversation,
+                                    onDeleteConversation: onDeleteConversation,
+                                    onExportConversation: onExportConversation,
+                                    onDropConversation: null,
+                                    isArchivedSection: true,
+                                    onArchiveConversation:
+                                        onArchiveConversation,
+                                    onEditConversationTags:
+                                        onEditConversationTags,
+                                    onToggleConversationBookmark:
+                                        onToggleConversationBookmark,
+                                    collapsed: _isCollapsed('archived'),
+                                    onToggleCollapsed: _toggleSection(
+                                      'archived',
+                                    ),
+                                  ),
+                              ],
+                            );
+                          }
+
+                          if (!hasQuery) {
+                            return ListView(
+                              padding: const EdgeInsets.only(
+                                top: 4,
+                                left: 4,
+                                right: 0,
+                                bottom: 12,
+                              ),
+                              children: [
                                 ProjectSidebarSection(
-                                  projects: visibleProjects,
+                                  projects: const [],
                                   collapsed: _isCollapsed('projects'),
                                   onToggleCollapsed: _toggleSection('projects'),
                                   selectedProjectId: selectedProjectId,
@@ -845,84 +986,18 @@ class ConversationSidebar extends StatelessWidget {
                                   onRenameConversation: onRenameConversation,
                                   onDeleteConversation: onDeleteConversation,
                                   onExportConversation: onExportConversation,
-                                  onArchiveConversation: onArchiveConversation,
-                                  onEditConversationTags:
-                                      onEditConversationTags,
-                                  onToggleConversationBookmark:
-                                      onToggleConversationBookmark,
-                                  selectionMode: selectionMode,
-                                  selectedConversationIds:
-                                      selectedConversationIds,
-                                  onToggleBatchSelection:
-                                      onToggleBatchSelection,
                                   onCreateProject: onCreateProject,
                                   loading: projectsLoading,
                                   errorMessage: projectLoadError,
                                   onRetry: onRetryProjects,
+                                  showEmptyMessage: false,
                                   emptyMessage: hasQuery
                                       ? l10n.noChatsSearchTitle
                                       : l10n.noProjects,
                                 ),
-                                const SizedBox(height: 16),
-                                SidebarConversationSection(
-                                  title: l10n.chats,
-                                  emptyMessage: hasQuery
-                                      ? l10n.noChatsSearchTitle
-                                      : l10n.noChatsTitle,
-                                  conversations: visibleConversations,
-                                  selectedConversationId:
-                                      selectedConversationId,
-                                  itemHeight: 32,
-                                  dropIcon: LucideIcons.messageCircle,
-                                  onSelectConversation: onSelectConversation,
-                                  onTogglePinned: onToggleConversationPinned,
-                                  onRenameConversation: onRenameConversation,
-                                  onDeleteConversation: onDeleteConversation,
-                                  onExportConversation: onExportConversation,
-                                  onArchiveConversation: onArchiveConversation,
-                                  onEditConversationTags:
-                                      onEditConversationTags,
-                                  onToggleConversationBookmark:
-                                      onToggleConversationBookmark,
-                                  onDropConversation: onMoveConversationToChats,
-                                  selectionMode: selectionMode,
-                                  selectedConversationIds:
-                                      selectedConversationIds,
-                                  onToggleBatchSelection:
-                                      onToggleBatchSelection,
-                                  collapsed: _isCollapsed('chats'),
-                                  onToggleCollapsed: _toggleSection('chats'),
-                                ),
-                                const SizedBox(height: 16),
-                                SidebarConversationSection(
-                                  title: l10n.archivedChats,
-                                  emptyMessage: hasQuery
-                                      ? l10n.noChatsSearchTitle
-                                      : l10n.noArchivedChats,
-                                  conversations: visibleArchivedConversations,
-                                  selectedConversationId:
-                                      selectedConversationId,
-                                  itemHeight: 32,
-                                  dropIcon: LucideIcons.archive,
-                                  onSelectConversation: onSelectConversation,
-                                  onTogglePinned: null,
-                                  onRenameConversation: onRenameConversation,
-                                  onDeleteConversation: onDeleteConversation,
-                                  onExportConversation: onExportConversation,
-                                  onDropConversation: null,
-                                  isArchivedSection: true,
-                                  onArchiveConversation: onArchiveConversation,
-                                  onEditConversationTags:
-                                      onEditConversationTags,
-                                  onToggleConversationBookmark:
-                                      onToggleConversationBookmark,
-                                  collapsed: _isCollapsed('archived'),
-                                  onToggleCollapsed: _toggleSection('archived'),
-                                ),
                               ],
                             );
                           }
-
                           return ListView(
                             padding: const EdgeInsets.only(
                               top: 4,
@@ -931,78 +1006,9 @@ class ConversationSidebar extends StatelessWidget {
                               bottom: 12,
                             ),
                             children: [
-                              _buildBatchSelectionBar(context),
                               _SidebarSection(
-                                title: l10n.pinnedChats,
-                                emptyMessage: l10n.noPinnedChats,
-                                collapsed: _isCollapsed('pinned'),
-                                onToggleCollapsed: _toggleSection('pinned'),
-                              ),
-                              const SizedBox(height: 16),
-                              ProjectSidebarSection(
-                                projects: const [],
-                                collapsed: _isCollapsed('projects'),
-                                onToggleCollapsed: _toggleSection('projects'),
-                                selectedProjectId: selectedProjectId,
-                                selectedConversationId: selectedConversationId,
-                                onSelectProject: onSelectProject,
-                                onSelectConversation: onSelectConversation,
-                                onOpenProjectOptions: onOpenProjectOptions,
-                                onCreateProjectConversation:
-                                    onCreateProjectConversation,
-                                onShowMoreProjectConversations:
-                                    onShowMoreProjectConversations,
-                                onMoveConversationToProject:
-                                    onMoveConversationToProject,
-                                onToggleConversationPinned:
-                                    onToggleConversationPinned,
-                                onRenameConversation: onRenameConversation,
-                                onDeleteConversation: onDeleteConversation,
-                                onExportConversation: onExportConversation,
-                                onCreateProject: onCreateProject,
-                                loading: projectsLoading,
-                                errorMessage: projectLoadError,
-                                onRetry: onRetryProjects,
-                                emptyMessage: hasQuery
-                                    ? l10n.noChatsSearchTitle
-                                    : l10n.noProjects,
-                              ),
-                              const SizedBox(height: 16),
-                              _SidebarSection(
-                                title: l10n.chats,
-                                emptyMessage: hasQuery
-                                    ? l10n.noChatsSearchTitle
-                                    : l10n.noChatsTitle,
-                                collapsed: _isCollapsed('chats'),
-                                onToggleCollapsed: _toggleSection('chats'),
-                              ),
-                              const SizedBox(height: 16),
-                              SidebarConversationSection(
-                                title: l10n.archivedChats,
-                                emptyMessage: hasQuery
-                                    ? l10n.noChatsSearchTitle
-                                    : l10n.noArchivedChats,
-                                conversations: visibleArchivedConversations,
-                                selectedConversationId: selectedConversationId,
-                                itemHeight: 32,
-                                dropIcon: LucideIcons.archive,
-                                onSelectConversation: onSelectConversation,
-                                onTogglePinned: null,
-                                onRenameConversation: onRenameConversation,
-                                onDeleteConversation: onDeleteConversation,
-                                onExportConversation: onExportConversation,
-                                onDropConversation: null,
-                                isArchivedSection: true,
-                                onArchiveConversation: onArchiveConversation,
-                                onEditConversationTags: onEditConversationTags,
-                                onToggleConversationBookmark:
-                                    onToggleConversationBookmark,
-                                selectionMode: selectionMode,
-                                selectedConversationIds:
-                                    selectedConversationIds,
-                                onToggleBatchSelection: onToggleBatchSelection,
-                                collapsed: _isCollapsed('archived'),
-                                onToggleCollapsed: _toggleSection('archived'),
+                                title: l10n.conversationHistory,
+                                emptyMessage: l10n.noChatsSearchTitle,
                               ),
                             ],
                           );
@@ -1239,15 +1245,11 @@ class _SidebarSection extends StatelessWidget {
     required this.title,
     required this.emptyMessage,
     this.onRetry,
-    this.collapsed = false,
-    this.onToggleCollapsed,
   });
 
   final String title;
   final String emptyMessage;
   final VoidCallback? onRetry;
-  final bool collapsed;
-  final VoidCallback? onToggleCollapsed;
 
   @override
   Widget build(BuildContext context) {
@@ -1255,37 +1257,26 @@ class _SidebarSection extends StatelessWidget {
     final palette = OpenChatPalette.of(context);
 
     return ConstrainedBox(
-      constraints: BoxConstraints(
-        minHeight: collapsed
-            ? 28
-            : onRetry == null
-            ? 56
-            : 104,
-      ),
+      constraints: BoxConstraints(minHeight: onRetry == null ? 56 : 104),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SidebarCollapsibleHeading(
-            title: title,
-            collapsed: collapsed,
-            onPressed: onToggleCollapsed ?? () {},
-          ),
-          if (!collapsed) const SizedBox(height: 8),
-          if (!collapsed)
-            Padding(
-              padding: EdgeInsets.only(bottom: onRetry == null ? 0 : 2),
-              child: Text(
-                emptyMessage,
-                maxLines: onRetry == null ? 1 : 2,
-                overflow: TextOverflow.ellipsis,
-                style: textTheme.bodyMedium?.copyWith(
-                  color: palette.secondaryText,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w400,
-                  height: 18 / 12,
-                ),
+          SidebarSectionHeading(title: title),
+          const SizedBox(height: 8),
+          Padding(
+            padding: EdgeInsets.only(bottom: onRetry == null ? 0 : 2),
+            child: Text(
+              emptyMessage,
+              maxLines: onRetry == null ? 1 : 2,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.bodyMedium?.copyWith(
+                color: palette.secondaryText,
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+                height: 18 / 12,
               ),
             ),
+          ),
           if (onRetry case final retry?)
             TextButton.icon(
               onPressed: retry,

@@ -40,6 +40,8 @@ pub async fn send_message(
         excluded_assistant_message_id,
         custom_instructions,
         project_instructions,
+        project_skills,
+        project_index_context,
         project_root,
         data_root,
         storage: context_storage,
@@ -67,7 +69,9 @@ pub async fn send_message(
     .await?;
     let provider_id = route.provider_id.as_deref().ok_or_else(route_error)?;
     #[cfg(windows)]
-    let mcp_registry = if route.supports_tool_calls != Some(false) {
+    let mcp_registry = if route.supports_tool_calls != Some(false)
+        && permission_mode != crate::tools::ToolPermissionMode::Plan
+    {
         let mcp_configs =
             crate::tools::mcp::filter_denied_servers(&mcp_configs, &tool_permission_rules);
         crate::tools::mcp::McpRegistry::connect(mcp_configs)
@@ -116,12 +120,18 @@ pub async fn send_message(
             .map_err(|_| storage_error())?
     };
     crate::history::validate_model_attachments(&stored_messages, route.supports_images)?;
-    let project_task_ids = crate::tools::project_tasks::load_project_task_ids_if_enabled(
-        project_root,
-        cfg!(windows) && route.supports_tool_calls != Some(false),
-    )?;
+    let project_task_ids = if permission_mode == crate::tools::ToolPermissionMode::Plan {
+        Vec::new()
+    } else {
+        crate::tools::project_tasks::load_project_task_ids_if_enabled(
+            project_root,
+            cfg!(windows) && route.supports_tool_calls != Some(false),
+        )?
+    };
     #[cfg(windows)]
-    let project_tools = if route.supports_tool_calls != Some(false) {
+    let project_tools = if route.supports_tool_calls != Some(false)
+        && permission_mode != crate::tools::ToolPermissionMode::Plan
+    {
         project_root
             .map(crate::tools::project_tools::load_if_present)
             .transpose()?
@@ -143,6 +153,8 @@ pub async fn send_message(
             excluded_assistant_message_id,
             custom_instructions,
             project_instructions,
+            project_skills: &project_skills,
+            project_index_context: project_index_context.as_deref(),
             permission_mode,
             has_project: project_root.is_some(),
             project_task_ids: &project_task_ids,
@@ -348,6 +360,8 @@ pub async fn send_message(
         instruction_sources: crate::usage_statistics::instruction_source_categories(
             custom_instructions,
             project_instructions,
+            &project_skills,
+            project_index_context.as_deref(),
             goal.is_some(),
         ),
         message_ids: included_messages[history_start..]

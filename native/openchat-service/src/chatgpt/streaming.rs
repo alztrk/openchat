@@ -51,6 +51,8 @@ impl ChatGptService {
             excluded_assistant_message_id,
             custom_instructions,
             project_instructions,
+            project_skills,
+            project_index_context,
             project_root,
             data_root,
             storage,
@@ -211,6 +213,8 @@ impl ChatGptService {
                 instruction_sources: crate::usage_statistics::instruction_source_categories(
                     custom_instructions,
                     project_instructions,
+                    &project_skills,
+                    project_index_context.as_deref(),
                     goal.is_some(),
                 ),
                 ..Default::default()

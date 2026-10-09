@@ -6,11 +6,13 @@ import 'package:openchat/features/chat/domain/history_search_result.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum ToolPermissionMode {
+  plan,
   requireApproval,
   approveSafeOperations,
   fullAccess;
 
   String get serviceValue => switch (this) {
+    ToolPermissionMode.plan => 'plan',
     ToolPermissionMode.requireApproval => 'require_approval',
     ToolPermissionMode.approveSafeOperations => 'approve_safe_operations',
     ToolPermissionMode.fullAccess => 'full_access',
@@ -130,6 +132,8 @@ class SettingsPreferences {
   static const _conversationTextSizeKey = 'appearance.conversation_text_size';
   static const _appFontKey = 'appearance.conversation_font';
   static const _defaultModelKey = 'models.default_model';
+  static const _projectDefaultModelPrefix = 'models.project_default.';
+  static const _projectSkillsPrefix = 'project.skills.';
   static const _hiddenModelKeysKey = 'models.hidden_keys';
   static const _collapsedSidebarSectionsKey = 'chat.collapsed_sidebar_sections';
   static const _savedHistorySearchesKey = 'chat.saved_history_searches';
@@ -299,6 +303,7 @@ class SettingsPreferences {
     final value = await _preferences.getString(_toolPermissionModeKey);
     return switch (value) {
       null || 'require_approval' => ToolPermissionMode.requireApproval,
+      'plan' => ToolPermissionMode.plan,
       'approve_safe_operations' => ToolPermissionMode.approveSafeOperations,
       'full_access' => ToolPermissionMode.fullAccess,
       _ => throw const FormatException(
@@ -419,6 +424,86 @@ class SettingsPreferences {
     );
   }
 
+  Future<DefaultModelPreference?> readProjectDefaultModel(
+    String projectId,
+  ) async {
+    final key = '$_projectDefaultModelPrefix${_validatedProjectId(projectId)}';
+    final raw = await _preferences.getString(key);
+    if (raw == null || raw.trim().isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, Object?>) {
+        return DefaultModelPreference.fromJson(decoded);
+      }
+      if (decoded is Map) {
+        return DefaultModelPreference.fromJson(
+          decoded.map((key, value) => MapEntry(key.toString(), value)),
+        );
+      }
+      return null;
+    } on Object {
+      return null;
+    }
+  }
+
+  Future<({DefaultModelPreference? preference, bool isProjectSpecific})>
+  readDefaultModelForProject(
+    String? projectId, {
+    bool useProjectDefault = true,
+  }) async {
+    if (useProjectDefault && projectId != null) {
+      final projectPreference = await readProjectDefaultModel(projectId);
+      if (projectPreference != null) {
+        return (preference: projectPreference, isProjectSpecific: true);
+      }
+    }
+    return (preference: await readDefaultModel(), isProjectSpecific: false);
+  }
+
+  Future<void> writeProjectDefaultModel(
+    String projectId,
+    DefaultModelPreference? preference,
+  ) async {
+    final key = '$_projectDefaultModelPrefix${_validatedProjectId(projectId)}';
+    if (preference == null) {
+      await _preferences.remove(key);
+      return;
+    }
+    await _preferences.setString(key, jsonEncode(preference.toJson()));
+  }
+
+  Future<Set<String>> readProjectSkillIds(String projectId) async {
+    final key = '$_projectSkillsPrefix${_validatedProjectId(projectId)}';
+    final ids = await _preferences.getStringList(key) ?? const <String>[];
+    if (ids.length > 32 ||
+        ids.toSet().length != ids.length ||
+        ids.any((id) => !_isValidProjectSkillId(id))) {
+      throw const FormatException('Project Skill preferences are invalid.');
+    }
+    return Set<String>.unmodifiable(ids);
+  }
+
+  Future<void> writeProjectSkillIds(
+    String projectId,
+    Set<String> skillIds,
+  ) async {
+    if (skillIds.length > 32 ||
+        skillIds.any((id) => !_isValidProjectSkillId(id))) {
+      throw ArgumentError.value(
+        skillIds,
+        'skillIds',
+        'Project Skill selection is invalid.',
+      );
+    }
+    final key = '$_projectSkillsPrefix${_validatedProjectId(projectId)}';
+    if (skillIds.isEmpty) {
+      await _preferences.remove(key);
+      return;
+    }
+    final sorted = skillIds.toList()..sort();
+    await _preferences.setStringList(key, sorted);
+  }
+
   Future<Set<String>> readHiddenModelKeys() async {
     final raw = await _preferences.getString(_hiddenModelKeysKey);
     if (raw == null || raw.trim().isEmpty) return const <String>{};
@@ -514,4 +599,7 @@ class SettingsPreferences {
     }
     return normalized;
   }
+
+  bool _isValidProjectSkillId(String id) =>
+      id.length <= 64 && RegExp(r'^[a-z][a-z0-9-]*$').hasMatch(id);
 }

@@ -575,17 +575,14 @@ class _ModelSelectorState extends State<ModelSelector> {
                   width: 16,
                   height: 16,
                   child: Center(
-                    child: RotatedBox(
-                      quarterTurns: controller.isOpen ? 0 : 2,
-                      child: Icon(
-                        controller.isOpen
-                            ? LucideIcons.chevronUp
-                            : LucideIcons.chevronDown,
-                        size: 16,
-                        color: isEnabled
-                            ? widget.palette.secondaryIcon
-                            : widget.palette.disabledIcon,
-                      ),
+                    child: Icon(
+                      controller.isOpen
+                          ? LucideIcons.chevronUp
+                          : LucideIcons.chevronDown,
+                      size: 16,
+                      color: isEnabled
+                          ? widget.palette.secondaryIcon
+                          : widget.palette.disabledIcon,
                     ),
                   ),
                 ),

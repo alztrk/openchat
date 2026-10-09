@@ -1003,6 +1003,13 @@ class AppLocalizationsTr extends AppLocalizations {
       'Yapay zekanın yerel dosya araçlarını hangi klasörlerde ve hangi izinle kullanacağını seç.';
 
   @override
+  String get toolPermissionPlan => 'Plan modu';
+
+  @override
+  String get toolPermissionPlanDescription =>
+      'Yalnızca oku ve araştır. Dosya değişiklikleri, terminal komutları, proje araçları ve entegrasyonlar engellenir.';
+
+  @override
   String get toolPermissionRequireApproval => 'Onay iste';
 
   @override
@@ -2129,7 +2136,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get searchMessageUnavailable => 'Bu mesaj artık kullanılamıyor.';
 
   @override
-  String get projects => 'Kod projeleri';
+  String get projects => 'Projeler';
 
   @override
   String get noProjects => 'Henüz proje yok';
@@ -2169,7 +2176,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get projectLoadFailed => 'Projeler yüklenemedi.';
 
   @override
-  String get projectLoading => 'Kod projeleri yükleniyor…';
+  String get projectLoading => 'Projeler yükleniyor…';
 
   @override
   String get projectMoveFailed => 'Sohbet projeye taşınamadı.';
@@ -2226,6 +2233,33 @@ class AppLocalizationsTr extends AppLocalizations {
   String get projectOptionsTitle => 'Proje seçenekleri';
 
   @override
+  String get projectDefaultModelSourceLabel => 'Proje varsayılanı';
+
+  @override
+  String get projectDefaultModelUseCurrent =>
+      'Geçerli modeli bu projede varsayılan yap';
+
+  @override
+  String get projectDefaultModelClear => 'Proje model varsayılanını temizle';
+
+  @override
+  String get projectDefaultModelSelectFirst =>
+      'Proje varsayılanını ayarlamadan önce bir model seçin.';
+
+  @override
+  String get projectDefaultModelSaveFailed =>
+      'Proje model varsayılanı kaydedilemedi.';
+
+  @override
+  String projectDefaultModelSaved(String model) {
+    return 'Projenin varsayılan modeli $model olarak ayarlandı.';
+  }
+
+  @override
+  String get projectDefaultModelCleared =>
+      'Proje model varsayılanı temizlendi.';
+
+  @override
   String get projectOptionsToolPermissions => 'Araç izinleri';
 
   @override
@@ -2236,6 +2270,9 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get projectOptionsInstructions => 'Proje talimatları';
+
+  @override
+  String get projectOptionsSkills => 'Proje Skills\'leri';
 
   @override
   String get projectInstructionsTitle => 'Proje talimatları';
@@ -2262,6 +2299,62 @@ class AppLocalizationsTr extends AppLocalizations {
   String projectInstructionsSize(int bytes, int maxBytes) {
     return '$bytes / $maxBytes bayt';
   }
+
+  @override
+  String get projectIndexTitle => 'Proje dizini';
+
+  @override
+  String get projectIndexDescription =>
+      'Proje metin dosyalarını yerel olarak dizinler. Dizin .gitignore kurallarına uyar ve proje klasörünün dışında saklanır.';
+
+  @override
+  String get projectIndexEnable => 'Sohbette proje dizinini kullan';
+
+  @override
+  String get projectIndexSync => 'Eşitle';
+
+  @override
+  String get projectIndexClear => 'Dizini temizle';
+
+  @override
+  String get projectIndexLoadFailed => 'Proje dizini durumu yüklenemedi.';
+
+  @override
+  String get projectIndexActionFailed => 'Proje dizini işlemi başarısız oldu.';
+
+  @override
+  String get projectIndexStale =>
+      'Proje dizini tamamlanamadı. Proje seçeneklerinden eşitleyin veya dizini kapatın.';
+
+  @override
+  String projectIndexStatus(Object status, Object files, Object bytes) {
+    return 'Durum: $status. Dosyalar: $files. Dizinlenen bayt: $bytes.';
+  }
+
+  @override
+  String get projectSkillsTitle => 'Proje Skills\'leri';
+
+  @override
+  String get projectSkillsDescription =>
+      'Proje Skills\'lerini .openchat/skills/<kimlik>/SKILL.md konumundan seçin. Seçilen içerik yeni yanıtlara eklenir. Seçim bu proje için yerel olarak saklanır.';
+
+  @override
+  String get projectSkillsEmpty =>
+      'Skill bulunamadı. .openchat/skills/<kimlik>/ altında bir SKILL.md dosyası ekleyin.';
+
+  @override
+  String get projectSkillsLoadFailed =>
+      'Proje Skills\'leri yüklenemedi. Proje dosyalarını kontrol edip yeniden deneyin.';
+
+  @override
+  String get projectSkillsSaveFailed => 'Proje Skill seçimi kaydedilemedi.';
+
+  @override
+  String get projectSkillsClearSelection => 'Seçimi temizle';
+
+  @override
+  String get projectSkillsStale =>
+      'Seçili Skill artık bulunamıyor. Kaydedilmiş seçimi temizlemek için işaretini kaldırın.';
 
   @override
   String get projectMcpTitle => 'Proje MCP sunucuları';
@@ -3062,10 +3155,18 @@ class AppLocalizationsTr extends AppLocalizations {
   String get moreOptions => 'Diğer seçenekler';
 
   @override
-  String get emptyChatWelcomeTitle => 'Nasıl yardımcı olabilirim?';
+  String get emptyChatWelcomeTitle => 'Nereden başlayalım?';
 
   @override
-  String get emptyChatWelcomeBody => 'Aklındaki soruyu yaz, sohbeti başlat.';
+  String get emptyChatWelcomeBody =>
+      'Bir soru yaz ya da aklındaki konuyu anlat.';
+
+  @override
+  String get emptyChatSelectModelTitle => 'Başlamak için bir model seç';
+
+  @override
+  String get emptyChatSelectModelBody =>
+      'Aşağıdaki model menüsünden seçim yap; ardından mesajını yaz.';
 
   @override
   String get switchToDarkMode => 'Koyu temaya geç';

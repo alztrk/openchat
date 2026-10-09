@@ -206,6 +206,12 @@ void main() {
         conversationId: 'conversation-1',
         messageId: 'assistant-answer',
       );
+      expect(
+        await repository.watchSavedOutputMessageKeys().first,
+        <SavedOutputMessageKey>{
+          (conversationId: 'conversation-1', messageId: 'assistant-answer'),
+        },
+      );
       final savedOutput = (await repository.watchSavedOutputs().first).single;
       expect(savedOutput.conversationTitle, 'Research notes');
       expect(savedOutput.content, 'A saved answer');
@@ -229,6 +235,7 @@ void main() {
         conversationId: 'conversation-1',
         messageId: 'assistant-answer',
       );
+      expect(await repository.watchSavedOutputMessageKeys().first, isEmpty);
       expect(await repository.watchSavedOutputs().first, isEmpty);
     },
   );

@@ -9,7 +9,6 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:intl/intl.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
-import 'package:openchat/app/openchat_brand_mark.dart';
 import 'package:openchat/app/openchat_toast.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
 import 'package:openchat/features/chat/data/chat_file_changes_repository.dart';
@@ -48,6 +47,7 @@ class ConversationPane extends StatelessWidget {
     this.isSending = false,
     this.isLoadingModels = false,
     this.hasAvailableModels = false,
+    this.hasSelectedModel = false,
     this.modelCatalogFailed = false,
     this.onOpenConnections,
     this.onRetryModels,
@@ -150,6 +150,7 @@ class ConversationPane extends StatelessWidget {
   final bool isSending;
   final bool isLoadingModels;
   final bool hasAvailableModels;
+  final bool hasSelectedModel;
   final bool modelCatalogFailed;
   final VoidCallback? onOpenConnections;
   final VoidCallback? onRetryModels;
@@ -247,6 +248,7 @@ class ConversationPane extends StatelessWidget {
     final content = LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 640;
+        final keyboardVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
         final horizontalPadding = compact
             ? OpenChatSpacing.compactPageHorizontal
             : OpenChatSpacing.pageHorizontal;
@@ -254,11 +256,18 @@ class ConversationPane extends StatelessWidget {
         final composerMaxWidth =
             OpenChatSpacing.composerMaxWidth *
             (conversationStyle.maxWidth / OpenChatSpacing.conversationMaxWidth);
-
         final latestFileChanges = _mergeConversationFileChanges(
           messages,
           conversationFileChanges,
         );
+        final isEmptyConversation =
+            messagesErrorDescription == null &&
+            !messagesLoading &&
+            messages.isEmpty &&
+            !showAssistantLoading &&
+            historySearchTargetMessageId == null;
+        final centerNewConversation =
+            isEmptyConversation && !compact && constraints.maxHeight >= 720;
         final header = _ConversationHeader(
           showHistoryButton: showHistoryButton,
           title: conversationTitle ?? l10n.conversationTitle,
@@ -285,19 +294,26 @@ class ConversationPane extends StatelessWidget {
                   ),
                 ),
               )
-            : messages.isEmpty &&
-                  !showAssistantLoading &&
-                  historySearchTargetMessageId == null
+            : isEmptyConversation
             ? _NewConversationEmptyState(
-                title: !isLoadingModels && !hasAvailableModels
+                isLoading: isLoadingModels,
+                title: isLoadingModels
+                    ? l10n.modelsLoading
+                    : !hasAvailableModels
                     ? modelCatalogFailed
                           ? l10n.modelsUnavailable
                           : l10n.noModelConnected
+                    : !hasSelectedModel
+                    ? l10n.emptyChatSelectModelTitle
                     : l10n.emptyChatWelcomeTitle,
-                description: !isLoadingModels && !hasAvailableModels
+                description: isLoadingModels
+                    ? null
+                    : !hasAvailableModels
                     ? modelCatalogFailed
                           ? l10n.modelCatalogUnavailable
                           : l10n.noModelConnectedBody
+                    : !hasSelectedModel
+                    ? l10n.emptyChatSelectModelBody
                     : l10n.emptyChatWelcomeBody,
                 onOpenConnections: !isLoadingModels && !hasAvailableModels
                     ? onOpenConnections
@@ -327,7 +343,9 @@ class ConversationPane extends StatelessWidget {
             horizontalPadding,
             0,
             horizontalPadding,
-            constraints.maxHeight <= 320
+            keyboardVisible
+                ? 0
+                : constraints.maxHeight <= 320
                 ? OpenChatSpacing.mainSurfaceInset
                 : OpenChatSpacing.composerBottomInset,
           ),
@@ -477,15 +495,41 @@ class ConversationPane extends StatelessWidget {
                 onChangesUpdated: onFileChangesUpdated ?? (_) {},
               )
             : null;
+        final conversationBody = showSidePanel && constraints.maxWidth < 1120
+            ? fileChangesPanel!
+            : isEmptyConversation && !centerNewConversation
+            ? Center(child: history)
+            : history;
         final mainContent = Column(
           children: [
             header,
-            Expanded(
-              child: showSidePanel && constraints.maxWidth < 1120
-                  ? fileChangesPanel!
-                  : history,
-            ),
-            composerArea,
+            if (centerNewConversation)
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, bodyConstraints) => SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(
+                        minHeight: bodyConstraints.maxHeight,
+                      ),
+                      child: Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            history,
+                            const SizedBox(height: OpenChatSpacing.lg),
+                            composerArea,
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              )
+            else ...[
+              Expanded(child: conversationBody),
+              composerArea,
+            ],
           ],
         );
 
@@ -1574,14 +1618,16 @@ class _EditConversationBranchDialogState
 
 class _NewConversationEmptyState extends StatelessWidget {
   const _NewConversationEmptyState({
+    required this.isLoading,
     required this.title,
     required this.description,
     this.onOpenConnections,
     this.onRetryModels,
   });
 
+  final bool isLoading;
   final String title;
-  final String description;
+  final String? description;
   final VoidCallback? onOpenConnections;
   final VoidCallback? onRetryModels;
 
@@ -1589,39 +1635,63 @@ class _NewConversationEmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = OpenChatPalette.of(context);
 
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24),
-        child: Column(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final descriptionText = constraints.maxHeight >= 400
+            ? description
+            : null;
+        final compactTitle = constraints.maxHeight < 280;
+        final titleFontSize = compactTitle
+            ? OpenChatTypography.componentTitle + 2
+            : OpenChatTypography.welcomeTitle;
+
+        return Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const ExcludeSemantics(child: OpenChatBrandMark(size: 40)),
-            const SizedBox(height: 24),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: palette.text,
-                fontSize: 22,
-                fontWeight: FontWeight.w500,
-                height: 30 / 22,
+            if (isLoading) ...[
+              const SizedBox.square(
+                dimension: 24,
+                child: CircularProgressIndicator(strokeWidth: 2),
               ),
-            ),
-            const SizedBox(height: 8),
+              const SizedBox(height: 16),
+            ],
             ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 440),
+              constraints: const BoxConstraints(maxWidth: 600),
               child: Text(
-                description,
+                title,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: palette.secondaryText,
-                  fontSize: OpenChatTypography.body,
-                  height: 20 / OpenChatTypography.body,
+                  color: palette.text,
+                  fontSize: titleFontSize,
+                  fontWeight: FontWeight.w600,
+                  height: 24 / titleFontSize,
                 ),
               ),
             ),
+            if (descriptionText != null) ...[
+              const SizedBox(height: 10),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
+                child: Text(
+                  descriptionText,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: palette.secondaryText,
+                    fontSize: OpenChatTypography.body,
+                    height: 22 / OpenChatTypography.body,
+                  ),
+                ),
+              ),
+            ],
             if (onOpenConnections != null || onRetryModels != null) ...[
-              const SizedBox(height: 20),
+              SizedBox(
+                height: constraints.maxHeight < 120
+                    ? 4
+                    : descriptionText != null
+                    ? 20
+                    : 12,
+              ),
               Wrap(
                 alignment: WrapAlignment.center,
                 spacing: 8,
@@ -1643,8 +1713,8 @@ class _NewConversationEmptyState extends StatelessWidget {
               ),
             ],
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 }

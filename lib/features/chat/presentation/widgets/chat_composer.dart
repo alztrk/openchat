@@ -982,12 +982,14 @@ class _ToolPermissionSelector extends StatelessWidget {
     final l10n = context.openchatL10n;
     final warning = OpenChatSemanticColors.of(context).warning;
     final label = switch (mode) {
+      ToolPermissionMode.plan => l10n.toolPermissionPlan,
       ToolPermissionMode.requireApproval => l10n.toolPermissionRequireApproval,
       ToolPermissionMode.approveSafeOperations =>
         l10n.toolPermissionApproveSafeOperations,
       ToolPermissionMode.fullAccess => l10n.toolPermissionFullAccess,
     };
     final description = switch (mode) {
+      ToolPermissionMode.plan => l10n.toolPermissionPlanDescription,
       ToolPermissionMode.requireApproval =>
         l10n.toolPermissionRequireApprovalDescription,
       ToolPermissionMode.approveSafeOperations =>
@@ -995,6 +997,7 @@ class _ToolPermissionSelector extends StatelessWidget {
       ToolPermissionMode.fullAccess => l10n.toolPermissionFullAccessDescription,
     };
     final modeIcon = switch (mode) {
+      ToolPermissionMode.plan => LucideIcons.search,
       ToolPermissionMode.requireApproval => LucideIcons.hand,
       ToolPermissionMode.approveSafeOperations => LucideIcons.shieldCheck,
       ToolPermissionMode.fullAccess => LucideIcons.shieldAlert,
@@ -1008,6 +1011,7 @@ class _ToolPermissionSelector extends StatelessWidget {
           OpenChatSelectOption<ToolPermissionMode>(
             value: option,
             label: switch (option) {
+              ToolPermissionMode.plan => l10n.toolPermissionPlan,
               ToolPermissionMode.requireApproval =>
                 l10n.toolPermissionRequireApproval,
               ToolPermissionMode.approveSafeOperations =>
@@ -1015,6 +1019,7 @@ class _ToolPermissionSelector extends StatelessWidget {
               ToolPermissionMode.fullAccess => l10n.toolPermissionFullAccess,
             },
             description: switch (option) {
+              ToolPermissionMode.plan => l10n.toolPermissionPlanDescription,
               ToolPermissionMode.requireApproval =>
                 l10n.toolPermissionRequireApprovalDescription,
               ToolPermissionMode.approveSafeOperations =>
@@ -1023,6 +1028,7 @@ class _ToolPermissionSelector extends StatelessWidget {
                 l10n.toolPermissionFullAccessDescription,
             },
             icon: switch (option) {
+              ToolPermissionMode.plan => LucideIcons.search,
               ToolPermissionMode.requireApproval => LucideIcons.hand,
               ToolPermissionMode.approveSafeOperations =>
                 LucideIcons.shieldCheck,

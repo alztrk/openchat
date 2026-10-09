@@ -518,14 +518,18 @@ fn benchmark_tool_latency_and_output_size() {
     ];
 
     eprintln!(
-        "dataset_files=501 dataset_bytes={dataset_bytes} benchmark_iterations=25 warmup_iterations=1"
+        "dataset_files=501 dataset_bytes={dataset_bytes} benchmark_iterations=500 warmup_iterations=10"
     );
     for measurement in measurements {
         eprintln!(
-            "tool={} p50_ms={:.3} p95_ms={:.3} output_bytes={} output_chars={} rough_tokens_chars_div_4={}",
+            "tool={} operation_p50_ms={:.3} operation_p95_ms={:.3} operation_p99_ms={:.3} serialization_p50_us={:.3} serialization_p95_us={:.3} serialization_p99_us={:.3} output_bytes={} output_chars={} rough_tokens_chars_div_4={}",
             measurement.name,
             measurement.p50.as_secs_f64() * 1000.0,
             measurement.p95.as_secs_f64() * 1000.0,
+            measurement.p99.as_secs_f64() * 1000.0,
+            measurement.serialization_p50.as_secs_f64() * 1_000_000.0,
+            measurement.serialization_p95.as_secs_f64() * 1_000_000.0,
+            measurement.serialization_p99.as_secs_f64() * 1_000_000.0,
             measurement.output_bytes,
             measurement.output_chars,
             measurement.output_chars.div_ceil(4),
@@ -581,7 +585,7 @@ fn benchmark_search_scale(file_count: usize) {
     let listing_cold =
         list_files(directory.root(), "src", 0, 100).expect("benchmark cold directory listing");
     let listing_cold_elapsed = listing_started.elapsed();
-    let listing = measure_iterations("list_files", 7, || {
+    let listing = measure_iterations("list_files", 7, 1, || {
         list_files(directory.root(), "src", 0, 100).expect("benchmark large listing")
     });
     let cold_started = Instant::now();
@@ -591,12 +595,12 @@ fn benchmark_search_scale(file_count: usize) {
     let canonical_root =
         super::canonical_root(directory.root()).expect("canonical benchmark workspace root");
     let source_directory = canonical_root.join("src");
-    let direct_listing = measure_iterations("list_files_direct_no_app_cache", 3, || {
+    let direct_listing = measure_iterations("list_files_direct_no_app_cache", 3, 1, || {
         let listing = super::read_directory_listing(&source_directory, false, 100)
             .expect("benchmark direct directory listing");
         super::directory_listing_response(Path::new("src"), &listing, 0, 100)
     });
-    let direct_search = measure_iterations("search_files_direct_no_app_cache", 3, || {
+    let direct_search = measure_iterations("search_files_direct_no_app_cache", 3, 1, || {
         super::search::search_files_direct(
             &canonical_root,
             &canonical_root,
@@ -608,7 +612,7 @@ fn benchmark_search_scale(file_count: usize) {
         )
         .expect("benchmark direct full search")
     });
-    let late_match = measure_iterations("search_files_late_match_no_app_cache", 3, || {
+    let late_match = measure_iterations("search_files_late_match_no_app_cache", 3, 1, || {
         search_files(directory.root(), "", "late-only-marker", false, 0, 40)
             .expect("benchmark late match search")
     });
@@ -623,11 +627,11 @@ fn benchmark_search_scale(file_count: usize) {
         Some(40)
     );
     assert_eq!(late_match_output["nextOffset"], json!(40));
-    let repeated = measure_iterations("search_files_direct_no_app_cache_repeat", 7, || {
+    let repeated = measure_iterations("search_files_direct_no_app_cache_repeat", 7, 1, || {
         search_files(directory.root(), "", "another-no-marker", false, 0, 40)
             .expect("benchmark repeated direct full search")
     });
-    let common = measure_iterations("search_files_common_term_no_app_cache", 7, || {
+    let common = measure_iterations("search_files_common_term_no_app_cache", 7, 1, || {
         search_files(directory.root(), "", "content", false, 0, 40)
             .expect("benchmark common search")
     });
@@ -694,38 +698,59 @@ struct Measurement {
     name: &'static str,
     p50: Duration,
     p95: Duration,
+    p99: Duration,
+    serialization_p50: Duration,
+    serialization_p95: Duration,
+    serialization_p99: Duration,
     output_bytes: usize,
     output_chars: usize,
 }
 
 fn measure(name: &'static str, operation: impl FnMut() -> serde_json::Value) -> Measurement {
-    measure_iterations(name, 25, operation)
+    measure_iterations(name, 500, 10, operation)
 }
 
 fn measure_iterations(
     name: &'static str,
     iterations: usize,
+    warmup_iterations: usize,
     mut operation: impl FnMut() -> serde_json::Value,
 ) -> Measurement {
-    let _ = operation();
+    for _ in 0..warmup_iterations {
+        let result = operation();
+        let _ = serde_json::to_vec(&result).expect("serialize benchmark warmup output");
+    }
+
     let mut durations = Vec::with_capacity(iterations);
+    let mut serialization_durations = Vec::with_capacity(iterations);
     let mut output = Vec::new();
     for _ in 0..iterations {
         let started = Instant::now();
         let result = operation();
         durations.push(started.elapsed());
+
+        let serialization_started = Instant::now();
         output = serde_json::to_vec(&result).expect("serialize benchmark output");
+        serialization_durations.push(serialization_started.elapsed());
     }
     durations.sort_unstable();
+    serialization_durations.sort_unstable();
     let output_text = std::str::from_utf8(&output).expect("tool output is valid UTF-8");
-    let p95_index = (durations.len() - 1) * 95 / 100;
     Measurement {
         name,
-        p50: durations[durations.len() / 2],
-        p95: durations[p95_index],
+        p50: percentile(&durations, 50),
+        p95: percentile(&durations, 95),
+        p99: percentile(&durations, 99),
+        serialization_p50: percentile(&serialization_durations, 50),
+        serialization_p95: percentile(&serialization_durations, 95),
+        serialization_p99: percentile(&serialization_durations, 99),
         output_bytes: output.len(),
         output_chars: output_text.chars().count(),
     }
+}
+
+fn percentile(durations: &[Duration], percentile: usize) -> Duration {
+    durations[(durations.len() - 1) * percentile / 100]
 }
 
 #[test]

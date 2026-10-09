@@ -64,20 +64,20 @@ class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
       Color.alphaBlend(border.withValues(alpha: 0.58), surface);
 
   static const light = OpenChatPalette(
-    background: Color(0xFFF6F3EF),
-    navigation: Color(0xFFEEEAE4),
-    surface: Color(0xFFFFFCF8),
+    background: Color(0xFFF4F5F6),
+    navigation: Color(0xFFEBEDF0),
+    surface: Color(0xFFFAFBFC),
     raisedSurface: Color(0xFFFFFFFF),
-    composer: Color(0xFFF1EBE4),
-    selected: Color(0xFFE7DED3),
-    hover: Color(0xFFEFE7DE),
-    border: Color(0xFFCDC3B9),
-    subtleBorder: Color(0xFFE3DBD2),
-    controlBorder: Color(0xFF81766B),
-    text: Color(0xFF24211E),
-    brandInk: Color(0xFF24211E),
-    secondaryText: Color(0xFF625B54),
-    secondaryIcon: Color(0xFF746B62),
+    composer: Color(0xFFF1F3F5),
+    selected: Color(0xFFE3E7EB),
+    hover: Color(0xFFEDF0F2),
+    border: Color(0xFFCCD1D7),
+    subtleBorder: Color(0xFFDFE3E7),
+    controlBorder: Color(0xFF7B838C),
+    text: Color(0xFF23272C),
+    brandInk: Color(0xFF23272C),
+    secondaryText: Color(0xFF56606A),
+    secondaryIcon: Color(0xFF68727D),
     accent: Color(0xFF8E563B),
     accentHover: Color(0xFF78452F),
     accentActive: Color(0xFF603B2B),
@@ -91,20 +91,20 @@ class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
   );
 
   static const dark = OpenChatPalette(
-    background: Color(0xFF181614),
-    navigation: Color(0xFF211F1C),
-    surface: Color(0xFF211F1C),
-    raisedSurface: Color(0xFF2A2723),
-    composer: Color(0xFF2D2925),
-    selected: Color(0xFF3A332C),
-    hover: Color(0xFF332E29),
-    border: Color(0xFF4A443E),
-    subtleBorder: Color(0xFF39342F),
-    controlBorder: Color(0xFF8E8175),
-    text: Color(0xFFF4EEE7),
-    brandInk: Color(0xFFF4EEE7),
-    secondaryText: Color(0xFFB7ADA2),
-    secondaryIcon: Color(0xFFC3B8AC),
+    background: Color(0xFF15171A),
+    navigation: Color(0xFF1A1D21),
+    surface: Color(0xFF202328),
+    raisedSurface: Color(0xFF282C31),
+    composer: Color(0xFF24282D),
+    selected: Color(0xFF343940),
+    hover: Color(0xFF2B3036),
+    border: Color(0xFF3D434B),
+    subtleBorder: Color(0xFF30353C),
+    controlBorder: Color(0xFF505761),
+    text: Color(0xFFF0F2F3),
+    brandInk: Color(0xFFF0F2F3),
+    secondaryText: Color(0xFFB6BCC4),
+    secondaryIcon: Color(0xFFAAB1BA),
     accent: Color(0xFFD08B68),
     accentHover: Color(0xFFE39A75),
     accentActive: Color(0xFFF0AD89),
@@ -387,7 +387,7 @@ abstract final class OpenChatSpacing {
   static const compactRailWidth = 52.0;
   static const collapsedSidebarWidth = 260.0;
   static const conversationMaxWidth = 920.0;
-  static const composerMaxWidth = 720.0;
+  static const composerMaxWidth = 800.0;
   static const mainSurfaceInset = 8.0;
   static const composerBottomInset = 16.0;
   static const fullSidebarBreakpoint = 1440.0;
@@ -410,8 +410,9 @@ abstract final class OpenChatTypography {
   static const pageTitle = 24.0;
   static const sectionTitle = 20.0;
   static const componentTitle = 16.0;
-  static const body = 14.0;
+  static const body = 15.0;
   static const metadata = 12.0;
+  static const welcomeTitle = 28.0;
   static const code = 13.0;
 }
 

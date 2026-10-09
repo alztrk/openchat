@@ -239,7 +239,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       child: OpenChatPageHeader(
                         title: sectionTitle,
-                        description: sectionDescription,
+                        description:
+                            constraints.maxWidth >= 640 &&
+                                constraints.maxHeight >= 520
+                            ? sectionDescription
+                            : null,
                         focusNode: widget.pageHeadingFocusNode,
                       ),
                     ),

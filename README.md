@@ -32,6 +32,9 @@ This release focuses on conversations and includes local workspace and terminal 
 
 Projects can declare named terminal tasks in `.openchat/tasks.json`. OpenChat validates the local task catalog and runs each task through the configured terminal permission mode, output limits, cancellation, and Windows process sandbox where available.
 
+Projects can also provide reusable Skills in `.openchat/skills/<id>/SKILL.md`. Select and inspect them in project options; selected Skill content is sent with new responses and the selection is saved locally for that project.
+Projects can optionally index bounded, redacted text excerpts in a local FTS5 cache. The index follows `.gitignore`, can be enabled, synchronized, or cleared from project options, and matching excerpts are attached to new requests.
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for the current implementation status, ordered next steps, and longer-term provider and platform plans. It distinguishes shipped code from work that still needs validation or implementation.
@@ -40,6 +43,7 @@ See [ROADMAP.md](ROADMAP.md) for the current implementation status, ordered next
 
 - Chat is the product focus.
 - Local file tools use canonical path checks. Projects can override the global tool permission mode per built-in tool with `Ask`, `Allow`, or `Deny`; unset tools inherit the global mode. `Allow` still follows the selected file scope and process sandbox, while `Deny` blocks the call. On Windows, each terminal session runs in a temporary AppContainer with access to its working tree; non-Windows terminals use the OpenChat process account without an OS sandbox. `Ask for approval` requires approval before each supported file, web, and terminal call. `Approve safe operations` automatically runs read-only list, search, read, and file-information calls within the project and OpenChat data folders, and asks before file changes, web access, and terminal calls. `Full access` skips approvals and allows file tools to access any folder.
+- `Plan mode` is available in the composer tool-access selector. It allows read-only file, Git, and web research; the service sends only those tool schemas and `ask_user`, skips project-task and MCP discovery, and blocks other operations even when a project permission rule allows them. Project `Deny` rules still restrict read-only calls.
 - Windows is the only first-release platform target.
 
 ## Current status
@@ -71,6 +75,8 @@ Local inference engine release catalogs are embedded in the service. OpenChat cu
 OpenCode's model endpoint supplies the available model IDs. Exact-ID matches in [Models.dev's OpenCode catalog](https://models.dev/) supply display names, descriptions, and context-window values. This metadata shares the six-hour catalog cache; if its source is unavailable, cached values are marked stale when available, while models remain selectable without metadata when no cached details exist.
 
 OpenCode reasoning controls follow the model catalog's supported effort values. OpenAI-compatible reasoning selections are sent as `reasoning_effort`; models without request-time controls use their provider default.
+
+Project options can save the current provider/model route and reasoning effort as that project's default for new conversations. The model picker labels an active project default, existing conversations keep their saved route, and the local preference stores connection identifiers rather than credentials.
 
 On Windows, Settings > Local engines offers two independent llama.cpp paths. A user can select an existing `llama-server.exe`, which OpenChat uses to launch registered GGUF models without downloading a managed runtime. Separately, OpenChat can detect a running `llama-server.exe` with a loopback listener and asks before connecting. Setup checks `/health`, reads `/v1/models`, and uses `/props` when available; chat requests go to `/v1/chat/completions`. Multiple detected user-started llama-server processes can be connected at once. Each server and its models appear in a separate chat model-picker section, and chat requests are routed to the server that supplied the selected model. Connected external models are not registered as downloaded models. Disconnecting clears only that server connection; OpenChat never stops a user-started server. Connections are held by the running service and must be accepted again after it restarts. Servers that require authentication are not connected because OpenChat does not read credentials from other processes.
 

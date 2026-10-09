@@ -60,12 +60,18 @@ import 'package:openchat/features/chat/presentation/widgets/create_project_dialo
 import 'package:openchat/features/chat/presentation/widgets/project_tool_permissions_dialog.dart';
 import 'package:openchat/features/chat/presentation/widgets/project_mcp_servers_dialog.dart';
 import 'package:openchat/features/chat/presentation/widgets/project_instructions_dialog.dart';
+import 'package:openchat/features/chat/presentation/widgets/project_skills_dialog.dart';
+import 'package:openchat/features/chat/presentation/widgets/project_index_dialog.dart';
 import 'package:openchat/features/chat/presentation/widgets/project_worktrees_dialog.dart';
 
 const _localEngineProviderIds = <String>{'llama_cpp', 'vllm', 'exllama'};
 
 enum _ProjectOptionsAction {
+  useCurrentModel,
+  clearModelDefault,
   instructions,
+  skills,
+  projectIndex,
   toolPermissions,
   mcpServers,
   worktrees,
@@ -195,6 +201,7 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _selectedApiKeyConnectionId;
   String? _selectedModelId;
   String? _selectedReasoningEffort;
+  bool _isUsingProjectDefaultModel = false;
   String? _modelLoadError;
   String _modelFreshness = 'unavailable';
   int _modelLoadGeneration = 0;
@@ -222,9 +229,10 @@ class _ChatScreenState extends State<ChatScreen> {
   Stream<List<ChatWorkspace>>? _workspaceStream;
   Stream<List<chat.ChatMessage>>? _messageStream;
   Stream<List<FavoriteModel>>? _favoriteModelsStream;
-  StreamSubscription<List<ChatSavedOutput>>? _savedOutputsSubscription;
-  Set<String> _savedOutputKeys = <String>{};
-  Set<String> _pendingSavedOutputKeys = <String>{};
+  StreamSubscription<Set<SavedOutputMessageKey>>? _savedOutputsSubscription;
+  Set<SavedOutputMessageKey> _savedOutputKeys = <SavedOutputMessageKey>{};
+  Set<SavedOutputMessageKey> _pendingSavedOutputKeys =
+      <SavedOutputMessageKey>{};
   int _savedOutputGeneration = 0;
   ConversationMemoryRepository? _conversationMemoryRepository;
   ChatFileChangesRepository? _chatFileChangesRepository;
@@ -347,24 +355,19 @@ class _ChatScreenState extends State<ChatScreen> {
       _workspaceStream = null;
       _messageStream = null;
       _favoriteModelsStream = null;
-      _savedOutputKeys = <String>{};
-      _pendingSavedOutputKeys = <String>{};
+      _savedOutputKeys = <SavedOutputMessageKey>{};
+      _pendingSavedOutputKeys = <SavedOutputMessageKey>{};
       return;
     }
     _conversationStream = repository.watchConversations();
     _projectStream = repository.watchProjects();
     _workspaceStream = repository.watchWorkspaces();
     _favoriteModelsStream = repository.watchModelFavorites();
-    _savedOutputsSubscription = repository.watchSavedOutputs().listen(
-      (outputs) {
+    _savedOutputsSubscription = repository.watchSavedOutputMessageKeys().listen(
+      (keys) {
         if (!mounted || generation != _savedOutputGeneration) return;
         setState(() {
-          _savedOutputKeys = outputs
-              .map(
-                (output) =>
-                    _savedOutputKey(output.conversationId, output.messageId),
-              )
-              .toSet();
+          _savedOutputKeys = keys;
         });
       },
       onError: (Object error, StackTrace stackTrace) {
@@ -1587,7 +1590,10 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  Future<void> _loadProviderState({bool forceRefresh = false}) async {
+  Future<void> _loadProviderState({
+    bool forceRefresh = false,
+    bool ignoreProjectDefault = false,
+  }) async {
     final service = widget.serviceClient;
     if (service == null) return;
     if (_isLoadingConnections) {
@@ -1599,7 +1605,9 @@ class _ChatScreenState extends State<ChatScreen> {
       _isLoadingConnections = true;
       _modelsLoaded = false;
     });
+    var ignoreProjectDefaultOnReload = false;
     try {
+      var connections = const <ChatGptConnection>[];
       ChatGptConnection? selectedConnection;
       ChatGptWorkspace? selectedWorkspace;
       try {
@@ -1610,7 +1618,7 @@ class _ChatScreenState extends State<ChatScreen> {
             'The ChatGPT connection list was invalid.',
           );
         }
-        final connections = rawConnections
+        connections = rawConnections
             .map((value) => ChatGptConnection.fromJson(_objectMap(value)))
             .toList(growable: false);
         selectedConnection = _firstOrNull(
@@ -1649,7 +1657,20 @@ class _ChatScreenState extends State<ChatScreen> {
         compatibleKeyStorageUnavailable = true;
       }
       final hiddenKeys = await _settingsPreferences.readHiddenModelKeys();
-      final defaultModel = await _settingsPreferences.readDefaultModel();
+      final projectIdForDefaults = _pendingProjectId;
+      final resolvedDefault = await _settingsPreferences
+          .readDefaultModelForProject(
+            projectIdForDefaults,
+            useProjectDefault: !ignoreProjectDefault,
+          );
+      final defaultModel = resolvedDefault.preference;
+      final projectDefaultModel = resolvedDefault.isProjectSpecific
+          ? defaultModel
+          : null;
+      if (projectIdForDefaults != _pendingProjectId) {
+        _providerStateReloadRequested = true;
+        return;
+      }
       if (!mounted) return;
       setState(() {
         _selectedConnectionId = selectedConnection?.id;
@@ -1658,6 +1679,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _availableCompatibleProviderIds = compatibleProviderIds;
         _hiddenModelKeys = hiddenKeys;
         _defaultModelPreference = defaultModel;
+        _isUsingProjectDefaultModel = resolvedDefault.isProjectSpecific;
         _isChatGptConnected =
             (selectedConnection != null && selectedWorkspace != null) ||
             apiConnections.isNotEmpty;
@@ -1696,13 +1718,29 @@ class _ChatScreenState extends State<ChatScreen> {
         var defaultModelAvailable = false;
         if (!_hasUserSelectedProvider && defaultModel != null) {
           final defaultProvider = defaultModel.providerId;
-          final isDefaultFamilyChatGpt =
-              _providerFamily(defaultProvider) == 'chatgpt';
+          final isDefaultOAuthRouteAvailable =
+              defaultProvider == 'chatgpt' &&
+              connections.any(
+                (connection) =>
+                    connection.id == defaultModel.connectionId &&
+                    connection.authStatus == 'active' &&
+                    connection.workspaces.any(
+                      (workspace) => workspace.id == defaultModel.workspaceId,
+                    ),
+              );
+          final isDefaultChatGptApiRouteAvailable =
+              defaultProvider == 'chatgpt_api' &&
+              apiConnections.any(
+                (connection) =>
+                    connection.id == defaultModel.apiKeyConnectionId,
+              );
           final isDefaultCompatible = ApiCompatibleProviderKeyStore.providerIds
               .contains(defaultProvider);
-          if (defaultProvider == 'opencode') {
+          if (defaultProvider == 'opencode' ||
+              _localEngineProviderIds.contains(defaultProvider)) {
             defaultModelAvailable = true;
-          } else if (isDefaultFamilyChatGpt && _isChatGptConnected) {
+          } else if (isDefaultOAuthRouteAvailable ||
+              isDefaultChatGptApiRouteAvailable) {
             defaultModelAvailable = true;
           } else if (isDefaultCompatible &&
               compatibleProviderIds.contains(defaultProvider)) {
@@ -1713,8 +1751,12 @@ class _ChatScreenState extends State<ChatScreen> {
           }
         }
         if (_providerFamily(providerId) == 'chatgpt') {
+          final preferredApiKeyConnectionId =
+              defaultModelAvailable && defaultModel?.providerId == providerId
+              ? defaultModel?.apiKeyConnectionId
+              : _selectedApiKeyConnectionId;
           final selectedApiKeyIsAvailable = _availableChatGptApiKeyConnectionIds
-              .contains(_selectedApiKeyConnectionId);
+              .contains(preferredApiKeyConnectionId);
           final selectedRouteIsAvailable = providerId == 'chatgpt_api'
               ? selectedApiKeyIsAvailable
               : _isChatGptOAuthAvailable;
@@ -1764,6 +1806,28 @@ class _ChatScreenState extends State<ChatScreen> {
               : null,
           forceRefresh: forceRefresh,
         );
+        if (projectDefaultModel != null &&
+            _selectedModelId != projectDefaultModel.modelId &&
+            _modelLoadError != 'unavailable') {
+          ignoreProjectDefaultOnReload = true;
+          _providerStateReloadRequested = true;
+          return;
+        }
+        final projectReasoningEffort = projectDefaultModel?.reasoningEffort;
+        if (projectReasoningEffort != null) {
+          final selectedModel = _firstOrNull(
+            _models.where(
+              (model) =>
+                  model.isAvailable &&
+                  model.id == projectDefaultModel?.modelId &&
+                  model.routeKey == projectDefaultModel?.routeKey,
+            ),
+          );
+          if (selectedModel?.reasoningLevels.contains(projectReasoningEffort) ==
+              true) {
+            setState(() => _selectedReasoningEffort = projectReasoningEffort);
+          }
+        }
       }
     } on ChatGptApiKeyStorageException {
       if (mounted) _showMessage(context.openchatL10n.providerDataUnavailable);
@@ -1779,7 +1843,12 @@ class _ChatScreenState extends State<ChatScreen> {
         _providerStateReloadRequested = false;
         _forceProviderStateReloadRequested = false;
         if (shouldReload) {
-          unawaited(_loadProviderState(forceRefresh: shouldForceRefresh));
+          unawaited(
+            _loadProviderState(
+              forceRefresh: shouldForceRefresh,
+              ignoreProjectDefault: ignoreProjectDefaultOnReload,
+            ),
+          );
         }
       }
     }
@@ -2540,7 +2609,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _startNewConversation() {
+  void _startNewConversation({String? projectId}) {
     _modelSelectionGeneration++;
     _goalLoadGeneration++;
     _fileChangesLoadGeneration++;
@@ -2550,7 +2619,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final defaultModel = _defaultModelPreference;
     setState(() {
       _selectedConversationId = null;
-      _pendingProjectId = null;
+      _pendingProjectId = projectId;
       _pendingProductWorkspaceId = null;
       _activeGoal = null;
       _isFileChangesPanelOpen = false;
@@ -2575,6 +2644,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _questionLoadFailed = false;
       _selectedModelId = defaultModel?.modelId;
       _selectedReasoningEffort = null;
+      _isUsingProjectDefaultModel = false;
       _isUpdatingConversationModel = false;
       _titleEditRequestId = null;
       _settingsOpen = false;
@@ -2648,8 +2718,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _startProjectConversation(String projectId) {
     if (widget.historyStorageStatus != HistoryStorageStatus.available) return;
-    _startNewConversation();
-    setState(() => _pendingProjectId = projectId);
+    _startNewConversation(projectId: projectId);
   }
 
   void _startWorkspaceConversation(String workspaceId) {
@@ -2831,8 +2900,10 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  String _savedOutputKey(String conversationId, String messageId) =>
-      '${conversationId.length}:$conversationId$messageId';
+  SavedOutputMessageKey _savedOutputKey(
+    String conversationId,
+    String messageId,
+  ) => (conversationId: conversationId, messageId: messageId);
 
   void _handleThemeToggle() {
     unawaited(_toggleThemeWithFeedback());
@@ -3075,6 +3146,28 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }
     final userMessageId = _newLocalId();
+    var projectSkillIds = const <String>[];
+    if (projectId != null) {
+      try {
+        projectSkillIds = (await _settingsPreferences.readProjectSkillIds(
+          projectId,
+        )).toList(growable: false);
+      } on Exception catch (error, stackTrace) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'project_skills',
+            context: ErrorDescription(
+              'while loading project Skills before sending',
+            ),
+          ),
+        );
+        if (mounted) _showMessage(l10n.projectSkillsLoadFailed);
+        _clearActiveSendState();
+        return;
+      }
+    }
     if (mounted) {
       setState(() {
         _isSending = true;
@@ -3451,6 +3544,7 @@ class _ChatScreenState extends State<ChatScreen> {
           },
           if (_isApiKeyRouteProvider(providerId))
             'apiKeyConnectionId': apiKeyConnectionId,
+          if (projectSkillIds.isNotEmpty) 'projectSkillIds': projectSkillIds,
           if (providerId == 'chatgpt' || providerId == 'chatgpt_api')
             'fastMode': chatGptFastMode,
           ...?switch (responseToReplace) {
@@ -4110,6 +4204,15 @@ class _ChatScreenState extends State<ChatScreen> {
       'context_compaction_input_too_large' => l10n.contextWindowExceeded,
       'conversation_not_routed' => l10n.modelRequired,
       'invalid_retry_target' => l10n.responseRetryUnavailable,
+      'project_skill_missing' => l10n.projectSkillsStale,
+      'project_index_stale' => l10n.projectIndexStale,
+      'project_skill_invalid_selection' ||
+      'project_skill_invalid_encoding' ||
+      'project_skill_empty' ||
+      'project_skill_invalid_id' ||
+      'project_skills_too_large' ||
+      'project_skills_too_many' ||
+      'project_skills_unavailable' => l10n.projectSkillsLoadFailed,
       _ => l10n.providerRequestFailed,
     };
     showOpenChatToast(context, message, type: OpenChatToastType.error);
@@ -4408,11 +4511,39 @@ class _ChatScreenState extends State<ChatScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
+                leading: const Icon(LucideIcons.star),
+                title: Text(l10n.projectDefaultModelUseCurrent),
+                onTap: () =>
+                    Navigator.of(dialogContext)
+                        .pop(_ProjectOptionsAction.useCurrentModel),
+              ),
+              ListTile(
+                leading: const Icon(LucideIcons.rotateCcw),
+                title: Text(l10n.projectDefaultModelClear),
+                onTap: () =>
+                    Navigator.of(dialogContext)
+                        .pop(_ProjectOptionsAction.clearModelDefault),
+              ),
+              ListTile(
                 leading: const Icon(LucideIcons.notebookPen),
                 title: Text(l10n.projectOptionsInstructions),
                 onTap: () =>
                     Navigator.of(dialogContext)
                         .pop(_ProjectOptionsAction.instructions),
+              ),
+              ListTile(
+                leading: const Icon(LucideIcons.sparkles),
+                title: Text(l10n.projectOptionsSkills),
+                onTap: () =>
+                    Navigator.of(dialogContext)
+                        .pop(_ProjectOptionsAction.skills),
+              ),
+              ListTile(
+                leading: const Icon(LucideIcons.search),
+                title: Text(l10n.projectIndexTitle),
+                onTap: () =>
+                    Navigator.of(dialogContext)
+                        .pop(_ProjectOptionsAction.projectIndex),
               ),
               ListTile(
                 leading: const Icon(LucideIcons.hand),
@@ -4447,6 +4578,76 @@ class _ChatScreenState extends State<ChatScreen> {
       },
     );
     if (!mounted || action == null) return;
+    if (action == _ProjectOptionsAction.useCurrentModel) {
+      final modelId = _selectedModelId;
+      if (modelId == null) {
+        _showMessage(context.openchatL10n.projectDefaultModelSelectFirst);
+        return;
+      }
+      final matchingModels = _models
+          .where((model) => model.id == modelId)
+          .toList(growable: false);
+      final selectedModel = matchingModels.isEmpty
+          ? null
+          : matchingModels.first;
+      try {
+        await _settingsPreferences.writeProjectDefaultModel(
+          projectId,
+          DefaultModelPreference(
+            providerId: _selectedProviderId,
+            modelId: modelId,
+            displayName: selectedModel?.displayName ?? modelId,
+            reasoningEffort: _selectedReasoningEffort,
+            connectionId: _selectedProviderId == 'chatgpt'
+                ? _selectedConnectionId
+                : null,
+            workspaceId: _selectedProviderId == 'chatgpt'
+                ? _selectedWorkspaceId
+                : null,
+            apiKeyConnectionId: _selectedProviderId == 'chatgpt_api'
+                ? _selectedApiKeyConnectionId
+                : null,
+          ),
+        );
+        if (_pendingProjectId == projectId && _selectedConversationId == null) {
+          unawaited(_loadProviderState());
+        }
+        if (mounted) {
+          showOpenChatToast(
+            context,
+            context.openchatL10n.projectDefaultModelSaved(
+              selectedModel?.displayName ?? modelId,
+            ),
+            type: OpenChatToastType.success,
+          );
+        }
+      } on Exception {
+        if (mounted) {
+          _showMessage(context.openchatL10n.projectDefaultModelSaveFailed);
+        }
+      }
+      return;
+    }
+    if (action == _ProjectOptionsAction.clearModelDefault) {
+      try {
+        await _settingsPreferences.writeProjectDefaultModel(projectId, null);
+        if (_pendingProjectId == projectId && _selectedConversationId == null) {
+          unawaited(_loadProviderState());
+        }
+        if (mounted) {
+          showOpenChatToast(
+            context,
+            context.openchatL10n.projectDefaultModelCleared,
+            type: OpenChatToastType.success,
+          );
+        }
+      } on Exception {
+        if (mounted) {
+          _showMessage(context.openchatL10n.projectDefaultModelSaveFailed);
+        }
+      }
+      return;
+    }
     if (action == _ProjectOptionsAction.instructions) {
       final service = widget.serviceClient;
       if (service == null) return;
@@ -4456,6 +4657,29 @@ class _ChatScreenState extends State<ChatScreen> {
           serviceClient: service,
           projectId: projectId,
         ),
+      );
+      return;
+    }
+    if (action == _ProjectOptionsAction.skills) {
+      final service = widget.serviceClient;
+      if (service == null) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => ProjectSkillsDialog(
+          serviceClient: service,
+          settingsPreferences: _settingsPreferences,
+          projectId: projectId,
+        ),
+      );
+      return;
+    }
+    if (action == _ProjectOptionsAction.projectIndex) {
+      final service = widget.serviceClient;
+      if (service == null) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) =>
+            ProjectIndexDialog(serviceClient: service, projectId: projectId),
       );
       return;
     }
@@ -5297,6 +5521,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
         return LayoutBuilder(
           builder: (context, constraints) {
+            if (constraints.maxWidth < 240 || constraints.maxHeight < 64) {
+              return Scaffold(
+                backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                body: const SizedBox.expand(),
+              );
+            }
             final showSidebar =
                 !_settingsOpen &&
                 !_modelsPageOpen &&
@@ -5345,7 +5575,9 @@ class _ChatScreenState extends State<ChatScreen> {
                     ),
               body: Column(
                 children: [
-                  const OpenChatWindowTitleBar(),
+                  if (constraints.maxHeight >=
+                      OpenChatSpacing.appTitleBarHeight)
+                    const OpenChatWindowTitleBar(),
                   Expanded(
                     child: Stack(
                       children: [
@@ -5353,7 +5585,9 @@ class _ChatScreenState extends State<ChatScreen> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             ChatNavigationRail(
-                              expanded: false,
+                              expanded:
+                                  constraints.maxWidth >=
+                                  OpenChatSpacing.expandedRailBreakpoint,
                               showBrand: !OpenChatWindowControls.isSupportedOn(
                                 Theme.of(context).platform,
                               ),
@@ -5581,35 +5815,45 @@ class _ChatScreenState extends State<ChatScreen> {
     required Widget child,
   }) {
     final reducedMotion = MediaQuery.disableAnimationsOf(context);
-    return Padding(
-      padding: const EdgeInsets.only(
-        right: OpenChatSpacing.mainSurfaceInset,
-        bottom: OpenChatSpacing.mainSurfaceInset,
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(OpenChatRadii.control),
-        clipBehavior: Clip.antiAlias,
-        child: AnimatedSwitcher(
-          duration: reducedMotion
-              ? Duration.zero
-              : const Duration(milliseconds: 190),
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
-          transitionBuilder: (child, animation) {
-            final position = animation.drive(
-              Tween<Offset>(
-                begin: const Offset(0, 0.012),
-                end: Offset.zero,
-              ).chain(CurveTween(curve: Curves.easeOutCubic)),
-            );
-            return FadeTransition(
-              opacity: animation,
-              child: SlideTransition(position: position, child: child),
-            );
-          },
-          child: KeyedSubtree(key: ValueKey<String>(surfaceKey), child: child),
-        ),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final rightInset = constraints.maxWidth >= 480
+            ? OpenChatSpacing.mainSurfaceInset
+            : 0.0;
+        final bottomInset = constraints.maxHeight >= 64
+            ? OpenChatSpacing.mainSurfaceInset
+            : 0.0;
+        return Padding(
+          padding: EdgeInsets.only(right: rightInset, bottom: bottomInset),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(OpenChatRadii.control),
+            clipBehavior: Clip.antiAlias,
+            child: AnimatedSwitcher(
+              duration: reducedMotion
+                  ? Duration.zero
+                  : const Duration(milliseconds: 190),
+              switchInCurve: Curves.easeOutCubic,
+              switchOutCurve: Curves.easeInCubic,
+              transitionBuilder: (child, animation) {
+                final position = animation.drive(
+                  Tween<Offset>(
+                    begin: const Offset(0, 0.012),
+                    end: Offset.zero,
+                  ).chain(CurveTween(curve: Curves.easeOutCubic)),
+                );
+                return FadeTransition(
+                  opacity: animation,
+                  child: SlideTransition(position: position, child: child),
+                );
+              },
+              child: KeyedSubtree(
+                key: ValueKey<String>(surfaceKey),
+                child: child,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -5864,6 +6108,13 @@ class _ChatScreenState extends State<ChatScreen> {
         selectedModel?.displayName ??
         selectedModelId ??
         widget.selectedModelLabel;
+    final isProjectDefaultSelected =
+        _pendingProjectId != null &&
+        _isUsingProjectDefaultModel &&
+        selectedModelRouteKey == _defaultModelPreference?.routeKey;
+    final projectDefaultLabel = isProjectDefaultSelected
+        ? ' · ${context.openchatL10n.projectDefaultModelSourceLabel}'
+        : '';
     final modelOptions = _models
         .where(
           (model) =>
@@ -5924,8 +6175,10 @@ class _ChatScreenState extends State<ChatScreen> {
         : _modelLoadError != null
         ? l10n.modelsUnavailable
         : _modelFreshness == 'stale' && modelLabel != null
-        ? '$modelLabel · ${l10n.cachedCatalog}'
-        : modelLabel;
+        ? '$modelLabel · ${l10n.cachedCatalog}$projectDefaultLabel'
+        : modelLabel == null
+        ? null
+        : '$modelLabel$projectDefaultLabel';
 
     return StreamBuilder<List<ChatWorkspace>>(
       stream: _workspaceStream,
@@ -6036,6 +6289,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   hasAvailableModels: modelOptions.any(
                     (model) => model.isAvailable,
                   ),
+                  hasSelectedModel: selectedModel != null,
                   modelCatalogFailed:
                       _modelLoadError != null && _modelLoadError != 'empty',
                   onOpenConnections: _openSettingsPage,

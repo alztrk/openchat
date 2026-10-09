@@ -103,6 +103,7 @@ impl ChatGptService {
         let excluded_assistant_message_id = context.excluded_assistant_message_id;
         let custom_instructions = context.custom_instructions;
         let project_instructions = context.project_instructions;
+        let project_skills = &context.project_skills;
         let project_root = context.project_root;
         let route = chatgpt_store::conversation_route(&self.storage, conversation_id)
             .map_err(database_error)?
@@ -193,11 +194,17 @@ impl ChatGptService {
             .collect::<Vec<_>>();
         crate::history::validate_model_attachments(&messages, model.supports_images)?;
         let last_message_id = included_messages.last().map(|message| message.id.clone());
-        let project_task_ids =
-            tools::project_tasks::load_project_task_ids_if_enabled(project_root, cfg!(windows))?;
+        let project_task_ids = if context.permission_mode == tools::ToolPermissionMode::Plan {
+            Vec::new()
+        } else {
+            tools::project_tasks::load_project_task_ids_if_enabled(project_root, cfg!(windows))?
+        };
         #[cfg(windows)]
-        let mcp_configs =
-            tools::mcp::filter_denied_servers(&context.mcp_configs, &context.tool_permission_rules);
+        let mcp_configs = if context.permission_mode == tools::ToolPermissionMode::Plan {
+            Vec::new()
+        } else {
+            tools::mcp::filter_denied_servers(&context.mcp_configs, &context.tool_permission_rules)
+        };
         let mcp_registry = tools::mcp::McpRegistry::connect(mcp_configs)
             .await
             .map_err(|_| {
@@ -223,9 +230,14 @@ impl ChatGptService {
         if !tools.is_empty() {
             tools.extend(goals::control_tool_definitions());
         }
+        if context.permission_mode == tools::ToolPermissionMode::Plan {
+            tools::apply_plan_mode_allowlist(&mut tools);
+        }
         let mut shared_instructions = instructions::shared_instructions(
             custom_instructions,
             project_instructions,
+            project_skills,
+            context.project_index_context.as_deref(),
             context.permission_mode,
             project_root.is_some(),
             !tools.is_empty(),

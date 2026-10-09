@@ -20,7 +20,9 @@ impl ToolExecutor {
         can_create: bool,
     ) -> Result<(PathBuf, String, PathBuf, ToolPathScope), Value> {
         match self.permission_mode {
-            ToolPermissionMode::RequireApproval | ToolPermissionMode::ApproveSafeOperations => {
+            ToolPermissionMode::Plan
+            | ToolPermissionMode::RequireApproval
+            | ToolPermissionMode::ApproveSafeOperations => {
                 self.resolve_approved_scope(path, directory, can_create)
             }
             ToolPermissionMode::FullAccess => self.resolve_full_access(path, directory, can_create),

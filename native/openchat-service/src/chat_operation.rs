@@ -18,6 +18,8 @@ pub struct ChatSendContext<'a> {
     pub excluded_assistant_message_id: Option<&'a str>,
     pub custom_instructions: Option<&'a str>,
     pub project_instructions: Option<&'a str>,
+    pub project_skills: Vec<crate::project_skills::ProjectSkill>,
+    pub project_index_context: Option<String>,
     pub project_root: Option<&'a Path>,
     pub data_root: &'a Path,
     pub storage: &'a AppStorage,

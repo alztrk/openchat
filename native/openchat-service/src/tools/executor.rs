@@ -25,6 +25,7 @@ pub(crate) use validation::{PreparedToolCall, ToolOperation};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ToolPermissionMode {
+    Plan,
     RequireApproval,
     ApproveSafeOperations,
     FullAccess,
@@ -184,6 +185,7 @@ pub(crate) enum ImageGenerationContext<'a> {
 impl ToolPermissionMode {
     pub fn from_rpc(value: Option<&str>) -> Result<Self, ServiceError> {
         match value {
+            Some("plan") => Ok(Self::Plan),
             None | Some("require_approval") => Ok(Self::RequireApproval),
             Some("approve_safe_operations") => Ok(Self::ApproveSafeOperations),
             Some("full_access") => Ok(Self::FullAccess),
@@ -197,6 +199,7 @@ impl ToolPermissionMode {
 
     fn requires_approval(self, operation: &ToolOperation) -> bool {
         match self {
+            Self::Plan => !operation.is_read_only_for_plan(),
             Self::RequireApproval => true,
             Self::ApproveSafeOperations => !operation.is_safe_for_auto_approval(),
             Self::FullAccess => false,
@@ -349,7 +352,36 @@ impl ToolExecutor {
         }
     }
 
+    async fn deny_plan_mode_tool(
+        &self,
+        call: &ToolCall,
+        request_id: &Value,
+        snapshot: &ChatStreamSnapshot,
+        events: &EventSink,
+        storage: &AppStorage,
+    ) -> Result<ToolResult, ServiceError> {
+        let output = tool_error(
+            "plan_mode_read_only",
+            "Plan mode permits read-only tools only. Switch to another mode before making changes.",
+        );
+        self.emit_activity(
+            storage,
+            ToolActivity::denied(call, String::new(), output.clone()),
+            request_id,
+            snapshot,
+            events,
+        )
+        .await?;
+        Ok(ToolResult {
+            call_id: call.id.clone(),
+            output,
+        })
+    }
+
     fn permission_rule(&self, call: &ToolCall, operation: &ToolOperation) -> ToolPermissionRule {
+        if self.permission_mode == ToolPermissionMode::Plan && !operation.is_read_only_for_plan() {
+            return ToolPermissionRule::Deny;
+        }
         let task_rule = (call.name == "run_project_task")
             .then(|| {
                 call.arguments
@@ -447,6 +479,11 @@ impl ToolExecutor {
         self.validate_tool_name(&call.name)?;
         #[cfg(windows)]
         if call.name.starts_with("mcp__") {
+            if self.permission_mode == ToolPermissionMode::Plan {
+                return self
+                    .deny_plan_mode_tool(call, request_id, snapshot, events, storage)
+                    .await;
+            }
             return self
                 .execute_mcp_call(
                     call,
@@ -460,6 +497,11 @@ impl ToolExecutor {
                 .await;
         }
         if call.name == "generate_image" {
+            if self.permission_mode == ToolPermissionMode::Plan {
+                return self
+                    .deny_plan_mode_tool(call, request_id, snapshot, events, storage)
+                    .await;
+            }
             return self
                 .execute_image_call(
                     call,
@@ -1748,6 +1790,91 @@ mod policy_tests {
                 &operation,
             ),
             ToolPermissionRule::Ask
+        );
+    }
+
+    #[test]
+    fn plan_mode_is_read_only_even_when_project_rules_allow_writes() {
+        let mut rules = ToolPermissionRules::new();
+        rules.insert("write_file".to_owned(), ToolPermissionRule::Allow);
+        rules.insert("read_file".to_owned(), ToolPermissionRule::Deny);
+        let executor = ToolExecutor::with_permission_rules(
+            None,
+            Path::new("."),
+            ToolPermissionMode::Plan,
+            ["write_file".to_owned(), "read_file".to_owned()],
+            rules,
+        );
+
+        let write_call = ToolCall {
+            id: "call_write".to_owned(),
+            name: "write_file".to_owned(),
+            arguments: json!({}),
+        };
+        assert_eq!(
+            executor.permission_rule(
+                &write_call,
+                &ToolOperation::Write {
+                    content: "change".to_owned(),
+                },
+            ),
+            ToolPermissionRule::Deny
+        );
+
+        let read_call = ToolCall {
+            id: "call_read".to_owned(),
+            name: "read_file".to_owned(),
+            arguments: json!({}),
+        };
+        assert_eq!(
+            executor.permission_rule(
+                &read_call,
+                &ToolOperation::Read {
+                    start_line: 1,
+                    line_count: 10,
+                },
+            ),
+            ToolPermissionRule::Deny
+        );
+
+        let default_read_executor = ToolExecutor::with_allowed_tool_names(
+            None,
+            Path::new("."),
+            ToolPermissionMode::Plan,
+            ["read_file".to_owned()],
+        );
+        assert_eq!(
+            default_read_executor.permission_rule(
+                &read_call,
+                &ToolOperation::Read {
+                    start_line: 1,
+                    line_count: 10,
+                },
+            ),
+            ToolPermissionRule::Allow
+        );
+
+        let web_call = ToolCall {
+            id: "call_search".to_owned(),
+            name: "web_search".to_owned(),
+            arguments: json!({}),
+        };
+        let web_operation = ToolOperation::WebSearch {
+            query: "Rust documentation".to_owned(),
+            limit: Some(3),
+        };
+        assert!(!web_operation.is_safe_for_auto_approval());
+        assert_eq!(
+            default_read_executor.permission_rule(&web_call, &web_operation),
+            ToolPermissionRule::Allow
+        );
+    }
+
+    #[test]
+    fn parses_plan_mode_from_rpc() {
+        assert_eq!(
+            ToolPermissionMode::from_rpc(Some("plan")).expect("parse plan mode"),
+            ToolPermissionMode::Plan
         );
     }
 

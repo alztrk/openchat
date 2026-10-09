@@ -29,55 +29,57 @@ class ToolPermissionCard extends StatelessWidget {
     final theme = Theme.of(context);
     final l10n = context.openchatL10n;
 
-    return ChatSurfaceCard(
-      key: const ValueKey<String>('tool-permission-card'),
-      padding: const EdgeInsets.all(12),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final details = _RequestDetails(
-            request: request,
-            palette: palette,
-            theme: theme,
-            l10n: l10n,
-            errorMessage: errorMessage,
-          );
-          final actions = _RequestActions(
-            isResponding: isResponding,
-            denyLabel: l10n.toolPermissionDeny,
-            approveLabel: l10n.toolPermissionAllowOnce,
-            onApprove: onApprove,
-            onDeny: onDeny,
-          );
+    return SingleChildScrollView(
+      child: ChatSurfaceCard(
+        key: const ValueKey<String>('tool-permission-card'),
+        padding: const EdgeInsets.all(12),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final details = _RequestDetails(
+              request: request,
+              palette: palette,
+              theme: theme,
+              l10n: l10n,
+              errorMessage: errorMessage,
+            );
+            final actions = _RequestActions(
+              isResponding: isResponding,
+              denyLabel: l10n.toolPermissionDeny,
+              approveLabel: l10n.toolPermissionAllowOnce,
+              onApprove: onApprove,
+              onDeny: onDeny,
+            );
 
-          if (constraints.maxWidth < 560) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            if (constraints.maxWidth < 560) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _PermissionIcon(palette: palette),
+                      const SizedBox(width: 10),
+                      Expanded(child: details),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Align(alignment: Alignment.centerRight, child: actions),
+                ],
+              );
+            }
+
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _PermissionIcon(palette: palette),
-                    const SizedBox(width: 10),
-                    Expanded(child: details),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Align(alignment: Alignment.centerRight, child: actions),
+                _PermissionIcon(palette: palette),
+                const SizedBox(width: 10),
+                Expanded(child: details),
+                const SizedBox(width: 16),
+                actions,
               ],
             );
-          }
-
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _PermissionIcon(palette: palette),
-              const SizedBox(width: 10),
-              Expanded(child: details),
-              const SizedBox(width: 16),
-              actions,
-            ],
-          );
-        },
+          },
+        ),
       ),
     );
   }
@@ -184,7 +186,7 @@ class _RequestDetails extends StatelessWidget {
         Text(
           message,
           style: theme.textTheme.bodySmall?.copyWith(
-          color: palette.destructive,
+            color: palette.destructive,
           ),
         ),
       ],

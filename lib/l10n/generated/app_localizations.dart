@@ -1796,6 +1796,18 @@ abstract class AppLocalizations {
   /// **'Choose where AI file tools can operate and whether each call requires your approval.'**
   String get toolPermissionsDescription;
 
+  /// No description provided for @toolPermissionPlan.
+  ///
+  /// In en, this message translates to:
+  /// **'Plan mode'**
+  String get toolPermissionPlan;
+
+  /// No description provided for @toolPermissionPlanDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Read and research only. File changes, terminal commands, project tools, and integrations are blocked.'**
+  String get toolPermissionPlanDescription;
+
   /// No description provided for @toolPermissionRequireApproval.
   ///
   /// In en, this message translates to:
@@ -3685,7 +3697,7 @@ abstract class AppLocalizations {
   /// No description provided for @projects.
   ///
   /// In en, this message translates to:
-  /// **'Code projects'**
+  /// **'Projects'**
   String get projects;
 
   /// No description provided for @noProjects.
@@ -3763,7 +3775,7 @@ abstract class AppLocalizations {
   /// No description provided for @projectLoading.
   ///
   /// In en, this message translates to:
-  /// **'Loading code projects…'**
+  /// **'Loading projects…'**
   String get projectLoading;
 
   /// No description provided for @projectMoveFailed.
@@ -3868,6 +3880,48 @@ abstract class AppLocalizations {
   /// **'Project options'**
   String get projectOptionsTitle;
 
+  /// No description provided for @projectDefaultModelSourceLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Project default'**
+  String get projectDefaultModelSourceLabel;
+
+  /// No description provided for @projectDefaultModelUseCurrent.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the current model for this project'**
+  String get projectDefaultModelUseCurrent;
+
+  /// No description provided for @projectDefaultModelClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear the project model default'**
+  String get projectDefaultModelClear;
+
+  /// No description provided for @projectDefaultModelSelectFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Select a model before setting a project default.'**
+  String get projectDefaultModelSelectFirst;
+
+  /// No description provided for @projectDefaultModelSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The project model default could not be saved.'**
+  String get projectDefaultModelSaveFailed;
+
+  /// No description provided for @projectDefaultModelSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Project default model set to {model}.'**
+  String projectDefaultModelSaved(String model);
+
+  /// No description provided for @projectDefaultModelCleared.
+  ///
+  /// In en, this message translates to:
+  /// **'Project model default cleared.'**
+  String get projectDefaultModelCleared;
+
   /// No description provided for @projectOptionsToolPermissions.
   ///
   /// In en, this message translates to:
@@ -3891,6 +3945,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Project instructions'**
   String get projectOptionsInstructions;
+
+  /// No description provided for @projectOptionsSkills.
+  ///
+  /// In en, this message translates to:
+  /// **'Project Skills'**
+  String get projectOptionsSkills;
 
   /// No description provided for @projectInstructionsTitle.
   ///
@@ -3933,6 +3993,102 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{bytes} / {maxBytes} bytes'**
   String projectInstructionsSize(int bytes, int maxBytes);
+
+  /// No description provided for @projectIndexTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Project index'**
+  String get projectIndexTitle;
+
+  /// No description provided for @projectIndexDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Index project text files locally. The index follows .gitignore rules and is stored outside the project folder.'**
+  String get projectIndexDescription;
+
+  /// No description provided for @projectIndexEnable.
+  ///
+  /// In en, this message translates to:
+  /// **'Use project index in chat'**
+  String get projectIndexEnable;
+
+  /// No description provided for @projectIndexSync.
+  ///
+  /// In en, this message translates to:
+  /// **'Sync'**
+  String get projectIndexSync;
+
+  /// No description provided for @projectIndexClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear index'**
+  String get projectIndexClear;
+
+  /// No description provided for @projectIndexLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Project index status could not be loaded.'**
+  String get projectIndexLoadFailed;
+
+  /// No description provided for @projectIndexActionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The project index operation failed.'**
+  String get projectIndexActionFailed;
+
+  /// No description provided for @projectIndexStale.
+  ///
+  /// In en, this message translates to:
+  /// **'The project index is incomplete. Sync it from project options or disable it.'**
+  String get projectIndexStale;
+
+  /// No description provided for @projectIndexStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Status: {status}. Files: {files}. Indexed bytes: {bytes}.'**
+  String projectIndexStatus(Object status, Object files, Object bytes);
+
+  /// No description provided for @projectSkillsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Project Skills'**
+  String get projectSkillsTitle;
+
+  /// No description provided for @projectSkillsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose project Skills from .openchat/skills/<id>/SKILL.md. Selected content is sent with new responses. Skill selection is saved locally for this project.'**
+  String get projectSkillsDescription;
+
+  /// No description provided for @projectSkillsEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No Skills found. Add a SKILL.md file under .openchat/skills/<id>/.'**
+  String get projectSkillsEmpty;
+
+  /// No description provided for @projectSkillsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Project Skills could not be loaded. Check the project files and try again.'**
+  String get projectSkillsLoadFailed;
+
+  /// No description provided for @projectSkillsSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The project Skill selection could not be saved.'**
+  String get projectSkillsSaveFailed;
+
+  /// No description provided for @projectSkillsClearSelection.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear selection'**
+  String get projectSkillsClearSelection;
+
+  /// No description provided for @projectSkillsStale.
+  ///
+  /// In en, this message translates to:
+  /// **'This selected Skill is no longer available. Uncheck it to clear the saved selection.'**
+  String get projectSkillsStale;
 
   /// No description provided for @projectMcpTitle.
   ///
@@ -5237,14 +5393,26 @@ abstract class AppLocalizations {
   /// No description provided for @emptyChatWelcomeTitle.
   ///
   /// In en, this message translates to:
-  /// **'How can I help?'**
+  /// **'What would you like to work on?'**
   String get emptyChatWelcomeTitle;
 
   /// No description provided for @emptyChatWelcomeBody.
   ///
   /// In en, this message translates to:
-  /// **'Ask a question to start chatting.'**
+  /// **'Write a question or describe what you have in mind.'**
   String get emptyChatWelcomeBody;
+
+  /// No description provided for @emptyChatSelectModelTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a model to begin'**
+  String get emptyChatSelectModelTitle;
+
+  /// No description provided for @emptyChatSelectModelBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Select a model from the menu below, then write your message.'**
+  String get emptyChatSelectModelBody;
 
   /// No description provided for @switchToDarkMode.
   ///

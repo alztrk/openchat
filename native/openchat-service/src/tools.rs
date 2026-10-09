@@ -698,6 +698,24 @@ pub fn definitions_for_request(
     }
 }
 
+pub(crate) fn apply_plan_mode_allowlist(definitions: &mut Vec<ToolDefinition>) {
+    definitions.retain(|tool| {
+        matches!(
+            tool.name.as_str(),
+            "list_files"
+                | "search_files"
+                | "read_file"
+                | "get_file_info"
+                | "git_status"
+                | "git_diff"
+                | "git_history"
+                | "web_search"
+                | "read_url_content"
+                | "ask_user"
+        )
+    });
+}
+
 pub fn context_usage_definitions(
     provider_id: &str,
     uses_responses_api: bool,
@@ -1049,10 +1067,45 @@ pub(crate) use executor::{
 #[cfg(test)]
 mod image_tool_tests {
     use super::{
-        context_usage_definitions, definitions, definitions_for_chatgpt_api,
-        definitions_for_chatgpt_model, definitions_for_model, definitions_for_provider,
-        definitions_for_request,
+        ToolDefinition, apply_plan_mode_allowlist, context_usage_definitions, definitions,
+        definitions_for_chatgpt_api, definitions_for_chatgpt_model, definitions_for_model,
+        definitions_for_provider, definitions_for_request,
     };
+
+    #[test]
+    fn plan_mode_tool_schemas_expose_only_read_only_operations_and_questions() {
+        let mut tools = definitions_for_chatgpt_model();
+        tools.push(ToolDefinition {
+            name: "mcp__server__write".to_owned(),
+            description: "MCP tool".to_owned(),
+            parameters: serde_json::json!({"type": "object"}),
+        });
+        tools.extend(crate::goals::control_tool_definitions());
+
+        apply_plan_mode_allowlist(&mut tools);
+
+        let names = tools
+            .iter()
+            .map(|tool| tool.name.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(
+            names,
+            [
+                "list_files",
+                "search_files",
+                "read_file",
+                "get_file_info",
+                "git_status",
+                "git_diff",
+                "git_history",
+                "web_search",
+                "read_url_content",
+                "ask_user",
+            ]
+            .into_iter()
+            .collect()
+        );
+    }
 
     #[test]
     fn image_generation_is_advertised_only_for_supported_chatgpt_routes() {

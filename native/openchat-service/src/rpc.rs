@@ -183,6 +183,44 @@ pub(crate) async fn dispatch(
             crate::project_instructions::save(&project_root, instructions)?;
             Ok(json!({"saved": true}))
         }
+        "project.skills.list" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let project_root = project_root_for_mcp(storage, project_id)?;
+            let skills = crate::project_skills::list(&project_root)?;
+            Ok(
+                json!({"skills": skills.iter().map(|skill| json!({"id": skill.id, "content": skill.content})).collect::<Vec<_>>()}),
+            )
+        }
+        "project.index.get" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let index_path = storage.root().join("cache").join("project-index.sqlite3");
+            Ok(json!({"index": crate::project_index::snapshot(&index_path, project_id)?}))
+        }
+        "project.index.set_enabled" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let enabled = request
+                .params
+                .get("enabled")
+                .and_then(Value::as_bool)
+                .ok_or_else(invalid_request_params)?;
+            let index_path = storage.root().join("cache").join("project-index.sqlite3");
+            Ok(
+                json!({"index": crate::project_index::set_enabled(&index_path, project_id, enabled)?}),
+            )
+        }
+        "project.index.sync" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let project_root = project_root_for_mcp(storage, project_id)?;
+            let index_path = storage.root().join("cache").join("project-index.sqlite3");
+            Ok(
+                json!({"index": crate::project_index::sync(&index_path, project_id, &project_root)?}),
+            )
+        }
+        "project.index.clear" => {
+            let project_id = required_string(&request.params, "projectId")?;
+            let index_path = storage.root().join("cache").join("project-index.sqlite3");
+            Ok(json!({"index": crate::project_index::clear(&index_path, project_id)?}))
+        }
         "project.mcp.catalog.get" => {
             let project_id = required_string(&request.params, "projectId")?;
             let project_root = project_root_for_mcp(storage, project_id)?;
@@ -649,6 +687,27 @@ pub(crate) async fn dispatch(
                 .map(|root| crate::project_instructions::load(Path::new(root)))
                 .transpose()?
                 .flatten();
+            let project_skill_ids = match request.params.get("projectSkillIds") {
+                None => Vec::new(),
+                Some(Value::Array(values)) => values
+                    .iter()
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .map(str::to_owned)
+                            .ok_or_else(invalid_context_usage_params)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+                _ => return Err(invalid_context_usage_params()),
+            };
+            crate::project_skills::validate_selected_ids(&project_skill_ids)?;
+            let project_skills = match project_root.as_deref() {
+                Some(root) => {
+                    crate::project_skills::load_selected(Path::new(root), &project_skill_ids)?
+                }
+                None if project_skill_ids.is_empty() => Vec::new(),
+                None => return Err(invalid_context_usage_params()),
+            };
             let has_project = project_root.is_some();
             let available_tools = openai_compatible::context_usage_tool_definitions(
                 storage,
@@ -659,6 +718,8 @@ pub(crate) async fn dispatch(
             let instructions = instructions::shared_instructions(
                 custom_instructions,
                 project_instructions.as_deref(),
+                &project_skills,
+                None,
                 permission_mode,
                 has_project,
                 !available_tools.is_empty(),
@@ -1016,6 +1077,20 @@ pub(crate) async fn dispatch(
             };
             let requested_custom_instructions =
                 optional_string(&request.params, "customInstructions")?;
+            let requested_project_skill_ids = match request.params.get("projectSkillIds") {
+                None => Vec::new(),
+                Some(Value::Array(values)) => values
+                    .iter()
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .map(str::to_owned)
+                            .ok_or_else(invalid_request_params)
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+                _ => return Err(invalid_request_params()),
+            };
+            crate::project_skills::validate_selected_ids(&requested_project_skill_ids)?;
             let permission_mode = ToolPermissionMode::from_rpc(optional_string(
                 &request.params,
                 "toolPermissionMode",
@@ -1116,6 +1191,8 @@ pub(crate) async fn dispatch(
                 run_id,
                 custom_instructions,
                 project_instructions,
+                project_skills,
+                project_index_context,
                 reasoning_effort,
                 fast_mode,
                 goal_execution,
@@ -1175,6 +1252,19 @@ pub(crate) async fn dispatch(
                         ));
                     }
                 };
+                let project_skills =
+                    crate::project_skills::from_checkpoint(checkpoint.get("projectSkills"))?;
+                let project_index_context = match checkpoint.get("projectIndexContext") {
+                    None | Some(Value::Null) => None,
+                    Some(Value::String(value)) if value.len() <= 12 * 1024 => Some(value.clone()),
+                    _ => {
+                        return Err(ServiceError::new(
+                            "question_run_checkpoint_invalid",
+                            "The saved project index context is invalid.",
+                            false,
+                        ));
+                    }
+                };
                 let reasoning_effort = checkpoint
                     .get("reasoningEffort")
                     .and_then(Value::as_str)
@@ -1219,6 +1309,8 @@ pub(crate) async fn dispatch(
                     run_id.to_owned(),
                     custom_instructions,
                     project_instructions,
+                    project_skills,
+                    project_index_context,
                     reasoning_effort,
                     fast_mode,
                     goal_execution,
@@ -1229,6 +1321,57 @@ pub(crate) async fn dispatch(
                     .map(|root| crate::project_instructions::load(Path::new(root)))
                     .transpose()?
                     .flatten();
+                let project_skills = match project_root.as_deref() {
+                    Some(root) => crate::project_skills::load_selected(
+                        Path::new(root),
+                        &requested_project_skill_ids,
+                    )?,
+                    None if requested_project_skill_ids.is_empty() => Vec::new(),
+                    None => return Err(invalid_request_params()),
+                };
+                let project_index_context = if let (Some(project_id), Some(root)) =
+                    (project_id.as_deref(), project_root.as_deref())
+                {
+                    let index_path = storage.root().join("cache").join("project-index.sqlite3");
+                    let state = crate::project_index::snapshot(&index_path, project_id)?;
+                    if state.enabled {
+                        let state =
+                            crate::project_index::sync(&index_path, project_id, Path::new(root))?;
+                        if state.status == "stale" {
+                            return Err(ServiceError::new(
+                                "project_index_stale",
+                                "The project index could not be fully synchronized. Retry sync in project options or disable the index.",
+                                true,
+                            ));
+                        }
+                        let messages =
+                            chatgpt_store::conversation_messages(storage, conversation_id)
+                                .map_err(|_| {
+                                    ServiceError::new(
+                                        "storage_unavailable",
+                                        "Chat history could not be read.",
+                                        false,
+                                    )
+                                })?;
+                        messages
+                            .iter()
+                            .rev()
+                            .find(|message| message.role == "user")
+                            .map(|message| {
+                                crate::project_index::search_current(
+                                    &index_path,
+                                    project_id,
+                                    &message.content,
+                                )
+                            })
+                            .transpose()?
+                            .flatten()
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
                 let run_id = uuid::Uuid::new_v4().simple().to_string();
                 crate::storage::user_questions::create_run(
                     &connection,
@@ -1250,6 +1393,8 @@ pub(crate) async fn dispatch(
                     "providerConnectionId": stored_api_key_connection_id,
                     "customInstructions": requested_custom_instructions,
                     "projectInstructions": project_instructions,
+                    "projectSkills": project_skills,
+                    "projectIndexContext": project_index_context,
                     "reasoningEffort": requested_reasoning_effort,
                     "fastMode": requested_fast_mode,
                 });
@@ -1279,6 +1424,8 @@ pub(crate) async fn dispatch(
                     run_id,
                     requested_custom_instructions.map(str::to_owned),
                     project_instructions,
+                    project_skills,
+                    project_index_context,
                     requested_reasoning_effort.map(str::to_owned),
                     requested_fast_mode,
                     goal_execution,
@@ -1348,6 +1495,8 @@ pub(crate) async fn dispatch(
                 excluded_assistant_message_id,
                 custom_instructions: custom_instructions.as_deref(),
                 project_instructions: project_instructions.as_deref(),
+                project_skills,
+                project_index_context,
                 project_root: project_root.as_deref().map(Path::new),
                 data_root: storage.root(),
                 storage,
@@ -2310,6 +2459,13 @@ mod tests {
             "Use the project's established terminology.",
         )
         .expect("write project instructions");
+        let skill_directory = project_config.join("skills").join("rust-style");
+        fs::create_dir_all(&skill_directory).expect("create project Skill directory");
+        fs::write(
+            skill_directory.join("SKILL.md"),
+            "Use rustfmt for Rust edits.",
+        )
+        .expect("write project Skill");
         let storage =
             Arc::new(AppStorage::open_at(directory.0.clone()).expect("open test storage"));
         let connection = storage.connect().expect("connect test storage");
@@ -2366,6 +2522,7 @@ mod tests {
             params: json!({
                 "conversationId": "conversation",
                 "apiKeyConnectionId": "gemini",
+                "projectSkillIds": ["rust-style"],
             }),
         };
         let (_cancel_sender, cancellation) = watch::channel(false);
@@ -2402,6 +2559,11 @@ mod tests {
         assert_eq!(
             checkpoint["projectInstructions"],
             "Use the project's established terminology."
+        );
+        assert_eq!(checkpoint["projectSkills"][0]["id"], "rust-style");
+        assert_eq!(
+            checkpoint["projectSkills"][0]["content"],
+            "Use rustfmt for Rust edits."
         );
         assert!(checkpoint.get("apiKey").is_none());
         assert!(checkpoint.get("apiKeyConnectionId").is_none());

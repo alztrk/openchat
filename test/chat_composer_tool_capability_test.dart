@@ -100,6 +100,10 @@ void main() {
           expect(tester.getSize(permission).height, greaterThanOrEqualTo(44));
           await tester.tap(permission);
           await tester.pumpAndSettle();
+          expect(
+            find.widgetWithText(MenuItemButton, l10n.toolPermissionPlan),
+            findsOneWidget,
+          );
           final access = find.widgetWithText(
             MenuItemButton,
             l10n.toolPermissionFullAccess,
