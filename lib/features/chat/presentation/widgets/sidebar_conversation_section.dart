@@ -95,7 +95,6 @@ class SidebarConversationSection extends StatelessWidget {
               duration: MediaQuery.disableAnimationsOf(context)
                   ? Duration.zero
                   : const Duration(milliseconds: 120),
-              padding: const EdgeInsets.symmetric(horizontal: 6),
               decoration: BoxDecoration(
                 color: isDropTarget ? palette.hover : Colors.transparent,
                 borderRadius: BorderRadius.circular(6),

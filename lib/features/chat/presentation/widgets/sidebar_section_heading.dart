@@ -20,7 +20,7 @@ class SidebarSectionHeading extends StatelessWidget {
         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
           color: palette.secondaryText,
           fontSize: 13,
-          fontWeight: FontWeight.w600,
+          fontWeight: FontWeight.w700,
           height: 18 / 13,
         ),
       ),

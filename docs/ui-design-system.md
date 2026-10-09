@@ -73,9 +73,9 @@ models are reached from Models and from local-engine settings so model
 management does not compete with the main conversation destinations.
 
 Use Lucide icons consistently. Keep primary navigation icon-only at every
-window width, give its 44 px controls a 4 px horizontal inset, and show
-localized labels in tooltips and semantic names. Use distinct selected and
-unselected glyphs for toggle states such as pinning and favorites. Keep
+window width, give its 44 px controls a 4 px horizontal inset for a 52 px rail,
+and show localized labels in tooltips and semantic names. Use distinct selected
+and unselected glyphs for toggle states such as pinning and favorites. Keep
 selected state visible with shape or fill as well as accent color.
 
 Keep the conversation sidebar's top row for search and run controls. Put chat

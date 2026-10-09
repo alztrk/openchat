@@ -565,6 +565,7 @@ class _ComposerActions extends StatelessWidget {
           : selectedModelLabel,
       palette: palette,
       compact: touchTargets,
+      borderless: true,
       width: narrow ? 144 : 152,
       models: models,
       favoriteModels: favoriteModels,
@@ -640,12 +641,7 @@ class _ComposerActions extends StatelessWidget {
                   ? palette.secondaryIcon
                   : palette.disabledIcon,
               decoration: shad.ShadDecoration(
-                border: shad.ShadBorder.all(
-                  color: attachmentsEnabled
-                      ? palette.controlBorder
-                      : palette.disabledBorder,
-                  radius: BorderRadius.circular(OpenChatRadii.control),
-                ),
+                border: shad.ShadBorder.none,
                 focusedBorder: shad.ShadBorder.all(
                   color: focusRing,
                   width: 2,
@@ -728,139 +724,25 @@ class _ComposerActions extends StatelessWidget {
         );
       },
     );
-    final fullAccessIndicator =
-        toolPermissionMode == ToolPermissionMode.fullAccess
-        ? Tooltip(
-            message: l10n.toolPermissionFullAccessDescription,
-            child: Semantics(
-              label:
-                  '${l10n.toolPermissionFullAccess}. ${l10n.toolPermissionFullAccessDescription}',
-              child: Container(
-                constraints: const BoxConstraints(minHeight: 36),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 7,
-                ),
-                decoration: BoxDecoration(
-                  color: palette.warning.withValues(alpha: 0.12),
-                  border: Border.all(color: palette.warning),
-                  borderRadius: BorderRadius.circular(OpenChatRadii.control),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      LucideIcons.shieldAlert,
-                      size: 16,
-                      color: palette.warning,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      l10n.toolPermissionFullAccess,
-                      style: TextStyle(
-                        color: palette.warning,
-                        fontSize: OpenChatTypography.metadata,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          )
-        : null;
-    final primaryControls = narrow
-        ? Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              attachmentButton,
-              modelSelector,
-              ?fullAccessIndicator,
-              sendButton,
-            ],
-          )
-        : Row(
-            children: [
-              attachmentButton,
-              const SizedBox(width: 8),
-              modelSelector,
-              const Spacer(),
-              ?fullAccessIndicator,
-              const SizedBox(width: 8),
-              sendButton,
-            ],
-          );
-    final advancedControls = Wrap(
+    final selectors = Wrap(
       spacing: 8,
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
-      children: [toolPermissionSelector, ?reasoningSelector, contextIndicator],
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        primaryControls,
-        _ComposerOptionsDisclosure(child: advancedControls),
+        attachmentButton,
+        modelSelector,
+        toolPermissionSelector,
+        ?reasoningSelector,
+        contextIndicator,
       ],
     );
-  }
-}
 
-class _ComposerOptionsDisclosure extends StatefulWidget {
-  const _ComposerOptionsDisclosure({required this.child});
-
-  final Widget child;
-
-  @override
-  State<_ComposerOptionsDisclosure> createState() =>
-      _ComposerOptionsDisclosureState();
-}
-
-class _ComposerOptionsDisclosureState
-    extends State<_ComposerOptionsDisclosure> {
-  bool _expanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.openchatL10n;
-    final reducedMotion = MediaQuery.disableAnimationsOf(context);
-    final palette = OpenChatPalette.of(context);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Semantics(
-          expanded: _expanded,
-          child: TextButton.icon(
-            onPressed: () => setState(() => _expanded = !_expanded),
-            icon: Icon(
-              _expanded ? LucideIcons.chevronUp : LucideIcons.slidersHorizontal,
-              size: 16,
-            ),
-            label: Text(l10n.moreOptions),
-            style: TextButton.styleFrom(
-              foregroundColor: palette.secondaryText,
-              minimumSize: const Size(40, 40),
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-            ),
-          ),
-        ),
-        AnimatedSize(
-          duration: reducedMotion
-              ? Duration.zero
-              : const Duration(milliseconds: 160),
-          curve: Curves.easeOutCubic,
-          alignment: Alignment.topLeft,
-          child: _expanded
-              ? Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: widget.child,
-                )
-              : const SizedBox(width: double.infinity),
-        ),
+        Expanded(child: selectors),
+        const SizedBox(width: 8),
+        sendButton,
       ],
     );
   }
@@ -912,6 +794,7 @@ class _ReasoningSelector extends StatelessWidget {
         menuWidth: width,
         height: composerControlHeight(context),
         horizontalPadding: 10,
+        borderless: true,
         selectedContent: Row(
           children: [
             SvgPicture.asset(
@@ -1042,6 +925,7 @@ class _ToolPermissionSelector extends StatelessWidget {
       menuWidth: 440,
       height: composerControlHeight(context),
       horizontalPadding: 10,
+      borderless: true,
       leadingIcon: modeIcon,
       leadingIconColor: modeColor,
       leadingIconGap: 5,

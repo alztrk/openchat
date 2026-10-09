@@ -212,11 +212,11 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               color: palette.text,
-                              fontSize: 13,
+                              fontSize: 12,
                               fontWeight: widget.selected
                                   ? FontWeight.w500
                                   : FontWeight.w400,
-                              height: 18 / 13,
+                              height: 16 / 12,
                             ),
                           ),
                         ],

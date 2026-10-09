@@ -105,6 +105,7 @@ class OpenChatSelect<T> extends StatelessWidget {
     this.trailingContent,
     this.trailingGap = 8,
     this.horizontalPadding = 12,
+    this.borderless = false,
     super.key,
   });
 
@@ -123,6 +124,7 @@ class OpenChatSelect<T> extends StatelessWidget {
   final Widget? trailingContent;
   final double trailingGap;
   final double horizontalPadding;
+  final bool borderless;
 
   OpenChatSelectOption<T>? _optionForValue(Object? value) {
     for (final option in options) {
@@ -217,10 +219,12 @@ class OpenChatSelect<T> extends StatelessWidget {
     final placeholderText = hint ?? '';
     final triggerDecoration = shad.ShadDecoration(
       color: Colors.transparent,
-      border: shad.ShadBorder.all(
-        color: isEnabled ? palette.controlBorder : palette.disabledBorder,
-        radius: BorderRadius.circular(OpenChatRadii.control),
-      ),
+      border: borderless
+          ? shad.ShadBorder.none
+          : shad.ShadBorder.all(
+              color: isEnabled ? palette.controlBorder : palette.disabledBorder,
+              radius: BorderRadius.circular(OpenChatRadii.control),
+            ),
       focusedBorder: shad.ShadBorder.all(
         color: palette.focusRing,
         width: 2,

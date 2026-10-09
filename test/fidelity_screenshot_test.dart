@@ -17,6 +17,7 @@ import 'package:openchat/features/chat/presentation/widgets/conversation_pane.da
 import 'package:openchat/features/chat/presentation/widgets/conversation_sidebar.dart';
 import 'package:openchat/features/chat/presentation/widgets/context_usage_indicator.dart';
 import 'package:openchat/features/chat/presentation/widgets/sidebar_conversation_tile.dart';
+import 'package:openchat/features/chat/presentation/widgets/sidebar_collapsible_heading.dart';
 import 'package:openchat/features/chat/presentation/widgets/window_control_bar.dart';
 import 'package:openchat/features/models/presentation/models_page.dart';
 import 'package:openchat/features/models/presentation/local_models_page.dart';
@@ -253,6 +254,7 @@ void main() {
                 ),
               ],
               onCreateConversation: () => created++,
+              onCreateProject: () {},
               onToggleSelectionMode: () {},
             ),
           ),
@@ -263,7 +265,11 @@ void main() {
       final createButton = find.byKey(
         const ValueKey<String>('conversations-create-button'),
       );
+      final projectCreateButton = find.byKey(
+        const ValueKey<String>('project-create-button'),
+      );
       expect(createButton, findsOneWidget);
+      expect(projectCreateButton, findsOneWidget);
       expect(find.text('Günlük sohbet'), findsOneWidget);
       expect(find.text('Gizli sağlayıcı · gizli-model'), findsNothing);
       expect(
@@ -273,6 +279,51 @@ void main() {
       expect(find.text('Sohbet geçmişi'), findsNothing);
       expect(find.text('Sohbetleri seç'), findsNothing);
       expect(find.text('Yeni sohbet'), findsNothing);
+
+      final l10n = AppLocalizations.of(tester.element(createButton));
+      expect(l10n, isNotNull);
+      final projectHeading = find.ancestor(
+        of: projectCreateButton,
+        matching: find.byType(SidebarCollapsibleHeading),
+      );
+      final conversationsHeading = find.ancestor(
+        of: createButton,
+        matching: find.byType(SidebarCollapsibleHeading),
+      );
+      expect(
+        tester.getRect(find.text(l10n!.projects)).left,
+        closeTo(tester.getRect(find.text(l10n.chats)).left, 0.1),
+      );
+      expect(
+        tester
+            .getRect(
+              find.descendant(
+                of: projectHeading,
+                matching: find.byIcon(LucideIcons.chevronDown),
+              ),
+            )
+            .right,
+        lessThan(tester.getRect(projectCreateButton).left),
+      );
+      expect(
+        tester
+            .getRect(
+              find.descendant(
+                of: conversationsHeading,
+                matching: find.byIcon(LucideIcons.chevronDown),
+              ),
+            )
+            .right,
+        lessThan(tester.getRect(createButton).left),
+      );
+      expect(
+        tester.widget<Text>(find.text(l10n.projects)).style?.fontWeight,
+        FontWeight.w700,
+      );
+      expect(
+        tester.widget<Text>(find.text('Günlük sohbet')).style?.fontSize,
+        12,
+      );
 
       await tester.tap(createButton);
       expect(created, 1);
@@ -490,10 +541,6 @@ void main() {
     await tester.pumpAndSettle();
 
     final permissionButton = find.text(l10n.toolPermissionRequireApproval).last;
-    final moreOptions = find.text(l10n.moreOptions);
-    await tester.ensureVisible(moreOptions);
-    await tester.tap(moreOptions);
-    await tester.pumpAndSettle();
     expect(permissionButton, findsOneWidget);
     expect(
       find.ancestor(of: permissionButton, matching: find.byType(Tooltip)),
@@ -1921,7 +1968,8 @@ void _expectComposerGeometry(WidgetTester tester) {
   if (l10n == null) {
     throw StateError('Composer localization is missing.');
   }
-  expect(find.text(l10n.moreOptions), findsOneWidget);
+  expect(find.text(l10n.moreOptions), findsNothing);
+  expect(find.text(l10n.toolPermissionRequireApproval), findsOneWidget);
 }
 
 void _expectComposerControls(

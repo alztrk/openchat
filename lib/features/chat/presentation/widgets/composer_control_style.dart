@@ -22,6 +22,7 @@ ButtonStyle composerControlStyle(
   double rightPadding = 10,
   Color? sideColor,
   Color? focusColor,
+  bool borderless = false,
 }) {
   final controlSide = sideColor ?? palette.controlBorder;
   final resolvedFocusColor = focusColor ?? palette.accent;
@@ -36,17 +37,18 @@ ButtonStyle composerControlStyle(
     tapTargetSize: compact
         ? MaterialTapTargetSize.padded
         : MaterialTapTargetSize.shrinkWrap,
-    side: BorderSide(color: controlSide),
+    side: borderless ? BorderSide.none : BorderSide(color: controlSide),
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(OpenChatRadii.control),
     ),
   ).copyWith(
     side: WidgetStateProperty.resolveWith<BorderSide?>((states) {
-      if (states.contains(WidgetState.disabled)) {
-        return BorderSide(color: palette.disabledBorder);
-      }
       if (states.contains(WidgetState.focused)) {
         return BorderSide(color: resolvedFocusColor, width: 2);
+      }
+      if (borderless) return BorderSide.none;
+      if (states.contains(WidgetState.disabled)) {
+        return BorderSide(color: palette.disabledBorder);
       }
       return BorderSide(color: controlSide);
     }),

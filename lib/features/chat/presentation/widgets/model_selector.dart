@@ -19,6 +19,7 @@ class ModelSelector extends StatefulWidget {
     required this.label,
     required this.palette,
     required this.compact,
+    this.borderless = false,
     this.width = 152,
     required this.models,
     required this.favoriteModels,
@@ -44,6 +45,7 @@ class ModelSelector extends StatefulWidget {
   final String label;
   final OpenChatPalette palette;
   final bool compact;
+  final bool borderless;
   final double width;
   final List<ChatGptModel> models;
   final List<FavoriteModel> favoriteModels;
@@ -541,6 +543,7 @@ class _ModelSelectorState extends State<ModelSelector> {
               leftPadding: 12,
               rightPadding: 12,
               focusColor: focusColor,
+              borderless: widget.borderless,
             ),
             child: Row(
               children: [
