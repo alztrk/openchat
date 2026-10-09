@@ -233,9 +233,8 @@ class _SavedOutputCardState extends State<_SavedOutputCard> {
                       const SizedBox(height: OpenChatSpacing.xxs),
                       Text(
                         source,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: palette.secondaryText,
-                        ),
+                        style: Theme.of(context).textTheme.bodySmall
+                            ?.copyWith(color: palette.secondaryText),
                       ),
                     ],
                   ],
@@ -303,8 +302,7 @@ String? _savedOutputSource(ChatSavedOutput output, AppLocalizations l10n) {
   final modelId = output.modelId?.trim();
   final labels = <String>[
     if (providerLabel != null) l10n.outputSourceProvider(providerLabel),
-    if (modelId != null && modelId.isNotEmpty)
-      l10n.outputSourceModel(modelId),
+    if (modelId != null && modelId.isNotEmpty) l10n.outputSourceModel(modelId),
   ];
   return labels.isEmpty ? null : labels.join(' · ');
 }

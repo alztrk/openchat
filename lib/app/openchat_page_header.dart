@@ -49,7 +49,8 @@ class OpenChatPageHeader extends StatelessWidget {
                           decoration: BoxDecoration(
                             border: focused
                                 ? Border.all(
-                                    color: OpenChatPalette.of(context).focusRing,
+                                    color: OpenChatPalette.of(context)
+                                        .focusRing,
                                     width: 2,
                                   )
                                 : null,
@@ -62,10 +63,7 @@ class OpenChatPageHeader extends StatelessWidget {
                               horizontal: 3,
                               vertical: 2,
                             ),
-                            child: Text(
-                              title,
-                              style: textTheme.headlineSmall,
-                            ),
+                            child: Text(title, style: textTheme.headlineSmall),
                           ),
                         ),
                       ),

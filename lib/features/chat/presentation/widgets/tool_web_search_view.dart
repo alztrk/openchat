@@ -324,7 +324,10 @@ class _WebSearchResultCard extends StatelessWidget {
                 iconSize: 14,
                 visualDensity: VisualDensity.standard,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+                constraints: const BoxConstraints.tightFor(
+                  width: 44,
+                  height: 44,
+                ),
               ),
               const SizedBox(width: 4),
               IconButton(
@@ -335,7 +338,10 @@ class _WebSearchResultCard extends StatelessWidget {
                 iconSize: 14,
                 visualDensity: VisualDensity.standard,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+                constraints: const BoxConstraints.tightFor(
+                  width: 44,
+                  height: 44,
+                ),
               ),
             ],
           ),
@@ -572,7 +578,10 @@ class ToolReadUrlResult extends StatelessWidget {
                 iconSize: 14,
                 visualDensity: VisualDensity.standard,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+                constraints: const BoxConstraints.tightFor(
+                  width: 44,
+                  height: 44,
+                ),
               ),
               const SizedBox(width: 6),
               IconButton(
@@ -583,7 +592,10 @@ class ToolReadUrlResult extends StatelessWidget {
                 iconSize: 14,
                 visualDensity: VisualDensity.standard,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+                constraints: const BoxConstraints.tightFor(
+                  width: 44,
+                  height: 44,
+                ),
               ),
             ],
           ),

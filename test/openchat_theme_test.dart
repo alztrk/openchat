@@ -69,6 +69,9 @@ void main() {
       themed.extension<OpenChatConversationStyle>()?.fontFamily,
       'Manrope',
     );
-    expect(themed.textTheme.bodyLarge?.fontFamily, OpenChatTypography.uiFontFamily);
+    expect(
+      themed.textTheme.bodyLarge?.fontFamily,
+      OpenChatTypography.uiFontFamily,
+    );
   });
 }

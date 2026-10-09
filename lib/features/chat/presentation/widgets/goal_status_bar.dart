@@ -188,7 +188,10 @@ class _GoalStatusBarState extends State<GoalStatusBar> {
                     : widget.onPauseOrResume,
                 visualDensity: VisualDensity.standard,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+                constraints: const BoxConstraints.tightFor(
+                  width: 44,
+                  height: 44,
+                ),
                 icon: Icon(
                   canResume ? LucideIcons.play : LucideIcons.pause,
                   size: 16,
@@ -199,7 +202,10 @@ class _GoalStatusBarState extends State<GoalStatusBar> {
                 onPressed: widget.isBusy ? null : widget.onStop,
                 visualDensity: VisualDensity.standard,
                 padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+                constraints: const BoxConstraints.tightFor(
+                  width: 44,
+                  height: 44,
+                ),
                 icon: const Icon(LucideIcons.square, size: 15),
               ),
             ],
