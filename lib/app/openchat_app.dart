@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:toastification/toastification.dart';
 
@@ -633,7 +634,10 @@ class _OpenChatAppState extends State<OpenChatApp> {
         highContrastDarkTheme: highContrastDarkTheme,
         themeMode: _themeMode,
         locale: _locale,
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        localizationsDelegates: <LocalizationsDelegate<dynamic>>[
+          ...AppLocalizations.localizationsDelegates,
+          shad.GlobalShadLocalizations.delegate,
+        ],
         supportedLocales: AppLocalizations.supportedLocales,
         builder: (context, child) {
           final mediaQuery = MediaQuery.of(context);
@@ -644,7 +648,10 @@ class _OpenChatAppState extends State<OpenChatApp> {
                 _conversationTextSize.scale,
               ),
             ),
-            child: child ?? const SizedBox.shrink(),
+            child: shad.ShadTheme(
+              data: OpenChatTheme.shadFromTheme(Theme.of(context)),
+              child: child ?? const SizedBox.shrink(),
+            ),
           );
         },
         home: FutureBuilder<_AppRuntime>(

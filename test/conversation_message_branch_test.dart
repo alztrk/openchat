@@ -5,6 +5,8 @@ import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 
+import 'support/shad_test_scope.dart';
+
 void main() {
   testWidgets('edits the selected user message before starting a branch', (
     tester,
@@ -31,6 +33,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.dark,
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: ConversationPane(
             messageController: controller,

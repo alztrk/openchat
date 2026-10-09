@@ -34,6 +34,7 @@ import 'package:shared_preferences_platform_interface/shared_preferences_async_p
 
 import 'fixtures/figma_chat_messages.dart';
 import 'fixtures/figma_sidebar_items.dart';
+import 'support/shad_test_scope.dart';
 
 const _mainSurfaceBottomInset = OpenChatSpacing.mainSurfaceInset;
 
@@ -88,6 +89,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: ConversationPane(
             messageController: controller,
@@ -154,6 +156,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
+        builder: openChatShadTestBuilder,
         home: const ChatScreen(
           themeMode: ThemeMode.dark,
           onThemeModeChanged: _ignoreThemeMode,
@@ -239,6 +242,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.light,
+        builder: openChatShadTestBuilder,
         home: const ChatScreen(
           themeMode: ThemeMode.light,
           onThemeModeChanged: _ignoreThemeMode,
@@ -287,6 +291,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.light.copyWith(platform: TargetPlatform.windows),
+        builder: openChatShadTestBuilder,
         home: const ChatScreen(
           themeMode: ThemeMode.light,
           onThemeModeChanged: _ignoreThemeMode,
@@ -333,6 +338,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: SizedBox.expand(
             child: ChatNavigationRail(
@@ -373,6 +379,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.light,
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: Center(
             child: SizedBox(
@@ -392,10 +399,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final permissionButton = find.widgetWithText(
-      OutlinedButton,
-      l10n.toolPermissionRequireApproval,
-    );
+    final permissionButton = find.text(l10n.toolPermissionRequireApproval).last;
     final moreOptions = find.text(l10n.moreOptions);
     await tester.ensureVisible(moreOptions);
     await tester.tap(moreOptions);
@@ -574,6 +578,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.light.copyWith(platform: TargetPlatform.windows),
+        builder: openChatShadTestBuilder,
         home: const ChatScreen(
           themeMode: ThemeMode.light,
           onThemeModeChanged: _ignoreThemeMode,
@@ -612,6 +617,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.light.copyWith(platform: TargetPlatform.windows),
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: SettingsScreen(
             themeMode: ThemeMode.light,
@@ -722,10 +728,13 @@ void main() {
           theme: OpenChatTheme.dark,
           builder: (context, child) {
             if (child == null) throw StateError('Model test route is missing.');
-            return MediaQuery(
-              data: MediaQuery.of(context)
-                  .copyWith(textScaler: TextScaler.linear(scale)),
-              child: child,
+            return openChatShadTestBuilder(
+              context,
+              MediaQuery(
+                data: MediaQuery.of(context)
+                    .copyWith(textScaler: TextScaler.linear(scale)),
+                child: child,
+              ),
             );
           },
           home: Scaffold(body: page),
@@ -791,10 +800,13 @@ void main() {
             if (child == null) {
               throw StateError('Provider test route is missing.');
             }
-            return MediaQuery(
-              data: MediaQuery.of(context)
-                  .copyWith(textScaler: TextScaler.linear(2)),
-              child: child,
+            return openChatShadTestBuilder(
+              context,
+              MediaQuery(
+                data: MediaQuery.of(context)
+                    .copyWith(textScaler: TextScaler.linear(2)),
+                child: child,
+              ),
             );
           },
           home: Scaffold(
@@ -1044,10 +1056,13 @@ void main() {
               if (child == null) {
                 throw StateError('Message test route is missing.');
               }
-              return MediaQuery(
-                data: MediaQuery.of(context)
-                    .copyWith(textScaler: TextScaler.linear(2)),
-                child: child,
+              return openChatShadTestBuilder(
+                context,
+                MediaQuery(
+                  data: MediaQuery.of(context)
+                      .copyWith(textScaler: TextScaler.linear(2)),
+                  child: child,
+                ),
               );
             },
             home: Scaffold(
@@ -1096,12 +1111,15 @@ void main() {
                 localizationsDelegates: AppLocalizations.localizationsDelegates,
                 supportedLocales: AppLocalizations.supportedLocales,
                 theme: theme.copyWith(platform: TargetPlatform.windows),
-                builder: (context, child) => MediaQuery(
-                  data: MediaQuery.of(context).copyWith(
-                    textScaler: TextScaler.linear(scale),
-                    disableAnimations: true,
+                builder: (context, child) => openChatShadTestBuilder(
+                  context,
+                  MediaQuery(
+                    data: MediaQuery.of(context).copyWith(
+                      textScaler: TextScaler.linear(scale),
+                      disableAnimations: true,
+                    ),
+                    child: child!,
                   ),
-                  child: child!,
                 ),
                 home: const ChatScreen(
                   themeMode: ThemeMode.system,
@@ -1117,7 +1135,7 @@ void main() {
             expect(composer.left, greaterThanOrEqualTo(0));
             expect(composer.right, lessThanOrEqualTo(size.width));
             expect(composer.bottom, lessThanOrEqualTo(size.height));
-            _expectComposerControls(tester, outlinedButtonCount: 2);
+            _expectComposerControls(tester, outlinedButtonCount: 1);
             expect(tester.takeException(), isNull);
 
             if (size.width < OpenChatSpacing.sidebarBreakpoint) {
@@ -1151,13 +1169,16 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.android),
-        builder: (context, child) => MediaQuery(
-          data: MediaQuery.of(context).copyWith(
-            viewInsets: const EdgeInsets.only(bottom: 180),
-            padding: const EdgeInsets.only(top: 24, bottom: 16),
-            disableAnimations: true,
+        builder: (context, child) => openChatShadTestBuilder(
+          context,
+          MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              viewInsets: const EdgeInsets.only(bottom: 180),
+              padding: const EdgeInsets.only(top: 24, bottom: 16),
+              disableAnimations: true,
+            ),
+            child: child!,
           ),
-          child: child!,
         ),
         home: Scaffold(
           body: ConversationPane(
@@ -1176,7 +1197,7 @@ void main() {
     await tester.pumpAndSettle();
     final composer = tester.getRect(find.byType(ChatComposer));
     expect(composer.bottom, lessThanOrEqualTo(300));
-    _expectComposerControls(tester, outlinedButtonCount: 2);
+    _expectComposerControls(tester, outlinedButtonCount: 1);
     expect(tester.takeException(), isNull);
   });
 
@@ -1246,6 +1267,7 @@ Future<void> _expectCompactNavigationRailMatchesOpenChat(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       theme: theme.copyWith(platform: TargetPlatform.windows),
+      builder: openChatShadTestBuilder,
       home: RepaintBoundary(
         key: const ValueKey<String>('compact-navigation-rail-screenshot'),
         child: SizedBox.expand(
@@ -1302,6 +1324,7 @@ Future<void> _expectCompositionGeometry(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       theme: OpenChatTheme.light.copyWith(platform: TargetPlatform.windows),
+      builder: openChatShadTestBuilder,
       home: const ChatScreen(
         themeMode: ThemeMode.light,
         onThemeModeChanged: _ignoreThemeMode,
@@ -1381,7 +1404,7 @@ Future<void> _expectCompositionGeometry(
   } else {
     expect(composer.bottom, lessThanOrEqualTo(pane.bottom));
   }
-  _expectComposerControls(tester, outlinedButtonCount: 2);
+  _expectComposerControls(tester, outlinedButtonCount: 1);
 }
 
 Future<void> _expectEmptyScreenMatchesOpenChat(
@@ -1401,6 +1424,7 @@ Future<void> _expectEmptyScreenMatchesOpenChat(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       theme: theme.copyWith(platform: TargetPlatform.windows),
+      builder: openChatShadTestBuilder,
       home: RepaintBoundary(
         key: const ValueKey<String>('empty-screen-screenshot'),
         child: ChatScreen(
@@ -1455,12 +1479,15 @@ Future<void> _pumpSettingsScreen(
       theme: theme.copyWith(platform: TargetPlatform.windows),
       builder: (context, child) {
         if (child == null) throw StateError('Settings test route is missing.');
-        return MediaQuery(
-          data: MediaQuery.of(context).copyWith(
-            textScaler: TextScaler.linear(textScale),
-            disableAnimations: true,
+        return openChatShadTestBuilder(
+          context,
+          MediaQuery(
+            data: MediaQuery.of(context).copyWith(
+              textScaler: TextScaler.linear(textScale),
+              disableAnimations: true,
+            ),
+            child: child,
           ),
-          child: child,
         );
       },
       home: RepaintBoundary(
@@ -1514,6 +1541,7 @@ Future<void> _expectActiveScreenMatchesOpenChat(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       theme: theme.copyWith(platform: TargetPlatform.windows),
+      builder: openChatShadTestBuilder,
       home: RepaintBoundary(
         key: const ValueKey<String>('active-screen-screenshot'),
         child: Scaffold(
@@ -1708,6 +1736,7 @@ Future<void> _expectNarrowComposerGeometry(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       theme: theme.copyWith(platform: TargetPlatform.windows),
+      builder: openChatShadTestBuilder,
       home: Scaffold(
         body: ColoredBox(
           color: theme.scaffoldBackgroundColor,
@@ -1729,7 +1758,7 @@ Future<void> _expectNarrowComposerGeometry(
   );
   await tester.pumpAndSettle();
 
-  _expectComposerControls(tester, outlinedButtonCount: 2);
+  _expectComposerControls(tester, outlinedButtonCount: 1);
 }
 
 Future<void> _expectPaneMatchesOpenChat(
@@ -1755,6 +1784,7 @@ Future<void> _expectPaneMatchesOpenChat(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
       theme: theme.copyWith(platform: TargetPlatform.windows),
+      builder: openChatShadTestBuilder,
       home: Scaffold(
         body: RepaintBoundary(
           key: const ValueKey<String>('pane-screenshot'),
@@ -1790,7 +1820,7 @@ Future<void> _expectPaneMatchesOpenChat(
 }
 
 void _expectComposerGeometry(WidgetTester tester) {
-  _expectComposerControls(tester, outlinedButtonCount: 2);
+  _expectComposerControls(tester, outlinedButtonCount: 1);
   final l10n = AppLocalizations.of(tester.element(find.byType(ChatComposer)));
   if (l10n == null) {
     throw StateError('Composer localization is missing.');
@@ -1805,9 +1835,12 @@ void _expectComposerControls(
   final composer = find.byType(ChatComposer);
   final composerRect = tester.getRect(composer);
   final messageField = tester.getRect(
-    find.descendant(of: composer, matching: find.byType(TextField)),
+    find.descendant(of: composer, matching: find.byType(EditableText)),
   );
-  final outlinedButtons = find.byType(OutlinedButton);
+  final outlinedButtons = find.descendant(
+    of: composer,
+    matching: find.byType(OutlinedButton),
+  );
   expect(outlinedButtons, findsNWidgets(outlinedButtonCount));
 
   final controlRects = <Rect>[

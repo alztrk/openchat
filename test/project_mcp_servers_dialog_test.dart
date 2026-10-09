@@ -4,6 +4,9 @@ import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/presentation/widgets/project_mcp_servers_dialog.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
+
+import 'support/shad_test_scope.dart';
+
 import 'package:openchat/platform/windows/openchat_service_client.dart';
 
 void main() {
@@ -28,6 +31,7 @@ void main() {
                 localizationsDelegates: AppLocalizations.localizationsDelegates,
                 supportedLocales: AppLocalizations.supportedLocales,
                 theme: OpenChatTheme.dark,
+                builder: openChatShadTestBuilder,
                 home: MediaQuery(
                   data: MediaQueryData(
                     size: Size(width, 900),
@@ -88,6 +92,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.light,
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: ProjectMcpServersDialog(
             serviceClient: service,
@@ -183,6 +188,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.light,
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: ProjectMcpServersDialog(
             serviceClient: service,
@@ -260,6 +266,7 @@ void main() {
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           theme: OpenChatTheme.light,
+          builder: openChatShadTestBuilder,
           home: Scaffold(
             body: ProjectMcpServersDialog(
               serviceClient: service,
@@ -331,6 +338,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.light,
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: ProjectMcpServersDialog(
             serviceClient: service,
@@ -374,6 +382,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.light,
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: ProjectMcpServersDialog(
             serviceClient: service,

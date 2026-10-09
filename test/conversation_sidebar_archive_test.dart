@@ -7,6 +7,8 @@ import 'package:openchat/features/chat/presentation/widgets/conversation_sidebar
 import 'package:openchat/features/chat/presentation/widgets/sidebar_conversation_tile.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 
+import 'support/shad_test_scope.dart';
+
 void main() {
   testWidgets('shows archived conversations with a restore action', (
     tester,
@@ -20,6 +22,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: ConversationSidebar(
             width: 300,
@@ -64,6 +67,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: ConversationSidebar(
             width: 320,
@@ -104,6 +108,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: ConversationSidebar(
             width: 280,
@@ -145,6 +150,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: ConversationSidebar(
             width: 320,
@@ -179,6 +185,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: ConversationSidebar(
             width: 320,

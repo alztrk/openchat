@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 
 import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_theme.dart';
@@ -411,28 +412,22 @@ class _GoalSlashInputState extends State<_GoalSlashInput> {
           ],
           Semantics(
             label: l10n.messageHint,
-            child: TextField(
+            child: shad.ShadInput(
               controller: widget.controller,
               minLines: 1,
               maxLines: 3,
               textCapitalization: TextCapitalization.sentences,
               textInputAction: TextInputAction.newline,
               cursorColor: widget.focusRing,
-              decoration: InputDecoration(
-                hintText: l10n.messageHint,
-                hintStyle: TextStyle(
-                  color: widget.palette.secondaryText,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w400,
-                  height: 20 / 15,
-                ),
-                filled: false,
-                border: InputBorder.none,
-                enabledBorder: InputBorder.none,
-                focusedBorder: InputBorder.none,
-                contentPadding: EdgeInsets.zero,
-                isDense: true,
-                isCollapsed: true,
+              decoration: shad.ShadDecoration.none,
+              padding: EdgeInsets.zero,
+              inputPadding: EdgeInsets.zero,
+              placeholder: Text(l10n.messageHint),
+              placeholderStyle: TextStyle(
+                color: widget.palette.secondaryText,
+                fontSize: 15,
+                fontWeight: FontWeight.w400,
+                height: 20 / 15,
               ),
               style: TextStyle(
                 color: widget.palette.text,
@@ -598,7 +593,6 @@ class _ComposerActions extends StatelessWidget {
             iconRoot: iconRoot,
             palette: palette,
             defaultHint: l10n.reasoningDefaultHint,
-            compact: touchTargets,
             width: narrow ? 144 : 152,
             options: reasoningOptions,
             onSelected: onReasoningSelected,
@@ -607,7 +601,6 @@ class _ComposerActions extends StatelessWidget {
     final toolPermissionSelector = _ToolPermissionSelector(
       mode: toolPermissionMode,
       palette: palette,
-      compact: touchTargets,
       width: narrow ? 168 : 176,
       hasSelectedModel: selectedModelId != null,
       supportsToolCalls: contextSupportsTools,
@@ -629,21 +622,35 @@ class _ComposerActions extends StatelessWidget {
         child: ExcludeSemantics(
           child: SizedBox.square(
             dimension: attachmentSize,
-            child: OutlinedButton(
-              onPressed: attachmentsEnabled ? onAddAttachments : null,
-              style: composerControlStyle(
-                palette,
-                width: attachmentSize,
-                height: attachmentSize,
-                compact: touchTargets,
-                focusColor: focusRing,
-              ),
-              child: Icon(
+            child: shad.ShadIconButton.outline(
+              icon: Icon(
                 LucideIcons.paperclip,
                 size: 18,
                 color: attachmentsEnabled
                     ? palette.secondaryIcon
                     : palette.disabledIcon,
+              ),
+              onPressed: attachmentsEnabled ? onAddAttachments : null,
+              enabled: attachmentsEnabled,
+              width: attachmentSize,
+              height: attachmentSize,
+              padding: EdgeInsets.zero,
+              backgroundColor: Colors.transparent,
+              foregroundColor: attachmentsEnabled
+                  ? palette.secondaryIcon
+                  : palette.disabledIcon,
+              decoration: shad.ShadDecoration(
+                border: shad.ShadBorder.all(
+                  color: attachmentsEnabled
+                      ? palette.controlBorder
+                      : palette.disabledBorder,
+                  radius: BorderRadius.circular(OpenChatRadii.control),
+                ),
+                focusedBorder: shad.ShadBorder.all(
+                  color: focusRing,
+                  width: 2,
+                  radius: BorderRadius.circular(OpenChatRadii.control),
+                ),
               ),
             ),
           ),
@@ -696,33 +703,24 @@ class _ComposerActions extends StatelessWidget {
             child: ExcludeSemantics(
               child: SizedBox.square(
                 dimension: sendSize,
-                child: IconButton(
-                  onPressed: onPressed,
-                  tooltip: null,
-                  padding: EdgeInsets.zero,
-                  iconSize: 18,
-                  constraints: BoxConstraints.tightFor(
-                    width: sendSize,
-                    height: sendSize,
-                  ),
-                  style: IconButton.styleFrom(
-                    backgroundColor: actionEnabled ? primary : palette.selected,
-                    foregroundColor: actionEnabled
-                        ? primaryForeground
-                        : palette.disabledForeground,
-                    disabledBackgroundColor: palette.selected,
-                    disabledForegroundColor: palette.disabledForeground,
-                    minimumSize: Size.square(sendSize),
-                    maximumSize: Size.square(sendSize),
-                    padding: EdgeInsets.zero,
-                    tapTargetSize: touchTargets
-                        ? MaterialTapTargetSize.padded
-                        : MaterialTapTargetSize.shrinkWrap,
-                    shape: const CircleBorder(),
-                  ),
+                child: shad.ShadIconButton.raw(
+                  variant: actionEnabled
+                      ? shad.ShadButtonVariant.primary
+                      : shad.ShadButtonVariant.secondary,
                   icon: isSending
                       ? const Icon(LucideIcons.square)
                       : const Icon(LucideIcons.arrowUp, size: 18),
+                  iconSize: 18,
+                  onPressed: onPressed,
+                  enabled: actionEnabled,
+                  width: sendSize,
+                  height: sendSize,
+                  padding: EdgeInsets.zero,
+                  backgroundColor: actionEnabled ? primary : palette.selected,
+                  foregroundColor: actionEnabled
+                      ? primaryForeground
+                      : palette.disabledForeground,
+                  decoration: const shad.ShadDecoration(shape: BoxShape.circle),
                 ),
               ),
             ),
@@ -874,7 +872,6 @@ class _ReasoningSelector extends StatelessWidget {
     required this.iconRoot,
     required this.palette,
     required this.defaultHint,
-    required this.compact,
     required this.width,
     required this.options,
     required this.onSelected,
@@ -884,7 +881,6 @@ class _ReasoningSelector extends StatelessWidget {
   final String iconRoot;
   final OpenChatPalette palette;
   final String defaultHint;
-  final bool compact;
   final double width;
   final List<String> options;
   final ValueChanged<String?>? onSelected;
@@ -915,14 +911,7 @@ class _ReasoningSelector extends StatelessWidget {
         width: width,
         menuWidth: width,
         height: composerControlHeight(context),
-        compact: compact,
-        triggerStyle: composerControlStyle(
-          palette,
-          width: width,
-          height: composerControlHeight(context),
-          compact: compact,
-          focusColor: _focusRingColor(context),
-        ),
+        horizontalPadding: 10,
         selectedContent: Row(
           children: [
             SvgPicture.asset(
@@ -962,7 +951,6 @@ class _ToolPermissionSelector extends StatelessWidget {
   const _ToolPermissionSelector({
     required this.mode,
     required this.palette,
-    required this.compact,
     required this.width,
     required this.hasSelectedModel,
     required this.supportsToolCalls,
@@ -971,7 +959,6 @@ class _ToolPermissionSelector extends StatelessWidget {
 
   final ToolPermissionMode mode;
   final OpenChatPalette palette;
-  final bool compact;
   final double width;
   final bool hasSelectedModel;
   final bool? supportsToolCalls;
@@ -1054,16 +1041,7 @@ class _ToolPermissionSelector extends StatelessWidget {
       width: width,
       menuWidth: 440,
       height: composerControlHeight(context),
-      compact: compact,
-      triggerStyle: composerControlStyle(
-        palette,
-        width: width,
-        height: composerControlHeight(context),
-        compact: compact,
-        leftPadding: 10,
-        rightPadding: 10,
-        focusColor: _focusRingColor(context),
-      ),
+      horizontalPadding: 10,
       leadingIcon: modeIcon,
       leadingIconColor: modeColor,
       leadingIconGap: 5,

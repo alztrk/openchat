@@ -9,9 +9,10 @@ primary workflow. Workspaces group chats, Outputs stores useful assistant
 responses, and model discovery stays separate from day-to-day conversation
 controls.
 
-Use the existing Material 3 interaction primitives with OpenChat's own colors,
-type, dimensions, and Lucide icon language. Avoid decorative gradients,
-unnecessary card grids, and icons that do not describe the action or object.
+Use Shadcn Flutter interaction primitives with OpenChat's own colors, type,
+dimensions, and Lucide icon language. The migration is in progress; unconverted
+surfaces still use Material controls. Avoid decorative gradients, unnecessary
+card grids, and icons that do not describe the action or object.
 
 ## Color roles
 

@@ -9,6 +9,8 @@ import 'package:openchat/features/chat/presentation/widgets/assistant_message.da
 import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 
+import 'support/shad_test_scope.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -261,6 +263,7 @@ Widget _testApp(Widget body) => MaterialApp(
   localizationsDelegates: AppLocalizations.localizationsDelegates,
   supportedLocales: AppLocalizations.supportedLocales,
   theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
+  builder: openChatShadTestBuilder,
   home: Scaffold(body: body),
 );
 

@@ -16,6 +16,8 @@ import 'package:openchat/features/chat/presentation/widgets/project_tool_permiss
 import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 
+import 'support/shad_test_scope.dart';
+
 void main() {
   testWidgets(
     'chat composer send action is labeled in every supported locale',
@@ -32,6 +34,10 @@ void main() {
               localizationsDelegates: AppLocalizations.localizationsDelegates,
               supportedLocales: AppLocalizations.supportedLocales,
               theme: OpenChatTheme.dark,
+              builder: (context, child) => openChatShadTestScope(
+                OpenChatTheme.dark,
+                child ?? const SizedBox.shrink(),
+              ),
               home: Scaffold(
                 body: ChatComposer(
                   controller: controller,
@@ -77,6 +83,10 @@ void main() {
               localizationsDelegates: AppLocalizations.localizationsDelegates,
               supportedLocales: AppLocalizations.supportedLocales,
               theme: OpenChatTheme.dark,
+              builder: (context, child) => openChatShadTestScope(
+                OpenChatTheme.dark,
+                child ?? const SizedBox.shrink(),
+              ),
               home: Scaffold(
                 body: FocusTraversalGroup(
                   child: Column(
@@ -129,6 +139,10 @@ void main() {
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           theme: OpenChatTheme.dark,
+          builder: (context, child) => openChatShadTestScope(
+            OpenChatTheme.dark,
+            child ?? const SizedBox.shrink(),
+          ),
           home: Scaffold(
             body: ChatComposer(
               controller: controller,
@@ -253,6 +267,10 @@ void main() {
             localizationsDelegates: AppLocalizations.localizationsDelegates,
             supportedLocales: AppLocalizations.supportedLocales,
             theme: OpenChatTheme.dark,
+            builder: (context, child) => openChatShadTestScope(
+              OpenChatTheme.dark,
+              child ?? const SizedBox.shrink(),
+            ),
             home: Scaffold(
               body: ChatComposer(
                 controller: controller,
@@ -266,7 +284,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        final field = find.byType(TextField);
+        final field = find.byType(EditableText);
         await tester.tap(field);
         await tester.enterText(field, 'Keyboard message');
         await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -766,10 +784,13 @@ void main() {
                       AppLocalizations.localizationsDelegates,
                   supportedLocales: AppLocalizations.supportedLocales,
                   theme: OpenChatTheme.dark,
-                  builder: (context, child) => MediaQuery(
-                    data: MediaQuery.of(context)
-                        .copyWith(textScaler: TextScaler.linear(textScale)),
-                    child: child ?? const SizedBox.shrink(),
+                  builder: (context, child) => openChatShadTestScope(
+                    OpenChatTheme.dark,
+                    MediaQuery(
+                      data: MediaQuery.of(context)
+                          .copyWith(textScaler: TextScaler.linear(textScale)),
+                      child: child ?? const SizedBox.shrink(),
+                    ),
                   ),
                   home: Builder(
                     builder: (context) => Scaffold(

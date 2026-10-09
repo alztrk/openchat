@@ -7,6 +7,8 @@ import 'package:openchat/features/chat/presentation/widgets/assistant_message.da
 import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 
+import 'support/shad_test_scope.dart';
+
 void main() {
   testWidgets('retries stay selectable as response versions', (tester) async {
     final controller = TextEditingController();
@@ -19,6 +21,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.dark,
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: SizedBox(
             width: 1000,
@@ -93,6 +96,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.dark,
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: SizedBox(
             width: 900,
@@ -160,6 +164,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.dark,
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: SizedBox(
             width: 900,

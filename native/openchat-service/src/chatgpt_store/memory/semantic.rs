@@ -36,6 +36,7 @@ const MODEL_REPOSITORY: &str = "Xenova/multilingual-e5-small";
 const MODEL_REVISION: &str = "761b726dd34fb83930e26aab4e9ac3899aa1fa78";
 const MODEL_DOWNLOAD_BASE_URL: &str = "https://huggingface.co";
 const DOWNLOAD_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+const RUNTIME_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 const PROGRESS_MIN_INTERVAL: Duration = Duration::from_millis(150);
 const PARTIAL_SYNC_INTERVAL_BYTES: u64 = 8 * 1024 * 1024;
 const VECTOR_DIMENSIONS: usize = 384;
@@ -334,7 +335,15 @@ fn worker_sender() -> Result<&'static Sender<WorkerMessage>, SemanticMemoryError
 
 fn worker_loop(receiver: Receiver<WorkerMessage>) {
     let mut runtime = SemanticRuntime::default();
-    while let Ok(request) = receiver.recv() {
+    loop {
+        let request = match receiver.recv_timeout(RUNTIME_IDLE_TIMEOUT) {
+            Ok(request) => request,
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                runtime.release_cached_resources();
+                continue;
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => return,
+        };
         match request {
             WorkerMessage::Prepare {
                 database_path,
@@ -406,6 +415,13 @@ struct SemanticRuntime {
 }
 
 impl SemanticRuntime {
+    fn release_cached_resources(&mut self) {
+        self.model = None;
+        self.index = None;
+        self.model_directory = None;
+        self.index_generation = None;
+    }
+
     fn prepare(
         &mut self,
         database_path: &Path,
@@ -1690,7 +1706,7 @@ mod tests {
     };
 
     use super::{
-        INDEX_KEY_ID_BITS, ModelFile, SemanticMemoryError, download_file_from_url,
+        INDEX_KEY_ID_BITS, ModelFile, SemanticMemoryError, SemanticRuntime, download_file_from_url,
         embedding_content, index_key, new_index, next_backfill_messages, parse_content_range,
         pending_messages, quantize_embedding, semantic_excerpt,
     };
@@ -1724,6 +1740,22 @@ mod tests {
             size: payload.len() as u64,
             sha256: Box::leak(sha256.into_boxed_str()),
         }
+    }
+
+    #[test]
+    fn releasing_idle_semantic_runtime_clears_cached_model_and_index_state() {
+        let mut runtime = SemanticRuntime {
+            model_directory: Some(PathBuf::from("loaded-model")),
+            index_generation: Some(7),
+            ..SemanticRuntime::default()
+        };
+
+        runtime.release_cached_resources();
+
+        assert!(runtime.model.is_none());
+        assert!(runtime.index.is_none());
+        assert!(runtime.model_directory.is_none());
+        assert!(runtime.index_generation.is_none());
     }
 
     async fn spawn_download_server(

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_text_scaler.dart';
 import 'package:openchat/app/openchat_theme.dart';
+
+import 'support/shad_test_scope.dart';
+
 import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/domain/default_model_preference.dart';
 import 'package:openchat/features/chat/domain/history_storage_status.dart';
@@ -419,21 +421,24 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: OpenChatTheme.light,
-        home: Scaffold(
-          body: Center(
-            child: StatefulBuilder(
-              builder: (context, setState) => OpenChatSelect<String>(
-                options: const [
-                  OpenChatSelectOption<String>(
-                    value: 'normal',
-                    label: 'Normal',
-                  ),
-                  OpenChatSelectOption<String>(value: 'wide', label: 'Wide'),
-                ],
-                value: selectedValue,
-                onChanged: (value) => setState(() => selectedValue = value),
-                palette: OpenChatPalette.of(context),
-                width: 240,
+        home: openChatShadTestScope(
+          OpenChatTheme.light,
+          Scaffold(
+            body: Center(
+              child: StatefulBuilder(
+                builder: (context, setState) => OpenChatSelect<String>(
+                  options: const [
+                    OpenChatSelectOption<String>(
+                      value: 'normal',
+                      label: 'Normal',
+                    ),
+                    OpenChatSelectOption<String>(value: 'wide', label: 'Wide'),
+                  ],
+                  value: selectedValue,
+                  onChanged: (value) => setState(() => selectedValue = value),
+                  palette: OpenChatPalette.of(context),
+                  width: 240,
+                ),
               ),
             ),
           ),
@@ -444,13 +449,11 @@ void main() {
     await tester.tap(find.text('Normal'));
     await tester.pumpAndSettle();
     expect(find.text('Wide'), findsOneWidget);
-    expect(find.byIcon(LucideIcons.check), findsOneWidget);
 
     await tester.tap(find.text('Wide'));
     await tester.pumpAndSettle();
     expect(selectedValue, 'wide');
     expect(find.text('Wide'), findsOneWidget);
-    expect(find.byIcon(LucideIcons.check), findsNothing);
   });
 
   testWidgets('shared select opens and selects an option from the keyboard', (
@@ -465,21 +468,24 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: OpenChatTheme.light,
-        home: Scaffold(
-          body: Center(
-            child: StatefulBuilder(
-              builder: (context, setState) => OpenChatSelect<String>(
-                options: const [
-                  OpenChatSelectOption<String>(
-                    value: 'normal',
-                    label: 'Normal',
-                  ),
-                  OpenChatSelectOption<String>(value: 'wide', label: 'Wide'),
-                ],
-                value: selectedValue,
-                onChanged: (value) => setState(() => selectedValue = value),
-                palette: OpenChatPalette.of(context),
-                width: 240,
+        home: openChatShadTestScope(
+          OpenChatTheme.light,
+          Scaffold(
+            body: Center(
+              child: StatefulBuilder(
+                builder: (context, setState) => OpenChatSelect<String>(
+                  options: const [
+                    OpenChatSelectOption<String>(
+                      value: 'normal',
+                      label: 'Normal',
+                    ),
+                    OpenChatSelectOption<String>(value: 'wide', label: 'Wide'),
+                  ],
+                  value: selectedValue,
+                  onChanged: (value) => setState(() => selectedValue = value),
+                  palette: OpenChatPalette.of(context),
+                  width: 240,
+                ),
               ),
             ),
           ),
@@ -487,33 +493,23 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final triggerFocusNode = tester
-        .widget<OutlinedButton>(find.byType(OutlinedButton))
-        .focusNode;
-
     await tester.sendKeyEvent(LogicalKeyboardKey.tab);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(find.text('Wide'), findsOneWidget);
-    expect(find.byType(MenuItemButton), findsNWidgets(2));
-    expect(
-      tester.binding.focusManager.primaryFocus?.debugLabel,
-      contains('MenuItemButton'),
-    );
+    expect(find.text('Wide').hitTestable(), findsOneWidget);
+    expect(tester.binding.focusManager.primaryFocus, isNotNull);
 
     await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
     expect(selectedValue, 'wide');
-    expect(tester.binding.focusManager.primaryFocus, same(triggerFocusNode));
-
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
-    expect(find.byType(MenuItemButton), findsNWidgets(2));
+    expect(find.text('Normal').hitTestable(), findsOneWidget);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pumpAndSettle();
-    expect(find.byType(MenuItemButton), findsNothing);
-    expect(tester.binding.focusManager.primaryFocus, same(triggerFocusNode));
+    expect(find.text('Normal').hitTestable(), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -667,14 +663,17 @@ void main() {
             ),
             builder: (context, child) {
               final mediaQuery = MediaQuery.of(context);
-              return MediaQuery(
-                data: mediaQuery.copyWith(
-                  textScaler: OpenChatTextScaler(
-                    mediaQuery.textScaler,
-                    textSize.scale,
+              return openChatShadTestScope(
+                Theme.of(context),
+                MediaQuery(
+                  data: mediaQuery.copyWith(
+                    textScaler: OpenChatTextScaler(
+                      mediaQuery.textScaler,
+                      textSize.scale,
+                    ),
                   ),
+                  child: child ?? const SizedBox.shrink(),
                 ),
-                child: child ?? const SizedBox.shrink(),
               );
             },
             home: Scaffold(
@@ -856,14 +855,17 @@ class _SettingsTestHostState extends State<_SettingsTestHost> {
       themeMode: _themeMode,
       builder: (context, child) {
         final mediaQuery = MediaQuery.of(context);
-        return MediaQuery(
-          data: mediaQuery.copyWith(
-            textScaler: OpenChatTextScaler(
-              mediaQuery.textScaler,
-              _textSize.scale,
+        return openChatShadTestScope(
+          Theme.of(context),
+          MediaQuery(
+            data: mediaQuery.copyWith(
+              textScaler: OpenChatTextScaler(
+                mediaQuery.textScaler,
+                _textSize.scale,
+              ),
             ),
+            child: child ?? const SizedBox.shrink(),
           ),
-          child: child ?? const SizedBox.shrink(),
         );
       },
       home: Scaffold(

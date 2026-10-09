@@ -9,6 +9,9 @@ import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/domain/history_storage_status.dart';
 import 'package:openchat/features/chat/presentation/chat_screen.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
+
+import 'support/shad_test_scope.dart';
+
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
@@ -69,6 +72,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.light.copyWith(platform: TargetPlatform.windows),
+        builder: openChatShadTestBuilder,
         home: ChatScreen(
           themeMode: ThemeMode.light,
           onThemeModeChanged: (_) async {},

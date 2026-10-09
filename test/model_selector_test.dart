@@ -6,6 +6,8 @@ import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/chat/presentation/widgets/model_selector.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 
+import 'support/shad_test_scope.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -34,6 +36,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.light,
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: Center(
             child: StatefulBuilder(
@@ -161,6 +164,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.light,
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: Center(
             child: StatefulBuilder(
@@ -257,6 +261,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.light,
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: Center(
             child: ModelSelector(
@@ -364,6 +369,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.light,
+        builder: openChatShadTestBuilder,
         home: Scaffold(
           body: Center(
             child: ModelSelector(

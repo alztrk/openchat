@@ -669,7 +669,6 @@ class _StatisticsSettingsSectionState extends State<StatisticsSettingsSection> {
           palette: palette,
           width: double.infinity,
           height: 40,
-          compact: true,
         ),
       ],
     );

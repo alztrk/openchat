@@ -7,6 +7,8 @@ import 'package:openchat/features/chat/presentation/widgets/conversation_pane.da
 import 'package:openchat/features/chat/presentation/widgets/tool_permission_card.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 
+import 'support/shad_test_scope.dart';
+
 void main() {
   test('parses only complete permission requests', () {
     expect(
@@ -48,6 +50,7 @@ void main() {
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           theme: OpenChatTheme.light,
+          builder: openChatShadTestBuilder,
           home: Scaffold(
             body: ConversationPane(
               messageController: controller,
@@ -102,6 +105,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.light,
+        builder: openChatShadTestBuilder,
         home: const Scaffold(
           body: ToolPermissionCard(
             request: ToolPermissionRequest(
@@ -152,6 +156,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.light,
+        builder: openChatShadTestBuilder,
         home: const Scaffold(
           body: Padding(
             padding: EdgeInsets.all(16),
@@ -193,6 +198,7 @@ void main() {
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           theme: OpenChatTheme.light,
+          builder: openChatShadTestBuilder,
           home: const Scaffold(
             body: Padding(
               padding: EdgeInsets.all(16),
@@ -235,6 +241,7 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.light,
+        builder: openChatShadTestBuilder,
         home: const Scaffold(
           body: Padding(
             padding: EdgeInsets.all(16),

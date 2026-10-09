@@ -5,6 +5,8 @@ import 'package:openchat/features/chat/presentation/widgets/project_tool_permiss
 import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 
+import 'support/shad_test_scope.dart';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -20,6 +22,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: OpenChatTheme.light,
+        builder: openChatShadTestBuilder,
         locale: const Locale('en'),
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,

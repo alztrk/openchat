@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 
 import 'package:openchat/app/openchat_brand_mark.dart';
 import 'package:openchat/app/openchat_theme.dart';
@@ -285,7 +286,7 @@ class _CompactBrand extends StatelessWidget {
   }
 }
 
-class _RailNavigationButton extends StatefulWidget {
+class _RailNavigationButton extends StatelessWidget {
   const _RailNavigationButton({
     required this.expanded,
     required this.label,
@@ -303,91 +304,66 @@ class _RailNavigationButton extends StatefulWidget {
   final VoidCallback? onPressed;
 
   @override
-  State<_RailNavigationButton> createState() => _RailNavigationButtonState();
-}
-
-class _RailNavigationButtonState extends State<_RailNavigationButton> {
-  bool _focused = false;
-
-  @override
   Widget build(BuildContext context) {
-    final foreground = widget.selected
-        ? widget.palette.text
-        : widget.palette.secondaryText;
-    final reducedMotion = MediaQuery.disableAnimationsOf(context);
-    final enabled = widget.onPressed != null;
+    final foreground = selected ? palette.text : palette.secondaryText;
     final item = Semantics(
       button: true,
-      enabled: enabled,
-      selected: widget.selected,
-      label: widget.label,
-      onTap: widget.onPressed,
+      enabled: onPressed != null,
+      selected: selected,
+      label: label,
       child: ExcludeSemantics(
-        child: AnimatedContainer(
-          duration: reducedMotion
-              ? Duration.zero
-              : const Duration(milliseconds: 150),
-          curve: Curves.easeOutCubic,
-          decoration: BoxDecoration(
-            color: widget.selected
-                ? widget.palette.selected
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(OpenChatRadii.control),
-            border: _focused
-                ? Border.all(color: widget.palette.focusRing, width: 2)
-                : widget.selected
-                ? Border.all(color: widget.palette.border)
-                : null,
+        child: shad.ShadButton.ghost(
+          width: double.infinity,
+          height: selected ? 46 : 44,
+          expands: expanded,
+          padding: EdgeInsets.symmetric(horizontal: expanded ? 12 : 0),
+          enabled: onPressed != null,
+          onPressed: onPressed,
+          backgroundColor: selected ? palette.selected : Colors.transparent,
+          hoverBackgroundColor: palette.hover,
+          foregroundColor: foreground,
+          decoration: shad.ShadDecoration(
+            border: shad.ShadBorder.all(
+              color: selected ? palette.border : Colors.transparent,
+              radius: BorderRadius.circular(OpenChatRadii.control),
+            ),
+            focusedBorder: shad.ShadBorder.all(
+              color: palette.focusRing,
+              width: 2,
+              radius: BorderRadius.circular(OpenChatRadii.control),
+            ),
           ),
-          child: Material(
-            color: Colors.transparent,
-            borderRadius: BorderRadius.circular(OpenChatRadii.control),
-            child: InkWell(
-              onTap: widget.onPressed,
-              onFocusChange: (focused) {
-                if (_focused != focused) setState(() => _focused = focused);
-              },
-              borderRadius: BorderRadius.circular(OpenChatRadii.control),
-              hoverColor: widget.palette.hover,
-              child: SizedBox(
-                height: 44,
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: widget.expanded ? 12 : 0,
+          child: SizedBox(
+            height: 44,
+            child: Row(
+              mainAxisAlignment: expanded
+                  ? MainAxisAlignment.start
+                  : MainAxisAlignment.center,
+              children: [
+                icon,
+                if (expanded) ...[
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: foreground,
+                        fontSize: 14,
+                        height: 20 / 14,
+                      ),
+                    ),
                   ),
-                  child: Row(
-                    mainAxisAlignment: widget.expanded
-                        ? MainAxisAlignment.start
-                        : MainAxisAlignment.center,
-                    children: [
-                      widget.icon,
-                      if (widget.expanded) ...[
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            widget.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: foreground,
-                                  fontSize: 14,
-                                  height: 20 / 14,
-                                ),
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
+                ],
+              ],
             ),
           ),
         ),
       ),
     );
 
-    return widget.expanded ? item : Tooltip(message: widget.label, child: item);
+    return expanded ? item : Tooltip(message: label, child: item);
   }
 }
 

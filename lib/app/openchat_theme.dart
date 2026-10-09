@@ -1,6 +1,7 @@
 import 'dart:ui' show lerpDouble;
 
 import 'package:flutter/material.dart';
+import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 
 class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
   const OpenChatPalette({
@@ -430,6 +431,46 @@ abstract final class OpenChatTheme {
     OpenChatPalette.highContrastDark,
     Brightness.dark,
   );
+
+  static shad.ShadThemeData shadFromTheme(ThemeData theme) {
+    final palette = theme.extension<OpenChatPalette>();
+    if (palette == null) {
+      throw StateError('OpenChatPalette is missing from the active theme.');
+    }
+
+    return shad.ShadThemeData(
+      brightness: theme.brightness,
+      colorScheme: shad.ShadColorScheme(
+        background: palette.background,
+        foreground: palette.text,
+        card: palette.surface,
+        cardForeground: palette.text,
+        popover: palette.raisedSurface,
+        popoverForeground: palette.text,
+        primary: theme.colorScheme.primary,
+        primaryForeground: theme.colorScheme.onPrimary,
+        secondary: palette.selected,
+        secondaryForeground: palette.text,
+        muted: palette.composer,
+        mutedForeground: palette.secondaryText,
+        accent: palette.hover,
+        accentForeground: palette.text,
+        destructive: palette.destructive,
+        destructiveForeground: theme.colorScheme.onError,
+        border: palette.border,
+        input: palette.controlBorder,
+        ring: palette.focusRing,
+        selection: palette.accent.withValues(alpha: 0.24),
+      ),
+      textTheme: shad.ShadTextTheme(
+        family:
+            theme.textTheme.bodyMedium?.fontFamily ??
+            OpenChatTypography.uiFontFamily,
+      ),
+      radius: BorderRadius.circular(OpenChatRadii.control),
+      disabledOpacity: 0.55,
+    );
+  }
 
   static ThemeData _create(
     OpenChatPalette palette,

@@ -4,7 +4,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_composer.dart';
+import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
+import 'package:shadcn_ui/shadcn_ui.dart' as shad;
+
+import 'support/shad_test_scope.dart';
 
 void main() {
   for (final locale in <Locale>[
@@ -28,6 +32,7 @@ void main() {
           final l10n = await AppLocalizations.delegate.load(locale);
           var sent = 0;
           var selected = 0;
+          ToolPermissionMode? selectedPermission;
           const modelTitle = 'Long model name for readable selector testing';
           await tester.pumpWidget(
             MaterialApp(
@@ -39,10 +44,13 @@ void main() {
                 if (child == null) {
                   throw StateError('Composer test route is missing.');
                 }
-                return MediaQuery(
-                  data: MediaQuery.of(context)
-                      .copyWith(textScaler: TextScaler.linear(2)),
-                  child: child,
+                return openChatShadTestScope(
+                  OpenChatTheme.dark,
+                  MediaQuery(
+                    data: MediaQuery.of(context)
+                        .copyWith(textScaler: TextScaler.linear(2)),
+                    child: child,
+                  ),
                 );
               },
               home: Scaffold(
@@ -54,7 +62,8 @@ void main() {
                     showReasoningSelector: true,
                     reasoningOptions: const ['low', 'medium', 'high'],
                     onReasoningSelected: (_) {},
-                    onToolPermissionModeChanged: (_) {},
+                    onToolPermissionModeChanged: (mode) =>
+                        selectedPermission = mode,
                     providerId: 'opencode',
                     modelLabel: modelTitle,
                     selectedModelId: 'test-model',
@@ -80,12 +89,12 @@ void main() {
           expect(tester.takeException(), isNull);
           final send = find.descendant(
             of: find.byTooltip(l10n.send),
-            matching: find.byType(IconButton),
+            matching: find.byType(shad.ShadIconButton),
           );
-          expect(tester.widget<IconButton>(send).onPressed, isNull);
-          await tester.enterText(find.byType(TextField), 'Test message');
+          expect(tester.widget<shad.ShadIconButton>(send).onPressed, isNull);
+          await tester.enterText(find.byType(EditableText), 'Test message');
           await tester.pump();
-          expect(tester.widget<IconButton>(send).onPressed, isNotNull);
+          expect(tester.widget<shad.ShadIconButton>(send).onPressed, isNotNull);
           await tester.tap(send);
           expect(sent, 1);
           final moreOptions = find.text(l10n.moreOptions);
@@ -93,35 +102,40 @@ void main() {
           await tester.ensureVisible(moreOptions);
           await tester.tap(moreOptions);
           await tester.pumpAndSettle();
-          final permission = find.widgetWithText(
-            OutlinedButton,
-            l10n.toolPermissionRequireApproval,
+          final permission = find.text(l10n.toolPermissionRequireApproval).last;
+          final permissionSelect = find.ancestor(
+            of: permission,
+            matching: find.byWidgetPredicate(
+              (widget) => widget is shad.ShadSelect,
+            ),
           );
-          expect(tester.getSize(permission).height, greaterThanOrEqualTo(44));
+          expect(
+            tester.getSize(permissionSelect).height,
+            greaterThanOrEqualTo(44),
+          );
           await tester.tap(permission);
           await tester.pumpAndSettle();
-          expect(
-            find.widgetWithText(MenuItemButton, l10n.toolPermissionPlan),
-            findsOneWidget,
+          expect(find.text(l10n.toolPermissionPlan), findsOneWidget);
+          final access = find.text(l10n.toolPermissionFullAccess);
+          final optionsScrollable = find
+              .ancestor(of: access, matching: find.byType(Scrollable))
+              .first;
+          await tester.scrollUntilVisible(
+            access,
+            100,
+            scrollable: optionsScrollable,
           );
-          final access = find.widgetWithText(
-            MenuItemButton,
-            l10n.toolPermissionFullAccess,
-          );
-          await tester.ensureVisible(access);
           await tester.tap(access);
           await tester.pumpAndSettle();
+          expect(selectedPermission, ToolPermissionMode.fullAccess);
           expect(tester.takeException(), isNull);
-          final reasoning = find.widgetWithText(
-            OutlinedButton,
-            l10n.reasoningDefault,
-          );
+          final reasoning = find.text(l10n.reasoningDefault).last;
           await tester.tap(reasoning);
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
           await tester.sendKeyEvent(LogicalKeyboardKey.escape);
           await tester.pumpAndSettle();
-          expect(find.byType(MenuItemButton), findsNothing);
+          expect(find.text(l10n.toolPermissionFullAccess), findsNothing);
           await tester.tap(find.byTooltip(modelTitle).first);
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
@@ -153,20 +167,23 @@ void main() {
           localizationsDelegates: AppLocalizations.localizationsDelegates,
           supportedLocales: AppLocalizations.supportedLocales,
           theme: OpenChatTheme.dark,
-          home: Scaffold(
-            body: Center(
-              child: SizedBox(
-                width: 720,
-                child: ChatComposer(
-                  controller: controller,
-                  onSendMessage: () => sent++,
-                  canSendMessage: true,
-                  isSending: isSending,
-                  onStopMessage: () => stopped++,
-                  attachmentsEnabled: true,
-                  onAddAttachments: () => attached++,
-                  showReasoningSelector: false,
-                  providerId: 'opencode',
+          home: openChatShadTestScope(
+            OpenChatTheme.dark,
+            Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 720,
+                  child: ChatComposer(
+                    controller: controller,
+                    onSendMessage: () => sent++,
+                    canSendMessage: true,
+                    isSending: isSending,
+                    onStopMessage: () => stopped++,
+                    attachmentsEnabled: true,
+                    onAddAttachments: () => attached++,
+                    showReasoningSelector: false,
+                    providerId: 'opencode',
+                  ),
                 ),
               ),
             ),
@@ -177,7 +194,7 @@ void main() {
     }
 
     await pumpComposer();
-    final field = find.byType(TextField);
+    final field = find.byType(EditableText);
     await tester.tap(field);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
     expect(sent, 0);
@@ -230,10 +247,7 @@ void main() {
     final tooltip = tester.widget<Tooltip>(
       find
           .ancestor(
-            of: find.widgetWithText(
-              OutlinedButton,
-              l10n.toolPermissionRequireApproval,
-            ),
+            of: find.text(l10n.toolPermissionRequireApproval).last,
             matching: find.byType(Tooltip),
           )
           .first,
@@ -265,10 +279,7 @@ void main() {
     final tooltip = tester.widget<Tooltip>(
       find
           .ancestor(
-            of: find.widgetWithText(
-              OutlinedButton,
-              l10n.toolPermissionRequireApproval,
-            ),
+            of: find.text(l10n.toolPermissionRequireApproval).last,
             matching: find.byType(Tooltip),
           )
           .first,
@@ -300,10 +311,7 @@ void main() {
     );
     await _showMoreOptions(tester, l10n);
 
-    final permissionButton = find.widgetWithText(
-      OutlinedButton,
-      l10n.toolPermissionRequireApproval,
-    );
+    final permissionButton = find.text(l10n.toolPermissionRequireApproval).last;
     expect(permissionButton, findsOneWidget);
     final tooltip = tester.widget<Tooltip>(
       find.ancestor(of: permissionButton, matching: find.byType(Tooltip)),
@@ -332,18 +340,21 @@ Widget _composerApp({
     localizationsDelegates: AppLocalizations.localizationsDelegates,
     supportedLocales: AppLocalizations.supportedLocales,
     theme: OpenChatTheme.light,
-    home: Scaffold(
-      body: Center(
-        child: SizedBox(
-          width: 1000,
-          child: ChatComposer(
-            controller: controller,
-            onSendMessage: () {},
-            canSendMessage: false,
-            showReasoningSelector: false,
-            providerId: 'opencode',
-            selectedModelId: selectedModelId,
-            contextSupportsTools: supportsToolCalls,
+    home: openChatShadTestScope(
+      OpenChatTheme.light,
+      Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: 1000,
+            child: ChatComposer(
+              controller: controller,
+              onSendMessage: () {},
+              canSendMessage: false,
+              showReasoningSelector: false,
+              providerId: 'opencode',
+              selectedModelId: selectedModelId,
+              contextSupportsTools: supportsToolCalls,
+            ),
           ),
         ),
       ),
