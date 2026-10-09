@@ -366,6 +366,7 @@ class _ProjectsHeadingState extends State<_ProjectsHeading> {
         onExit: (_) => setState(() => _hovered = false),
         child: SidebarCollapsibleHeading(
           title: widget.title,
+          icon: LucideIcons.folder,
           collapsed: widget.collapsed,
           onPressed: widget.onToggleCollapsed ?? () {},
           trailing: widget.onCreateProject == null
@@ -453,12 +454,12 @@ class _ProjectSidebarTile extends StatelessWidget {
                     ? palette.hover
                     : Colors.transparent,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(OpenChatRadii.button),
                 ),
                 child: InkWell(
                   onTap: onSelect,
                   hoverColor: palette.selected,
-                  borderRadius: BorderRadius.circular(6),
+                  borderRadius: BorderRadius.circular(OpenChatRadii.button),
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(minHeight: 44),
                     child: Padding(
@@ -564,7 +565,7 @@ class _ProjectAction extends StatelessWidget {
               ? MaterialTapTargetSize.padded
               : MaterialTapTargetSize.shrinkWrap,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(OpenChatRadii.control),
+            borderRadius: BorderRadius.circular(OpenChatRadii.button),
           ),
         ),
         icon: child,

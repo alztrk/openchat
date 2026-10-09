@@ -238,9 +238,13 @@ class _RailNavigationButtonState extends State<_RailNavigationButton> {
               color: widget.selected
                   ? widget.palette.border
                   : Colors.transparent,
-              radius: BorderRadius.circular(OpenChatRadii.control),
+              radius: BorderRadius.circular(OpenChatRadii.button),
             ),
-            focusedBorder: shad.ShadBorder.none,
+            focusedBorder: shad.ShadBorder.all(
+              color: Colors.transparent,
+              width: 0,
+              radius: BorderRadius.circular(OpenChatRadii.button),
+            ),
           ),
           child: SizedBox(
             width: OpenChatSpacing.navigationRailButtonWidth,
@@ -279,7 +283,7 @@ class _ThemeButton extends StatelessWidget {
           foregroundColor: palette.secondaryText,
           padding: EdgeInsets.zero,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(OpenChatRadii.control),
+            borderRadius: BorderRadius.circular(OpenChatRadii.button),
           ),
         ),
         child: Icon(

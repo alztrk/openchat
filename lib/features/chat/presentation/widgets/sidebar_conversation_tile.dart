@@ -34,7 +34,7 @@ class DraggableSidebarConversation extends StatelessWidget {
           decoration: BoxDecoration(
             color: palette.composer,
             border: Border.all(color: palette.border),
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(OpenChatRadii.button),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -162,13 +162,15 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
               : _focused
               ? palette.hover
               : Colors.transparent,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(OpenChatRadii.button),
+          ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: widget.onPressed,
             onFocusChange: (focused) => setState(() => _focused = focused),
             hoverColor: palette.selected,
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(OpenChatRadii.button),
             child: ConstrainedBox(
               constraints: BoxConstraints(minHeight: 44),
               child: Padding(

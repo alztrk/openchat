@@ -16,15 +16,16 @@ const MODEL_CATALOG_CACHE_AGE_MS: i64 = 6 * 60 * 60 * 1000;
 const MODEL_METADATA_TIMEOUT: Duration = Duration::from_secs(5);
 const SUPPORTED_FREE_CHAT_MODELS: &[&str] = &[
     "big-pickle",
-    "jev-1.13-free",
+    "exo-free",
+    "ling-3.0-flash-fin-free",
+    "ling-3.1-flash-free",
     "longcat-2.5-preview-free",
     "mimo-v2.5-free",
     "mimo-v2.6-flash-free",
-    "muse-spark-1.2-contributor-free",
-    "muse-spark-1.3-contributor-free",
     "nemotron-3-ultra-free",
     "nemotron-3.5-lightning-free",
     "space-bunny-free",
+    "step-5-preview-free",
 ];
 const SUPPORTED_PAID_CHAT_MODELS: &[&str] = &[
     "deepseek-v4.1-flash",
@@ -64,13 +65,11 @@ fn load_model_catalog(storage: &AppStorage) -> Result<Option<(Vec<Value>, i64)>,
         )
         .optional()
         .map_err(|_| storage_error())?;
-    cached
-        .map(|(models_json, fetched_at)| {
-            serde_json::from_str::<Vec<Value>>(&models_json)
-                .map(|models| (models, fetched_at))
-                .map_err(|_| invalid_response_error())
-        })
-        .transpose()
+    Ok(cached.and_then(|(models_json, fetched_at)| {
+        serde_json::from_str::<Vec<Value>>(&models_json)
+            .ok()
+            .map(|models| (models, fetched_at))
+    }))
 }
 
 pub(super) fn supports_image_input(
@@ -531,7 +530,39 @@ pub(super) fn is_supported_paid_chat_model(id: &str) -> bool {
 mod tests {
     use serde_json::json;
 
-    use super::{has_model_groups, stale_catalog_fallback_allowed, supported_models};
+    use super::{
+        has_model_groups, load_model_catalog, stale_catalog_fallback_allowed, supported_models,
+    };
+
+    #[test]
+    fn malformed_cached_catalog_is_treated_as_a_cache_miss() {
+        let root =
+            std::env::temp_dir().join(format!("openchat-opencode-cache-{}", uuid::Uuid::new_v4()));
+        let storage = crate::storage::AppStorage::open_at(root.clone()).expect("open storage");
+        let connection = storage.connect().expect("connect storage");
+        connection
+            .execute_batch(
+                "CREATE TABLE opencode_model_catalog (
+                    catalog_id INTEGER PRIMARY KEY,
+                    fetched_at_unix_ms INTEGER NOT NULL,
+                    models_json TEXT NOT NULL
+                );
+                 INSERT INTO opencode_model_catalog
+                    (catalog_id, fetched_at_unix_ms, models_json)
+                 VALUES (1, 0, '{broken');",
+            )
+            .expect("insert malformed cached catalog");
+        drop(connection);
+
+        assert!(
+            load_model_catalog(&storage)
+                .expect("read cached catalog")
+                .is_none()
+        );
+
+        drop(storage);
+        std::fs::remove_dir_all(root).expect("remove isolated cache storage");
+    }
 
     #[test]
     fn open_code_catalog_preserves_context_and_prompt_limits_separately() {
@@ -554,6 +585,40 @@ mod tests {
         assert_eq!(models[0]["contextWindow"], 262_144);
         assert_eq!(models[0]["inputTokenLimit"], 131_072);
         assert_eq!(models[0]["supportsTools"], true);
+    }
+
+    #[test]
+    fn open_code_catalog_includes_currently_listed_models_by_tier() {
+        let provider_models = json!({"data": [
+            {"id": "exo-free"},
+            {"id": "ling-3.0-flash-fin-free"},
+            {"id": "step-5-preview-free"},
+            {"id": "glm-5.3"},
+            {"id": "qwen3.8-max"}
+        ]});
+
+        let models = supported_models(&provider_models, None).expect("catalog");
+        assert_eq!(models.len(), 5);
+        assert_eq!(models[0]["groupId"], "free");
+        assert_eq!(models[1]["groupId"], "free");
+        assert_eq!(models[2]["groupId"], "free");
+        assert_eq!(models[3]["groupId"], "paid");
+        assert_eq!(models[4]["groupId"], "paid");
+    }
+
+    #[test]
+    fn open_code_catalog_excludes_models_that_require_other_api_protocols() {
+        let provider_models = json!({"data": [
+            {"id": "jev-1.13-free"},
+            {"id": "jev-1.13"},
+            {"id": "muse-spark-1.3-contributor-free"},
+            {"id": "muse-spark-1.3"},
+            {"id": "qwen3.8-flash"},
+            {"id": "qwen3.6-plus"}
+        ]});
+
+        let models = supported_models(&provider_models, None).expect("catalog");
+        assert!(models.is_empty());
     }
 
     #[test]

@@ -9,6 +9,7 @@ class SidebarCollapsibleHeading extends StatefulWidget {
     required this.title,
     required this.collapsed,
     required this.onPressed,
+    this.icon,
     this.trailing,
     super.key,
   });
@@ -16,6 +17,7 @@ class SidebarCollapsibleHeading extends StatefulWidget {
   final String title;
   final bool collapsed;
   final VoidCallback onPressed;
+  final IconData? icon;
   final Widget? trailing;
 
   @override
@@ -41,7 +43,7 @@ class _SidebarCollapsibleHeadingState extends State<SidebarCollapsibleHeading> {
             : const Duration(milliseconds: 120),
         decoration: BoxDecoration(
           color: _hovered || _focused ? palette.hover : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(OpenChatRadii.button),
         ),
         child: Row(
           children: [
@@ -58,19 +60,31 @@ class _SidebarCollapsibleHeadingState extends State<SidebarCollapsibleHeading> {
                     child: Material(
                       color: Colors.transparent,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(
+                          OpenChatRadii.button,
+                        ),
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: InkWell(
                         onTap: widget.onPressed,
                         hoverColor: Colors.transparent,
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(
+                          OpenChatRadii.button,
+                        ),
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(minHeight: 40),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 4),
                             child: Row(
                               children: [
+                                if (widget.icon != null) ...[
+                                  Icon(
+                                    widget.icon,
+                                    size: 16,
+                                    color: palette.secondaryIcon,
+                                  ),
+                                  const SizedBox(width: 8),
+                                ],
                                 Expanded(
                                   child: SidebarSectionHeading(
                                     title: widget.title,

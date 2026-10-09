@@ -203,6 +203,12 @@ void main() {
     expect(find.text('OAuth'), findsOneWidget);
     expect(find.text('API model'), findsOneWidget);
     expect(find.text('OAuth model'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Scrollbar && widget.thumbVisibility == true,
+      ),
+      findsAtLeastNWidgets(2),
+    );
 
     await tester.tap(find.text('OpenCode'));
     updateSelector(() => providerId = 'opencode');

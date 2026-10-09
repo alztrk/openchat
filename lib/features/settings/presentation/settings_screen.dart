@@ -733,7 +733,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       color: Theme.of(context).colorScheme.error,
                     ),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(OpenChatRadii.button),
                     ),
                   ).copyWith(
                     side: WidgetStateProperty.resolveWith<BorderSide?>((
@@ -1176,10 +1176,14 @@ class _SettingsSidebar extends StatelessWidget {
                       message: l10n.settingsAdvanced,
                       child: Material(
                         color: Colors.transparent,
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(
+                          OpenChatRadii.button,
+                        ),
                         child: InkWell(
                           onTap: onToggleAdvanced,
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(
+                            OpenChatRadii.button,
+                          ),
                           child: ConstrainedBox(
                             constraints: const BoxConstraints(minHeight: 44),
                             child: Padding(
@@ -1312,7 +1316,7 @@ class _SettingsSidebarItemState extends State<_SettingsSidebarItem> {
                 ? palette.hover
                 : Colors.transparent,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(OpenChatRadii.button),
             ),
             clipBehavior: Clip.antiAlias,
             child: InkWell(
@@ -1320,7 +1324,7 @@ class _SettingsSidebarItemState extends State<_SettingsSidebarItem> {
               onFocusChange: (focused) {
                 if (_focused != focused) setState(() => _focused = focused);
               },
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(OpenChatRadii.button),
               overlayColor: WidgetStateProperty.resolveWith((states) {
                 if (states.contains(WidgetState.pressed)) {
                   return palette.selected;
@@ -1474,7 +1478,7 @@ class _SegmentedSelector<T> extends StatelessWidget {
               ? palette.disabledBorder
               : palette.controlBorder,
         ),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(OpenChatRadii.control),
       ),
       child: Row(children: selectorOptions),
     );
@@ -1509,10 +1513,10 @@ class _ThemeChoice extends StatelessWidget {
       child: ExcludeSemantics(
         child: Material(
           color: selected ? palette.selected : Colors.transparent,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(OpenChatRadii.button),
           child: InkWell(
             onTap: onPressed,
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(OpenChatRadii.button),
             child: Center(
               child: Text(
                 label,
@@ -1553,7 +1557,7 @@ class _StatusLabel extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: palette.hover,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(OpenChatRadii.control),
       ),
       child: Text(
         label,

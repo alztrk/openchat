@@ -750,6 +750,7 @@ class ConversationSidebar extends StatelessWidget {
                                         selectedConversationId,
                                     itemHeight: 32,
                                     dropIcon: LucideIcons.pin,
+                                    headingIcon: LucideIcons.pin,
                                     onSelectConversation: onSelectConversation,
                                     onTogglePinned: onToggleConversationPinned,
                                     onRenameConversation: onRenameConversation,
@@ -835,6 +836,7 @@ class ConversationSidebar extends StatelessWidget {
                                         selectedConversationId,
                                     itemHeight: 32,
                                     dropIcon: LucideIcons.messageCircle,
+                                    headingIcon: LucideIcons.messagesSquare,
                                     onSelectConversation: onSelectConversation,
                                     onTogglePinned: onToggleConversationPinned,
                                     onRenameConversation: onRenameConversation,
@@ -872,6 +874,7 @@ class ConversationSidebar extends StatelessWidget {
                                         selectedConversationId,
                                     itemHeight: 32,
                                     dropIcon: LucideIcons.archive,
+                                    headingIcon: LucideIcons.archive,
                                     onSelectConversation: onSelectConversation,
                                     onTogglePinned: null,
                                     onRenameConversation: onRenameConversation,
@@ -941,6 +944,7 @@ class ConversationSidebar extends StatelessWidget {
                                       selectedConversationId,
                                   itemHeight: 32,
                                   dropIcon: LucideIcons.messageCircle,
+                                  headingIcon: LucideIcons.messagesSquare,
                                   onSelectConversation: onSelectConversation,
                                   onTogglePinned: onToggleConversationPinned,
                                   onRenameConversation: onRenameConversation,
@@ -1108,7 +1112,7 @@ class _HistorySearchResultsSection extends StatelessWidget {
                 onTap: onSelectResult == null
                     ? null
                     : () => onSelectResult!(result),
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(OpenChatRadii.button),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 5,

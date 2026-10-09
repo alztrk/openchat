@@ -837,21 +837,22 @@ class _ToolPermissionSelector extends StatelessWidget {
     final selector = SizedBox(
       width: width,
       height: composerControlHeight(context),
-      child: Row(
-        children: [
-          ExcludeSemantics(child: Icon(modeIcon, size: 16, color: modeColor)),
-          const SizedBox(width: 5),
-          Expanded(
-            child: OpenChatSelect<ToolPermissionMode>(
-              options: options,
-              value: mode,
-              onChanged: onSelected,
-              palette: palette,
-              menuWidth: 440,
-              height: composerControlHeight(context),
-              horizontalPadding: 10,
-              borderless: true,
-              selectedContent: Text(
+      child: OpenChatSelect<ToolPermissionMode>(
+        options: options,
+        value: mode,
+        onChanged: onSelected,
+        palette: palette,
+        width: width,
+        menuWidth: 440,
+        height: composerControlHeight(context),
+        horizontalPadding: 10,
+        borderless: true,
+        selectedContent: Row(
+          children: [
+            Icon(modeIcon, size: 16, color: modeColor),
+            const SizedBox(width: 7),
+            Flexible(
+              child: Text(
                 label,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
@@ -865,8 +866,8 @@ class _ToolPermissionSelector extends StatelessWidget {
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
     final capabilityNotice = !hasSelectedModel
@@ -880,7 +881,39 @@ class _ToolPermissionSelector extends StatelessWidget {
       message: capabilityNotice == null
           ? description
           : '$description\n$capabilityNotice',
-      child: selector,
+      child: _HoverSurface(palette: palette, child: selector),
+    );
+  }
+}
+
+class _HoverSurface extends StatefulWidget {
+  const _HoverSurface({required this.palette, required this.child});
+
+  final OpenChatPalette palette;
+  final Widget child;
+
+  @override
+  State<_HoverSurface> createState() => _HoverSurfaceState();
+}
+
+class _HoverSurfaceState extends State<_HoverSurface> {
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedContainer(
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 120),
+        decoration: BoxDecoration(
+          color: _hovered ? widget.palette.hover : Colors.transparent,
+          borderRadius: BorderRadius.circular(OpenChatRadii.button),
+        ),
+        child: widget.child,
+      ),
     );
   }
 }

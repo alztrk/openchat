@@ -399,6 +399,7 @@ abstract final class OpenChatSpacing {
 
 abstract final class OpenChatRadii {
   static const control = 8.0;
+  static const button = 12.0;
   static const menu = 8.0;
   static const card = 12.0;
   static const panel = 12.0;
@@ -468,7 +469,7 @@ abstract final class OpenChatTheme {
             theme.textTheme.bodyMedium?.fontFamily ??
             OpenChatTypography.uiFontFamily,
       ),
-      radius: BorderRadius.circular(OpenChatRadii.control),
+      radius: BorderRadius.circular(OpenChatRadii.button),
       disabledOpacity: 0.55,
     );
   }
@@ -643,7 +644,7 @@ abstract final class OpenChatTheme {
           side: _focusOutline(),
           shape: WidgetStatePropertyAll(
             RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(OpenChatRadii.control),
+              borderRadius: BorderRadius.circular(OpenChatRadii.button),
             ),
           ),
           overlayColor: _controlOverlay(palette),
@@ -663,7 +664,7 @@ abstract final class OpenChatTheme {
           ),
           shape: WidgetStatePropertyAll(
             RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(OpenChatRadii.control),
+              borderRadius: BorderRadius.circular(OpenChatRadii.button),
             ),
           ),
           overlayColor: _controlOverlay(palette),
@@ -696,7 +697,7 @@ abstract final class OpenChatTheme {
           ),
           shape: WidgetStatePropertyAll(
             RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(OpenChatRadii.control),
+              borderRadius: BorderRadius.circular(OpenChatRadii.button),
             ),
           ),
           textStyle: WidgetStatePropertyAll(
@@ -729,7 +730,7 @@ abstract final class OpenChatTheme {
           ),
           shape: WidgetStatePropertyAll(
             RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(OpenChatRadii.control),
+              borderRadius: BorderRadius.circular(OpenChatRadii.button),
             ),
           ),
           textStyle: WidgetStatePropertyAll(
@@ -762,7 +763,7 @@ abstract final class OpenChatTheme {
           ),
           shape: WidgetStatePropertyAll(
             RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(OpenChatRadii.control),
+              borderRadius: BorderRadius.circular(OpenChatRadii.button),
             ),
           ),
           overlayColor: _controlOverlay(palette),

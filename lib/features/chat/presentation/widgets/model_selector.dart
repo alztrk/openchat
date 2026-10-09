@@ -97,6 +97,8 @@ class _ModelSelectorState extends State<ModelSelector> {
 
   final _menuController = MenuController();
   final _searchController = TextEditingController();
+  final _providerScrollController = ScrollController();
+  final _modelScrollController = ScrollController();
   bool _showFavorites = false;
   String _searchQuery = '';
 
@@ -111,6 +113,8 @@ class _ModelSelectorState extends State<ModelSelector> {
   @override
   void dispose() {
     _searchController.dispose();
+    _providerScrollController.dispose();
+    _modelScrollController.dispose();
     super.dispose();
   }
 
@@ -246,36 +250,45 @@ class _ModelSelectorState extends State<ModelSelector> {
                 width: providerWidth,
                 color: widget.palette.navigation,
                 padding: const EdgeInsets.all(8),
-                child: SingleChildScrollView(
-                  primary: false,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      _ModelProviderTab(
-                        providerId: 'favorites',
-                        label: l10n.favoriteModels,
-                        selected: _showFavorites,
-                        onPressed: _selectFavorites,
-                        palette: widget.palette,
-                      ),
-                      const SizedBox(height: 4),
-                      for (final providerId in _providerIds) ...[
+                child: Scrollbar(
+                  controller: _providerScrollController,
+                  thumbVisibility: true,
+                  interactive: true,
+                  thickness: 5,
+                  radius: const Radius.circular(4),
+                  child: SingleChildScrollView(
+                    controller: _providerScrollController,
+                    primary: false,
+                    physics: const BouncingScrollPhysics(),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
                         _ModelProviderTab(
-                          providerId: providerId,
-                          label: _providerLabel(providerId, l10n),
-                          selected:
-                              !_showFavorites &&
-                              widget.providerId == providerId,
-                          onPressed:
-                              !_isProviderAvailable(providerId) ||
-                                  widget.onProviderSelected == null
-                              ? null
-                              : () => _selectProvider(providerId),
+                          providerId: 'favorites',
+                          label: l10n.favoriteModels,
+                          selected: _showFavorites,
+                          onPressed: _selectFavorites,
                           palette: widget.palette,
                         ),
                         const SizedBox(height: 4),
+                        for (final providerId in _providerIds) ...[
+                          _ModelProviderTab(
+                            providerId: providerId,
+                            label: _providerLabel(providerId, l10n),
+                            selected:
+                                !_showFavorites &&
+                                widget.providerId == providerId,
+                            onPressed:
+                                !_isProviderAvailable(providerId) ||
+                                    widget.onProviderSelected == null
+                                ? null
+                                : () => _selectProvider(providerId),
+                            palette: widget.palette,
+                          ),
+                          const SizedBox(height: 4),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
@@ -393,144 +406,157 @@ class _ModelSelectorState extends State<ModelSelector> {
                                         ),
                                       ),
                               )
-                            : ListView.builder(
-                                primary: false,
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 4,
-                                ),
-                                itemCount: shownCount,
-                                itemBuilder: (context, index) {
-                                  if (_showFavorites) {
-                                    final favorite = visibleFavorites[index];
-                                    final favoriteModel = _findFavoriteModel(
-                                      widget.models,
-                                      favorite,
-                                    );
-                                    final providerLabel = _providerLabel(
-                                      favorite.providerId,
-                                      l10n,
-                                    );
-                                    return _ModelOption(
-                                      key: ValueKey<String>(
-                                        '${favorite.providerId}:${favorite.modelId}',
-                                      ),
-                                      providerId: _providerFamily(
+                            : Scrollbar(
+                                controller: _modelScrollController,
+                                thumbVisibility: true,
+                                interactive: true,
+                                thickness: 5,
+                                radius: const Radius.circular(4),
+                                child: ListView.builder(
+                                  controller: _modelScrollController,
+                                  primary: false,
+                                  physics: const BouncingScrollPhysics(),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 4,
+                                  ),
+                                  itemCount: shownCount,
+                                  itemBuilder: (context, index) {
+                                    if (_showFavorites) {
+                                      final favorite = visibleFavorites[index];
+                                      final favoriteModel = _findFavoriteModel(
+                                        widget.models,
+                                        favorite,
+                                      );
+                                      final providerLabel = _providerLabel(
                                         favorite.providerId,
+                                        l10n,
+                                      );
+                                      return _ModelOption(
+                                        key: ValueKey<String>(
+                                          '${favorite.providerId}:${favorite.modelId}',
+                                        ),
+                                        providerId: _providerFamily(
+                                          favorite.providerId,
+                                        ),
+                                        title:
+                                            '${favorite.displayName} · $providerLabel',
+                                        description: _modelDescription(
+                                          favoriteModel?.description,
+                                        ),
+                                        contextWindow:
+                                            favoriteModel?.contextWindow,
+                                        isAvailable:
+                                            favoriteModel?.isAvailable ?? true,
+                                        selected:
+                                            _providerFamily(
+                                                  favorite.providerId,
+                                                ) ==
+                                                widget.providerId &&
+                                            favorite.modelId ==
+                                                widget.selectedModelId &&
+                                            (!_isApiKeyProvider(
+                                                  favorite.providerId,
+                                                ) ||
+                                                widget.selectedModelRouteKey ==
+                                                    '${favorite.providerId}:${favorite.sourceConnectionId ?? ''}::${favorite.modelId}'),
+                                        isFavorite: true,
+                                        palette: widget.palette,
+                                        addFavoriteLabel: l10n.addModelFavorite,
+                                        removeFavoriteLabel:
+                                            l10n.removeModelFavorite,
+                                        onSelected:
+                                            widget.onFavoriteSelected == null
+                                            ? null
+                                            : () {
+                                                widget.onFavoriteSelected!(
+                                                  favorite,
+                                                );
+                                                _menuController.close();
+                                              },
+                                        onToggleFavorite:
+                                            widget.onFavoriteChanged == null
+                                            ? null
+                                            : () => widget.onFavoriteChanged!(
+                                                favorite.providerId,
+                                                favorite.modelId,
+                                                favorite.displayName,
+                                                favorite.sourceConnectionId,
+                                                false,
+                                              ),
+                                      );
+                                    }
+
+                                    final entry = modelEntries[index];
+                                    if (entry case _ModelSectionEntry(
+                                      :final label,
+                                    )) {
+                                      return _ModelSection(
+                                        label: label,
+                                        palette: widget.palette,
+                                      );
+                                    }
+                                    final model =
+                                        (entry as _ModelRowEntry).model;
+                                    final isFavorite = widget.favoriteModels
+                                        .any(
+                                          (favorite) =>
+                                              favorite.providerId ==
+                                                  model.providerId &&
+                                              favorite.modelId == model.id &&
+                                              (!_isApiKeyProvider(
+                                                    model.providerId,
+                                                  ) ||
+                                                  favorite.sourceConnectionId ==
+                                                      model.connectionId),
+                                        );
+                                    final title = model.sourceLabel == null
+                                        ? model.displayName
+                                        : '${model.displayName} · ${model.sourceLabel}';
+                                    return _ModelOption(
+                                      key: ValueKey<String>(model.routeKey),
+                                      providerId: _providerFamily(
+                                        model.providerId,
                                       ),
-                                      title:
-                                          '${favorite.displayName} · $providerLabel',
+                                      title: title,
                                       description: _modelDescription(
-                                        favoriteModel?.description,
+                                        model.description ??
+                                            _unavailableModelDescription(
+                                              model,
+                                              l10n,
+                                            ),
                                       ),
-                                      contextWindow:
-                                          favoriteModel?.contextWindow,
-                                      isAvailable:
-                                          favoriteModel?.isAvailable ?? true,
+                                      contextWindow: model.contextWindow,
+                                      isAvailable: model.isAvailable,
                                       selected:
-                                          _providerFamily(
-                                                favorite.providerId,
-                                              ) ==
-                                              widget.providerId &&
-                                          favorite.modelId ==
-                                              widget.selectedModelId &&
-                                          (!_isApiKeyProvider(
-                                                favorite.providerId,
-                                              ) ||
-                                              widget.selectedModelRouteKey ==
-                                                  '${favorite.providerId}:${favorite.sourceConnectionId ?? ''}::${favorite.modelId}'),
-                                      isFavorite: true,
+                                          model.routeKey ==
+                                          widget.selectedModelRouteKey,
+                                      isFavorite: isFavorite,
                                       palette: widget.palette,
                                       addFavoriteLabel: l10n.addModelFavorite,
                                       removeFavoriteLabel:
                                           l10n.removeModelFavorite,
                                       onSelected:
-                                          widget.onFavoriteSelected == null
+                                          !model.isAvailable ||
+                                              widget.onSelected == null
                                           ? null
                                           : () {
-                                              widget.onFavoriteSelected!(
-                                                favorite,
-                                              );
+                                              widget.onSelected!(model);
                                               _menuController.close();
                                             },
                                       onToggleFavorite:
-                                          widget.onFavoriteChanged == null
+                                          !model.isAvailable ||
+                                              widget.onFavoriteChanged == null
                                           ? null
                                           : () => widget.onFavoriteChanged!(
-                                              favorite.providerId,
-                                              favorite.modelId,
-                                              favorite.displayName,
-                                              favorite.sourceConnectionId,
-                                              false,
+                                              model.providerId,
+                                              model.id,
+                                              model.displayName,
+                                              model.connectionId,
+                                              !isFavorite,
                                             ),
                                     );
-                                  }
-
-                                  final entry = modelEntries[index];
-                                  if (entry case _ModelSectionEntry(
-                                    :final label,
-                                  )) {
-                                    return _ModelSection(
-                                      label: label,
-                                      palette: widget.palette,
-                                    );
-                                  }
-                                  final model = (entry as _ModelRowEntry).model;
-                                  final isFavorite = widget.favoriteModels.any(
-                                    (favorite) =>
-                                        favorite.providerId ==
-                                            model.providerId &&
-                                        favorite.modelId == model.id &&
-                                        (!_isApiKeyProvider(model.providerId) ||
-                                            favorite.sourceConnectionId ==
-                                                model.connectionId),
-                                  );
-                                  final title = model.sourceLabel == null
-                                      ? model.displayName
-                                      : '${model.displayName} · ${model.sourceLabel}';
-                                  return _ModelOption(
-                                    key: ValueKey<String>(model.routeKey),
-                                    providerId: _providerFamily(
-                                      model.providerId,
-                                    ),
-                                    title: title,
-                                    description: _modelDescription(
-                                      model.description ??
-                                          _unavailableModelDescription(
-                                            model,
-                                            l10n,
-                                          ),
-                                    ),
-                                    contextWindow: model.contextWindow,
-                                    isAvailable: model.isAvailable,
-                                    selected:
-                                        model.routeKey ==
-                                        widget.selectedModelRouteKey,
-                                    isFavorite: isFavorite,
-                                    palette: widget.palette,
-                                    addFavoriteLabel: l10n.addModelFavorite,
-                                    removeFavoriteLabel:
-                                        l10n.removeModelFavorite,
-                                    onSelected:
-                                        !model.isAvailable ||
-                                            widget.onSelected == null
-                                        ? null
-                                        : () {
-                                            widget.onSelected!(model);
-                                            _menuController.close();
-                                          },
-                                    onToggleFavorite:
-                                        !model.isAvailable ||
-                                            widget.onFavoriteChanged == null
-                                        ? null
-                                        : () => widget.onFavoriteChanged!(
-                                            model.providerId,
-                                            model.id,
-                                            model.displayName,
-                                            model.connectionId,
-                                            !isFavorite,
-                                          ),
-                                  );
-                                },
+                                  },
+                                ),
                               ),
                       ),
                     ],
@@ -961,7 +987,7 @@ class _ModelOptionState extends State<_ModelOption> {
               : _rowFocused || _hovered
               ? widget.palette.hover
               : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(OpenChatRadii.button),
           border: widget.selected
               ? Border.all(color: widget.palette.accent)
               : null,
@@ -976,7 +1002,7 @@ class _ModelOptionState extends State<_ModelOption> {
                   onFocusChange: (focused) => setState(() {
                     _rowFocused = focused;
                   }),
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(OpenChatRadii.button),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
                       minHeight: hasDetails ? 56 : 44,
@@ -1210,7 +1236,7 @@ class _ChatGptFastModeButton extends StatelessWidget {
           padding: EdgeInsets.zero,
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(OpenChatRadii.button),
           ),
         ),
         icon: const Icon(LucideIcons.zap, size: 18),
@@ -1252,7 +1278,7 @@ class _ModelProviderTab extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             minimumSize: const Size(0, 40),
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(OpenChatRadii.button),
             ),
           ),
           child: Row(

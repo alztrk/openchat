@@ -8,6 +8,46 @@ import 'package:openchat/app/openchat_theme.dart';
 import 'support/shad_test_scope.dart';
 
 void main() {
+  testWidgets('wide select keeps the trigger wider than its menu', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1068, 700);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: OpenChatTheme.dark,
+        home: openChatShadTestScope(
+          OpenChatTheme.dark,
+          Scaffold(
+            body: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Builder(
+                builder: (context) => OpenChatSelect<String>(
+                  options: const [
+                    OpenChatSelectOption<String>(value: 'one', label: 'One'),
+                  ],
+                  value: 'one',
+                  onChanged: (_) {},
+                  palette: OpenChatPalette.of(context),
+                  width: double.infinity,
+                  menuWidth: 360,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('One'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('labeled select exposes its label and selected value', (
     tester,
   ) async {

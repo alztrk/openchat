@@ -217,17 +217,22 @@ class OpenChatSelect<T> extends StatelessWidget {
       child: Builder(
         builder: (focusContext) {
           final focused = Focus.of(focusContext).hasFocus;
+          final roundedBorderlessShape = shad.ShadBorder.all(
+            color: Colors.transparent,
+            width: 0,
+            radius: BorderRadius.circular(OpenChatRadii.button),
+          );
           final triggerDecoration = shad.ShadDecoration(
             color: focused ? palette.hover : Colors.transparent,
             border: borderless
-                ? shad.ShadBorder.none
+                ? roundedBorderlessShape
                 : shad.ShadBorder.all(
                     color: isEnabled
                         ? palette.controlBorder
                         : palette.disabledBorder,
-                    radius: BorderRadius.circular(OpenChatRadii.control),
+                    radius: BorderRadius.circular(OpenChatRadii.button),
                   ),
-            focusedBorder: shad.ShadBorder.none,
+            focusedBorder: roundedBorderlessShape,
           );
 
           return MergeSemantics(
@@ -375,7 +380,11 @@ class OpenChatSelect<T> extends StatelessWidget {
                   padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
                   optionsPadding: const EdgeInsets.all(4),
                   minWidth: 0,
-                  maxWidth: resolvedMenuWidth,
+                  // The menu's width is limited by its option constraints;
+                  // keep this limit for the trigger only when explicitly set.
+                  maxWidth: width != null && width!.isFinite
+                      ? width!
+                      : double.infinity,
                   maxHeight: maxMenuHeight,
                   decoration: triggerDecoration,
                 ),

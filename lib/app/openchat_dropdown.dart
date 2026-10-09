@@ -70,7 +70,7 @@ class OpenChatDropdown extends StatefulWidget {
       side: const WidgetStatePropertyAll(BorderSide.none),
       shape: WidgetStatePropertyAll(
         RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(OpenChatRadii.control),
+          borderRadius: BorderRadius.circular(OpenChatRadii.button),
         ),
       ),
     );

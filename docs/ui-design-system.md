@@ -56,7 +56,8 @@ changes conversation content; interface labels use Source Sans 3.
 ## Dimensions and surfaces
 
 - Spacing scale: 4, 8, 12, 16, 24, 32, 40, and 48 px.
-- Controls and menus: 8 px radius.
+- Form controls: 8 px radius; buttons: 12 px radius. Menus use their
+  component-specific radius.
 - Cards and panels: 12 px radius.
 - Dialogs: 16 px radius.
 - Standard icon: 20 px; inline icon: 16 px; primary action icon: 24 px.

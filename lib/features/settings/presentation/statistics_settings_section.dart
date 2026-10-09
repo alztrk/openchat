@@ -1479,7 +1479,7 @@ class _StatisticsCountPill extends StatelessWidget {
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surfaceContainerHighest
             .withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(OpenChatRadii.control),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
       child: Text(
@@ -1930,7 +1930,7 @@ class _ConversationUsageRow extends StatelessWidget {
           : '$semanticLabel, ${l10n.statisticsOpenConversation}',
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(OpenChatRadii.button),
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 4),
           child: Row(

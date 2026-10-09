@@ -23,6 +23,7 @@ class SidebarConversationSection extends StatelessWidget {
     required this.onExportConversation,
     required this.onDropConversation,
     this.isArchivedSection = false,
+    this.headingIcon,
     this.onArchiveConversation,
     this.onEditConversationTags,
     this.onToggleConversationBookmark,
@@ -47,6 +48,7 @@ class SidebarConversationSection extends StatelessWidget {
   final ValueChanged<String>? onExportConversation;
   final ValueChanged<String>? onDropConversation;
   final bool isArchivedSection;
+  final IconData? headingIcon;
   final ValueChanged<String>? onArchiveConversation;
   final ValueChanged<String>? onEditConversationTags;
   final ValueChanged<String>? onToggleConversationBookmark;
@@ -97,10 +99,11 @@ class SidebarConversationSection extends StatelessWidget {
                   : const Duration(milliseconds: 120),
               decoration: BoxDecoration(
                 color: isDropTarget ? palette.hover : Colors.transparent,
-                borderRadius: BorderRadius.circular(6),
+                borderRadius: BorderRadius.circular(OpenChatRadii.button),
               ),
               child: SidebarCollapsibleHeading(
                 title: title,
+                icon: headingIcon,
                 collapsed: collapsed,
                 onPressed: onToggleCollapsed ?? () {},
                 trailing: trailing.isEmpty

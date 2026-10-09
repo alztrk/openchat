@@ -830,11 +830,50 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn live_opencode_models_full_test() {
-        let storage = crate::storage::AppStorage::open().unwrap();
+        let root =
+            std::env::temp_dir().join(format!("openchat-opencode-models-{}", uuid::Uuid::new_v4()));
+        let storage = crate::storage::AppStorage::open_at(root.clone()).unwrap();
+        storage
+            .connect()
+            .unwrap()
+            .execute_batch(
+                "CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                 ALTER TABLE conversations ADD COLUMN project_id TEXT;
+                 ALTER TABLE conversations ADD COLUMN model_id TEXT;
+                 ALTER TABLE conversations ADD COLUMN connection_id TEXT;
+                 ALTER TABLE conversations ADD COLUMN workspace_id TEXT;
+                 CREATE TABLE projects (id TEXT PRIMARY KEY, folder_path TEXT);
+                 CREATE TABLE messages (
+                    rowid INTEGER PRIMARY KEY,
+                    id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at INTEGER,
+                    output_tokens INTEGER,
+                    tool_activities TEXT NOT NULL DEFAULT '[]',
+                    UNIQUE (conversation_id, id)
+                 );",
+            )
+            .unwrap();
+        storage.initialize_backend_schema().unwrap();
+        assert!(
+            storage
+                .connect()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM opencode_model_catalog", [], |row| row
+                    .get::<_, i64>(0),)
+                .is_ok()
+        );
         let (_tx, mut rx) = tokio::sync::watch::channel(false);
-        let res = super::models::models(&storage, None, true, &mut rx).await;
-        println!("[FULL MODELS RESULT]: {:?}", res);
-        assert!(res.is_ok());
+        let result = super::models::models(&storage, None, true, &mut rx).await;
+        drop(storage);
+        std::fs::remove_dir_all(root).expect("remove isolated model catalog storage");
+        assert!(
+            result.is_ok(),
+            "OpenCode catalog request failed: {result:?}"
+        );
     }
 
     #[test]

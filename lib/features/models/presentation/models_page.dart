@@ -531,7 +531,7 @@ class _ModelsPageState extends State<ModelsPage> {
                 color: _format == option.$1 ? palette.accent : palette.border,
               ),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(OpenChatRadii.control),
+                borderRadius: BorderRadius.circular(OpenChatRadii.button),
               ),
             ),
             child: Row(
@@ -649,7 +649,7 @@ class _ModelsPageState extends State<ModelsPage> {
                                     : Colors.transparent,
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(
-                                    OpenChatRadii.control,
+                                    OpenChatRadii.button,
                                   ),
                                   side: BorderSide(
                                     color: selected
@@ -659,7 +659,7 @@ class _ModelsPageState extends State<ModelsPage> {
                                 ),
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(
-                                    OpenChatRadii.control,
+                                    OpenChatRadii.button,
                                   ),
                                   onTap: () => unawaited(_selectModel(model)),
                                   child: Padding(

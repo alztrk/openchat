@@ -489,7 +489,7 @@ class _FileChangeRowState extends State<_FileChangeRow> {
         side: widget.isSelected
             ? BorderSide(color: palette.accent)
             : BorderSide.none,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(OpenChatRadii.button),
       ),
       child: Semantics(
         button: true,
@@ -499,7 +499,7 @@ class _FileChangeRowState extends State<_FileChangeRow> {
           onFocusChange: (focused) {
             if (_focused != focused) setState(() => _focused = focused);
           },
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(OpenChatRadii.button),
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 44),
             child: Padding(

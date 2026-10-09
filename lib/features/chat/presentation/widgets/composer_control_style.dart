@@ -37,7 +37,7 @@ ButtonStyle composerControlStyle(
         : MaterialTapTargetSize.shrinkWrap,
     side: borderless ? BorderSide.none : BorderSide(color: controlSide),
     shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(OpenChatRadii.control),
+      borderRadius: BorderRadius.circular(OpenChatRadii.button),
     ),
   ).copyWith(
     side: WidgetStateProperty.resolveWith<BorderSide?>((states) {

@@ -365,7 +365,7 @@ class _ContextUsageIndicatorState extends State<ContextUsageIndicator> {
                     ? MaterialTapTargetSize.padded
                     : MaterialTapTargetSize.shrinkWrap,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(OpenChatRadii.control),
+                  borderRadius: BorderRadius.circular(OpenChatRadii.button),
                 ),
               ).copyWith(side: const WidgetStatePropertyAll(BorderSide.none)),
               icon: ExcludeSemantics(
