@@ -143,69 +143,47 @@ class ConversationSidebar extends StatelessWidget {
 
   Widget _buildBatchSelectionBar(BuildContext context) {
     final l10n = context.openchatL10n;
-    if (!selectionMode && onToggleSelectionMode == null) {
-      return const SizedBox.shrink();
-    }
+    if (!selectionMode) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 0, 8, 8),
       child: Row(
         children: [
-          if (selectionMode)
-            IconButton(
-              tooltip: l10n.cancelSelection,
-              onPressed: onToggleSelectionMode,
-              icon: const Icon(LucideIcons.x),
-            )
-          else
-            Expanded(
-              child: TextButton.icon(
-                onPressed: onToggleSelectionMode,
-                icon: const Icon(LucideIcons.listChecks, size: 16),
-                label: Text(
-                  l10n.selectConversations,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+          IconButton(
+            tooltip: l10n.cancelSelection,
+            onPressed: onToggleSelectionMode,
+            icon: const Icon(LucideIcons.x),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              l10n.conversationsSelected(selectedConversationIds.length),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          PopupMenuButton<String>(
+            tooltip: l10n.moveSelectedChats,
+            enabled:
+                selectedConversationIds.isNotEmpty && onMoveSelected != null,
+            onSelected: (projectId) =>
+                onMoveSelected!(projectId.isEmpty ? null : projectId),
+            itemBuilder: (context) => [
+              PopupMenuItem<String>(value: '', child: Text(l10n.moveToChats)),
+              for (final project in projects)
+                PopupMenuItem<String>(
+                  value: project.id,
+                  child: Text(project.title),
                 ),
-                style: TextButton.styleFrom(
-                  alignment: Alignment.centerLeft,
-                  minimumSize: const Size.fromHeight(40),
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                ),
-              ),
-            ),
-          if (selectionMode) ...[
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                l10n.conversationsSelected(selectedConversationIds.length),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            PopupMenuButton<String>(
-              tooltip: l10n.moveSelectedChats,
-              enabled:
-                  selectedConversationIds.isNotEmpty && onMoveSelected != null,
-              onSelected: (projectId) =>
-                  onMoveSelected!(projectId.isEmpty ? null : projectId),
-              itemBuilder: (context) => [
-                PopupMenuItem<String>(value: '', child: Text(l10n.moveToChats)),
-                for (final project in projects)
-                  PopupMenuItem<String>(
-                    value: project.id,
-                    child: Text(project.title),
-                  ),
-              ],
-              icon: const Icon(LucideIcons.folder),
-            ),
-            IconButton(
-              tooltip: l10n.archiveSelectedConversations,
-              onPressed: selectedConversationIds.isEmpty
-                  ? null
-                  : onArchiveSelected,
-              icon: const Icon(LucideIcons.archive),
-            ),
-          ],
+            ],
+            icon: const Icon(LucideIcons.folder),
+          ),
+          IconButton(
+            tooltip: l10n.archiveSelectedConversations,
+            onPressed: selectedConversationIds.isEmpty
+                ? null
+                : onArchiveSelected,
+            icon: const Icon(LucideIcons.archive),
+          ),
         ],
       ),
     );
@@ -532,19 +510,9 @@ class ConversationSidebar extends StatelessWidget {
                                     contentPadding: EdgeInsets.zero,
                                   ),
                                 )
-                              : Align(
-                                  key: const ValueKey<String>(
-                                    'conversation-sidebar-title',
-                                  ),
-                                  alignment: Alignment.centerLeft,
-                                  child: Text(
-                                    l10n.conversationHistory,
-                                    style: TextStyle(
-                                      color: palette.text,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w400,
-                                      height: 22 / 16,
-                                    ),
+                              : const SizedBox.shrink(
+                                  key: ValueKey<String>(
+                                    'conversation-sidebar-title-placeholder',
                                   ),
                                 ),
                         ),
@@ -667,40 +635,6 @@ class ConversationSidebar extends StatelessWidget {
                   ),
                 ),
               ),
-              Tooltip(
-                message: l10n.newChat,
-                child: TextButton.icon(
-                  onPressed: onCreateConversation,
-                  icon: Icon(
-                    LucideIcons.messageSquarePlus,
-                    color: palette.secondaryIcon,
-                    size: 18,
-                  ),
-                  label: Text(
-                    l10n.newChat,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: palette.text,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w400,
-                      height: 18 / 13,
-                    ),
-                  ),
-                  style: TextButton.styleFrom(
-                    alignment: Alignment.centerLeft,
-                    minimumSize: const Size.fromHeight(44),
-                    padding: const EdgeInsets.fromLTRB(14, 0, 8, 0),
-                    tapTargetSize: MaterialTapTargetSize.padded,
-                    visualDensity: VisualDensity.compact,
-                    foregroundColor: palette.text,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
               Expanded(
                 child: Stack(
                   children: [
@@ -726,6 +660,7 @@ class ConversationSidebar extends StatelessWidget {
                                   emptyMessage:
                                       errorMessage ?? l10n.historyLoading,
                                   onRetry: onRetryStorage,
+                                  onCreateConversation: onCreateConversation,
                                 ),
                               ],
                             );
@@ -885,9 +820,11 @@ class ConversationSidebar extends StatelessWidget {
                                         : l10n.noProjects,
                                   ),
                                 if (visibleProjects.isNotEmpty &&
-                                    visibleConversations.isNotEmpty)
+                                    (visibleConversations.isNotEmpty ||
+                                        !hasQuery))
                                   const SizedBox(height: 16),
-                                if (visibleConversations.isNotEmpty)
+                                if (visibleConversations.isNotEmpty ||
+                                    !hasQuery)
                                   SidebarConversationSection(
                                     title: l10n.chats,
                                     emptyMessage: hasQuery
@@ -911,6 +848,7 @@ class ConversationSidebar extends StatelessWidget {
                                         onToggleConversationBookmark,
                                     onDropConversation:
                                         onMoveConversationToChats,
+                                    onCreateConversation: onCreateConversation,
                                     selectionMode: selectionMode,
                                     selectedConversationIds:
                                         selectedConversationIds,
@@ -995,6 +933,24 @@ class ConversationSidebar extends StatelessWidget {
                                       ? l10n.noChatsSearchTitle
                                       : l10n.noProjects,
                                 ),
+                                SidebarConversationSection(
+                                  title: l10n.chats,
+                                  emptyMessage: l10n.noChatsTitle,
+                                  conversations: const [],
+                                  selectedConversationId:
+                                      selectedConversationId,
+                                  itemHeight: 32,
+                                  dropIcon: LucideIcons.messageCircle,
+                                  onSelectConversation: onSelectConversation,
+                                  onTogglePinned: onToggleConversationPinned,
+                                  onRenameConversation: onRenameConversation,
+                                  onDeleteConversation: onDeleteConversation,
+                                  onExportConversation: onExportConversation,
+                                  onDropConversation: onMoveConversationToChats,
+                                  onCreateConversation: onCreateConversation,
+                                  collapsed: _isCollapsed('chats'),
+                                  onToggleCollapsed: _toggleSection('chats'),
+                                ),
                               ],
                             );
                           }
@@ -1007,8 +963,9 @@ class ConversationSidebar extends StatelessWidget {
                             ),
                             children: [
                               _SidebarSection(
-                                title: l10n.conversationHistory,
+                                title: l10n.chats,
                                 emptyMessage: l10n.noChatsSearchTitle,
+                                onCreateConversation: onCreateConversation,
                               ),
                             ],
                           );
@@ -1245,15 +1202,23 @@ class _SidebarSection extends StatelessWidget {
     required this.title,
     required this.emptyMessage,
     this.onRetry,
+    this.onCreateConversation,
   });
 
   final String title;
   final String emptyMessage;
   final VoidCallback? onRetry;
+  final VoidCallback? onCreateConversation;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
+    final touch = switch (Theme.of(context).platform) {
+      TargetPlatform.android ||
+      TargetPlatform.iOS ||
+      TargetPlatform.fuchsia => true,
+      _ => false,
+    };
     final palette = OpenChatPalette.of(context);
 
     return ConstrainedBox(
@@ -1261,7 +1226,24 @@ class _SidebarSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SidebarSectionHeading(title: title),
+          Row(
+            children: [
+              Expanded(child: SidebarSectionHeading(title: title)),
+              if (onCreateConversation case final createConversation?)
+                IconButton(
+                  key: const ValueKey<String>('conversations-create-button'),
+                  tooltip: context.openchatL10n.newChat,
+                  onPressed: createConversation,
+                  visualDensity: VisualDensity.standard,
+                  constraints: BoxConstraints.tightFor(
+                    width: touch ? 44 : 32,
+                    height: touch ? 44 : 32,
+                  ),
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(LucideIcons.plus, size: 19),
+                ),
+            ],
+          ),
           const SizedBox(height: 8),
           Padding(
             padding: EdgeInsets.only(bottom: onRetry == null ? 0 : 2),

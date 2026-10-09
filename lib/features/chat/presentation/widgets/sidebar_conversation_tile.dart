@@ -152,7 +152,6 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
         selected: widget.selected,
         label: <String>[
           widget.conversation.title,
-          ?widget.conversation.providerLabel,
           ...widget.conversation.tags,
           if (widget.conversation.isBookmarked) l10n.conversationBookmarked,
         ].join(', '),
@@ -220,18 +219,6 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
                               height: 18 / 13,
                             ),
                           ),
-                          if (widget.conversation.providerLabel
-                              case final providerLabel?)
-                            Text(
-                              providerLabel,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                color: palette.secondaryText,
-                                fontSize: OpenChatTypography.metadata,
-                                height: 16 / OpenChatTypography.metadata,
-                              ),
-                            ),
                         ],
                       ),
                     ),

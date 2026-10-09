@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
 import 'package:openchat/features/chat/presentation/widgets/sidebar_conversation_tile.dart';
 import 'package:openchat/features/chat/presentation/widgets/sidebar_collapsible_heading.dart';
@@ -26,6 +28,7 @@ class SidebarConversationSection extends StatelessWidget {
     this.onToggleConversationBookmark,
     this.collapsed = false,
     this.onToggleCollapsed,
+    this.onCreateConversation,
     this.selectionMode = false,
     this.selectedConversationIds = const <String>{},
     this.onToggleBatchSelection,
@@ -49,6 +52,7 @@ class SidebarConversationSection extends StatelessWidget {
   final ValueChanged<String>? onToggleConversationBookmark;
   final bool collapsed;
   final VoidCallback? onToggleCollapsed;
+  final VoidCallback? onCreateConversation;
   final bool selectionMode;
   final Set<String> selectedConversationIds;
   final ValueChanged<String>? onToggleBatchSelection;
@@ -61,6 +65,29 @@ class SidebarConversationSection extends StatelessWidget {
       builder: (context, candidates, _) {
         final isDropTarget = candidates.isNotEmpty;
         final palette = OpenChatPalette.of(context);
+        final l10n = context.openchatL10n;
+        final touch = switch (Theme.of(context).platform) {
+          TargetPlatform.android ||
+          TargetPlatform.iOS ||
+          TargetPlatform.fuchsia => true,
+          _ => false,
+        };
+        final trailing = <Widget>[
+          if (isDropTarget) Icon(dropIcon, size: 16, color: palette.accentIcon),
+          if (onCreateConversation case final createConversation?)
+            IconButton(
+              key: const ValueKey<String>('conversations-create-button'),
+              tooltip: l10n.newChat,
+              onPressed: createConversation,
+              visualDensity: VisualDensity.standard,
+              constraints: BoxConstraints.tightFor(
+                width: touch ? 44 : 32,
+                height: touch ? 44 : 32,
+              ),
+              padding: EdgeInsets.zero,
+              icon: const Icon(LucideIcons.plus, size: 19),
+            ),
+        ];
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -77,9 +104,9 @@ class SidebarConversationSection extends StatelessWidget {
                 title: title,
                 collapsed: collapsed,
                 onPressed: onToggleCollapsed ?? () {},
-                trailing: isDropTarget
-                    ? Icon(dropIcon, size: 16, color: palette.accentIcon)
-                    : null,
+                trailing: trailing.isEmpty
+                    ? null
+                    : Row(mainAxisSize: MainAxisSize.min, children: trailing),
               ),
             ),
             AnimatedSize(

@@ -94,7 +94,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Kaydedilmiş yanıt', findRichText: true), findsOneWidget);
 
-    await tester.tap(find.text('Ayarlar'));
+    await tester.tap(find.byTooltip('Ayarlar'));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Gelişmiş'));
     await tester.pumpAndSettle();

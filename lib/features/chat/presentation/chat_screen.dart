@@ -5585,9 +5585,6 @@ class _ChatScreenState extends State<ChatScreen> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             ChatNavigationRail(
-                              expanded:
-                                  constraints.maxWidth >=
-                                  OpenChatSpacing.expandedRailBreakpoint,
                               showBrand: !OpenChatWindowControls.isSupportedOn(
                                 Theme.of(context).platform,
                               ),

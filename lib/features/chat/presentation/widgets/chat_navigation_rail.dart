@@ -8,7 +8,6 @@ import 'package:openchat/l10n/openchat_localizations.dart';
 
 class ChatNavigationRail extends StatelessWidget {
   const ChatNavigationRail({
-    required this.expanded,
     required this.settingsSelected,
     this.workspacesSelected = false,
     this.outputsSelected = false,
@@ -25,7 +24,6 @@ class ChatNavigationRail extends StatelessWidget {
     super.key,
   });
 
-  final bool expanded;
   final bool settingsSelected;
   final bool workspacesSelected;
   final bool outputsSelected;
@@ -45,7 +43,7 @@ class ChatNavigationRail extends StatelessWidget {
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
-    final railContentWidth = expanded ? 226.0 : 44.0;
+    const railContentWidth = OpenChatSpacing.navigationRailButtonWidth;
     final chatsSelected =
         !settingsSelected &&
         !workspacesSelected &&
@@ -53,9 +51,7 @@ class ChatNavigationRail extends StatelessWidget {
         !modelsSelected;
 
     return Container(
-      width: expanded
-          ? OpenChatSpacing.expandedRailWidth
-          : OpenChatSpacing.compactRailWidth,
+      width: OpenChatSpacing.compactRailWidth,
       decoration: BoxDecoration(
         color: OpenChatSemanticColors.of(context).background,
       ),
@@ -63,21 +59,19 @@ class ChatNavigationRail extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, constraints) {
             final content = Padding(
-              padding: EdgeInsets.symmetric(horizontal: expanded ? 16 : 4),
+              padding: const EdgeInsets.symmetric(
+                horizontal: OpenChatSpacing.navigationRailInset,
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  SizedBox(height: expanded ? 20 : 4),
+                  const SizedBox(height: 4),
                   if (showBrand) ...[
-                    if (expanded)
-                      _Brand(palette: palette)
-                    else ...[
-                      const _CompactBrand(),
-                      const SizedBox(height: 24),
-                    ],
+                    const Tooltip(message: 'OpenChat', child: _CompactBrand()),
+                    const SizedBox(height: 24),
                   ] else
                     const SizedBox(height: 4),
-                  SizedBox(height: expanded ? 10 : 6),
+                  const SizedBox(height: 6),
                   Align(
                     alignment: Alignment.center,
                     child: SizedBox(
@@ -86,7 +80,6 @@ class ChatNavigationRail extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           _RailNavigationButton(
-                            expanded: expanded,
                             label: l10n.chats,
                             selected: chatsSelected,
                             icon: Icon(
@@ -102,7 +95,6 @@ class ChatNavigationRail extends StatelessWidget {
                           if (onOpenWorkspaces case final openWorkspaces?) ...[
                             const SizedBox(height: 8),
                             _RailNavigationButton(
-                              expanded: expanded,
                               label: l10n.workspaces,
                               selected: workspacesSelected,
                               icon: Icon(
@@ -119,7 +111,6 @@ class ChatNavigationRail extends StatelessWidget {
                           if (onOpenOutputs case final openOutputs?) ...[
                             const SizedBox(height: 8),
                             _RailNavigationButton(
-                              expanded: expanded,
                               label: l10n.outputs,
                               selected: outputsSelected,
                               icon: Icon(
@@ -136,7 +127,6 @@ class ChatNavigationRail extends StatelessWidget {
                           if (onOpenModels case final openModels?) ...[
                             const SizedBox(height: 8),
                             _RailNavigationButton(
-                              expanded: expanded,
                               label: l10n.modelLibrary,
                               selected: modelsSelected,
                               icon: Icon(
@@ -172,17 +162,12 @@ class ChatNavigationRail extends StatelessWidget {
                                 ? l10n.switchToLightMode
                                 : l10n.switchToDarkMode,
                             child: _ThemeButton(
-                              expanded: expanded,
-                              label: dark
-                                  ? l10n.switchToLightMode
-                                  : l10n.switchToDarkMode,
                               palette: palette,
                               onPressed: onToggleTheme,
                             ),
                           ),
                           const SizedBox(height: 8),
                           _RailNavigationButton(
-                            expanded: expanded,
                             label: l10n.settings,
                             selected: settingsSelected,
                             icon: Icon(
@@ -198,7 +183,6 @@ class ChatNavigationRail extends StatelessWidget {
                           if (onToggleSidebars case final toggleSidebars?) ...[
                             const SizedBox(height: 8),
                             _RailNavigationButton(
-                              expanded: expanded,
                               label: sidebarsCompact
                                   ? l10n.showSidebars
                                   : l10n.collapseSidebars,
@@ -233,46 +217,6 @@ class ChatNavigationRail extends StatelessWidget {
   }
 }
 
-class _Brand extends StatelessWidget {
-  const _Brand({required this.palette});
-
-  final OpenChatPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    const mark = OpenChatBrandMark(size: 58.8);
-
-    return Semantics(
-      label: 'OpenChat',
-      child: SizedBox(
-        height: 68,
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Positioned(left: 50.78, top: 4.52, child: mark),
-            Positioned(
-              left: 115.2,
-              top: 25.3,
-              child: ExcludeSemantics(
-                child: Text(
-                  'OpenChat',
-                  style: TextStyle(
-                    color: palette.text,
-                    fontSize: OpenChatTypography.componentTitle,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0,
-                    height: 1.2,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _CompactBrand extends StatelessWidget {
   const _CompactBrand();
 
@@ -288,7 +232,6 @@ class _CompactBrand extends StatelessWidget {
 
 class _RailNavigationButton extends StatelessWidget {
   const _RailNavigationButton({
-    required this.expanded,
     required this.label,
     required this.selected,
     required this.icon,
@@ -296,7 +239,6 @@ class _RailNavigationButton extends StatelessWidget {
     this.onPressed,
   });
 
-  final bool expanded;
   final String label;
   final bool selected;
   final Widget icon;
@@ -315,8 +257,8 @@ class _RailNavigationButton extends StatelessWidget {
         child: shad.ShadButton.ghost(
           width: double.infinity,
           height: selected ? 46 : 44,
-          expands: expanded,
-          padding: EdgeInsets.symmetric(horizontal: expanded ? 12 : 0),
+          expands: false,
+          padding: EdgeInsets.zero,
           enabled: onPressed != null,
           onPressed: onPressed,
           backgroundColor: selected ? palette.selected : Colors.transparent,
@@ -334,49 +276,21 @@ class _RailNavigationButton extends StatelessWidget {
             ),
           ),
           child: SizedBox(
+            width: OpenChatSpacing.navigationRailButtonWidth,
             height: 44,
-            child: Row(
-              mainAxisAlignment: expanded
-                  ? MainAxisAlignment.start
-                  : MainAxisAlignment.center,
-              children: [
-                icon,
-                if (expanded) ...[
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: foreground,
-                        fontSize: 14,
-                        height: 20 / 14,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
+            child: Center(child: icon),
           ),
         ),
       ),
     );
 
-    return expanded ? item : Tooltip(message: label, child: item);
+    return Tooltip(message: label, child: item);
   }
 }
 
 class _ThemeButton extends StatelessWidget {
-  const _ThemeButton({
-    required this.expanded,
-    required this.label,
-    required this.palette,
-    required this.onPressed,
-  });
+  const _ThemeButton({required this.palette, required this.onPressed});
 
-  final bool expanded;
-  final String label;
   final OpenChatPalette palette;
   final VoidCallback onPressed;
 
@@ -388,38 +302,19 @@ class _ThemeButton extends StatelessWidget {
       child: TextButton(
         onPressed: onPressed,
         style: TextButton.styleFrom(
-          alignment: expanded ? Alignment.centerLeft : Alignment.center,
+          alignment: Alignment.center,
           foregroundColor: palette.secondaryText,
-          padding: EdgeInsets.symmetric(horizontal: expanded ? 12 : 0),
+          padding: EdgeInsets.zero,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(OpenChatRadii.control),
           ),
         ),
-        child: Row(
-          mainAxisAlignment: expanded
-              ? MainAxisAlignment.start
-              : MainAxisAlignment.center,
-          children: [
-            Icon(
-              Theme.of(context).brightness == Brightness.dark
-                  ? LucideIcons.sun
-                  : LucideIcons.moon,
-              size: 20,
-              color: palette.secondaryIcon,
-            ),
-            if (expanded) ...[
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyMedium
-                      ?.copyWith(fontSize: 14, height: 20 / 14),
-                ),
-              ),
-            ],
-          ],
+        child: Icon(
+          Theme.of(context).brightness == Brightness.dark
+              ? LucideIcons.sun
+              : LucideIcons.moon,
+          size: 20,
+          color: palette.secondaryIcon,
         ),
       ),
     );
