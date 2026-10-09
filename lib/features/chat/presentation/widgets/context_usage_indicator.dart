@@ -315,7 +315,6 @@ class _ContextUsageIndicatorState extends State<ContextUsageIndicator> {
           _ => false,
         };
         final buttonSize = touch ? 44.0 : 36.0;
-        final focusRing = OpenChatSemanticColors.of(context).focusRing;
         final detailsUnavailable =
             _inspectionFailed || _instructionsFailed || _configurationFailed;
         final statusLabel = _configurationLoading
@@ -358,26 +357,17 @@ class _ContextUsageIndicatorState extends State<ContextUsageIndicator> {
                 width: buttonSize,
                 height: buttonSize,
               ),
-              style:
-                  IconButton.styleFrom(
-                    foregroundColor: palette.secondaryIcon,
-                    minimumSize: Size.square(buttonSize),
-                    maximumSize: Size.square(buttonSize),
-                    tapTargetSize: touch
-                        ? MaterialTapTargetSize.padded
-                        : MaterialTapTargetSize.shrinkWrap,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(
-                        OpenChatRadii.control,
-                      ),
-                    ),
-                  ).copyWith(
-                    side: WidgetStateProperty.resolveWith(
-                      (states) => states.contains(WidgetState.focused)
-                          ? BorderSide(color: focusRing, width: 1.4)
-                          : BorderSide.none,
-                    ),
-                  ),
+              style: IconButton.styleFrom(
+                foregroundColor: palette.secondaryIcon,
+                minimumSize: Size.square(buttonSize),
+                maximumSize: Size.square(buttonSize),
+                tapTargetSize: touch
+                    ? MaterialTapTargetSize.padded
+                    : MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(OpenChatRadii.control),
+                ),
+              ).copyWith(side: const WidgetStatePropertyAll(BorderSide.none)),
               icon: ExcludeSemantics(
                 child: _configurationLoading
                     ? const SizedBox.square(

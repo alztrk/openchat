@@ -36,6 +36,7 @@ class OpenChatPageHeader extends StatelessWidget {
                 child: Builder(
                   builder: (context) {
                     final focused = Focus.of(context).hasFocus;
+                    final palette = OpenChatPalette.of(context);
                     return Semantics(
                       container: true,
                       header: true,
@@ -47,13 +48,7 @@ class OpenChatPageHeader extends StatelessWidget {
                       child: ExcludeSemantics(
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                            border: focused
-                                ? Border.all(
-                                    color: OpenChatPalette.of(context)
-                                        .focusRing,
-                                    width: 2,
-                                  )
-                                : null,
+                            color: focused ? palette.hover : null,
                             borderRadius: BorderRadius.circular(
                               OpenChatRadii.control,
                             ),

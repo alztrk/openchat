@@ -480,11 +480,13 @@ class _FileChangeRowState extends State<_FileChangeRow> {
     final l10n = context.openchatL10n;
     final change = widget.change;
     return Material(
-      color: widget.isSelected ? palette.composer : Colors.transparent,
+      color: widget.isSelected
+          ? palette.composer
+          : _focused
+          ? palette.hover
+          : Colors.transparent,
       shape: RoundedRectangleBorder(
-        side: _focused
-            ? BorderSide(color: palette.focusRing, width: 2)
-            : widget.isSelected
+        side: widget.isSelected
             ? BorderSide(color: palette.accent)
             : BorderSide.none,
         borderRadius: BorderRadius.circular(8),

@@ -98,9 +98,6 @@ class OpenChatSelect<T> extends StatelessWidget {
     this.menuWidth,
     this.height = 40,
     this.hint,
-    this.leadingIcon,
-    this.leadingIconColor,
-    this.leadingIconGap = 8,
     this.selectedContent,
     this.trailingContent,
     this.trailingGap = 8,
@@ -117,9 +114,6 @@ class OpenChatSelect<T> extends StatelessWidget {
   final double? menuWidth;
   final double height;
   final String? hint;
-  final IconData? leadingIcon;
-  final Color? leadingIconColor;
-  final double leadingIconGap;
   final Widget? selectedContent;
   final Widget? trailingContent;
   final double trailingGap;
@@ -217,165 +211,178 @@ class OpenChatSelect<T> extends StatelessWidget {
     );
     final maxMenuHeight = math.min(384.0, availableHeight * 0.5);
     final placeholderText = hint ?? '';
-    final triggerDecoration = shad.ShadDecoration(
-      color: Colors.transparent,
-      border: borderless
-          ? shad.ShadBorder.none
-          : shad.ShadBorder.all(
-              color: isEnabled ? palette.controlBorder : palette.disabledBorder,
-              radius: BorderRadius.circular(OpenChatRadii.control),
-            ),
-      focusedBorder: shad.ShadBorder.all(
-        color: palette.focusRing,
-        width: 2,
-        radius: BorderRadius.circular(OpenChatRadii.control),
-      ),
-    );
 
-    return MergeSemantics(
-      child: Semantics(
-        button: true,
-        enabled: isEnabled,
-        label: selected?.label ?? placeholderText,
-        hint: selected?.description,
-        child: SizedBox(
-          width: width,
-          height: math.max(
-            height,
-            MediaQuery.textScalerOf(context).scale(18) + 12,
-          ),
-          child: shad.ShadSelect<_OpenChatSelectValue<T>>(
-            enabled: isEnabled,
-            initialValue: selectedValue,
-            onChanged: (newValue) {
-              if (newValue != null) onChanged?.call(newValue.value);
-            },
-            options: [
-              for (final option in options)
-                if (option.enabled)
-                  shad.ShadOption<_OpenChatSelectValue<T>>(
-                    value: _OpenChatSelectValue<T>(option.value),
-                    padding: EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: option.description == null ? 10 : 8,
-                    ),
-                    hoveredBackgroundColor: palette.hover,
-                    selectedBackgroundColor: palette.hover,
-                    textStyle: _optionTextStyle(option, selected: false),
-                    selectedTextStyle: _optionTextStyle(option, selected: true),
-                    selectedIcon: Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: Icon(
-                        LucideIcons.check,
-                        size: 16,
-                        color: option.selectedColor ?? palette.accentIcon,
-                      ),
-                    ),
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(
-                        minHeight: option.description == null ? 44 : 58,
-                        maxWidth: resolvedMenuWidth,
-                      ),
-                      child: _optionContents(option),
-                    ),
-                  )
-                else
-                  Semantics(
-                    button: true,
-                    enabled: false,
-                    label: option.label,
-                    hint: option.description,
-                    child: ExcludeSemantics(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          minHeight: option.description == null ? 44 : 58,
-                          maxWidth: resolvedMenuWidth,
-                        ),
-                        child: Padding(
+    return Focus(
+      skipTraversal: true,
+      child: Builder(
+        builder: (focusContext) {
+          final focused = Focus.of(focusContext).hasFocus;
+          final triggerDecoration = shad.ShadDecoration(
+            color: focused ? palette.hover : Colors.transparent,
+            border: borderless
+                ? shad.ShadBorder.none
+                : shad.ShadBorder.all(
+                    color: isEnabled
+                        ? palette.controlBorder
+                        : palette.disabledBorder,
+                    radius: BorderRadius.circular(OpenChatRadii.control),
+                  ),
+            focusedBorder: shad.ShadBorder.none,
+          );
+
+          return MergeSemantics(
+            child: Semantics(
+              button: true,
+              enabled: isEnabled,
+              label: selected?.label ?? placeholderText,
+              hint: selected?.description,
+              child: SizedBox(
+                width: width,
+                height: math.max(
+                  height,
+                  MediaQuery.textScalerOf(context).scale(18) + 12,
+                ),
+                child: shad.ShadSelect<_OpenChatSelectValue<T>>(
+                  enabled: isEnabled,
+                  initialValue: selectedValue,
+                  onChanged: (newValue) {
+                    if (newValue != null) onChanged?.call(newValue.value);
+                  },
+                  options: [
+                    for (final option in options)
+                      if (option.enabled)
+                        shad.ShadOption<_OpenChatSelectValue<T>>(
+                          value: _OpenChatSelectValue<T>(option.value),
                           padding: EdgeInsets.symmetric(
                             horizontal: 12,
                             vertical: option.description == null ? 10 : 8,
                           ),
-                          child: _optionContents(option),
+                          hoveredBackgroundColor: palette.hover,
+                          selectedBackgroundColor: palette.hover,
+                          textStyle: _optionTextStyle(option, selected: false),
+                          selectedTextStyle: _optionTextStyle(
+                            option,
+                            selected: true,
+                          ),
+                          selectedIcon: Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: Icon(
+                              LucideIcons.check,
+                              size: 16,
+                              color: option.selectedColor ?? palette.accentIcon,
+                            ),
+                          ),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minHeight: option.description == null ? 44 : 58,
+                              maxWidth: resolvedMenuWidth,
+                            ),
+                            child: _optionContents(option),
+                          ),
+                        )
+                      else
+                        Semantics(
+                          button: true,
+                          enabled: false,
+                          label: option.label,
+                          hint: option.description,
+                          child: ExcludeSemantics(
+                            child: ConstrainedBox(
+                              constraints: BoxConstraints(
+                                minHeight: option.description == null ? 44 : 58,
+                                maxWidth: resolvedMenuWidth,
+                              ),
+                              child: Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: option.description == null ? 10 : 8,
+                                ),
+                                child: _optionContents(option),
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
+                  ],
+                  selectedOptionBuilder: (context, selectedValue) {
+                    final selectedOption = _optionForValue(selectedValue.value);
+                    if (selectedOption == null) {
+                      return Text(
+                        placeholderText,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: palette.secondaryText,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      );
+                    }
+                    final customContent = selectedContent;
+                    if (customContent != null) {
+                      return Opacity(
+                        opacity: isEnabled ? 1 : 0.55,
+                        child: customContent,
+                      );
+                    }
+                    return Text(
+                      selectedOption.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _optionTextStyle(selectedOption, selected: true)
+                          .copyWith(
+                            color: isEnabled
+                                ? selectedOption.textStyle?.color ??
+                                      palette.text
+                                : palette.disabledForeground,
+                            fontWeight: FontWeight.w500,
+                          ),
+                    );
+                  },
+                  placeholder: Text(
+                    placeholderText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isEnabled
+                          ? palette.secondaryText
+                          : palette.disabledForeground,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-            ],
-            selectedOptionBuilder: (context, selectedValue) {
-              final selectedOption = _optionForValue(selectedValue.value);
-              if (selectedOption == null) {
-                return Text(
-                  placeholderText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
+                  placeholderStyle: TextStyle(
                     color: palette.secondaryText,
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
                   ),
-                );
-              }
-              final customContent = selectedContent;
-              if (customContent != null) {
-                return Opacity(
-                  opacity: isEnabled ? 1 : 0.55,
-                  child: customContent,
-                );
-              }
-              return Text(
-                selectedOption.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: _optionTextStyle(selectedOption, selected: true)
-                    .copyWith(
-                      color: isEnabled
-                          ? selectedOption.textStyle?.color ?? palette.text
-                          : palette.disabledForeground,
-                      fontWeight: FontWeight.w500,
-                    ),
-              );
-            },
-            placeholder: Text(
-              placeholderText,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: isEnabled
-                    ? palette.secondaryText
-                    : palette.disabledForeground,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
+                  trailing: trailingContent == null
+                      ? Icon(
+                          LucideIcons.chevronDown,
+                          size: 18,
+                          color: isEnabled
+                              ? palette.secondaryIcon
+                              : palette.disabledIcon,
+                        )
+                      : Padding(
+                          padding: EdgeInsetsDirectional.only(
+                            start: trailingGap,
+                          ),
+                          child: Opacity(
+                            opacity: isEnabled ? 1 : 0.55,
+                            child: trailingContent,
+                          ),
+                        ),
+                  padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                  optionsPadding: const EdgeInsets.all(4),
+                  minWidth: 0,
+                  maxWidth: resolvedMenuWidth,
+                  maxHeight: maxMenuHeight,
+                  decoration: triggerDecoration,
+                ),
               ),
             ),
-            placeholderStyle: TextStyle(
-              color: palette.secondaryText,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
-            trailing: trailingContent == null
-                ? Icon(
-                    LucideIcons.chevronDown,
-                    size: 18,
-                    color: isEnabled
-                        ? palette.secondaryIcon
-                        : palette.disabledIcon,
-                  )
-                : Padding(
-                    padding: EdgeInsetsDirectional.only(start: trailingGap),
-                    child: Opacity(
-                      opacity: isEnabled ? 1 : 0.55,
-                      child: trailingContent,
-                    ),
-                  ),
-            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-            optionsPadding: const EdgeInsets.all(4),
-            minWidth: 0,
-            maxWidth: resolvedMenuWidth,
-            maxHeight: maxMenuHeight,
-            decoration: triggerDecoration,
-          ),
-        ),
+          );
+        },
       ),
     );
   }

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 
 import 'package:openchat/app/openchat_select.dart';
@@ -149,6 +148,7 @@ class ChatComposer extends StatelessWidget {
         final touchTargets = _usesTouchTargets(context);
         final focusRing = _focusRingColor(context);
         final horizontalPadding = narrow ? 12.0 : 16.0;
+        final reducedMotion = MediaQuery.disableAnimationsOf(context);
 
         return ConstrainedBox(
           constraints: BoxConstraints(minHeight: narrow ? 104 : 100),
@@ -157,7 +157,11 @@ class ChatComposer extends StatelessWidget {
             child: Builder(
               builder: (focusContext) {
                 final hasFocus = Focus.of(focusContext).hasFocus;
-                return Container(
+                return AnimatedContainer(
+                  duration: reducedMotion
+                      ? Duration.zero
+                      : const Duration(milliseconds: 180),
+                  curve: Curves.easeOutCubic,
                   decoration: BoxDecoration(
                     color: palette.composer,
                     border: Border.all(
@@ -552,9 +556,6 @@ class _ComposerActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.openchatL10n;
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final iconRoot = dark ? 'assets/icons/dark' : 'assets/icons';
-    final focusRing = _focusRingColor(context);
     final semantic = OpenChatSemanticColors.of(context);
     final primary = semantic.primary;
     final primaryForeground = semantic.primaryForeground;
@@ -572,6 +573,10 @@ class _ComposerActions extends StatelessWidget {
       selectedModelId: selectedModelId,
       selectedModelRouteKey: selectedModelRouteKey,
       providerId: providerId,
+      showReasoningSelector: showReasoningSelector,
+      reasoningLevel: reasoningLevel,
+      reasoningOptions: reasoningOptions,
+      onReasoningSelected: onReasoningSelected,
       isChatGptConnected: isChatGptConnected,
       chatGptFastModeEnabled: chatGptFastModeEnabled,
       chatGptFastModeAvailable: chatGptFastModeAvailable,
@@ -588,17 +593,6 @@ class _ComposerActions extends StatelessWidget {
       onFavoriteSelected: onFavoriteModelSelected,
       hiddenModelKeys: hiddenModelKeys,
     );
-    final reasoningSelector = showReasoningSelector
-        ? _ReasoningSelector(
-            level: reasoningLevel,
-            iconRoot: iconRoot,
-            palette: palette,
-            defaultHint: l10n.reasoningDefaultHint,
-            width: narrow ? 144 : 152,
-            options: reasoningOptions,
-            onSelected: onReasoningSelected,
-          )
-        : null;
     final toolPermissionSelector = _ToolPermissionSelector(
       mode: toolPermissionMode,
       palette: palette,
@@ -623,30 +617,37 @@ class _ComposerActions extends StatelessWidget {
         child: ExcludeSemantics(
           child: SizedBox.square(
             dimension: attachmentSize,
-            child: shad.ShadIconButton.outline(
-              icon: Icon(
-                LucideIcons.paperclip,
-                size: 18,
-                color: attachmentsEnabled
-                    ? palette.secondaryIcon
-                    : palette.disabledIcon,
-              ),
-              onPressed: attachmentsEnabled ? onAddAttachments : null,
-              enabled: attachmentsEnabled,
-              width: attachmentSize,
-              height: attachmentSize,
-              padding: EdgeInsets.zero,
-              backgroundColor: Colors.transparent,
-              foregroundColor: attachmentsEnabled
-                  ? palette.secondaryIcon
-                  : palette.disabledIcon,
-              decoration: shad.ShadDecoration(
-                border: shad.ShadBorder.none,
-                focusedBorder: shad.ShadBorder.all(
-                  color: focusRing,
-                  width: 2,
-                  radius: BorderRadius.circular(OpenChatRadii.control),
-                ),
+            child: Focus(
+              skipTraversal: true,
+              child: Builder(
+                builder: (focusContext) {
+                  final focused = Focus.of(focusContext).hasFocus;
+                  return shad.ShadIconButton.outline(
+                    icon: Icon(
+                      LucideIcons.paperclip,
+                      size: 18,
+                      color: attachmentsEnabled
+                          ? palette.secondaryIcon
+                          : palette.disabledIcon,
+                    ),
+                    onPressed: attachmentsEnabled ? onAddAttachments : null,
+                    enabled: attachmentsEnabled,
+                    width: attachmentSize,
+                    height: attachmentSize,
+                    padding: EdgeInsets.zero,
+                    backgroundColor: focused
+                        ? palette.hover
+                        : Colors.transparent,
+                    foregroundColor: attachmentsEnabled
+                        ? palette.secondaryIcon
+                        : palette.disabledIcon,
+                    decoration: const shad.ShadDecoration(
+                      shape: BoxShape.circle,
+                      border: shad.ShadBorder.none,
+                      focusedBorder: shad.ShadBorder.none,
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -732,7 +733,6 @@ class _ComposerActions extends StatelessWidget {
         attachmentButton,
         modelSelector,
         toolPermissionSelector,
-        ?reasoningSelector,
         contextIndicator,
       ],
     );
@@ -744,88 +744,6 @@ class _ComposerActions extends StatelessWidget {
         const SizedBox(width: 8),
         sendButton,
       ],
-    );
-  }
-}
-
-class _ReasoningSelector extends StatelessWidget {
-  const _ReasoningSelector({
-    required this.level,
-    required this.iconRoot,
-    required this.palette,
-    required this.defaultHint,
-    required this.width,
-    required this.options,
-    required this.onSelected,
-  });
-
-  final String? level;
-  final String iconRoot;
-  final OpenChatPalette palette;
-  final String defaultHint;
-  final double width;
-  final List<String> options;
-  final ValueChanged<String?>? onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final currentLevel = level;
-    final l10n = context.openchatL10n;
-    return Tooltip(
-      message: currentLevel == null
-          ? defaultHint
-          : _reasoningLabel(context, currentLevel),
-      child: OpenChatSelect<String?>(
-        options: [
-          OpenChatSelectOption<String?>(
-            value: null,
-            label: l10n.reasoningDefault,
-          ),
-          for (final option in options)
-            OpenChatSelectOption<String?>(
-              value: option,
-              label: _reasoningLabel(context, option),
-            ),
-        ],
-        value: currentLevel,
-        onChanged: onSelected,
-        palette: palette,
-        width: width,
-        menuWidth: width,
-        height: composerControlHeight(context),
-        horizontalPadding: 10,
-        borderless: true,
-        selectedContent: Row(
-          children: [
-            SvgPicture.asset(
-              '$iconRoot/brain.svg',
-              width: 16,
-              height: 16,
-              colorFilter: ColorFilter.mode(
-                palette.secondaryText,
-                BlendMode.srcIn,
-              ),
-              excludeFromSemantics: true,
-            ),
-            const SizedBox(width: 4),
-            Flexible(
-              child: Text(
-                currentLevel == null
-                    ? l10n.reasoningDefault
-                    : _reasoningLabel(context, currentLevel),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: palette.text,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  height: 16 / 12,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -875,70 +793,80 @@ class _ToolPermissionSelector extends StatelessWidget {
     final modeColor = mode == ToolPermissionMode.fullAccess
         ? warning
         : palette.secondaryIcon;
-    final selector = OpenChatSelect<ToolPermissionMode>(
-      options: [
-        for (final option in ToolPermissionMode.values)
-          OpenChatSelectOption<ToolPermissionMode>(
-            value: option,
-            label: switch (option) {
-              ToolPermissionMode.plan => l10n.toolPermissionPlan,
-              ToolPermissionMode.requireApproval =>
-                l10n.toolPermissionRequireApproval,
-              ToolPermissionMode.approveSafeOperations =>
-                l10n.toolPermissionApproveSafeOperations,
-              ToolPermissionMode.fullAccess => l10n.toolPermissionFullAccess,
-            },
-            description: switch (option) {
-              ToolPermissionMode.plan => l10n.toolPermissionPlanDescription,
-              ToolPermissionMode.requireApproval =>
-                l10n.toolPermissionRequireApprovalDescription,
-              ToolPermissionMode.approveSafeOperations =>
-                l10n.toolPermissionApproveSafeOperationsDescription,
-              ToolPermissionMode.fullAccess =>
-                l10n.toolPermissionFullAccessDescription,
-            },
-            icon: switch (option) {
-              ToolPermissionMode.plan => LucideIcons.search,
-              ToolPermissionMode.requireApproval => LucideIcons.hand,
-              ToolPermissionMode.approveSafeOperations =>
-                LucideIcons.shieldCheck,
-              ToolPermissionMode.fullAccess => LucideIcons.shieldAlert,
-            },
-            iconColor: option == ToolPermissionMode.fullAccess
-                ? warning
-                : palette.secondaryText,
-            descriptionColor: option == ToolPermissionMode.fullAccess
-                ? warning
-                : palette.secondaryText,
-            selectedColor: option == ToolPermissionMode.fullAccess
-                ? warning
-                : null,
-            textStyle: option == ToolPermissionMode.fullAccess
-                ? TextStyle(color: warning, fontSize: 13)
-                : null,
-          ),
-      ],
-      value: mode,
-      onChanged: onSelected,
-      palette: palette,
-      width: width,
-      menuWidth: 440,
-      height: composerControlHeight(context),
-      horizontalPadding: 10,
-      borderless: true,
-      leadingIcon: modeIcon,
-      leadingIconColor: modeColor,
-      leadingIconGap: 5,
-      selectedContent: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-          color: mode == ToolPermissionMode.fullAccess ? warning : palette.text,
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-          height: 18 / 13,
+    final options = [
+      for (final option in ToolPermissionMode.values)
+        OpenChatSelectOption<ToolPermissionMode>(
+          value: option,
+          label: switch (option) {
+            ToolPermissionMode.plan => l10n.toolPermissionPlan,
+            ToolPermissionMode.requireApproval =>
+              l10n.toolPermissionRequireApproval,
+            ToolPermissionMode.approveSafeOperations =>
+              l10n.toolPermissionApproveSafeOperations,
+            ToolPermissionMode.fullAccess => l10n.toolPermissionFullAccess,
+          },
+          description: switch (option) {
+            ToolPermissionMode.plan => l10n.toolPermissionPlanDescription,
+            ToolPermissionMode.requireApproval =>
+              l10n.toolPermissionRequireApprovalDescription,
+            ToolPermissionMode.approveSafeOperations =>
+              l10n.toolPermissionApproveSafeOperationsDescription,
+            ToolPermissionMode.fullAccess =>
+              l10n.toolPermissionFullAccessDescription,
+          },
+          icon: switch (option) {
+            ToolPermissionMode.plan => LucideIcons.search,
+            ToolPermissionMode.requireApproval => LucideIcons.hand,
+            ToolPermissionMode.approveSafeOperations => LucideIcons.shieldCheck,
+            ToolPermissionMode.fullAccess => LucideIcons.shieldAlert,
+          },
+          iconColor: option == ToolPermissionMode.fullAccess
+              ? warning
+              : palette.secondaryText,
+          descriptionColor: option == ToolPermissionMode.fullAccess
+              ? warning
+              : palette.secondaryText,
+          selectedColor: option == ToolPermissionMode.fullAccess
+              ? warning
+              : null,
+          textStyle: option == ToolPermissionMode.fullAccess
+              ? TextStyle(color: warning, fontSize: 13)
+              : null,
         ),
+    ];
+    final selector = SizedBox(
+      width: width,
+      height: composerControlHeight(context),
+      child: Row(
+        children: [
+          ExcludeSemantics(child: Icon(modeIcon, size: 16, color: modeColor)),
+          const SizedBox(width: 5),
+          Expanded(
+            child: OpenChatSelect<ToolPermissionMode>(
+              options: options,
+              value: mode,
+              onChanged: onSelected,
+              palette: palette,
+              menuWidth: 440,
+              height: composerControlHeight(context),
+              horizontalPadding: 10,
+              borderless: true,
+              selectedContent: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: mode == ToolPermissionMode.fullAccess
+                      ? warning
+                      : palette.text,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  height: 18 / 13,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
     final capabilityNotice = !hasSelectedModel
@@ -955,18 +883,4 @@ class _ToolPermissionSelector extends StatelessWidget {
       child: selector,
     );
   }
-}
-
-String _reasoningLabel(BuildContext context, String value) {
-  final l10n = context.openchatL10n;
-  return switch (value) {
-    'minimal' => l10n.reasoningMinimal,
-    'low' => l10n.reasoningLow,
-    'medium' => l10n.reasoningMedium,
-    'high' => l10n.reasoningHigh,
-    'xhigh' => l10n.reasoningExtraHigh,
-    'max' => l10n.reasoningMax,
-    'ultra' => l10n.reasoningUltra,
-    _ => value,
-  };
 }

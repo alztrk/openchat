@@ -157,13 +157,12 @@ class _SidebarConversationTileState extends State<SidebarConversationTile> {
         ].join(', '),
         onTap: widget.onPressed,
         child: Material(
-          color: widget.selected ? palette.selected : Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(6),
-            side: _focused
-                ? BorderSide(color: palette.focusRing, width: 2)
-                : BorderSide.none,
-          ),
+          color: widget.selected
+              ? palette.selected
+              : _focused
+              ? palette.hover
+              : Colors.transparent,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: widget.onPressed,

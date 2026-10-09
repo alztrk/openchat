@@ -1306,12 +1306,13 @@ class _SettingsSidebarItemState extends State<_SettingsSidebarItem> {
         child: Tooltip(
           message: widget.label,
           child: Material(
-            color: widget.selected ? palette.selected : Colors.transparent,
+            color: widget.selected
+                ? palette.selected
+                : _focused
+                ? palette.hover
+                : Colors.transparent,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
-              side: _focused
-                  ? BorderSide(color: palette.focusRing, width: 2)
-                  : BorderSide.none,
             ),
             clipBehavior: Clip.antiAlias,
             child: InkWell(

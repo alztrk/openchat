@@ -3,10 +3,10 @@
 ## Visual direction
 
 OpenChat is a desktop-first AI workspace for a broad audience. Use neutral,
-clearly separated surfaces with a restrained copper accent so conversations,
-saved work, and provider controls have a readable hierarchy. Chat remains the
-primary workflow. Workspaces group chats, Outputs stores useful assistant
-responses, and model discovery stays separate from day-to-day conversation
+clearly separated surfaces with a restrained copper accent so conversations
+and provider controls have a readable hierarchy. Chat remains the primary
+workflow. Projects group related conversations, saved responses stay available
+inside chats, and model discovery stays separate from day-to-day conversation
 controls.
 
 Use Shadcn Flutter interaction primitives with OpenChat's own colors, type,
@@ -68,9 +68,9 @@ The canonical dimensions are in `OpenChatSpacing`, `OpenChatRadii`, and
 
 ## Navigation and icons
 
-Primary navigation is Chats, Workspaces, Outputs, Models, and Settings. Local
-models are reached from Models and from local-engine settings so model
-management does not compete with the main conversation destinations.
+Primary navigation is Chats, Models, and Settings. Local models are reached
+from Models and from local-engine settings so model management does not
+compete with the main conversation destinations.
 
 Use Lucide icons consistently. Keep primary navigation icon-only at every
 window width, give its 44 px controls a 4 px horizontal inset for a 52 px rail,
@@ -85,7 +85,8 @@ is active.
 
 ## Interaction and accessibility
 
-- Keep keyboard focus visible with the palette focus-ring role.
+- Keep keyboard focus visible with a quiet surface highlight. The composer
+  keeps its distinct, animated focus outline.
 - Preserve keyboard order and accessible names for controls and navigation.
 - Make important status understandable without relying on color alone.
 - Honor reduced-motion settings; use motion only for state and feedback.

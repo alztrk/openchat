@@ -573,7 +573,28 @@ class _ModelsPageState extends State<ModelsPage> {
               unawaited(_searchModels());
             },
             palette: OpenChatPalette.of(context),
-            leadingIcon: LucideIcons.arrowUpDown,
+            selectedContent: Row(
+              children: [
+                Icon(
+                  LucideIcons.arrowUpDown,
+                  size: 16,
+                  color: palette.secondaryIcon,
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    switch (_sort) {
+                      HuggingFaceModelSort.downloads => l10n.modelSortDownloads,
+                      HuggingFaceModelSort.likes => l10n.modelSortLikes,
+                      HuggingFaceModelSort.recentlyUpdated =>
+                        l10n.modelSortRecentlyUpdated,
+                    },
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],
@@ -621,7 +642,9 @@ class _ModelsPageState extends State<ModelsPage> {
                               label: model.repoId,
                               child: Material(
                                 key: ValueKey(model.repoId),
-                                color: selected
+                                color: focused
+                                    ? palette.hover
+                                    : selected
                                     ? palette.selected
                                     : Colors.transparent,
                                 shape: RoundedRectangleBorder(
@@ -629,12 +652,9 @@ class _ModelsPageState extends State<ModelsPage> {
                                     OpenChatRadii.control,
                                   ),
                                   side: BorderSide(
-                                    color: focused
-                                        ? palette.focusRing
-                                        : selected
+                                    color: selected
                                         ? palette.accent
                                         : Colors.transparent,
-                                    width: focused ? 2 : 1,
                                   ),
                                 ),
                                 child: InkWell(

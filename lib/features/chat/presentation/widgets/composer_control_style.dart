@@ -21,11 +21,9 @@ ButtonStyle composerControlStyle(
   double leftPadding = 10,
   double rightPadding = 10,
   Color? sideColor,
-  Color? focusColor,
   bool borderless = false,
 }) {
   final controlSide = sideColor ?? palette.controlBorder;
-  final resolvedFocusColor = focusColor ?? palette.accent;
   return OutlinedButton.styleFrom(
     minimumSize: Size(width, height),
     maximumSize: Size(width, double.infinity),
@@ -43,14 +41,22 @@ ButtonStyle composerControlStyle(
     ),
   ).copyWith(
     side: WidgetStateProperty.resolveWith<BorderSide?>((states) {
-      if (states.contains(WidgetState.focused)) {
-        return BorderSide(color: resolvedFocusColor, width: 2);
-      }
       if (borderless) return BorderSide.none;
       if (states.contains(WidgetState.disabled)) {
         return BorderSide(color: palette.disabledBorder);
       }
       return BorderSide(color: controlSide);
+    }),
+    overlayColor: WidgetStateProperty.resolveWith((states) {
+      if (states.contains(WidgetState.disabled)) return Colors.transparent;
+      if (states.contains(WidgetState.pressed)) {
+        return palette.selected.withValues(alpha: 0.8);
+      }
+      if (states.contains(WidgetState.focused) ||
+          states.contains(WidgetState.hovered)) {
+        return palette.hover;
+      }
+      return Colors.transparent;
     }),
   );
 }

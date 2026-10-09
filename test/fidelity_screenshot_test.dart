@@ -369,7 +369,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('page navigation moves focus to the destination heading', (
+  testWidgets('settings and model navigation focus destination headings', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(1280, 800);
@@ -407,17 +407,17 @@ void main() {
         .whereType<FocusNode>();
     expect(settingsFocusNodes.any((node) => node.hasFocus), isTrue);
 
-    await tester.tap(find.byTooltip(l10n.workspaces));
+    await tester.tap(find.byTooltip(l10n.modelLibrary));
     await tester.pumpAndSettle();
-    final workspaceHeader = find.byType(OpenChatPageHeader);
-    expect(workspaceHeader, findsOneWidget);
-    final workspaceFocusNodes = tester
+    final modelsHeader = find.byType(OpenChatPageHeader);
+    expect(modelsHeader, findsOneWidget);
+    final modelsFocusNodes = tester
         .widgetList<Focus>(
-          find.descendant(of: workspaceHeader, matching: find.byType(Focus)),
+          find.descendant(of: modelsHeader, matching: find.byType(Focus)),
         )
         .map((focus) => focus.focusNode)
         .whereType<FocusNode>();
-    expect(workspaceFocusNodes.any((node) => node.hasFocus), isTrue);
+    expect(modelsFocusNodes.any((node) => node.hasFocus), isTrue);
     expect(tester.takeException(), isNull);
   });
 
@@ -498,6 +498,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    final navigationL10n = AppLocalizations.of(
+      tester.element(find.byType(ChatNavigationRail)),
+    );
+    expect(navigationL10n, isNotNull);
+    expect(find.byTooltip(navigationL10n!.chats), findsOneWidget);
+    expect(find.byTooltip(navigationL10n.workspaces), findsNothing);
+    expect(find.byTooltip(navigationL10n.outputs), findsNothing);
     expect(find.byType(SingleChildScrollView), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

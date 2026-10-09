@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_dropdown.dart';
+import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/chat/domain/model_favorite.dart';
@@ -21,6 +22,10 @@ class ModelSelector extends StatefulWidget {
     required this.compact,
     this.borderless = false,
     this.width = 152,
+    this.showReasoningSelector = false,
+    this.reasoningLevel,
+    this.reasoningOptions = const <String>[],
+    this.onReasoningSelected,
     required this.models,
     required this.favoriteModels,
     required this.selectedModelId,
@@ -47,6 +52,10 @@ class ModelSelector extends StatefulWidget {
   final bool compact;
   final bool borderless;
   final double width;
+  final bool showReasoningSelector;
+  final String? reasoningLevel;
+  final List<String> reasoningOptions;
+  final ValueChanged<String?>? onReasoningSelected;
   final List<ChatGptModel> models;
   final List<FavoriteModel> favoriteModels;
   final String? selectedModelId;
@@ -216,8 +225,7 @@ class _ModelSelectorState extends State<ModelSelector> {
       menuWidth * 0.36,
       menuWidth < 420 ? 112.0 : 152.0,
     );
-
-    final focusColor = OpenChatSemanticColors.of(context).focusRing;
+    final reasoningWidth = math.max(0.0, menuWidth - providerWidth - 25);
 
     return OpenChatDropdown(
       palette: widget.palette,
@@ -335,6 +343,17 @@ class _ModelSelectorState extends State<ModelSelector> {
                           ],
                         ],
                       ),
+                      if (widget.showReasoningSelector) ...[
+                        const SizedBox(height: 12),
+                        _ReasoningControl(
+                          palette: widget.palette,
+                          level: widget.reasoningLevel,
+                          options: widget.reasoningOptions,
+                          availableWidth: reasoningWidth,
+                          onSelected: widget.onReasoningSelected,
+                        ),
+                        const Divider(height: 17),
+                      ],
                       const SizedBox(height: 8),
                       Expanded(
                         child: shownCount == 0
@@ -542,7 +561,6 @@ class _ModelSelectorState extends State<ModelSelector> {
               compact: widget.compact,
               leftPadding: 12,
               rightPadding: 12,
-              focusColor: focusColor,
               borderless: widget.borderless,
             ),
             child: Row(
@@ -709,6 +727,132 @@ bool _isApiKeyProvider(String providerId) =>
 String _providerFamily(String providerId) =>
     providerId == 'chatgpt_api' ? 'chatgpt' : providerId;
 
+class _ReasoningControl extends StatelessWidget {
+  const _ReasoningControl({
+    required this.palette,
+    required this.level,
+    required this.options,
+    required this.availableWidth,
+    required this.onSelected,
+  });
+
+  final OpenChatPalette palette;
+  final String? level;
+  final List<String> options;
+  final double availableWidth;
+  final ValueChanged<String?>? onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.openchatL10n;
+    final selectedLabel = switch (level) {
+      null => l10n.reasoningDefault,
+      final selectedLevel => _reasoningLabel(l10n, selectedLevel),
+    };
+    final selector = OpenChatSelect<String?>(
+      options: [
+        OpenChatSelectOption<String?>(
+          value: null,
+          label: l10n.reasoningDefault,
+        ),
+        for (final option in options)
+          OpenChatSelectOption<String?>(
+            value: option,
+            label: _reasoningLabel(l10n, option),
+          ),
+      ],
+      value: level,
+      onChanged: onSelected,
+      palette: palette,
+      width: double.infinity,
+      menuWidth: math.min(260, availableWidth),
+      height: composerControlHeight(context),
+      horizontalPadding: 10,
+      selectedContent: Row(
+        children: [
+          Icon(LucideIcons.brain, size: 16, color: palette.secondaryIcon),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              selectedLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: palette.text,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                height: 16 / 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (availableWidth >= 300) {
+      return Row(
+        children: [
+          Icon(LucideIcons.brain, size: 16, color: palette.secondaryIcon),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              l10n.reasoning,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: palette.secondaryText,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(child: selector),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Icon(LucideIcons.brain, size: 16, color: palette.secondaryIcon),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                l10n.reasoning,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: palette.secondaryText,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        SizedBox(width: availableWidth, child: selector),
+      ],
+    );
+  }
+}
+
+String _reasoningLabel(AppLocalizations l10n, String value) {
+  return switch (value.trim().toLowerCase()) {
+    'minimal' => l10n.reasoningMinimal,
+    'low' => l10n.reasoningLow,
+    'medium' => l10n.reasoningMedium,
+    'high' => l10n.reasoningHigh,
+    'xhigh' || 'extra_high' || 'extra-high' => l10n.reasoningExtraHigh,
+    'max' || 'maximum' => l10n.reasoningMax,
+    'ultra' => l10n.reasoningUltra,
+    _ => value,
+  };
+}
+
 sealed class _ModelEntry {
   const _ModelEntry();
 }
@@ -812,13 +956,13 @@ class _ModelOptionState extends State<_ModelOption> {
       onExit: (_) => setState(() => _hovered = false),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          color: widget.selected || _hovered
+          color: widget.selected
               ? widget.palette.selected
+              : _rowFocused || _hovered
+              ? widget.palette.hover
               : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
-          border: _rowFocused
-              ? Border.all(color: widget.palette.focusRing, width: 2)
-              : widget.selected
+          border: widget.selected
               ? Border.all(color: widget.palette.accent)
               : null,
         ),

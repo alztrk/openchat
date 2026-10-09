@@ -40,7 +40,7 @@ class _SidebarCollapsibleHeadingState extends State<SidebarCollapsibleHeading> {
             ? Duration.zero
             : const Duration(milliseconds: 120),
         decoration: BoxDecoration(
-          color: _hovered ? palette.hover : Colors.transparent,
+          color: _hovered || _focused ? palette.hover : Colors.transparent,
           borderRadius: BorderRadius.circular(6),
         ),
         child: Row(
@@ -59,9 +59,6 @@ class _SidebarCollapsibleHeadingState extends State<SidebarCollapsibleHeading> {
                       color: Colors.transparent,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(6),
-                        side: _focused
-                            ? BorderSide(color: palette.focusRing, width: 2)
-                            : BorderSide.none,
                       ),
                       clipBehavior: Clip.antiAlias,
                       child: InkWell(
@@ -71,7 +68,7 @@ class _SidebarCollapsibleHeadingState extends State<SidebarCollapsibleHeading> {
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(minHeight: 40),
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
                             child: Row(
                               children: [
                                 Expanded(

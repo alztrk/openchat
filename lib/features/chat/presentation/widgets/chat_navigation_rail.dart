@@ -9,13 +9,9 @@ import 'package:openchat/l10n/openchat_localizations.dart';
 class ChatNavigationRail extends StatelessWidget {
   const ChatNavigationRail({
     required this.settingsSelected,
-    this.workspacesSelected = false,
-    this.outputsSelected = false,
     this.modelsSelected = false,
     this.showBrand = true,
     required this.onOpenChat,
-    this.onOpenWorkspaces,
-    this.onOpenOutputs,
     this.onOpenModels,
     required this.onOpenSettings,
     required this.onToggleTheme,
@@ -25,13 +21,9 @@ class ChatNavigationRail extends StatelessWidget {
   });
 
   final bool settingsSelected;
-  final bool workspacesSelected;
-  final bool outputsSelected;
   final bool modelsSelected;
   final bool showBrand;
   final VoidCallback onOpenChat;
-  final VoidCallback? onOpenWorkspaces;
-  final VoidCallback? onOpenOutputs;
   final VoidCallback? onOpenModels;
   final VoidCallback onOpenSettings;
   final VoidCallback onToggleTheme;
@@ -44,11 +36,7 @@ class ChatNavigationRail extends StatelessWidget {
     final palette = OpenChatPalette.of(context);
     final dark = Theme.of(context).brightness == Brightness.dark;
     const railContentWidth = OpenChatSpacing.navigationRailButtonWidth;
-    final chatsSelected =
-        !settingsSelected &&
-        !workspacesSelected &&
-        !outputsSelected &&
-        !modelsSelected;
+    final chatsSelected = !settingsSelected && !modelsSelected;
 
     return Container(
       width: OpenChatSpacing.compactRailWidth,
@@ -92,38 +80,6 @@ class ChatNavigationRail extends StatelessWidget {
                             palette: palette,
                             onPressed: onOpenChat,
                           ),
-                          if (onOpenWorkspaces case final openWorkspaces?) ...[
-                            const SizedBox(height: 8),
-                            _RailNavigationButton(
-                              label: l10n.workspaces,
-                              selected: workspacesSelected,
-                              icon: Icon(
-                                LucideIcons.folder,
-                                color: workspacesSelected
-                                    ? palette.accentIcon
-                                    : palette.secondaryIcon,
-                                size: 20,
-                              ),
-                              palette: palette,
-                              onPressed: openWorkspaces,
-                            ),
-                          ],
-                          if (onOpenOutputs case final openOutputs?) ...[
-                            const SizedBox(height: 8),
-                            _RailNavigationButton(
-                              label: l10n.outputs,
-                              selected: outputsSelected,
-                              icon: Icon(
-                                LucideIcons.bookmark,
-                                color: outputsSelected
-                                    ? palette.accentIcon
-                                    : palette.secondaryIcon,
-                                size: 20,
-                              ),
-                              palette: palette,
-                              onPressed: openOutputs,
-                            ),
-                          ],
                           if (onOpenModels case final openModels?) ...[
                             const SizedBox(height: 8),
                             _RailNavigationButton(
@@ -230,7 +186,7 @@ class _CompactBrand extends StatelessWidget {
   }
 }
 
-class _RailNavigationButton extends StatelessWidget {
+class _RailNavigationButton extends StatefulWidget {
   const _RailNavigationButton({
     required this.label,
     required this.selected,
@@ -246,45 +202,62 @@ class _RailNavigationButton extends StatelessWidget {
   final VoidCallback? onPressed;
 
   @override
+  State<_RailNavigationButton> createState() => _RailNavigationButtonState();
+}
+
+class _RailNavigationButtonState extends State<_RailNavigationButton> {
+  bool _focused = false;
+
+  @override
   Widget build(BuildContext context) {
-    final foreground = selected ? palette.text : palette.secondaryText;
+    final foreground = widget.selected
+        ? widget.palette.text
+        : widget.palette.secondaryText;
     final item = Semantics(
       button: true,
-      enabled: onPressed != null,
-      selected: selected,
-      label: label,
+      enabled: widget.onPressed != null,
+      selected: widget.selected,
+      label: widget.label,
       child: ExcludeSemantics(
         child: shad.ShadButton.ghost(
           width: double.infinity,
-          height: selected ? 46 : 44,
+          height: widget.selected ? 46 : 44,
           expands: false,
           padding: EdgeInsets.zero,
-          enabled: onPressed != null,
-          onPressed: onPressed,
-          backgroundColor: selected ? palette.selected : Colors.transparent,
-          hoverBackgroundColor: palette.hover,
+          enabled: widget.onPressed != null,
+          onPressed: widget.onPressed,
+          backgroundColor: widget.selected
+              ? widget.palette.selected
+              : _focused
+              ? widget.palette.hover
+              : Colors.transparent,
+          hoverBackgroundColor: widget.palette.hover,
           foregroundColor: foreground,
           decoration: shad.ShadDecoration(
             border: shad.ShadBorder.all(
-              color: selected ? palette.border : Colors.transparent,
+              color: widget.selected
+                  ? widget.palette.border
+                  : Colors.transparent,
               radius: BorderRadius.circular(OpenChatRadii.control),
             ),
-            focusedBorder: shad.ShadBorder.all(
-              color: palette.focusRing,
-              width: 2,
-              radius: BorderRadius.circular(OpenChatRadii.control),
-            ),
+            focusedBorder: shad.ShadBorder.none,
           ),
           child: SizedBox(
             width: OpenChatSpacing.navigationRailButtonWidth,
             height: 44,
-            child: Center(child: icon),
+            child: Center(child: widget.icon),
           ),
         ),
       ),
     );
 
-    return Tooltip(message: label, child: item);
+    return Focus(
+      skipTraversal: true,
+      onFocusChange: (focused) {
+        if (_focused != focused) setState(() => _focused = focused);
+      },
+      child: Tooltip(message: widget.label, child: item),
+    );
   }
 }
 

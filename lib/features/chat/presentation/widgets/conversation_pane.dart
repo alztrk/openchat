@@ -2014,12 +2014,7 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
                               borderRadius: BorderRadius.circular(4),
                               child: DecoratedBox(
                                 decoration: BoxDecoration(
-                                  border: _titleHasFocus
-                                      ? Border.all(
-                                          color: palette.focusRing,
-                                          width: 2,
-                                        )
-                                      : null,
+                                  color: _titleHasFocus ? palette.hover : null,
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Padding(

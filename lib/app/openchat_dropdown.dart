@@ -63,13 +63,11 @@ class OpenChatDropdown extends StatefulWidget {
       overlayColor: WidgetStateProperty.resolveWith((states) {
         if (states.contains(WidgetState.disabled)) return Colors.transparent;
         if (states.contains(WidgetState.pressed)) return palette.selected;
+        if (states.contains(WidgetState.focused)) return palette.hover;
         if (states.contains(WidgetState.hovered)) return palette.hover;
         return Colors.transparent;
       }),
-      side: WidgetStateProperty.resolveWith<BorderSide?>((states) {
-        if (!states.contains(WidgetState.focused)) return BorderSide.none;
-        return BorderSide(color: palette.focusRing, width: 2);
-      }),
+      side: const WidgetStatePropertyAll(BorderSide.none),
       shape: WidgetStatePropertyAll(
         RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(OpenChatRadii.control),

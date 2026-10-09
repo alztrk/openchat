@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_composer.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 
 import 'support/shad_test_scope.dart';
@@ -32,7 +34,9 @@ void main() {
           final l10n = await AppLocalizations.delegate.load(locale);
           var sent = 0;
           var selected = 0;
+          var permissionMode = ToolPermissionMode.requireApproval;
           ToolPermissionMode? selectedPermission;
+          String? selectedReasoning;
           const modelTitle = 'Long model name for readable selector testing';
           await tester.pumpWidget(
             MaterialApp(
@@ -55,31 +59,37 @@ void main() {
               },
               home: Scaffold(
                 body: Center(
-                  child: ChatComposer(
-                    controller: controller,
-                    onSendMessage: () => sent++,
-                    canSendMessage: true,
-                    showReasoningSelector: true,
-                    reasoningOptions: const ['low', 'medium', 'high'],
-                    onReasoningSelected: (_) {},
-                    onToolPermissionModeChanged: (mode) =>
-                        selectedPermission = mode,
-                    providerId: 'opencode',
-                    modelLabel: modelTitle,
-                    selectedModelId: 'test-model',
-                    onModelSelected: (_) => selected++,
-                    onProviderSelected: (_) {},
-                    models: const [
-                      ChatGptModel(
-                        id: 'test-model',
-                        displayName: modelTitle,
-                        isAvailable: true,
-                        reasoningLevels: [],
-                        providerId: 'opencode',
-                        groupId: 'free',
-                        contextWindow: 200000,
-                      ),
-                    ],
+                  child: StatefulBuilder(
+                    builder: (context, setState) => ChatComposer(
+                      controller: controller,
+                      onSendMessage: () => sent++,
+                      canSendMessage: true,
+                      showReasoningSelector: true,
+                      reasoningOptions: const ['low', 'medium', 'high'],
+                      onReasoningSelected: (level) =>
+                          setState(() => selectedReasoning = level),
+                      toolPermissionMode: permissionMode,
+                      onToolPermissionModeChanged: (mode) => setState(() {
+                        selectedPermission = mode;
+                        permissionMode = mode;
+                      }),
+                      providerId: 'opencode',
+                      modelLabel: modelTitle,
+                      selectedModelId: 'test-model',
+                      onModelSelected: (_) => selected++,
+                      onProviderSelected: (_) {},
+                      models: const [
+                        ChatGptModel(
+                          id: 'test-model',
+                          displayName: modelTitle,
+                          isAvailable: true,
+                          reasoningLevels: [],
+                          providerId: 'opencode',
+                          groupId: 'free',
+                          contextWindow: 200000,
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -110,6 +120,7 @@ void main() {
           );
           await tester.tap(permission);
           await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
           expect(find.text(l10n.toolPermissionPlan), findsOneWidget);
           final access = find.text(l10n.toolPermissionFullAccess);
           final optionsScrollable = find
@@ -120,17 +131,25 @@ void main() {
             100,
             scrollable: optionsScrollable,
           );
+          expect(tester.takeException(), isNull);
           await tester.tap(access);
           await tester.pumpAndSettle();
           expect(selectedPermission, ToolPermissionMode.fullAccess);
+          expect(find.byIcon(LucideIcons.shieldAlert), findsOneWidget);
           expect(tester.takeException(), isNull);
-          final reasoning = find.text(l10n.reasoningDefault).last;
-          await tester.tap(reasoning);
+          await tester.tap(find.byTooltip(modelTitle).first);
           await tester.pumpAndSettle();
+          expect(find.text(l10n.reasoning), findsOneWidget);
+          expect(tester.takeException(), isNull);
+          await tester.tap(find.byType(OpenChatSelect<String?>));
+          await tester.pumpAndSettle();
+          expect(tester.takeException(), isNull);
+          await tester.tap(find.text(l10n.reasoningHigh).last);
+          await tester.pumpAndSettle();
+          expect(selectedReasoning, 'high');
           expect(tester.takeException(), isNull);
           await tester.sendKeyEvent(LogicalKeyboardKey.escape);
           await tester.pumpAndSettle();
-          expect(find.text(l10n.toolPermissionFullAccess), findsNothing);
           await tester.tap(find.byTooltip(modelTitle).first);
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);

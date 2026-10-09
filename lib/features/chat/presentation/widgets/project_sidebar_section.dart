@@ -449,11 +449,10 @@ class _ProjectSidebarTile extends StatelessWidget {
               child: Material(
                 color: selected || candidates.isNotEmpty
                     ? palette.selected
+                    : focused
+                    ? palette.hover
                     : Colors.transparent,
                 shape: RoundedRectangleBorder(
-                  side: focused
-                      ? BorderSide(color: palette.focusRing, width: 2)
-                      : BorderSide.none,
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: InkWell(

@@ -460,7 +460,7 @@ abstract final class OpenChatTheme {
         destructiveForeground: theme.colorScheme.onError,
         border: palette.border,
         input: palette.controlBorder,
-        ring: palette.focusRing,
+        ring: Colors.transparent,
         selection: palette.accent.withValues(alpha: 0.24),
       ),
       textTheme: shad.ShadTextTheme(
@@ -621,7 +621,7 @@ abstract final class OpenChatTheme {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(OpenChatRadii.control),
-          borderSide: BorderSide(color: semantic.focusRing, width: 2),
+          borderSide: BorderSide(color: palette.accent, width: 1),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(OpenChatRadii.control),
@@ -629,7 +629,7 @@ abstract final class OpenChatTheme {
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(OpenChatRadii.control),
-          borderSide: BorderSide(color: colorScheme.error, width: 2),
+          borderSide: BorderSide(color: colorScheme.error, width: 1),
         ),
       ),
       iconButtonTheme: IconButtonThemeData(
@@ -640,7 +640,7 @@ abstract final class OpenChatTheme {
                 : palette.secondaryText,
           ),
           minimumSize: const WidgetStatePropertyAll(Size(40, 40)),
-          side: _focusOutline(palette),
+          side: _focusOutline(),
           shape: WidgetStatePropertyAll(
             RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(OpenChatRadii.control),
@@ -657,7 +657,7 @@ abstract final class OpenChatTheme {
                 : palette.text,
           ),
           minimumSize: const WidgetStatePropertyAll(Size(40, 40)),
-          side: _focusOutline(palette),
+          side: _focusOutline(),
           padding: const WidgetStatePropertyAll(
             EdgeInsets.symmetric(horizontal: 10),
           ),
@@ -679,17 +679,15 @@ abstract final class OpenChatTheme {
           backgroundColor: WidgetStateProperty.resolveWith(
             (states) => states.contains(WidgetState.disabled)
                 ? palette.disabledSurface
+                : states.contains(WidgetState.focused)
+                ? palette.hover
                 : Colors.transparent,
           ),
           side: WidgetStateProperty.resolveWith((states) {
-            final color = states.contains(WidgetState.disabled)
-                ? palette.disabledBorder
-                : states.contains(WidgetState.focused)
-                ? semantic.focusRing
-                : semantic.border;
             return BorderSide(
-              color: color,
-              width: states.contains(WidgetState.focused) ? 2 : 1,
+              color: states.contains(WidgetState.disabled)
+                  ? palette.disabledBorder
+                  : semantic.border,
             );
           }),
           minimumSize: const WidgetStatePropertyAll(Size(40, 40)),
@@ -725,7 +723,7 @@ abstract final class OpenChatTheme {
                 : colorScheme.primary,
           ),
           minimumSize: const WidgetStatePropertyAll(Size(40, 40)),
-          side: _focusOutline(palette),
+          side: _focusOutline(),
           padding: const WidgetStatePropertyAll(
             EdgeInsets.symmetric(horizontal: 12),
           ),
@@ -758,7 +756,7 @@ abstract final class OpenChatTheme {
           ),
           elevation: const WidgetStatePropertyAll(0),
           minimumSize: const WidgetStatePropertyAll(Size(40, 40)),
-          side: _focusOutline(palette),
+          side: _focusOutline(),
           padding: const WidgetStatePropertyAll(
             EdgeInsets.symmetric(horizontal: 12),
           ),
@@ -826,7 +824,7 @@ abstract final class OpenChatTheme {
         return palette.selected.withValues(alpha: 0.8);
       }
       if (states.contains(WidgetState.focused)) {
-        return palette.focusRing.withValues(alpha: 0.16);
+        return palette.hover.withValues(alpha: 0.9);
       }
       if (states.contains(WidgetState.hovered)) {
         return palette.hover.withValues(alpha: 0.7);
@@ -835,16 +833,8 @@ abstract final class OpenChatTheme {
     });
   }
 
-  static WidgetStateProperty<BorderSide?> _focusOutline(
-    OpenChatPalette palette,
-  ) {
-    return WidgetStateProperty.resolveWith((states) {
-      if (states.contains(WidgetState.focused) &&
-          !states.contains(WidgetState.disabled)) {
-        return BorderSide(color: palette.focusRing, width: 2);
-      }
-      return BorderSide.none;
-    });
+  static WidgetStateProperty<BorderSide?> _focusOutline() {
+    return const WidgetStatePropertyAll(BorderSide.none);
   }
 
   static WidgetStateProperty<Color?> _primaryOverlay(OpenChatPalette palette) {
@@ -854,7 +844,7 @@ abstract final class OpenChatTheme {
         return palette.surface.withValues(alpha: 0.22);
       }
       if (states.contains(WidgetState.focused)) {
-        return palette.focusRing.withValues(alpha: 0.22);
+        return palette.surface.withValues(alpha: 0.22);
       }
       if (states.contains(WidgetState.hovered)) {
         return palette.surface.withValues(alpha: 0.14);
