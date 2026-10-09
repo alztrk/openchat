@@ -21,7 +21,7 @@ dependencies:
   html: 0.15.7
   intl: any
   markdown: 7.3.1
-  sqlite3: 3.5.2
+  sqlite3: 3.7.0
   shared_preferences: ^2.5.5
   toastification: 3.2.0
   lucide_icons_flutter: 3.1.22
