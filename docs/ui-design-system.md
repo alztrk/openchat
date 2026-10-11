@@ -73,16 +73,22 @@ Primary navigation is Chats, Models, and Settings. Local models are reached
 from Models and from local-engine settings so model management does not
 compete with the main conversation destinations.
 
+On Windows, place page back and forward controls in the custom title bar,
+followed by the sidebar toggle. The navigation history covers Chats, Models,
+Local Models, and Settings; it does not track conversation selection or
+subsections within Settings. Keep the sidebar toggle in the navigation rail on
+other platforms.
+
 Use Lucide icons consistently. Keep primary navigation icon-only at every
 window width, give its 44 px controls a 4 px horizontal inset for a 52 px rail,
 and show localized labels in tooltips and semantic names. Use distinct selected
 and unselected glyphs for toggle states such as pinning and favorites. Keep
 selected state visible with shape or fill as well as accent color.
 
-Keep the conversation sidebar's top row for search and run controls. Put chat
-creation in the Chats heading, and show conversation titles without provider
-or model route labels. Show batch-selection controls only while selection mode
-is active.
+Keep the conversation sidebar's search and run controls in a sticky header.
+Put chat creation in the Chats heading, and show conversation titles without
+provider or model route labels. Show batch-selection controls only while
+selection mode is active. Show a bottom border while the list is scrolled.
 
 ## Interaction and accessibility
 
