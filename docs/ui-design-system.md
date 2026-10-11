@@ -89,6 +89,9 @@ is active.
 - Keep keyboard focus visible with a quiet surface highlight. The composer
   keeps its distinct, animated focus outline.
 - Preserve keyboard order and accessible names for controls and navigation.
+- Give the composer message field a localized accessible name on the editable
+  text field itself, and exclude the visual placeholder from semantics to avoid
+  duplicate announcements.
 - Make important status understandable without relying on color alone.
 - Honor reduced-motion settings; use motion only for state and feedback.
 - Keep loading, empty, error, retry, disabled, and destructive states explicit.
