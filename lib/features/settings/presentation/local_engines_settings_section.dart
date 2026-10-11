@@ -350,7 +350,12 @@ class _LocalEnginesSettingsSectionState
           _latestProgress = null;
           _assetProgress.clear();
           _isCancelling = false;
-          _installError = failure == null || cancelled ? null : 'install';
+          _installError = failure == null || cancelled
+              ? null
+              : failure is OpenChatServiceException &&
+                    failure.code == 'local_engine_release_check_unavailable'
+              ? 'release_check'
+              : 'install';
         });
       }
       await _loadCatalog();
@@ -793,7 +798,9 @@ class _LocalEnginesSettingsSectionState
           _buildMessageCard(
             context,
             icon: LucideIcons.circleAlert,
-            message: l10n.localEngineInstallFailed,
+            message: _installError == 'release_check'
+                ? l10n.localEngineReleaseCheckUnavailable
+                : l10n.localEngineInstallFailed,
             action: OutlinedButton.icon(
               onPressed: _loadState == _LocalEnginesLoadState.loading
                   ? null
@@ -924,6 +931,30 @@ class _LocalEnginesSettingsSectionState
                           fontSize: 12,
                         ),
                       ),
+                      if (engine.releaseCheckStatus != 'current') ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          l10n.localEngineReleaseCheckUnavailable,
+                          style: TextStyle(
+                            color: palette.secondaryText,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ] else if (engine.latestUpstreamReleaseTag
+                          case final latestTag?
+                          when latestTag != engine.releaseTag) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          l10n.localEngineNewerReleaseIncompatible(
+                            latestTag,
+                            engine.releaseTag,
+                          ),
+                          style: TextStyle(
+                            color: palette.secondaryText,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1522,7 +1553,11 @@ class _LocalEnginesSettingsSectionState
                       ? () => unawaited(_install(engine, variant))
                       : null,
                   icon: const Icon(LucideIcons.download, size: 16),
-                  label: Text(l10n.localEngineInstall),
+                  label: Text(
+                    variant.installed
+                        ? l10n.localEngineUpdate
+                        : l10n.localEngineInstall,
+                  ),
                 ),
               ),
             ],
@@ -1746,7 +1781,9 @@ class _LocalEnginesSettingsSectionState
       };
 
   String _statusReasonLabel(AppLocalizations l10n, LocalEngine engine) =>
-      engine.catalogStatus == 'deprecated'
+      engine.statusReason == 'release_check_unavailable'
+      ? l10n.localEngineReleaseCheckUnavailable
+      : engine.catalogStatus == 'deprecated'
       ? l10n.localEngineWindowsDeprecatedReason
       : switch (engine.engineId) {
           'vllm' => l10n.localEngineVllmBlockedReason,
@@ -1758,6 +1795,7 @@ class _LocalEnginesSettingsSectionState
       switch (status) {
         'available' => l10n.localEngineAvailable,
         'installed' => l10n.localEngineInstalled,
+        'update_available' => l10n.localEngineUpdateAvailable,
         'blocked' => l10n.localEngineBlocked,
         'deprecated' => l10n.localEngineDeprecated,
         'unsupported_platform' => l10n.localEngineUnsupportedPlatform,

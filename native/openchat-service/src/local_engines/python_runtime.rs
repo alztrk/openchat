@@ -9,9 +9,11 @@ use std::{
 
 use tokio::{fs, process::Command, sync::watch, time::timeout};
 
-use crate::{local_engines::catalog::EngineVariant, protocol::ServiceError};
+use crate::{
+    local_engines::catalog::{EngineManifest, EngineVariant},
+    protocol::ServiceError,
+};
 
-const EXLLAMA_VERSION: &str = "1.5.2";
 const PYTHON_VERSION: &str = "3.12.13";
 const UV_CACHE_DIRECTORY: &str = ".uv-cache";
 
@@ -19,13 +21,14 @@ struct ExllamaRuntimeFiles {
     project: &'static [u8],
     lock: &'static [u8],
     uv_executable: &'static str,
-    wheel_name: &'static str,
+    wheel_name: String,
     python_executable: &'static str,
 }
 
 /// Resolve Python lock files and runtime paths for a supported ExLlama variant.
 pub(crate) async fn install_exllama(
     runtime_root: &Path,
+    manifest: &EngineManifest,
     variant: &EngineVariant,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<(), ServiceError> {
@@ -115,7 +118,8 @@ pub(crate) async fn install_exllama(
     )
     .await?;
 
-    verify_exllama_imports(&venv_python, runtime_root, cancellation).await?;
+    let version = release_version(manifest)?;
+    verify_exllama_imports(&venv_python, runtime_root, &version, cancellation).await?;
     fs::remove_file(&wheel)
         .await
         .map_err(|_| runtime_install_error())?;
@@ -140,7 +144,7 @@ fn exllama_runtime_files(variant: &EngineVariant) -> Result<ExllamaRuntimeFiles,
                 "../../resources/local-engines/python/exllama-windows-cuda128/uv.lock"
             ),
             uv_executable: "uv.exe",
-            wheel_name: "exllamav3-1.5.2+cu128.torch2.9.0-cp312-cp312-win_amd64.whl",
+            wheel_name: primary_asset_name(variant)?,
             python_executable: "Scripts/python.exe",
         }),
         "linux-x86_64-cuda12.8-python3.12-torch2.9" => Ok(ExllamaRuntimeFiles {
@@ -151,20 +155,44 @@ fn exllama_runtime_files(variant: &EngineVariant) -> Result<ExllamaRuntimeFiles,
                 "../../resources/local-engines/python/exllama-linux-cuda128/uv.lock"
             ),
             uv_executable: "uv-x86_64-unknown-linux-gnu/uv",
-            wheel_name: "exllamav3-1.5.2+cu128.torch2.9.0-cp312-cp312-linux_x86_64.whl",
+            wheel_name: primary_asset_name(variant)?,
             python_executable: "bin/python",
         }),
         _ => Err(runtime_install_error()),
     }
 }
 
+fn primary_asset_name(variant: &EngineVariant) -> Result<String, ServiceError> {
+    variant
+        .assets
+        .iter()
+        .find(|asset| asset.role == "primary")
+        .map(|asset| asset.name.clone())
+        .ok_or_else(runtime_install_error)
+}
+
+fn release_version(manifest: &EngineManifest) -> Result<String, ServiceError> {
+    manifest
+        .release_tag
+        .strip_prefix('v')
+        .filter(|version| {
+            !version.is_empty()
+                && version
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || byte == b'.')
+        })
+        .map(str::to_owned)
+        .ok_or_else(runtime_install_error)
+}
+
 async fn verify_exllama_imports(
     python: &Path,
     runtime_root: &Path,
+    version: &str,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<(), ServiceError> {
     let code = format!(
-        "import importlib.metadata as m; import torch; from exllamav3.ext import exllamav3_ext; assert m.version('exllamav3') == '{EXLLAMA_VERSION}'; assert torch.cuda.is_available()"
+        "import importlib.metadata as m; import torch; from exllamav3.ext import exllamav3_ext; assert m.version('exllamav3') == '{version}'; assert torch.cuda.is_available()"
     );
     let mut command = Command::new(python);
     command

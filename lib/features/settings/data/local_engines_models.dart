@@ -122,6 +122,8 @@ class LocalEngine {
     required this.engineId,
     required this.displayName,
     required this.releaseTag,
+    required this.latestUpstreamReleaseTag,
+    required this.releaseCheckStatus,
     required this.channel,
     required this.catalogStatus,
     required this.statusReason,
@@ -133,6 +135,8 @@ class LocalEngine {
   final String engineId;
   final String displayName;
   final String releaseTag;
+  final String? latestUpstreamReleaseTag;
+  final String releaseCheckStatus;
   final String channel;
   final String catalogStatus;
   final String? statusReason;
@@ -152,6 +156,12 @@ class LocalEngine {
       engineId: _requiredString(json, 'engineId'),
       displayName: _requiredString(json, 'displayName'),
       releaseTag: _requiredString(json, 'releaseTag'),
+      latestUpstreamReleaseTag: _optionalString(
+        json,
+        'latestUpstreamReleaseTag',
+      ),
+      releaseCheckStatus:
+          _optionalString(json, 'releaseCheckStatus') ?? 'not_checked',
       channel: _requiredString(json, 'channel'),
       catalogStatus: _requiredString(json, 'catalogStatus'),
       statusReason: _optionalString(json, 'statusReason'),

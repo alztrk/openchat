@@ -8,18 +8,20 @@ use std::{
 use tokio::{fs, process::Command, sync::watch, time::timeout};
 
 use crate::{
-    local_engines::{catalog::EngineVariant, wsl},
+    local_engines::{
+        catalog::{EngineManifest, EngineVariant},
+        wsl,
+    },
     protocol::ServiceError,
 };
 
-const VLLM_VERSION: &str = "0.30.0";
 const PYTHON_VERSION: &str = "3.12.13";
 const PROJECT_RELATIVE_PATH: &str = "python/environment";
 const UV_RELATIVE_PATH: &str = "uv-x86_64-unknown-linux-gnu/uv";
-const WHEEL_RELATIVE_PATH: &str = "wheels/vllm-0.30.0-cp38-abi3-manylinux_2_28_x86_64.whl";
 
 pub(crate) async fn install_vllm(
     runtime_root: &Path,
+    manifest: &EngineManifest,
     variant: &EngineVariant,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<(), ServiceError> {
@@ -35,7 +37,9 @@ pub(crate) async fn install_vllm(
     }
 
     let uv_windows = runtime_root.join(UV_RELATIVE_PATH);
-    let wheel_windows = runtime_root.join(WHEEL_RELATIVE_PATH);
+    let wheel_windows = runtime_root
+        .join("wheels")
+        .join(primary_asset_name(variant)?);
     let project_windows = runtime_root.join(PROJECT_RELATIVE_PATH);
     let python_install_dir_windows = runtime_root.join("python/managed-python");
     let temp_dir_windows = runtime_root.join("uv-temp");
@@ -184,7 +188,8 @@ pub(crate) async fn install_vllm(
             .await
             .map_err(|_| runtime_install_error())?;
     }
-    verify_vllm_imports(&python, use_wsl, cancellation).await?;
+    let version = release_version(manifest)?;
+    verify_vllm_imports(&python, use_wsl, &version, cancellation).await?;
 
     fs::remove_dir_all(&temp_dir_windows)
         .await
@@ -198,10 +203,11 @@ pub(crate) async fn install_vllm(
 async fn verify_vllm_imports(
     python: &Path,
     use_wsl: bool,
+    version: &str,
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<(), ServiceError> {
     let code = format!(
-        "import importlib.metadata as m; import torch; import vllm; assert m.version('vllm') == '{VLLM_VERSION}'; assert torch.version.cuda and torch.version.cuda.startswith('13.'); assert torch.cuda.is_available(); assert torch.cuda.get_device_capability(0) >= (7, 5)"
+        "import importlib.metadata as m; import torch; import vllm; assert m.version('vllm') == '{version}'; assert torch.version.cuda and torch.version.cuda.startswith('13.'); assert torch.cuda.is_available(); assert torch.cuda.get_device_capability(0) >= (7, 5)"
     );
     let mut command = wsl::command(python, use_wsl).map_err(|_| runtime_install_error())?;
     command
@@ -210,6 +216,29 @@ async fn verify_vllm_imports(
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     run_command(&mut command, cancellation).await
+}
+
+fn primary_asset_name(variant: &EngineVariant) -> Result<String, ServiceError> {
+    variant
+        .assets
+        .iter()
+        .find(|asset| asset.role == "primary")
+        .map(|asset| asset.name.clone())
+        .ok_or_else(runtime_install_error)
+}
+
+fn release_version(manifest: &EngineManifest) -> Result<String, ServiceError> {
+    manifest
+        .release_tag
+        .strip_prefix('v')
+        .filter(|version| {
+            !version.is_empty()
+                && version
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || byte == b'.')
+        })
+        .map(str::to_owned)
+        .ok_or_else(runtime_install_error)
 }
 
 async fn run_uv<I, S>(

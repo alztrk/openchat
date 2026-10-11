@@ -6,6 +6,7 @@ mod gguf;
 pub(crate) mod installer;
 pub(crate) mod models;
 mod python_runtime;
+mod releases;
 mod runtime;
 mod settings;
 mod vllm_runtime;
@@ -13,6 +14,7 @@ mod wsl;
 
 use std::time::Duration;
 
+use futures_util::future::join_all;
 use serde_json::{Value, json};
 use tokio::{process::Command, time::timeout};
 
@@ -41,8 +43,6 @@ const CATALOGS: &[(&str, &[u8])] = &[
         include_bytes!("../../resources/local-engines/exllama.json"),
     ),
 ];
-
-const WINDOWS_DEPRECATED_ENGINE_IDS: &[&str] = &["vllm", "exllama"];
 
 pub(crate) fn manifests() -> Result<Vec<EngineManifest>, ServiceError> {
     CATALOGS
@@ -78,16 +78,40 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
         .and_then(settings::validate_saved_executable_path)
         .is_some();
     let registered_models = models::list(storage)?;
-    let engines = manifests()?
+    let mut manifests = manifests()?;
+    let release_checks = manifests
+        .iter_mut()
+        .filter(|manifest| matches!(manifest.engine_id.as_str(), "vllm" | "exllama"))
+        .map(|manifest| async move {
+            let engine_id = manifest.engine_id.clone();
+            let result = releases::refresh_compatible_release(manifest).await;
+            (engine_id, result)
+        });
+    let release_statuses = join_all(release_checks)
+        .await
+        .into_iter()
+        .map(|(engine_id, result)| (engine_id, result.ok()))
+        .collect::<std::collections::HashMap<_, _>>();
+    let engines = manifests
         .into_iter()
         .map(|manifest| {
-            let catalog_status =
+            let checked_tag = release_statuses
+                .get(&manifest.engine_id)
+                .cloned()
+                .unwrap_or(Some(manifest.release_tag.clone()));
+            let release_check_succeeded = checked_tag.is_some();
+            let latest_upstream_tag = checked_tag;
+            let mut catalog_status =
                 catalog_status_for_host(&manifest.engine_id, &manifest.catalog_status, host_os());
-            let status_reason = status_reason_for_host(
+            let mut status_reason = status_reason_for_host(
                 &manifest.engine_id,
                 manifest.status_reason.as_deref(),
                 host_os(),
             );
+            if !release_check_succeeded {
+                catalog_status = "blocked";
+                status_reason = Some("release_check_unavailable");
+            }
             let model_directory =
                 models::default_model_directory(storage.root(), &manifest.engine_id)?
                     .to_str()
@@ -128,6 +152,8 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
                 "engineId": manifest.engine_id,
                 "displayName": manifest.display_name,
                 "releaseTag": manifest.release_tag,
+                "latestUpstreamReleaseTag": latest_upstream_tag,
+                "releaseCheckStatus": if release_check_succeeded { "current" } else { "unavailable" },
                 "channel": manifest.channel,
                 "catalogStatus": catalog_status,
                 "statusReason": status_reason,
@@ -327,14 +353,19 @@ pub(crate) async fn remove_model(
     Ok(json!({"removed": models::remove(storage, model_id)?}))
 }
 
-pub(crate) fn find_variant(
+pub(crate) async fn find_variant(
     engine_id: &str,
     variant_id: &str,
 ) -> Result<(EngineManifest, EngineVariant), ServiceError> {
-    let manifest = manifests()?
+    let mut manifest = manifests()?
         .into_iter()
         .find(|manifest| manifest.engine_id == engine_id)
         .ok_or_else(unknown_engine_error)?;
+    if matches!(manifest.engine_id.as_str(), "vllm" | "exllama") {
+        releases::refresh_compatible_release(&mut manifest)
+            .await
+            .map_err(|()| release_check_error())?;
+    }
     let variant = manifest
         .variants
         .iter()
@@ -342,6 +373,14 @@ pub(crate) fn find_variant(
         .cloned()
         .ok_or_else(unsupported_engine_variant_error)?;
     Ok((manifest, variant))
+}
+
+fn release_check_error() -> ServiceError {
+    ServiceError::new(
+        "local_engine_release_check_unavailable",
+        "The latest compatible local engine release could not be verified. Check your connection and try again.",
+        true,
+    )
 }
 
 pub(crate) async fn can_install(manifest: &EngineManifest, variant: &EngineVariant) -> bool {
@@ -375,16 +414,25 @@ fn variant_json(
     nvidia_driver: NvidiaDriverStatus,
     recommended_variant: Option<&str>,
 ) -> Result<Value, ServiceError> {
-    let installed = installer::installed_engine(storage, manifest, variant)?.is_some();
+    let installed_engine = installer::installed_engine(storage, manifest, variant)?;
+    let installed = installed_engine.is_some();
+    let update_available = catalog_status == "installable"
+        && installed_engine
+            .as_ref()
+            .is_some_and(|installed| installed.release_tag != manifest.release_tag);
     let platform_matches =
         variant_host_os(variant) == host_os() && variant.architecture == host_architecture();
     let hardware_status = variant_hardware_status(variant, nvidia_driver);
     let can_install = catalog_status == "installable"
         && platform_matches
         && hardware_status.is_none()
-        && !installed;
+        && (!installed || update_available);
     let status = if installed {
-        "installed"
+        if update_available {
+            "update_available"
+        } else {
+            "installed"
+        }
     } else if catalog_status == "deprecated" {
         "deprecated"
     } else if catalog_status == "blocked" {
@@ -405,6 +453,7 @@ fn variant_json(
         "recommended": platform_matches
             && recommended_variant == Some(variant.variant_id.as_str()),
         "installed": installed,
+        "installedReleaseTag": installed_engine.map(|engine| engine.release_tag),
         "status": status,
     }))
 }
@@ -544,24 +593,16 @@ fn variant_visible_for_host(engine_id: &str, variant: &EngineVariant, os: &str) 
     engine_id != "llama_cpp" || os != "windows" || variant_host_os(variant) == "windows"
 }
 
-fn catalog_status_for_host<'a>(engine_id: &str, catalog_status: &'a str, os: &str) -> &'a str {
-    if os == "windows" && WINDOWS_DEPRECATED_ENGINE_IDS.contains(&engine_id) {
-        "deprecated"
-    } else {
-        catalog_status
-    }
+fn catalog_status_for_host<'a>(_engine_id: &str, catalog_status: &'a str, _os: &str) -> &'a str {
+    catalog_status
 }
 
 fn status_reason_for_host<'a>(
-    engine_id: &str,
+    _engine_id: &str,
     status_reason: Option<&'a str>,
-    os: &str,
+    _os: &str,
 ) -> Option<&'a str> {
-    if os == "windows" && WINDOWS_DEPRECATED_ENGINE_IDS.contains(&engine_id) {
-        Some("windows_deprecated")
-    } else {
-        status_reason
-    }
+    status_reason
 }
 
 fn variant_uses_wsl(variant: &EngineVariant) -> bool {
@@ -703,15 +744,15 @@ mod tests {
     }
 
     #[test]
-    fn only_llama_cpp_remains_installable_on_windows() {
+    fn catalog_support_is_not_overridden_by_the_host_platform() {
         for engine_id in ["vllm", "exllama"] {
             assert_eq!(
                 super::catalog_status_for_host(engine_id, "installable", "windows"),
-                "deprecated"
+                "installable"
             );
             assert_eq!(
                 super::status_reason_for_host(engine_id, None, "windows"),
-                Some("windows_deprecated")
+                None
             );
             assert_eq!(
                 super::catalog_status_for_host(engine_id, "installable", "linux"),
@@ -726,7 +767,7 @@ mod tests {
     }
 
     #[test]
-    fn deprecated_engines_are_rejected_by_the_host_install_guard() {
+    fn windows_local_engine_variants_remain_installable_when_supported() {
         for engine_id in ["vllm", "exllama"] {
             let manifest = CATALOGS
                 .iter()
@@ -744,7 +785,7 @@ mod tests {
                 .find(|variant| super::variant_host_os(variant) == "linux")
                 .expect("Linux variant should exist");
 
-            assert!(!super::can_install_on_host(
+            assert!(super::can_install_on_host(
                 &manifest,
                 windows_variant,
                 "windows",

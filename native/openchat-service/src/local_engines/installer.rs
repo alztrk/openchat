@@ -89,7 +89,9 @@ pub async fn install_engine_variant(
 
     let _install_guard = install_lock().lock().await;
     if let Some(installed) = installed_engine(storage, manifest, variant)? {
-        return Ok(installed);
+        if installed.release_tag == manifest.release_tag {
+            return Ok(installed);
+        }
     }
     check_cancelled(cancellation)?;
 
@@ -176,12 +178,13 @@ pub fn installed_engine(
     manifest: &EngineManifest,
     variant: &EngineVariant,
 ) -> Result<Option<InstalledEngine>, ServiceError> {
-    let root = installed_engine_path(storage, manifest, variant)?;
-    match fs::symlink_metadata(&root) {
-        Ok(metadata) if metadata.file_type().is_symlink() => {
-            return Err(installation_invalid_error());
-        }
-        Ok(metadata) if !metadata.is_dir() => {
+    let releases_root = storage
+        .root()
+        .join("runtimes")
+        .join(safe_component(&manifest.engine_id, "engineId")?)
+        .join(safe_component(&variant.variant_id, "variantId")?);
+    match fs::symlink_metadata(&releases_root) {
+        Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
             return Err(installation_invalid_error());
         }
         Ok(_) => {}
@@ -189,42 +192,68 @@ pub fn installed_engine(
         Err(_) => return Err(storage_error()),
     }
 
-    let marker_path = root.join(INSTALL_MARKER);
-    if fs::symlink_metadata(&marker_path)
-        .ok()
-        .is_some_and(|metadata| metadata.file_type().is_symlink())
-    {
-        return Err(installation_invalid_error());
+    let mut installed = Vec::new();
+    for entry in fs::read_dir(&releases_root).map_err(|_| storage_error())? {
+        let entry = entry.map_err(|_| storage_error())?;
+        let metadata = fs::symlink_metadata(entry.path()).map_err(|_| storage_error())?;
+        if metadata.file_type().is_symlink() {
+            return Err(installation_invalid_error());
+        }
+        if !metadata.is_dir() {
+            continue;
+        }
+        let root = entry.path();
+        let marker_path = root.join(INSTALL_MARKER);
+        match fs::symlink_metadata(&marker_path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(installation_invalid_error());
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(_) => return Err(storage_error()),
+        }
+        let marker_bytes = fs::read(&marker_path).map_err(|_| storage_error())?;
+        let marker = serde_json::from_slice::<InstalledMarker>(&marker_bytes)
+            .map_err(|_| installation_invalid_error())?;
+        let directory_tag = entry
+            .file_name()
+            .into_string()
+            .map_err(|_| installation_invalid_error())?;
+        if marker.marker_version != INSTALL_MARKER_VERSION
+            || marker.engine_id != manifest.engine_id
+            || marker.variant_id != variant.variant_id
+            || marker.release_tag != directory_tag
+            || marker.entrypoint != variant.entrypoint
+        {
+            return Err(installation_invalid_error());
+        }
+        let entrypoint_relative =
+            safe_relative_path(&marker.entrypoint).map_err(|_| installation_invalid_error())?;
+        let entrypoint = root.join(entrypoint_relative);
+        if !entrypoint.is_file() {
+            continue;
+        }
+        installed.push(InstalledEngine {
+            engine_id: marker.engine_id,
+            variant_id: marker.variant_id,
+            release_tag: marker.release_tag,
+            root,
+            entrypoint,
+        });
     }
-    let marker_bytes = match fs::read(&marker_path) {
-        Ok(bytes) => bytes,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err(storage_error()),
-    };
-    let marker = serde_json::from_slice::<InstalledMarker>(&marker_bytes)
-        .map_err(|_| installation_invalid_error())?;
-    if marker.marker_version != INSTALL_MARKER_VERSION
-        || marker.engine_id != manifest.engine_id
-        || marker.variant_id != variant.variant_id
-        || marker.release_tag != manifest.release_tag
-        || marker.entrypoint != variant.entrypoint
-    {
-        return Err(installation_invalid_error());
-    }
-    let entrypoint_relative =
-        safe_relative_path(&marker.entrypoint).map_err(|_| installation_invalid_error())?;
-    let entrypoint = root.join(entrypoint_relative);
-    if !entrypoint.is_file() {
-        return Ok(None);
-    }
+    installed.sort_by(|left, right| compare_release_tags(&left.release_tag, &right.release_tag));
+    Ok(installed.pop())
+}
 
-    Ok(Some(InstalledEngine {
-        engine_id: marker.engine_id,
-        variant_id: marker.variant_id,
-        release_tag: marker.release_tag,
-        root,
-        entrypoint,
-    }))
+fn compare_release_tags(left: &str, right: &str) -> std::cmp::Ordering {
+    let parts = |tag: &str| {
+        tag.strip_prefix('v')
+            .unwrap_or(tag)
+            .split('.')
+            .map(|part| part.parse::<u32>().unwrap_or(0))
+            .collect::<Vec<_>>()
+    };
+    parts(left).cmp(&parts(right))
 }
 
 async fn install_staged(
@@ -337,9 +366,12 @@ async fn install_staged(
         }
         let install_result = match manifest.engine_id.as_str() {
             "exllama" => {
-                super::python_runtime::install_exllama(target, variant, cancellation).await
+                super::python_runtime::install_exllama(target, manifest, variant, cancellation)
+                    .await
             }
-            "vllm" => super::vllm_runtime::install_vllm(target, variant, cancellation).await,
+            "vllm" => {
+                super::vllm_runtime::install_vllm(target, manifest, variant, cancellation).await
+            }
             _ => Err(invalid_install_error()),
         };
         if let Err(error) = install_result {

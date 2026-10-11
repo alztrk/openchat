@@ -1026,7 +1026,7 @@ pub(crate) async fn dispatch(
         "local.engines.install" => {
             let engine_id = required_string(&request.params, "engineId")?;
             let variant_id = required_string(&request.params, "variantId")?;
-            let (manifest, variant) = local_engines::find_variant(engine_id, variant_id)?;
+            let (manifest, variant) = local_engines::find_variant(engine_id, variant_id).await?;
             if !local_engines::can_install(&manifest, &variant).await {
                 return Err(ServiceError::new(
                     "local_engine_install_unavailable",
