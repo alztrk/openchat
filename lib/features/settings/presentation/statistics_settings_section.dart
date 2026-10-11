@@ -1,19 +1,19 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart' show SemanticsProperties;
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/openchat_toast.dart';
-import 'package:openchat/app/openchat_select.dart';
+import 'package:openchat/app/openchat_dropdown.dart';
 import 'package:openchat/features/settings/domain/usage_statistics.dart';
-import 'package:openchat/features/settings/presentation/chat_gpt_usage_bucket_label.dart';
-import 'package:openchat/features/settings/domain/chat_gpt_usage_snapshot.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/platform/windows/openchat_service_client.dart';
@@ -41,16 +41,12 @@ class _StatisticsSettingsSectionState extends State<StatisticsSettingsSection> {
   UsageStatistics? _statistics;
   String? _providerId;
   String? _modelId;
-  String? _operation;
-  String? _reasoningEffort;
-  bool? _fastMode;
   bool _showMonthlyTrend = false;
   bool _isRefreshing = false;
   bool _isExporting = false;
-  int _pageIndex = 0;
   int _loadGeneration = 0;
 
-  static const _pageSize = 25;
+  static const _statisticsLimit = 1;
   static const _exportPageSize = 200;
 
   @override
@@ -96,9 +92,6 @@ class _StatisticsSettingsSectionState extends State<StatisticsSettingsSection> {
       'toUnixMs': math.max(start + 1, end),
       'providerId': _providerId,
       'modelId': _modelId,
-      'operation': _operation,
-      'reasoningEffort': _reasoningEffort,
-      'fastMode': _fastMode,
       'offset': offset,
       'limit': limit,
     };
@@ -124,7 +117,7 @@ class _StatisticsSettingsSectionState extends State<StatisticsSettingsSection> {
     try {
       final response = await service.call(
         'statistics.get',
-        params: _queryParams(offset: _pageIndex * _pageSize, limit: _pageSize),
+        params: _queryParams(offset: 0, limit: _statisticsLimit),
       );
       final statistics = UsageStatistics.fromJson(response);
       if (!mounted || generation != _loadGeneration) return;
@@ -173,7 +166,6 @@ class _StatisticsSettingsSectionState extends State<StatisticsSettingsSection> {
         start: DateUtils.dateOnly(selected.start),
         end: DateUtils.dateOnly(selected.end),
       );
-      _pageIndex = 0;
     });
     unawaited(_load());
   }
@@ -182,7 +174,6 @@ class _StatisticsSettingsSectionState extends State<StatisticsSettingsSection> {
     if (_isExporting) return;
     setState(() {
       update();
-      _pageIndex = 0;
     });
     unawaited(_load());
   }
@@ -191,9 +182,6 @@ class _StatisticsSettingsSectionState extends State<StatisticsSettingsSection> {
     _setFilter(() {
       _providerId = null;
       _modelId = null;
-      _operation = null;
-      _reasoningEffort = null;
-      _fastMode = null;
     });
   }
 
@@ -351,19 +339,10 @@ class _StatisticsSettingsSectionState extends State<StatisticsSettingsSection> {
     }
     if (statistics == null) return const SizedBox.shrink();
 
-    final detailsStart = _pageIndex * _pageSize;
-    final detailsEnd = math.min(
-      detailsStart + statistics.requests.length,
-      statistics.requestDetailCount,
-    );
-    final showDetails = statistics.requestDetailCount > 0;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildHeader(l10n, palette),
-        const SizedBox(height: 16),
-        _buildFilters(statistics, l10n, palette),
+        _buildHeader(statistics, l10n, palette),
         if (_isRefreshing) ...[
           const SizedBox(height: 10),
           const LinearProgressIndicator(minHeight: 2),
@@ -373,7 +352,7 @@ class _StatisticsSettingsSectionState extends State<StatisticsSettingsSection> {
           _buildInlineError(l10n, palette),
         ],
         const SizedBox(height: 18),
-        _buildOverview(statistics, l10n, palette),
+        _buildOverview(statistics.summary, l10n, palette),
         const SizedBox(height: 20),
         _buildTrend(statistics, l10n, palette),
         const SizedBox(height: 14),
@@ -381,83 +360,167 @@ class _StatisticsSettingsSectionState extends State<StatisticsSettingsSection> {
         const SizedBox(height: 20),
         _buildConversations(statistics, l10n, palette),
         const SizedBox(height: 20),
-        _buildQuotaHistory(statistics.quotaHistory, l10n, palette),
-        const SizedBox(height: 20),
-        _buildRequestDetails(
-          statistics,
-          l10n,
-          palette,
-          showDetails: showDetails,
-          detailsStart: detailsStart,
-          detailsEnd: detailsEnd,
-        ),
       ],
     );
   }
 
-  Widget _buildHeader(AppLocalizations l10n, OpenChatPalette palette) {
+  Widget _buildHeader(
+    UsageStatistics statistics,
+    AppLocalizations l10n,
+    OpenChatPalette palette,
+  ) {
+    final locale = Localizations.localeOf(context).toString();
+    final dateFormat = DateFormat.yMMMd(locale);
+    final dateLabel =
+        '${dateFormat.format(_dateRange.start)} - ${dateFormat.format(_dateRange.end)}';
+    final activeFilters =
+        (_providerId == null ? 0 : 1) + (_modelId == null ? 0 : 1);
+    final dateItem = MenuItemButton(
+      leadingIcon: const Icon(LucideIcons.calendarDays, size: 16),
+      onPressed: _isExporting ? null : () => unawaited(_chooseDateRange()),
+      child: Text(dateLabel),
+    );
+    final providerItems = <Widget>[
+      MenuItemButton(
+        trailingIcon: _providerId == null
+            ? const Icon(LucideIcons.check, size: 15)
+            : null,
+        onPressed: _isExporting
+            ? null
+            : () => _setFilter(() => _providerId = null),
+        child: Text(l10n.statisticsAll),
+      ),
+      for (final provider in statistics.filterOptions.providers)
+        MenuItemButton(
+          trailingIcon: _providerId == provider
+              ? const Icon(LucideIcons.check, size: 15)
+              : null,
+          onPressed: _isExporting
+              ? null
+              : () => _setFilter(() => _providerId = provider),
+          child: Text(_providerLabel(provider, l10n)),
+        ),
+    ];
+    final modelItems = <Widget>[
+      MenuItemButton(
+        trailingIcon: _modelId == null
+            ? const Icon(LucideIcons.check, size: 15)
+            : null,
+        onPressed: _isExporting
+            ? null
+            : () => _setFilter(() => _modelId = null),
+        child: Text(l10n.statisticsAll),
+      ),
+      for (final model in statistics.filterOptions.models)
+        MenuItemButton(
+          trailingIcon: _modelId == model
+              ? const Icon(LucideIcons.check, size: 15)
+              : null,
+          onPressed: _isExporting
+              ? null
+              : () => _setFilter(() => _modelId = model),
+          child: Text(model),
+        ),
+    ];
+    final actions = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        OpenChatDropdown(
+          palette: palette,
+          menuChildren: [
+            dateItem,
+            SubmenuButton(
+              menuChildren: providerItems,
+              child: Text(l10n.statisticsProvider),
+            ),
+            SubmenuButton(
+              menuChildren: modelItems,
+              child: Text(l10n.statisticsModel),
+            ),
+            if (activeFilters > 0)
+              MenuItemButton(
+                leadingIcon: const Icon(LucideIcons.x, size: 15),
+                onPressed: _isExporting ? null : _clearFilters,
+                child: Text(l10n.statisticsClearFilters),
+              ),
+          ],
+          builder: (context, controller, child, focusNode) =>
+              OutlinedButton.icon(
+                focusNode: focusNode,
+                onPressed: _isExporting
+                    ? null
+                    : () => controller.isOpen
+                          ? controller.close()
+                          : controller.open(),
+                icon: const Icon(LucideIcons.listFilter, size: 16),
+                label: Text(
+                  activeFilters == 0
+                      ? l10n.statisticsFilters
+                      : '${l10n.statisticsFilters} · $activeFilters',
+                ),
+              ),
+        ),
+        IconButton(
+          tooltip: l10n.statisticsRetry,
+          onPressed: _isRefreshing || _isExporting
+              ? null
+              : () => unawaited(_load()),
+          icon: _isRefreshing
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(LucideIcons.refreshCw, size: 17),
+        ),
+        FilledButton.icon(
+          onPressed: _isExporting ? null : () => unawaited(_exportCsv()),
+          icon: _isExporting
+              ? const SizedBox.square(
+                  dimension: 15,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(LucideIcons.download, size: 16),
+          label: Text(
+            _isExporting ? l10n.statisticsExporting : l10n.statisticsExportCsv,
+          ),
+        ),
+      ],
+    );
+    final title = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(l10n.statistics, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        Text(
+          l10n.statisticsDescription,
+          style: TextStyle(
+            color: palette.secondaryText,
+            fontSize: 13,
+            height: 1.45,
+          ),
+        ),
+      ],
+    );
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        final stack = constraints.maxWidth < 560;
-        final description = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              l10n.statistics,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              l10n.statisticsDescription,
-              style: TextStyle(
-                color: palette.secondaryText,
-                fontSize: 13,
-                height: 1.45,
-              ),
-            ),
-          ],
-        );
-        final actions = Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            OutlinedButton.icon(
-              onPressed: _isExporting ? null : () => unawaited(_load()),
-              icon: _isRefreshing
-                  ? const SizedBox.square(
-                      dimension: 15,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(LucideIcons.refreshCw, size: 16),
-              label: Text(l10n.statisticsRetry),
-            ),
-            FilledButton.icon(
-              onPressed: _isExporting ? null : () => unawaited(_exportCsv()),
-              icon: _isExporting
-                  ? const SizedBox.square(
-                      dimension: 15,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(LucideIcons.download, size: 16),
-              label: Text(
-                _isExporting
-                    ? l10n.statisticsExporting
-                    : l10n.statisticsExportCsv,
-              ),
-            ),
-          ],
-        );
-        if (stack) {
+        if (constraints.maxWidth < 680) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [description, const SizedBox(height: 12), actions],
+            children: [
+              title,
+              const SizedBox(height: 12),
+              Align(alignment: Alignment.centerRight, child: actions),
+            ],
           );
         }
         return Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(child: description),
-            const SizedBox(width: 12),
+            Expanded(child: title),
+            const SizedBox(width: 16),
             actions,
           ],
         );
@@ -465,229 +528,13 @@ class _StatisticsSettingsSectionState extends State<StatisticsSettingsSection> {
     );
   }
 
-  Widget _buildFilters(
-    UsageStatistics statistics,
-    AppLocalizations l10n,
-    OpenChatPalette palette,
-  ) {
-    final fastMode = _fastMode;
-    final locale = Localizations.localeOf(context).toString();
-    final dateFormat = DateFormat.yMMMd(locale);
-    final dateLabel =
-        '${dateFormat.format(_dateRange.start)} - ${dateFormat.format(_dateRange.end)}';
-    return _StatisticsPanel(
-      palette: palette,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              OutlinedButton.icon(
-                onPressed: _isExporting
-                    ? null
-                    : () => unawaited(_chooseDateRange()),
-                icon: const Icon(LucideIcons.calendarDays, size: 16),
-                label: Text('$dateLabel  ·  ${l10n.statisticsDateRange}'),
-              ),
-              TextButton.icon(
-                onPressed: _isExporting ? null : _clearFilters,
-                icon: const Icon(LucideIcons.x, size: 15),
-                label: Text(l10n.statisticsClearFilters),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final columns = constraints.maxWidth >= 720
-                  ? 3
-                  : constraints.maxWidth >= 460
-                  ? 2
-                  : 1;
-              final itemWidth =
-                  (constraints.maxWidth - (columns - 1) * 10) / columns;
-              final effortOptions = [
-                ...statistics.filterOptions.reasoningEfforts,
-              ];
-              return Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  SizedBox(
-                    width: itemWidth,
-                    child: _buildFilterSelect(
-                      label: l10n.statisticsProvider,
-                      value: _providerId ?? '',
-                      options: [
-                        ('', l10n.statisticsAll),
-                        ...statistics.filterOptions.providers.map(
-                          (value) => (value, _providerLabel(value, l10n)),
-                        ),
-                      ],
-                      palette: palette,
-                      onChanged: _isExporting
-                          ? null
-                          : (value) => _setFilter(
-                              () => _providerId = value.isEmpty ? null : value,
-                            ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: itemWidth,
-                    child: _buildFilterSelect(
-                      label: l10n.statisticsModel,
-                      value: _modelId ?? '',
-                      options: [
-                        ('', l10n.statisticsAll),
-                        ...statistics.filterOptions.models.map(
-                          (value) => (value, value),
-                        ),
-                      ],
-                      palette: palette,
-                      onChanged: _isExporting
-                          ? null
-                          : (value) => _setFilter(
-                              () => _modelId = value.isEmpty ? null : value,
-                            ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: itemWidth,
-                    child: _buildFilterSelect(
-                      label: l10n.statisticsOperation,
-                      value: _operation ?? '',
-                      options: [
-                        ('', l10n.statisticsAll),
-                        ('chat', l10n.statisticsOperationChat),
-                        (
-                          'tool_follow_up',
-                          l10n.statisticsOperationToolFollowUp,
-                        ),
-                        ('compaction', l10n.statisticsOperationCompaction),
-                        (
-                          'title_generation',
-                          l10n.statisticsOperationTitleGeneration,
-                        ),
-                      ],
-                      palette: palette,
-                      onChanged: _isExporting
-                          ? null
-                          : (value) => _setFilter(
-                              () => _operation = value.isEmpty ? null : value,
-                            ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: itemWidth,
-                    child: _buildFilterSelect(
-                      label: l10n.statisticsReasoningEffort,
-                      value: _reasoningEffort ?? '',
-                      options: [
-                        ('', l10n.statisticsAll),
-                        ...effortOptions.map(
-                          (value) => (value, _reasoningLabel(value, l10n)),
-                        ),
-                      ],
-                      palette: palette,
-                      onChanged: _isExporting
-                          ? null
-                          : (value) => _setFilter(
-                              () => _reasoningEffort = value.isEmpty
-                                  ? null
-                                  : value,
-                            ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: itemWidth,
-                    child: _buildFilterSelect(
-                      label: l10n.statisticsFastModeFilter,
-                      value: fastMode == null
-                          ? ''
-                          : fastMode
-                          ? 'true'
-                          : 'false',
-                      options: [
-                        ('', l10n.statisticsAll),
-                        ('true', l10n.statisticsRequested),
-                        ('false', l10n.statisticsNotRequested),
-                      ],
-                      palette: palette,
-                      onChanged: _isExporting
-                          ? null
-                          : (value) => _setFilter(() {
-                              _fastMode = switch (value) {
-                                'true' => true,
-                                'false' => false,
-                                _ => null,
-                              };
-                            }),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildFilterSelect({
-    required String label,
-    required String value,
-    required List<(String, String)> options,
-    required OpenChatPalette palette,
-    required ValueChanged<String>? onChanged,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text(
-          label,
-          style: TextStyle(
-            color: palette.secondaryText,
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 5),
-        OpenChatSelect<String>(
-          options: options
-              .map(
-                (option) => OpenChatSelectOption<String>(
-                  value: option.$1,
-                  label: option.$2,
-                ),
-              )
-              .toList(growable: false),
-          value: value,
-          onChanged: onChanged,
-          palette: palette,
-          width: double.infinity,
-          height: 40,
-        ),
-      ],
-    );
-  }
-
   Widget _buildOverview(
-    UsageStatistics statistics,
+    UsageStatisticsSummary summary,
     AppLocalizations l10n,
     OpenChatPalette palette,
   ) {
-    final summary = statistics.summary;
     final locale = Localizations.localeOf(context).toString();
     final number = NumberFormat.decimalPattern(locale);
-    final reportedCostValue = summary.costReportedRequests == 0
-        ? l10n.statisticsNotReported
-        : _formatCostUsd(summary.providerReportedCostUsd, locale);
-    final catalogCostValue = summary.modelsDevCatalogCostRequests == 0
-        ? l10n.statisticsNotReported
-        : _formatCostUsd(summary.modelsDevCatalogCostUsd, locale);
     final metrics = <_StatisticsMetricData>[
       _StatisticsMetricData(
         label: l10n.statisticsTotalTokens,
@@ -706,35 +553,7 @@ class _StatisticsSettingsSectionState extends State<StatisticsSettingsSection> {
       _StatisticsMetricData(
         label: l10n.statisticsConversations,
         value: number.format(summary.conversationCount),
-        detail: l10n.statisticsConversations,
         icon: LucideIcons.messagesSquare,
-      ),
-      _StatisticsMetricData(
-        label: l10n.statisticsReasoningTokens,
-        value: number.format(summary.reasoningTokens),
-        detail: l10n.statisticsReasoningLevels,
-        icon: LucideIcons.brain,
-      ),
-      _StatisticsMetricData(
-        label: l10n.statisticsCachedInputTokens,
-        value: number.format(summary.cachedInputTokens),
-        detail:
-            '${l10n.statisticsCacheWriteTokens}: ${number.format(summary.cacheWriteTokens)}',
-        icon: LucideIcons.database,
-      ),
-      _StatisticsMetricData(
-        label: l10n.statisticsProviderReportedCost,
-        value: reportedCostValue,
-        detail: l10n.statisticsCostCoverage(summary.costReportedRequests),
-        icon: LucideIcons.circleDollarSign,
-      ),
-      _StatisticsMetricData(
-        label: l10n.statisticsModelsDevCatalogCost,
-        value: catalogCostValue,
-        detail: l10n.statisticsModelsDevCatalogCostCoverage(
-          summary.modelsDevCatalogCostRequests,
-        ),
-        icon: LucideIcons.receipt,
       ),
     ];
     return Column(
@@ -742,11 +561,7 @@ class _StatisticsSettingsSectionState extends State<StatisticsSettingsSection> {
       children: [
         LayoutBuilder(
           builder: (context, constraints) {
-            final columns = constraints.maxWidth >= 700
-                ? 3
-                : constraints.maxWidth >= 430
-                ? 2
-                : 1;
+            final columns = constraints.maxWidth >= 560 ? 3 : 1;
             final cardWidth =
                 (constraints.maxWidth - (columns - 1) * 10) / columns;
             return Wrap(
@@ -764,107 +579,6 @@ class _StatisticsSettingsSectionState extends State<StatisticsSettingsSection> {
               ],
             );
           },
-        ),
-        const SizedBox(height: 12),
-        _StatisticsPanel(
-          palette: palette,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                l10n.statisticsCoverage,
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-              const SizedBox(height: 5),
-              Text(
-                l10n.statisticsCoverageText(
-                  summary.totalRequests,
-                  summary.anyUsageRequests,
-                ),
-                style: TextStyle(color: palette.secondaryText, fontSize: 12),
-              ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 10,
-                runSpacing: 8,
-                children: [
-                  _StatisticsCountPill(
-                    label: l10n.statisticsSuccessfulRequests,
-                    count: summary.successfulRequests,
-                    palette: palette,
-                  ),
-                  _StatisticsCountPill(
-                    label: l10n.statisticsFailedRequests,
-                    count: summary.failedRequests,
-                    palette: palette,
-                  ),
-                  _StatisticsCountPill(
-                    label: l10n.statisticsCancelledRequests,
-                    count: summary.cancelledRequests,
-                    palette: palette,
-                  ),
-                  _StatisticsCountPill(
-                    label: l10n.statisticsInterruptedRequests,
-                    count: summary.interruptedRequests,
-                    palette: palette,
-                  ),
-                  _StatisticsCountPill(
-                    label: l10n.statisticsPendingRequests,
-                    count: summary.pendingRequests,
-                    palette: palette,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 10,
-                runSpacing: 8,
-                children: [
-                  _StatisticsCountPill(
-                    label: l10n.statisticsInputCoverage,
-                    count: summary.inputUsageRequests,
-                    palette: palette,
-                  ),
-                  _StatisticsCountPill(
-                    label: l10n.statisticsOutputCoverage,
-                    count: summary.outputUsageRequests,
-                    palette: palette,
-                  ),
-                  _StatisticsCountPill(
-                    label: l10n.statisticsReasoningCoverage,
-                    count: summary.reasoningUsageRequests,
-                    palette: palette,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Text(
-                l10n.statisticsModelsDevPricingNote,
-                style: TextStyle(color: palette.secondaryText, fontSize: 12),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                _modelsDevPricingStatus(
-                  statistics.modelsDevPricing,
-                  l10n,
-                  locale,
-                ),
-                style: TextStyle(color: palette.secondaryText, fontSize: 12),
-              ),
-              if (summary.legacyOutputMessages > 0) ...[
-                const SizedBox(height: 8),
-                Text(
-                  '${l10n.statisticsLegacyOutput}: ${number.format(summary.legacyOutputMessages)}',
-                  style: TextStyle(color: palette.secondaryText, fontSize: 12),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  l10n.statisticsLegacyDataNote,
-                  style: TextStyle(color: palette.secondaryText, fontSize: 12),
-                ),
-              ],
-            ],
-          ),
         ),
       ],
     );
@@ -963,116 +677,9 @@ class _StatisticsSettingsSectionState extends State<StatisticsSettingsSection> {
                 labelFor: (key) => key,
               ),
             ),
-            SizedBox(
-              width: width,
-              child: _StatisticsBreakdownPanel(
-                title: l10n.statisticsReasoningLevels,
-                items: statistics.reasoning,
-                palette: palette,
-                emptyLabel: l10n.statisticsNoBreakdownData,
-                labelFor: (key) => _reasoningLabel(key, l10n),
-                compact: true,
-              ),
-            ),
-            SizedBox(
-              width: width,
-              child: _StatisticsBreakdownPanel(
-                title: l10n.statisticsOperations,
-                items: statistics.operations,
-                palette: palette,
-                emptyLabel: l10n.statisticsNoBreakdownData,
-                labelFor: (key) => _operationLabel(key, l10n),
-                compact: true,
-              ),
-            ),
-            SizedBox(
-              width: width,
-              child: _buildFastModePanel(statistics.fastMode, l10n, palette),
-            ),
-            SizedBox(
-              width: width,
-              child: _StatisticsBreakdownPanel(
-                title: l10n.statisticsServiceTiers,
-                items: statistics.serviceTiers,
-                palette: palette,
-                emptyLabel: l10n.statisticsNoBreakdownData,
-                labelFor: (key) => key,
-                compact: true,
-              ),
-            ),
           ],
         );
       },
-    );
-  }
-
-  Widget _buildFastModePanel(
-    List<UsageStatisticsFastMode> values,
-    AppLocalizations l10n,
-    OpenChatPalette palette,
-  ) {
-    final number = NumberFormat.decimalPattern(
-      Localizations.localeOf(context).toString(),
-    );
-    final locale = Localizations.localeOf(context).toString();
-    return _StatisticsPanel(
-      palette: palette,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            l10n.statisticsFastModeUsage,
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: 12),
-          if (values.isEmpty)
-            Text(
-              l10n.statisticsNoBreakdownData,
-              style: TextStyle(color: palette.secondaryText, fontSize: 12),
-            )
-          else
-            for (var index = 0; index < values.length; index++) ...[
-              if (index > 0) const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      values[index].fastRequested == true
-                          ? l10n.statisticsRequested
-                          : values[index].fastRequested == false
-                          ? l10n.statisticsNotRequested
-                          : l10n.statisticsNotReported,
-                      style: TextStyle(color: palette.text, fontSize: 13),
-                    ),
-                  ),
-                  Text(
-                    number.format(values[index].requests),
-                    style: TextStyle(
-                      color: palette.secondaryText,
-                      fontSize: 12,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 3),
-              Text(
-                <String>[
-                  '${l10n.statisticsInputTokens}: ${number.format(values[index].inputTokens)}',
-                  '${l10n.statisticsOutputTokens}: ${number.format(values[index].outputTokens)}',
-                  if (values[index].costReportedRequests > 0)
-                    '${l10n.statisticsProviderReportedCost}: ${_formatCostUsd(values[index].providerReportedCostUsd, locale)} · ${l10n.statisticsCostCoverage(values[index].costReportedRequests)}',
-                  if (values[index].modelsDevCatalogCostRequests > 0)
-                    '${l10n.statisticsModelsDevCatalogCost}: ${_formatCostUsd(values[index].modelsDevCatalogCostUsd, locale)} · ${l10n.statisticsModelsDevCatalogCostCoverage(values[index].modelsDevCatalogCostRequests)}',
-                ].join(' · '),
-                style: TextStyle(
-                  color: palette.secondaryText,
-                  fontSize: OpenChatTypography.metadata,
-                ),
-              ),
-            ],
-        ],
-      ),
     );
   }
 
@@ -1116,187 +723,6 @@ class _StatisticsSettingsSectionState extends State<StatisticsSettingsSection> {
                         statistics.conversations[index].conversationId,
                       ),
               ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildQuotaHistory(
-    List<UsageQuotaSnapshot> snapshots,
-    AppLocalizations l10n,
-    OpenChatPalette palette,
-  ) {
-    final locale = Localizations.localeOf(context).toString();
-    final dateFormat = DateFormat.yMMMd(locale).add_jm();
-    final number = NumberFormat.decimalPattern(locale);
-    final percent = NumberFormat.percentPattern(locale);
-    return _StatisticsPanel(
-      palette: palette,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            l10n.statisticsQuotaHistory,
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: 8),
-          if (snapshots.isEmpty)
-            Text(
-              l10n.statisticsNoQuotaHistory,
-              style: TextStyle(color: palette.secondaryText, fontSize: 13),
-            )
-          else
-            for (var index = 0; index < snapshots.length; index++) ...[
-              if (index > 0)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 10),
-                  child: Divider(height: 1, color: palette.border),
-                ),
-              _QuotaHistorySnapshotCard(
-                snapshot: snapshots[index],
-                dateLabel: dateFormat.format(
-                  DateTime.fromMillisecondsSinceEpoch(
-                    snapshots[index].fetchedAtUnixMs,
-                  ).toLocal(),
-                ),
-                l10n: l10n,
-                palette: palette,
-                numberFormat: number,
-                percentFormat: percent,
-              ),
-            ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRequestDetails(
-    UsageStatistics statistics,
-    AppLocalizations l10n,
-    OpenChatPalette palette, {
-    required bool showDetails,
-    required int detailsStart,
-    required int detailsEnd,
-  }) {
-    final locale = Localizations.localeOf(context).toString();
-    final dateFormat = DateFormat.yMMMd(locale).add_jm();
-    final number = NumberFormat.decimalPattern(locale);
-    final pageCount = statistics.requestDetailCount == 0
-        ? 0
-        : (statistics.requestDetailCount / _pageSize).ceil();
-    return _StatisticsPanel(
-      palette: palette,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final title = Text(
-                l10n.statisticsRequestDetails,
-                style: Theme.of(context).textTheme.titleSmall,
-              );
-              final rows = Text(
-                showDetails
-                    ? l10n.statisticsShowingRows(
-                        detailsStart + 1,
-                        detailsEnd,
-                        statistics.requestDetailCount,
-                      )
-                    : '0',
-                style: TextStyle(color: palette.secondaryText, fontSize: 12),
-              );
-              if (constraints.maxWidth < 450) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [title, const SizedBox(height: 4), rows],
-                );
-              }
-              return Row(
-                children: [
-                  Expanded(child: title),
-                  rows,
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 10),
-          Text(
-            l10n.statisticsLegacyDataNote,
-            style: TextStyle(color: palette.secondaryText, fontSize: 12),
-          ),
-          const SizedBox(height: 12),
-          if (!showDetails)
-            Text(
-              l10n.statisticsNoRequestData,
-              style: TextStyle(color: palette.secondaryText, fontSize: 13),
-            )
-          else if (statistics.requests.isEmpty)
-            const Center(
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: 20),
-                child: CircularProgressIndicator(),
-              ),
-            )
-          else ...[
-            for (
-              var index = 0;
-              index < statistics.requests.length;
-              index++
-            ) ...[
-              if (index > 0)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Divider(height: 1, color: palette.border),
-                ),
-              _UsageRequestDetail(
-                request: statistics.requests[index],
-                dateLabel: dateFormat.format(
-                  DateTime.fromMillisecondsSinceEpoch(
-                    statistics.requests[index].startedAtUnixMs,
-                  ).toLocal(),
-                ),
-                numberFormat: number,
-                l10n: l10n,
-                palette: palette,
-              ),
-            ],
-            if (pageCount > 1) ...[
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  IconButton(
-                    tooltip: MaterialLocalizations.of(context)
-                        .previousPageTooltip,
-                    onPressed: _pageIndex == 0 || _isExporting
-                        ? null
-                        : () {
-                            setState(() => _pageIndex--);
-                            unawaited(_load());
-                          },
-                    icon: const Icon(LucideIcons.chevronLeft, size: 18),
-                  ),
-                  Text(
-                    '${_pageIndex + 1} / $pageCount',
-                    style: TextStyle(
-                      color: palette.secondaryText,
-                      fontSize: 12,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: MaterialLocalizations.of(context).nextPageTooltip,
-                    onPressed: _pageIndex + 1 >= pageCount || _isExporting
-                        ? null
-                        : () {
-                            setState(() => _pageIndex++);
-                            unawaited(_load());
-                          },
-                    icon: const Icon(LucideIcons.chevronRight, size: 18),
-                  ),
-                ],
-              ),
-            ],
-          ],
         ],
       ),
     );
@@ -1378,13 +804,13 @@ class _StatisticsMetricData {
   const _StatisticsMetricData({
     required this.label,
     required this.value,
-    required this.detail,
+    this.detail,
     required this.icon,
   });
 
   final String label;
   final String value;
-  final String detail;
+  final String? detail;
   final IconData icon;
 }
 
@@ -1442,51 +868,19 @@ class _StatisticsMetricCard extends StatelessWidget {
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
-            const SizedBox(height: 4),
-            Text(
-              data.detail,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: palette.secondaryText,
-                fontSize: OpenChatTypography.metadata,
+            if (data.detail case final detail?) ...[
+              const SizedBox(height: 4),
+              Text(
+                detail,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: palette.secondaryText,
+                  fontSize: OpenChatTypography.metadata,
+                ),
               ),
-            ),
+            ],
           ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatisticsCountPill extends StatelessWidget {
-  const _StatisticsCountPill({
-    required this.label,
-    required this.count,
-    required this.palette,
-  });
-
-  final String label;
-  final int count;
-  final OpenChatPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    final number = NumberFormat.decimalPattern(
-      Localizations.localeOf(context).toString(),
-    );
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest
-            .withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(OpenChatRadii.control),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-      child: Text(
-        '$label: ${number.format(count)}',
-        style: TextStyle(
-          color: palette.text,
-          fontSize: OpenChatTypography.metadata,
         ),
       ),
     );
@@ -1528,50 +922,30 @@ class _UsageTrendChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final maxTokens = points.fold<int>(
-      0,
-      (current, point) => math.max(
-        current,
-        point.inputTokens.saturatingAdd(point.outputTokens),
-      ),
-    );
-    final chartColors = Theme.of(context).colorScheme;
+    final colors = Theme.of(context).colorScheme;
     final locale = Localizations.localeOf(context).toString();
-    final number = NumberFormat.decimalPattern(locale);
-    final labelStep = math.max(1, (points.length / 7).ceil());
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final itemExtent = math
-                .max(constraints.maxWidth / points.length, 22.0)
-                .toDouble();
-            return Scrollbar(
-              child: SizedBox(
-                height: 156,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemExtent: itemExtent,
-                  itemCount: points.length,
-                  itemBuilder: (context, index) => _TrendBar(
-                    point: points[index],
-                    maxTokens: maxTokens,
-                    showLabel:
-                        index % labelStep == 0 || index == points.length - 1,
-                    monthly: monthly,
-                    locale: locale,
-                    numberFormat: number,
-                    inputColor: palette.accent,
-                    outputColor: chartColors.tertiary,
-                    palette: palette,
-                  ),
-                ),
-              ),
-            );
-          },
+        SizedBox(
+          height: 190,
+          child: CustomPaint(
+            painter: _UsageTrendLinePainter(
+              points: points,
+              monthly: monthly,
+              locale: locale,
+              inputColor: palette.accent,
+              outputColor: colors.tertiary,
+              gridColor: palette.border,
+              labelColor: palette.secondaryText,
+              inputLabel: l10n.statisticsInputTokens,
+              outputLabel: l10n.statisticsOutputTokens,
+              requestLabel: l10n.statisticsRequests,
+            ),
+            child: const SizedBox.expand(),
+          ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 10),
         Wrap(
           spacing: 16,
           runSpacing: 8,
@@ -1581,7 +955,7 @@ class _UsageTrendChart extends StatelessWidget {
               label: l10n.statisticsInputTokens,
             ),
             _TrendLegend(
-              color: chartColors.tertiary,
+              color: colors.tertiary,
               label: l10n.statisticsOutputTokens,
             ),
           ],
@@ -1591,133 +965,204 @@ class _UsageTrendChart extends StatelessWidget {
   }
 }
 
-class _TrendBar extends StatelessWidget {
-  const _TrendBar({
-    required this.point,
-    required this.maxTokens,
-    required this.showLabel,
+class _UsageTrendLinePainter extends CustomPainter {
+  const _UsageTrendLinePainter({
+    required this.points,
     required this.monthly,
     required this.locale,
-    required this.numberFormat,
     required this.inputColor,
     required this.outputColor,
-    required this.palette,
+    required this.gridColor,
+    required this.labelColor,
+    required this.inputLabel,
+    required this.outputLabel,
+    required this.requestLabel,
   });
 
-  final UsageStatisticsTrend point;
-  final int maxTokens;
-  final bool showLabel;
+  final List<UsageStatisticsTrend> points;
   final bool monthly;
   final String locale;
-  final NumberFormat numberFormat;
   final Color inputColor;
   final Color outputColor;
-  final OpenChatPalette palette;
+  final Color gridColor;
+  final Color labelColor;
+  final String inputLabel;
+  final String outputLabel;
+  final String requestLabel;
 
-  @override
-  Widget build(BuildContext context) {
-    const barAreaHeight = 118.0;
-    final total = point.inputTokens.saturatingAdd(point.outputTokens);
-    final fraction = maxTokens == 0 ? 0.0 : total / maxTokens;
-    final inputHeight = total == 0
-        ? 0.0
-        : barAreaHeight * fraction * point.inputTokens / total;
-    final outputHeight = total == 0
-        ? 0.0
-        : barAreaHeight * fraction * point.outputTokens / total;
-    final labelDate = DateTime.tryParse(
-      monthly ? '${point.bucket}-01' : point.bucket,
-    );
-    final tickLabel = labelDate == null
-        ? point.bucket
-        : monthly
-        ? DateFormat.MMM(locale).format(labelDate)
-        : DateFormat.Md(locale).format(labelDate);
-    final catalogCost = point.modelsDevCatalogCostRequests == 0
-        ? null
-        : '${_localizedCatalogCostLabel(context)}: ${_formatCostUsd(point.modelsDevCatalogCostUsd, locale)}';
-    final tooltip = <String>[
-      point.bucket,
-      '${numberFormat.format(point.inputTokens)} ${_localizedInputLabel(context)}',
-      '${numberFormat.format(point.outputTokens)} ${_localizedOutputLabel(context)}',
-      '${numberFormat.format(point.requests)} ${_localizedRequestLabel(context)}',
-      ?catalogCost,
-    ].join('\n');
-    return Tooltip(
-      message: tooltip,
-      child: Semantics(
-        label: tooltip,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 1),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Flexible(
-                      child: Container(
-                        width: 7,
-                        height: inputHeight,
-                        decoration: BoxDecoration(
-                          color: inputColor,
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(2),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 1),
-                    Flexible(
-                      child: Container(
-                        width: 7,
-                        height: outputHeight,
-                        decoration: BoxDecoration(
-                          color: outputColor,
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(2),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 5),
-              SizedBox(
-                height: 18,
-                child: showLabel
-                    ? Text(
-                        tickLabel,
-                        maxLines: 1,
-                        overflow: TextOverflow.clip,
-                        style: TextStyle(
-                          color: palette.secondaryText,
-                          fontSize: OpenChatTypography.metadata,
-                        ),
-                      )
-                    : null,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  static const _left = 48.0;
+  static const _right = 8.0;
+  static const _top = 10.0;
+  static const _bottom = 30.0;
+
+  Rect _plotRect(Size size) => Rect.fromLTRB(
+    _left,
+    _top,
+    math.max(_left + 1, size.width - _right),
+    math.max(_top + 1, size.height - _bottom),
+  );
+
+  double _maxTokens() => points
+      .fold<int>(
+        0,
+        (maximum, point) =>
+            math.max(maximum, math.max(point.inputTokens, point.outputTokens)),
+      )
+      .toDouble();
+
+  double _xForIndex(int index, Rect plot) => points.length == 1
+      ? plot.center.dx
+      : plot.left + plot.width * index / (points.length - 1);
+
+  double _yForValue(int value, Rect plot, double maximum) =>
+      plot.bottom - plot.height * value / (maximum == 0 ? 1 : maximum);
+
+  String _dateLabel(String bucket) {
+    final date = DateTime.tryParse(monthly ? '$bucket-01' : bucket);
+    if (date == null) return bucket;
+    return monthly
+        ? DateFormat.MMM(locale).format(date)
+        : DateFormat.Md(locale).format(date);
   }
 
-  String _localizedInputLabel(BuildContext context) =>
-      context.openchatL10n.statisticsInputTokens;
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (points.isEmpty) return;
+    final plot = _plotRect(size);
+    final maximum = _maxTokens();
+    final number = NumberFormat.compact(locale: locale);
+    final gridPaint = Paint()
+      ..color = gridColor.withValues(alpha: 0.42)
+      ..strokeWidth = 1;
 
-  String _localizedOutputLabel(BuildContext context) =>
-      context.openchatL10n.statisticsOutputTokens;
+    for (var tick = 0; tick <= 4; tick++) {
+      final fraction = tick / 4;
+      final y = plot.bottom - plot.height * fraction;
+      canvas.drawLine(Offset(plot.left, y), Offset(plot.right, y), gridPaint);
+      final label = TextPainter(
+        text: TextSpan(
+          text: number.format(maximum * fraction),
+          style: TextStyle(color: labelColor, fontSize: 10),
+        ),
+        textDirection: ui.TextDirection.ltr,
+      )..layout(maxWidth: _left - 8);
+      label.paint(
+        canvas,
+        Offset(_left - 8 - label.width, y - label.height / 2),
+      );
+    }
 
-  String _localizedRequestLabel(BuildContext context) =>
-      context.openchatL10n.statisticsRequests;
+    _drawSeries(
+      canvas,
+      plot,
+      maximum,
+      inputColor,
+      (point) => point.inputTokens,
+    );
+    _drawSeries(
+      canvas,
+      plot,
+      maximum,
+      outputColor,
+      (point) => point.outputTokens,
+    );
 
-  String _localizedCatalogCostLabel(BuildContext context) =>
-      context.openchatL10n.statisticsModelsDevCatalogCost;
+    final step = math.max(1, (points.length / 6).ceil());
+    for (var index = 0; index < points.length; index++) {
+      if (index % step != 0 && index != points.length - 1) continue;
+      final label = TextPainter(
+        text: TextSpan(
+          text: _dateLabel(points[index].bucket),
+          style: TextStyle(color: labelColor, fontSize: 10),
+        ),
+        textDirection: ui.TextDirection.ltr,
+      )..layout();
+      final x = _xForIndex(index, plot);
+      final labelX = (x - label.width / 2)
+          .clamp(plot.left, math.max(plot.left, plot.right - label.width))
+          .toDouble();
+      label.paint(canvas, Offset(labelX, plot.bottom + 8));
+    }
+  }
+
+  void _drawSeries(
+    Canvas canvas,
+    Rect plot,
+    double maximum,
+    Color color,
+    int Function(UsageStatisticsTrend) valueFor,
+  ) {
+    final seriesPaint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
+    final markerPaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final path = Path();
+    for (var index = 0; index < points.length; index++) {
+      final point = Offset(
+        _xForIndex(index, plot),
+        _yForValue(valueFor(points[index]), plot, maximum),
+      );
+      if (index == 0) {
+        path.moveTo(point.dx, point.dy);
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+      canvas.drawCircle(point, 2.5, markerPaint);
+    }
+    if (points.length > 1) canvas.drawPath(path, seriesPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _UsageTrendLinePainter oldDelegate) =>
+      oldDelegate.points != points ||
+      oldDelegate.monthly != monthly ||
+      oldDelegate.locale != locale ||
+      oldDelegate.inputColor != inputColor ||
+      oldDelegate.outputColor != outputColor ||
+      oldDelegate.gridColor != gridColor ||
+      oldDelegate.labelColor != labelColor;
+
+  @override
+  SemanticsBuilderCallback get semanticsBuilder => (size) {
+    if (points.isEmpty) return const <CustomPainterSemantics>[];
+    final plot = _plotRect(size);
+    final number = NumberFormat.decimalPattern(locale);
+    final pointWidth = math.max(24.0, plot.width / points.length);
+    return [
+      for (var index = 0; index < points.length; index++)
+        CustomPainterSemantics(
+          rect: Rect.fromLTWH(
+            (_xForIndex(index, plot) - pointWidth / 2).clamp(
+              plot.left,
+              math.max(plot.left, plot.right - pointWidth),
+            ),
+            0,
+            pointWidth,
+            size.height,
+          ),
+          properties: SemanticsProperties(
+            textDirection: ui.TextDirection.ltr,
+            label:
+                '${_dateLabel(points[index].bucket)}, '
+                '${number.format(points[index].inputTokens)} $inputLabel, '
+                '${number.format(points[index].outputTokens)} $outputLabel, '
+                '${number.format(points[index].requests)} $requestLabel',
+          ),
+        ),
+    ];
+  };
+
+  @override
+  bool shouldRebuildSemantics(covariant _UsageTrendLinePainter oldDelegate) =>
+      shouldRepaint(oldDelegate) ||
+      oldDelegate.inputLabel != inputLabel ||
+      oldDelegate.outputLabel != outputLabel ||
+      oldDelegate.requestLabel != requestLabel;
 }
 
 class _TrendLegend extends StatelessWidget {
@@ -1760,7 +1205,6 @@ class _StatisticsBreakdownPanel extends StatelessWidget {
     required this.palette,
     required this.emptyLabel,
     required this.labelFor,
-    this.compact = false,
   });
 
   final String title;
@@ -1768,7 +1212,6 @@ class _StatisticsBreakdownPanel extends StatelessWidget {
   final OpenChatPalette palette;
   final String emptyLabel;
   final String Function(String key) labelFor;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -1797,7 +1240,6 @@ class _StatisticsBreakdownPanel extends StatelessWidget {
                 label: labelFor(items[index].key),
                 maxTokens: maxTokens,
                 palette: palette,
-                compact: compact,
               ),
             ],
         ],
@@ -1812,14 +1254,12 @@ class _StatisticsBreakdownRow extends StatelessWidget {
     required this.label,
     required this.maxTokens,
     required this.palette,
-    required this.compact,
   });
 
   final UsageStatisticsBreakdown item;
   final String label;
   final int maxTokens;
   final OpenChatPalette palette;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -1846,7 +1286,7 @@ class _StatisticsBreakdownRow extends StatelessWidget {
               Expanded(
                 child: Text(
                   label,
-                  maxLines: compact ? 1 : 2,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(color: palette.text, fontSize: 12),
                 ),
@@ -2001,535 +1441,12 @@ class _ConversationUsageRow extends StatelessWidget {
   }
 }
 
-class _QuotaHistorySnapshotCard extends StatelessWidget {
-  const _QuotaHistorySnapshotCard({
-    required this.snapshot,
-    required this.dateLabel,
-    required this.l10n,
-    required this.palette,
-    required this.numberFormat,
-    required this.percentFormat,
-  });
-
-  final UsageQuotaSnapshot snapshot;
-  final String dateLabel;
-  final AppLocalizations l10n;
-  final OpenChatPalette palette;
-  final NumberFormat numberFormat;
-  final NumberFormat percentFormat;
-
-  @override
-  Widget build(BuildContext context) {
-    final account = snapshot.connectionName?.trim();
-    final workspace = snapshot.workspaceName?.trim();
-    final resetCreditCount = snapshot.resetCreditCount;
-    final statusLabel = switch (snapshot.ordinaryUsageAllowed) {
-      true => l10n.statisticsQuotaAllowed,
-      false => l10n.statisticsQuotaBlocked,
-      null => l10n.statisticsQuotaUnknown,
-    };
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 4,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            Text(
-              dateLabel,
-              style: TextStyle(
-                color: palette.text,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            if (account != null && account.isNotEmpty)
-              Text(
-                account,
-                style: TextStyle(
-                  color: palette.secondaryText,
-                  fontSize: OpenChatTypography.metadata,
-                ),
-              ),
-            if (workspace != null && workspace.isNotEmpty)
-              Text(
-                workspace,
-                style: TextStyle(
-                  color: palette.secondaryText,
-                  fontSize: OpenChatTypography.metadata,
-                ),
-              ),
-            Text(
-              switch (snapshot.freshness) {
-                'current' => l10n.statisticsQuotaFreshnessCurrent,
-                'stale' => l10n.statisticsQuotaFreshnessStale,
-                _ => l10n.statisticsQuotaFreshnessUnknown,
-              },
-              style: TextStyle(
-                color: palette.secondaryText,
-                fontSize: OpenChatTypography.metadata,
-              ),
-            ),
-            Text(
-              statusLabel,
-              style: TextStyle(
-                color: palette.secondaryText,
-                fontSize: OpenChatTypography.metadata,
-              ),
-            ),
-            if (resetCreditCount != null)
-              Text(
-                l10n.resetCreditsAvailable(resetCreditCount),
-                style: TextStyle(
-                  color: palette.secondaryText,
-                  fontSize: OpenChatTypography.metadata,
-                ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        if (snapshot.buckets.isEmpty)
-          Text(
-            l10n.statisticsNotReported,
-            style: TextStyle(color: palette.secondaryText, fontSize: 12),
-          )
-        else
-          for (var index = 0; index < snapshot.buckets.length; index++) ...[
-            if (index > 0) const SizedBox(height: 8),
-            _QuotaHistoryBucket(
-              bucket: snapshot.buckets[index],
-              l10n: l10n,
-              palette: palette,
-              numberFormat: numberFormat,
-              percentFormat: percentFormat,
-            ),
-          ],
-      ],
-    );
-  }
-}
-
-class _QuotaHistoryBucket extends StatelessWidget {
-  const _QuotaHistoryBucket({
-    required this.bucket,
-    required this.l10n,
-    required this.palette,
-    required this.numberFormat,
-    required this.percentFormat,
-  });
-
-  final UsageQuotaBucket bucket;
-  final AppLocalizations l10n;
-  final OpenChatPalette palette;
-  final NumberFormat numberFormat;
-  final NumberFormat percentFormat;
-
-  @override
-  Widget build(BuildContext context) {
-    final percent = bucket.usedPercent;
-    final labelBucket = ChatGptUsageBucket(
-      limitId: bucket.limitId,
-      windowSeconds: bucket.windowSeconds,
-    );
-    final reset = bucket.resetAtUnixMs;
-    final resetLabel = reset == null
-        ? null
-        : DateFormat.yMMMd(Localizations.localeOf(context).toString())
-              .add_jm()
-              .format(DateTime.fromMillisecondsSinceEpoch(reset).toLocal());
-    final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                chatGptUsageBucketLabel(labelBucket, l10n),
-                style: TextStyle(color: palette.text, fontSize: 12),
-              ),
-            ),
-            Text(
-              percent == null
-                  ? l10n.statisticsNotReported
-                  : percentFormat.format((percent / 100).clamp(0.0, 1.0)),
-              style: TextStyle(
-                color: palette.secondaryText,
-                fontSize: OpenChatTypography.metadata,
-                fontFeatures: const [FontFeature.tabularFigures()],
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 4),
-        if (percent != null)
-          ClipRRect(
-            borderRadius: BorderRadius.circular(3),
-            child: LinearProgressIndicator(
-              value: (percent / 100).clamp(0.0, 1.0),
-              minHeight: 4,
-              backgroundColor: theme.colorScheme.surfaceContainerHighest,
-              color: palette.accent,
-            ),
-          ),
-        if (resetLabel != null) ...[
-          const SizedBox(height: 3),
-          Text(
-            '${l10n.statisticsResetAt}: $resetLabel',
-            style: TextStyle(
-              color: palette.secondaryText,
-              fontSize: OpenChatTypography.metadata,
-            ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _UsageRequestDetail extends StatelessWidget {
-  const _UsageRequestDetail({
-    required this.request,
-    required this.dateLabel,
-    required this.numberFormat,
-    required this.l10n,
-    required this.palette,
-  });
-
-  final UsageStatisticsRequest request;
-  final String dateLabel;
-  final NumberFormat numberFormat;
-  final AppLocalizations l10n;
-  final OpenChatPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    final providerId = request.providerId;
-    final reasoningEffort = request.reasoningEffort;
-    final fastRequested = request.fastRequested;
-    final serviceTier = request.serviceTier;
-    final provider = providerId == null
-        ? l10n.statisticsNotReported
-        : _providerLabel(providerId, l10n);
-    final model = request.modelId ?? l10n.statisticsNotReported;
-    final title = request.conversationTitle.trim().isEmpty
-        ? l10n.statisticsNotReported
-        : request.conversationTitle;
-    final status = _statusLabel(request, l10n);
-    final tokens = <String>[
-      '${l10n.statisticsInputTokens}: ${_count(request.inputTokens)}',
-      '${l10n.statisticsOutputTokens}: ${_count(request.outputTokens)}',
-      '${l10n.statisticsReasoningTokens}: ${_count(request.reasoningTokens)}',
-      '${l10n.statisticsCachedInputTokens}: ${_count(request.cachedInputTokens)}',
-      '${l10n.statisticsCacheWriteTokens}: ${_count(request.cacheWriteTokens)}',
-    ];
-    final metadata = <String>[
-      provider,
-      model,
-      _operationLabel(request.operation, l10n),
-      '${l10n.statisticsReasoningEffort}: ${_reasoningLabel(reasoningEffort ?? 'unspecified', l10n)}',
-      '${l10n.statisticsFastModeFilter}: ${switch (fastRequested) {
-        true => l10n.statisticsRequested,
-        false => l10n.statisticsNotRequested,
-        null => l10n.statisticsNotReported,
-      }}',
-      '${l10n.statisticsServiceTier}: ${serviceTier ?? l10n.statisticsNotReported}',
-      if (request.runId case final runId?) l10n.statisticsRunIdValue(runId),
-    ];
-    return Semantics(
-      container: true,
-      label:
-          '$title, $dateLabel, $provider, $model, $status, ${metadata.join(', ')}, ${tokens.join(', ')}',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Wrap(
-            spacing: 8,
-            runSpacing: 5,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: palette.text,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              _StatusLabel(
-                label: status,
-                status: request.status,
-                palette: palette,
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '$dateLabel · ${metadata.join(' · ')}',
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: palette.secondaryText,
-              fontSize: OpenChatTypography.metadata,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Wrap(
-            spacing: 10,
-            runSpacing: 4,
-            children: [
-              for (final token in tokens)
-                Text(
-                  token,
-                  style: TextStyle(
-                    color: palette.text,
-                    fontSize: OpenChatTypography.metadata,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
-              if (request.providerReportedCostUsd case final cost?)
-                Text(
-                  '${l10n.statisticsProviderReportedCost}: ${_formatCostUsd(cost, Localizations.localeOf(context).toString())}',
-                  style: TextStyle(
-                    color: palette.secondaryText,
-                    fontSize: OpenChatTypography.metadata,
-                  ),
-                ),
-              if (request.modelsDevCatalogCostUsd case final cost?)
-                Text(
-                  '${l10n.statisticsModelsDevCatalogCost}: ${_formatCostUsd(cost, Localizations.localeOf(context).toString())}',
-                  style: TextStyle(
-                    color: palette.secondaryText,
-                    fontSize: OpenChatTypography.metadata,
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 5),
-          _UsageRequestManifestView(
-            manifest: request.requestManifest,
-            l10n: l10n,
-            palette: palette,
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _count(int? value) =>
-      value == null ? l10n.statisticsNotReported : numberFormat.format(value);
-}
-
-class _UsageRequestManifestView extends StatelessWidget {
-  const _UsageRequestManifestView({
-    required this.manifest,
-    required this.l10n,
-    required this.palette,
-  });
-
-  final UsageRequestManifest? manifest;
-  final AppLocalizations l10n;
-  final OpenChatPalette palette;
-
-  @override
-  Widget build(BuildContext context) => ExpansionTile(
-    tilePadding: EdgeInsets.zero,
-    childrenPadding: const EdgeInsets.only(bottom: 6),
-    visualDensity: VisualDensity.compact,
-    title: Text(
-      l10n.statisticsRequestPayload,
-      style: TextStyle(color: palette.text, fontSize: 12),
-    ),
-    children: [
-      if (manifest case final requestManifest?
-          when requestManifest.available) ...[
-        _ManifestLine(
-          label: l10n.statisticsRequestMessageCount(
-            requestManifest.messageCount,
-          ),
-          palette: palette,
-        ),
-        if (requestManifest.messageRoles.isNotEmpty)
-          _ManifestLine(
-            label: l10n.statisticsRequestRoles(
-              requestManifest.messageRoles.entries
-                  .map((entry) => '${entry.key}: ${entry.value}')
-                  .join(', '),
-            ),
-            palette: palette,
-          ),
-        if (requestManifest.sourceMessageIds.isNotEmpty)
-          _ManifestLine(
-            label: l10n.statisticsRequestSourceMessages(
-              _manifestIds(requestManifest.sourceMessageIds),
-            ),
-            palette: palette,
-          ),
-        if (requestManifest.archivedMessageIds.isNotEmpty)
-          _ManifestLine(
-            label: l10n.statisticsRequestArchivedMessages(
-              _manifestIds(requestManifest.archivedMessageIds),
-            ),
-            palette: palette,
-          ),
-        if (requestManifest.summarizedThroughMessageId case final boundaryId?)
-          _ManifestLine(
-            label: l10n.statisticsRequestSummaryBoundary(boundaryId),
-            palette: palette,
-          ),
-        if (requestManifest.sourceAttachments.isNotEmpty)
-          _ManifestLine(
-            label: l10n.statisticsRequestSourceAttachments(
-              requestManifest.sourceAttachments
-                  .take(8)
-                  .map(
-                    (attachment) =>
-                        '${attachment.name} (${attachment.mimeType}; ${attachment.id})',
-                  )
-                  .join(', '),
-            ),
-            palette: palette,
-          ),
-        if (requestManifest.sourceDetailsTruncated)
-          _ManifestLine(
-            label: l10n.statisticsRequestSourcesTruncated,
-            palette: palette,
-          ),
-        _ManifestLine(
-          label: l10n.statisticsRequestImageCount(requestManifest.imageCount),
-          palette: palette,
-        ),
-        _ManifestLine(
-          label: l10n.statisticsRequestToolResultCount(
-            requestManifest.toolResultCount,
-          ),
-          palette: palette,
-        ),
-        _ManifestLine(
-          label: l10n.statisticsRequestInstructionBytes(
-            requestManifest.instructionBytes,
-          ),
-          palette: palette,
-        ),
-        _ManifestLine(
-          label: l10n.statisticsRequestTools(
-            requestManifest.toolDefinitions.isEmpty
-                ? l10n.statisticsNone
-                : requestManifest.toolDefinitions.join(', '),
-          ),
-          palette: palette,
-        ),
-        _ManifestLine(
-          label: l10n.statisticsRequestCacheControls(
-            requestManifest.cacheControls.isEmpty
-                ? l10n.statisticsNone
-                : requestManifest.cacheControls.join(', '),
-          ),
-          palette: palette,
-        ),
-      ] else
-        Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            l10n.statisticsRequestContextUnavailable,
-            style: TextStyle(
-              color: palette.secondaryText,
-              fontSize: OpenChatTypography.metadata,
-            ),
-          ),
-        ),
-    ],
-  );
-
-  String _manifestIds(List<String> ids) {
-    final visible = ids.take(12).join(', ');
-    final remaining = ids.length - 12;
-    return remaining > 0 ? '$visible, +$remaining' : visible;
-  }
-}
-
-class _ManifestLine extends StatelessWidget {
-  const _ManifestLine({required this.label, required this.palette});
-
-  final String label;
-  final OpenChatPalette palette;
-
-  @override
-  Widget build(BuildContext context) => Align(
-    alignment: Alignment.centerLeft,
-    child: Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: palette.secondaryText,
-          fontSize: OpenChatTypography.metadata,
-        ),
-      ),
-    ),
-  );
-}
-
-class _StatusLabel extends StatelessWidget {
-  const _StatusLabel({
-    required this.label,
-    required this.status,
-    required this.palette,
-  });
-
-  final String label;
-  final String status;
-  final OpenChatPalette palette;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = switch (status) {
-      'completed' => Theme.of(context).colorScheme.tertiary,
-      'failed' => Theme.of(context).colorScheme.error,
-      _ => palette.secondaryText,
-    };
-    return Container(
-      decoration: BoxDecoration(
-        border: Border.all(color: color.withValues(alpha: 0.55)),
-        borderRadius: BorderRadius.circular(5),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      child: Text(
-        label,
-        style: TextStyle(color: color, fontSize: OpenChatTypography.metadata),
-      ),
-    );
-  }
-}
-
 String _formatCostUsd(double amount, String locale) => NumberFormat.currency(
   locale: locale,
   name: 'USD',
   symbol: r'$ ',
   decimalDigits: amount.abs() < 0.01 ? 6 : 4,
 ).format(amount);
-
-String _modelsDevPricingStatus(
-  UsageStatisticsPricingCatalog pricing,
-  AppLocalizations l10n,
-  String locale,
-) {
-  final fetchedAt = pricing.fetchedAtUnixMs;
-  if (pricing.state == 'unavailable' || fetchedAt == null) {
-    return l10n.statisticsModelsDevPricingUnavailable;
-  }
-  final formattedDate = DateFormat.yMMMd(locale)
-      .add_jm()
-      .format(DateTime.fromMillisecondsSinceEpoch(fetchedAt).toLocal());
-  return switch (pricing.state) {
-    'current' => l10n.statisticsModelsDevPricingCurrent(formattedDate),
-    'stale' => l10n.statisticsModelsDevPricingStale(formattedDate),
-    _ => l10n.statisticsModelsDevPricingUnavailable,
-  };
-}
 
 String _providerLabel(String providerId, AppLocalizations l10n) =>
     switch (providerId) {
