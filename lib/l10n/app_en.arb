@@ -43,6 +43,8 @@
   "@outputSavedAt": { "placeholders": { "date": { "type": "String" } } },
   "collapseSidebars": "Collapse sidebars",
   "showSidebars": "Show sidebars",
+  "previousPage": "Previous page",
+  "nextPage": "Next page",
   "home": "Home",
   "extensions": "Extensions",
   "scheduled": "Scheduled",

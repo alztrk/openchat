@@ -149,6 +149,12 @@ class AppLocalizationsDe extends AppLocalizations {
   String get showSidebars => 'Seitenleisten anzeigen';
 
   @override
+  String get previousPage => 'Vorherige Seite';
+
+  @override
+  String get nextPage => 'Nächste Seite';
+
+  @override
   String get home => 'Startseite';
 
   @override

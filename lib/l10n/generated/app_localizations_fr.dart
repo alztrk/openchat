@@ -148,6 +148,12 @@ class AppLocalizationsFr extends AppLocalizations {
   String get showSidebars => 'Afficher les barres latérales';
 
   @override
+  String get previousPage => 'Page précédente';
+
+  @override
+  String get nextPage => 'Page suivante';
+
+  @override
   String get home => 'Accueil';
 
   @override

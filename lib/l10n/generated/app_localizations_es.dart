@@ -146,6 +146,12 @@ class AppLocalizationsEs extends AppLocalizations {
   String get showSidebars => 'Mostrar barras laterales';
 
   @override
+  String get previousPage => 'Página anterior';
+
+  @override
+  String get nextPage => 'Página siguiente';
+
+  @override
   String get home => 'Inicio';
 
   @override

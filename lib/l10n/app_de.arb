@@ -43,6 +43,8 @@
   "@outputSavedAt": { "placeholders": { "date": { "type": "String" } } },
   "collapseSidebars": "Seitenleisten einklappen",
   "showSidebars": "Seitenleisten anzeigen",
+  "previousPage": "Vorherige Seite",
+  "nextPage": "Nächste Seite",
   "home": "Startseite",
   "extensions": "Erweiterungen",
   "scheduled": "Geplant",

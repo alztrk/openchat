@@ -141,6 +141,12 @@ class AppLocalizationsTr extends AppLocalizations {
   String get showSidebars => 'Kenar çubuklarını göster';
 
   @override
+  String get previousPage => 'Önceki sayfa';
+
+  @override
+  String get nextPage => 'Sonraki sayfa';
+
+  @override
   String get home => 'Anasayfa';
 
   @override

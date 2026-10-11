@@ -43,6 +43,8 @@
   "@outputSavedAt": { "placeholders": { "date": { "type": "String" } } },
   "collapseSidebars": "Réduire les barres latérales",
   "showSidebars": "Afficher les barres latérales",
+  "previousPage": "Page précédente",
+  "nextPage": "Page suivante",
   "home": "Accueil",
   "extensions": "Extensions",
   "scheduled": "Planifiées",

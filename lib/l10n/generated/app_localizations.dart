@@ -344,6 +344,18 @@ abstract class AppLocalizations {
   /// **'Show sidebars'**
   String get showSidebars;
 
+  /// No description provided for @previousPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Previous page'**
+  String get previousPage;
+
+  /// No description provided for @nextPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Next page'**
+  String get nextPage;
+
   /// No description provided for @home.
   ///
   /// In en, this message translates to:

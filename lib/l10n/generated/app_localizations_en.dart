@@ -142,6 +142,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get showSidebars => 'Show sidebars';
 
   @override
+  String get previousPage => 'Previous page';
+
+  @override
+  String get nextPage => 'Next page';
+
+  @override
   String get home => 'Home';
 
   @override

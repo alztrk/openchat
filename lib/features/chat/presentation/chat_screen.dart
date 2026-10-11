@@ -75,6 +75,8 @@ enum _ProjectOptionsAction {
   worktrees,
 }
 
+enum _ChatSurface { chats, models, localModels, settings }
+
 class ChatScreen extends StatefulWidget {
   const ChatScreen({
     required this.themeMode,
@@ -141,9 +143,9 @@ class _ChatScreenState extends State<ChatScreen> {
   final _messageController = TextEditingController();
   final _messageScrollController = ScrollController();
   final List<ChatAttachment> _pendingAttachments = <ChatAttachment>[];
-  bool _settingsOpen = false;
-  bool _modelsPageOpen = false;
-  bool _localModelsPageOpen = false;
+  _ChatSurface _currentSurface = _ChatSurface.chats;
+  final List<_ChatSurface> _surfaceHistory = <_ChatSurface>[_ChatSurface.chats];
+  int _surfaceHistoryIndex = 0;
   bool _sidebarsCompact = false;
   Set<String> _collapsedSidebarSections = const <String>{};
   bool _isSending = false;
@@ -252,6 +254,12 @@ class _ChatScreenState extends State<ChatScreen> {
   String? _historyTargetMessageId;
   int _historyTargetRequestId = 0;
   HuggingFaceDownloadController? _modelDownloadController;
+
+  bool get _settingsOpen => _currentSurface == _ChatSurface.settings;
+  bool get _modelsPageOpen => _currentSurface == _ChatSurface.models;
+  bool get _localModelsPageOpen => _currentSurface == _ChatSurface.localModels;
+  bool get _canGoBack => _surfaceHistoryIndex > 0;
+  bool get _canGoForward => _surfaceHistoryIndex < _surfaceHistory.length - 1;
 
   @override
   void initState() {
@@ -408,9 +416,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ? null
           : conversationId;
       _historyTargetMessageId = historyMessageId;
-      _settingsOpen = false;
-      _modelsPageOpen = false;
-      _localModelsPageOpen = false;
+      _recordSurfaceNavigation(_ChatSurface.chats);
       _messageStream = widget.chatRepository?.watchMessages(conversationId);
       _selectedModelId = null;
       _selectedReasoningEffort = null;
@@ -1028,11 +1034,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (_selectedConversationId != target.conversationId) {
       _selectConversation(target.conversationId);
     } else {
-      setState(() {
-        _settingsOpen = false;
-        _modelsPageOpen = false;
-        _localModelsPageOpen = false;
-      });
+      _navigateTo(_ChatSurface.chats);
     }
     if (target.kind == ConversationNotificationKind.userQuestion) {
       unawaited(_focusQuestionNotification(target));
@@ -1069,11 +1071,7 @@ class _ChatScreenState extends State<ChatScreen> {
           loadPendingQuestions: !shouldLoadReplyState,
         );
       } else {
-        setState(() {
-          _settingsOpen = false;
-          _modelsPageOpen = false;
-          _localModelsPageOpen = false;
-        });
+        _navigateTo(_ChatSurface.chats);
       }
 
       if (target.replyInputTooLong) {
@@ -2641,19 +2639,13 @@ class _ChatScreenState extends State<ChatScreen> {
       _isUsingProjectDefaultModel = false;
       _isUpdatingConversationModel = false;
       _titleEditRequestId = null;
-      _settingsOpen = false;
-      _modelsPageOpen = false;
-      _localModelsPageOpen = false;
+      _recordSurfaceNavigation(_ChatSurface.chats);
     });
     unawaited(_loadProviderState());
   }
 
   void _openChatSurface() {
-    setState(() {
-      _settingsOpen = false;
-      _modelsPageOpen = false;
-      _localModelsPageOpen = false;
-    });
+    _navigateTo(_ChatSurface.chats);
   }
 
   void _requestPageHeadingFocus(FocusNode focusNode) {
@@ -2663,21 +2655,66 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _openSettingsPage() {
-    setState(() {
-      _settingsOpen = true;
-      _modelsPageOpen = false;
-      _localModelsPageOpen = false;
-    });
-    _requestPageHeadingFocus(_settingsHeadingFocusNode);
+    _navigateTo(_ChatSurface.settings);
   }
 
   void _openModelsPage() {
+    _navigateTo(_ChatSurface.models);
+  }
+
+  void _navigateTo(_ChatSurface destination) {
+    if (_currentSurface != destination) {
+      setState(() => _recordSurfaceNavigation(destination));
+    }
+    _focusSurfaceHeading(destination);
+  }
+
+  void _recordSurfaceNavigation(_ChatSurface destination) {
+    if (_currentSurface == destination) return;
+    if (_surfaceHistoryIndex < _surfaceHistory.length - 1) {
+      _surfaceHistory.removeRange(
+        _surfaceHistoryIndex + 1,
+        _surfaceHistory.length,
+      );
+    }
+    _surfaceHistory.add(destination);
+    if (_surfaceHistory.length > 50) {
+      _surfaceHistory.removeAt(0);
+    }
+    _surfaceHistoryIndex = _surfaceHistory.length - 1;
+    _currentSurface = destination;
+  }
+
+  void _goBack() => _moveInSurfaceHistory(-1);
+
+  void _goForward() => _moveInSurfaceHistory(1);
+
+  void _moveInSurfaceHistory(int offset) {
+    final destinationIndex = _surfaceHistoryIndex + offset;
+    if (destinationIndex < 0 || destinationIndex >= _surfaceHistory.length) {
+      return;
+    }
     setState(() {
-      _modelsPageOpen = true;
-      _settingsOpen = false;
-      _localModelsPageOpen = false;
+      _surfaceHistoryIndex = destinationIndex;
+      _currentSurface = _surfaceHistory[destinationIndex];
     });
-    _requestPageHeadingFocus(_modelsHeadingFocusNode);
+    _focusSurfaceHeading(_currentSurface);
+  }
+
+  void _focusSurfaceHeading(_ChatSurface surface) {
+    final headingFocusNode = switch (surface) {
+      _ChatSurface.chats => null,
+      _ChatSurface.models => _modelsHeadingFocusNode,
+      _ChatSurface.localModels => _localModelsHeadingFocusNode,
+      _ChatSurface.settings => _settingsHeadingFocusNode,
+    };
+    if (headingFocusNode != null) {
+      _requestPageHeadingFocus(headingFocusNode);
+    }
+  }
+
+  void _toggleSidebars() {
+    setState(() => _sidebarsCompact = !_sidebarsCompact);
   }
 
   void _startProjectConversation(String projectId) {
@@ -5379,6 +5416,9 @@ class _ChatScreenState extends State<ChatScreen> {
             final drawerWidth = constraints.maxWidth < sidebarWidth
                 ? constraints.maxWidth
                 : sidebarWidth;
+            final supportsWindowTitleBar = OpenChatWindowControls.isSupportedOn(
+              Theme.of(context).platform,
+            );
 
             return Scaffold(
               key: _scaffoldKey,
@@ -5413,7 +5453,14 @@ class _ChatScreenState extends State<ChatScreen> {
                 children: [
                   if (constraints.maxHeight >=
                       OpenChatSpacing.appTitleBarHeight)
-                    const OpenChatWindowTitleBar(),
+                    OpenChatWindowTitleBar(
+                      canGoBack: _canGoBack,
+                      canGoForward: _canGoForward,
+                      sidebarsCompact: _sidebarsCompact,
+                      onGoBack: _goBack,
+                      onGoForward: _goForward,
+                      onToggleSidebars: _toggleSidebars,
+                    ),
                   Expanded(
                     child: Stack(
                       children: [
@@ -5421,9 +5468,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             ChatNavigationRail(
-                              showBrand: !OpenChatWindowControls.isSupportedOn(
-                                Theme.of(context).platform,
-                              ),
+                              showBrand: !supportsWindowTitleBar,
                               settingsSelected: _settingsOpen,
                               modelsSelected:
                                   _modelsPageOpen || _localModelsPageOpen,
@@ -5432,9 +5477,9 @@ class _ChatScreenState extends State<ChatScreen> {
                               onOpenModels: _openModelsPage,
                               onToggleTheme: _handleThemeToggle,
                               sidebarsCompact: _sidebarsCompact,
-                              onToggleSidebars: () => setState(
-                                () => _sidebarsCompact = !_sidebarsCompact,
-                              ),
+                              onToggleSidebars: supportsWindowTitleBar
+                                  ? null
+                                  : _toggleSidebars,
                             ),
                             if (_settingsOpen)
                               Expanded(
@@ -5501,13 +5546,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                         _modelDownloadController,
                                     settingsPreferences: _settingsPreferences,
                                     onOpenLocalModels: () {
-                                      setState(() {
-                                        _modelsPageOpen = false;
-                                        _localModelsPageOpen = true;
-                                      });
-                                      _requestPageHeadingFocus(
-                                        _localModelsHeadingFocusNode,
-                                      );
+                                      _navigateTo(_ChatSurface.localModels);
                                     },
                                   ),
                                 ),
@@ -5521,13 +5560,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                         _localModelsHeadingFocusNode,
                                     serviceClient: widget.serviceClient,
                                     onOpenModelCatalog: () {
-                                      setState(() {
-                                        _modelsPageOpen = true;
-                                        _localModelsPageOpen = false;
-                                      });
-                                      _requestPageHeadingFocus(
-                                        _modelsHeadingFocusNode,
-                                      );
+                                      _navigateTo(_ChatSurface.models);
                                     },
                                   ),
                                 ),

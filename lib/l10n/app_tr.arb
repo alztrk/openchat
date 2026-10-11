@@ -43,6 +43,8 @@
   "@outputSavedAt": { "placeholders": { "date": { "type": "String" } } },
   "collapseSidebars": "Kenar çubuklarını daralt",
   "showSidebars": "Kenar çubuklarını göster",
+  "previousPage": "Önceki sayfa",
+  "nextPage": "Sonraki sayfa",
   "home": "Anasayfa",
   "extensions": "Eklentiler",
   "scheduled": "Zamanlananlar",
