@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openchat/app/openchat_theme.dart';
@@ -406,5 +407,88 @@ void main() {
 
     expect(find.text('Free Model 1'), findsOneWidget);
     expect(find.text('Free Model 2'), findsNothing);
+  });
+
+  testWidgets('hovering a model opens its provider and limit details', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    const model = ChatGptModel(
+      id: 'free-model',
+      displayName: 'Free model',
+      description: 'A model description.',
+      contextWindow: 32768,
+      isAvailable: true,
+      reasoningLevels: [],
+      supportsImages: true,
+      supportsTools: true,
+      providerId: 'opencode',
+      groupId: 'free',
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('tr'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.light,
+        builder: openChatShadTestBuilder,
+        home: Scaffold(
+          body: Center(
+            child: ModelSelector(
+              label: 'Model seç',
+              palette: OpenChatPalette.light,
+              compact: false,
+              models: const <ChatGptModel>[model],
+              favoriteModels: const [],
+              selectedModelId: null,
+              selectedModelRouteKey: null,
+              providerId: 'opencode',
+              isChatGptConnected: false,
+              availableProviderIds: const {'opencode'},
+              onProviderSelected: (_) {},
+              isLoadingModels: false,
+              emptyModelsLabel: 'Model yok',
+              onSelected: (_) {},
+              onFavoriteChanged: (_, _, _, _, _) {},
+              onFavoriteSelected: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Model seç'));
+    await tester.pumpAndSettle();
+    final modelRow = find.text('Free model');
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    addTearDown(mouse.removePointer);
+    await mouse.addPointer(location: Offset.zero);
+    await mouse.moveTo(tester.getCenter(modelRow));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+
+    final l10n = AppLocalizations.of(
+      tester.element(find.byType(ModelSelector)),
+    )!;
+    expect(find.text(l10n.modelDetailsProvider), findsOneWidget);
+    expect(find.text(l10n.openCodeProvider), findsAtLeastNWidgets(2));
+    expect(find.text(l10n.modelDetailsContext), findsOneWidget);
+    expect(find.text('A model description.'), findsAtLeastNWidgets(2));
+    final menuRect = tester.getRect(
+      find.byKey(const ValueKey<String>('model-selector-menu')),
+    );
+    final detailsRect = tester.getRect(
+      find.byKey(const ValueKey<String>('model-details-panel')),
+    );
+    expect(
+      detailsRect.right <= menuRect.left || detailsRect.left >= menuRect.right,
+      isTrue,
+    );
+    expect(detailsRect.center.dy, closeTo(menuRect.center.dy, 20));
+    expect(tester.takeException(), isNull);
   });
 }

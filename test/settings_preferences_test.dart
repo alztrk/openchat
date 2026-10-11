@@ -14,6 +14,7 @@ import 'package:openchat/features/chat/domain/history_search_result.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/features/settings/presentation/settings_screen.dart';
+import 'package:openchat/platform/windows/openchat_service_client.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
@@ -188,6 +189,29 @@ void main() {
     await writer.writeHiddenModelKeys({});
     expect(await reopenedReader.readHiddenModelKeys(), isEmpty);
   });
+
+  test(
+    'per-route model context limits persist and can reset to automatic',
+    () async {
+      final writer = SettingsPreferences(SharedPreferencesAsync());
+      const routeKey = 'chatgpt:account-1:workspace-1:gpt-6-sol';
+
+      expect(await writer.readModelContextLimits(), isEmpty);
+      await writer.writeModelContextLimit(routeKey, 240000);
+      expect(
+        await SettingsPreferences(SharedPreferencesAsync())
+            .readModelContextLimits(),
+        <String, int>{routeKey: 240000},
+      );
+
+      await writer.writeModelContextLimit(routeKey, null);
+      expect(await writer.readModelContextLimits(), isEmpty);
+      await expectLater(
+        writer.writeModelContextLimit(routeKey, 1024),
+        throwsArgumentError,
+      );
+    },
+  );
 
   test(
     'project model defaults persist independently and can be cleared',
@@ -636,6 +660,42 @@ void main() {
     expect(await preferences.readSharedInstructions(), 'Keep answers concise.');
   });
 
+  testWidgets('restoring default instructions removes saved shared text', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final preferences = SettingsPreferences(SharedPreferencesAsync());
+    await preferences.writeSharedInstructions('Use a custom style.');
+
+    await tester.pumpWidget(
+      _SettingsTestHost(
+        preferences: preferences,
+        serviceClient: _DefaultInstructionsServiceClient(),
+      ),
+    );
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.text('Ortak talimatlar'));
+    await tester.pump(const Duration(seconds: 1));
+    await tester.tap(find.text('Varsayılanları geri yükle'));
+    await tester.pump(const Duration(seconds: 1));
+
+    final instructionsField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField &&
+          widget.decoration?.hintText ==
+              'Yanıtların nasıl verilmesini istediğini yaz...',
+    );
+    expect(
+      tester.widget<TextField>(instructionsField).controller?.text,
+      'Default assistant guidance.',
+    );
+    expect(await preferences.readSharedInstructions(), isEmpty);
+    await tester.pump(const Duration(seconds: 5));
+  });
+
   testWidgets('conversation width and text size reach rendered messages', (
     tester,
   ) async {
@@ -816,9 +876,10 @@ void main() {
 }
 
 class _SettingsTestHost extends StatefulWidget {
-  const _SettingsTestHost({required this.preferences});
+  const _SettingsTestHost({required this.preferences, this.serviceClient});
 
   final SettingsPreferences preferences;
+  final OpenChatServiceClient? serviceClient;
 
   @override
   State<_SettingsTestHost> createState() => _SettingsTestHostState();
@@ -886,6 +947,7 @@ class _SettingsTestHostState extends State<_SettingsTestHost> {
                 historyStorageStatus: HistoryStorageStatus.available,
                 hasConversationHistory: false,
                 settingsPreferences: widget.preferences,
+                serviceClient: widget.serviceClient,
                 conversationWidth: _width,
                 conversationTextSize: _textSize,
                 appFont: _appFont,
@@ -919,4 +981,18 @@ class _SettingsTestHostState extends State<_SettingsTestHost> {
   ThemeData _withAppFont(ThemeData theme) => theme.copyWith(
     textTheme: theme.textTheme.apply(fontFamily: _appFont.familyName),
   );
+}
+
+class _DefaultInstructionsServiceClient extends OpenChatServiceClient {
+  @override
+  Future<Map<String, Object?>> call(
+    String method, {
+    Map<String, Object?> params = const <String, Object?>{},
+    Duration timeout = const Duration(seconds: 15),
+  }) async {
+    if (method == 'instructions.defaults.get') {
+      return {'instructions': 'Default assistant guidance.'};
+    }
+    return super.call(method, params: params, timeout: timeout);
+  }
 }

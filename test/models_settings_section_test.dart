@@ -112,6 +112,18 @@ void main() {
       expect(find.text('Space Bunny Free'), findsOneWidget);
       expect(find.text('200k context'), findsOneWidget);
 
+      await tester.tap(find.text('Otomatik').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Modelin en yüksek sınırı: 200K'), findsOneWidget);
+      await tester.enterText(find.byType(TextFormField), '150000');
+      await tester.tap(find.text('Kaydet'));
+      await tester.pumpAndSettle();
+      expect(find.text('Sınır: 150K'), findsOneWidget);
+      expect(
+        (await preferences.readModelContextLimits())['opencode:::big-pickle'],
+        150000,
+      );
+
       // Set Big Pickle as default
       final setDefaultButtons = find.text('Varsayılan Yap');
       expect(setDefaultButtons, findsNWidgets(2));

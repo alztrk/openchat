@@ -202,6 +202,100 @@ pub(super) async fn load(
     })
 }
 
+pub(super) async fn model_details(
+    storage: &AppStorage,
+    provider_id: &str,
+    model_id: &str,
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<Value, ServiceError> {
+    let catalog = load(storage, cancellation).await?;
+    let cached = load_cached_catalog(storage)?;
+    let model = cached
+        .and_then(|(_, json)| serde_json::from_str::<Value>(&json).ok())
+        .and_then(|catalog| model_from_catalog(&catalog, provider_id, model_id));
+
+    Ok(serde_json::json!({
+        "state": catalog.state,
+        "fetchedAtUnixMs": catalog.fetched_at_unix_ms,
+        "model": model,
+    }))
+}
+
+fn model_from_catalog(catalog: &Value, provider_id: &str, model_id: &str) -> Option<Value> {
+    let catalog_provider_id = match provider_id {
+        "chatgpt" | "chatgpt_api" => "openai",
+        "gemini" => "google",
+        provider => provider,
+    };
+    let provider = catalog.get(catalog_provider_id)?;
+    let model = provider.get("models")?.get(model_id)?;
+    let context_window = positive_limit(model, "context");
+    let maximum_output = positive_limit(model, "output");
+    let input_modalities = string_list(
+        model
+            .get("modalities")
+            .and_then(|modalities| modalities.get("input")),
+    );
+    let output_modalities = string_list(
+        model
+            .get("modalities")
+            .and_then(|modalities| modalities.get("output")),
+    );
+    let cost = model.get("cost").filter(|value| value.is_object());
+    let pricing = cost.and_then(|cost| {
+        let tiers = parse_model_tiers(cost)?;
+        let base_rates = tiers.first().map(|(_, rates)| *rates)?;
+        Some(serde_json::json!({
+            "input": base_rates.input,
+            "output": base_rates.output,
+            "reasoning": base_rates.reasoning,
+            "cacheRead": base_rates.cache_read,
+            "cacheWrite": base_rates.cache_write,
+            "tiers": tiers.into_iter().skip(1).map(|(context, rates)| {
+                serde_json::json!({
+                    "context": context,
+                    "input": rates.input,
+                    "output": rates.output,
+                    "reasoning": rates.reasoning,
+                    "cacheRead": rates.cache_read,
+                    "cacheWrite": rates.cache_write,
+                })
+            }).collect::<Vec<_>>(),
+        }))
+    });
+
+    Some(serde_json::json!({
+        "providerId": catalog_provider_id,
+        "providerName": provider.get("name").and_then(Value::as_str),
+        "modelId": model_id,
+        "modelName": model.get("name").and_then(Value::as_str),
+        "contextWindow": context_window,
+        "maximumOutput": maximum_output,
+        "inputModalities": input_modalities,
+        "outputModalities": output_modalities,
+        "supportsTools": model.get("tool_call").and_then(Value::as_bool),
+        "pricing": pricing,
+    }))
+}
+
+fn positive_limit(model: &Value, field: &str) -> Option<i64> {
+    model
+        .get("limit")?
+        .get(field)?
+        .as_i64()
+        .filter(|value| *value > 0)
+}
+
+fn string_list(value: Option<&Value>) -> Vec<&str> {
+    value
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .collect()
+}
+
 fn load_cached_catalog(storage: &AppStorage) -> Result<Option<(i64, String)>, ServiceError> {
     storage
         .connect()
@@ -361,4 +455,39 @@ fn storage_error() -> ServiceError {
         "Local usage statistics could not be loaded.",
         true,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::model_from_catalog;
+    use serde_json::json;
+
+    #[test]
+    fn model_details_match_provider_and_model_ids_exactly() {
+        let catalog = json!({
+            "openai": {
+                "name": "OpenAI",
+                "models": {
+                    "gpt-example": {
+                        "name": "GPT Example",
+                        "limit": {"context": 128000, "output": 16000},
+                        "modalities": {"input": ["text", "image"], "output": ["text"]},
+                        "tool_call": true,
+                        "cost": {"input": 2.5, "output": 10.0, "reasoning": 12.0}
+                    }
+                }
+            }
+        });
+
+        let details = model_from_catalog(&catalog, "chatgpt_api", "gpt-example")
+            .expect("exact model should be returned");
+        assert_eq!(details["providerName"], "OpenAI");
+        assert_eq!(details["contextWindow"], 128000);
+        assert_eq!(details["maximumOutput"], 16000);
+        assert_eq!(details["pricing"]["input"], 2.5);
+        assert_eq!(details["pricing"]["output"], 10.0);
+        assert_eq!(details["pricing"]["reasoning"], 12.0);
+        assert!(details["supportsTools"].as_bool().unwrap_or(false));
+        assert!(model_from_catalog(&catalog, "chatgpt_api", "other").is_none());
+    }
 }

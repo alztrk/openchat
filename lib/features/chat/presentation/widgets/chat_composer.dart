@@ -6,6 +6,7 @@ import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
+import 'package:openchat/features/chat/data/model_pricing_repository.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/domain/chat_attachment.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
@@ -75,6 +76,7 @@ class ChatComposer extends StatelessWidget {
     this.contextConnectionId,
     this.contextWorkspaceId,
     this.conversationMemoryRepository,
+    this.modelPricingRepository,
     this.settingsPreferences,
     this.pendingAttachments = const <ChatAttachment>[],
     this.onAddAttachments,
@@ -130,6 +132,7 @@ class ChatComposer extends StatelessWidget {
   final String? contextConnectionId;
   final String? contextWorkspaceId;
   final ConversationMemoryRepository? conversationMemoryRepository;
+  final ModelPricingRepository? modelPricingRepository;
   final SettingsPreferences? settingsPreferences;
   final List<ChatAttachment> pendingAttachments;
   final VoidCallback? onAddAttachments;
@@ -243,6 +246,7 @@ class ChatComposer extends StatelessWidget {
                         contextWorkspaceId: contextWorkspaceId,
                         conversationMemoryRepository:
                             conversationMemoryRepository,
+                        modelPricingRepository: modelPricingRepository,
                         settingsPreferences: settingsPreferences,
                         pendingAttachments: pendingAttachments,
                         onAddAttachments: onAddAttachments,
@@ -414,30 +418,32 @@ class _GoalSlashInputState extends State<_GoalSlashInput> {
             ),
             const SizedBox(height: 10),
           ],
-          Semantics(
-            label: l10n.messageHint,
-            child: shad.ShadInput(
-              controller: widget.controller,
-              minLines: 1,
-              maxLines: 3,
-              textCapitalization: TextCapitalization.sentences,
-              textInputAction: TextInputAction.newline,
-              cursorColor: widget.focusRing,
-              decoration: shad.ShadDecoration.none,
-              padding: EdgeInsets.zero,
-              inputPadding: EdgeInsets.zero,
-              placeholder: Text(l10n.messageHint),
-              placeholderStyle: TextStyle(
-                color: widget.palette.secondaryText,
-                fontSize: 15,
-                fontWeight: FontWeight.w400,
-                height: 20 / 15,
-              ),
-              style: TextStyle(
-                color: widget.palette.text,
-                fontSize: 15,
-                fontWeight: FontWeight.w400,
-                height: 20 / 15,
+          MergeSemantics(
+            child: Semantics(
+              label: l10n.messageHint,
+              child: shad.ShadInput(
+                controller: widget.controller,
+                minLines: 1,
+                maxLines: 3,
+                textCapitalization: TextCapitalization.sentences,
+                textInputAction: TextInputAction.newline,
+                cursorColor: widget.focusRing,
+                decoration: shad.ShadDecoration.none,
+                padding: EdgeInsets.zero,
+                inputPadding: EdgeInsets.zero,
+                placeholder: ExcludeSemantics(child: Text(l10n.messageHint)),
+                placeholderStyle: TextStyle(
+                  color: widget.palette.secondaryText,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w400,
+                  height: 20 / 15,
+                ),
+                style: TextStyle(
+                  color: widget.palette.text,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w400,
+                  height: 20 / 15,
+                ),
               ),
             ),
           ),
@@ -489,6 +495,7 @@ class _ComposerActions extends StatelessWidget {
     required this.contextConnectionId,
     required this.contextWorkspaceId,
     required this.conversationMemoryRepository,
+    required this.modelPricingRepository,
     required this.settingsPreferences,
     required this.pendingAttachments,
     required this.onAddAttachments,
@@ -545,6 +552,7 @@ class _ComposerActions extends StatelessWidget {
   final String? contextConnectionId;
   final String? contextWorkspaceId;
   final ConversationMemoryRepository? conversationMemoryRepository;
+  final ModelPricingRepository? modelPricingRepository;
   final SettingsPreferences? settingsPreferences;
   final List<ChatAttachment> pendingAttachments;
   final VoidCallback? onAddAttachments;
@@ -569,6 +577,7 @@ class _ComposerActions extends StatelessWidget {
       borderless: true,
       width: narrow ? 144 : 152,
       models: models,
+      pricingRepository: modelPricingRepository,
       favoriteModels: favoriteModels,
       selectedModelId: selectedModelId,
       selectedModelRouteKey: selectedModelRouteKey,
@@ -654,22 +663,6 @@ class _ComposerActions extends StatelessWidget {
         ),
       ),
     );
-    final contextIndicator = ContextUsageIndicator(
-      controller: controller,
-      messages: messages,
-      providerId: contextProviderId,
-      modelId: contextModelId,
-      supportsTools: contextSupportsTools,
-      contextWindow: contextWindow,
-      repository: conversationMemoryRepository,
-      conversationId: conversationId,
-      isSending: isSending,
-      connectionId: contextConnectionId,
-      workspaceId: contextWorkspaceId,
-      settingsPreferences: settingsPreferences,
-      toolPermissionMode: toolPermissionMode,
-      pendingAttachments: pendingAttachments,
-    );
     final sendButton = ValueListenableBuilder<TextEditingValue>(
       valueListenable: controller,
       builder: (context, value, _) {
@@ -730,10 +723,25 @@ class _ComposerActions extends StatelessWidget {
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        attachmentButton,
         modelSelector,
         toolPermissionSelector,
-        contextIndicator,
+        if (selectedModelId != null)
+          ContextUsageIndicator(
+            controller: controller,
+            messages: messages,
+            providerId: contextProviderId,
+            modelId: contextModelId,
+            supportsTools: contextSupportsTools,
+            contextWindow: contextWindow,
+            repository: conversationMemoryRepository,
+            conversationId: conversationId,
+            isSending: isSending,
+            connectionId: contextConnectionId,
+            workspaceId: contextWorkspaceId,
+            settingsPreferences: settingsPreferences,
+            toolPermissionMode: toolPermissionMode,
+            pendingAttachments: pendingAttachments,
+          ),
       ],
     );
 
@@ -742,6 +750,8 @@ class _ComposerActions extends StatelessWidget {
       children: [
         Expanded(child: selectors),
         const SizedBox(width: 8),
+        attachmentButton,
+        const SizedBox(width: 4),
         sendButton,
       ],
     );

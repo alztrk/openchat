@@ -1357,6 +1357,7 @@ mod tests {
             context_window: None,
             input_token_limit: None,
             max_output_tokens: None,
+            context_limit_override: None,
             supports_images: false,
             supports_tool_calls: None,
             connection_id: None,

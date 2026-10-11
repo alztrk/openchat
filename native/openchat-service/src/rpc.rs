@@ -500,6 +500,12 @@ pub(crate) async fn dispatch(
             let query = statistics_query(&request.params)?;
             usage_statistics::get_statistics(storage, &query, &mut cancellation).await
         }
+        "models.pricing.get" => {
+            let provider_id = required_string(&request.params, "providerId")?;
+            let model_id = required_string(&request.params, "modelId")?;
+            usage_statistics::get_model_details(storage, provider_id, model_id, &mut cancellation)
+                .await
+        }
         "chatgpt.reset_credits.consume" => {
             let connection_id = required_string(&request.params, "connectionId")?;
             let workspace_id = required_string(&request.params, "workspaceId")?;
@@ -1063,6 +1069,15 @@ pub(crate) async fn dispatch(
             let api_key_connection_id = optional_string(&request.params, "apiKeyConnectionId")?;
             let requested_reasoning_effort = optional_string(&request.params, "reasoningEffort")?;
             let requested_fast_mode = optional_bool(&request.params, "fastMode")?.unwrap_or(false);
+            let context_limit_override = match request.params.get("contextLimit") {
+                None | Some(Value::Null) => None,
+                Some(Value::Number(value)) => value
+                    .as_i64()
+                    .filter(|limit| (2048..=2_000_000).contains(limit))
+                    .ok_or_else(invalid_request_params)
+                    .map(Some)?,
+                _ => return Err(invalid_request_params()),
+            };
             let goal_requested = optional_bool(&request.params, "goal")?.unwrap_or(false);
             let requested_goal_objective = if goal_requested {
                 Some(goals::validate_objective(
@@ -1510,6 +1525,7 @@ pub(crate) async fn dispatch(
                 user_question_broker: &user_question_broker,
                 cancellation: &mut cancellation,
                 events,
+                context_limit_override,
             };
             let result = match provider_id.as_deref() {
                 Some(

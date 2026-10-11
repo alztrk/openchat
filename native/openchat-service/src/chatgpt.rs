@@ -122,7 +122,7 @@ impl ChatGptService {
         )
         .map_err(database_error)?
         .ok_or_else(connection_unavailable)?;
-        let model = chatgpt_store::selected_model(
+        let mut model = chatgpt_store::selected_model(
             &self.storage,
             &route.connection_id,
             &route.workspace_id,
@@ -137,6 +137,12 @@ impl ChatGptService {
                 false,
             )
         })?;
+        if let Some(requested_limit) = context.context_limit_override {
+            let effective_limit = model
+                .context_window
+                .map_or(requested_limit, |maximum| requested_limit.min(maximum));
+            model.context_window = Some(effective_limit);
+        }
         if fast_mode && !model.supports_fast_mode {
             return Err(ServiceError::new(
                 "fast_mode_unsupported",

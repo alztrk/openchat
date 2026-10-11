@@ -62,12 +62,15 @@ class _ContextUsageIndicatorState extends State<ContextUsageIndicator> {
   bool _instructionsFailed = false;
   bool _configurationLoading = false;
   bool _configurationFailed = false;
+  int? _modelContextLimit;
+  int _contextLimitGeneration = 0;
 
   @override
   void initState() {
     super.initState();
     _loadMemoryState();
     _loadSharedInstructions();
+    _loadModelContextLimit();
   }
 
   @override
@@ -86,6 +89,8 @@ class _ContextUsageIndicatorState extends State<ContextUsageIndicator> {
         oldWidget.conversationId != widget.conversationId ||
         oldWidget.providerId != widget.providerId ||
         oldWidget.modelId != widget.modelId ||
+        oldWidget.connectionId != widget.connectionId ||
+        oldWidget.workspaceId != widget.workspaceId ||
         oldWidget.supportsTools != widget.supportsTools ||
         oldWidget.toolPermissionMode != widget.toolPermissionMode;
     if (oldWidget.settingsPreferences != widget.settingsPreferences) {
@@ -96,6 +101,47 @@ class _ContextUsageIndicatorState extends State<ContextUsageIndicator> {
       _usageConfiguration = null;
       _configurationFailed = false;
       _loadUsageConfiguration(_sharedInstructions);
+    }
+    if (usageRouteChanged ||
+        oldWidget.settingsPreferences != widget.settingsPreferences ||
+        oldWidget.isSending != widget.isSending) {
+      _loadModelContextLimit();
+    }
+  }
+
+  Future<void> _loadModelContextLimit() async {
+    final preferences = widget.settingsPreferences;
+    final providerId = widget.providerId;
+    final modelId = widget.modelId;
+    final generation = ++_contextLimitGeneration;
+    if (mounted) setState(() => _modelContextLimit = null);
+    if (preferences == null || providerId == null || modelId == null) {
+      if (mounted) setState(() => _modelContextLimit = null);
+      return;
+    }
+    final connectionId = widget.connectionId;
+    final workspaceId = widget.workspaceId;
+    final routeKey =
+        '$providerId:${providerId == 'chatgpt_api' || const {'gemini', 'groq', 'cerebras', 'openrouter', 'mistral'}.contains(providerId)
+            ? connectionId ?? providerId
+            : providerId == 'chatgpt'
+            ? connectionId ?? ''
+            : ''}:${providerId == 'chatgpt' ? workspaceId ?? '' : ''}:$modelId';
+    try {
+      final limits = await preferences.readModelContextLimits();
+      if (!mounted || generation != _contextLimitGeneration) return;
+      setState(() => _modelContextLimit = limits[routeKey]);
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'context_usage',
+          context: ErrorDescription('while loading the model context limit'),
+        ),
+      );
+      if (!mounted || generation != _contextLimitGeneration) return;
+      setState(() => _modelContextLimit = null);
     }
   }
 
@@ -293,7 +339,14 @@ class _ContextUsageIndicatorState extends State<ContextUsageIndicator> {
   Widget build(BuildContext context) {
     final palette = OpenChatPalette.of(context);
     final l10n = context.openchatL10n;
-    final contextWindow = widget.contextWindow;
+    final modelContextWindow = widget.contextWindow;
+    final contextWindow = _modelContextLimit == null
+        ? modelContextWindow
+        : modelContextWindow == null
+        ? _modelContextLimit
+        : _modelContextLimit! > modelContextWindow
+        ? modelContextWindow
+        : _modelContextLimit;
     final percentFormat = NumberFormat.percentPattern(
       Localizations.localeOf(context).toString(),
     )..maximumFractionDigits = 2;

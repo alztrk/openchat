@@ -230,6 +230,39 @@ class AppLocalizationsEn extends AppLocalizations {
       'Choose the default model for new conversations and hide models you don\'t use.';
 
   @override
+  String get modelContextAutomatic => 'Automatic';
+
+  @override
+  String modelContextCustom(String count) {
+    return 'Limit: $count';
+  }
+
+  @override
+  String modelContextTitle(String model) {
+    return 'Context budget · $model';
+  }
+
+  @override
+  String modelContextMaximum(String limit) {
+    return 'Model maximum: $limit';
+  }
+
+  @override
+  String get modelContextCustomLabel => 'Your context limit in tokens';
+
+  @override
+  String get modelContextExplanation =>
+      'OpenChat uses this limit to compact older chat history before sending. It does not change the provider model’s actual capacity or guarantee lower quota use.';
+
+  @override
+  String get modelContextInvalid =>
+      'Enter a value from 2,048 to 2,000,000 tokens.';
+
+  @override
+  String get modelContextAboveMaximum =>
+      'The limit cannot exceed the model maximum.';
+
+  @override
   String get localEngines => 'Local engines';
 
   @override
@@ -256,6 +289,15 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String localEngineNewerReleaseIncompatible(String latest, String compatible) {
+    return 'Upstream has released $latest; $compatible is the newest release compatible with this runtime.';
+  }
+
+  @override
+  String get localEngineReleaseCheckUnavailable =>
+      'New releases could not be checked. Check your connection and reload; installation is disabled until a release is verified.';
+
+  @override
   String get localEngineVariants => 'Packages';
 
   @override
@@ -275,6 +317,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get localEngineInstalled => 'Installed';
+
+  @override
+  String get localEngineUpdateAvailable => 'Update available';
 
   @override
   String get localEngineNotInstalled => 'Not installed';
@@ -317,6 +362,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get localEngineInstall => 'Install';
+
+  @override
+  String get localEngineUpdate => 'Update';
 
   @override
   String get localEngineInstalling => 'Preparing installation...';
@@ -726,6 +774,16 @@ class AppLocalizationsEn extends AppLocalizations {
       'These instructions are sent with every connected provider. File tool access follows the Tool access setting.';
 
   @override
+  String get restoreDefaults => 'Restore defaults';
+
+  @override
+  String get sharedInstructionsRestored => 'Default instructions restored.';
+
+  @override
+  String get defaultInstructionsLoadFailed =>
+      'Default instructions could not be loaded. Try again.';
+
+  @override
   String get sharedInstructionsHint =>
       'Describe how you want responses to be written...';
 
@@ -903,6 +961,85 @@ class AppLocalizationsEn extends AppLocalizations {
   String modelContextWindow(String value) {
     return 'Context window · $value tokens';
   }
+
+  @override
+  String get modelDetailsProvider => 'Provider';
+
+  @override
+  String get modelDetailsContext => 'Context window';
+
+  @override
+  String get modelDetailsMaximumOutput => 'Maximum output';
+
+  @override
+  String get modelDetailsInputModalities => 'Input types';
+
+  @override
+  String get modelDetailsOutputModalities => 'Output types';
+
+  @override
+  String get modelDetailsImages => 'Image input';
+
+  @override
+  String get modelDetailsToolCalling => 'Tool calling';
+
+  @override
+  String get modelDetailsSupported => 'Supported';
+
+  @override
+  String get modelDetailsUnsupported => 'Not supported';
+
+  @override
+  String get modelDetailsInputPrice => 'Input';
+
+  @override
+  String get modelDetailsOutputPrice => 'Output';
+
+  @override
+  String get modelDetailsReasoningPrice => 'Reasoning';
+
+  @override
+  String get modelDetailsCacheReadPrice => 'Cached input';
+
+  @override
+  String get modelDetailsCacheWritePrice => 'Cache write';
+
+  @override
+  String get modelDetailsPricing => 'List pricing';
+
+  @override
+  String get modelDetailsPricingLoading => 'Loading models.dev prices…';
+
+  @override
+  String get modelDetailsPricingLoadFailed =>
+      'Model prices could not be loaded.';
+
+  @override
+  String get modelDetailsPricingStale =>
+      'Cached prices shown; models.dev is currently unavailable.';
+
+  @override
+  String get modelDetailsPricingUnavailable =>
+      'No exact price is listed for this model.';
+
+  @override
+  String modelDetailsPerMillion(String value) {
+    return '$value / 1M tokens';
+  }
+
+  @override
+  String modelDetailsTier(String context) {
+    return 'Context tier · $context';
+  }
+
+  @override
+  String modelDetailsInputOutputPrices(String input, String output) {
+    return 'Input $input · output $output';
+  }
+
+  @override
+  String get modelDetailsPricingSource =>
+      'USD list prices from models.dev, not a provider invoice.';
 
   @override
   String openCodeModelContextWindow(String value) {
@@ -3774,8 +3911,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get statistics => 'Statistics';
 
   @override
+  String get statisticsFilters => 'Filters';
+
+  @override
   String get statisticsDescription =>
-      'Explore token usage, requests, and ChatGPT quota history by provider, model, and conversation.';
+      'Explore token usage over time by provider, model, and conversation.';
 
   @override
   String get statisticsLoadFailed => 'Usage statistics could not be loaded.';

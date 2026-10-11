@@ -253,6 +253,62 @@ void main() {
   );
 
   testWidgets(
+    'chat composer message field has a localized editable name in every locale',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      try {
+        for (final locale in AppLocalizations.supportedLocales) {
+          await tester.pumpWidget(
+            MaterialApp(
+              key: ValueKey<String>('composer-field-${locale.languageCode}'),
+              locale: locale,
+              localizationsDelegates: AppLocalizations.localizationsDelegates,
+              supportedLocales: AppLocalizations.supportedLocales,
+              theme: OpenChatTheme.dark,
+              builder: (context, child) => openChatShadTestScope(
+                OpenChatTheme.dark,
+                child ?? const SizedBox.shrink(),
+              ),
+              home: Scaffold(
+                body: ChatComposer(
+                  controller: controller,
+                  onSendMessage: () {},
+                  canSendMessage: false,
+                  showReasoningSelector: false,
+                  providerId: 'opencode',
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          final l10n = AppLocalizations.of(
+            tester.element(find.byType(ChatComposer)),
+          )!;
+          final field = tester.getSemantics(find.byType(EditableText));
+          final data = field.getSemanticsData();
+          expect(
+            find.bySemanticsLabel(l10n.messageHint),
+            findsOneWidget,
+            reason: locale.languageCode,
+          );
+          expect(data.label, l10n.messageHint, reason: locale.languageCode);
+          expect(
+            data.flagsCollection.isTextField,
+            isTrue,
+            reason: locale.languageCode,
+          );
+          expect(tester.takeException(), isNull);
+        }
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets(
     'chat composer sends from the keyboard in every supported locale',
     (tester) async {
       final controller = TextEditingController();

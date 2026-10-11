@@ -17,6 +17,7 @@ import 'package:openchat/features/chat/data/chat_stream_message_persister.dart';
 import 'package:openchat/features/chat/data/chat_attachment_store.dart';
 import 'package:openchat/features/chat/data/chat_file_changes_repository.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
+import 'package:openchat/features/chat/data/model_pricing_repository.dart';
 import 'package:openchat/features/chat/data/history_search_repository.dart';
 import 'package:openchat/features/chat/domain/chat_conversation.dart';
 import 'package:openchat/features/chat/domain/agent_question.dart';
@@ -225,6 +226,7 @@ class _ChatScreenState extends State<ChatScreen> {
       <SavedOutputMessageKey>{};
   int _savedOutputGeneration = 0;
   ConversationMemoryRepository? _conversationMemoryRepository;
+  ModelPricingRepository? _modelPricingRepository;
   ChatFileChangesRepository? _chatFileChangesRepository;
   List<ChatFileChange> _conversationFileChanges = const <ChatFileChange>[];
   String? _fileChangesConversationId;
@@ -258,6 +260,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _conversationMemoryRepository = serviceClient == null
         ? null
         : ConversationMemoryRepository(serviceClient);
+    _modelPricingRepository = serviceClient == null
+        ? null
+        : ModelPricingRepository(serviceClient);
     _chatFileChangesRepository = serviceClient == null
         ? null
         : ChatFileChangesRepository(serviceClient);
@@ -300,6 +305,9 @@ class _ChatScreenState extends State<ChatScreen> {
       _conversationMemoryRepository = serviceClient == null
           ? null
           : ConversationMemoryRepository(serviceClient);
+      _modelPricingRepository = serviceClient == null
+          ? null
+          : ModelPricingRepository(serviceClient);
       _chatFileChangesRepository = serviceClient == null
           ? null
           : ChatFileChangesRepository(serviceClient);
@@ -2887,6 +2895,8 @@ class _ChatScreenState extends State<ChatScreen> {
       workspaceId: workspaceId,
       apiKeyConnectionId: apiKeyConnectionId,
     );
+    final modelContextLimit = (await _settingsPreferences
+        .readModelContextLimits())[modelRouteKey];
     final oauthModelSupportsFastMode =
         providerId == 'chatgpt' &&
         _models.any(
@@ -3349,44 +3359,48 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }
 
+    final requestParams = <String, Object?>{
+      'conversationId': conversationId,
+      if (goalObjective != null) ...<String, Object?>{
+        'goal': true,
+        'goalObjective': goalObjective,
+      },
+      ...?switch (resumeRunId) {
+        final runId? => <String, Object?>{'resumeRunId': runId},
+        _ => null,
+      },
+      if (sharedInstructions.trim().isNotEmpty)
+        'customInstructions': sharedInstructions,
+      ...?switch (apiKey) {
+        final key? => <String, Object?>{'apiKey': key},
+        _ => null,
+      },
+      if (_isApiKeyRouteProvider(providerId))
+        'apiKeyConnectionId': apiKeyConnectionId,
+      if (projectSkillIds.isNotEmpty) 'projectSkillIds': projectSkillIds,
+      if (providerId == 'chatgpt' || providerId == 'chatgpt_api')
+        'fastMode': chatGptFastMode,
+      ...?switch (responseToReplace) {
+        final replacement? => <String, Object?>{
+          'excludedAssistantMessageId': replacement.id,
+        },
+        _ => null,
+      },
+      ...?switch (_selectedReasoningEffort) {
+        final effort? => <String, Object?>{'reasoningEffort': effort},
+        _ => null,
+      },
+      'toolPermissionMode': toolPermissionMode.serviceValue,
+      if (projectToolRules.isNotEmpty) 'toolPermissionRules': projectToolRules,
+    };
+    if (modelContextLimit != null) {
+      requestParams['contextLimit'] = modelContextLimit;
+    }
+
     try {
       final activeOperation = await service.startOperation(
         'chat.send',
-        params: <String, Object?>{
-          'conversationId': conversationId,
-          if (goalObjective != null) ...<String, Object?>{
-            'goal': true,
-            'goalObjective': goalObjective,
-          },
-          ...?switch (resumeRunId) {
-            final runId? => <String, Object?>{'resumeRunId': runId},
-            _ => null,
-          },
-          if (sharedInstructions.trim().isNotEmpty)
-            'customInstructions': sharedInstructions,
-          ...?switch (apiKey) {
-            final key? => <String, Object?>{'apiKey': key},
-            _ => null,
-          },
-          if (_isApiKeyRouteProvider(providerId))
-            'apiKeyConnectionId': apiKeyConnectionId,
-          if (projectSkillIds.isNotEmpty) 'projectSkillIds': projectSkillIds,
-          if (providerId == 'chatgpt' || providerId == 'chatgpt_api')
-            'fastMode': chatGptFastMode,
-          ...?switch (responseToReplace) {
-            final replacement? => <String, Object?>{
-              'excludedAssistantMessageId': replacement.id,
-            },
-            _ => null,
-          },
-          ...?switch (_selectedReasoningEffort) {
-            final effort? => <String, Object?>{'reasoningEffort': effort},
-            _ => null,
-          },
-          'toolPermissionMode': toolPermissionMode.serviceValue,
-          if (projectToolRules.isNotEmpty)
-            'toolPermissionRules': projectToolRules,
-        },
+        params: requestParams,
       );
       operation = activeOperation;
       _activeChatOperation = activeOperation;
@@ -6175,6 +6189,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   contextWorkspaceId: routeWorkspaceId,
                   productWorkspaceName: productWorkspace?.name,
                   conversationMemoryRepository: _conversationMemoryRepository,
+                  modelPricingRepository: _modelPricingRepository,
                   fileChangesRepository: _chatFileChangesRepository,
                   conversationFileChanges:
                       selectedConversation?.id == _fileChangesConversationId

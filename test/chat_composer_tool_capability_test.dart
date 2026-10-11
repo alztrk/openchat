@@ -5,6 +5,7 @@ import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_composer.dart';
+import 'package:openchat/features/chat/presentation/widgets/context_usage_indicator.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -174,7 +175,10 @@ void main() {
     var stopped = 0;
     var attached = 0;
 
-    Future<void> pumpComposer({bool isSending = false}) async {
+    Future<void> pumpComposer({
+      bool isSending = false,
+      String? selectedModelId,
+    }) async {
       await tester.pumpWidget(
         MaterialApp(
           locale: const Locale('tr'),
@@ -192,6 +196,7 @@ void main() {
                     onSendMessage: () => sent++,
                     canSendMessage: true,
                     isSending: isSending,
+                    selectedModelId: selectedModelId,
                     onStopMessage: () => stopped++,
                     attachmentsEnabled: true,
                     onAddAttachments: () => attached++,
@@ -208,6 +213,10 @@ void main() {
     }
 
     await pumpComposer();
+    expect(find.byType(ContextUsageIndicator), findsNothing);
+    final attachBounds = tester.getRect(find.byTooltip(l10n.attachFile));
+    final sendBounds = tester.getRect(find.byTooltip(l10n.send));
+    expect(sendBounds.left - attachBounds.right, 4);
     final field = find.byType(EditableText);
     await tester.tap(field);
     await tester.sendKeyEvent(LogicalKeyboardKey.enter);
@@ -231,6 +240,9 @@ void main() {
     expect(sent, 2);
     await tester.tap(find.byTooltip(l10n.attachFile));
     expect(attached, 2);
+
+    await pumpComposer(selectedModelId: 'selected-model');
+    expect(find.byType(ContextUsageIndicator), findsOneWidget);
 
     await pumpComposer(isSending: true);
     await tester.tap(field);

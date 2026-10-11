@@ -22,6 +22,7 @@ pub(super) struct ChatRoute {
     pub(super) context_window: Option<i64>,
     pub(super) input_token_limit: Option<i64>,
     pub(super) max_output_tokens: Option<i64>,
+    pub(super) context_limit_override: Option<i64>,
     pub(super) supports_images: bool,
     pub(super) supports_tool_calls: Option<bool>,
     pub(super) connection_id: Option<String>,
@@ -30,7 +31,14 @@ pub(super) struct ChatRoute {
 
 impl ChatRoute {
     pub(super) fn request_context_limit(&self) -> Option<i64> {
-        self.input_token_limit.or(self.context_window)
+        self.context_limit_override
+            .map(|limit| {
+                self.input_token_limit
+                    .or(self.context_window)
+                    .map_or(limit, |max| limit.min(max))
+            })
+            .or(self.input_token_limit)
+            .or(self.context_window)
     }
 }
 
@@ -40,6 +48,7 @@ pub(super) async fn resolve_chat_route(
     api_key: Option<&str>,
     requested_api_key_connection_id: Option<&str>,
     stored_api_key_connection_id: Option<&str>,
+    context_limit_override: Option<i64>,
     cancellation: &mut tokio::sync::watch::Receiver<bool>,
 ) -> Result<ChatRoute, ServiceError> {
     let (provider_id, model_id) = storage
@@ -70,6 +79,7 @@ pub(super) async fn resolve_chat_route(
         context_window,
         input_token_limit,
         max_output_tokens,
+        context_limit_override,
         supports_images,
         supports_tool_calls,
         connection_id,
@@ -102,6 +112,7 @@ pub(super) async fn resolve_chat_route(
                 context_window,
                 input_token_limit,
                 max_output_tokens,
+                context_limit_override,
                 supports_images,
                 supports_tool_calls,
                 None,
@@ -124,6 +135,7 @@ pub(super) async fn resolve_chat_route(
                 endpoint.capabilities.context_window,
                 None,
                 None,
+                context_limit_override,
                 endpoint.capabilities.supports_images,
                 endpoint.capabilities.supports_tool_calls,
                 None,
@@ -145,6 +157,7 @@ pub(super) async fn resolve_chat_route(
                 None,
                 None,
                 None,
+                context_limit_override,
                 crate::openai_api::supports_image_input(&model_id),
                 None,
                 stored_api_key_connection_id.map(str::to_owned),
@@ -175,6 +188,7 @@ pub(super) async fn resolve_chat_route(
                 context_window,
                 input_token_limit,
                 max_output_tokens,
+                context_limit_override,
                 supports_images,
                 supports_tool_calls,
                 Some(id.to_owned()),
@@ -199,6 +213,7 @@ pub(super) async fn resolve_chat_route(
         context_window,
         input_token_limit,
         max_output_tokens,
+        context_limit_override,
         supports_images,
         supports_tool_calls,
         connection_id,
@@ -210,7 +225,11 @@ pub(super) async fn resolve_chat_route(
 mod tests {
     use super::ChatRoute;
 
-    fn route(context_window: Option<i64>, input_token_limit: Option<i64>) -> ChatRoute {
+    fn route(
+        context_window: Option<i64>,
+        input_token_limit: Option<i64>,
+        context_limit_override: Option<i64>,
+    ) -> ChatRoute {
         ChatRoute {
             model_id: "model".to_owned(),
             provider_model_id: "model".to_owned(),
@@ -222,6 +241,7 @@ mod tests {
             context_window,
             input_token_limit,
             max_output_tokens: None,
+            context_limit_override,
             supports_images: false,
             supports_tool_calls: None,
             connection_id: None,
@@ -232,17 +252,25 @@ mod tests {
     #[test]
     fn request_budget_prefers_explicit_input_limit_and_falls_back_to_context() {
         assert_eq!(
-            route(Some(262_144), Some(131_072)).request_context_limit(),
+            route(Some(262_144), Some(131_072), None).request_context_limit(),
             Some(131_072)
         );
         assert_eq!(
-            route(Some(262_144), None).request_context_limit(),
+            route(Some(262_144), None, None).request_context_limit(),
             Some(262_144)
         );
         assert_eq!(
-            route(None, Some(131_072)).request_context_limit(),
+            route(None, Some(131_072), None).request_context_limit(),
             Some(131_072)
         );
-        assert_eq!(route(None, None).request_context_limit(), None);
+        assert_eq!(route(None, None, None).request_context_limit(), None);
+        assert_eq!(
+            route(Some(262_144), Some(250_000), Some(180_000)).request_context_limit(),
+            Some(180_000)
+        );
+        assert_eq!(
+            route(Some(262_144), Some(131_072), Some(180_000)).request_context_limit(),
+            Some(131_072)
+        );
     }
 }

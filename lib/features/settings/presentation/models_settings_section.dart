@@ -48,6 +48,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
   String _searchQuery = '';
   Map<String, List<ChatGptModel>> _providerModels = {};
   Set<String> _hiddenModelKeys = {};
+  Map<String, int> _modelContextLimits = {};
   DefaultModelPreference? _defaultModel;
   late Stream<List<FavoriteModel>>? _favoriteModelsStream;
   final Set<String> _favoriteChangesInProgress = {};
@@ -90,12 +91,37 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
     });
 
     final hiddenKeys = await widget.settingsPreferences.readHiddenModelKeys();
+    final contextLimits = await widget.settingsPreferences
+        .readModelContextLimits();
     final defaultModel = await widget.settingsPreferences.readDefaultModel();
 
     final service = widget.serviceClient;
     final modelsByProvider = <String, List<ChatGptModel>>{};
 
     if (service != null) {
+      for (final engineId in const ['llama_cpp', 'vllm', 'exllama']) {
+        try {
+          final response = await service.call(
+            'local.engines.chat_models.list',
+            params: <String, Object?>{'engineId': engineId},
+          );
+          final rawModels = response['models'];
+          if (rawModels is List<Object?>) {
+            modelsByProvider[engineId] = rawModels
+                .map((item) => ChatGptModel.fromJson(_objectMap(item)))
+                .map(
+                  (model) => model.withRoute(
+                    providerId: engineId,
+                    groupId: 'models',
+                    connectionId: null,
+                  ),
+                )
+                .toList(growable: false);
+          }
+        } catch (error) {
+          _providerErrors[engineId] = error.toString();
+        }
+      }
       // 1. OpenCode models
       try {
         final apiKey = await widget.openCodeApiKeyStore?.readApiKey();
@@ -277,6 +303,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
       _isLoading = false;
       _providerModels = modelsByProvider;
       _hiddenModelKeys = hiddenKeys;
+      _modelContextLimits = contextLimits;
       _defaultModel = defaultModel;
     });
   }
@@ -615,6 +642,9 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
             'cerebras',
             'openrouter',
             'mistral',
+            'llama_cpp',
+            'vllm',
+            'exllama',
           ]) ...[
             if (_providerModels.containsKey(providerId)) ...[
               _buildProviderCard(
@@ -661,7 +691,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: palette.border),
+        side: BorderSide(color: palette.subtleBorder),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -688,10 +718,10 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
               ],
             ),
             const SizedBox(height: 12),
-            Divider(height: 1, color: palette.border),
+            Divider(height: 1, color: palette.subtleBorder),
             const SizedBox(height: 8),
             for (var i = 0; i < filtered.length; i++) ...[
-              if (i > 0) Divider(height: 1, color: palette.border),
+              if (i > 0) Divider(height: 1, color: palette.subtleBorder),
               _buildModelRow(
                 context,
                 filtered[i],
@@ -736,6 +766,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
     final contextWindowText = model.contextWindow != null
         ? '${(model.contextWindow! / 1000).round()}k context'
         : null;
+    final contextLimit = _modelContextLimits[key];
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -844,6 +875,18 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
                           fontSize: OpenChatTypography.metadata,
                         ),
                       ),
+                    TextButton.icon(
+                      onPressed: () => _editContextLimit(model),
+                      icon: const Icon(LucideIcons.slidersHorizontal, size: 14),
+                      label: Text(
+                        contextLimit == null
+                            ? l10n.modelContextAutomatic
+                            : l10n.modelContextCustom(
+                                _formatTokenCount(contextLimit),
+                              ),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 2),
@@ -927,6 +970,130 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _editContextLimit(ChatGptModel model) async {
+    final limit = await showDialog<int?>(
+      context: context,
+      builder: (_) => _ModelContextLimitDialog(
+        model: model,
+        savedLimit: _modelContextLimits[model.routeKey],
+      ),
+    );
+    if (limit == null || !mounted) return;
+    final savedLimit = limit == -1 ? null : limit;
+    await widget.settingsPreferences.writeModelContextLimit(
+      model.routeKey,
+      savedLimit,
+    );
+    if (!mounted) return;
+    setState(() {
+      final updated = Map<String, int>.from(_modelContextLimits);
+      if (savedLimit == null) {
+        updated.remove(model.routeKey);
+      } else {
+        updated[model.routeKey] = savedLimit;
+      }
+      _modelContextLimits = updated;
+    });
+  }
+
+  String _formatTokenCount(int value) =>
+      value >= 1000 ? '${(value / 1000).round()}K' : value.toString();
+}
+
+class _ModelContextLimitDialog extends StatefulWidget {
+  const _ModelContextLimitDialog({
+    required this.model,
+    required this.savedLimit,
+  });
+
+  final ChatGptModel model;
+  final int? savedLimit;
+
+  @override
+  State<_ModelContextLimitDialog> createState() =>
+      _ModelContextLimitDialogState();
+}
+
+class _ModelContextLimitDialogState extends State<_ModelContextLimitDialog> {
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.savedLimit?.toString() ?? '',
+  );
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.openchatL10n;
+    final model = widget.model;
+    final maximum = model.contextWindow;
+    return AlertDialog(
+      title: Text(l10n.modelContextTitle(model.displayName)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            l10n.modelContextMaximum(
+              maximum == null
+                  ? l10n.contextUsageNoModelLimit
+                  : maximum >= 1000
+                  ? '${(maximum / 1000).round()}K'
+                  : maximum.toString(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Form(
+            key: _formKey,
+            child: TextFormField(
+              controller: _controller,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: l10n.modelContextCustomLabel,
+                hintText: l10n.modelContextAutomatic,
+              ),
+              validator: (text) {
+                final value = int.tryParse(text?.trim() ?? '');
+                if (value == null || value < 2048 || value > 2_000_000) {
+                  return l10n.modelContextInvalid;
+                }
+                if (maximum case final maxContext? when value > maxContext) {
+                  return l10n.modelContextAboveMaximum;
+                }
+                return null;
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(l10n.modelContextExplanation),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(l10n.cancel),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, -1),
+          child: Text(l10n.modelContextAutomatic),
+        ),
+        FilledButton(
+          onPressed: () {
+            if (_formKey.currentState?.validate() != true) return;
+            final value = int.tryParse(_controller.text.trim());
+            if (value != null) Navigator.pop(context, value);
+          },
+          child: Text(l10n.save),
+        ),
+      ],
     );
   }
 }

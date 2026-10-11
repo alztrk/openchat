@@ -135,6 +135,7 @@ class SettingsPreferences {
   static const _projectDefaultModelPrefix = 'models.project_default.';
   static const _projectSkillsPrefix = 'project.skills.';
   static const _hiddenModelKeysKey = 'models.hidden_keys';
+  static const _modelContextLimitsKey = 'models.context_limits';
   static const _collapsedSidebarSectionsKey = 'chat.collapsed_sidebar_sections';
   static const _savedHistorySearchesKey = 'chat.saved_history_searches';
   static const _localModelDirectoryPrefix = 'models.local_engine_directory.';
@@ -526,6 +527,54 @@ class SettingsPreferences {
       _hiddenModelKeysKey,
       jsonEncode(keys.toList(growable: false)),
     );
+  }
+
+  Future<Map<String, int>> readModelContextLimits() async {
+    final raw = await _preferences.getString(_modelContextLimitsKey);
+    if (raw == null || raw.trim().isEmpty) return const <String, int>{};
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(raw);
+    } on FormatException {
+      throw const FormatException('Saved model context limits are invalid.');
+    }
+    if (decoded is! Map || decoded.length > 10000) {
+      throw const FormatException('Saved model context limits are invalid.');
+    }
+    final limits = <String, int>{};
+    for (final entry in decoded.entries) {
+      final key = entry.key;
+      final value = entry.value;
+      if (key is! String || key.isEmpty || value is! int || value < 2048) {
+        throw const FormatException('Saved model context limits are invalid.');
+      }
+      limits[key] = value;
+    }
+    return Map<String, int>.unmodifiable(limits);
+  }
+
+  Future<void> writeModelContextLimit(String routeKey, int? limit) async {
+    if (routeKey.trim().isEmpty ||
+        routeKey.length > 1024 ||
+        routeKey.contains('\u0000') ||
+        (limit != null && limit < 2048)) {
+      throw ArgumentError.value(
+        routeKey,
+        'routeKey',
+        'The model context limit is invalid.',
+      );
+    }
+    final limits = Map<String, int>.from(await readModelContextLimits());
+    if (limit == null) {
+      limits.remove(routeKey);
+    } else {
+      limits[routeKey] = limit;
+    }
+    if (limits.isEmpty) {
+      await _preferences.remove(_modelContextLimitsKey);
+    } else {
+      await _preferences.setString(_modelContextLimitsKey, jsonEncode(limits));
+    }
   }
 
   Future<String?> readLocalModelDirectory(String engineId) async {

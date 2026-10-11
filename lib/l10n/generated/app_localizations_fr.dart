@@ -237,6 +237,39 @@ class AppLocalizationsFr extends AppLocalizations {
       'Choisissez le modèle par défaut des nouvelles conversations et masquez ceux que vous n’utilisez pas.';
 
   @override
+  String get modelContextAutomatic => 'Automatique';
+
+  @override
+  String modelContextCustom(String count) {
+    return 'Limite : $count';
+  }
+
+  @override
+  String modelContextTitle(String model) {
+    return 'Budget de contexte · $model';
+  }
+
+  @override
+  String modelContextMaximum(String limit) {
+    return 'Maximum du modèle : $limit';
+  }
+
+  @override
+  String get modelContextCustomLabel => 'Votre limite de contexte en jetons';
+
+  @override
+  String get modelContextExplanation =>
+      'OpenChat réduit l’historique ancien selon cette limite avant l’envoi. Cela ne modifie pas la capacité réelle du modèle et ne garantit pas une baisse de l’utilisation du quota.';
+
+  @override
+  String get modelContextInvalid =>
+      'Saisissez une valeur comprise entre 2 048 et 2 000 000 jetons.';
+
+  @override
+  String get modelContextAboveMaximum =>
+      'La limite ne peut pas dépasser le maximum du modèle.';
+
+  @override
   String get localEngines => 'Moteurs locaux';
 
   @override
@@ -264,6 +297,15 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
+  String localEngineNewerReleaseIncompatible(String latest, String compatible) {
+    return 'Upstream a publié $latest ; $compatible est la version la plus récente compatible avec cet environnement.';
+  }
+
+  @override
+  String get localEngineReleaseCheckUnavailable =>
+      'Impossible de vérifier les nouvelles versions. Vérifiez la connexion puis actualisez ; l’installation exige une version vérifiée.';
+
+  @override
   String get localEngineVariants => 'Packages';
 
   @override
@@ -283,6 +325,9 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get localEngineInstalled => 'Installé';
+
+  @override
+  String get localEngineUpdateAvailable => 'Mise à jour disponible';
 
   @override
   String get localEngineNotInstalled => 'Non installé';
@@ -325,6 +370,9 @@ class AppLocalizationsFr extends AppLocalizations {
 
   @override
   String get localEngineInstall => 'Installer';
+
+  @override
+  String get localEngineUpdate => 'Mettre à jour';
 
   @override
   String get localEngineInstalling => 'Préparation de l\'installation...';
@@ -741,6 +789,17 @@ class AppLocalizationsFr extends AppLocalizations {
       'Ces instructions sont envoyées avec chaque fournisseur connecté. L\'accès aux outils de fichiers suit le paramètre d\'accès aux outils.';
 
   @override
+  String get restoreDefaults => 'Restaurer les valeurs par défaut';
+
+  @override
+  String get sharedInstructionsRestored =>
+      'Les instructions par défaut ont été restaurées.';
+
+  @override
+  String get defaultInstructionsLoadFailed =>
+      'Impossible de charger les instructions par défaut. Réessayez.';
+
+  @override
   String get sharedInstructionsHint =>
       'Décrivez comment vous souhaitez que les réponses soient rédigées...';
 
@@ -922,6 +981,85 @@ class AppLocalizationsFr extends AppLocalizations {
   String modelContextWindow(String value) {
     return 'Fenêtre de contexte · $value jetons';
   }
+
+  @override
+  String get modelDetailsProvider => 'Fournisseur';
+
+  @override
+  String get modelDetailsContext => 'Fenêtre de contexte';
+
+  @override
+  String get modelDetailsMaximumOutput => 'Sortie maximale';
+
+  @override
+  String get modelDetailsInputModalities => 'Types d’entrée';
+
+  @override
+  String get modelDetailsOutputModalities => 'Types de sortie';
+
+  @override
+  String get modelDetailsImages => 'Entrée d’images';
+
+  @override
+  String get modelDetailsToolCalling => 'Appels d’outils';
+
+  @override
+  String get modelDetailsSupported => 'Pris en charge';
+
+  @override
+  String get modelDetailsUnsupported => 'Non pris en charge';
+
+  @override
+  String get modelDetailsInputPrice => 'Entrée';
+
+  @override
+  String get modelDetailsOutputPrice => 'Sortie';
+
+  @override
+  String get modelDetailsReasoningPrice => 'Raisonnement';
+
+  @override
+  String get modelDetailsCacheReadPrice => 'Lecture du cache';
+
+  @override
+  String get modelDetailsCacheWritePrice => 'Écriture du cache';
+
+  @override
+  String get modelDetailsPricing => 'Tarifs catalogue';
+
+  @override
+  String get modelDetailsPricingLoading => 'Chargement des tarifs models.dev…';
+
+  @override
+  String get modelDetailsPricingLoadFailed =>
+      'Les tarifs du modèle n’ont pas pu être chargés.';
+
+  @override
+  String get modelDetailsPricingStale =>
+      'Tarifs en cache affichés ; models.dev est indisponible.';
+
+  @override
+  String get modelDetailsPricingUnavailable =>
+      'Aucun tarif exact n’est répertorié pour ce modèle.';
+
+  @override
+  String modelDetailsPerMillion(String value) {
+    return '$value / 1 million de jetons';
+  }
+
+  @override
+  String modelDetailsTier(String context) {
+    return 'Palier de contexte · $context';
+  }
+
+  @override
+  String modelDetailsInputOutputPrices(String input, String output) {
+    return 'Entrée $input · sortie $output';
+  }
+
+  @override
+  String get modelDetailsPricingSource =>
+      'Tarifs catalogue USD de models.dev, pas une facture du fournisseur.';
 
   @override
   String openCodeModelContextWindow(String value) {
@@ -3857,8 +3995,11 @@ class AppLocalizationsFr extends AppLocalizations {
   String get statistics => 'Statistiques';
 
   @override
+  String get statisticsFilters => 'Filtres';
+
+  @override
   String get statisticsDescription =>
-      'Consultez les jetons utilisés, les requêtes et l\'historique des quotas ChatGPT par fournisseur, modèle et conversation.';
+      'Consultez l’utilisation des jetons au fil du temps par fournisseur, modèle et conversation.';
 
   @override
   String get statisticsLoadFailed =>

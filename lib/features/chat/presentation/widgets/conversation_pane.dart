@@ -11,6 +11,7 @@ import 'package:intl/intl.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/openchat_toast.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
+import 'package:openchat/features/chat/data/model_pricing_repository.dart';
 import 'package:openchat/features/chat/data/chat_file_changes_repository.dart';
 import 'package:openchat/features/chat/domain/agent_question.dart';
 import 'package:openchat/features/chat/domain/agent_goal.dart';
@@ -89,6 +90,7 @@ class ConversationPane extends StatelessWidget {
     this.contextConnectionId,
     this.contextWorkspaceId,
     this.conversationMemoryRepository,
+    this.modelPricingRepository,
     this.fileChangesRepository,
     this.conversationFileChanges = const <ChatFileChange>[],
     this.fileChangesRevision = 0,
@@ -199,6 +201,7 @@ class ConversationPane extends StatelessWidget {
   final String? contextConnectionId;
   final String? contextWorkspaceId;
   final ConversationMemoryRepository? conversationMemoryRepository;
+  final ModelPricingRepository? modelPricingRepository;
   final ChatFileChangesRepository? fileChangesRepository;
   final List<ChatFileChange> conversationFileChanges;
   final int fileChangesRevision;
@@ -267,7 +270,7 @@ class ConversationPane extends StatelessWidget {
             !showAssistantLoading &&
             historySearchTargetMessageId == null;
         final centerNewConversation =
-            isEmptyConversation && !compact && constraints.maxHeight >= 720;
+            isEmptyConversation && !compact && constraints.maxHeight >= 640;
         final header = _ConversationHeader(
           showHistoryButton: showHistoryButton,
           title: conversationTitle ?? l10n.conversationTitle,
@@ -470,6 +473,7 @@ class ConversationPane extends StatelessWidget {
                     contextConnectionId: contextConnectionId,
                     contextWorkspaceId: contextWorkspaceId,
                     conversationMemoryRepository: conversationMemoryRepository,
+                    modelPricingRepository: modelPricingRepository,
                     settingsPreferences: settingsPreferences,
                     pendingAttachments: pendingAttachments,
                     onAddAttachments: onAddAttachments,

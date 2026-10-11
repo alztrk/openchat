@@ -564,6 +564,15 @@ pub(crate) async fn get_statistics(
         .map_err(|_| statistics_storage_error())
 }
 
+pub(crate) async fn get_model_details(
+    storage: &AppStorage,
+    provider_id: &str,
+    model_id: &str,
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<Value, ServiceError> {
+    models_dev_pricing::model_details(storage, provider_id, model_id, cancellation).await
+}
+
 fn statistics_storage_error() -> ServiceError {
     ServiceError::new(
         "usage_statistics_unavailable",

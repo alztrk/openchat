@@ -57,6 +57,7 @@ pub async fn send_message(
         mut goal,
         cancellation,
         events,
+        context_limit_override,
     } = context;
     let route = route::resolve_chat_route(
         storage,
@@ -64,6 +65,7 @@ pub async fn send_message(
         api_key,
         requested_api_key_connection_id,
         stored_api_key_connection_id.as_deref(),
+        context_limit_override,
         cancellation,
     )
     .await?;

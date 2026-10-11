@@ -500,6 +500,54 @@ abstract class AppLocalizations {
   /// **'Choose the default model for new conversations and hide models you don\'t use.'**
   String get modelsDescription;
 
+  /// No description provided for @modelContextAutomatic.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic'**
+  String get modelContextAutomatic;
+
+  /// No description provided for @modelContextCustom.
+  ///
+  /// In en, this message translates to:
+  /// **'Limit: {count}'**
+  String modelContextCustom(String count);
+
+  /// No description provided for @modelContextTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Context budget · {model}'**
+  String modelContextTitle(String model);
+
+  /// No description provided for @modelContextMaximum.
+  ///
+  /// In en, this message translates to:
+  /// **'Model maximum: {limit}'**
+  String modelContextMaximum(String limit);
+
+  /// No description provided for @modelContextCustomLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Your context limit in tokens'**
+  String get modelContextCustomLabel;
+
+  /// No description provided for @modelContextExplanation.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenChat uses this limit to compact older chat history before sending. It does not change the provider model’s actual capacity or guarantee lower quota use.'**
+  String get modelContextExplanation;
+
+  /// No description provided for @modelContextInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a value from 2,048 to 2,000,000 tokens.'**
+  String get modelContextInvalid;
+
+  /// No description provided for @modelContextAboveMaximum.
+  ///
+  /// In en, this message translates to:
+  /// **'The limit cannot exceed the model maximum.'**
+  String get modelContextAboveMaximum;
+
   /// No description provided for @localEngines.
   ///
   /// In en, this message translates to:
@@ -542,6 +590,18 @@ abstract class AppLocalizations {
   /// **'Release {tag}'**
   String localEngineRelease(String tag);
 
+  /// No description provided for @localEngineNewerReleaseIncompatible.
+  ///
+  /// In en, this message translates to:
+  /// **'Upstream has released {latest}; {compatible} is the newest release compatible with this runtime.'**
+  String localEngineNewerReleaseIncompatible(String latest, String compatible);
+
+  /// No description provided for @localEngineReleaseCheckUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'New releases could not be checked. Check your connection and reload; installation is disabled until a release is verified.'**
+  String get localEngineReleaseCheckUnavailable;
+
   /// No description provided for @localEngineVariants.
   ///
   /// In en, this message translates to:
@@ -583,6 +643,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Installed'**
   String get localEngineInstalled;
+
+  /// No description provided for @localEngineUpdateAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Update available'**
+  String get localEngineUpdateAvailable;
 
   /// No description provided for @localEngineNotInstalled.
   ///
@@ -655,6 +721,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Install'**
   String get localEngineInstall;
+
+  /// No description provided for @localEngineUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Update'**
+  String get localEngineUpdate;
 
   /// No description provided for @localEngineInstalling.
   ///
@@ -1316,6 +1388,24 @@ abstract class AppLocalizations {
   /// **'These instructions are sent with every connected provider. File tool access follows the Tool access setting.'**
   String get sharedInstructionsDescription;
 
+  /// No description provided for @restoreDefaults.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore defaults'**
+  String get restoreDefaults;
+
+  /// No description provided for @sharedInstructionsRestored.
+  ///
+  /// In en, this message translates to:
+  /// **'Default instructions restored.'**
+  String get sharedInstructionsRestored;
+
+  /// No description provided for @defaultInstructionsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Default instructions could not be loaded. Try again.'**
+  String get defaultInstructionsLoadFailed;
+
   /// No description provided for @sharedInstructionsHint.
   ///
   /// In en, this message translates to:
@@ -1621,6 +1711,144 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Context window · {value} tokens'**
   String modelContextWindow(String value);
+
+  /// No description provided for @modelDetailsProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Provider'**
+  String get modelDetailsProvider;
+
+  /// No description provided for @modelDetailsContext.
+  ///
+  /// In en, this message translates to:
+  /// **'Context window'**
+  String get modelDetailsContext;
+
+  /// No description provided for @modelDetailsMaximumOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'Maximum output'**
+  String get modelDetailsMaximumOutput;
+
+  /// No description provided for @modelDetailsInputModalities.
+  ///
+  /// In en, this message translates to:
+  /// **'Input types'**
+  String get modelDetailsInputModalities;
+
+  /// No description provided for @modelDetailsOutputModalities.
+  ///
+  /// In en, this message translates to:
+  /// **'Output types'**
+  String get modelDetailsOutputModalities;
+
+  /// No description provided for @modelDetailsImages.
+  ///
+  /// In en, this message translates to:
+  /// **'Image input'**
+  String get modelDetailsImages;
+
+  /// No description provided for @modelDetailsToolCalling.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool calling'**
+  String get modelDetailsToolCalling;
+
+  /// No description provided for @modelDetailsSupported.
+  ///
+  /// In en, this message translates to:
+  /// **'Supported'**
+  String get modelDetailsSupported;
+
+  /// No description provided for @modelDetailsUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'Not supported'**
+  String get modelDetailsUnsupported;
+
+  /// No description provided for @modelDetailsInputPrice.
+  ///
+  /// In en, this message translates to:
+  /// **'Input'**
+  String get modelDetailsInputPrice;
+
+  /// No description provided for @modelDetailsOutputPrice.
+  ///
+  /// In en, this message translates to:
+  /// **'Output'**
+  String get modelDetailsOutputPrice;
+
+  /// No description provided for @modelDetailsReasoningPrice.
+  ///
+  /// In en, this message translates to:
+  /// **'Reasoning'**
+  String get modelDetailsReasoningPrice;
+
+  /// No description provided for @modelDetailsCacheReadPrice.
+  ///
+  /// In en, this message translates to:
+  /// **'Cached input'**
+  String get modelDetailsCacheReadPrice;
+
+  /// No description provided for @modelDetailsCacheWritePrice.
+  ///
+  /// In en, this message translates to:
+  /// **'Cache write'**
+  String get modelDetailsCacheWritePrice;
+
+  /// No description provided for @modelDetailsPricing.
+  ///
+  /// In en, this message translates to:
+  /// **'List pricing'**
+  String get modelDetailsPricing;
+
+  /// No description provided for @modelDetailsPricingLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading models.dev prices…'**
+  String get modelDetailsPricingLoading;
+
+  /// No description provided for @modelDetailsPricingLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Model prices could not be loaded.'**
+  String get modelDetailsPricingLoadFailed;
+
+  /// No description provided for @modelDetailsPricingStale.
+  ///
+  /// In en, this message translates to:
+  /// **'Cached prices shown; models.dev is currently unavailable.'**
+  String get modelDetailsPricingStale;
+
+  /// No description provided for @modelDetailsPricingUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'No exact price is listed for this model.'**
+  String get modelDetailsPricingUnavailable;
+
+  /// No description provided for @modelDetailsPerMillion.
+  ///
+  /// In en, this message translates to:
+  /// **'{value} / 1M tokens'**
+  String modelDetailsPerMillion(String value);
+
+  /// No description provided for @modelDetailsTier.
+  ///
+  /// In en, this message translates to:
+  /// **'Context tier · {context}'**
+  String modelDetailsTier(String context);
+
+  /// No description provided for @modelDetailsInputOutputPrices.
+  ///
+  /// In en, this message translates to:
+  /// **'Input {input} · output {output}'**
+  String modelDetailsInputOutputPrices(String input, String output);
+
+  /// No description provided for @modelDetailsPricingSource.
+  ///
+  /// In en, this message translates to:
+  /// **'USD list prices from models.dev, not a provider invoice.'**
+  String get modelDetailsPricingSource;
 
   /// No description provided for @openCodeModelContextWindow.
   ///
@@ -6398,10 +6626,16 @@ abstract class AppLocalizations {
   /// **'Statistics'**
   String get statistics;
 
+  /// No description provided for @statisticsFilters.
+  ///
+  /// In en, this message translates to:
+  /// **'Filters'**
+  String get statisticsFilters;
+
   /// No description provided for @statisticsDescription.
   ///
   /// In en, this message translates to:
-  /// **'Explore token usage, requests, and ChatGPT quota history by provider, model, and conversation.'**
+  /// **'Explore token usage over time by provider, model, and conversation.'**
   String get statisticsDescription;
 
   /// No description provided for @statisticsLoadFailed.

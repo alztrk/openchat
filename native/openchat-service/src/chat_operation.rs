@@ -33,4 +33,5 @@ pub struct ChatSendContext<'a> {
     pub user_question_broker: &'a UserQuestionBroker,
     pub cancellation: &'a mut watch::Receiver<bool>,
     pub events: EventSink,
+    pub context_limit_override: Option<i64>,
 }

@@ -229,6 +229,39 @@ class AppLocalizationsTr extends AppLocalizations {
       'Yeni sohbetlerde kullanılacak varsayılan modeli seçin ve kullanmadığınız modelleri gizleyin.';
 
   @override
+  String get modelContextAutomatic => 'Otomatik';
+
+  @override
+  String modelContextCustom(String count) {
+    return 'Sınır: $count';
+  }
+
+  @override
+  String modelContextTitle(String model) {
+    return 'Bağlam bütçesi · $model';
+  }
+
+  @override
+  String modelContextMaximum(String limit) {
+    return 'Modelin en yüksek sınırı: $limit';
+  }
+
+  @override
+  String get modelContextCustomLabel => 'Token cinsinden bağlam sınırınız';
+
+  @override
+  String get modelContextExplanation =>
+      'OpenChat, göndermeden önce eski sohbet geçmişini bu sınıra göre sıkıştırır. Bu ayar sağlayıcının gerçek model kapasitesini değiştirmez ve kota kullanımının düşeceğini garanti etmez.';
+
+  @override
+  String get modelContextInvalid =>
+      '2.048 ile 2.000.000 arasında bir token değeri girin.';
+
+  @override
+  String get modelContextAboveMaximum =>
+      'Sınır, modelin en yüksek değerini aşamaz.';
+
+  @override
   String get localEngines => 'Yerel motorlar';
 
   @override
@@ -254,6 +287,15 @@ class AppLocalizationsTr extends AppLocalizations {
   }
 
   @override
+  String localEngineNewerReleaseIncompatible(String latest, String compatible) {
+    return 'Upstream\'de $latest yayımlandı; bu kurulumla uyumlu en yeni sürüm $compatible.';
+  }
+
+  @override
+  String get localEngineReleaseCheckUnavailable =>
+      'Yeni sürümler denetlenemedi. Bağlantınızı kontrol edip Yenile\'yi seçin; doğrulanmış sürüm olmadan kurulum yapılamaz.';
+
+  @override
   String get localEngineVariants => 'Paketler';
 
   @override
@@ -273,6 +315,9 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get localEngineInstalled => 'Kurulu';
+
+  @override
+  String get localEngineUpdateAvailable => 'Güncelleme var';
 
   @override
   String get localEngineNotInstalled => 'Kurulu değil';
@@ -315,6 +360,9 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get localEngineInstall => 'Kur';
+
+  @override
+  String get localEngineUpdate => 'Güncelle';
 
   @override
   String get localEngineInstalling => 'Kurulum hazırlanıyor...';
@@ -724,6 +772,17 @@ class AppLocalizationsTr extends AppLocalizations {
       'Bu talimatlar bağlı olan tüm sağlayıcılara her sohbette gönderilir. Dosya araçlarının erişimi Araç erişimi ayarına uyar.';
 
   @override
+  String get restoreDefaults => 'Varsayılanları geri yükle';
+
+  @override
+  String get sharedInstructionsRestored =>
+      'Varsayılan talimatlar geri yüklendi.';
+
+  @override
+  String get defaultInstructionsLoadFailed =>
+      'Varsayılan talimatlar yüklenemedi. Yeniden deneyin.';
+
+  @override
   String get sharedInstructionsHint =>
       'Yanıtların nasıl verilmesini istediğini yaz...';
 
@@ -902,6 +961,84 @@ class AppLocalizationsTr extends AppLocalizations {
   String modelContextWindow(String value) {
     return 'Bağlam penceresi · $value token';
   }
+
+  @override
+  String get modelDetailsProvider => 'Sağlayıcı';
+
+  @override
+  String get modelDetailsContext => 'Bağlam penceresi';
+
+  @override
+  String get modelDetailsMaximumOutput => 'En fazla çıktı';
+
+  @override
+  String get modelDetailsInputModalities => 'Girdi türleri';
+
+  @override
+  String get modelDetailsOutputModalities => 'Çıktı türleri';
+
+  @override
+  String get modelDetailsImages => 'Görüntü girdisi';
+
+  @override
+  String get modelDetailsToolCalling => 'Araç çağrısı';
+
+  @override
+  String get modelDetailsSupported => 'Destekleniyor';
+
+  @override
+  String get modelDetailsUnsupported => 'Desteklenmiyor';
+
+  @override
+  String get modelDetailsInputPrice => 'Girdi';
+
+  @override
+  String get modelDetailsOutputPrice => 'Çıktı';
+
+  @override
+  String get modelDetailsReasoningPrice => 'Akıl yürütme';
+
+  @override
+  String get modelDetailsCacheReadPrice => 'Önbellekten okuma';
+
+  @override
+  String get modelDetailsCacheWritePrice => 'Önbelleğe yazma';
+
+  @override
+  String get modelDetailsPricing => 'Liste fiyatları';
+
+  @override
+  String get modelDetailsPricingLoading => 'models.dev fiyatları yükleniyor…';
+
+  @override
+  String get modelDetailsPricingLoadFailed => 'Model fiyatları yüklenemedi.';
+
+  @override
+  String get modelDetailsPricingStale =>
+      'Önbellekteki fiyatlar gösteriliyor; models.dev şu anda kullanılamıyor.';
+
+  @override
+  String get modelDetailsPricingUnavailable =>
+      'Bu model için eşleşen bir fiyat bulunamadı.';
+
+  @override
+  String modelDetailsPerMillion(String value) {
+    return '1 milyon token başına $value';
+  }
+
+  @override
+  String modelDetailsTier(String context) {
+    return 'Bağlam katmanı · $context';
+  }
+
+  @override
+  String modelDetailsInputOutputPrices(String input, String output) {
+    return 'Girdi $input · çıktı $output';
+  }
+
+  @override
+  String get modelDetailsPricingSource =>
+      'models.dev USD liste fiyatıdır, sağlayıcı faturası değildir.';
 
   @override
   String openCodeModelContextWindow(String value) {
@@ -3753,8 +3890,11 @@ class AppLocalizationsTr extends AppLocalizations {
   String get statistics => 'İstatistikler';
 
   @override
+  String get statisticsFilters => 'Filtreler';
+
+  @override
   String get statisticsDescription =>
-      'Sağlayıcı, model ve sohbet bazında token kullanımını, istekleri ve ChatGPT kota geçmişini inceleyin.';
+      'Token kullanımını zamana, sağlayıcıya, modele ve sohbete göre inceleyin.';
 
   @override
   String get statisticsLoadFailed => 'Kullanım istatistikleri yüklenemedi.';
