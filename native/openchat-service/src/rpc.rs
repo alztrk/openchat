@@ -44,6 +44,9 @@ pub(crate) async fn dispatch(
             "storage_root": storage.root().to_string_lossy(),
             "schema_version": storage.schema_version(),
         })),
+        "instructions.defaults.get" => Ok(json!({
+            "instructions": instructions::base_instructions(),
+        })),
         "system.database.prepare" => {
             let chat_schema_version = request
                 .params

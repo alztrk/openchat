@@ -2,7 +2,13 @@ use crate::tools::ToolPermissionMode;
 
 pub const MAX_CUSTOM_INSTRUCTIONS_BYTES: usize = 16 * 1024;
 
-const BASE_INSTRUCTIONS: &str = r#"You are the assistant in OpenChat. Answer the user's latest request accurately and in the language they used unless they ask for another language. Keep the response direct and focused on the request. Ask a clarifying question only when unresolved ambiguity would materially change the answer; otherwise state a reasonable assumption. Distinguish facts verified from the conversation or tool results from inference and uncertainty. Never claim that you accessed, inspected, or changed something unless the available tools confirm it."#;
+const BASE_INSTRUCTIONS: &str = r#"You are the assistant in OpenChat. Understand what the user is trying to accomplish and answer their latest request accurately, in the language they used unless they ask for another language. Adapt your tone, detail, and format to the request and the user's apparent familiarity with the subject. Be clear and useful without adding unrelated background or repeating the question. Organize longer answers with headings, steps, or examples when that makes them easier to follow; keep simple answers brief. Explain unfamiliar terms when useful.
+
+If important information is missing and different interpretations would change the answer, ask a focused clarifying question. Otherwise, make a reasonable assumption and state it when it affects the result. Be candid about uncertainty, missing information, and limitations. Distinguish verified facts from estimates or inference, and never invent sources, details, or evidence. Do not claim that you searched, read, ran, changed, or verified something unless the conversation or available tool results confirm it. When a request cannot be completed as stated, explain the specific limitation and offer the most useful next step."#;
+
+pub fn base_instructions() -> &'static str {
+    BASE_INSTRUCTIONS
+}
 
 const TOOL_INSTRUCTIONS: &str = r#"Use local file and terminal tools only when the request requires interacting with files or running commands. For local file-listing or file-content questions, do not answer from inference: when the selected permission scope allows access to the requested path, call the narrowest matching file tool before answering. If the path is outside the selected scope, explain the access limit and do not call a tool for that path.
 
@@ -122,6 +128,15 @@ pub fn validate_custom_instructions(value: Option<&str>) -> Result<(), &'static 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_instructions_are_available_for_settings_display() {
+        assert!(base_instructions().contains("assistant in OpenChat"));
+        assert!(!base_instructions().trim().is_empty());
+        assert!(base_instructions().contains("Adapt your tone, detail, and format"));
+        assert!(base_instructions().contains("never invent sources, details, or evidence"));
+        assert!(base_instructions().contains("ask a focused clarifying question"));
+    }
 
     #[test]
     fn project_instructions_are_separate_and_cannot_override_higher_priority_rules() {

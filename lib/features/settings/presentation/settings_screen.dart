@@ -136,6 +136,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isLoadingInstructions = true;
   bool _isSavingInstructions = false;
   String _savedSharedInstructions = '';
+  String? _defaultInstructions;
+  String? _defaultInstructionsError;
   String? _sharedInstructionsError;
   _SettingsSection _selectedSection = _SettingsSection.connections;
   bool _advancedSettingsExpanded = false;
@@ -237,14 +239,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         horizontalInset,
                         16,
                       ),
-                      child: OpenChatPageHeader(
-                        title: sectionTitle,
-                        description:
-                            constraints.maxWidth >= 640 &&
-                                constraints.maxHeight >= 520
-                            ? sectionDescription
-                            : null,
-                        focusNode: widget.pageHeadingFocusNode,
+                      child: Align(
+                        alignment: Alignment.topLeft,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 1040),
+                          child: OpenChatPageHeader(
+                            title: sectionTitle,
+                            description:
+                                constraints.maxWidth >= 640 &&
+                                    constraints.maxHeight >= 520
+                                ? sectionDescription
+                                : null,
+                            focusNode: widget.pageHeadingFocusNode,
+                          ),
+                        ),
                       ),
                     ),
                     Expanded(
@@ -405,6 +413,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
             height: 1.45,
           ),
         ),
+        if (_defaultInstructionsError != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            _defaultInstructionsError!,
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+        ],
         const SizedBox(height: 14),
         if (_isLoadingInstructions)
           const LinearProgressIndicator()
@@ -472,6 +487,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   '${_sharedInstructionsController.text.characters.length}/$_sharedInstructionsMaxLength',
                   style: TextStyle(color: palette.secondaryText, fontSize: 12),
                 ),
+                if (_defaultInstructions != null)
+                  TextButton.icon(
+                    onPressed:
+                        _isSavingInstructions ||
+                            _sharedInstructionsController.text ==
+                                _defaultInstructions
+                        ? null
+                        : () => unawaited(_restoreDefaultInstructions()),
+                    icon: const Icon(LucideIcons.refreshCw),
+                    label: Text(l10n.restoreDefaults),
+                  ),
                 FilledButton.icon(
                   onPressed:
                       _isSavingInstructions ||
@@ -772,9 +798,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
       final instructions = await widget.settingsPreferences
           .readSharedInstructions();
       if (!mounted) return;
-      _sharedInstructionsController.text = instructions;
+      final defaultInstructionsLoadFailed =
+          context.openchatL10n.defaultInstructionsLoadFailed;
+      String? defaultInstructions;
+      String? defaultInstructionsError;
+      final serviceClient = widget.serviceClient;
+      if (serviceClient != null) {
+        try {
+          final defaults = await serviceClient.call(
+            'instructions.defaults.get',
+          );
+          defaultInstructions = defaults['instructions'] as String?;
+          if (defaultInstructions == null ||
+              defaultInstructions.trim().isEmpty) {
+            defaultInstructions = null;
+            defaultInstructionsError = defaultInstructionsLoadFailed;
+          }
+        } on Object catch (error, stackTrace) {
+          FlutterError.reportError(
+            FlutterErrorDetails(
+              exception: error,
+              stack: stackTrace,
+              library: 'settings',
+              context: ErrorDescription(
+                'while loading default chat instructions',
+              ),
+            ),
+          );
+          defaultInstructionsError = defaultInstructionsLoadFailed;
+        }
+      }
+      final initialInstructions = instructions.isNotEmpty
+          ? instructions
+          : defaultInstructions ?? '';
+      _sharedInstructionsController.text = initialInstructions;
       setState(() {
-        _savedSharedInstructions = instructions;
+        _defaultInstructions = defaultInstructions;
+        _defaultInstructionsError = defaultInstructionsError;
+        _savedSharedInstructions = initialInstructions;
         _isLoadingInstructions = false;
       });
     } on Object catch (error, stackTrace) {
@@ -822,6 +883,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
           stack: stackTrace,
           library: 'settings',
           context: ErrorDescription('while saving shared chat instructions'),
+        ),
+      );
+      if (!mounted) return;
+      showOpenChatToast(
+        context,
+        context.openchatL10n.sharedInstructionsSaveFailed,
+        type: OpenChatToastType.error,
+      );
+    } finally {
+      if (mounted) setState(() => _isSavingInstructions = false);
+    }
+  }
+
+  Future<void> _restoreDefaultInstructions() async {
+    final instructions = _defaultInstructions;
+    if (instructions == null || _isSavingInstructions) return;
+    setState(() => _isSavingInstructions = true);
+    try {
+      await widget.settingsPreferences.writeSharedInstructions('');
+      if (!mounted) return;
+      _sharedInstructionsController.value = TextEditingValue(
+        text: instructions,
+        selection: TextSelection.collapsed(offset: instructions.length),
+      );
+      setState(() => _savedSharedInstructions = instructions);
+      showOpenChatToast(
+        context,
+        context.openchatL10n.sharedInstructionsRestored,
+        type: OpenChatToastType.success,
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription('while restoring default instructions'),
         ),
       );
       if (!mounted) return;
