@@ -380,12 +380,13 @@ abstract final class OpenChatSpacing {
   static const section = 48.0;
   static const pageHorizontal = 32.0;
   static const compactPageHorizontal = 16.0;
-  static const appTitleBarHeight = 40.0;
+  static const appTitleBarHeight = 48.0;
   static const conversationHeaderHeight = 40.0;
   static const sidebarWidth = 320.0;
   static const compactSidebarWidth = 300.0;
+  static const sidebarCategoryContentMaxHeight = 280.0;
   static const navigationRailButtonWidth = 44.0;
-  static const navigationRailInset = 4.0;
+  static const navigationRailInset = 8.0;
   static const compactRailWidth =
       navigationRailButtonWidth + navigationRailInset * 2;
   static const collapsedSidebarWidth = 260.0;

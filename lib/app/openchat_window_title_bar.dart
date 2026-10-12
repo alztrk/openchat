@@ -44,7 +44,7 @@ class OpenChatWindowTitleBar extends StatelessWidget {
       child: SizedBox(
         height: OpenChatSpacing.appTitleBarHeight,
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.symmetric(vertical: OpenChatSpacing.xs),
           child: LayoutBuilder(
             builder: (context, constraints) {
               final showNavigationControls = constraints.maxWidth >= 240;
@@ -64,14 +64,14 @@ class OpenChatWindowTitleBar extends StatelessWidget {
                       onPressed: canGoBack ? onGoBack : null,
                       color: palette.secondaryIcon,
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: OpenChatSpacing.xs),
                     _TitleBarActionButton(
                       label: l10n.nextPage,
                       icon: LucideIcons.arrowRight,
                       onPressed: canGoForward ? onGoForward : null,
                       color: palette.secondaryIcon,
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: OpenChatSpacing.xs),
                     _TitleBarActionButton(
                       label: sidebarsCompact
                           ? l10n.showSidebars

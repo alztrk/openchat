@@ -98,211 +98,246 @@ class ProjectSidebarSection extends StatelessWidget {
           curve: Curves.easeOutCubic,
           alignment: Alignment.topCenter,
           child: ClipRect(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (!collapsed) ...[
-                  if (loading)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(4, 7, 4, 4),
-                      child: Semantics(
-                        liveRegion: true,
-                        label: context.openchatL10n.projectLoading,
-                        child: const LinearProgressIndicator(minHeight: 2),
-                      ),
-                    )
-                  else if (errorMessage != null)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(0, 6, 0, 2),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              errorMessage!,
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(
-                                    color: palette.secondaryText,
-                                    fontSize: OpenChatTypography.metadata,
-                                    height: 18 / OpenChatTypography.metadata,
-                                  ),
-                            ),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxHeight: OpenChatSpacing.sidebarCategoryContentMaxHeight,
+              ),
+              child: SingleChildScrollView(
+                primary: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (!collapsed) ...[
+                      if (loading)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(4, 7, 4, 4),
+                          child: Semantics(
+                            liveRegion: true,
+                            label: context.openchatL10n.projectLoading,
+                            child: const LinearProgressIndicator(minHeight: 2),
                           ),
-                          if (onRetry != null)
-                            IconButton(
-                              tooltip: l10n.retry,
-                              onPressed: onRetry,
-                              icon: const Icon(LucideIcons.refreshCw),
-                            ),
-                        ],
-                      ),
-                    )
-                  else if (projects.isEmpty && showEmptyMessage)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(0, 6, 0, 2),
-                      child: Text(
-                        emptyMessage,
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: palette.secondaryText,
-                          fontSize: 12,
-                          height: 18 / 12,
-                        ),
-                      ),
-                    ),
-                  const SizedBox(height: 2),
-                  for (final entry in projects) ...[
-                    _ProjectSidebarTile(
-                      project: entry.project,
-                      selected: entry.project.id == selectedProjectId,
-                      onSelect: onSelectProject == null
-                          ? null
-                          : () => onSelectProject!(entry.project.id),
-                      onOpenOptions: onOpenProjectOptions == null
-                          ? null
-                          : () => onOpenProjectOptions!(
-                              entry.project.id,
-                              entry.project.folderPath,
-                              entry.project.title,
-                            ),
-                      onCreateConversation: onCreateProjectConversation == null
-                          ? null
-                          : () =>
-                                onCreateProjectConversation!(entry.project.id),
-                      onMoveConversationToProject: onMoveConversationToProject,
-                      key: ValueKey<String>(
-                        'sidebar-project-${entry.project.id}',
-                      ),
-                    ),
-                    if (entry.conversations.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 4,
-                                ),
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.stretch,
-                                  children: [
-                                    for (
-                                      var index = 0;
-                                      index < entry.conversations.length;
-                                      index++
-                                    ) ...[
-                                      if (index > 0) const SizedBox(height: 2),
-                                      DraggableSidebarConversation(
-                                        conversation:
-                                            entry.conversations[index],
-                                        child: SidebarConversationTile(
-                                          conversation:
-                                              entry.conversations[index],
-                                          selected:
-                                              entry.conversations[index].id ==
-                                              selectedConversationId,
-                                          selectionMode: selectionMode,
-                                          selectedForBatch:
-                                              selectedConversationIds.contains(
-                                                entry.conversations[index].id,
-                                              ),
-                                          height: 32,
-                                          inset: 8,
-                                          showChatIcon: false,
-                                          onPressed: selectionMode
-                                              ? () => onToggleBatchSelection
-                                                    ?.call(
-                                                      entry
-                                                          .conversations[index]
-                                                          .id,
-                                                    )
-                                              : onSelectConversation == null
-                                              ? null
-                                              : () => onSelectConversation!(
-                                                  entry.conversations[index].id,
-                                                ),
-                                          onTogglePinned:
-                                              onToggleConversationPinned == null
-                                              ? null
-                                              : () =>
-                                                    onToggleConversationPinned!(
-                                                      entry
-                                                          .conversations[index]
-                                                          .id,
-                                                    ),
-                                          onRename: onRenameConversation == null
-                                              ? null
-                                              : () => onRenameConversation!(
-                                                  entry.conversations[index].id,
-                                                ),
-                                          onDelete: onDeleteConversation == null
-                                              ? null
-                                              : () => onDeleteConversation!(
-                                                  entry.conversations[index].id,
-                                                ),
-                                          onExport: onExportConversation == null
-                                              ? null
-                                              : () => onExportConversation!(
-                                                  entry.conversations[index].id,
-                                                ),
-                                          onArchive:
-                                              onArchiveConversation == null
-                                              ? null
-                                              : () => onArchiveConversation!(
-                                                  entry.conversations[index].id,
-                                                ),
-                                          onEditTags:
-                                              onEditConversationTags == null
-                                              ? null
-                                              : () => onEditConversationTags!(
-                                                  entry.conversations[index].id,
-                                                ),
-                                          onToggleBookmark:
-                                              onToggleConversationBookmark ==
-                                                  null
-                                              ? null
-                                              : () =>
-                                                    onToggleConversationBookmark!(
-                                                      entry
-                                                          .conversations[index]
-                                                          .id,
-                                                    ),
-                                          key: ValueKey<String>(
-                                            'sidebar-conversation-${entry.conversations[index].id}',
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                    if (entry.project.hasMoreConversations) ...[
-                                      const SizedBox(height: 6),
-                                      _ShowMoreProjectConversations(
-                                        label: l10n.showMore,
+                        )
+                      else if (errorMessage != null)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(0, 6, 0, 2),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  errorMessage!,
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(
                                         color: palette.secondaryText,
-                                        onPressed:
-                                            onShowMoreProjectConversations ==
-                                                null
-                                            ? null
-                                            : () =>
-                                                  onShowMoreProjectConversations!(
-                                                    entry.project.id,
-                                                  ),
+                                        fontSize: OpenChatTypography.metadata,
+                                        height:
+                                            18 / OpenChatTypography.metadata,
                                       ),
-                                    ],
-                                  ],
                                 ),
                               ),
-                            ),
-                          ],
+                              if (onRetry != null)
+                                IconButton(
+                                  tooltip: l10n.retry,
+                                  onPressed: onRetry,
+                                  icon: const Icon(LucideIcons.refreshCw),
+                                ),
+                            ],
+                          ),
+                        )
+                      else if (projects.isEmpty && showEmptyMessage)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(0, 6, 0, 2),
+                          child: Text(
+                            emptyMessage,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(
+                                  color: palette.secondaryText,
+                                  fontSize: 12,
+                                  height: 18 / 12,
+                                ),
+                          ),
                         ),
-                      ),
+                      const SizedBox(height: 2),
+                      for (final entry in projects) ...[
+                        _ProjectSidebarTile(
+                          project: entry.project,
+                          selected: entry.project.id == selectedProjectId,
+                          onSelect: onSelectProject == null
+                              ? null
+                              : () => onSelectProject!(entry.project.id),
+                          onOpenOptions: onOpenProjectOptions == null
+                              ? null
+                              : () => onOpenProjectOptions!(
+                                  entry.project.id,
+                                  entry.project.folderPath,
+                                  entry.project.title,
+                                ),
+                          onCreateConversation:
+                              onCreateProjectConversation == null
+                              ? null
+                              : () => onCreateProjectConversation!(
+                                  entry.project.id,
+                                ),
+                          onMoveConversationToProject:
+                              onMoveConversationToProject,
+                          key: ValueKey<String>(
+                            'sidebar-project-${entry.project.id}',
+                          ),
+                        ),
+                        if (entry.conversations.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 4,
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        for (
+                                          var index = 0;
+                                          index < entry.conversations.length;
+                                          index++
+                                        ) ...[
+                                          if (index > 0)
+                                            const SizedBox(height: 2),
+                                          DraggableSidebarConversation(
+                                            conversation:
+                                                entry.conversations[index],
+                                            child: SidebarConversationTile(
+                                              conversation:
+                                                  entry.conversations[index],
+                                              selected:
+                                                  entry
+                                                      .conversations[index]
+                                                      .id ==
+                                                  selectedConversationId,
+                                              selectionMode: selectionMode,
+                                              selectedForBatch:
+                                                  selectedConversationIds
+                                                      .contains(
+                                                        entry
+                                                            .conversations[index]
+                                                            .id,
+                                                      ),
+                                              height: 32,
+                                              inset: 8,
+                                              showChatIcon: false,
+                                              onPressed: selectionMode
+                                                  ? () => onToggleBatchSelection
+                                                        ?.call(
+                                                          entry
+                                                              .conversations[index]
+                                                              .id,
+                                                        )
+                                                  : onSelectConversation == null
+                                                  ? null
+                                                  : () => onSelectConversation!(
+                                                      entry
+                                                          .conversations[index]
+                                                          .id,
+                                                    ),
+                                              onTogglePinned:
+                                                  onToggleConversationPinned ==
+                                                      null
+                                                  ? null
+                                                  : () => onToggleConversationPinned!(
+                                                      entry
+                                                          .conversations[index]
+                                                          .id,
+                                                    ),
+                                              onRename:
+                                                  onRenameConversation == null
+                                                  ? null
+                                                  : () => onRenameConversation!(
+                                                      entry
+                                                          .conversations[index]
+                                                          .id,
+                                                    ),
+                                              onDelete:
+                                                  onDeleteConversation == null
+                                                  ? null
+                                                  : () => onDeleteConversation!(
+                                                      entry
+                                                          .conversations[index]
+                                                          .id,
+                                                    ),
+                                              onExport:
+                                                  onExportConversation == null
+                                                  ? null
+                                                  : () => onExportConversation!(
+                                                      entry
+                                                          .conversations[index]
+                                                          .id,
+                                                    ),
+                                              onArchive:
+                                                  onArchiveConversation == null
+                                                  ? null
+                                                  : () => onArchiveConversation!(
+                                                      entry
+                                                          .conversations[index]
+                                                          .id,
+                                                    ),
+                                              onEditTags:
+                                                  onEditConversationTags == null
+                                                  ? null
+                                                  : () => onEditConversationTags!(
+                                                      entry
+                                                          .conversations[index]
+                                                          .id,
+                                                    ),
+                                              onToggleBookmark:
+                                                  onToggleConversationBookmark ==
+                                                      null
+                                                  ? null
+                                                  : () => onToggleConversationBookmark!(
+                                                      entry
+                                                          .conversations[index]
+                                                          .id,
+                                                    ),
+                                              key: ValueKey<String>(
+                                                'sidebar-conversation-${entry.conversations[index].id}',
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                        if (entry
+                                            .project
+                                            .hasMoreConversations) ...[
+                                          const SizedBox(height: 6),
+                                          _ShowMoreProjectConversations(
+                                            label: l10n.showMore,
+                                            color: palette.secondaryText,
+                                            onPressed:
+                                                onShowMoreProjectConversations ==
+                                                    null
+                                                ? null
+                                                : () =>
+                                                      onShowMoreProjectConversations!(
+                                                        entry.project.id,
+                                                      ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        if (entry != projects.last) const SizedBox(height: 12),
+                      ],
                     ],
-                    if (entry != projects.last) const SizedBox(height: 12),
                   ],
-                ],
-              ],
+                ),
+              ),
             ),
           ),
         ),

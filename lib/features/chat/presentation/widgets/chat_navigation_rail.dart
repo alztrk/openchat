@@ -86,7 +86,7 @@ class ChatNavigationRail extends StatelessWidget {
                               label: l10n.modelLibrary,
                               selected: modelsSelected,
                               icon: Icon(
-                                LucideIcons.brain,
+                                LucideIcons.library,
                                 color: modelsSelected
                                     ? palette.accentIcon
                                     : palette.secondaryIcon,

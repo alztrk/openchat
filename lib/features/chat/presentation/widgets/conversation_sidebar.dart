@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -13,14 +15,13 @@ import 'package:openchat/features/chat/presentation/widgets/sidebar_conversation
 class ConversationSidebar extends StatelessWidget {
   const ConversationSidebar({
     required this.searchController,
+    this.historySearchDialogRevision,
     this.isHistorySearchOpen = false,
     this.onOpenHistorySearch,
-    this.onOpenRunManager,
     this.onOpenSavedHistorySearches,
     this.onCloseHistorySearch,
     this.onSearchChanged,
     this.onSearchSubmitted,
-    this.historySearchQuery,
     this.hasHistorySearchDateRange = false,
     this.onPickHistorySearchDateRange,
     this.onClearHistorySearchDateRange,
@@ -75,14 +76,13 @@ class ConversationSidebar extends StatelessWidget {
   });
 
   final TextEditingController searchController;
+  final Listenable? historySearchDialogRevision;
   final bool isHistorySearchOpen;
   final VoidCallback? onOpenHistorySearch;
-  final VoidCallback? onOpenRunManager;
   final VoidCallback? onOpenSavedHistorySearches;
   final VoidCallback? onCloseHistorySearch;
   final ValueChanged<String>? onSearchChanged;
   final ValueChanged<String>? onSearchSubmitted;
-  final String? historySearchQuery;
   final bool hasHistorySearchDateRange;
   final VoidCallback? onPickHistorySearchDateRange;
   final VoidCallback? onClearHistorySearchDateRange;
@@ -207,6 +207,8 @@ class ConversationSidebar extends StatelessWidget {
     String? tag = options?.tags.contains(historySearchFilters.tag) ?? false
         ? historySearchFilters.tag
         : null;
+    var resultType = historySearchFilters.resultType;
+    var sortOrder = historySearchFilters.sortOrder;
     var archiveState = switch (historySearchFilters.isArchived) {
       true => 'archived',
       false => 'active',
@@ -239,6 +241,50 @@ class ConversationSidebar extends StatelessWidget {
                     Text(
                       l10n.historySearchRouteFilterNote,
                       style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    const SizedBox(height: 16),
+                    OpenChatSelectField<String>(
+                      label: l10n.historySearchResultTypeFilter,
+                      options: [
+                        OpenChatSelectOption<String>(
+                          value: 'all',
+                          label: l10n.historySearchAllResultTypes,
+                        ),
+                        OpenChatSelectOption<String>(
+                          value: 'messages',
+                          label: l10n.historySearchMessagesOnly,
+                        ),
+                        OpenChatSelectOption<String>(
+                          value: 'conversations',
+                          label: l10n.historySearchConversationsOnly,
+                        ),
+                      ],
+                      value: resultType,
+                      palette: palette,
+                      onChanged: (value) =>
+                          setSheetState(() => resultType = value),
+                    ),
+                    const SizedBox(height: 12),
+                    OpenChatSelectField<String>(
+                      label: l10n.historySearchSortFilter,
+                      options: [
+                        OpenChatSelectOption<String>(
+                          value: 'relevance',
+                          label: l10n.historySearchSortRelevance,
+                        ),
+                        OpenChatSelectOption<String>(
+                          value: 'newest',
+                          label: l10n.historySearchSortNewest,
+                        ),
+                        OpenChatSelectOption<String>(
+                          value: 'oldest',
+                          label: l10n.historySearchSortOldest,
+                        ),
+                      ],
+                      value: sortOrder,
+                      palette: palette,
+                      onChanged: (value) =>
+                          setSheetState(() => sortOrder = value),
                     ),
                     if (isLoadingHistorySearchFilterOptions) ...[
                       const SizedBox(height: 12),
@@ -377,6 +423,8 @@ class ConversationSidebar extends StatelessWidget {
                                   'archived' => true,
                                   _ => null,
                                 },
+                                resultType: resultType,
+                                sortOrder: sortOrder,
                               ),
                             );
                             Navigator.of(sheetContext).pop();
@@ -415,224 +463,7 @@ class ConversationSidebar extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
           child: _StickySidebarFrame(
-            header: ConstrainedBox(
-              key: const ValueKey<String>('conversation-sidebar-header'),
-              constraints: const BoxConstraints(
-                minHeight: OpenChatSpacing.conversationHeaderHeight,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: AnimatedSwitcher(
-                        duration: MediaQuery.disableAnimationsOf(context)
-                            ? Duration.zero
-                            : const Duration(milliseconds: 180),
-                        transitionBuilder: (child, animation) => ClipRect(
-                          child: SizeTransition(
-                            axis: Axis.horizontal,
-                            alignment: Alignment.centerRight,
-                            sizeFactor: animation,
-                            child: FadeTransition(
-                              opacity: animation,
-                              child: child,
-                            ),
-                          ),
-                        ),
-                        child: isHistorySearchOpen
-                            ? TextField(
-                                key: const ValueKey<String>(
-                                  'history-search-input',
-                                ),
-                                autofocus: true,
-                                controller: searchController,
-                                onChanged: onSearchChanged,
-                                onSubmitted: onSearchSubmitted,
-                                textInputAction: TextInputAction.search,
-                                style: TextStyle(
-                                  color: palette.secondaryText,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w400,
-                                  height: 18 / 13,
-                                ),
-                                decoration: InputDecoration(
-                                  labelText: l10n.searchChats,
-                                  hintText: l10n.searchChatsHint,
-                                  hintStyle: TextStyle(
-                                    color: palette.secondaryText,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w400,
-                                    height: 18 / 13,
-                                  ),
-                                  filled: true,
-                                  fillColor: palette.hover,
-                                  prefixIcon: Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      10,
-                                      10,
-                                      8,
-                                      10,
-                                    ),
-                                    child: Icon(
-                                      LucideIcons.search,
-                                      size: 16,
-                                      color: palette.secondaryText,
-                                    ),
-                                  ),
-                                  prefixIconConstraints:
-                                      const BoxConstraints.tightFor(
-                                        width: 34,
-                                        height: 36,
-                                      ),
-                                  suffixIcon: isHistorySearchLoading
-                                      ? Semantics(
-                                          liveRegion: true,
-                                          label: l10n.searchMessagesLoading,
-                                          child: const SizedBox(
-                                            width: 34,
-                                            height: 36,
-                                            child: Center(
-                                              child: SizedBox.square(
-                                                dimension: 15,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                      strokeWidth: 2,
-                                                    ),
-                                              ),
-                                            ),
-                                          ),
-                                        )
-                                      : null,
-                                  isDense: true,
-                                  contentPadding: EdgeInsets.zero,
-                                ),
-                              )
-                            : const SizedBox.shrink(
-                                key: ValueKey<String>(
-                                  'conversation-sidebar-title-placeholder',
-                                ),
-                              ),
-                      ),
-                    ),
-                    if (isHistorySearchOpen)
-                      IconButton(
-                        tooltip: hasHistorySearchDateRange
-                            ? l10n.historySearchDateFilterApplied
-                            : l10n.historySearchDateFilter,
-                        onPressed: onPickHistorySearchDateRange,
-                        visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 36,
-                          height: 40,
-                        ),
-                        padding: EdgeInsets.zero,
-                        icon: Icon(
-                          LucideIcons.calendarDays,
-                          color: hasHistorySearchDateRange
-                              ? palette.accent
-                              : palette.secondaryIcon,
-                          size: 17,
-                        ),
-                      ),
-                    if (isHistorySearchOpen &&
-                        onOpenSavedHistorySearches != null)
-                      IconButton(
-                        tooltip: l10n.savedHistorySearchesTitle,
-                        onPressed: onOpenSavedHistorySearches,
-                        visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 32,
-                          height: 40,
-                        ),
-                        padding: EdgeInsets.zero,
-                        icon: Icon(
-                          LucideIcons.bookmark,
-                          color: palette.secondaryIcon,
-                          size: 17,
-                        ),
-                      ),
-                    if (isHistorySearchOpen)
-                      IconButton(
-                        tooltip: historySearchFilters.isEmpty
-                            ? l10n.historySearchOpenFilters
-                            : l10n.historySearchFiltersActive,
-                        onPressed: () => _showHistorySearchFilters(context),
-                        visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 36,
-                          height: 40,
-                        ),
-                        padding: EdgeInsets.zero,
-                        icon: Icon(
-                          LucideIcons.slidersHorizontal,
-                          color: historySearchFilters.isEmpty
-                              ? palette.secondaryIcon
-                              : palette.accent,
-                          size: 17,
-                        ),
-                      ),
-                    if (isHistorySearchOpen && hasHistorySearchDateRange)
-                      IconButton(
-                        tooltip: l10n.historySearchClearDateFilter,
-                        onPressed: onClearHistorySearchDateRange,
-                        visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 32,
-                          height: 40,
-                        ),
-                        padding: EdgeInsets.zero,
-                        icon: Icon(
-                          LucideIcons.x,
-                          color: palette.secondaryIcon,
-                          size: 16,
-                        ),
-                      ),
-                    if (onOpenRunManager != null)
-                      IconButton(
-                        tooltip: l10n.agentRunManagerTitle,
-                        onPressed: onOpenRunManager,
-                        visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints.tightFor(
-                          width: 40,
-                          height: 40,
-                        ),
-                        padding: EdgeInsets.zero,
-                        icon: Icon(
-                          LucideIcons.listChecks,
-                          color: palette.secondaryIcon,
-                          size: 17,
-                        ),
-                      ),
-                    IconButton(
-                      tooltip: isHistorySearchOpen
-                          ? l10n.close
-                          : l10n.searchMessagesTooltip,
-                      onPressed: isHistorySearchOpen
-                          ? onCloseHistorySearch
-                          : onOpenHistorySearch,
-                      visualDensity: VisualDensity.compact,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 40,
-                        height: 40,
-                      ),
-                      padding: EdgeInsets.zero,
-                      icon: isHistorySearchOpen
-                          ? Icon(
-                              LucideIcons.x,
-                              color: palette.secondaryIcon,
-                              size: 18,
-                            )
-                          : Icon(
-                              LucideIcons.search,
-                              size: 17,
-                              color: palette.secondaryIcon,
-                            ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            header: _ConversationSidebarHeader(sidebar: this),
             content: Stack(
               children: [
                 Positioned.fill(
@@ -645,7 +476,7 @@ class ConversationSidebar extends StatelessWidget {
                         return ListView(
                           padding: const EdgeInsets.only(
                             top: 4,
-                            left: 4,
+                            left: 0,
                             right: 0,
                             bottom: 12,
                           ),
@@ -724,7 +555,7 @@ class ConversationSidebar extends StatelessWidget {
                         return ListView(
                           padding: const EdgeInsets.only(
                             top: 4,
-                            left: 4,
+                            left: 0,
                             right: 0,
                             bottom: 12,
                           ),
@@ -871,7 +702,7 @@ class ConversationSidebar extends StatelessWidget {
                         return ListView(
                           padding: const EdgeInsets.only(
                             top: 4,
-                            left: 4,
+                            left: 0,
                             right: 0,
                             bottom: 12,
                           ),
@@ -929,7 +760,7 @@ class ConversationSidebar extends StatelessWidget {
                       return ListView(
                         padding: const EdgeInsets.only(
                           top: 4,
-                          left: 4,
+                          left: 0,
                           right: 0,
                           bottom: 12,
                         ),
@@ -944,40 +775,308 @@ class ConversationSidebar extends StatelessWidget {
                     },
                   ),
                 ),
-                if (isHistorySearchOpen &&
-                    searchController.text.trim().isNotEmpty &&
-                    historySearchQuery?.trim().toLowerCase() ==
-                        searchController.text.trim().toLowerCase())
-                  Positioned(
-                    top: 0,
-                    left: 0,
-                    right: 0,
-                    child: Material(
-                      color: palette.navigation,
-                      elevation: 5,
-                      clipBehavior: Clip.antiAlias,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        side: BorderSide(color: palette.border),
-                      ),
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 360),
-                        child: SingleChildScrollView(
-                          padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
-                          child: _HistorySearchResultsSection(
-                            query: searchController.text.trim(),
-                            results: historySearchResults,
-                            loading: isHistorySearchLoading,
-                            errorCode: historySearchErrorCode,
-                            onSearch: onSearchSubmitted,
-                            onSelectResult: onSelectHistoryResult,
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConversationSidebarHeader extends StatefulWidget {
+  const _ConversationSidebarHeader({required this.sidebar});
+
+  final ConversationSidebar sidebar;
+
+  @override
+  State<_ConversationSidebarHeader> createState() =>
+      _ConversationSidebarHeaderState();
+}
+
+class _ConversationSidebarHeaderState
+    extends State<_ConversationSidebarHeader> {
+  bool _isSearchDialogOpen = false;
+  bool _isSearchDialogScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleSearchDialog(widget.sidebar.isHistorySearchOpen);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ConversationSidebarHeader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.sidebar.isHistorySearchOpen &&
+        widget.sidebar.isHistorySearchOpen) {
+      _scheduleSearchDialog(true);
+    }
+  }
+
+  void _scheduleSearchDialog(bool isOpen) {
+    if (!isOpen || _isSearchDialogOpen || _isSearchDialogScheduled) return;
+    _isSearchDialogScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _isSearchDialogScheduled = false;
+      if (mounted && widget.sidebar.isHistorySearchOpen) {
+        unawaited(_showSearchDialog());
+      }
+    });
+  }
+
+  Future<void> _showSearchDialog() async {
+    if (_isSearchDialogOpen) return;
+    _isSearchDialogOpen = true;
+    final result = await showDialog<HistorySearchResult>(
+      context: context,
+      builder: (dialogContext) {
+        final revision = widget.sidebar.historySearchDialogRevision;
+        if (revision == null) return _buildSearchDialog(dialogContext);
+        return AnimatedBuilder(
+          animation: revision,
+          builder: (context, _) => _buildSearchDialog(context),
+        );
+      },
+    );
+    if (!mounted) return;
+    _isSearchDialogOpen = false;
+    final sidebar = widget.sidebar;
+    if (result == null) {
+      sidebar.onCloseHistorySearch?.call();
+    } else {
+      sidebar.onSelectHistoryResult?.call(result);
+    }
+  }
+
+  Widget _buildSearchDialog(BuildContext context) {
+    final sidebar = widget.sidebar;
+    return _HistorySearchDialog(
+      sidebar: sidebar,
+      onOpenFilters: () => sidebar._showHistorySearchFilters(context),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
+    return ConstrainedBox(
+      key: const ValueKey<String>('conversation-sidebar-header'),
+      constraints: const BoxConstraints(
+        minHeight: OpenChatSpacing.conversationHeaderHeight,
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          6,
+          OpenChatSpacing.xs,
+          6,
+          OpenChatSpacing.xs,
+        ),
+        child: Row(
+          children: [
+            FilledButton.tonalIcon(
+              onPressed: widget.sidebar.onCreateConversation,
+              icon: const Icon(LucideIcons.plus, size: 17),
+              label: Text(l10n.newChat),
+              style: FilledButton.styleFrom(
+                minimumSize: const Size(0, 40),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+            ),
+            const Spacer(),
+            IconButton(
+              tooltip: l10n.searchMessagesTooltip,
+              onPressed: widget.sidebar.onOpenHistorySearch,
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+              padding: EdgeInsets.zero,
+              color: palette.secondaryIcon,
+              icon: const Icon(LucideIcons.search, size: 18),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HistorySearchDialog extends StatelessWidget {
+  const _HistorySearchDialog({
+    required this.sidebar,
+    required this.onOpenFilters,
+  });
+
+  final ConversationSidebar sidebar;
+  final VoidCallback onOpenFilters;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
+    final screenSize = MediaQuery.sizeOf(context);
+    final dialogWidth = (screenSize.width - 32).clamp(0.0, 780.0).toDouble();
+
+    return Dialog(
+      insetPadding: const EdgeInsets.all(16),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 780, maxHeight: 680),
+        child: SizedBox(
+          width: dialogWidth,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 12, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        key: const ValueKey<String>('history-search-input'),
+                        autofocus: true,
+                        controller: sidebar.searchController,
+                        onChanged: sidebar.onSearchChanged,
+                        onSubmitted: sidebar.onSearchSubmitted,
+                        textInputAction: TextInputAction.search,
+                        style: Theme.of(context).textTheme.bodyMedium
+                            ?.copyWith(color: palette.text),
+                        decoration: InputDecoration(
+                          labelText: l10n.searchChats,
+                          hintText: l10n.searchChatsHint,
+                          filled: true,
+                          fillColor: palette.hover,
+                          prefixIcon: Icon(
+                            LucideIcons.search,
+                            size: 18,
+                            color: palette.secondaryIcon,
                           ),
+                          suffixIcon: sidebar.isHistorySearchLoading
+                              ? Semantics(
+                                  liveRegion: true,
+                                  label: l10n.searchMessagesLoading,
+                                  child: const SizedBox(
+                                    width: 40,
+                                    height: 40,
+                                    child: Center(
+                                      child: SizedBox.square(
+                                        dimension: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              : null,
+                          isDense: true,
                         ),
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: l10n.close,
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(LucideIcons.x),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: [
+                    IconButton(
+                      tooltip: sidebar.hasHistorySearchDateRange
+                          ? l10n.historySearchDateFilterApplied
+                          : l10n.historySearchDateFilter,
+                      onPressed: sidebar.onPickHistorySearchDateRange,
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 40,
+                        height: 40,
+                      ),
+                      padding: EdgeInsets.zero,
+                      icon: Icon(
+                        LucideIcons.calendarDays,
+                        color: sidebar.hasHistorySearchDateRange
+                            ? palette.accent
+                            : palette.secondaryIcon,
+                        size: 17,
+                      ),
+                    ),
+                    if (sidebar.onOpenSavedHistorySearches != null)
+                      IconButton(
+                        tooltip: l10n.savedHistorySearchesTitle,
+                        onPressed: sidebar.onOpenSavedHistorySearches,
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 40,
+                          height: 40,
+                        ),
+                        padding: EdgeInsets.zero,
+                        icon: Icon(
+                          LucideIcons.bookmark,
+                          color: palette.secondaryIcon,
+                          size: 17,
+                        ),
+                      ),
+                    IconButton(
+                      tooltip: sidebar.historySearchFilters.isEmpty
+                          ? l10n.historySearchOpenFilters
+                          : l10n.historySearchFiltersActive,
+                      onPressed: onOpenFilters,
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 40,
+                        height: 40,
+                      ),
+                      padding: EdgeInsets.zero,
+                      icon: Icon(
+                        LucideIcons.slidersHorizontal,
+                        color: sidebar.historySearchFilters.isEmpty
+                            ? palette.secondaryIcon
+                            : palette.accent,
+                        size: 17,
+                      ),
+                    ),
+                    if (sidebar.hasHistorySearchDateRange)
+                      IconButton(
+                        tooltip: l10n.historySearchClearDateFilter,
+                        onPressed: sidebar.onClearHistorySearchDateRange,
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 40,
+                          height: 40,
+                        ),
+                        padding: EdgeInsets.zero,
+                        icon: Icon(
+                          LucideIcons.x,
+                          color: palette.secondaryIcon,
+                          size: 16,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                  child: _HistorySearchResultsSection(
+                    query: sidebar.searchController.text.trim(),
+                    results: sidebar.historySearchResults,
+                    loading: sidebar.isHistorySearchLoading,
+                    errorCode: sidebar.historySearchErrorCode,
+                    onSearch: sidebar.onSearchSubmitted,
+                    onSelectResult: (result) =>
+                        Navigator.of(context).pop(result),
                   ),
-              ],
-            ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -999,7 +1098,7 @@ class _StickySidebarFrameState extends State<_StickySidebarFrame> {
   bool _isScrolled = false;
 
   bool _handleScroll(ScrollNotification notification) {
-    if (notification.depth != 0 || notification.metrics.axis != Axis.vertical) {
+    if (notification.metrics.axis != Axis.vertical) {
       return false;
     }
     final isScrolled = notification.metrics.pixels > 0;
@@ -1071,17 +1170,7 @@ class _HistorySearchResultsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(4, 0, 4, 7),
-          child: Text(
-            l10n.searchMessagesHeader,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: palette.secondaryText,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ),
+        const SizedBox(height: 8),
         if (loading)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
@@ -1114,6 +1203,16 @@ class _HistorySearchResultsSection extends StatelessWidget {
               ],
             ),
           )
+        else if (query.isEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+            child: Text(
+              l10n.searchMessagesTooShort,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: palette.secondaryText,
+              ),
+            ),
+          )
         else if (results.isEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
@@ -1127,11 +1226,17 @@ class _HistorySearchResultsSection extends StatelessWidget {
         else
           for (final result in results)
             Material(
+              key: ValueKey<String>(
+                '${result.conversationId}:${result.messageId ?? 'title'}',
+              ),
               color: Colors.transparent,
               child: InkWell(
                 onTap: onSelectResult == null
                     ? null
                     : () => onSelectResult!(result),
+                mouseCursor: SystemMouseCursors.click,
+                hoverColor: palette.hover,
+                focusColor: palette.hover,
                 borderRadius: BorderRadius.circular(OpenChatRadii.button),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
@@ -1141,34 +1246,72 @@ class _HistorySearchResultsSection extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        result.conversationTitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: palette.text,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 3),
-                      Text.rich(
-                        TextSpan(
-                          children: _historyExcerptSpans(
-                            result.excerpt,
-                            normalStyle: theme.textTheme.bodySmall?.copyWith(
-                              color: palette.secondaryText,
-                            ),
-                            matchStyle: theme.textTheme.bodySmall?.copyWith(
-                              color: theme.colorScheme.onPrimaryContainer,
-                              backgroundColor:
-                                  theme.colorScheme.primaryContainer,
-                              fontWeight: FontWeight.w600,
+                      Row(
+                        children: [
+                          if (result.isConversationTitleMatch)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 7),
+                              child: Icon(
+                                LucideIcons.messagesSquare,
+                                size: 15,
+                                color: palette.secondaryText,
+                              ),
+                            )
+                          else
+                            const SizedBox(width: 22),
+                          Expanded(
+                            child: Text(
+                              result.conversationTitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: palette.text,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ),
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
+                        ],
                       ),
+                      if (!result.isConversationTitleMatch)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 30, top: 4),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Container(
+                                width: 1,
+                                margin: const EdgeInsets.symmetric(vertical: 2),
+                                color: palette.border,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text.rich(
+                                  TextSpan(
+                                    children: _historyExcerptSpans(
+                                      result.excerpt,
+                                      normalStyle: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: palette.secondaryText,
+                                          ),
+                                      matchStyle: theme.textTheme.bodySmall
+                                          ?.copyWith(
+                                            color: theme
+                                                .colorScheme
+                                                .onPrimaryContainer,
+                                            backgroundColor: theme
+                                                .colorScheme
+                                                .primaryContainer,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                    ),
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                     ],
                   ),
                 ),

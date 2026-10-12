@@ -74,7 +74,7 @@ class _SidebarCollapsibleHeadingState extends State<SidebarCollapsibleHeading> {
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(minHeight: 40),
                           child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
                             child: Row(
                               children: [
                                 if (widget.icon != null) ...[
@@ -111,7 +111,11 @@ class _SidebarCollapsibleHeadingState extends State<SidebarCollapsibleHeading> {
                 ),
               ),
             ),
-            if (widget.trailing != null) widget.trailing!,
+            if (widget.trailing case final trailing?)
+              Padding(
+                padding: const EdgeInsets.only(right: OpenChatSpacing.xs),
+                child: trailing,
+              ),
           ],
         ),
       ),

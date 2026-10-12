@@ -118,99 +118,108 @@ class SidebarConversationSection extends StatelessWidget {
               curve: Curves.easeOutCubic,
               alignment: Alignment.topCenter,
               child: ClipRect(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    if (!collapsed) ...[
-                      const SizedBox(height: 4),
-                      if (conversations.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
-                          child: Text(
-                            emptyMessage,
-                            style: TextStyle(
-                              color: palette.secondaryText,
-                              fontSize: 12,
-                              height: 18 / 12,
-                            ),
-                          ),
-                        )
-                      else
-                        for (
-                          var index = 0;
-                          index < conversations.length;
-                          index++
-                        ) ...[
-                          if (index > 0) const SizedBox(height: 2),
-                          DraggableSidebarConversation(
-                            conversation: conversations[index],
-                            enabled: !isArchivedSection && !selectionMode,
-                            child: SidebarConversationTile(
-                              conversation: conversations[index],
-                              selected:
-                                  conversations[index].id ==
-                                  selectedConversationId,
-                              selectionMode:
-                                  selectionMode && !isArchivedSection,
-                              selectedForBatch: selectedConversationIds
-                                  .contains(conversations[index].id),
-                              height: itemHeight,
-                              inset: 8,
-                              showChatIcon: false,
-                              onPressed: selectionMode && !isArchivedSection
-                                  ? () => onToggleBatchSelection?.call(
-                                      conversations[index].id,
-                                    )
-                                  : onSelectConversation == null
-                                  ? null
-                                  : () => onSelectConversation!(
-                                      conversations[index].id,
-                                    ),
-                              onTogglePinned:
-                                  isArchivedSection || onTogglePinned == null
-                                  ? null
-                                  : () => onTogglePinned!(
-                                      conversations[index].id,
-                                    ),
-                              onRename: onRenameConversation == null
-                                  ? null
-                                  : () => onRenameConversation!(
-                                      conversations[index].id,
-                                    ),
-                              onDelete: onDeleteConversation == null
-                                  ? null
-                                  : () => onDeleteConversation!(
-                                      conversations[index].id,
-                                    ),
-                              onExport: onExportConversation == null
-                                  ? null
-                                  : () => onExportConversation!(
-                                      conversations[index].id,
-                                    ),
-                              onArchive: onArchiveConversation == null
-                                  ? null
-                                  : () => onArchiveConversation!(
-                                      conversations[index].id,
-                                    ),
-                              onEditTags: onEditConversationTags == null
-                                  ? null
-                                  : () => onEditConversationTags!(
-                                      conversations[index].id,
-                                    ),
-                              onToggleBookmark:
-                                  onToggleConversationBookmark == null
-                                  ? null
-                                  : () => onToggleConversationBookmark!(
-                                      conversations[index].id,
-                                    ),
-                              key: ValueKey<String>(
-                                'sidebar-conversation-${conversations[index].id}',
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxHeight: OpenChatSpacing.sidebarCategoryContentMaxHeight,
+                  ),
+                  child: SingleChildScrollView(
+                    primary: false,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (!collapsed) ...[
+                          const SizedBox(height: 4),
+                          if (conversations.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(4, 0, 4, 4),
+                              child: Text(
+                                emptyMessage,
+                                style: TextStyle(
+                                  color: palette.secondaryText,
+                                  fontSize: 12,
+                                  height: 18 / 12,
+                                ),
                               ),
-                            ),
-                          ),
+                            )
+                          else
+                            for (
+                              var index = 0;
+                              index < conversations.length;
+                              index++
+                            ) ...[
+                              if (index > 0) const SizedBox(height: 2),
+                              DraggableSidebarConversation(
+                                conversation: conversations[index],
+                                enabled: !isArchivedSection && !selectionMode,
+                                child: SidebarConversationTile(
+                                  conversation: conversations[index],
+                                  selected:
+                                      conversations[index].id ==
+                                      selectedConversationId,
+                                  selectionMode:
+                                      selectionMode && !isArchivedSection,
+                                  selectedForBatch: selectedConversationIds
+                                      .contains(conversations[index].id),
+                                  height: itemHeight,
+                                  inset: 8,
+                                  showChatIcon: false,
+                                  onPressed: selectionMode && !isArchivedSection
+                                      ? () => onToggleBatchSelection?.call(
+                                          conversations[index].id,
+                                        )
+                                      : onSelectConversation == null
+                                      ? null
+                                      : () => onSelectConversation!(
+                                          conversations[index].id,
+                                        ),
+                                  onTogglePinned:
+                                      isArchivedSection ||
+                                          onTogglePinned == null
+                                      ? null
+                                      : () => onTogglePinned!(
+                                          conversations[index].id,
+                                        ),
+                                  onRename: onRenameConversation == null
+                                      ? null
+                                      : () => onRenameConversation!(
+                                          conversations[index].id,
+                                        ),
+                                  onDelete: onDeleteConversation == null
+                                      ? null
+                                      : () => onDeleteConversation!(
+                                          conversations[index].id,
+                                        ),
+                                  onExport: onExportConversation == null
+                                      ? null
+                                      : () => onExportConversation!(
+                                          conversations[index].id,
+                                        ),
+                                  onArchive: onArchiveConversation == null
+                                      ? null
+                                      : () => onArchiveConversation!(
+                                          conversations[index].id,
+                                        ),
+                                  onEditTags: onEditConversationTags == null
+                                      ? null
+                                      : () => onEditConversationTags!(
+                                          conversations[index].id,
+                                        ),
+                                  onToggleBookmark:
+                                      onToggleConversationBookmark == null
+                                      ? null
+                                      : () => onToggleConversationBookmark!(
+                                          conversations[index].id,
+                                        ),
+                                  key: ValueKey<String>(
+                                    'sidebar-conversation-${conversations[index].id}',
+                                  ),
+                                ),
+                              ),
+                            ],
                         ],
-                    ],
-                  ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
