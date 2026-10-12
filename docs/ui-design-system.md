@@ -64,8 +64,16 @@ changes conversation content; interface labels use Source Sans 3.
 - Desktop control height: 40 px; touch targets: at least 44 px.
 - Conversation reading width: 920 px maximum; composer width: 800 px maximum.
 
-The canonical dimensions are in `OpenChatSpacing`, `OpenChatRadii`, and
-`OpenChatTypography` in `lib/app/openchat_theme.dart`.
+Use `OpenChatGlassSurface` only on a small number of elevated dialogs and
+forms where a translucent layer improves surface depth. Keep it opaque and
+shadow-free in high-contrast themes. Short state feedback uses the
+`OpenChatMotion.quick` 160 ms token and changes to `Duration.zero` when
+`MediaQuery.disableAnimationsOf` is true; loading feedback remains clear with
+a static icon when motion is disabled.
+
+The canonical dimensions and motion duration are in `OpenChatSpacing`,
+`OpenChatRadii`, `OpenChatTypography`, and `OpenChatMotion` in
+`lib/app/openchat_theme.dart`.
 
 ## Navigation and icons
 

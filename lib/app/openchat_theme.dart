@@ -420,6 +420,10 @@ abstract final class OpenChatTypography {
   static const code = 13.0;
 }
 
+abstract final class OpenChatMotion {
+  static const quick = Duration(milliseconds: 160);
+}
+
 abstract final class OpenChatTheme {
   static final ThemeData light = _create(
     OpenChatPalette.light,
