@@ -177,12 +177,19 @@ class OpenChatServiceClient {
     Map<String, Object?> params = const <String, Object?>{},
     Duration timeout = _requestTimeout,
   }) async {
-    final operation = await startOperation(method, params: params);
+    final stopwatch = Stopwatch()..start();
+    OpenChatServiceOperation? operation;
     try {
-      return await operation.result.timeout(timeout);
+      operation = await startOperation(method, params: params).timeout(timeout);
+      final remaining = timeout - stopwatch.elapsed;
+      if (remaining <= Duration.zero) throw TimeoutException(method);
+      return await operation.result.timeout(remaining);
     } on TimeoutException {
-      _forgetOperation(operation.id);
-      unawaited(operation.cancel());
+      final timedOutOperation = operation;
+      if (timedOutOperation != null) {
+        _forgetOperation(timedOutOperation.id);
+        unawaited(timedOutOperation.cancel());
+      }
       throw OpenChatServiceException(
         code: 'service_timeout',
         message: 'The local service did not answer $method in time.',

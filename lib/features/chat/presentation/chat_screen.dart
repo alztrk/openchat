@@ -19,6 +19,7 @@ import 'package:openchat/features/chat/data/chat_file_changes_repository.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
 import 'package:openchat/features/chat/data/model_pricing_repository.dart';
 import 'package:openchat/features/chat/data/history_search_repository.dart';
+import 'package:openchat/features/chat/data/available_model_catalog_repository.dart';
 import 'package:openchat/features/chat/domain/chat_conversation.dart';
 import 'package:openchat/features/chat/domain/agent_question.dart';
 import 'package:openchat/features/chat/domain/agent_goal.dart';
@@ -30,6 +31,7 @@ import 'package:openchat/features/chat/domain/chat_workspace.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
 import 'package:openchat/features/chat/domain/default_model_preference.dart';
+import 'package:openchat/features/chat/domain/title_generation_preference.dart';
 import 'package:openchat/features/chat/domain/history_storage_status.dart';
 import 'package:openchat/features/chat/domain/history_search_result.dart';
 import 'package:openchat/features/chat/domain/model_favorite.dart';
@@ -50,10 +52,10 @@ import 'package:openchat/platform/windows/user_question_notifications.dart';
 import 'package:openchat/platform/windows/window_controls.dart';
 
 import 'package:openchat/features/chat/presentation/conversation_markdown_export.dart';
+import 'package:openchat/features/chat/presentation/widgets/chat_composer.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_navigation_rail.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_sidebar.dart';
-import 'package:openchat/features/chat/presentation/widgets/agent_run_manager_dialog.dart';
 import 'package:openchat/features/chat/presentation/widgets/create_project_dialog.dart';
 import 'package:openchat/features/chat/presentation/widgets/project_tool_permissions_dialog.dart';
 import 'package:openchat/features/chat/presentation/widgets/project_mcp_servers_dialog.dart';
@@ -149,11 +151,13 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _sidebarsCompact = false;
   Set<String> _collapsedSidebarSections = const <String>{};
   bool _isSending = false;
+  bool _isCompactingConversation = false;
   bool _isCreatingMessageBranch = false;
   bool _isLoadingToolPermissionMode = true;
   bool _isSavingToolPermissionMode = false;
   bool _toolPermissionModeReady = false;
   ToolPermissionMode _toolPermissionMode = ToolPermissionMode.requireApproval;
+  ChatComposerMode _composerMode = ChatComposerMode.none;
   bool _chatGptFastModeEnabled = false;
   bool _isLoadingChatGptFastMode = true;
   bool _isSavingChatGptFastMode = false;
@@ -201,12 +205,16 @@ class _ChatScreenState extends State<ChatScreen> {
   int _modelSelectionGeneration = 0;
   int _nextLocalId = 0;
   List<ChatGptModel> _models = const <ChatGptModel>[];
+  List<ChatGptModel> _slashModelCatalog = const <ChatGptModel>[];
+  bool _isLoadingSlashModelCatalog = false;
+  int _slashModelCatalogGeneration = 0;
   bool _modelsLoaded = false;
   String? _loadedConnectionId;
   String? _loadedWorkspaceId;
   String? _loadedProviderId;
   Set<String> _loadedApiKeyConnectionIds = const <String>{};
   Set<String> _availableCompatibleProviderIds = const <String>{};
+  List<CustomCompatibleProvider> _customCompatibleProviders = const [];
   Set<String> _availableChatGptApiKeyConnectionIds = const <String>{};
   Set<String> _hiddenModelKeys = const <String>{};
   DefaultModelPreference? _defaultModelPreference;
@@ -236,6 +244,7 @@ class _ChatScreenState extends State<ChatScreen> {
   int _fileChangesLoadGeneration = 0;
   bool _isFileChangesPanelOpen = false;
   HistorySearchRepository? _historySearchRepository;
+  final ValueNotifier<int> _historySearchDialogRevision = ValueNotifier<int>(0);
   HistorySearchFilterOptions? _historySearchFilterOptions;
   bool _isLoadingHistorySearchFilterOptions = false;
   HistorySearchFilters _historySearchFilters = const HistorySearchFilters();
@@ -249,6 +258,7 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _isSearchingHistory = false;
   int _historySearchGeneration = 0;
   Timer? _historySearchDebounceTimer;
+  Timer? _historySearchLoadingTimer;
   bool _isHistorySearchOpen = false;
   String? _historyTargetConversationId;
   String? _historyTargetMessageId;
@@ -309,6 +319,8 @@ class _ChatScreenState extends State<ChatScreen> {
       final serviceClient = widget.serviceClient;
       _historySearchDebounceTimer?.cancel();
       _historySearchDebounceTimer = null;
+      _historySearchLoadingTimer?.cancel();
+      _historySearchLoadingTimer = null;
       _historySearchGeneration++;
       _conversationMemoryRepository = serviceClient == null
           ? null
@@ -324,6 +336,7 @@ class _ChatScreenState extends State<ChatScreen> {
           : HistorySearchRepository(serviceClient);
       _isSearchingHistory = false;
       _historySearchErrorCode = _historySearchQuery == null ? null : 'failed';
+      _historySearchDialogRevision.value++;
       final oldController = _modelDownloadController;
       oldController?.removeListener(_handleModelDownloadChanged);
       oldController?.dispose();
@@ -534,11 +547,22 @@ class _ChatScreenState extends State<ChatScreen> {
     setState(() => _isFileChangesPanelOpen = false);
   }
 
-  void _openHistorySearch() {
+  void _openHistorySearch([String? initialQuery]) {
     if (_isHistorySearchOpen) return;
+    if (initialQuery != null) {
+      _searchController.text = initialQuery;
+    }
     setState(() => _isHistorySearchOpen = true);
     unawaited(_loadHistorySearchFilterOptions());
     unawaited(_loadSavedHistorySearches());
+    if (initialQuery != null) {
+      _handleHistorySearchChanged(initialQuery);
+    }
+  }
+
+  void _setHistorySearchState(VoidCallback update) {
+    setState(update);
+    _historySearchDialogRevision.value++;
   }
 
   Future<void> _loadSavedHistorySearches() async {
@@ -737,7 +761,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final through = throughUnixMs == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(throughUnixMs);
-    setState(() {
+    _setHistorySearchState(() {
       _historySearchFilters = selected.filters;
       _historySearchDateRange = from == null || through == null
           ? null
@@ -757,11 +781,11 @@ class _ChatScreenState extends State<ChatScreen> {
         _isLoadingHistorySearchFilterOptions) {
       return;
     }
-    setState(() => _isLoadingHistorySearchFilterOptions = true);
+    _setHistorySearchState(() => _isLoadingHistorySearchFilterOptions = true);
     try {
       final options = await repository.loadFilterOptions();
       if (!mounted) return;
-      setState(() {
+      _setHistorySearchState(() {
         _historySearchFilterOptions = options;
         _isLoadingHistorySearchFilterOptions = false;
       });
@@ -775,32 +799,21 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
       if (mounted) {
-        setState(() => _isLoadingHistorySearchFilterOptions = false);
+        _setHistorySearchState(
+          () => _isLoadingHistorySearchFilterOptions = false,
+        );
       }
     }
-  }
-
-  Future<void> _openRunManager() async {
-    final serviceClient = widget.serviceClient;
-    if (serviceClient == null ||
-        widget.historyStorageStatus != HistoryStorageStatus.available) {
-      return;
-    }
-    await showDialog<void>(
-      context: context,
-      builder: (context) => AgentRunManagerDialog(
-        serviceClient: serviceClient,
-        onOpenConversation: _selectConversation,
-      ),
-    );
   }
 
   void _closeHistorySearch() {
     _historySearchDebounceTimer?.cancel();
     _historySearchDebounceTimer = null;
+    _historySearchLoadingTimer?.cancel();
+    _historySearchLoadingTimer = null;
     _historySearchGeneration++;
     _searchController.clear();
-    setState(() {
+    _setHistorySearchState(() {
       _isHistorySearchOpen = false;
       _historySearchQuery = null;
       _historySearchDateRange = null;
@@ -816,6 +829,8 @@ class _ChatScreenState extends State<ChatScreen> {
     final queryLength = query.runes.length;
     _historySearchDebounceTimer?.cancel();
     _historySearchDebounceTimer = null;
+    _historySearchLoadingTimer?.cancel();
+    _historySearchLoadingTimer = null;
     if (query.isEmpty || queryLength < 2 || queryLength > 512) {
       _submitHistorySearch(query);
       return;
@@ -828,13 +843,14 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     final generation = ++_historySearchGeneration;
-    setState(() {
+    _setHistorySearchState(() {
       _historySearchQuery = query;
       _historySearchResults = const <HistorySearchResult>[];
       _historySearchErrorCode = null;
       _isSearchingHistory = true;
     });
-    _historySearchDebounceTimer = Timer(const Duration(milliseconds: 240), () {
+    _armHistorySearchLoadingTimeout(generation);
+    _historySearchDebounceTimer = Timer(const Duration(milliseconds: 80), () {
       _historySearchDebounceTimer = null;
       unawaited(_loadHistorySearchResults(repository, query, generation));
     });
@@ -843,11 +859,13 @@ class _ChatScreenState extends State<ChatScreen> {
   void _submitHistorySearch(String rawQuery) {
     _historySearchDebounceTimer?.cancel();
     _historySearchDebounceTimer = null;
+    _historySearchLoadingTimer?.cancel();
+    _historySearchLoadingTimer = null;
     final query = rawQuery.trim();
     final generation = ++_historySearchGeneration;
     final queryLength = query.runes.length;
     if (query.isEmpty) {
-      setState(() {
+      _setHistorySearchState(() {
         _historySearchQuery = null;
         _historySearchResults = const <HistorySearchResult>[];
         _historySearchErrorCode = null;
@@ -856,7 +874,7 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
     if (queryLength < 2 || queryLength > 512) {
-      setState(() {
+      _setHistorySearchState(() {
         _historySearchQuery = query;
         _historySearchResults = const <HistorySearchResult>[];
         _historySearchErrorCode = queryLength < 2 ? 'too_short' : 'too_long';
@@ -866,7 +884,7 @@ class _ChatScreenState extends State<ChatScreen> {
     }
     final repository = _historySearchRepository;
     if (repository == null) {
-      setState(() {
+      _setHistorySearchState(() {
         _historySearchQuery = query;
         _historySearchResults = const <HistorySearchResult>[];
         _historySearchErrorCode = 'failed';
@@ -874,13 +892,28 @@ class _ChatScreenState extends State<ChatScreen> {
       });
       return;
     }
-    setState(() {
+    _setHistorySearchState(() {
       _historySearchQuery = query;
       _historySearchResults = const <HistorySearchResult>[];
       _historySearchErrorCode = null;
       _isSearchingHistory = true;
     });
+    _armHistorySearchLoadingTimeout(generation);
     unawaited(_loadHistorySearchResults(repository, query, generation));
+  }
+
+  void _armHistorySearchLoadingTimeout(int generation) {
+    _historySearchLoadingTimer?.cancel();
+    _historySearchLoadingTimer = Timer(const Duration(seconds: 9), () {
+      if (!mounted || generation != _historySearchGeneration) return;
+      _historySearchGeneration++;
+      _historySearchLoadingTimer = null;
+      _setHistorySearchState(() {
+        _historySearchResults = const <HistorySearchResult>[];
+        _historySearchErrorCode = 'failed';
+        _isSearchingHistory = false;
+      });
+    });
   }
 
   Future<void> _loadHistorySearchResults(
@@ -912,10 +945,9 @@ class _ChatScreenState extends State<ChatScreen> {
         filters: filters,
       );
       if (!mounted || generation != _historySearchGeneration) return;
-      setState(() {
+      _setHistorySearchState(() {
         _historySearchResults = results;
         _historySearchErrorCode = null;
-        _isSearchingHistory = false;
       });
     } on Object catch (error, stackTrace) {
       FlutterError.reportError(
@@ -927,11 +959,16 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
       );
       if (!mounted || generation != _historySearchGeneration) return;
-      setState(() {
+      _setHistorySearchState(() {
         _historySearchResults = const <HistorySearchResult>[];
         _historySearchErrorCode = 'failed';
-        _isSearchingHistory = false;
       });
+    } finally {
+      if (mounted && generation == _historySearchGeneration) {
+        _historySearchLoadingTimer?.cancel();
+        _historySearchLoadingTimer = null;
+        _setHistorySearchState(() => _isSearchingHistory = false);
+      }
     }
   }
 
@@ -944,20 +981,20 @@ class _ChatScreenState extends State<ChatScreen> {
       initialDateRange: _historySearchDateRange,
     );
     if (!mounted || selected == null) return;
-    setState(() => _historySearchDateRange = selected);
+    _setHistorySearchState(() => _historySearchDateRange = selected);
     final query = _historySearchQuery;
     if (query != null && query.length >= 2) _submitHistorySearch(query);
   }
 
   void _clearHistorySearchDateRange() {
     if (_historySearchDateRange == null) return;
-    setState(() => _historySearchDateRange = null);
+    _setHistorySearchState(() => _historySearchDateRange = null);
     final query = _historySearchQuery;
     if (query != null && query.length >= 2) _submitHistorySearch(query);
   }
 
   void _applyHistorySearchFilters(HistorySearchFilters filters) {
-    setState(() => _historySearchFilters = filters);
+    _setHistorySearchState(() => _historySearchFilters = filters);
     final query = _historySearchQuery;
     if (query != null && query.length >= 2) _submitHistorySearch(query);
   }
@@ -966,7 +1003,9 @@ class _ChatScreenState extends State<ChatScreen> {
     _closeHistorySearch();
     _selectConversation(
       result.conversationId,
-      historyMessageId: result.messageId,
+      historyMessageId: result.isConversationTitleMatch
+          ? null
+          : result.messageId,
     );
     _scaffoldKey.currentState?.closeDrawer();
   }
@@ -1632,6 +1671,7 @@ class _ChatScreenState extends State<ChatScreen> {
       List<ChatGptApiKeyConnection> apiConnections =
           const <ChatGptApiKeyConnection>[];
       var compatibleProviderIds = const <String>{};
+      var customCompatibleProviders = const <CustomCompatibleProvider>[];
       var apiKeyStorageUnavailable = false;
       var compatibleKeyStorageUnavailable = false;
       try {
@@ -1646,6 +1686,13 @@ class _ChatScreenState extends State<ChatScreen> {
             await widget.apiCompatibleProviderKeyStore
                 ?.readConfiguredProviderIds() ??
             const <String>{};
+      } on ApiCompatibleProviderKeyStorageException {
+        compatibleKeyStorageUnavailable = true;
+      }
+      try {
+        customCompatibleProviders =
+            await widget.apiCompatibleProviderKeyStore?.readCustomProviders() ??
+            const <CustomCompatibleProvider>[];
       } on ApiCompatibleProviderKeyStorageException {
         compatibleKeyStorageUnavailable = true;
       }
@@ -1670,6 +1717,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _selectedWorkspaceId = selectedWorkspace?.id;
         _chatGptApiKeyConnections = apiConnections;
         _availableCompatibleProviderIds = compatibleProviderIds;
+        _customCompatibleProviders = customCompatibleProviders;
         _hiddenModelKeys = hiddenKeys;
         _defaultModelPreference = defaultModel;
         _isUsingProjectDefaultModel = resolvedDefault.isProjectSpecific;
@@ -1727,8 +1775,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 (connection) =>
                     connection.id == defaultModel.apiKeyConnectionId,
               );
-          final isDefaultCompatible = ApiCompatibleProviderKeyStore.providerIds
-              .contains(defaultProvider);
+          final isDefaultCompatible =
+              ApiCompatibleProviderKeyStore.isApiKeyProviderId(defaultProvider);
           if (defaultProvider == 'opencode' ||
               _localEngineProviderIds.contains(defaultProvider)) {
             defaultModelAvailable = true;
@@ -1761,7 +1809,7 @@ class _ChatScreenState extends State<ChatScreen> {
             providerId = 'opencode';
           }
         }
-        if (ApiCompatibleProviderKeyStore.providerIds.contains(providerId) &&
+        if (ApiCompatibleProviderKeyStore.isApiKeyProviderId(providerId) &&
             !compatibleProviderIds.contains(providerId)) {
           providerId = 'opencode';
         }
@@ -1784,7 +1832,7 @@ class _ChatScreenState extends State<ChatScreen> {
           } else {
             if (!_isApiKeyRouteProvider(providerId)) {
               _selectedApiKeyConnectionId = null;
-            } else if (ApiCompatibleProviderKeyStore.providerIds.contains(
+            } else if (ApiCompatibleProviderKeyStore.isApiKeyProviderId(
               providerId,
             )) {
               _selectedApiKeyConnectionId = providerId;
@@ -1856,7 +1904,8 @@ class _ChatScreenState extends State<ChatScreen> {
     try {
       final conversation = await repository.getConversation(conversationId);
       if (!mounted || _selectedConversationId != conversationId) return;
-      final providerId = switch (conversation?.providerId) {
+      final savedProviderId = conversation?.providerId;
+      final providerId = switch (savedProviderId) {
         'opencode' => 'opencode',
         'chatgpt_api' => 'chatgpt_api',
         'chatgpt' => 'chatgpt',
@@ -1865,6 +1914,8 @@ class _ChatScreenState extends State<ChatScreen> {
         'cerebras' => 'cerebras',
         'openrouter' => 'openrouter',
         'mistral' => 'mistral',
+        final id? when ApiCompatibleProviderKeyStore.isCustomProviderId(id) =>
+          id,
         _ =>
           conversation?.connectionId != null
               ? 'chatgpt'
@@ -1876,7 +1927,7 @@ class _ChatScreenState extends State<ChatScreen> {
       if ((providerId == 'chatgpt' &&
               (connectionId == null || workspaceId == null)) ||
           (providerId == 'chatgpt_api' && apiKeyConnectionId == null) ||
-          (ApiCompatibleProviderKeyStore.providerIds.contains(providerId) &&
+          (ApiCompatibleProviderKeyStore.isApiKeyProviderId(providerId) &&
               apiKeyConnectionId != providerId)) {
         throw StateError('The conversation provider route was incomplete.');
       }
@@ -1924,6 +1975,48 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _loadSlashModelCatalog({bool forceRefresh = false}) async {
+    final service = widget.serviceClient;
+    if (service == null || _isLoadingSlashModelCatalog) return;
+    final generation = ++_slashModelCatalogGeneration;
+    setState(() => _isLoadingSlashModelCatalog = true);
+    try {
+      final result = await AvailableModelCatalogRepository(
+        service: service,
+        chatGptApiKeyStore: widget.chatGptApiKeyStore,
+        apiCompatibleProviderKeyStore: widget.apiCompatibleProviderKeyStore,
+      ).load(forceRefresh: forceRefresh);
+      if (!mounted || generation != _slashModelCatalogGeneration) return;
+      final models = result.models
+          .where(
+            (model) =>
+                !_hiddenModelKeys.contains(model.routeKey) &&
+                !_hiddenModelKeys.contains('${model.providerId}:${model.id}'),
+          )
+          .toList(growable: false);
+      setState(() => _slashModelCatalog = List.unmodifiable(models));
+      if (result.hasUnavailableSources) {
+        _showMessage(context.openchatL10n.providerDataUnavailable);
+      }
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'model_catalog',
+          context: ErrorDescription('while loading available model sources'),
+        ),
+      );
+      if (mounted && generation == _slashModelCatalogGeneration) {
+        _showMessage(context.openchatL10n.providerDataUnavailable);
+      }
+    } finally {
+      if (mounted && generation == _slashModelCatalogGeneration) {
+        setState(() => _isLoadingSlashModelCatalog = false);
+      }
+    }
+  }
+
   Future<void> _loadModels({
     required String providerId,
     required String? selectedModelId,
@@ -1957,7 +2050,7 @@ class _ChatScreenState extends State<ChatScreen> {
           _selectedApiKeyConnectionId =
               selectedModel.providerId == 'chatgpt_api'
               ? selectedModel.connectionId
-              : ApiCompatibleProviderKeyStore.providerIds.contains(
+              : ApiCompatibleProviderKeyStore.isApiKeyProviderId(
                   selectedModel.providerId,
                 )
               ? selectedModel.providerId
@@ -2121,6 +2214,52 @@ class _ChatScreenState extends State<ChatScreen> {
             sourceServiceError ??= error;
           }
         }
+      } else if (ApiCompatibleProviderKeyStore.isCustomProviderId(
+        providerFamily,
+      )) {
+        try {
+          final provider = _firstOrNull(
+            (await widget.apiCompatibleProviderKeyStore
+                        ?.readCustomProviders() ??
+                    const <CustomCompatibleProvider>[])
+                .where((provider) => provider.id == providerFamily),
+          );
+          final selectedProvider = provider;
+          final apiKey = await widget.apiCompatibleProviderKeyStore?.readApiKey(
+            providerFamily,
+          );
+          if (selectedProvider == null) {
+            sourceFailure = true;
+          } else {
+            final response = await service.call(
+              'compatible.models.list',
+              params: <String, Object?>{
+                'providerId': selectedProvider.id,
+                'baseUrl': selectedProvider.baseUrl,
+                'protocol': selectedProvider.protocol.name,
+                ...?switch (apiKey) {
+                  final key? => <String, Object?>{'apiKey': key},
+                  _ => null,
+                },
+                if (forceRefresh) 'forceRefresh': true,
+              },
+            );
+            final catalog = parseCatalog(
+              response,
+              routeProviderId: selectedProvider.id,
+              groupId: 'models',
+              connectionId: selectedProvider.id,
+            );
+            models.addAll(catalog.models);
+            loadedApiKeys.add(selectedProvider.id);
+            isStale = catalog.stale;
+          }
+        } on ApiCompatibleProviderKeyStorageException {
+          sourceFailure = true;
+        } on OpenChatServiceException catch (error) {
+          sourceFailure = true;
+          sourceServiceError ??= error;
+        }
       } else if (ApiCompatibleProviderKeyStore.providerIds.contains(
         providerFamily,
       )) {
@@ -2205,7 +2344,7 @@ class _ChatScreenState extends State<ChatScreen> {
           _selectedApiKeyConnectionId =
               selectedModel.providerId == 'chatgpt_api'
               ? selectedModel.connectionId
-              : ApiCompatibleProviderKeyStore.providerIds.contains(
+              : ApiCompatibleProviderKeyStore.isApiKeyProviderId(
                   selectedModel.providerId,
                 )
               ? selectedModel.providerId
@@ -2289,7 +2428,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }) =>
       '$providerId:${providerId == 'chatgpt_api'
           ? apiKeyConnectionId ?? ''
-          : ApiCompatibleProviderKeyStore.providerIds.contains(providerId)
+          : ApiCompatibleProviderKeyStore.isApiKeyProviderId(providerId)
           ? apiKeyConnectionId ?? providerId
           : providerId == 'chatgpt'
           ? connectionId ?? ''
@@ -2297,6 +2436,12 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _selectModel(ChatGptModel selectedModel) {
     if (!selectedModel.isAvailable) return;
+    final selectedRouteLoaded =
+        _loadedProviderId == _providerFamily(selectedModel.providerId) &&
+        _models.any(
+          (model) =>
+              model.isAvailable && model.routeKey == selectedModel.routeKey,
+        );
     final conversationId = _selectedConversationId;
     final generation = ++_modelSelectionGeneration;
     final previousModelId = _selectedModelId;
@@ -2315,7 +2460,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       _selectedApiKeyConnectionId = selectedModel.providerId == 'chatgpt_api'
           ? selectedModel.connectionId
-          : ApiCompatibleProviderKeyStore.providerIds.contains(
+          : ApiCompatibleProviderKeyStore.isApiKeyProviderId(
               selectedModel.providerId,
             )
           ? selectedModel.providerId
@@ -2334,6 +2479,16 @@ class _ChatScreenState extends State<ChatScreen> {
           previousWorkspaceId: previousWorkspaceId,
           previousApiKeyConnectionId: previousApiKeyConnectionId,
           generation: generation,
+        ),
+      );
+    }
+    if (!selectedRouteLoaded) {
+      unawaited(
+        _loadModels(
+          providerId: selectedModel.providerId,
+          selectedModelId: selectedModel.id,
+          selectedModelRouteKey: selectedModel.routeKey,
+          forceRefresh: true,
         ),
       );
     }
@@ -2403,9 +2558,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _showMessage(context.openchatL10n.modelCatalogUnavailable);
       return;
     }
-    if (ApiCompatibleProviderKeyStore.providerIds.contains(
-          favorite.providerId,
-        ) &&
+    if (ApiCompatibleProviderKeyStore.isApiKeyProviderId(favorite.providerId) &&
         !_availableCompatibleProviderIds.contains(favorite.providerId)) {
       _showMessage(context.openchatL10n.modelCatalogUnavailable);
       return;
@@ -2414,7 +2567,7 @@ class _ChatScreenState extends State<ChatScreen> {
         favorite.providerId != 'chatgpt_api' &&
         favorite.providerId != 'opencode' &&
         !_localEngineProviderIds.contains(favorite.providerId) &&
-        !ApiCompatibleProviderKeyStore.providerIds.contains(
+        !ApiCompatibleProviderKeyStore.isApiKeyProviderId(
           favorite.providerId,
         )) {
       return;
@@ -2425,7 +2578,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _selectedProviderId = favorite.providerId;
         _selectedApiKeyConnectionId = favorite.providerId == 'chatgpt_api'
             ? favorite.sourceConnectionId
-            : ApiCompatibleProviderKeyStore.providerIds.contains(
+            : ApiCompatibleProviderKeyStore.isApiKeyProviderId(
                 favorite.providerId,
               )
             ? favorite.providerId
@@ -2529,9 +2682,7 @@ class _ChatScreenState extends State<ChatScreen> {
         workspaceId: model.providerId == 'chatgpt' ? model.workspaceId : null,
         apiKeyConnectionId: model.providerId == 'chatgpt_api'
             ? model.connectionId
-            : ApiCompatibleProviderKeyStore.providerIds.contains(
-                model.providerId,
-              )
+            : ApiCompatibleProviderKeyStore.isApiKeyProviderId(model.providerId)
             ? model.providerId
             : null,
       );
@@ -2574,6 +2725,46 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _selectReasoning(String? effort) {
     setState(() => _selectedReasoningEffort = effort);
+  }
+
+  Future<void> _selectModelFromSlashCommand(String query) async {
+    final l10n = context.openchatL10n;
+    final normalizedQuery = query.trim().toLowerCase();
+    if (normalizedQuery.isEmpty) {
+      _showMessage(l10n.slashCommandModelNameRequired);
+      return;
+    }
+    if (_isSending || _isUpdatingConversationModel) {
+      _showMessage(l10n.slashCommandModelUnavailable);
+      return;
+    }
+    if (_isLoadingSlashModelCatalog) {
+      _showMessage(l10n.slashCommandModelUnavailable);
+      return;
+    }
+    if (_slashModelCatalog.isEmpty) {
+      await _loadSlashModelCatalog();
+    }
+    if (!mounted) return;
+    final matchingModels = _slashModelCatalog
+        .where(
+          (model) =>
+              model.isAvailable &&
+              !_hiddenModelKeys.contains(model.routeKey) &&
+              !_hiddenModelKeys.contains('${model.providerId}:${model.id}') &&
+              (model.id.trim().toLowerCase() == normalizedQuery ||
+                  model.displayName.trim().toLowerCase() == normalizedQuery),
+        )
+        .toList(growable: false);
+    if (matchingModels.isEmpty) {
+      _showMessage(l10n.slashCommandModelNoMatch);
+      return;
+    }
+    if (matchingModels.length > 1) {
+      _showMessage(l10n.slashCommandModelAmbiguous);
+      return;
+    }
+    _selectModel(matchingModels.single);
   }
 
   void _handleModelDownloadChanged() {
@@ -2837,6 +3028,72 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<Map<String, Object?>> _loadTitleGenerationRequest() async {
+    TitleGenerationPreference preference;
+    try {
+      preference = await _settingsPreferences.readTitleGenerationPreference();
+    } on FormatException catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'title_generation',
+          context: ErrorDescription('while reading title generation settings'),
+        ),
+      );
+      return const <String, Object?>{'mode': 'disabled'};
+    }
+    if (preference.mode == TitleGenerationMode.conversation) {
+      return const <String, Object?>{'mode': 'conversation'};
+    }
+    final model = preference.model;
+    if (model == null) return const <String, Object?>{'mode': 'disabled'};
+
+    String? apiKey;
+    CustomCompatibleProvider? customProvider;
+    try {
+      if (ApiCompatibleProviderKeyStore.isCustomProviderId(model.providerId)) {
+        customProvider = _firstOrNull(
+          (await widget.apiCompatibleProviderKeyStore?.readCustomProviders() ??
+                  const <CustomCompatibleProvider>[])
+              .where((provider) => provider.id == model.providerId),
+        );
+        if (customProvider == null) {
+          return const <String, Object?>{'mode': 'disabled'};
+        }
+      }
+      apiKey = switch (model.providerId) {
+        'opencode' => await widget.openCodeApiKeyStore?.readApiKey(),
+        'chatgpt_api' when model.apiKeyConnectionId != null =>
+          await widget.chatGptApiKeyStore?.readApiKey(
+            model.apiKeyConnectionId!,
+          ),
+        final providerId
+            when ApiCompatibleProviderKeyStore.isApiKeyProviderId(providerId) ||
+                ApiCompatibleProviderKeyStore.isCustomProviderId(providerId) =>
+          await widget.apiCompatibleProviderKeyStore?.readApiKey(providerId),
+        _ => null,
+      };
+    } on OpenCodeApiKeyStorageException {
+      return const <String, Object?>{'mode': 'disabled'};
+    } on ChatGptApiKeyStorageException {
+      return const <String, Object?>{'mode': 'disabled'};
+    } on ApiCompatibleProviderKeyStorageException {
+      return const <String, Object?>{'mode': 'disabled'};
+    }
+    return <String, Object?>{
+      'mode': preference.mode.name,
+      'target': <String, Object?>{
+        ...model.toJson(),
+        ...?switch (apiKey) {
+          final key? => <String, Object?>{'apiKey': key},
+          _ => null,
+        },
+        if (customProvider != null) 'customProvider': customProvider.toJson(),
+      },
+    };
+  }
+
   Future<void> _sendMessage(
     ChatConversation? selectedConversation, {
     chat.ChatMessage? responseToReplace,
@@ -2860,19 +3117,42 @@ class _ChatScreenState extends State<ChatScreen> {
             _pendingQuestionGroups.isNotEmpty)) {
       return;
     }
-    final toolPermissionMode = _toolPermissionMode;
     final repository = widget.chatRepository;
     final service = widget.serviceClient;
     final l10n = context.openchatL10n;
-    final rawText = responseToReplace == null && resumeRunId == null
+    var rawText = responseToReplace == null && resumeRunId == null
         ? messageTextOverride ?? _messageController.text.trim()
         : '';
-    String? goalObjective;
-    if (messageTextOverride == null &&
+    final isFreshComposerMessage =
+        messageTextOverride == null &&
         responseToReplace == null &&
-        resumeRunId == null &&
-        RegExp(r'^/goal(?:\s|$)', caseSensitive: false).hasMatch(rawText)) {
-      final objective = rawText.substring('/goal'.length).trim();
+        resumeRunId == null;
+    var modeForRequest = _composerMode;
+    if (isFreshComposerMessage) {
+      final modeCommand = RegExp(
+        r'^/(plan|goal|hedef)(?:\s|$)',
+        caseSensitive: false,
+      ).firstMatch(rawText);
+      if (modeCommand != null) {
+        modeForRequest = switch (modeCommand.group(1)?.toLowerCase()) {
+          'plan' => ChatComposerMode.plan,
+          'goal' || 'hedef' => ChatComposerMode.goal,
+          _ => modeForRequest,
+        };
+        _setComposerMode(modeForRequest);
+        rawText = rawText.substring(modeCommand.end).trim();
+        if (rawText.isEmpty) {
+          _messageController.clear();
+          return;
+        }
+      }
+    }
+    final toolPermissionMode = modeForRequest == ChatComposerMode.plan
+        ? ToolPermissionMode.plan
+        : _toolPermissionMode;
+    String? goalObjective;
+    if (isFreshComposerMessage && modeForRequest == ChatComposerMode.goal) {
+      final objective = rawText.trim();
       if (objective.isEmpty) {
         _showMessage(l10n.goalObjectiveRequired);
         return;
@@ -2912,7 +3192,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final apiKeyConnectionId = _isApiKeyRouteProvider(providerId)
         ? selectedConversation?.apiKeyConnectionId ??
               _selectedApiKeyConnectionId ??
-              (ApiCompatibleProviderKeyStore.providerIds.contains(providerId)
+              (ApiCompatibleProviderKeyStore.isApiKeyProviderId(providerId)
                   ? providerId
                   : null)
         : null;
@@ -2966,15 +3246,25 @@ class _ChatScreenState extends State<ChatScreen> {
     }
 
     String? apiKey;
+    CustomCompatibleProvider? customProvider;
     try {
+      if (ApiCompatibleProviderKeyStore.isCustomProviderId(providerId)) {
+        customProvider = _firstOrNull(
+          (await widget.apiCompatibleProviderKeyStore?.readCustomProviders() ??
+                  const <CustomCompatibleProvider>[])
+              .where((provider) => provider.id == providerId),
+        );
+        if (customProvider == null) {
+          _showMessage(l10n.modelCatalogUnavailable);
+          return;
+        }
+      }
       apiKey = switch (providerId) {
         'opencode' => await widget.openCodeApiKeyStore?.readApiKey(),
         'chatgpt_api' when apiKeyConnectionId != null =>
           await widget.chatGptApiKeyStore?.readApiKey(apiKeyConnectionId),
         final providerId
-            when ApiCompatibleProviderKeyStore.providerIds.contains(
-              providerId,
-            ) =>
+            when ApiCompatibleProviderKeyStore.isApiKeyProviderId(providerId) =>
           await widget.apiCompatibleProviderKeyStore?.readApiKey(providerId),
         _ => null,
       };
@@ -3396,6 +3686,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
     }
 
+    final titleGeneration = await _loadTitleGenerationRequest();
     final requestParams = <String, Object?>{
       'conversationId': conversationId,
       if (goalObjective != null) ...<String, Object?>{
@@ -3414,6 +3705,7 @@ class _ChatScreenState extends State<ChatScreen> {
       },
       if (_isApiKeyRouteProvider(providerId))
         'apiKeyConnectionId': apiKeyConnectionId,
+      if (customProvider != null) 'customProvider': customProvider.toJson(),
       if (projectSkillIds.isNotEmpty) 'projectSkillIds': projectSkillIds,
       if (providerId == 'chatgpt' || providerId == 'chatgpt_api')
         'fastMode': chatGptFastMode,
@@ -3428,6 +3720,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _ => null,
       },
       'toolPermissionMode': toolPermissionMode.serviceValue,
+      'titleGeneration': titleGeneration,
       if (projectToolRules.isNotEmpty) 'toolPermissionRules': projectToolRules,
     };
     if (modelContextLimit != null) {
@@ -4250,6 +4543,11 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _setComposerMode(ChatComposerMode mode) {
+    if (_composerMode == mode) return;
+    setState(() => _composerMode = mode);
+  }
+
   Future<void> _toggleConversationPinned(String conversationId) async {
     await _updateConversationPinned(conversationId);
   }
@@ -4849,6 +5147,107 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  Future<void> _renameConversationFromSlashCommand(
+    String conversationId,
+    String title,
+  ) async {
+    final repository = widget.chatRepository;
+    if (repository == null) {
+      if (mounted) {
+        _showMessage(context.openchatL10n.conversationTitleSaveFailed);
+      }
+      return;
+    }
+    try {
+      await repository.renameConversation(
+        conversationId: conversationId,
+        title: title,
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'chat_history',
+          context: ErrorDescription('while renaming a conversation by command'),
+        ),
+      );
+      if (mounted) {
+        _showMessage(context.openchatL10n.conversationTitleSaveFailed);
+      }
+      return;
+    }
+    if (mounted && _selectedConversationId == conversationId) {
+      showOpenChatToast(
+        context,
+        context.openchatL10n.slashCommandRenameSuccess,
+        type: OpenChatToastType.success,
+      );
+    }
+  }
+
+  Future<void> _compactConversationFromSlashCommand({
+    required String conversationId,
+    required String routeKey,
+    required int? modelContextWindow,
+  }) async {
+    final l10n = context.openchatL10n;
+    if (_isCompactingConversation ||
+        _isSending ||
+        _isUpdatingConversationModel) {
+      _showMessage(l10n.slashCommandCompactBusy);
+      return;
+    }
+    final repository = _conversationMemoryRepository;
+    if (repository == null) {
+      _showMessage(l10n.slashCommandCompactFailed);
+      return;
+    }
+
+    setState(() => _isCompactingConversation = true);
+    try {
+      final savedLimit = (await _settingsPreferences
+          .readModelContextLimits())[routeKey];
+      var contextWindow = modelContextWindow;
+      if (savedLimit != null &&
+          (contextWindow == null || savedLimit < contextWindow)) {
+        contextWindow = savedLimit;
+      }
+      if (contextWindow == null || contextWindow < 2048) {
+        if (mounted) _showMessage(l10n.slashCommandCompactNoContextWindow);
+        return;
+      }
+      final compacted = await repository.compactConversation(
+        conversationId: conversationId,
+        contextWindow: contextWindow,
+      );
+      if (!mounted || _selectedConversationId != conversationId) return;
+      if (compacted) {
+        showOpenChatToast(
+          context,
+          l10n.slashCommandCompactSuccess,
+          type: OpenChatToastType.success,
+        );
+      } else {
+        _showMessage(l10n.slashCommandCompactNothing);
+      }
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'conversation_memory',
+          context: ErrorDescription('while compacting a conversation'),
+        ),
+      );
+      if (mounted && _selectedConversationId == conversationId) {
+        _showMessage(l10n.slashCommandCompactFailed);
+      }
+    } finally {
+      if (mounted) setState(() => _isCompactingConversation = false);
+    }
+  }
+
   Future<void> _editConversationTags(String conversationId) async {
     final repository = widget.chatRepository;
     if (repository == null) return;
@@ -5340,7 +5739,9 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void dispose() {
     _historySearchDebounceTimer?.cancel();
+    _historySearchLoadingTimer?.cancel();
     _historySearchGeneration++;
+    _historySearchDialogRevision.dispose();
     _fileChangesLoadGeneration++;
     unawaited(_questionServiceEvents?.cancel());
     unawaited(_savedOutputsSubscription?.cancel());
@@ -5731,20 +6132,15 @@ class _ChatScreenState extends State<ChatScreen> {
           width: width,
           showDivider: showDivider,
           searchController: _searchController,
+          historySearchDialogRevision: _historySearchDialogRevision,
           isHistorySearchOpen: _isHistorySearchOpen,
           onOpenHistorySearch: _openHistorySearch,
-          onOpenRunManager:
-              widget.serviceClient == null ||
-                  widget.historyStorageStatus != HistoryStorageStatus.available
-              ? null
-              : () => unawaited(_openRunManager()),
           onOpenSavedHistorySearches: _isHistorySearchOpen
               ? () => unawaited(_openSavedHistorySearches())
               : null,
           onCloseHistorySearch: _closeHistorySearch,
           onSearchChanged: _handleHistorySearchChanged,
           onSearchSubmitted: _submitHistorySearch,
-          historySearchQuery: _historySearchQuery,
           hasHistorySearchDateRange: _historySearchDateRange != null,
           onPickHistorySearchDateRange: _pickHistorySearchDateRange,
           onClearHistorySearchDateRange: _clearHistorySearchDateRange,
@@ -5906,9 +6302,7 @@ class _ChatScreenState extends State<ChatScreen> {
     final routeApiKeyConnectionId = _isApiKeyRouteProvider(routeProviderId)
         ? selectedConversation?.apiKeyConnectionId ??
               _selectedApiKeyConnectionId ??
-              (ApiCompatibleProviderKeyStore.providerIds.contains(
-                    routeProviderId,
-                  )
+              (ApiCompatibleProviderKeyStore.isApiKeyProviderId(routeProviderId)
                   ? routeProviderId
                   : null)
         : null;
@@ -5961,7 +6355,7 @@ class _ChatScreenState extends State<ChatScreen> {
             _localEngineProviderIds.contains(routeProviderId) ||
             (_isApiKeyRouteProvider(routeProviderId) &&
                 _loadedApiKeyConnectionIds.contains(routeApiKeyConnectionId)) ||
-            (ApiCompatibleProviderKeyStore.providerIds.contains(
+            (ApiCompatibleProviderKeyStore.isApiKeyProviderId(
                   routeProviderId,
                 ) &&
                 _availableCompatibleProviderIds.contains(routeProviderId)) ||
@@ -5982,6 +6376,7 @@ class _ChatScreenState extends State<ChatScreen> {
         !_questionLoadFailed &&
         _pendingQuestionGroups.isEmpty &&
         !_isCreatingMessageBranch &&
+        !_isCompactingConversation &&
         !_isSending;
     final l10n = context.openchatL10n;
     final modelsEmptyLabel =
@@ -6010,6 +6405,7 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         );
         return StreamBuilder<List<chat.ChatMessage>>(
+          key: ValueKey<String?>(selectedConversation?.id),
           stream: selectedConversation == null ? null : _messageStream,
           builder: (context, messageSnapshot) {
             final storedMessages = selectedConversation == null
@@ -6024,6 +6420,10 @@ class _ChatScreenState extends State<ChatScreen> {
                       )
                       .toList(growable: false)
                 : storedMessages;
+            final messagesLoading =
+                selectedConversation != null &&
+                !messageSnapshot.hasData &&
+                !messageSnapshot.hasError;
             return StreamBuilder<List<FavoriteModel>>(
               stream: _favoriteModelsStream,
               builder: (context, favoriteSnapshot) {
@@ -6127,6 +6527,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     }
                   },
                   models: modelOptions,
+                  slashModels: _slashModelCatalog,
+                  isLoadingSlashModels: _isLoadingSlashModelCatalog,
+                  onRefreshSlashModels: () =>
+                      unawaited(_loadSlashModelCatalog()),
                   favoriteModels:
                       favoriteSnapshot.data ?? const <FavoriteModel>[],
                   providerId: _providerFamily(routeProviderId),
@@ -6145,6 +6549,10 @@ class _ChatScreenState extends State<ChatScreen> {
                     ..._localEngineProviderIds,
                     if (_isChatGptConnected) 'chatgpt',
                     ..._availableCompatibleProviderIds,
+                  },
+                  providerNames: {
+                    for (final provider in _customCompatibleProviders)
+                      provider.id: provider.name,
                   },
                   onProviderSelected: selectedConversation == null
                       ? _selectProvider
@@ -6186,6 +6594,120 @@ class _ChatScreenState extends State<ChatScreen> {
                           _isSavingToolPermissionMode
                       ? null
                       : _selectToolPermissionMode,
+                  mode: _composerMode,
+                  onModeChanged: _setComposerMode,
+                  onNewConversation: _startNewConversation,
+                  onNewConversationMessage: (message) => unawaited(
+                    _sendMessage(null, messageTextOverride: message),
+                  ),
+                  onOpenHistorySearch: _openHistorySearch,
+                  onSummarizeConversation: (additionalInstructions) {
+                    if (selectedConversation == null) {
+                      _showMessage(l10n.slashCommandSummarizeNoMessages);
+                      return;
+                    }
+                    if (messageSnapshot.hasError) {
+                      _showMessage(l10n.messageHistoryLoadFailed);
+                      return;
+                    }
+                    if (messagesLoading) {
+                      _showMessage(l10n.slashCommandSummarizeLoading);
+                      return;
+                    }
+                    if (messages.isEmpty) {
+                      _showMessage(l10n.slashCommandSummarizeNoMessages);
+                      return;
+                    }
+                    if (!canSend) {
+                      _showMessage(l10n.slashCommandSummarizeUnavailable);
+                      return;
+                    }
+                    final prompt = l10n.slashCommandSummarizePrompt;
+                    final instructions = additionalInstructions?.trim();
+                    final request = instructions == null || instructions.isEmpty
+                        ? prompt
+                        : '$prompt\n\n$instructions';
+                    unawaited(
+                      _sendMessage(
+                        selectedConversation,
+                        messageTextOverride: request,
+                      ),
+                    );
+                  },
+                  onRenameCommand: (title) {
+                    final normalizedTitle = title.trim();
+                    if (normalizedTitle.isEmpty) {
+                      _showMessage(l10n.slashCommandRenameTitleRequired);
+                      return;
+                    }
+                    if (selectedConversation == null) {
+                      _showMessage(l10n.slashCommandRenameNoConversation);
+                      return;
+                    }
+                    unawaited(
+                      _renameConversationFromSlashCommand(
+                        selectedConversation.id,
+                        normalizedTitle,
+                      ),
+                    );
+                  },
+                  onModelCommand: (query) =>
+                      unawaited(_selectModelFromSlashCommand(query)),
+                  onReasoningCommand: (requestedLevel) {
+                    final normalizedLevel = requestedLevel.trim().toLowerCase();
+                    if (normalizedLevel.isEmpty) {
+                      _showMessage(l10n.slashCommandReasoningLevelRequired);
+                      return;
+                    }
+                    if (_isSending || _isUpdatingConversationModel) {
+                      _showMessage(l10n.slashCommandModelUnavailable);
+                      return;
+                    }
+                    if (normalizedLevel == 'default' ||
+                        normalizedLevel == 'auto') {
+                      _selectReasoning(null);
+                      return;
+                    }
+                    if (selectedModel?.supportsReasoning != true) {
+                      _showMessage(l10n.slashCommandReasoningUnsupported);
+                      return;
+                    }
+                    final matchingLevels = reasoningOptions
+                        .where(
+                          (level) => level.toLowerCase() == normalizedLevel,
+                        )
+                        .toList(growable: false);
+                    if (matchingLevels.length != 1) {
+                      _showMessage(l10n.slashCommandReasoningUnsupported);
+                      return;
+                    }
+                    _selectReasoning(matchingLevels.single);
+                  },
+                  onCompactCommand: (arguments) {
+                    if (arguments?.isNotEmpty == true) {
+                      _showMessage(l10n.slashCommandCompactNoArguments);
+                      return;
+                    }
+                    if (selectedConversation == null) {
+                      _showMessage(l10n.slashCommandCompactNoConversation);
+                      return;
+                    }
+                    if (messageSnapshot.hasError) {
+                      _showMessage(l10n.messageHistoryLoadFailed);
+                      return;
+                    }
+                    if (messagesLoading) {
+                      _showMessage(l10n.slashCommandSummarizeLoading);
+                      return;
+                    }
+                    unawaited(
+                      _compactConversationFromSlashCommand(
+                        conversationId: selectedConversation.id,
+                        routeKey: selectedModelRouteKey,
+                        modelContextWindow: selectedModel?.contextWindow,
+                      ),
+                    );
+                  },
                   toolPermissionRequest: _pendingToolPermissionRequest,
                   isRespondingToToolPermission: _isRespondingToToolPermission,
                   toolPermissionError: _toolPermissionError,
@@ -6255,10 +6777,7 @@ class _ChatScreenState extends State<ChatScreen> {
                       _isSending &&
                       _activeChatConversationId != null &&
                       _activeChatConversationId == _selectedConversationId,
-                  messagesLoading:
-                      selectedConversation != null &&
-                      !messageSnapshot.hasData &&
-                      !messageSnapshot.hasError,
+                  messagesLoading: messagesLoading,
                   messagesErrorDescription: messageSnapshot.hasError
                       ? context.openchatL10n.messageHistoryLoadFailed
                       : null,
@@ -6299,7 +6818,7 @@ Map<String, Object?> _objectMap(Object? value) {
 
 bool _isApiKeyRouteProvider(String providerId) =>
     providerId == 'chatgpt_api' ||
-    ApiCompatibleProviderKeyStore.providerIds.contains(providerId);
+    ApiCompatibleProviderKeyStore.isApiKeyProviderId(providerId);
 
 T? _firstOrNull<T>(Iterable<T> values) {
   final iterator = values.iterator;

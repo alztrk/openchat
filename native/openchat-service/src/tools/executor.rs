@@ -199,7 +199,7 @@ impl ToolPermissionMode {
 
     fn requires_approval(self, operation: &ToolOperation) -> bool {
         match self {
-            Self::Plan => !operation.is_read_only_for_plan(),
+            Self::Plan => true,
             Self::RequireApproval => true,
             Self::ApproveSafeOperations => !operation.is_safe_for_auto_approval(),
             Self::FullAccess => false,
@@ -361,8 +361,8 @@ impl ToolExecutor {
         storage: &AppStorage,
     ) -> Result<ToolResult, ServiceError> {
         let output = tool_error(
-            "plan_mode_read_only",
-            "Plan mode permits read-only tools only. Switch to another mode before making changes.",
+            "plan_mode_tools_disabled",
+            "Plan mode does not allow tool calls. Review the plan, then turn off Plan mode before taking action.",
         );
         self.emit_activity(
             storage,
@@ -379,7 +379,7 @@ impl ToolExecutor {
     }
 
     fn permission_rule(&self, call: &ToolCall, operation: &ToolOperation) -> ToolPermissionRule {
-        if self.permission_mode == ToolPermissionMode::Plan && !operation.is_read_only_for_plan() {
+        if self.permission_mode == ToolPermissionMode::Plan {
             return ToolPermissionRule::Deny;
         }
         let task_rule = (call.name == "run_project_task")
@@ -477,13 +477,13 @@ impl ToolExecutor {
         image_generation: Option<&ImageGenerationContext<'_>>,
     ) -> Result<ToolResult, ServiceError> {
         self.validate_tool_name(&call.name)?;
+        if self.permission_mode == ToolPermissionMode::Plan {
+            return self
+                .deny_plan_mode_tool(call, request_id, snapshot, events, storage)
+                .await;
+        }
         #[cfg(windows)]
         if call.name.starts_with("mcp__") {
-            if self.permission_mode == ToolPermissionMode::Plan {
-                return self
-                    .deny_plan_mode_tool(call, request_id, snapshot, events, storage)
-                    .await;
-            }
             return self
                 .execute_mcp_call(
                     call,
@@ -497,11 +497,6 @@ impl ToolExecutor {
                 .await;
         }
         if call.name == "generate_image" {
-            if self.permission_mode == ToolPermissionMode::Plan {
-                return self
-                    .deny_plan_mode_tool(call, request_id, snapshot, events, storage)
-                    .await;
-            }
             return self
                 .execute_image_call(
                     call,
@@ -1794,7 +1789,7 @@ mod policy_tests {
     }
 
     #[test]
-    fn plan_mode_is_read_only_even_when_project_rules_allow_writes() {
+    fn plan_mode_denies_every_tool_even_when_project_rules_allow_them() {
         let mut rules = ToolPermissionRules::new();
         rules.insert("write_file".to_owned(), ToolPermissionRule::Allow);
         rules.insert("read_file".to_owned(), ToolPermissionRule::Deny);
@@ -1851,7 +1846,7 @@ mod policy_tests {
                     line_count: 10,
                 },
             ),
-            ToolPermissionRule::Allow
+            ToolPermissionRule::Deny
         );
 
         let web_call = ToolCall {
@@ -1866,7 +1861,7 @@ mod policy_tests {
         assert!(!web_operation.is_safe_for_auto_approval());
         assert_eq!(
             default_read_executor.permission_rule(&web_call, &web_operation),
-            ToolPermissionRule::Allow
+            ToolPermissionRule::Deny
         );
     }
 

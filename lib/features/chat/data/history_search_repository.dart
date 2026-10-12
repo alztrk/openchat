@@ -40,8 +40,10 @@ class HistorySearchRepository {
         if (filters.projectId != null) 'projectId': filters.projectId,
         if (filters.isArchived != null) 'isArchived': filters.isArchived,
         if (filters.tag != null) 'tag': filters.tag,
+        'resultType': filters.resultType,
+        'sortOrder': filters.sortOrder,
       },
-      timeout: const Duration(seconds: 60),
+      timeout: const Duration(seconds: 8),
     );
     final rawResults = response['results'];
     if (rawResults is! List || rawResults.length > 30) {

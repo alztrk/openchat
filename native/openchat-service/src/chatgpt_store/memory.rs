@@ -17,8 +17,9 @@ pub struct ArchivedMemoryExcerpt {
 pub struct HistorySearchResult {
     pub conversation_id: String,
     pub conversation_title: String,
-    pub message_id: String,
-    pub role: String,
+    pub is_conversation_title_match: bool,
+    pub message_id: Option<String>,
+    pub role: Option<String>,
     pub excerpt: String,
     pub created_at_unix_ms: i64,
 }
@@ -32,6 +33,8 @@ pub struct HistorySearchFilters {
     pub project_id: Option<String>,
     pub is_archived: Option<bool>,
     pub tag: Option<String>,
+    pub result_type: String,
+    pub sort_order: String,
 }
 
 #[derive(Clone, Debug)]
@@ -207,15 +210,18 @@ pub async fn search_chat_history(
     if query.chars().count() > search::MAX_ARCHIVE_SEARCH_QUERY_CHARS {
         return Err(rusqlite::Error::InvalidQuery);
     }
-    let Some(search_expression) = search::content_search_expression(query) else {
+    let search_expression = search::content_search_expression(query);
+    if search_expression.is_none() && filters.result_type != "conversations" {
         return Ok(Vec::new());
-    };
+    }
     let database_path = storage.database_path().to_owned();
+    let query = query.to_owned();
     tokio::task::spawn_blocking(move || {
         let connection = rusqlite::Connection::open(database_path)?;
         search::search_chat_history_from_connection(
             &connection,
-            &search_expression,
+            search_expression.as_deref(),
+            &query,
             &filters,
             search::MAX_HISTORY_SEARCH_RESULTS,
         )

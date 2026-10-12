@@ -11,6 +11,7 @@ import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/domain/chat_attachment.dart';
 import 'package:openchat/features/chat/domain/conversation_memory.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
+import 'package:openchat/features/settings/data/api_compatible_provider_key_store.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 
 class ContextUsageIndicator extends StatefulWidget {
@@ -122,7 +123,7 @@ class _ContextUsageIndicatorState extends State<ContextUsageIndicator> {
     final connectionId = widget.connectionId;
     final workspaceId = widget.workspaceId;
     final routeKey =
-        '$providerId:${providerId == 'chatgpt_api' || const {'gemini', 'groq', 'cerebras', 'openrouter', 'mistral'}.contains(providerId)
+        '$providerId:${providerId == 'chatgpt_api' || ApiCompatibleProviderKeyStore.isApiKeyProviderId(providerId)
             ? connectionId ?? providerId
             : providerId == 'chatgpt'
             ? connectionId ?? ''

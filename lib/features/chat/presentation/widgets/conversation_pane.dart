@@ -53,6 +53,10 @@ class ConversationPane extends StatelessWidget {
     this.onOpenConnections,
     this.onRetryModels,
     this.models = const <ChatGptModel>[],
+    this.slashModels = const <ChatGptModel>[],
+    this.isLoadingSlashModels = false,
+    this.onRefreshSlashModels,
+    this.providerNames = const <String, String>{},
     this.favoriteModels = const <FavoriteModel>[],
     required this.providerId,
     this.isChatGptConnected = false,
@@ -112,6 +116,16 @@ class ConversationPane extends StatelessWidget {
     this.reasoningLevel,
     this.toolPermissionMode = ToolPermissionMode.requireApproval,
     this.onToolPermissionModeChanged,
+    this.mode = ChatComposerMode.none,
+    this.onModeChanged,
+    this.onNewConversation,
+    this.onNewConversationMessage,
+    this.onOpenHistorySearch,
+    this.onSummarizeConversation,
+    this.onRenameCommand,
+    this.onModelCommand,
+    this.onReasoningCommand,
+    this.onCompactCommand,
     this.toolPermissionRequest,
     this.isRespondingToToolPermission = false,
     this.toolPermissionError,
@@ -157,6 +171,10 @@ class ConversationPane extends StatelessWidget {
   final VoidCallback? onOpenConnections;
   final VoidCallback? onRetryModels;
   final List<ChatGptModel> models;
+  final List<ChatGptModel> slashModels;
+  final bool isLoadingSlashModels;
+  final VoidCallback? onRefreshSlashModels;
+  final Map<String, String> providerNames;
   final List<FavoriteModel> favoriteModels;
   final String providerId;
   final bool isChatGptConnected;
@@ -224,6 +242,16 @@ class ConversationPane extends StatelessWidget {
   final String? reasoningLevel;
   final ToolPermissionMode toolPermissionMode;
   final ValueChanged<ToolPermissionMode>? onToolPermissionModeChanged;
+  final ChatComposerMode mode;
+  final ValueChanged<ChatComposerMode>? onModeChanged;
+  final VoidCallback? onNewConversation;
+  final ValueChanged<String>? onNewConversationMessage;
+  final ValueChanged<String?>? onOpenHistorySearch;
+  final ValueChanged<String?>? onSummarizeConversation;
+  final ValueChanged<String>? onRenameCommand;
+  final ValueChanged<String>? onModelCommand;
+  final ValueChanged<String>? onReasoningCommand;
+  final ValueChanged<String?>? onCompactCommand;
   final ToolPermissionRequest? toolPermissionRequest;
   final bool isRespondingToToolPermission;
   final String? toolPermissionError;
@@ -441,6 +469,10 @@ class ConversationPane extends StatelessWidget {
                     onStopMessage: onStopMessage,
                     modelLabel: selectedModelLabel,
                     models: models,
+                    slashModels: slashModels,
+                    isLoadingSlashModels: isLoadingSlashModels,
+                    onRefreshSlashModels: onRefreshSlashModels,
+                    providerNames: providerNames,
                     favoriteModels: favoriteModels,
                     providerId: providerId,
                     isChatGptConnected: isChatGptConnected,
@@ -464,6 +496,16 @@ class ConversationPane extends StatelessWidget {
                     showReasoningSelector: showReasoningSelector,
                     toolPermissionMode: toolPermissionMode,
                     onToolPermissionModeChanged: onToolPermissionModeChanged,
+                    mode: mode,
+                    onModeChanged: onModeChanged,
+                    onNewConversation: onNewConversation,
+                    onNewConversationMessage: onNewConversationMessage,
+                    onOpenHistorySearch: onOpenHistorySearch,
+                    onSummarizeConversation: onSummarizeConversation,
+                    onRenameCommand: onRenameCommand,
+                    onModelCommand: onModelCommand,
+                    onReasoningCommand: onReasoningCommand,
+                    onCompactCommand: onCompactCommand,
                     messages: messages,
                     conversationId: conversationId,
                     contextProviderId: contextProviderId,

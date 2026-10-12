@@ -11,6 +11,7 @@ import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/chat/domain/model_favorite.dart';
 import 'package:openchat/features/chat/domain/model_pricing.dart';
 import 'package:openchat/features/chat/data/model_pricing_repository.dart';
+import 'package:openchat/features/settings/data/api_compatible_provider_key_store.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 
@@ -42,6 +43,7 @@ class ModelSelector extends StatefulWidget {
     this.chatGptFastModeSaving = false,
     this.onChatGptFastModeChanged,
     this.availableProviderIds = const <String>{},
+    this.providerNames = const <String, String>{},
     this.hiddenModelKeys = const <String>{},
     this.pricingRepository,
     required this.onProviderSelected,
@@ -72,6 +74,7 @@ class ModelSelector extends StatefulWidget {
   final bool chatGptFastModeSaving;
   final ValueChanged<bool>? onChatGptFastModeChanged;
   final Set<String> availableProviderIds;
+  final Map<String, String> providerNames;
   final Set<String> hiddenModelKeys;
   final ModelPricingRepository? pricingRepository;
   final ValueChanged<String>? onProviderSelected;
@@ -155,6 +158,16 @@ class _ModelSelectorState extends State<ModelSelector> {
     'opencode' => true,
     _ => widget.availableProviderIds.contains(providerId),
   };
+
+  List<String> get _availableProviderOrder {
+    final ids = <String>{..._providerIds};
+    ids.addAll(
+      widget.availableProviderIds.where(
+        ApiCompatibleProviderKeyStore.isCustomProviderId,
+      ),
+    );
+    return ids.toList(growable: false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -284,10 +297,12 @@ class _ModelSelectorState extends State<ModelSelector> {
                             palette: widget.palette,
                           ),
                           const SizedBox(height: 4),
-                          for (final providerId in _providerIds) ...[
+                          for (final providerId in _availableProviderOrder) ...[
                             _ModelProviderTab(
                               providerId: providerId,
-                              label: _providerLabel(providerId, l10n),
+                              label:
+                                  widget.providerNames[providerId] ??
+                                  _providerLabel(providerId, l10n),
                               selected:
                                   !_showFavorites &&
                                   widget.providerId == providerId,
@@ -786,11 +801,7 @@ String _providerLabel(String providerId, AppLocalizations l10n) =>
 
 bool _isApiKeyProvider(String providerId) =>
     providerId == 'chatgpt_api' ||
-    providerId == 'gemini' ||
-    providerId == 'groq' ||
-    providerId == 'cerebras' ||
-    providerId == 'openrouter' ||
-    providerId == 'mistral';
+    ApiCompatibleProviderKeyStore.isApiKeyProviderId(providerId);
 
 String _providerFamily(String providerId) =>
     providerId == 'chatgpt_api' ? 'chatgpt' : providerId;

@@ -10,6 +10,7 @@ const MAX_RESULTS: i64 = 16;
 const MAX_SNIPPET_WORDS: i64 = 256;
 pub(super) const MAX_ARCHIVE_SEARCH_RESULTS: i64 = 20;
 pub(super) const MAX_HISTORY_SEARCH_RESULTS: i64 = 30;
+const MAX_HISTORY_SEARCH_CANDIDATES: i64 = 300;
 pub(super) const ARCHIVE_SEARCH_SNIPPET_WORDS: i64 = 48;
 pub(super) const MAX_ARCHIVE_SEARCH_QUERY_CHARS: usize = 512;
 pub(super) const MAX_ARCHIVE_EXCERPT_CHARS: usize = 4096;
@@ -176,91 +177,186 @@ pub(super) fn search_archived_memories_from_connection(
 
 pub(super) fn search_chat_history_from_connection(
     connection: &Connection,
-    search_expression: &str,
+    search_expression: Option<&str>,
+    query: &str,
     filters: &HistorySearchFilters,
     result_limit: i64,
 ) -> rusqlite::Result<Vec<HistorySearchResult>> {
-    index::ensure_all_archived_memory_indexes(connection)?;
-    let mut statement = connection.prepare(
-        "WITH matches AS (
-             SELECT message.conversation_id, message.id AS message_id, message.role,
+    let search_messages = search_expression.is_some() && filters.result_type != "conversations";
+    let message_matches = if search_messages {
+        format!(
+            "SELECT message.conversation_id, message.id AS message_id, message.role,
+                candidate.excerpt,
+                candidate.score,
+                0 AS source,
+                COALESCE(message.created_at, 0) AS created_at,
+                0 AS is_conversation_title_match
+         FROM (
+             SELECT conversation_memory_fts.rowid,
                     snippet(conversation_memory_fts, 4, '[match]', '[/match]', ' … ', 48) AS excerpt,
-                    bm25(conversation_memory_fts, 0.0, 0.0, 0.0, 0.0, 1.0) AS score,
-                    0 AS source,
-                    COALESCE(message.created_at, 0) AS created_at
+                    bm25(conversation_memory_fts, 0.0, 0.0, 0.0, 0.0, 1.0) AS score
              FROM conversation_memory_fts
-             JOIN messages AS message ON message.rowid = conversation_memory_fts.rowid
+             JOIN messages AS candidate_message
+               ON candidate_message.rowid = conversation_memory_fts.rowid
+             JOIN conversations AS candidate_conversation
+               ON candidate_conversation.id = candidate_message.conversation_id
              WHERE conversation_memory_fts MATCH ?1
                AND COALESCE((
                     SELECT included FROM conversation_memory_archive_settings
-                    WHERE conversation_id = message.conversation_id
+                    WHERE conversation_id = candidate_message.conversation_id
                ), 1) = 1
-             UNION ALL
-             SELECT message.conversation_id, message.id AS message_id, message.role,
+               AND (?3 IS NULL OR COALESCE(candidate_message.created_at, 0) >= ?3)
+               AND (?4 IS NULL OR COALESCE(candidate_message.created_at, 0) < ?4)
+               AND (?5 IS NULL OR candidate_message.provider_id = ?5)
+               AND (?6 IS NULL OR candidate_message.model_id = ?6)
+               AND (?7 IS NULL OR candidate_conversation.project_id = ?7)
+               AND (?8 IS NULL OR candidate_conversation.is_archived = ?8)
+               AND (?9 IS NULL OR EXISTS (
+                    SELECT 1 FROM json_each(
+                        CASE WHEN json_valid(candidate_conversation.tags)
+                             THEN candidate_conversation.tags ELSE '[]' END
+                    ) AS conversation_tag
+                    WHERE typeof(conversation_tag.value) = 'text'
+                      AND lower(conversation_tag.value) = lower(?9)
+               ))
+             ORDER BY score
+             LIMIT {MAX_HISTORY_SEARCH_CANDIDATES}
+         ) AS candidate
+         JOIN messages AS message ON message.rowid = candidate.rowid
+         WHERE COALESCE((
+                SELECT included FROM conversation_memory_archive_settings
+                WHERE conversation_id = message.conversation_id
+           ), 1) = 1
+         UNION ALL
+         SELECT message.conversation_id, message.id AS message_id, message.role,
+                candidate.excerpt,
+                candidate.score,
+                1 AS source,
+                COALESCE(message.created_at, 0) AS created_at,
+                0 AS is_conversation_title_match
+         FROM (
+             SELECT conversation_memory_tools_fts.rowid,
                     snippet(conversation_memory_tools_fts, 4, '[match]', '[/match]', ' … ', 48) AS excerpt,
-                    bm25(conversation_memory_tools_fts, 0.0, 0.0, 0.0, 0.0, 1.0) AS score,
-                    1 AS source,
-                    COALESCE(message.created_at, 0) AS created_at
+                    bm25(conversation_memory_tools_fts, 0.0, 0.0, 0.0, 0.0, 1.0) AS score
              FROM conversation_memory_tools_fts
-             JOIN messages AS message ON message.rowid = conversation_memory_tools_fts.rowid
+             JOIN messages AS candidate_message
+               ON candidate_message.rowid = conversation_memory_tools_fts.rowid
+             JOIN conversations AS candidate_conversation
+               ON candidate_conversation.id = candidate_message.conversation_id
              WHERE conversation_memory_tools_fts MATCH ?1
                AND COALESCE((
                     SELECT included FROM conversation_memory_archive_settings
-                    WHERE conversation_id = message.conversation_id
+                    WHERE conversation_id = candidate_message.conversation_id
+               ), 1) = 1
+               AND (?3 IS NULL OR COALESCE(candidate_message.created_at, 0) >= ?3)
+               AND (?4 IS NULL OR COALESCE(candidate_message.created_at, 0) < ?4)
+               AND (?5 IS NULL OR candidate_message.provider_id = ?5)
+               AND (?6 IS NULL OR candidate_message.model_id = ?6)
+               AND (?7 IS NULL OR candidate_conversation.project_id = ?7)
+               AND (?8 IS NULL OR candidate_conversation.is_archived = ?8)
+               AND (?9 IS NULL OR EXISTS (
+                    SELECT 1 FROM json_each(
+                        CASE WHEN json_valid(candidate_conversation.tags)
+                             THEN candidate_conversation.tags ELSE '[]' END
+                    ) AS conversation_tag
+                    WHERE typeof(conversation_tag.value) = 'text'
+                      AND lower(conversation_tag.value) = lower(?9)
+               ))
+             ORDER BY score
+             LIMIT {MAX_HISTORY_SEARCH_CANDIDATES}
+         ) AS candidate
+         JOIN messages AS message ON message.rowid = candidate.rowid
+         WHERE COALESCE((
+                SELECT included FROM conversation_memory_archive_settings
+                WHERE conversation_id = message.conversation_id
+           ), 1) = 1"
+        )
+    } else {
+        String::from(
+            "SELECT NULL AS conversation_id, NULL AS message_id, NULL AS role,
+                NULL AS excerpt, 0.0 AS score, 0 AS source, 0 AS created_at,
+                0 AS is_conversation_title_match WHERE 0",
+        )
+    };
+    let title_pattern = query_like_pattern(query);
+    let mut statement = connection.prepare(&format!(
+        "WITH matches AS (
+             {message_matches}
+             UNION ALL
+             SELECT conversation.id, NULL, NULL, '', 0.0, 2,
+                    COALESCE(conversation.updated_at, conversation.created_at, 0), 1
+             FROM conversations AS conversation
+             WHERE conversation.title LIKE ?2 ESCAPE '\\'
+               AND COALESCE((
+                    SELECT included FROM conversation_memory_archive_settings
+                    WHERE conversation_id = conversation.id
                ), 1) = 1
          ), ranked AS (
              SELECT conversation_id, message_id, role, excerpt, created_at,
+                    is_conversation_title_match,
                     row_number() OVER (
                         PARTITION BY source
-                        ORDER BY score, created_at DESC, message_id DESC
+                        ORDER BY score, created_at DESC, COALESCE(message_id, '') DESC
                     ) AS source_rank
              FROM matches
          ), deduplicated AS (
-             SELECT conversation_id, message_id, role,
+             SELECT conversation_id, message_id, role, is_conversation_title_match,
                     group_concat(excerpt, ' … ') AS excerpt,
                     MAX(created_at) AS created_at,
-                    SUM(1.0 / (60 + source_rank)) AS relevance
+                    MAX(is_conversation_title_match) * 1.0 +
+                        SUM(1.0 / (60 + source_rank)) AS relevance
              FROM ranked
-             GROUP BY conversation_id, message_id, role
+             GROUP BY conversation_id, message_id, role, is_conversation_title_match
          )
          SELECT deduplicated.conversation_id, conversation.title,
+                deduplicated.is_conversation_title_match,
                 deduplicated.message_id, deduplicated.role,
                 deduplicated.excerpt, deduplicated.created_at
          FROM deduplicated
          JOIN conversations AS conversation
            ON conversation.id = deduplicated.conversation_id
-         WHERE (?2 IS NULL OR deduplicated.created_at >= ?2)
-           AND (?3 IS NULL OR deduplicated.created_at < ?3)
-           AND (?4 IS NULL OR EXISTS (
+         WHERE (?3 IS NULL OR (
+                    CASE WHEN deduplicated.is_conversation_title_match = 1
+                         THEN COALESCE(conversation.updated_at, conversation.created_at, 0)
+                         ELSE deduplicated.created_at END >= ?3
+                ))
+           AND (?4 IS NULL OR (
+                    CASE WHEN deduplicated.is_conversation_title_match = 1
+                         THEN COALESCE(conversation.updated_at, conversation.created_at, 0)
+                         ELSE deduplicated.created_at END < ?4
+                ))
+           AND ((?5 IS NULL AND ?6 IS NULL) OR EXISTS (
                 SELECT 1 FROM messages AS routed_message
                 WHERE routed_message.conversation_id = deduplicated.conversation_id
-                  AND routed_message.id = deduplicated.message_id
-                  AND routed_message.provider_id = ?4
+                  AND (?5 IS NULL OR routed_message.provider_id = ?5)
+                  AND (?6 IS NULL OR routed_message.model_id = ?6)
+                  AND (deduplicated.is_conversation_title_match = 1
+                       OR routed_message.id = deduplicated.message_id)
            ))
-           AND (?5 IS NULL OR EXISTS (
-                SELECT 1 FROM messages AS routed_message
-                WHERE routed_message.conversation_id = deduplicated.conversation_id
-                  AND routed_message.id = deduplicated.message_id
-                  AND routed_message.model_id = ?5
-           ))
-           AND (?6 IS NULL OR conversation.project_id = ?6)
-           AND (?7 IS NULL OR conversation.is_archived = ?7)
-           AND (?8 IS NULL OR EXISTS (
+           AND (?7 IS NULL OR conversation.project_id = ?7)
+           AND (?8 IS NULL OR conversation.is_archived = ?8)
+           AND (?9 IS NULL OR EXISTS (
                 SELECT 1 FROM json_each(
                     CASE WHEN json_valid(conversation.tags)
                          THEN conversation.tags ELSE '[]' END
                 ) AS conversation_tag
                 WHERE typeof(conversation_tag.value) = 'text'
-                  AND lower(conversation_tag.value) = lower(?8)
+                  AND lower(conversation_tag.value) = lower(?9)
            ))
-         ORDER BY deduplicated.relevance DESC,
+           AND (?10 = 'all'
+                OR (?10 = 'messages' AND deduplicated.is_conversation_title_match = 0)
+                OR (?10 = 'conversations' AND deduplicated.is_conversation_title_match = 1))
+         ORDER BY CASE WHEN ?11 = 'relevance' THEN deduplicated.relevance END DESC,
+                  CASE WHEN ?11 = 'newest' THEN deduplicated.created_at END DESC,
+                  CASE WHEN ?11 = 'oldest' THEN deduplicated.created_at END ASC,
                   deduplicated.created_at DESC,
                   deduplicated.message_id DESC
-         LIMIT ?9",
-    )?;
+         LIMIT ?12"
+    ))?;
     let rows = statement.query_map(
         params![
             search_expression,
+            title_pattern,
             filters.from_unix_ms,
             filters.through_unix_ms,
             filters.provider_id,
@@ -268,20 +364,31 @@ pub(super) fn search_chat_history_from_connection(
             filters.project_id,
             filters.is_archived.map(i64::from),
             filters.tag,
+            filters.result_type,
+            filters.sort_order,
             result_limit
         ],
         |row| {
             Ok(HistorySearchResult {
                 conversation_id: row.get(0)?,
                 conversation_title: row.get(1)?,
-                message_id: row.get(2)?,
-                role: row.get(3)?,
-                excerpt: bounded_archive_excerpt(row.get(4)?),
-                created_at_unix_ms: row.get(5)?,
+                is_conversation_title_match: row.get(2)?,
+                message_id: row.get(3)?,
+                role: row.get(4)?,
+                excerpt: bounded_archive_excerpt(row.get(5)?),
+                created_at_unix_ms: row.get(6)?,
             })
         },
     )?;
     rows.collect()
+}
+
+fn query_like_pattern(query: &str) -> String {
+    let escaped = query
+        .replace('\\', "\\\\")
+        .replace('%', "\\%")
+        .replace('_', "\\_");
+    format!("%{escaped}%")
 }
 
 pub(super) fn bounded_archive_excerpt(content: String) -> String {

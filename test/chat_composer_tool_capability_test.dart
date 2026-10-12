@@ -122,7 +122,7 @@ void main() {
           await tester.tap(permission);
           await tester.pumpAndSettle();
           expect(tester.takeException(), isNull);
-          expect(find.text(l10n.toolPermissionPlan), findsOneWidget);
+          expect(find.text(l10n.toolPermissionPlan), findsNothing);
           final access = find.text(l10n.toolPermissionFullAccess);
           final optionsScrollable = find
               .ancestor(of: access, matching: find.byType(Scrollable))

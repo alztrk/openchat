@@ -2,16 +2,18 @@ class HistorySearchResult {
   const HistorySearchResult({
     required this.conversationId,
     required this.conversationTitle,
-    required this.messageId,
-    required this.role,
+    required this.isConversationTitleMatch,
+    this.messageId,
+    this.role,
     required this.excerpt,
     required this.createdAt,
   });
 
   final String conversationId;
   final String conversationTitle;
-  final String messageId;
-  final String role;
+  final bool isConversationTitleMatch;
+  final String? messageId;
+  final String? role;
   final String excerpt;
   final DateTime createdAt;
 
@@ -31,16 +33,20 @@ class HistorySearchResult {
     final conversationTitle = result['conversationTitle'];
     final messageId = result['messageId'];
     final role = result['role'];
+    final isConversationTitleMatch = result['isConversationTitleMatch'];
     final excerpt = result['excerpt'];
     final createdAtUnixMs = result['createdAtUnixMs'];
     if (conversationId is! String ||
         conversationId.isEmpty ||
         conversationTitle is! String ||
         conversationTitle.isEmpty ||
-        messageId is! String ||
-        messageId.isEmpty ||
-        role is! String ||
-        (role != 'user' && role != 'assistant') ||
+        isConversationTitleMatch is! bool ||
+        (isConversationTitleMatch && (messageId != null || role != null)) ||
+        (!isConversationTitleMatch &&
+            (messageId is! String ||
+                messageId.isEmpty ||
+                role is! String ||
+                (role != 'user' && role != 'assistant'))) ||
         excerpt is! String ||
         createdAtUnixMs is! int ||
         createdAtUnixMs < 0 ||
@@ -50,8 +56,9 @@ class HistorySearchResult {
     return HistorySearchResult(
       conversationId: conversationId,
       conversationTitle: conversationTitle,
-      messageId: messageId,
-      role: role,
+      isConversationTitleMatch: isConversationTitleMatch,
+      messageId: messageId is String ? messageId : null,
+      role: role is String ? role : null,
       excerpt: excerpt,
       createdAt: DateTime.fromMillisecondsSinceEpoch(
         createdAtUnixMs,
@@ -68,6 +75,8 @@ class HistorySearchFilters {
     this.projectId,
     this.isArchived,
     this.tag,
+    this.resultType = 'all',
+    this.sortOrder = 'relevance',
   });
 
   final String? providerId;
@@ -75,13 +84,17 @@ class HistorySearchFilters {
   final String? projectId;
   final bool? isArchived;
   final String? tag;
+  final String resultType;
+  final String sortOrder;
 
   bool get isEmpty =>
       providerId == null &&
       modelId == null &&
       projectId == null &&
       isArchived == null &&
-      tag == null;
+      tag == null &&
+      resultType == 'all' &&
+      sortOrder == 'relevance';
 }
 
 class HistorySearchFilterOptions {
@@ -146,6 +159,8 @@ class SavedHistorySearch {
     'projectId': filters.projectId,
     'isArchived': filters.isArchived,
     'tag': filters.tag,
+    'resultType': filters.resultType,
+    'sortOrder': filters.sortOrder,
     'fromUnixMs': fromUnixMs,
     'throughUnixMs': throughUnixMs,
   };
@@ -161,6 +176,8 @@ class SavedHistorySearch {
     final projectId = value['projectId'];
     final isArchived = value['isArchived'];
     final tag = value['tag'];
+    final resultType = value['resultType'];
+    final sortOrder = value['sortOrder'];
     final fromUnixMs = value['fromUnixMs'];
     final throughUnixMs = value['throughUnixMs'];
     if (name is! String ||
@@ -176,6 +193,20 @@ class SavedHistorySearch {
             (projectId is! String || projectId.length > 256)) ||
         (isArchived != null && isArchived is! bool) ||
         (tag != null && (tag is! String || tag.isEmpty || tag.length > 32)) ||
+        (resultType != null &&
+            (resultType is! String ||
+                !const {
+                  'all',
+                  'messages',
+                  'conversations',
+                }.contains(resultType))) ||
+        (sortOrder != null &&
+            (sortOrder is! String ||
+                !const {
+                  'relevance',
+                  'newest',
+                  'oldest',
+                }.contains(sortOrder))) ||
         (fromUnixMs != null && fromUnixMs is! int) ||
         (throughUnixMs != null && throughUnixMs is! int) ||
         (fromUnixMs is int &&
@@ -196,6 +227,8 @@ class SavedHistorySearch {
         projectId: projectId is String ? projectId : null,
         isArchived: isArchived is bool ? isArchived : null,
         tag: tag is String ? tag : null,
+        resultType: resultType is String ? resultType : 'all',
+        sortOrder: sortOrder is String ? sortOrder : 'relevance',
       ),
       fromUnixMs: fromUnixMs is int ? fromUnixMs : null,
       throughUnixMs: throughUnixMs is int ? throughUnixMs : null,

@@ -698,22 +698,8 @@ pub fn definitions_for_request(
     }
 }
 
-pub(crate) fn apply_plan_mode_allowlist(definitions: &mut Vec<ToolDefinition>) {
-    definitions.retain(|tool| {
-        matches!(
-            tool.name.as_str(),
-            "list_files"
-                | "search_files"
-                | "read_file"
-                | "get_file_info"
-                | "git_status"
-                | "git_diff"
-                | "git_history"
-                | "web_search"
-                | "read_url_content"
-                | "ask_user"
-        )
-    });
+pub(crate) fn disable_tools_for_plan_mode(definitions: &mut Vec<ToolDefinition>) {
+    definitions.clear();
 }
 
 pub fn context_usage_definitions(
@@ -1067,13 +1053,13 @@ pub(crate) use executor::{
 #[cfg(test)]
 mod image_tool_tests {
     use super::{
-        ToolDefinition, apply_plan_mode_allowlist, context_usage_definitions, definitions,
-        definitions_for_chatgpt_api, definitions_for_chatgpt_model, definitions_for_model,
-        definitions_for_provider, definitions_for_request,
+        ToolDefinition, context_usage_definitions, definitions, definitions_for_chatgpt_api,
+        definitions_for_chatgpt_model, definitions_for_model, definitions_for_provider,
+        definitions_for_request, disable_tools_for_plan_mode,
     };
 
     #[test]
-    fn plan_mode_tool_schemas_expose_only_read_only_operations_and_questions() {
+    fn plan_mode_does_not_advertise_tools() {
         let mut tools = definitions_for_chatgpt_model();
         tools.push(ToolDefinition {
             name: "mcp__server__write".to_owned(),
@@ -1082,29 +1068,9 @@ mod image_tool_tests {
         });
         tools.extend(crate::goals::control_tool_definitions());
 
-        apply_plan_mode_allowlist(&mut tools);
+        disable_tools_for_plan_mode(&mut tools);
 
-        let names = tools
-            .iter()
-            .map(|tool| tool.name.as_str())
-            .collect::<std::collections::HashSet<_>>();
-        assert_eq!(
-            names,
-            [
-                "list_files",
-                "search_files",
-                "read_file",
-                "get_file_info",
-                "git_status",
-                "git_diff",
-                "git_history",
-                "web_search",
-                "read_url_content",
-                "ask_user",
-            ]
-            .into_iter()
-            .collect()
-        );
+        assert!(tools.is_empty());
     }
 
     #[test]

@@ -139,6 +139,24 @@ class ConversationMemoryRepository {
     }
   }
 
+  Future<bool> compactConversation({
+    required String conversationId,
+    required int contextWindow,
+  }) async {
+    final operation = await _serviceClient.startOperation(
+      'chat.memory.compact',
+      params: <String, Object?>{
+        'conversationId': conversationId,
+        'contextWindow': contextWindow,
+      },
+    );
+    final response = await operation.result;
+    return switch (response['compacted']) {
+      bool compacted => compacted,
+      _ => throw const FormatException('Invalid conversation compact result.'),
+    };
+  }
+
   Future<bool> semanticSearchIsReady() async {
     final response = await _serviceClient.call('chat.memory.semantic.status');
     return switch (response['ready']) {
