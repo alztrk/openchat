@@ -24,13 +24,8 @@ class DefaultModelPreference {
       'chatgpt' => connectionId,
       'chatgpt_api' => apiKeyConnectionId ?? connectionId,
       'opencode' || 'llama_cpp' || 'vllm' || 'exllama' => null,
-      'gemini' ||
-      'groq' ||
-      'cerebras' ||
-      'openrouter' ||
-      'mistral' => apiKeyConnectionId ?? connectionId ?? providerId,
       final providerId
-          when ApiCompatibleProviderKeyStore.isCustomProviderId(providerId) =>
+          when ApiCompatibleProviderKeyStore.isApiKeyProviderId(providerId) =>
         apiKeyConnectionId ?? connectionId ?? providerId,
       _ => null,
     };

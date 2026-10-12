@@ -909,6 +909,27 @@ class AppLocalizationsEs extends AppLocalizations {
   String get sambaNovaProvider => 'SambaNova';
 
   @override
+  String get anthropicProvider => 'Anthropic';
+
+  @override
+  String get fireworksProvider => 'Fireworks AI';
+
+  @override
+  String get deepInfraProvider => 'DeepInfra';
+
+  @override
+  String get dashScopeProvider => 'DashScope (Qwen)';
+
+  @override
+  String get cohereProvider => 'Cohere';
+
+  @override
+  String get ollamaProvider => 'Ollama';
+
+  @override
+  String get lmStudioProvider => 'LM Studio';
+
+  @override
   String get geminiApiDescription =>
       'Añade una clave de API de Google AI Studio para usar los modelos disponibles en tu cuenta. El acceso gratuito depende del modelo y de tu cuota.';
 
@@ -947,6 +968,34 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get sambaNovaApiDescription =>
       'Añade una clave de API de SambaNova Cloud para usar modelos de código abierto de alto rendimiento impulsados por RDU de SambaNova.';
+
+  @override
+  String get anthropicApiDescription =>
+      'Añada una clave de API de Anthropic para usar modelos Claude 3.5 y Claude 3.7 con razonamiento y visión.';
+
+  @override
+  String get fireworksApiDescription =>
+      'Añada una clave de API de Fireworks AI para usar modelos rápidos de pesos abiertos.';
+
+  @override
+  String get deepInfraApiDescription =>
+      'Añada una clave de API de DeepInfra para acceder a modelos de código abierto alojados y económicos.';
+
+  @override
+  String get dashScopeApiDescription =>
+      'Añada una clave de API de Alibaba Cloud DashScope para usar modelos Qwen en modo compatible con OpenAI.';
+
+  @override
+  String get cohereApiDescription =>
+      'Añada una clave de API de Cohere para usar modelos Command R y Command R+.';
+
+  @override
+  String get ollamaApiDescription =>
+      'Conéctese a una instancia local de Ollama en http://localhost:11434. No se requiere clave de API por defecto.';
+
+  @override
+  String get lmStudioApiDescription =>
+      'Conéctese a un servidor local de LM Studio en http://localhost:1234. No se requiere clave de API por defecto.';
 
   @override
   String get geminiUnpaidDataNotice =>

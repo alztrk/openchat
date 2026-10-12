@@ -20,7 +20,15 @@ void main() {
       'perplexity',
       'together',
       'sambanova',
+      'anthropic',
+      'fireworks',
+      'deepinfra',
+      'dashscope',
+      'cohere',
+      'ollama',
+      'lmstudio',
     ]));
+    expect(ApiCompatibleProviderKeyStore.providerIds.length, equals(17));
   });
 
   test('localizations provide valid display names and descriptions for all providers', () async {
@@ -37,12 +45,26 @@ void main() {
       expect(l10n.perplexityProvider, isNotEmpty);
       expect(l10n.togetherProvider, isNotEmpty);
       expect(l10n.sambaNovaProvider, isNotEmpty);
+      expect(l10n.anthropicProvider, isNotEmpty);
+      expect(l10n.fireworksProvider, isNotEmpty);
+      expect(l10n.deepInfraProvider, isNotEmpty);
+      expect(l10n.dashScopeProvider, isNotEmpty);
+      expect(l10n.cohereProvider, isNotEmpty);
+      expect(l10n.ollamaProvider, isNotEmpty);
+      expect(l10n.lmStudioProvider, isNotEmpty);
 
       expect(l10n.deepSeekApiDescription, isNotEmpty);
       expect(l10n.xAiApiDescription, isNotEmpty);
       expect(l10n.perplexityApiDescription, isNotEmpty);
       expect(l10n.togetherApiDescription, isNotEmpty);
       expect(l10n.sambaNovaApiDescription, isNotEmpty);
+      expect(l10n.anthropicApiDescription, isNotEmpty);
+      expect(l10n.fireworksApiDescription, isNotEmpty);
+      expect(l10n.deepInfraApiDescription, isNotEmpty);
+      expect(l10n.dashScopeApiDescription, isNotEmpty);
+      expect(l10n.cohereApiDescription, isNotEmpty);
+      expect(l10n.ollamaApiDescription, isNotEmpty);
+      expect(l10n.lmStudioApiDescription, isNotEmpty);
     }
   });
 

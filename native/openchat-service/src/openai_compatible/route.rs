@@ -211,7 +211,13 @@ pub(super) async fn resolve_chat_route(
             {
                 return Err(route_error());
             }
-            let api_key = api_key.ok_or_else(|| provider_authentication_required_error(id))?;
+            let api_key = if let Some(key) = api_key {
+                key
+            } else if matches!(id, "ollama" | "lmstudio") {
+                "local"
+            } else {
+                return Err(provider_authentication_required_error(id));
+            };
             let (context_window, input_token_limit, max_output_tokens) =
                 super::provider_models::context_limits(storage, id, api_key, &model_id)?;
             let supports_images =
@@ -220,7 +226,11 @@ pub(super) async fn resolve_chat_route(
                 super::provider_models::supports_tool_calls(storage, id, api_key, &model_id)?;
             (
                 model_id.clone(),
-                format!("{}/chat/completions", provider.base_url),
+                if provider.is_anthropic() {
+                    format!("{}/messages", provider.base_url)
+                } else {
+                    format!("{}/chat/completions", provider.base_url)
+                },
                 false,
                 false,
                 context_window,
@@ -238,6 +248,7 @@ pub(super) async fn resolve_chat_route(
 
     if !is_free
         && api_key.is_none()
+        && !matches!(provider_id.as_deref(), Some("ollama" | "lmstudio"))
         && !provider_id
             .as_deref()
             .is_some_and(|provider_id| provider_id.starts_with("custom_"))

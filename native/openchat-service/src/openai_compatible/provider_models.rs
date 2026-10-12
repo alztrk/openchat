@@ -204,9 +204,18 @@ pub async fn models(
             .timeout(Duration::from_secs(45))
             .build()
             .map_err(|_| network_error(provider.name))?;
-        let response = client
-            .get(format!("{}/models", provider.base_url))
-            .bearer_auth(api_key)
+        let mut request = client.get(format!("{}/models", provider.base_url));
+        if provider.is_anthropic() {
+            request = request
+                .query(&[("limit", MAX_MODELS)])
+                .header("x-api-key", api_key)
+                .header("anthropic-version", "2023-06-01");
+        } else if matches!(provider.id, "ollama" | "lmstudio") && (api_key == "local" || api_key.is_empty()) {
+            // Local providers do not require bearer token authentication.
+        } else {
+            request = request.bearer_auth(api_key);
+        }
+        let response = request
             .send()
             .await
             .map_err(|_| network_error(provider.name))?;
@@ -285,6 +294,13 @@ fn default_provider_context_window(provider_id: &str, model_id: &str) -> Option<
             }
         }
         "sambanova" => Some(131_072),
+        "anthropic" => Some(200_000),
+        "fireworks" => Some(131_072),
+        "deepinfra" => Some(131_072),
+        "dashscope" => Some(131_072),
+        "cohere" => Some(128_000),
+        "ollama" => Some(131_072),
+        "lmstudio" => Some(131_072),
         _ => None,
     }
 }
@@ -293,6 +309,8 @@ fn default_provider_max_output_tokens(provider_id: &str, _model_id: &str) -> Opt
     match provider_id {
         "deepseek" | "xai" => Some(8_192),
         "perplexity" => Some(4_096),
+        "anthropic" => Some(8_192),
+        "cohere" => Some(4_096),
         _ => None,
     }
 }
@@ -383,7 +401,8 @@ fn parse_models(
                     };
                     let supports_reasoning = !reasoning_levels.is_empty()
                         || (provider_id == "deepseek" && id.contains("reasoner"))
-                        || (provider_id == "perplexity" && id.contains("reasoning"));
+                        || (provider_id == "perplexity" && id.contains("reasoning"))
+                        || (provider_id == "anthropic" && (id.contains("claude-3-7") || id.contains("claude-3.7")));
                     let mut model = json!({
                         "id": id,
                         "displayName": item.get("name").or_else(|| details.and_then(|model| model.get("name").or_else(|| model.get("displayName")))).and_then(Value::as_str).filter(|name| !name.trim().is_empty()).unwrap_or(id),
@@ -453,6 +472,12 @@ fn provider_tool_support(provider_id: &str, model_id: &str, model: &Value) -> Op
             .or(Some(true)),
         "sambanova" => Some(true),
         "perplexity" => Some(false),
+        "anthropic" => Some(true),
+        "fireworks" => model
+            .pointer("/capabilities/function_calling")
+            .and_then(Value::as_bool)
+            .or(Some(true)),
+        "deepinfra" | "dashscope" | "cohere" | "ollama" | "lmstudio" => Some(true),
         _ => None,
     }
 }
@@ -571,7 +596,30 @@ fn supports_images(
                 || model_id.to_ascii_lowercase().contains("vision")
         }
         "together" | "sambanova" => advertised_vision || modalities_include_image,
-        "deepseek" | "perplexity" => false,
+        "anthropic" => {
+            advertised_vision
+                || modalities_include_image
+                || model_id.contains("claude-3")
+                || model_id.contains("claude")
+        }
+        "fireworks" | "deepinfra" | "lmstudio" => {
+            advertised_vision
+                || modalities_include_image
+                || model_id.to_ascii_lowercase().contains("vision")
+        }
+        "dashscope" => {
+            advertised_vision
+                || modalities_include_image
+                || model_id.to_ascii_lowercase().contains("vl")
+                || model_id.to_ascii_lowercase().contains("vision")
+        }
+        "ollama" => {
+            advertised_vision
+                || modalities_include_image
+                || model_id.to_ascii_lowercase().contains("vision")
+                || model_id.to_ascii_lowercase().contains("llava")
+        }
+        "deepseek" | "perplexity" | "cohere" => false,
         _ => false,
     }
 }

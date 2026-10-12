@@ -298,6 +298,13 @@ class _CompatibleProviderConnectionSectionState
     'perplexity' => l10n.perplexityProvider,
     'together' => l10n.togetherProvider,
     'sambanova' => l10n.sambaNovaProvider,
+    'anthropic' => l10n.anthropicProvider,
+    'fireworks' => l10n.fireworksProvider,
+    'deepinfra' => l10n.deepInfraProvider,
+    'dashscope' => l10n.dashScopeProvider,
+    'cohere' => l10n.cohereProvider,
+    'ollama' => l10n.ollamaProvider,
+    'lmstudio' => l10n.lmStudioProvider,
     _ => widget.providerId,
   };
 
@@ -312,6 +319,13 @@ class _CompatibleProviderConnectionSectionState
     'perplexity' => l10n.perplexityApiDescription,
     'together' => l10n.togetherApiDescription,
     'sambanova' => l10n.sambaNovaApiDescription,
+    'anthropic' => l10n.anthropicApiDescription,
+    'fireworks' => l10n.fireworksApiDescription,
+    'deepinfra' => l10n.deepInfraApiDescription,
+    'dashscope' => l10n.dashScopeApiDescription,
+    'cohere' => l10n.cohereApiDescription,
+    'ollama' => l10n.ollamaApiDescription,
+    'lmstudio' => l10n.lmStudioApiDescription,
     _ => '',
   };
 }

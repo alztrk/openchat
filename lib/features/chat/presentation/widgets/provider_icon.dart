@@ -57,6 +57,13 @@ class ProviderIcon extends StatelessWidget {
       'perplexity' => _ProviderMonogram(label: 'Px', color: color, size: size),
       'together' => _ProviderMonogram(label: 'To', color: color, size: size),
       'sambanova' => _ProviderMonogram(label: 'Sn', color: color, size: size),
+      'anthropic' => _ProviderMonogram(label: 'An', color: color, size: size),
+      'fireworks' => _ProviderMonogram(label: 'Fw', color: color, size: size),
+      'deepinfra' => _ProviderMonogram(label: 'Di', color: color, size: size),
+      'dashscope' => _ProviderMonogram(label: 'Qw', color: color, size: size),
+      'cohere' => _ProviderMonogram(label: 'Co', color: color, size: size),
+      'ollama' => _ProviderMonogram(label: 'Ol', color: color, size: size),
+      'lmstudio' => _ProviderMonogram(label: 'Lm', color: color, size: size),
       'llama_cpp' || 'vllm' || 'exllama' => LocalEngineIcon(
         engineId: providerId,
         color: color,

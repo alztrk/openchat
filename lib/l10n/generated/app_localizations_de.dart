@@ -917,6 +917,27 @@ class AppLocalizationsDe extends AppLocalizations {
   String get sambaNovaProvider => 'SambaNova';
 
   @override
+  String get anthropicProvider => 'Anthropic';
+
+  @override
+  String get fireworksProvider => 'Fireworks AI';
+
+  @override
+  String get deepInfraProvider => 'DeepInfra';
+
+  @override
+  String get dashScopeProvider => 'DashScope (Qwen)';
+
+  @override
+  String get cohereProvider => 'Cohere';
+
+  @override
+  String get ollamaProvider => 'Ollama';
+
+  @override
+  String get lmStudioProvider => 'LM Studio';
+
+  @override
   String get geminiApiDescription =>
       'Fügen Sie einen Google-AI-Studio-API-Schlüssel hinzu, um die für Ihr Konto verfügbaren Modelle zu verwenden. Der kostenlose Zugriff hängt vom Modell und Ihrem Kontingent ab.';
 
@@ -955,6 +976,34 @@ class AppLocalizationsDe extends AppLocalizations {
   @override
   String get sambaNovaApiDescription =>
       'Fügen Sie einen SambaNova Cloud-API-Schlüssel hinzu, um Open-Source-Modelle mit SambaNova RDUs zu nutzen.';
+
+  @override
+  String get anthropicApiDescription =>
+      'Fügen Sie einen Anthropic-API-Schlüssel hinzu, um Claude 3.5- und Claude 3.7-Modelle mit Reasoning und Vision zu verwenden.';
+
+  @override
+  String get fireworksApiDescription =>
+      'Fügen Sie einen Fireworks AI-API-Schlüssel hinzu, um schnelle Open-Weights- und Inferenzmodelle zu verwenden.';
+
+  @override
+  String get deepInfraApiDescription =>
+      'Fügen Sie einen DeepInfra-API-Schlüssel hinzu, um kostengünstige gehostete Open-Source-Modelle zu nutzen.';
+
+  @override
+  String get dashScopeApiDescription =>
+      'Fügen Sie einen Alibaba Cloud DashScope-API-Schlüssel hinzu, um Qwen-Modelle im OpenAI-kompatiblen Modus zu verwenden.';
+
+  @override
+  String get cohereApiDescription =>
+      'Fügen Sie einen Cohere-API-Schlüssel hinzu, um Command R- und Command R+-Modelle zu verwenden.';
+
+  @override
+  String get ollamaApiDescription =>
+      'Verbinden Sie sich mit einer lokalen Ollama-Instanz unter http://localhost:11434. Standardmäßig ist kein API-Schlüssel erforderlich.';
+
+  @override
+  String get lmStudioApiDescription =>
+      'Verbinden Sie sich mit einem lokalen LM Studio-Server unter http://localhost:1234. Standardmäßig ist kein API-Schlüssel erforderlich.';
 
   @override
   String get geminiUnpaidDataNotice =>

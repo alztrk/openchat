@@ -895,6 +895,27 @@ class AppLocalizationsTr extends AppLocalizations {
   String get sambaNovaProvider => 'SambaNova';
 
   @override
+  String get anthropicProvider => 'Anthropic';
+
+  @override
+  String get fireworksProvider => 'Fireworks AI';
+
+  @override
+  String get deepInfraProvider => 'DeepInfra';
+
+  @override
+  String get dashScopeProvider => 'DashScope (Qwen)';
+
+  @override
+  String get cohereProvider => 'Cohere';
+
+  @override
+  String get ollamaProvider => 'Ollama';
+
+  @override
+  String get lmStudioProvider => 'LM Studio';
+
+  @override
   String get geminiApiDescription =>
       'Google AI Studio API anahtarını ekleyerek erişebildiğin modelleri kullan. Ücretsiz kullanım model ve kota sınırına bağlıdır.';
 
@@ -933,6 +954,34 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get sambaNovaApiDescription =>
       'SambaNova RDU donanımıyla çalışan yüksek hızlı açık modelleri kullanmak için bir SambaNova Cloud API anahtarı ekleyin.';
+
+  @override
+  String get anthropicApiDescription =>
+      'Gelişmiş akıl yürütme ve görme özellikli Claude 3.5 ve Claude 3.7 modellerini kullanmak için bir Anthropic API anahtarı ekleyin.';
+
+  @override
+  String get fireworksApiDescription =>
+      'Yüksek hızlı açık ağırlıklı modelleri ve özel çıkarım modellerini kullanmak için bir Fireworks AI API anahtarı ekleyin.';
+
+  @override
+  String get deepInfraApiDescription =>
+      'OpenAI uyumlu uygun maliyetli barındırılan açık modelleri kullanmak için bir DeepInfra API anahtarı ekleyin.';
+
+  @override
+  String get dashScopeApiDescription =>
+      'Qwen modellerini OpenAI uyumlu modda kullanmak için bir Alibaba Cloud DashScope API anahtarı ekleyin.';
+
+  @override
+  String get cohereApiDescription =>
+      'Command R ve Command R+ modellerini uyumluluk API\'si üzerinden kullanmak için bir Cohere API anahtarı ekleyin.';
+
+  @override
+  String get ollamaApiDescription =>
+      'http://localhost:11434 adresinde çalışan yerel Ollama sunucusuna bağlanın. Varsayılan olarak API anahtarı gerekmez.';
+
+  @override
+  String get lmStudioApiDescription =>
+      'http://localhost:1234 adresinde çalışan yerel LM Studio sunucusuna bağlanın. Varsayılan olarak API anahtarı gerekmez.';
 
   @override
   String get geminiUnpaidDataNotice =>

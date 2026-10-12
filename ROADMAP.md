@@ -7,8 +7,9 @@ This roadmap reflects the repository's current implementation and has no calenda
 - Flutter desktop UI with a local Rust child service and SQLite conversation storage under `%LOCALAPPDATA%\OpenChat`.
 - ChatGPT OAuth connections, account/workspace selection, model catalog, account and quota information, streamed Responses, cancellation, and background conversation titles.
 - OpenCode Console through its OpenAI Chat Completions endpoint. Other OpenCode protocol families are not supported.
-- Gemini, Groq, Cerebras, OpenRouter, and Mistral through their official OpenAI-compatible Chat Completions APIs, with API keys in platform secure storage and six-hour per-key model catalogs. Mistral exposes context, vision, and documented reasoning capabilities; OpenRouter models are filtered to current zero-price text-chat entries that advertise tool support.
-- Shared provider request, tool, and stream event types across ChatGPT, OpenCode, Gemini, Groq, Cerebras, OpenRouter, and Mistral, plus local shared instructions.
+- API-key and local providers: Gemini, Groq, Cerebras, OpenRouter, Mistral, DeepSeek, xAI, Perplexity, Together AI, SambaNova, Fireworks AI, DeepInfra, DashScope (Qwen), Cohere, Ollama, and LM Studio, plus custom OpenAI- and Anthropic-compatible endpoints. API keys are stored in platform secure storage with six-hour per-key model catalogs; local engines connect without credentials. Mistral exposes context, vision, and documented reasoning capabilities; OpenRouter models are filtered to current zero-price text-chat entries that advertise tool support.
+- Anthropic Claude Messages API adapter (`/messages`), supporting context limits up to 200K, vision, tools, and Claude 3.7 reasoning.
+- Shared provider request, tool, and stream event types across ChatGPT, OpenCode, Anthropic, and all compatible cloud and local providers, plus local shared instructions.
 - Embedded release catalogs and a verified, cancellable installer for llama.cpp on Windows x64. Windows x64 Settings supports a model folder per engine and bounded discovery of unregistered GGUF and Transformers model files, with explicit confirmation before registration. The managed llama.cpp path starts selected GGUF models on demand, waits for health readiness, streams chat through the shared route, and stops individual processes on cancellation or service shutdown. Manual Windows CPU and NVIDIA CUDA checks used real GGUF files; CUDA verification reported the RTX 3060, generated a text answer, and handled an attached PNG with its matching vision projector. These were manual runtime checks, not automated release tests. CUDA offload is recommended only when the detected driver meets the pinned catalog floor. vLLM and ExLlama installation is disabled on Windows while their Linux runtimes remain separately catalogued and await live validation on supported CUDA hosts. Runtime diagnostics record bounded, safe lifecycle fields. GGUF-declared and runtime-active context windows, projector pairing, and reported image and tool-template capabilities are implemented.
 - Local workspace tools for file listing, search, reading, metadata, writing, and editing, plus web search, URL reading, and terminal command/session tools. Tool calls, arguments, progress, and results are stored with assistant messages and shown in the conversation UI.
 - Global `Ask for approval`, `Approve safe operations`, and `Full access` settings govern built-in tool approvals. Filesystem calls use canonical path checks. On Windows, each terminal session runs in a temporary AppContainer with access granted to its working tree; non-Windows terminal execution still uses the OpenChat process account without an OS sandbox.
@@ -44,7 +45,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### Validate API-key providers
 
-**Status: implemented in source; live account validation remains open after the first GitHub release.** Gemini, Groq, Cerebras, OpenRouter, and Mistral are connected through their official OpenAI-compatible endpoints. Validation requires configured provider accounts and is not part of credential-free CI.
+**Status: implemented in source; live account validation remains open after the first GitHub release.** Hosted cloud providers (Gemini, Groq, Cerebras, OpenRouter, Mistral, DeepSeek, xAI, Perplexity, Together AI, SambaNova, Anthropic, Fireworks AI, DeepInfra, DashScope, Cohere) and local engines (Ollama, LM Studio) are connected. Validation requires configured provider accounts or running local engines and is not part of credential-free CI.
 
 - Verify model catalog loading, streaming, cancellation, errors, local history, and tool calls with real accounts for each provider.
 - Confirm current pricing, quota, tool-use capability, and data handling against each provider's account terms.
@@ -197,21 +198,21 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 7. Broaden API-key provider access
 
-**Status: planned.** Make compatible provider connections configurable and expose provider/model support accurately before adding more provider-specific behavior.
+**Status: implemented in source and covered by deterministic tests.** Custom OpenAI- and Anthropic-compatible endpoints, presets for DeepSeek, xAI, Perplexity, Together AI, SambaNova, Fireworks AI, DeepInfra, DashScope (Qwen), Cohere, and local engines (Ollama, LM Studio) are implemented in the local Rust service and Flutter UI. Live account validation remains open.
 
-- Add a user-configured OpenAI-compatible endpoint with a base URL, API key, catalog refresh, and manual model entry when a catalog is unavailable. Keep credentials in platform secure storage and requests in the local Rust service.
-- Treat context limits, streaming, reasoning, vision, tool calling, and prices as model capabilities. Keep unknown values explicit and do not expose an unsupported feature as available.
-- Add a DeepSeek preset using its documented API and verify streamed responses, reasoning output, and tool calls through the shared provider contract.
+- Add a user-configured OpenAI-compatible endpoint with a base URL, API key, catalog refresh, and manual model entry when a catalog is unavailable. Implemented with support for both OpenAI and Anthropic protocol targets.
+- Treat context limits, streaming, reasoning, vision, tool calling, and prices as model capabilities. Implemented with per-provider capability mappings and default limits.
+- Add a DeepSeek preset using its documented API and verify streamed responses, reasoning output, and tool calls through the shared provider contract. Implemented.
 - Extend OpenRouter beyond its current zero-price model filter. Show current input/output prices and supported capabilities for priced models, and make the cost implications clear before a user selects or calls one.
 
-**Exit criteria:** a user can configure a compatible endpoint or connect DeepSeek without exposing credentials; the model selector only offers verified capabilities; and OpenRouter model pricing and tool support are visible before use.
+**Exit criteria:** a user can configure a compatible endpoint or connect DeepSeek without exposing credentials; the model selector only offers verified capabilities; and OpenRouter model pricing and tool support are visible before use. Met in source implementation; live verification remains open.
 
 ### 8. Add provider-native API capabilities
 
-**Status: planned.** Add native API adapters where OpenAI-compatible Chat Completions does not expose a provider's documented capabilities.
+**Status: partially implemented in source.** Anthropic Claude Messages API adapter is implemented (`/messages` route, header-based auth, streaming, tools, vision, and reasoning). Public OpenAI Responses API and Mistral hosted search remain planned.
 
 - Add the public OpenAI Responses API for OpenAI API-key connections, including streaming, function calling, and optional hosted tools such as web search. Keep this route distinct from ChatGPT OAuth and its private Codex endpoints.
-- Evaluate Anthropic Messages and xAI Responses as separate provider adapters, with model catalogs and capabilities obtained from their documented APIs.
+- Evaluate Anthropic Messages and xAI Responses as separate provider adapters, with model catalogs and capabilities obtained from their documented APIs. Anthropic Messages adapter is implemented in source and covered by deterministic unit tests.
 - Evaluate native Mistral APIs for provider-hosted tools that its compatibility endpoint does not expose. Add only documented features that fit the shared request and event contract.
 - Treat prompt caching as a provider/model/runtime capability. Keep reusable instructions and tool schemas stable at the start of requests; add documented cache breakpoints or keys only in adapters that support them. Adapters can shape cache eligibility, but the provider/runtime owns cache storage and actual hits, and a marker or key does not guarantee reuse.
 - Label provider-hosted tools, the information sent to them, citations or returned sources, and any provider-side billing. Never enable these tools implicitly when a user selects a model.

@@ -84,6 +84,13 @@ class ApiCompatibleProviderKeyStore {
     'perplexity',
     'together',
     'sambanova',
+    'anthropic',
+    'fireworks',
+    'deepinfra',
+    'dashscope',
+    'cohere',
+    'ollama',
+    'lmstudio',
   };
   static bool isCustomProviderId(String providerId) =>
       _customProviderId.hasMatch(providerId);

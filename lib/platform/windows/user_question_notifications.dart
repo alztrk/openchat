@@ -270,6 +270,6 @@ class UserQuestionNotifications {
     'llama_cpp' => 'assets/icons/notification_llama_cpp.svg',
     'vllm' => 'assets/icons/notification_vllm.svg',
     'exllama' => 'assets/icons/engines/exllama-v3.png',
-    _ => throw ArgumentError.value(providerId, 'providerId'),
+    _ => 'assets/icons/notification_chatgpt.svg',
   };
 }

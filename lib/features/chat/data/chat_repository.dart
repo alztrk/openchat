@@ -12,14 +12,7 @@ import 'package:openchat/features/chat/domain/chat_saved_output.dart';
 import 'package:openchat/features/chat/domain/chat_workspace.dart';
 
 import 'package:openchat/features/chat/data/openchat_database.dart';
-
-const _compatibleProviderIds = <String>{
-  'gemini',
-  'groq',
-  'cerebras',
-  'openrouter',
-  'mistral',
-};
+import 'package:openchat/features/settings/data/api_compatible_provider_key_store.dart';
 
 const _localEngineProviderIds = <String>{'llama_cpp', 'vllm', 'exllama'};
 
@@ -30,7 +23,8 @@ bool _isLocalEngineProvider(String? providerId) =>
 
 bool _isApiKeyRouteProvider(String? providerId) =>
     providerId == 'chatgpt_api' ||
-    (providerId != null && _compatibleProviderIds.contains(providerId));
+    (providerId != null &&
+        ApiCompatibleProviderKeyStore.isApiKeyProviderId(providerId));
 
 class ChatRepository {
   const ChatRepository(this._database, {this.attachmentStore});
@@ -357,7 +351,7 @@ class ChatRepository {
     if (providerId != 'chatgpt' &&
         providerId != 'chatgpt_api' &&
         providerId != 'opencode' &&
-        !_compatibleProviderIds.contains(providerId) &&
+        !ApiCompatibleProviderKeyStore.isApiKeyProviderId(providerId) &&
         !_isLocalEngineProvider(providerId)) {
       throw ArgumentError.value(providerId, 'providerId', 'Unknown provider.');
     }
@@ -721,7 +715,8 @@ class ChatRepository {
             (!hasApiRoute ||
                 hasOAuthRoute ||
                 modelId == null ||
-                (_compatibleProviderIds.contains(selectedProvider) &&
+                (selectedProvider != null &&
+                    ApiCompatibleProviderKeyStore.isApiKeyProviderId(selectedProvider) &&
                     apiKeyConnectionId != selectedProvider))) ||
         (!isOpenCode &&
             !isLocalEngine &&
@@ -837,7 +832,7 @@ class ChatRepository {
         (hasApiKeyRoute &&
             (apiKeyConnectionId == null ||
                 hasOAuthRoute ||
-                (_compatibleProviderIds.contains(normalizedProviderId) &&
+                (ApiCompatibleProviderKeyStore.isApiKeyProviderId(normalizedProviderId) &&
                     apiKeyConnectionId != normalizedProviderId))) ||
         (!isOpenCode &&
             !isLocalEngine &&
@@ -918,7 +913,8 @@ class ChatRepository {
       if (hasApiKeyRoute && conversation.apiKeyConnectionId == null) {
         throw StateError('The conversation has no API key route.');
       }
-      if (_compatibleProviderIds.contains(conversation.providerId) &&
+      if (conversation.providerId != null &&
+          ApiCompatibleProviderKeyStore.isApiKeyProviderId(conversation.providerId!) &&
           conversation.apiKeyConnectionId != conversation.providerId) {
         throw StateError('The conversation provider route is invalid.');
       }

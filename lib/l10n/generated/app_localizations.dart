@@ -1616,6 +1616,48 @@ abstract class AppLocalizations {
   /// **'SambaNova'**
   String get sambaNovaProvider;
 
+  /// No description provided for @anthropicProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Anthropic'**
+  String get anthropicProvider;
+
+  /// No description provided for @fireworksProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Fireworks AI'**
+  String get fireworksProvider;
+
+  /// No description provided for @deepInfraProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'DeepInfra'**
+  String get deepInfraProvider;
+
+  /// No description provided for @dashScopeProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'DashScope (Qwen)'**
+  String get dashScopeProvider;
+
+  /// No description provided for @cohereProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Cohere'**
+  String get cohereProvider;
+
+  /// No description provided for @ollamaProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Ollama'**
+  String get ollamaProvider;
+
+  /// No description provided for @lmStudioProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'LM Studio'**
+  String get lmStudioProvider;
+
   /// No description provided for @geminiApiDescription.
   ///
   /// In en, this message translates to:
@@ -1675,6 +1717,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Add a SambaNova Cloud API key to use high-throughput open models powered by SambaNova RDUs.'**
   String get sambaNovaApiDescription;
+
+  /// No description provided for @anthropicApiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Add an Anthropic API key to use Claude 3.5 and Claude 3.7 models with advanced reasoning and vision.'**
+  String get anthropicApiDescription;
+
+  /// No description provided for @fireworksApiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a Fireworks AI API key to use fast open-weights and custom inference models.'**
+  String get fireworksApiDescription;
+
+  /// No description provided for @deepInfraApiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a DeepInfra API key to access cost-effective hosted open-source models with OpenAI compatibility.'**
+  String get deepInfraApiDescription;
+
+  /// No description provided for @dashScopeApiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Add an Alibaba Cloud DashScope API key to use Qwen models in OpenAI-compatible mode.'**
+  String get dashScopeApiDescription;
+
+  /// No description provided for @cohereApiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a Cohere API key to use Command R and Command R+ models via the compatibility API.'**
+  String get cohereApiDescription;
+
+  /// No description provided for @ollamaApiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect to a local Ollama instance running at http://localhost:11434. No API key required by default.'**
+  String get ollamaApiDescription;
+
+  /// No description provided for @lmStudioApiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect to a local LM Studio server running at http://localhost:1234. No API key required by default.'**
+  String get lmStudioApiDescription;
 
   /// No description provided for @geminiUnpaidDataNotice.
   ///

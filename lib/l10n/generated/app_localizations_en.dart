@@ -897,6 +897,27 @@ class AppLocalizationsEn extends AppLocalizations {
   String get sambaNovaProvider => 'SambaNova';
 
   @override
+  String get anthropicProvider => 'Anthropic';
+
+  @override
+  String get fireworksProvider => 'Fireworks AI';
+
+  @override
+  String get deepInfraProvider => 'DeepInfra';
+
+  @override
+  String get dashScopeProvider => 'DashScope (Qwen)';
+
+  @override
+  String get cohereProvider => 'Cohere';
+
+  @override
+  String get ollamaProvider => 'Ollama';
+
+  @override
+  String get lmStudioProvider => 'LM Studio';
+
+  @override
   String get geminiApiDescription =>
       'Add a Google AI Studio API key to use the models available to your account. Free access depends on the model and your quota.';
 
@@ -935,6 +956,34 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get sambaNovaApiDescription =>
       'Add a SambaNova Cloud API key to use high-throughput open models powered by SambaNova RDUs.';
+
+  @override
+  String get anthropicApiDescription =>
+      'Add an Anthropic API key to use Claude 3.5 and Claude 3.7 models with advanced reasoning and vision.';
+
+  @override
+  String get fireworksApiDescription =>
+      'Add a Fireworks AI API key to use fast open-weights and custom inference models.';
+
+  @override
+  String get deepInfraApiDescription =>
+      'Add a DeepInfra API key to access cost-effective hosted open-source models with OpenAI compatibility.';
+
+  @override
+  String get dashScopeApiDescription =>
+      'Add an Alibaba Cloud DashScope API key to use Qwen models in OpenAI-compatible mode.';
+
+  @override
+  String get cohereApiDescription =>
+      'Add a Cohere API key to use Command R and Command R+ models via the compatibility API.';
+
+  @override
+  String get ollamaApiDescription =>
+      'Connect to a local Ollama instance running at http://localhost:11434. No API key required by default.';
+
+  @override
+  String get lmStudioApiDescription =>
+      'Connect to a local LM Studio server running at http://localhost:1234. No API key required by default.';
 
   @override
   String get geminiUnpaidDataNotice =>

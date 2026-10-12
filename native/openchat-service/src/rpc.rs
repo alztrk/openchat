@@ -1672,6 +1672,13 @@ pub(crate) async fn dispatch(
                             | "perplexity"
                             | "together"
                             | "sambanova"
+                            | "anthropic"
+                            | "fireworks"
+                            | "deepinfra"
+                            | "dashscope"
+                            | "cohere"
+                            | "ollama"
+                            | "lmstudio"
                             | "llama_cpp"
                             | "vllm"
                             | "exllama"
@@ -1744,7 +1751,8 @@ pub(crate) async fn dispatch(
                 Some(
                     "opencode" | "chatgpt_api" | "gemini" | "groq" | "cerebras" | "openrouter"
                     | "mistral" | "deepseek" | "xai" | "perplexity" | "together" | "sambanova"
-                    | "llama_cpp" | "vllm" | "exllama",
+                    | "anthropic" | "fireworks" | "deepinfra" | "dashscope" | "cohere" | "ollama"
+                    | "lmstudio" | "llama_cpp" | "vllm" | "exllama",
                 ) => {
                     openai_compatible::send_message(
                         storage,
@@ -2015,7 +2023,11 @@ pub(crate) async fn dispatch(
                 )
                 .await
             } else {
-                let api_key = required_string(&request.params, "apiKey")?;
+                let api_key = if matches!(provider_id, "ollama" | "lmstudio") {
+                    optional_string(&request.params, "apiKey")?.unwrap_or("local")
+                } else {
+                    required_string(&request.params, "apiKey")?
+                };
                 openai_compatible::models_for_provider(
                     storage,
                     provider_id,

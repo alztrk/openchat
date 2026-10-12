@@ -16,6 +16,18 @@ String buildConversationMarkdown(
     'cerebras' => l10n.cerebrasProvider,
     'openrouter' => l10n.openRouterProvider,
     'mistral' => l10n.mistralProvider,
+    'deepseek' => l10n.deepSeekProvider,
+    'xai' => l10n.xAiProvider,
+    'perplexity' => l10n.perplexityProvider,
+    'together' => l10n.togetherProvider,
+    'sambanova' => l10n.sambaNovaProvider,
+    'anthropic' => l10n.anthropicProvider,
+    'fireworks' => l10n.fireworksProvider,
+    'deepinfra' => l10n.deepInfraProvider,
+    'dashscope' => l10n.dashScopeProvider,
+    'cohere' => l10n.cohereProvider,
+    'ollama' => l10n.ollamaProvider,
+    'lmstudio' => l10n.lmStudioProvider,
     _ => l10n.chatGptProvider,
   };
   final modelLabel = conversation.modelId ?? l10n.messageModelUnavailable;
