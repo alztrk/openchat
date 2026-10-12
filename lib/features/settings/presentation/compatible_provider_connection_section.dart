@@ -293,6 +293,11 @@ class _CompatibleProviderConnectionSectionState
     'cerebras' => l10n.cerebrasProvider,
     'openrouter' => l10n.openRouterProvider,
     'mistral' => l10n.mistralProvider,
+    'deepseek' => l10n.deepSeekProvider,
+    'xai' => l10n.xAiProvider,
+    'perplexity' => l10n.perplexityProvider,
+    'together' => l10n.togetherProvider,
+    'sambanova' => l10n.sambaNovaProvider,
     _ => widget.providerId,
   };
 
@@ -302,6 +307,11 @@ class _CompatibleProviderConnectionSectionState
     'cerebras' => l10n.cerebrasApiDescription,
     'openrouter' => l10n.openRouterApiDescription,
     'mistral' => l10n.mistralApiDescription,
+    'deepseek' => l10n.deepSeekApiDescription,
+    'xai' => l10n.xAiApiDescription,
+    'perplexity' => l10n.perplexityApiDescription,
+    'together' => l10n.togetherApiDescription,
+    'sambanova' => l10n.sambaNovaApiDescription,
     _ => '',
   };
 }

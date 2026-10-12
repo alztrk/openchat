@@ -10,6 +10,25 @@ use crate::{
     tools::{ToolPermissionMode, ToolPermissionRules},
 };
 use crate::{storage::AppStorage, user_question_broker::UserQuestionBroker};
+
+#[derive(Clone)]
+pub enum TitleGenerationRequest {
+    Disabled,
+    Conversation,
+    Model(TitleGenerationModel),
+}
+
+#[derive(Clone)]
+pub struct TitleGenerationModel {
+    pub provider_id: String,
+    pub model_id: String,
+    pub connection_id: Option<String>,
+    pub workspace_id: Option<String>,
+    pub api_key_connection_id: Option<String>,
+    pub api_key: Option<zeroize::Zeroizing<String>>,
+    pub custom_provider: Option<crate::openai_compatible::CustomProviderConfig>,
+}
+
 pub struct ChatSendContext<'a> {
     pub request_id: Value,
     pub run_id: String,
@@ -34,4 +53,5 @@ pub struct ChatSendContext<'a> {
     pub cancellation: &'a mut watch::Receiver<bool>,
     pub events: EventSink,
     pub context_limit_override: Option<i64>,
+    pub title_generation: TitleGenerationRequest,
 }

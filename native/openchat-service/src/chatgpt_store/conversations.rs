@@ -44,6 +44,17 @@ pub fn conversation_route(
     }
 }
 
+pub fn conversation_title_is_automatic(
+    storage: &AppStorage,
+    conversation_id: &str,
+) -> rusqlite::Result<bool> {
+    storage.connect()?.query_row(
+        "SELECT title_source = 'automatic' FROM conversations WHERE id = ?1",
+        [conversation_id],
+        |row| row.get(0),
+    )
+}
+
 pub fn conversation_messages(
     storage: &AppStorage,
     conversation_id: &str,

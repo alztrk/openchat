@@ -188,6 +188,13 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
     }))
 }
 
+pub(crate) async fn runtime_status(storage: &AppStorage) -> Result<Value, ServiceError> {
+    Ok(json!({
+        "runtime": runtime::status(storage).await?,
+        "externalLlamaServers": runtime::external_server_status().await,
+    }))
+}
+
 fn runtime_status_for_engine(runtime: &Value, engine_id: &str) -> &'static str {
     let servers = runtime.get("servers").and_then(Value::as_array);
     let Some(servers) = servers else {

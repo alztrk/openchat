@@ -181,7 +181,59 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsDataRecovery => 'Data and recovery';
 
   @override
-  String get settingsOtherProviders => 'Other providers';
+  String get settingsAccountConnectionsHeading => 'Account connections';
+
+  @override
+  String get settingsModelProvidersHeading => 'Model providers';
+
+  @override
+  String get customProvidersHeading => 'Custom providers';
+
+  @override
+  String get customProvidersDescription =>
+      'Add your own provider that supports the OpenAI or Anthropic API format.';
+
+  @override
+  String get customProvidersEmpty => 'No custom providers have been added yet.';
+
+  @override
+  String get addCustomProvider => 'Add custom provider';
+
+  @override
+  String get editCustomProvider => 'Edit custom provider';
+
+  @override
+  String get customProviderName => 'Provider name';
+
+  @override
+  String get customProviderProtocol => 'API format';
+
+  @override
+  String get customProviderBaseUrl => 'Base API URL';
+
+  @override
+  String get customProviderApiKey => 'API key';
+
+  @override
+  String get customProviderApiKeyOptional =>
+      'Leave blank if the server does not require a key';
+
+  @override
+  String get customProviderKeyUnchanged =>
+      'Leave blank to keep the current key';
+
+  @override
+  String get customProviderInvalid => 'Check the provider details.';
+
+  @override
+  String get customProviderUrlInvalid =>
+      'Enter a valid HTTP or HTTPS API URL. The URL cannot contain user information, a query, or a fragment.';
+
+  @override
+  String get openAiCompatible => 'OpenAI-compatible';
+
+  @override
+  String get anthropicCompatible => 'Anthropic-compatible';
 
   @override
   String get settingsConnectionsDescription =>
@@ -830,6 +882,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get mistralProvider => 'Mistral';
 
   @override
+  String get deepSeekProvider => 'DeepSeek';
+
+  @override
+  String get xAiProvider => 'xAI';
+
+  @override
+  String get perplexityProvider => 'Perplexity';
+
+  @override
+  String get togetherProvider => 'Together AI';
+
+  @override
+  String get sambaNovaProvider => 'SambaNova';
+
+  @override
   String get geminiApiDescription =>
       'Add a Google AI Studio API key to use the models available to your account. Free access depends on the model and your quota.';
 
@@ -848,6 +915,26 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get mistralApiDescription =>
       'Add a Mistral API key to use the chat models available to your account. Free access, pricing, and usage limits depend on your Mistral plan.';
+
+  @override
+  String get deepSeekApiDescription =>
+      'Add a DeepSeek API key to use DeepSeek-V3 and DeepSeek-R1 models. Usage limits and pricing depend on your account balance.';
+
+  @override
+  String get xAiApiDescription =>
+      'Add an xAI API key to use Grok models. Usage limits and pricing depend on your xAI plan.';
+
+  @override
+  String get perplexityApiDescription =>
+      'Add a Perplexity API key to use Sonar search-augmented models with real-time web citations.';
+
+  @override
+  String get togetherApiDescription =>
+      'Add a Together AI API key to access open-source models with fast cloud inference.';
+
+  @override
+  String get sambaNovaApiDescription =>
+      'Add a SambaNova Cloud API key to use high-throughput open models powered by SambaNova RDUs.';
 
   @override
   String get geminiUnpaidDataNotice =>
@@ -1153,7 +1240,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get toolPermissionPlanDescription =>
-      'Read and research only. File changes, terminal commands, project tools, and integrations are blocked.';
+      'No tools are available. The assistant prepares a plan from the conversation and waits for your approval.';
+
+  @override
+  String get toolPermissionPlanOff => 'Turn off plan mode';
+
+  @override
+  String get composerGoalModeLabel => 'Goal mode';
+
+  @override
+  String get composerGoalModeOff => 'Turn off goal mode';
 
   @override
   String get toolPermissionRequireApproval => 'Ask for approval';
@@ -1462,10 +1558,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'No ChatGPT account workspace information is available.';
 
   @override
-  String get selectAccountForWorkspace =>
-      'Select this account to choose its workspace.';
-
-  @override
   String get accountEmailUnavailable => 'Email address unavailable';
 
   @override
@@ -1617,7 +1709,43 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get titleGenerationTargetDescription =>
-      'When the conversation account has no different model available, OpenChat can use the account you choose here. It skips title generation when ordinary usage is unavailable.';
+      'Titles are generated separately from replies. Choose how OpenChat should create them.';
+
+  @override
+  String get titleUseConversationModel =>
+      'Use the conversation\'s model and account';
+
+  @override
+  String get titleConversationModeDescription =>
+      'Use the same model and account as the conversation.';
+
+  @override
+  String get titleUseSpecificModel => 'Choose a connected model';
+
+  @override
+  String get titleSpecificModelDescription =>
+      'Pick from connected providers and registered local models.';
+
+  @override
+  String get titleUseLightweightModel =>
+      'Let OpenChat choose the smallest model';
+
+  @override
+  String get titleLightweightModeDescription =>
+      'Choose the smallest model with a known parameter count.';
+
+  @override
+  String get titleSelectModelHint =>
+      'Choose a connected provider or local model';
+
+  @override
+  String get titleLightweightUnavailable =>
+      'No available model has a parameter count stated in its name. You can choose a model directly.';
+
+  @override
+  String titleLightweightModelSelected(String model) {
+    return 'OpenChat chose $model, the smallest model with a known parameter count.';
+  }
 
   @override
   String get titleUseConversationAccount => 'Use the conversation account';
@@ -2170,6 +2298,30 @@ class AppLocalizationsEn extends AppLocalizations {
       'Provider and model refer to the route saved with each assistant answer.';
 
   @override
+  String get historySearchResultTypeFilter => 'Result type';
+
+  @override
+  String get historySearchAllResultTypes => 'Messages and conversations';
+
+  @override
+  String get historySearchMessagesOnly => 'Messages only';
+
+  @override
+  String get historySearchConversationsOnly => 'Conversation titles only';
+
+  @override
+  String get historySearchSortFilter => 'Sort by';
+
+  @override
+  String get historySearchSortRelevance => 'Relevance';
+
+  @override
+  String get historySearchSortNewest => 'Newest';
+
+  @override
+  String get historySearchSortOldest => 'Oldest';
+
+  @override
   String get historySearchProviderFilter => 'Answer provider';
 
   @override
@@ -2269,22 +2421,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get searchMessagesHeader => 'Message matches';
 
   @override
-  String get searchMessagesLoading => 'Searching messages…';
+  String get searchMessagesLoading => 'Searching messages and conversations…';
 
   @override
-  String get searchMessagesNoResults => 'No message matches';
+  String get searchMessagesNoResults =>
+      'No matching messages or conversations.';
 
   @override
   String get searchMessagesTooShort =>
-      'Enter at least two characters to search messages.';
+      'Enter at least two characters to search.';
 
   @override
   String get searchMessagesTooLong =>
       'Search text must be 512 characters or fewer.';
 
   @override
-  String get searchMessagesFailed =>
-      'Messages could not be searched. Try again.';
+  String get searchMessagesFailed => 'Search failed. Try again.';
 
   @override
   String get searchMessageUnavailable => 'This message is no longer available.';
@@ -4653,6 +4805,131 @@ class AppLocalizationsEn extends AppLocalizations {
   String get fileChangesUnavailableTitle => 'File changes unavailable';
 
   @override
+  String get slashCommandPlanLabel => 'Plan';
+
+  @override
+  String get slashCommandGoalLabel => 'Goal';
+
+  @override
+  String get slashCommandNewLabel => 'New';
+
+  @override
+  String get slashCommandSearchLabel => 'Search';
+
+  @override
+  String get slashCommandSummarizeLabel => 'Summarize';
+
+  @override
+  String get slashCommandSummarizeDescription =>
+      'Create a concise summary of this conversation, including key decisions, results, and unresolved work.';
+
+  @override
+  String get slashCommandSummarizePrompt =>
+      'Summarize this conversation. Briefly include key decisions, completed work, and unresolved items.';
+
+  @override
+  String get slashCommandSummarizeNoMessages =>
+      'There are no messages to summarize. Send at least one message in this chat first.';
+
+  @override
+  String get slashCommandSummarizeLoading =>
+      'Messages are still loading, so this conversation cannot be summarized yet.';
+
+  @override
+  String get slashCommandSummarizeUnavailable =>
+      'This command cannot run right now. Check the model connection and wait for pending chat operations to finish.';
+
+  @override
+  String get slashCommandRenameLabel => 'Rename';
+
+  @override
+  String get slashCommandRenameDescription =>
+      'Rename this conversation. Add a new title after the command.';
+
+  @override
+  String get slashCommandRenameTitleRequired => 'Add a title after /rename.';
+
+  @override
+  String get slashCommandRenameNoConversation =>
+      'Open a conversation before renaming it.';
+
+  @override
+  String get slashCommandRenameSuccess => 'Conversation renamed.';
+
+  @override
+  String get slashCommandModelLabel => 'Model';
+
+  @override
+  String get slashCommandModelDescription =>
+      'Switch to an available model by its exact name or ID.';
+
+  @override
+  String get slashCommandModelNameRequired =>
+      'Add a model name or ID after /model.';
+
+  @override
+  String get slashCommandModelNoMatch =>
+      'No available model matches that name or ID for the current provider.';
+
+  @override
+  String get slashCommandModelAmbiguous =>
+      'More than one available model matches. Use its exact model ID.';
+
+  @override
+  String get slashCommandModelUnavailable =>
+      'The model selector is unavailable while models load or a response is running.';
+
+  @override
+  String get slashCommandCompactLabel => 'Compact';
+
+  @override
+  String get slashCommandCompactDescription =>
+      'Locally summarize older messages for future requests while keeping the full history searchable.';
+
+  @override
+  String get slashCommandCompactNoConversation =>
+      'Open a conversation before compacting its context.';
+
+  @override
+  String get slashCommandCompactNoArguments =>
+      '/compact does not take an argument.';
+
+  @override
+  String get slashCommandCompactNoContextWindow =>
+      'A context limit is unavailable for this model. Set one in Model preferences.';
+
+  @override
+  String get slashCommandCompactBusy =>
+      'Wait for the current response to finish before compacting.';
+
+  @override
+  String get slashCommandCompactSuccess =>
+      'Older conversation context was compacted. The full chat history remains searchable.';
+
+  @override
+  String get slashCommandCompactNothing =>
+      'There is not enough older context to compact yet.';
+
+  @override
+  String get slashCommandCompactFailed =>
+      'The older conversation context could not be compacted. Your full history is still available.';
+
+  @override
+  String get slashCommandReasoningLabel => 'Reasoning';
+
+  @override
+  String get slashCommandReasoningDescription =>
+      'Set a reasoning level supported by the selected model, or choose default.';
+
+  @override
+  String get slashCommandReasoningLevelRequired =>
+      'Add a supported level after /reasoning, or use /reasoning default.';
+
+  @override
+  String get slashCommandReasoningUnsupported =>
+      'The selected model does not support that reasoning level.';
+
+  @override
   String get goalSlashCommand => '/goal';
 
   @override
@@ -4660,7 +4937,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Start this message as a goal and keep working until it is complete or needs your input.';
 
   @override
-  String get goalObjectiveRequired => 'Write a goal after /goal.';
+  String get goalObjectiveRequired => 'Write a goal before sending.';
 
   @override
   String get goalWorking => 'Working on goal';

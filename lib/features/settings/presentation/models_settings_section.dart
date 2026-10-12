@@ -261,17 +261,28 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
             await widget.apiCompatibleProviderKeyStore
                 ?.readConfiguredProviderIds() ??
             const <String>{};
+        final customProviders =
+            await widget.apiCompatibleProviderKeyStore?.readCustomProviders() ??
+            const <CustomCompatibleProvider>[];
+        final customProvidersById = <String, CustomCompatibleProvider>{
+          for (final provider in customProviders) provider.id: provider,
+        };
         for (final providerId in configuredProviders) {
           final apiKey = await widget.apiCompatibleProviderKeyStore?.readApiKey(
             providerId,
           );
           if (apiKey != null) {
             try {
+              final customProvider = customProvidersById[providerId];
               final response = await service.call(
                 'compatible.models.list',
                 params: <String, Object?>{
                   'providerId': providerId,
                   'apiKey': apiKey,
+                  if (customProvider != null) ...<String, Object?>{
+                    'baseUrl': customProvider.baseUrl,
+                    'protocol': customProvider.protocol.name,
+                  },
                   if (forceRefresh) 'forceRefresh': true,
                 },
               );
@@ -1100,4 +1111,4 @@ class _ModelContextLimitDialogState extends State<_ModelContextLimitDialog> {
 
 bool _isApiKeyModel(String providerId) =>
     providerId == 'chatgpt_api' ||
-    ApiCompatibleProviderKeyStore.providerIds.contains(providerId);
+    ApiCompatibleProviderKeyStore.isApiKeyProviderId(providerId);

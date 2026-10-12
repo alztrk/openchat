@@ -114,7 +114,7 @@ pub(super) fn build_provider_request(
         tools.extend(goals::control_tool_definitions());
     }
     if permission_mode == ToolPermissionMode::Plan {
-        tools::apply_plan_mode_allowlist(&mut tools);
+        tools::disable_tools_for_plan_mode(&mut tools);
     }
     let mut shared_instructions = instructions::shared_instructions(
         custom_instructions,
@@ -242,6 +242,108 @@ pub(super) fn chat_completion_body(
         );
         body["tool_choice"] = json!("auto");
         body["parallel_tool_calls"] = json!(false);
+    }
+    body
+}
+
+pub(super) fn anthropic_messages_body(request: &ProviderChatRequest, messages: &[Value]) -> Value {
+    let system = messages
+        .iter()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("system"))
+        .and_then(|message| message.get("content"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let mut anthropic_messages = Vec::<Value>::new();
+    for message in messages
+        .iter()
+        .filter(|message| message.get("role").and_then(Value::as_str) != Some("system"))
+    {
+        let role = message
+            .get("role")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let (role, mut content) = if role == "tool" {
+            let call_id = message
+                .get("tool_call_id")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            (
+                "user",
+                vec![json!({
+                    "type": "tool_result",
+                    "tool_use_id": call_id,
+                    "content": message.get("content").and_then(Value::as_str).unwrap_or_default(),
+                })],
+            )
+        } else {
+            let mut blocks = Vec::new();
+            if let Some(text) = message.get("content").and_then(Value::as_str)
+                && !text.is_empty()
+            {
+                blocks.push(json!({"type": "text", "text": text}));
+            }
+            if let Some(calls) = message.get("tool_calls").and_then(Value::as_array) {
+                for call in calls {
+                    let Some(function) = call.get("function") else {
+                        continue;
+                    };
+                    let Some(name) = function.get("name").and_then(Value::as_str) else {
+                        continue;
+                    };
+                    let input = function
+                        .get("arguments")
+                        .and_then(Value::as_str)
+                        .and_then(|arguments| serde_json::from_str::<Value>(arguments).ok())
+                        .unwrap_or_else(|| json!({}));
+                    blocks.push(json!({
+                        "type": "tool_use",
+                        "id": call.get("id").and_then(Value::as_str).unwrap_or_default(),
+                        "name": name,
+                        "input": input,
+                    }));
+                }
+            }
+            (
+                if role == "assistant" {
+                    "assistant"
+                } else {
+                    "user"
+                },
+                blocks,
+            )
+        };
+        if content.is_empty() {
+            content.push(json!({"type": "text", "text": " "}));
+        }
+        if let Some(previous) = anthropic_messages.last_mut()
+            && previous.get("role").and_then(Value::as_str) == Some(role)
+            && let Some(previous_content) =
+                previous.get_mut("content").and_then(Value::as_array_mut)
+        {
+            previous_content.append(&mut content);
+        } else {
+            anthropic_messages.push(json!({"role": role, "content": content}));
+        }
+    }
+    let mut body = json!({
+        "model": request.model,
+        "max_tokens": 4096,
+        "system": system,
+        "messages": anthropic_messages,
+        "stream": true,
+    });
+    if !request.tools.is_empty() {
+        body["tools"] = json!(
+            request
+                .tools
+                .iter()
+                .map(|tool| json!({
+                    "name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.parameters,
+                }))
+                .collect::<Vec<_>>()
+        );
     }
     body
 }

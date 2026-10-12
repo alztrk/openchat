@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:openchat/features/chat/domain/default_model_preference.dart';
 import 'package:openchat/features/chat/domain/history_search_result.dart';
+import 'package:openchat/features/chat/domain/title_generation_preference.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 enum ToolPermissionMode {
@@ -13,6 +14,17 @@ enum ToolPermissionMode {
 
   String get serviceValue => switch (this) {
     ToolPermissionMode.plan => 'plan',
+    ToolPermissionMode.requireApproval => 'require_approval',
+    ToolPermissionMode.approveSafeOperations => 'approve_safe_operations',
+    ToolPermissionMode.fullAccess => 'full_access',
+  };
+
+  String get preferenceValue => switch (this) {
+    ToolPermissionMode.plan => throw ArgumentError.value(
+      this,
+      'mode',
+      'Plan mode is a per-request composer mode and cannot be saved.',
+    ),
     ToolPermissionMode.requireApproval => 'require_approval',
     ToolPermissionMode.approveSafeOperations => 'approve_safe_operations',
     ToolPermissionMode.fullAccess => 'full_access',
@@ -132,6 +144,7 @@ class SettingsPreferences {
   static const _conversationTextSizeKey = 'appearance.conversation_text_size';
   static const _appFontKey = 'appearance.conversation_font';
   static const _defaultModelKey = 'models.default_model';
+  static const _titleGenerationPreferenceKey = 'chat.title_generation';
   static const _projectDefaultModelPrefix = 'models.project_default.';
   static const _projectSkillsPrefix = 'project.skills.';
   static const _hiddenModelKeysKey = 'models.hidden_keys';
@@ -304,7 +317,7 @@ class SettingsPreferences {
     final value = await _preferences.getString(_toolPermissionModeKey);
     return switch (value) {
       null || 'require_approval' => ToolPermissionMode.requireApproval,
-      'plan' => ToolPermissionMode.plan,
+      'plan' => ToolPermissionMode.requireApproval,
       'approve_safe_operations' => ToolPermissionMode.approveSafeOperations,
       'full_access' => ToolPermissionMode.fullAccess,
       _ => throw const FormatException(
@@ -314,7 +327,7 @@ class SettingsPreferences {
   }
 
   Future<void> writeToolPermissionMode(ToolPermissionMode mode) {
-    return _preferences.setString(_toolPermissionModeKey, mode.serviceValue);
+    return _preferences.setString(_toolPermissionModeKey, mode.preferenceValue);
   }
 
   Future<Map<String, ToolPermissionRule>> readProjectToolPermissionRules(
@@ -413,6 +426,46 @@ class SettingsPreferences {
     } on Object {
       return null;
     }
+  }
+
+  Future<TitleGenerationPreference> readTitleGenerationPreference() async {
+    final raw = await _preferences.getString(_titleGenerationPreferenceKey);
+    if (raw == null || raw.trim().isEmpty) {
+      return const TitleGenerationPreference();
+    }
+    final decoded = jsonDecode(raw);
+    if (decoded is! Map) {
+      throw const FormatException('Title generation preferences are invalid.');
+    }
+    final values = <String, Object?>{};
+    for (final entry in decoded.entries) {
+      if (entry.key is! String) {
+        throw const FormatException(
+          'Title generation preferences are invalid.',
+        );
+      }
+      values[entry.key as String] = entry.value;
+    }
+    return TitleGenerationPreference.fromJson(values);
+  }
+
+  Future<void> writeTitleGenerationPreference(
+    TitleGenerationPreference preference,
+  ) async {
+    if ((preference.mode == TitleGenerationMode.conversation &&
+            preference.model != null) ||
+        (preference.mode == TitleGenerationMode.selectedModel &&
+            preference.model == null)) {
+      throw ArgumentError.value(
+        preference,
+        'preference',
+        'A title model is required outside conversation-model mode.',
+      );
+    }
+    await _preferences.setString(
+      _titleGenerationPreferenceKey,
+      jsonEncode(preference.toJson()),
+    );
   }
 
   Future<void> writeDefaultModel(DefaultModelPreference? preference) {

@@ -8,13 +8,172 @@ use tokio::sync::watch;
 
 use crate::{protocol::ServiceError, storage::AppStorage};
 
-use super::{api_compatible_provider, cancelled_error, http_error, invalid_response_error};
+use super::{
+    CustomProviderConfig, CustomProviderProtocol, api_compatible_provider, cancelled_error,
+    http_error, invalid_response_error,
+};
 
 const CACHE_AGE_MS: i64 = 6 * 60 * 60 * 1000;
 const MAX_MODELS: usize = 1000;
 const CEREBRAS_PUBLIC_MODELS_URL: &str = "https://api.cerebras.ai/public/v1/models";
 const GEMINI_MODELS_URL: &str =
     "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000";
+
+pub async fn models_for_custom_provider(
+    storage: &AppStorage,
+    provider: &CustomProviderConfig,
+    api_key: Option<&str>,
+    force_refresh: bool,
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<Value, ServiceError> {
+    if api_key.is_some_and(|key| {
+        key.trim().is_empty() || key.len() > 4096 || key.chars().any(char::is_control)
+    }) {
+        return Err(invalid_request_error());
+    }
+    let cache_key = custom_catalog_key(provider, api_key);
+    let cached = load_catalog(storage, &provider.id, &cache_key)?;
+    if !force_refresh
+        && let Some((models, fetched_at)) = &cached
+        && current_time_millis()?.saturating_sub(*fetched_at) < CACHE_AGE_MS
+    {
+        return Ok(response(models, "current"));
+    }
+
+    let fetch = async {
+        let client = Client::builder()
+            .user_agent(concat!("OpenChat/", env!("CARGO_PKG_VERSION")))
+            .connect_timeout(Duration::from_secs(15))
+            .timeout(Duration::from_secs(45))
+            .build()
+            .map_err(|_| network_error("Custom provider"))?;
+        let mut request = client.get(format!("{}/models", provider.base_url));
+        if provider.protocol == CustomProviderProtocol::Anthropic {
+            request = request.query(&[("limit", MAX_MODELS)]);
+        }
+        request = match (provider.protocol, api_key) {
+            (CustomProviderProtocol::OpenAi, Some(api_key)) => request.bearer_auth(api_key),
+            (CustomProviderProtocol::OpenAi, None) => request,
+            (CustomProviderProtocol::Anthropic, Some(api_key)) => request
+                .header("x-api-key", api_key)
+                .header("anthropic-version", "2023-06-01"),
+            (CustomProviderProtocol::Anthropic, None) => {
+                request.header("anthropic-version", "2023-06-01")
+            }
+        };
+        let response = request
+            .send()
+            .await
+            .map_err(|_| network_error("Custom provider"))?;
+        if !response.status().is_success() {
+            return Err(http_error(response.status(), Some(&provider.id)));
+        }
+        let value = response
+            .json::<Value>()
+            .await
+            .map_err(|_| invalid_response_error())?;
+        let items = value
+            .get("data")
+            .and_then(Value::as_array)
+            .filter(|items| !items.is_empty() && items.len() <= MAX_MODELS)
+            .ok_or_else(invalid_response_error)?;
+        let models = items
+            .iter()
+            .filter_map(|item| {
+                let id = item.get("id")?.as_str()?.trim();
+                if id.is_empty() || id.len() > 256 || id.chars().any(char::is_control) {
+                    return None;
+                }
+                let display_name = item
+                    .get("display_name")
+                    .or_else(|| item.get("name"))
+                    .and_then(Value::as_str)
+                    .filter(|name| !name.trim().is_empty())
+                    .unwrap_or(id);
+                let context_window = item
+                    .get("context_window")
+                    .or_else(|| item.get("input_token_limit"))
+                    .and_then(Value::as_i64)
+                    .filter(|limit| *limit > 0);
+                Some(json!({
+                    "id": id,
+                    "displayName": display_name,
+                    "description": Value::Null,
+                    "contextWindow": context_window,
+                    "inputTokenLimit": context_window,
+                    "maxOutputTokens": item.get("max_output_tokens").and_then(Value::as_i64),
+                    "supportsImages": false,
+                    "supportsTools": Value::Null,
+                    "supportsReasoning": false,
+                    "reasoningLevels": [],
+                    "isAvailable": true,
+                    "groupId": "models"
+                }))
+            })
+            .collect::<Vec<_>>();
+        if models.is_empty() {
+            return Err(invalid_response_error());
+        }
+        save_catalog(storage, &provider.id, &cache_key, &models)?;
+        Ok::<_, ServiceError>(models)
+    };
+
+    let fetched = tokio::select! {
+        changed = cancellation.changed() => {
+            let _ = changed;
+            return Err(cancelled_error());
+        }
+        result = fetch => result,
+    };
+    match fetched {
+        Ok(models) => Ok(response(&models, "current")),
+        Err(error) if error.code == "network_unavailable" || error.retryable => match cached {
+            Some((models, _)) => Ok(response(&models, "stale")),
+            None => Err(error),
+        },
+        Err(error) => Err(error),
+    }
+}
+
+pub(super) fn custom_context_limits(
+    storage: &AppStorage,
+    provider: &CustomProviderConfig,
+    api_key: Option<&str>,
+    model_id: &str,
+) -> Result<(Option<i64>, Option<i64>, Option<i64>), ServiceError> {
+    let cache_key = custom_catalog_key(provider, api_key);
+    let Some((models, _)) = load_catalog(storage, &provider.id, &cache_key)? else {
+        return Ok((None, None, None));
+    };
+    let Some(model) = models
+        .iter()
+        .find(|model| model.get("id").and_then(Value::as_str) == Some(model_id))
+    else {
+        return Ok((None, None, None));
+    };
+    let context_window = model
+        .get("contextWindow")
+        .and_then(Value::as_i64)
+        .filter(|value| *value > 0);
+    let input_token_limit = model
+        .get("inputTokenLimit")
+        .and_then(Value::as_i64)
+        .filter(|value| *value > 0);
+    let max_output_tokens = model
+        .get("maxOutputTokens")
+        .and_then(Value::as_i64)
+        .filter(|value| *value > 0);
+    Ok((context_window, input_token_limit, max_output_tokens))
+}
+
+fn custom_catalog_key(provider: &CustomProviderConfig, api_key: Option<&str>) -> String {
+    api_key_hash(&format!(
+        "{}\0{:?}\0{}",
+        provider.base_url,
+        provider.protocol,
+        api_key.unwrap_or_default()
+    ))
+}
 
 pub async fn models(
     storage: &AppStorage,
@@ -114,6 +273,30 @@ pub async fn models(
     }
 }
 
+fn default_provider_context_window(provider_id: &str, model_id: &str) -> Option<i64> {
+    match provider_id {
+        "deepseek" => Some(64_000),
+        "xai" => Some(131_072),
+        "perplexity" => {
+            if model_id.contains("pro") {
+                Some(200_000)
+            } else {
+                Some(128_000)
+            }
+        }
+        "sambanova" => Some(131_072),
+        _ => None,
+    }
+}
+
+fn default_provider_max_output_tokens(provider_id: &str, _model_id: &str) -> Option<i64> {
+    match provider_id {
+        "deepseek" | "xai" => Some(8_192),
+        "perplexity" => Some(4_096),
+        _ => None,
+    }
+}
+
 fn parse_models(
     provider_id: &str,
     value: &Value,
@@ -177,7 +360,9 @@ fn parse_models(
                                 .and_then(Value::as_i64)
                         })
                         .or(input_token_limit)
+                        .or_else(|| default_provider_context_window(provider_id, id))
                         .filter(|value| *value > 0);
+                    let input_token_limit = input_token_limit.or(context_window);
                     let max_output_tokens = [
                         item.pointer("/top_provider/max_completion_tokens"),
                         item.get("max_completion_tokens"),
@@ -187,7 +372,8 @@ fn parse_models(
                     .into_iter()
                     .flatten()
                     .filter_map(Value::as_i64)
-                    .find(|limit| *limit > 0);
+                    .find(|limit| *limit > 0)
+                    .or_else(|| default_provider_max_output_tokens(provider_id, id));
                     let supports_images = supports_images(provider_id, id, item, details);
                     let supports_tools = provider_tool_support(provider_id, id, item);
                     let reasoning_levels = if provider_id == "mistral" {
@@ -195,7 +381,9 @@ fn parse_models(
                     } else {
                         Vec::new()
                     };
-                    let supports_reasoning = !reasoning_levels.is_empty();
+                    let supports_reasoning = !reasoning_levels.is_empty()
+                        || (provider_id == "deepseek" && id.contains("reasoner"))
+                        || (provider_id == "perplexity" && id.contains("reasoning"));
                     let mut model = json!({
                         "id": id,
                         "displayName": item.get("name").or_else(|| details.and_then(|model| model.get("name").or_else(|| model.get("displayName")))).and_then(Value::as_str).filter(|name| !name.trim().is_empty()).unwrap_or(id),
@@ -210,7 +398,7 @@ fn parse_models(
                         "reasoningLevels": reasoning_levels,
                         "isAvailable": true,
                     });
-                    if provider_id == "mistral" {
+                    if provider_id == "mistral" || supports_reasoning {
                         model["supportsReasoning"] = json!(supports_reasoning);
                     }
                     Some(model)
@@ -257,6 +445,14 @@ fn provider_tool_support(provider_id: &str, model_id: &str, model: &Value) -> Op
         "mistral" => model
             .pointer("/capabilities/function_calling")
             .and_then(Value::as_bool),
+        "deepseek" => Some(!model_id.contains("reasoner")),
+        "xai" => Some(true),
+        "together" => model
+            .pointer("/capabilities/function_calling")
+            .and_then(Value::as_bool)
+            .or(Some(true)),
+        "sambanova" => Some(true),
+        "perplexity" => Some(false),
         _ => None,
     }
 }
@@ -369,6 +565,13 @@ fn supports_images(
                     .is_some_and(|(input, _)| input.split('+').any(|kind| kind == "image"))
         }
         "mistral" => advertised_vision || modalities_include_image,
+        "xai" => {
+            advertised_vision
+                || modalities_include_image
+                || model_id.to_ascii_lowercase().contains("vision")
+        }
+        "together" | "sambanova" => advertised_vision || modalities_include_image,
+        "deepseek" | "perplexity" => false,
         _ => false,
     }
 }
@@ -816,6 +1019,55 @@ mod tests {
         )
         .expect("parse Cerebras tool models");
         assert_eq!(cerebras[0]["supportsTools"], true);
+
+        let deepseek = parse_models(
+            "deepseek",
+            &json!({
+                "data": [
+                    {"id": "deepseek-chat"},
+                    {"id": "deepseek-reasoner"}
+                ]
+            }),
+            None,
+        )
+        .expect("parse DeepSeek models");
+        assert_eq!(deepseek.len(), 2);
+        assert_eq!(deepseek[0]["contextWindow"], 64_000);
+        assert_eq!(deepseek[0]["supportsTools"], true);
+        assert_eq!(deepseek[1]["supportsTools"], false);
+        assert_eq!(deepseek[1]["supportsReasoning"], true);
+
+        let xai = parse_models(
+            "xai",
+            &json!({
+                "data": [
+                    {"id": "grok-2"},
+                    {"id": "grok-2-vision"}
+                ]
+            }),
+            None,
+        )
+        .expect("parse xAI models");
+        assert_eq!(xai[0]["contextWindow"], 131_072);
+        assert_eq!(xai[0]["supportsTools"], true);
+        assert_eq!(xai[1]["supportsImages"], true);
+
+        let perplexity = parse_models(
+            "perplexity",
+            &json!({
+                "data": [
+                    {"id": "sonar"},
+                    {"id": "sonar-pro"},
+                    {"id": "sonar-reasoning"}
+                ]
+            }),
+            None,
+        )
+        .expect("parse Perplexity models");
+        assert_eq!(perplexity[0]["contextWindow"], 128_000);
+        assert_eq!(perplexity[1]["contextWindow"], 200_000);
+        assert_eq!(perplexity[2]["supportsReasoning"], true);
+        assert_eq!(perplexity[0]["supportsTools"], false);
     }
 
     #[test]

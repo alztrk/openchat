@@ -17,8 +17,92 @@ mod provider_models;
 mod request;
 mod route;
 mod stream;
+mod title_generation;
 pub use models::models;
 pub use provider_models::models as models_for_provider;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CustomProviderProtocol {
+    OpenAi,
+    Anthropic,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct CustomProviderConfig {
+    pub(crate) id: String,
+    pub(crate) base_url: String,
+    pub(crate) protocol: CustomProviderProtocol,
+}
+
+impl CustomProviderConfig {
+    pub(crate) fn from_value(value: &Value) -> Result<Self, ServiceError> {
+        let invalid = || {
+            ServiceError::new(
+                "invalid_request_params",
+                "The custom provider configuration is invalid.",
+                false,
+            )
+        };
+        let id = value
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or_else(invalid)?;
+        if !(19..=64).contains(&id.len())
+            || !id.starts_with("custom_")
+            || !id[7..]
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+        {
+            return Err(invalid());
+        }
+        let base_url = value
+            .get("baseUrl")
+            .and_then(Value::as_str)
+            .ok_or_else(invalid)?;
+        let url = url::Url::parse(base_url).map_err(|_| invalid())?;
+        if !matches!(url.scheme(), "http" | "https")
+            || url.host_str().is_none()
+            || !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+            || base_url.len() > 2048
+        {
+            return Err(invalid());
+        }
+        let protocol = match value.get("protocol").and_then(Value::as_str) {
+            Some("openAi") => CustomProviderProtocol::OpenAi,
+            Some("anthropic") => CustomProviderProtocol::Anthropic,
+            _ => return Err(invalid()),
+        };
+        Ok(Self {
+            id: id.to_owned(),
+            base_url: base_url.trim_end_matches('/').to_owned(),
+            protocol,
+        })
+    }
+
+    pub(crate) fn is_anthropic(&self) -> bool {
+        self.protocol == CustomProviderProtocol::Anthropic
+    }
+}
+
+pub(crate) async fn models_for_custom_provider(
+    storage: &AppStorage,
+    provider: &CustomProviderConfig,
+    api_key: Option<&str>,
+    force_refresh: bool,
+    cancellation: &mut tokio::sync::watch::Receiver<bool>,
+) -> Result<Value, ServiceError> {
+    provider_models::models_for_custom_provider(
+        storage,
+        provider,
+        api_key,
+        force_refresh,
+        cancellation,
+    )
+    .await
+}
 
 pub(crate) fn context_usage_tool_definitions(
     storage: &AppStorage,
@@ -59,6 +143,13 @@ pub(super) struct ApiCompatibleProvider {
     pub id: &'static str,
     pub name: &'static str,
     pub base_url: &'static str,
+    pub protocol: CustomProviderProtocol,
+}
+
+impl ApiCompatibleProvider {
+    pub(super) fn is_anthropic(&self) -> bool {
+        self.protocol == CustomProviderProtocol::Anthropic
+    }
 }
 
 pub(super) fn api_compatible_provider(provider_id: &str) -> Option<ApiCompatibleProvider> {
@@ -67,26 +158,103 @@ pub(super) fn api_compatible_provider(provider_id: &str) -> Option<ApiCompatible
             id: "gemini",
             name: "Gemini",
             base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
+            protocol: CustomProviderProtocol::OpenAi,
         }),
         "groq" => Some(ApiCompatibleProvider {
             id: "groq",
             name: "Groq",
             base_url: "https://api.groq.com/openai/v1",
+            protocol: CustomProviderProtocol::OpenAi,
         }),
         "cerebras" => Some(ApiCompatibleProvider {
             id: "cerebras",
             name: "Cerebras",
             base_url: "https://api.cerebras.ai/v1",
+            protocol: CustomProviderProtocol::OpenAi,
         }),
         "openrouter" => Some(ApiCompatibleProvider {
             id: "openrouter",
             name: "OpenRouter",
             base_url: "https://openrouter.ai/api/v1",
+            protocol: CustomProviderProtocol::OpenAi,
         }),
         "mistral" => Some(ApiCompatibleProvider {
             id: "mistral",
             name: "Mistral",
             base_url: "https://api.mistral.ai/v1",
+            protocol: CustomProviderProtocol::OpenAi,
+        }),
+        "deepseek" => Some(ApiCompatibleProvider {
+            id: "deepseek",
+            name: "DeepSeek",
+            base_url: "https://api.deepseek.com",
+            protocol: CustomProviderProtocol::OpenAi,
+        }),
+        "xai" => Some(ApiCompatibleProvider {
+            id: "xai",
+            name: "xAI",
+            base_url: "https://api.x.ai/v1",
+            protocol: CustomProviderProtocol::OpenAi,
+        }),
+        "perplexity" => Some(ApiCompatibleProvider {
+            id: "perplexity",
+            name: "Perplexity",
+            base_url: "https://api.perplexity.ai",
+            protocol: CustomProviderProtocol::OpenAi,
+        }),
+        "together" => Some(ApiCompatibleProvider {
+            id: "together",
+            name: "Together AI",
+            base_url: "https://api.together.ai/v1",
+            protocol: CustomProviderProtocol::OpenAi,
+        }),
+        "sambanova" => Some(ApiCompatibleProvider {
+            id: "sambanova",
+            name: "SambaNova",
+            base_url: "https://api.sambanova.ai/v1",
+            protocol: CustomProviderProtocol::OpenAi,
+        }),
+        "anthropic" => Some(ApiCompatibleProvider {
+            id: "anthropic",
+            name: "Anthropic",
+            base_url: "https://api.anthropic.com/v1",
+            protocol: CustomProviderProtocol::Anthropic,
+        }),
+        "fireworks" => Some(ApiCompatibleProvider {
+            id: "fireworks",
+            name: "Fireworks AI",
+            base_url: "https://api.fireworks.ai/inference/v1",
+            protocol: CustomProviderProtocol::OpenAi,
+        }),
+        "deepinfra" => Some(ApiCompatibleProvider {
+            id: "deepinfra",
+            name: "DeepInfra",
+            base_url: "https://api.deepinfra.com/v1/openai",
+            protocol: CustomProviderProtocol::OpenAi,
+        }),
+        "dashscope" => Some(ApiCompatibleProvider {
+            id: "dashscope",
+            name: "DashScope (Qwen)",
+            base_url: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+            protocol: CustomProviderProtocol::OpenAi,
+        }),
+        "cohere" => Some(ApiCompatibleProvider {
+            id: "cohere",
+            name: "Cohere",
+            base_url: "https://api.cohere.ai/compatibility/v1",
+            protocol: CustomProviderProtocol::OpenAi,
+        }),
+        "ollama" => Some(ApiCompatibleProvider {
+            id: "ollama",
+            name: "Ollama",
+            base_url: "http://localhost:11434/v1",
+            protocol: CustomProviderProtocol::OpenAi,
+        }),
+        "lmstudio" => Some(ApiCompatibleProvider {
+            id: "lmstudio",
+            name: "LM Studio",
+            base_url: "http://localhost:1234/v1",
+            protocol: CustomProviderProtocol::OpenAi,
         }),
         _ => None,
     }
@@ -95,6 +263,7 @@ pub(super) fn api_compatible_provider(provider_id: &str) -> Option<ApiCompatible
 mod context_compaction;
 mod conversation;
 pub use conversation::send_message;
+pub(crate) use title_generation::{generate_title_for_route, generate_title_for_target};
 
 fn chat_completion_tool(tool: &ToolDefinition) -> Value {
     json!({

@@ -185,7 +185,60 @@ class AppLocalizationsEs extends AppLocalizations {
   String get settingsDataRecovery => 'Datos y recuperación';
 
   @override
-  String get settingsOtherProviders => 'Otros proveedores';
+  String get settingsAccountConnectionsHeading => 'Conexiones de cuentas';
+
+  @override
+  String get settingsModelProvidersHeading => 'Proveedores de modelos';
+
+  @override
+  String get customProvidersHeading => 'Proveedores personalizados';
+
+  @override
+  String get customProvidersDescription =>
+      'Añade un proveedor propio que admita el formato de API de OpenAI o Anthropic.';
+
+  @override
+  String get customProvidersEmpty =>
+      'Todavía no se han añadido proveedores personalizados.';
+
+  @override
+  String get addCustomProvider => 'Añadir proveedor personalizado';
+
+  @override
+  String get editCustomProvider => 'Editar proveedor personalizado';
+
+  @override
+  String get customProviderName => 'Nombre del proveedor';
+
+  @override
+  String get customProviderProtocol => 'Formato de API';
+
+  @override
+  String get customProviderBaseUrl => 'URL base de la API';
+
+  @override
+  String get customProviderApiKey => 'Clave de API';
+
+  @override
+  String get customProviderApiKeyOptional =>
+      'Déjalo en blanco si el servidor no requiere una clave';
+
+  @override
+  String get customProviderKeyUnchanged =>
+      'Déjalo en blanco para conservar la clave actual';
+
+  @override
+  String get customProviderInvalid => 'Revisa los datos del proveedor.';
+
+  @override
+  String get customProviderUrlInvalid =>
+      'Introduce una URL de API HTTP o HTTPS válida. La URL no puede incluir credenciales, consulta ni fragmento.';
+
+  @override
+  String get openAiCompatible => 'Compatible con OpenAI';
+
+  @override
+  String get anthropicCompatible => 'Compatible con Anthropic';
 
   @override
   String get settingsConnectionsDescription =>
@@ -841,6 +894,21 @@ class AppLocalizationsEs extends AppLocalizations {
   String get mistralProvider => 'Mistral';
 
   @override
+  String get deepSeekProvider => 'DeepSeek';
+
+  @override
+  String get xAiProvider => 'xAI';
+
+  @override
+  String get perplexityProvider => 'Perplexity';
+
+  @override
+  String get togetherProvider => 'Together AI';
+
+  @override
+  String get sambaNovaProvider => 'SambaNova';
+
+  @override
   String get geminiApiDescription =>
       'Añade una clave de API de Google AI Studio para usar los modelos disponibles en tu cuenta. El acceso gratuito depende del modelo y de tu cuota.';
 
@@ -859,6 +927,26 @@ class AppLocalizationsEs extends AppLocalizations {
   @override
   String get mistralApiDescription =>
       'Añade una clave de API de Mistral para usar los modelos de chat disponibles en tu cuenta. El acceso gratuito, los precios y los límites dependen de tu plan de Mistral.';
+
+  @override
+  String get deepSeekApiDescription =>
+      'Añade una clave de API de DeepSeek para usar los modelos DeepSeek-V3 y DeepSeek-R1. Los límites de uso y los precios dependen del saldo de tu cuenta.';
+
+  @override
+  String get xAiApiDescription =>
+      'Añade una clave de API de xAI para usar los modelos Grok. Los límites de uso y los precios dependen de tu plan de xAI.';
+
+  @override
+  String get perplexityApiDescription =>
+      'Añade una clave de API de Perplexity para usar los modelos Sonar con citas web en tiempo real.';
+
+  @override
+  String get togetherApiDescription =>
+      'Añade una clave de API de Together AI para acceder a modelos de código abierto con inferencia rápida en la nube.';
+
+  @override
+  String get sambaNovaApiDescription =>
+      'Añade una clave de API de SambaNova Cloud para usar modelos de código abierto de alto rendimiento impulsados por RDU de SambaNova.';
 
   @override
   String get geminiUnpaidDataNotice =>
@@ -1167,7 +1255,16 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get toolPermissionPlanDescription =>
-      'Solo lectura e investigación. Se bloquean los cambios de archivos, los comandos de terminal, las herramientas del proyecto y las integraciones.';
+      'No hay herramientas disponibles en el modo de planificación. La IA prepara un plan a partir de la conversación y espera tu aprobación.';
+
+  @override
+  String get toolPermissionPlanOff => 'Desactivar el modo de planificación';
+
+  @override
+  String get composerGoalModeLabel => 'Modo objetivo';
+
+  @override
+  String get composerGoalModeOff => 'Desactivar el modo objetivo';
 
   @override
   String get toolPermissionRequireApproval => 'Pedir aprobación';
@@ -1482,10 +1579,6 @@ class AppLocalizationsEs extends AppLocalizations {
       'No hay información del espacio de trabajo de la cuenta de ChatGPT.';
 
   @override
-  String get selectAccountForWorkspace =>
-      'Selecciona esta cuenta para elegir su espacio de trabajo.';
-
-  @override
   String get accountEmailUnavailable => 'Correo electrónico no disponible';
 
   @override
@@ -1639,7 +1732,43 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get titleGenerationTargetDescription =>
-      'Cuando la cuenta de la conversación no tiene otro modelo disponible, OpenChat puede usar aquí la cuenta que elijas. Omitirá la generación del título si el uso normal no está disponible.';
+      'Los títulos se generan aparte de las respuestas. Elige cómo quieres que OpenChat los cree.';
+
+  @override
+  String get titleUseConversationModel =>
+      'Usar el modelo y la cuenta de la conversación';
+
+  @override
+  String get titleConversationModeDescription =>
+      'Usa el mismo modelo y la misma cuenta que la conversación.';
+
+  @override
+  String get titleUseSpecificModel => 'Elegir un modelo conectado';
+
+  @override
+  String get titleSpecificModelDescription =>
+      'Elige entre proveedores conectados y modelos locales registrados.';
+
+  @override
+  String get titleUseLightweightModel =>
+      'Dejar que OpenChat elija el modelo más pequeño';
+
+  @override
+  String get titleLightweightModeDescription =>
+      'Elige el modelo más pequeño con un número de parámetros conocido.';
+
+  @override
+  String get titleSelectModelHint =>
+      'Elige un proveedor conectado o un modelo local';
+
+  @override
+  String get titleLightweightUnavailable =>
+      'Ningún modelo disponible indica explícitamente su número de parámetros en el nombre. Puedes elegir uno directamente.';
+
+  @override
+  String titleLightweightModelSelected(String model) {
+    return 'OpenChat eligió $model, el modelo más pequeño con un número de parámetros conocido.';
+  }
 
   @override
   String get titleUseConversationAccount => 'Usar la cuenta de la conversación';
@@ -2206,6 +2335,30 @@ class AppLocalizationsEs extends AppLocalizations {
       'El proveedor y el modelo corresponden a la ruta guardada con cada respuesta.';
 
   @override
+  String get historySearchResultTypeFilter => 'Tipo de resultado';
+
+  @override
+  String get historySearchAllResultTypes => 'Mensajes y conversaciones';
+
+  @override
+  String get historySearchMessagesOnly => 'Solo mensajes';
+
+  @override
+  String get historySearchConversationsOnly => 'Solo títulos de conversaciones';
+
+  @override
+  String get historySearchSortFilter => 'Ordenar por';
+
+  @override
+  String get historySearchSortRelevance => 'Relevancia';
+
+  @override
+  String get historySearchSortNewest => 'Más recientes';
+
+  @override
+  String get historySearchSortOldest => 'Más antiguos';
+
+  @override
   String get historySearchProviderFilter => 'Proveedor de la respuesta';
 
   @override
@@ -2306,22 +2459,22 @@ class AppLocalizationsEs extends AppLocalizations {
   String get searchMessagesHeader => 'Coincidencias en mensajes';
 
   @override
-  String get searchMessagesLoading => 'Buscando mensajes…';
+  String get searchMessagesLoading => 'Buscando mensajes y conversaciones…';
 
   @override
-  String get searchMessagesNoResults => 'No hay mensajes coincidentes';
+  String get searchMessagesNoResults =>
+      'No hay mensajes ni conversaciones coincidentes.';
 
   @override
   String get searchMessagesTooShort =>
-      'Escribe al menos dos caracteres para buscar mensajes.';
+      'Escribe al menos dos caracteres para buscar.';
 
   @override
   String get searchMessagesTooLong =>
       'El texto de búsqueda no puede superar los 512 caracteres.';
 
   @override
-  String get searchMessagesFailed =>
-      'No se pudieron buscar los mensajes. Inténtalo de nuevo.';
+  String get searchMessagesFailed => 'La búsqueda falló. Inténtalo de nuevo.';
 
   @override
   String get searchMessageUnavailable => 'Este mensaje ya no está disponible.';
@@ -4734,6 +4887,132 @@ class AppLocalizationsEs extends AppLocalizations {
   String get fileChangesUnavailableTitle => 'Cambios no disponibles';
 
   @override
+  String get slashCommandPlanLabel => 'Plan';
+
+  @override
+  String get slashCommandGoalLabel => 'Objetivo';
+
+  @override
+  String get slashCommandNewLabel => 'Nuevo';
+
+  @override
+  String get slashCommandSearchLabel => 'Buscar';
+
+  @override
+  String get slashCommandSummarizeLabel => 'Resumir';
+
+  @override
+  String get slashCommandSummarizeDescription =>
+      'Crea un resumen breve de esta conversación con las decisiones, los resultados y los asuntos pendientes.';
+
+  @override
+  String get slashCommandSummarizePrompt =>
+      'Resume esta conversación. Incluye brevemente las decisiones, el trabajo completado y los asuntos pendientes.';
+
+  @override
+  String get slashCommandSummarizeNoMessages =>
+      'No hay mensajes que resumir. Envía primero al menos un mensaje en este chat.';
+
+  @override
+  String get slashCommandSummarizeLoading =>
+      'Los mensajes aún se están cargando; todavía no se puede resumir esta conversación.';
+
+  @override
+  String get slashCommandSummarizeUnavailable =>
+      'Este comando no se puede ejecutar ahora. Comprueba la conexión del modelo y espera a que terminen las operaciones pendientes.';
+
+  @override
+  String get slashCommandRenameLabel => 'Cambiar nombre';
+
+  @override
+  String get slashCommandRenameDescription =>
+      'Cambia el nombre de esta conversación. Escribe el nuevo título después del comando.';
+
+  @override
+  String get slashCommandRenameTitleRequired =>
+      'Escribe un título después de /rename.';
+
+  @override
+  String get slashCommandRenameNoConversation =>
+      'Abre una conversación antes de cambiarle el nombre.';
+
+  @override
+  String get slashCommandRenameSuccess =>
+      'Se cambió el nombre de la conversación.';
+
+  @override
+  String get slashCommandModelLabel => 'Modelo';
+
+  @override
+  String get slashCommandModelDescription =>
+      'Cambia a un modelo disponible con su nombre o ID exactos.';
+
+  @override
+  String get slashCommandModelNameRequired =>
+      'Escribe el nombre o ID del modelo después de /model.';
+
+  @override
+  String get slashCommandModelNoMatch =>
+      'No hay ningún modelo disponible de este proveedor que coincida con ese nombre o ID.';
+
+  @override
+  String get slashCommandModelAmbiguous =>
+      'Coincide más de un modelo disponible. Usa el ID exacto del modelo.';
+
+  @override
+  String get slashCommandModelUnavailable =>
+      'La selección de modelos no está disponible mientras se cargan modelos o se genera una respuesta.';
+
+  @override
+  String get slashCommandCompactLabel => 'Compactar contexto';
+
+  @override
+  String get slashCommandCompactDescription =>
+      'Resume localmente los mensajes antiguos para futuras solicitudes y mantiene todo el historial disponible para buscar.';
+
+  @override
+  String get slashCommandCompactNoConversation =>
+      'Abre una conversación antes de compactar su contexto.';
+
+  @override
+  String get slashCommandCompactNoArguments => '/compact no acepta argumentos.';
+
+  @override
+  String get slashCommandCompactNoContextWindow =>
+      'No hay un límite de contexto disponible para este modelo. Configura uno en Preferencias de modelo.';
+
+  @override
+  String get slashCommandCompactBusy =>
+      'Espera a que termine la respuesta actual antes de compactar.';
+
+  @override
+  String get slashCommandCompactSuccess =>
+      'Se compactó el contexto antiguo. Todo el historial del chat sigue disponible para buscar.';
+
+  @override
+  String get slashCommandCompactNothing =>
+      'Todavía no hay suficiente contexto antiguo para compactar.';
+
+  @override
+  String get slashCommandCompactFailed =>
+      'No se pudo compactar el contexto antiguo. El historial completo sigue disponible.';
+
+  @override
+  String get slashCommandReasoningLabel => 'Razonamiento';
+
+  @override
+  String get slashCommandReasoningDescription =>
+      'Establece un nivel de razonamiento compatible con el modelo seleccionado o elige el predeterminado.';
+
+  @override
+  String get slashCommandReasoningLevelRequired =>
+      'Escribe un nivel compatible después de /reasoning o usa /reasoning default.';
+
+  @override
+  String get slashCommandReasoningUnsupported =>
+      'El modelo seleccionado no admite ese nivel de razonamiento.';
+
+  @override
   String get goalSlashCommand => '/goal';
 
   @override
@@ -4741,7 +5020,7 @@ class AppLocalizationsEs extends AppLocalizations {
       'Inicia este mensaje como objetivo y sigue trabajando hasta completarlo o necesitar tu ayuda.';
 
   @override
-  String get goalObjectiveRequired => 'Escribe un objetivo después de /goal.';
+  String get goalObjectiveRequired => 'Escribe un objetivo antes de enviarlo.';
 
   @override
   String get goalWorking => 'Trabajando en el objetivo';

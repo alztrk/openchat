@@ -12,7 +12,6 @@ import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/settings/data/chat_gpt_api_key_store.dart';
 import 'package:openchat/features/settings/domain/chat_gpt_api_key_connection.dart';
 import 'package:openchat/features/settings/presentation/chat_gpt_oauth_connection_row.dart';
-import 'package:openchat/features/settings/presentation/chat_gpt_title_preference_section.dart';
 import 'package:openchat/features/settings/presentation/chat_gpt_api_key_form.dart';
 import 'package:openchat/features/settings/presentation/settings_widgets.dart';
 
@@ -43,8 +42,6 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
   List<ChatGptConnection> _oauthConnections = const [];
   _ConnectionLoadState _loadState = _ConnectionLoadState.loading;
   _ConnectionLoadState _oauthLoadState = _ConnectionLoadState.loading;
-  _ConnectionLoadState _titlePreferenceLoadState = _ConnectionLoadState.loading;
-  ChatGptTitlePreference _titlePreference = const ChatGptTitlePreference();
   OpenChatServiceOperation? _oauthOperation;
   String? _oauthError;
   String? _selectedWorkspaceId;
@@ -52,7 +49,6 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
   bool _showApiKeyForm = false;
   bool _isSaving = false;
   bool _isSigningIn = false;
-  bool _isSavingTitlePreference = false;
   final Set<String> _removingConnectionIds = <String>{};
   int _loadRequestGeneration = 0;
 
@@ -131,91 +127,12 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
         _selectedWorkspaceId = selectedWorkspace?.id;
         _oauthLoadState = _ConnectionLoadState.loaded;
       });
-      unawaited(_loadTitlePreference());
     } on OpenChatServiceException {
       if (!mounted) return;
       setState(() => _oauthLoadState = _ConnectionLoadState.failed);
     } on FormatException {
       if (!mounted) return;
       setState(() => _oauthLoadState = _ConnectionLoadState.failed);
-    }
-  }
-
-  Future<void> _loadTitlePreference() async {
-    final service = widget.serviceClient;
-    if (service == null) {
-      if (mounted) {
-        setState(() => _titlePreferenceLoadState = _ConnectionLoadState.loaded);
-      }
-      return;
-    }
-    setState(() => _titlePreferenceLoadState = _ConnectionLoadState.loading);
-    try {
-      final response = await service.call('chatgpt.titles.get');
-      final preference = ChatGptTitlePreference.fromJson(response);
-      if (!mounted) return;
-      setState(() {
-        _titlePreference = preference;
-        _titlePreferenceLoadState = _ConnectionLoadState.loaded;
-      });
-    } on OpenChatServiceException {
-      if (!mounted) return;
-      setState(() => _titlePreferenceLoadState = _ConnectionLoadState.failed);
-    } on FormatException {
-      if (!mounted) return;
-      setState(() => _titlePreferenceLoadState = _ConnectionLoadState.failed);
-    }
-  }
-
-  Future<void> _selectTitleConnection(String? connectionId) async {
-    if (connectionId == null || _isSavingTitlePreference) return;
-    final selectedId = connectionId.isEmpty ? null : connectionId;
-    String? workspaceId;
-    if (selectedId != null) {
-      for (final connection in _oauthConnections) {
-        if (connection.id == selectedId && connection.workspaces.length == 1) {
-          workspaceId = connection.workspaces.single.id;
-          break;
-        }
-      }
-    }
-    await _saveTitlePreference(selectedId, workspaceId);
-  }
-
-  Future<void> _selectTitleWorkspace(String? workspaceId) async {
-    if (workspaceId == null || _isSavingTitlePreference) return;
-    final connectionId = _titlePreference.connectionId;
-    if (connectionId == null) return;
-    await _saveTitlePreference(connectionId, workspaceId);
-  }
-
-  Future<void> _saveTitlePreference(
-    String? connectionId,
-    String? workspaceId,
-  ) async {
-    final service = widget.serviceClient;
-    if (service == null) return;
-    setState(() => _isSavingTitlePreference = true);
-    try {
-      final response = await service.call(
-        'chatgpt.titles.select',
-        params: <String, Object?>{
-          'connectionId': connectionId,
-          'workspaceId': workspaceId,
-        },
-      );
-      final preference = ChatGptTitlePreference.fromJson(response);
-      if (!mounted) return;
-      setState(() {
-        _titlePreference = preference;
-        _titlePreferenceLoadState = _ConnectionLoadState.loaded;
-      });
-    } on OpenChatServiceException {
-      if (mounted) _showMessage(context.openchatL10n.titlePreferenceSaveFailed);
-    } on FormatException {
-      if (mounted) _showMessage(context.openchatL10n.providerDataUnavailable);
-    } finally {
-      if (mounted) setState(() => _isSavingTitlePreference = false);
     }
   }
 
@@ -536,20 +453,21 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
             borderRadius: BorderRadius.circular(OpenChatRadii.card),
             side: BorderSide(color: palette.border),
           ),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                LayoutBuilder(
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: LayoutBuilder(
                   builder: (context, constraints) {
                     final provider = Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         SvgPicture.asset(
                           'assets/icons/chatgpt.svg',
-                          width: 24,
-                          height: 24,
+                          width: 28,
+                          height: 28,
                           colorFilter: ColorFilter.mode(
                             logoColor,
                             BlendMode.srcIn,
@@ -562,7 +480,7 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
                             'ChatGPT',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: textTheme.titleMedium,
+                            style: textTheme.titleLarge,
                           ),
                         ),
                       ],
@@ -570,12 +488,12 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
 
                     if (constraints.maxWidth /
                             MediaQuery.textScalerOf(context).scale(1) <
-                        520) {
+                        560) {
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           provider,
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 16),
                           actions,
                         ],
                       );
@@ -584,24 +502,141 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
                     return Row(
                       children: [
                         Expanded(child: provider),
-                        const SizedBox(width: 16),
+                        const SizedBox(width: 20),
                         actions,
                       ],
                     );
                   },
                 ),
-                if (noConnections) ...[
-                  const SizedBox(height: 12),
-                  Text(
+              ),
+              Divider(height: 1, color: palette.border),
+              if (noConnections)
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text(
                     l10n.noChatGptConnections,
-                    style: TextStyle(
-                      color: palette.secondaryText,
-                      fontSize: 13,
-                    ),
+                    style: TextStyle(color: palette.secondaryText),
                   ),
-                ],
-              ],
-            ),
+                ),
+              if (_isSigningIn)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                  child: Row(
+                    children: [
+                      const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(child: Text(l10n.oauthBrowserWaiting)),
+                      TextButton(
+                        onPressed: _cancelOAuth,
+                        child: Text(l10n.cancel),
+                      ),
+                    ],
+                  ),
+                ),
+              if (_oauthError case final String error)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          error,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => unawaited(_startOAuth()),
+                        icon: const Icon(LucideIcons.refreshCw, size: 16),
+                        label: Text(l10n.retry),
+                      ),
+                    ],
+                  ),
+                ),
+              if (_oauthLoadState == _ConnectionLoadState.loading)
+                const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: LinearProgressIndicator(),
+                )
+              else if (_oauthLoadState == _ConnectionLoadState.failed)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          l10n.oauthConnectionsLoadFailed,
+                          style: TextStyle(color: palette.secondaryText),
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => unawaited(_loadOAuthConnections()),
+                        icon: const Icon(LucideIcons.refreshCw, size: 16),
+                        label: Text(l10n.retry),
+                      ),
+                    ],
+                  ),
+                )
+              else if (_oauthConnections.isNotEmpty)
+                _buildOAuthConnections(),
+              if (_connections.isNotEmpty ||
+                  _loadState != _ConnectionLoadState.loaded)
+                Divider(height: 1, color: palette.border),
+              if (_loadState == _ConnectionLoadState.loading)
+                const Padding(
+                  padding: EdgeInsets.all(20),
+                  child: LinearProgressIndicator(),
+                )
+              else if (_loadState == _ConnectionLoadState.failed)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          l10n.apiKeyLoadFailed,
+                          style: TextStyle(color: palette.secondaryText),
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => unawaited(_loadConnections()),
+                        icon: const Icon(LucideIcons.refreshCw, size: 16),
+                        label: Text(l10n.retry),
+                      ),
+                    ],
+                  ),
+                )
+              else if (_connections.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                  child: Column(
+                    children: [
+                      for (
+                        var index = 0;
+                        index < _connections.length;
+                        index++
+                      ) ...[
+                        _ChatGptConnectionThread(
+                          key: ValueKey(_connections[index].id),
+                          connection: _connections[index],
+                          isRemoving: _removingConnectionIds.contains(
+                            _connections[index].id,
+                          ),
+                          onRemove: () => unawaited(
+                            _removeApiKeyConnection(_connections[index]),
+                          ),
+                        ),
+                        if (index < _connections.length - 1)
+                          SettingsDivider(color: palette.border),
+                      ],
+                    ],
+                  ),
+                ),
+            ],
           ),
         ),
         if (_showApiKeyForm)
@@ -613,157 +648,20 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
             onSave: () => unawaited(_saveApiKey()),
             onCancel: _toggleApiKeyForm,
           ),
-        if (_isSigningIn)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Row(
-              children: [
-                const SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                const SizedBox(width: 10),
-                Expanded(child: Text(l10n.oauthBrowserWaiting)),
-                TextButton(onPressed: _cancelOAuth, child: Text(l10n.cancel)),
-              ],
-            ),
-          ),
-        if (_oauthError case final String error)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    error,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: () => unawaited(_startOAuth()),
-                  icon: const Icon(LucideIcons.refreshCw, size: 16),
-                  label: Text(l10n.retry),
-                ),
-              ],
-            ),
-          ),
-        if (_oauthLoadState == _ConnectionLoadState.loading)
-          const Padding(
-            padding: EdgeInsets.fromLTRB(12, 18, 12, 0),
-            child: LinearProgressIndicator(),
-          )
-        else if (_oauthLoadState == _ConnectionLoadState.failed)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 14, 12, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    l10n.oauthConnectionsLoadFailed,
-                    style: TextStyle(
-                      color: palette.secondaryText,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: () => unawaited(_loadOAuthConnections()),
-                  icon: const Icon(LucideIcons.refreshCw, size: 16),
-                  label: Text(l10n.retry),
-                ),
-              ],
-            ),
-          )
-        else if (_oauthConnections.isNotEmpty)
-          _buildOAuthConnections(palette),
-        if (_loadState == _ConnectionLoadState.loading)
-          const Padding(
-            padding: EdgeInsets.fromLTRB(12, 18, 12, 0),
-            child: LinearProgressIndicator(),
-          )
-        else if (_loadState == _ConnectionLoadState.failed)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 14, 12, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    l10n.apiKeyLoadFailed,
-                    style: TextStyle(
-                      color: palette.secondaryText,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-                TextButton.icon(
-                  onPressed: () => unawaited(_loadConnections()),
-                  icon: const Icon(LucideIcons.refreshCw, size: 16),
-                  label: Text(l10n.retry),
-                ),
-              ],
-            ),
-          )
-        else if (_connections.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Column(
-              children: [
-                for (var index = 0; index < _connections.length; index++) ...[
-                  _ChatGptConnectionThread(
-                    key: ValueKey(_connections[index].id),
-                    connection: _connections[index],
-                    isRemoving: _removingConnectionIds.contains(
-                      _connections[index].id,
-                    ),
-                    onRemove: () =>
-                        unawaited(_removeApiKeyConnection(_connections[index])),
-                  ),
-                  if (index < _connections.length - 1)
-                    SettingsDivider(color: palette.border),
-                ],
-              ],
-            ),
-          ),
       ],
     );
   }
 
-  Widget _buildOAuthConnections(OpenChatPalette palette) {
+  Widget _buildOAuthConnections() {
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (var index = 0; index < _oauthConnections.length; index++) ...[
-            _buildOAuthConnectionRow(_oauthConnections[index]),
-            if (index < _oauthConnections.length - 1)
-              SettingsDivider(color: palette.border),
-          ],
-          if (_oauthConnections.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.only(top: 12),
-              child: SettingsDivider(color: palette.border),
-            ),
-            _buildTitlePreference(palette),
-          ],
+          for (final connection in _oauthConnections)
+            _buildOAuthConnectionRow(connection),
         ],
       ),
-    );
-  }
-
-  Widget _buildTitlePreference(OpenChatPalette palette) {
-    return ChatGptTitlePreferenceSection(
-      preference: _titlePreference,
-      connections: _oauthConnections,
-      palette: palette,
-      isLoading: _titlePreferenceLoadState == _ConnectionLoadState.loading,
-      hasError: _titlePreferenceLoadState == _ConnectionLoadState.failed,
-      isSaving: _isSavingTitlePreference,
-      onRetry: () => unawaited(_loadTitlePreference()),
-      onConnectionChanged: _selectTitleConnection,
-      onWorkspaceChanged: _selectTitleWorkspace,
     );
   }
 

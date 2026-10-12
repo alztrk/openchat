@@ -15,6 +15,7 @@ use super::{
 };
 use crate::{
     chat_operation::ChatSendContext,
+    chat_operation::TitleGenerationRequest,
     chatgpt_store::{self, AssistantMessageWrite, ChatGptModel},
     goals::{self, GoalDecision},
     protocol::{Response, ServiceError},
@@ -68,6 +69,7 @@ impl ChatGptService {
             mut goal,
             cancellation,
             events,
+            title_generation,
             ..
         } = context;
         let message_id = Uuid::new_v4().simple().to_string();
@@ -1122,17 +1124,45 @@ impl ChatGptService {
         let service = Arc::clone(self);
         let conversation_model_id = model.id.clone();
         let title_is_automatic = route.title_is_automatic;
-        if title_is_automatic {
+        if title_is_automatic && !matches!(&title_generation, TitleGenerationRequest::Disabled) {
             tokio::spawn(async move {
-                service
-                    .generate_title(
-                        &title_conversation_id,
-                        &title_route,
-                        &conversation_model_id,
-                        title_excluded_assistant_message_id.as_deref(),
-                        title_events,
-                    )
-                    .await;
+                match title_generation {
+                    TitleGenerationRequest::Conversation => {
+                        service
+                            .generate_title(
+                                &title_conversation_id,
+                                &title_route,
+                                &conversation_model_id,
+                                title_excluded_assistant_message_id.as_deref(),
+                                title_events,
+                                None,
+                            )
+                            .await;
+                    }
+                    TitleGenerationRequest::Model(target) if target.provider_id == "chatgpt" => {
+                        service
+                            .generate_title(
+                                &title_conversation_id,
+                                &title_route,
+                                &conversation_model_id,
+                                title_excluded_assistant_message_id.as_deref(),
+                                title_events,
+                                Some(target),
+                            )
+                            .await;
+                    }
+                    TitleGenerationRequest::Model(target) => {
+                        crate::openai_compatible::generate_title_for_target(
+                            &service.storage_handle(),
+                            &title_conversation_id,
+                            target,
+                            title_excluded_assistant_message_id.as_deref(),
+                            title_events,
+                        )
+                        .await;
+                    }
+                    TitleGenerationRequest::Disabled => {}
+                }
             });
         }
         let mut result = json!({

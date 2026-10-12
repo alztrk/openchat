@@ -422,11 +422,107 @@ abstract class AppLocalizations {
   /// **'Data and recovery'**
   String get settingsDataRecovery;
 
-  /// No description provided for @settingsOtherProviders.
+  /// No description provided for @settingsAccountConnectionsHeading.
   ///
   /// In en, this message translates to:
-  /// **'Other providers'**
-  String get settingsOtherProviders;
+  /// **'Account connections'**
+  String get settingsAccountConnectionsHeading;
+
+  /// No description provided for @settingsModelProvidersHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Model providers'**
+  String get settingsModelProvidersHeading;
+
+  /// No description provided for @customProvidersHeading.
+  ///
+  /// In en, this message translates to:
+  /// **'Custom providers'**
+  String get customProvidersHeading;
+
+  /// No description provided for @customProvidersDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Add your own provider that supports the OpenAI or Anthropic API format.'**
+  String get customProvidersDescription;
+
+  /// No description provided for @customProvidersEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No custom providers have been added yet.'**
+  String get customProvidersEmpty;
+
+  /// No description provided for @addCustomProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Add custom provider'**
+  String get addCustomProvider;
+
+  /// No description provided for @editCustomProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit custom provider'**
+  String get editCustomProvider;
+
+  /// No description provided for @customProviderName.
+  ///
+  /// In en, this message translates to:
+  /// **'Provider name'**
+  String get customProviderName;
+
+  /// No description provided for @customProviderProtocol.
+  ///
+  /// In en, this message translates to:
+  /// **'API format'**
+  String get customProviderProtocol;
+
+  /// No description provided for @customProviderBaseUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Base API URL'**
+  String get customProviderBaseUrl;
+
+  /// No description provided for @customProviderApiKey.
+  ///
+  /// In en, this message translates to:
+  /// **'API key'**
+  String get customProviderApiKey;
+
+  /// No description provided for @customProviderApiKeyOptional.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave blank if the server does not require a key'**
+  String get customProviderApiKeyOptional;
+
+  /// No description provided for @customProviderKeyUnchanged.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave blank to keep the current key'**
+  String get customProviderKeyUnchanged;
+
+  /// No description provided for @customProviderInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Check the provider details.'**
+  String get customProviderInvalid;
+
+  /// No description provided for @customProviderUrlInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a valid HTTP or HTTPS API URL. The URL cannot contain user information, a query, or a fragment.'**
+  String get customProviderUrlInvalid;
+
+  /// No description provided for @openAiCompatible.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenAI-compatible'**
+  String get openAiCompatible;
+
+  /// No description provided for @anthropicCompatible.
+  ///
+  /// In en, this message translates to:
+  /// **'Anthropic-compatible'**
+  String get anthropicCompatible;
 
   /// No description provided for @settingsConnectionsDescription.
   ///
@@ -1490,6 +1586,36 @@ abstract class AppLocalizations {
   /// **'Mistral'**
   String get mistralProvider;
 
+  /// No description provided for @deepSeekProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'DeepSeek'**
+  String get deepSeekProvider;
+
+  /// No description provided for @xAiProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'xAI'**
+  String get xAiProvider;
+
+  /// No description provided for @perplexityProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Perplexity'**
+  String get perplexityProvider;
+
+  /// No description provided for @togetherProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'Together AI'**
+  String get togetherProvider;
+
+  /// No description provided for @sambaNovaProvider.
+  ///
+  /// In en, this message translates to:
+  /// **'SambaNova'**
+  String get sambaNovaProvider;
+
   /// No description provided for @geminiApiDescription.
   ///
   /// In en, this message translates to:
@@ -1519,6 +1645,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Add a Mistral API key to use the chat models available to your account. Free access, pricing, and usage limits depend on your Mistral plan.'**
   String get mistralApiDescription;
+
+  /// No description provided for @deepSeekApiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a DeepSeek API key to use DeepSeek-V3 and DeepSeek-R1 models. Usage limits and pricing depend on your account balance.'**
+  String get deepSeekApiDescription;
+
+  /// No description provided for @xAiApiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Add an xAI API key to use Grok models. Usage limits and pricing depend on your xAI plan.'**
+  String get xAiApiDescription;
+
+  /// No description provided for @perplexityApiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a Perplexity API key to use Sonar search-augmented models with real-time web citations.'**
+  String get perplexityApiDescription;
+
+  /// No description provided for @togetherApiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a Together AI API key to access open-source models with fast cloud inference.'**
+  String get togetherApiDescription;
+
+  /// No description provided for @sambaNovaApiDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a SambaNova Cloud API key to use high-throughput open models powered by SambaNova RDUs.'**
+  String get sambaNovaApiDescription;
 
   /// No description provided for @geminiUnpaidDataNotice.
   ///
@@ -2045,8 +2201,26 @@ abstract class AppLocalizations {
   /// No description provided for @toolPermissionPlanDescription.
   ///
   /// In en, this message translates to:
-  /// **'Read and research only. File changes, terminal commands, project tools, and integrations are blocked.'**
+  /// **'No tools are available. The assistant prepares a plan from the conversation and waits for your approval.'**
   String get toolPermissionPlanDescription;
+
+  /// No description provided for @toolPermissionPlanOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off plan mode'**
+  String get toolPermissionPlanOff;
+
+  /// No description provided for @composerGoalModeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Goal mode'**
+  String get composerGoalModeLabel;
+
+  /// No description provided for @composerGoalModeOff.
+  ///
+  /// In en, this message translates to:
+  /// **'Turn off goal mode'**
+  String get composerGoalModeOff;
 
   /// No description provided for @toolPermissionRequireApproval.
   ///
@@ -2582,12 +2756,6 @@ abstract class AppLocalizations {
   /// **'No ChatGPT account workspace information is available.'**
   String get workspaceUnavailable;
 
-  /// No description provided for @selectAccountForWorkspace.
-  ///
-  /// In en, this message translates to:
-  /// **'Select this account to choose its workspace.'**
-  String get selectAccountForWorkspace;
-
   /// No description provided for @accountEmailUnavailable.
   ///
   /// In en, this message translates to:
@@ -2831,8 +2999,62 @@ abstract class AppLocalizations {
   /// No description provided for @titleGenerationTargetDescription.
   ///
   /// In en, this message translates to:
-  /// **'When the conversation account has no different model available, OpenChat can use the account you choose here. It skips title generation when ordinary usage is unavailable.'**
+  /// **'Titles are generated separately from replies. Choose how OpenChat should create them.'**
   String get titleGenerationTargetDescription;
+
+  /// No description provided for @titleUseConversationModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the conversation\'s model and account'**
+  String get titleUseConversationModel;
+
+  /// No description provided for @titleConversationModeDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the same model and account as the conversation.'**
+  String get titleConversationModeDescription;
+
+  /// No description provided for @titleUseSpecificModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a connected model'**
+  String get titleUseSpecificModel;
+
+  /// No description provided for @titleSpecificModelDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick from connected providers and registered local models.'**
+  String get titleSpecificModelDescription;
+
+  /// No description provided for @titleUseLightweightModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Let OpenChat choose the smallest model'**
+  String get titleUseLightweightModel;
+
+  /// No description provided for @titleLightweightModeDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose the smallest model with a known parameter count.'**
+  String get titleLightweightModeDescription;
+
+  /// No description provided for @titleSelectModelHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a connected provider or local model'**
+  String get titleSelectModelHint;
+
+  /// No description provided for @titleLightweightUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'No available model has a parameter count stated in its name. You can choose a model directly.'**
+  String get titleLightweightUnavailable;
+
+  /// No description provided for @titleLightweightModelSelected.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenChat chose {model}, the smallest model with a known parameter count.'**
+  String titleLightweightModelSelected(String model);
 
   /// No description provided for @titleUseConversationAccount.
   ///
@@ -3724,6 +3946,54 @@ abstract class AppLocalizations {
   /// **'Provider and model refer to the route saved with each assistant answer.'**
   String get historySearchRouteFilterNote;
 
+  /// No description provided for @historySearchResultTypeFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'Result type'**
+  String get historySearchResultTypeFilter;
+
+  /// No description provided for @historySearchAllResultTypes.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages and conversations'**
+  String get historySearchAllResultTypes;
+
+  /// No description provided for @historySearchMessagesOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages only'**
+  String get historySearchMessagesOnly;
+
+  /// No description provided for @historySearchConversationsOnly.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation titles only'**
+  String get historySearchConversationsOnly;
+
+  /// No description provided for @historySearchSortFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort by'**
+  String get historySearchSortFilter;
+
+  /// No description provided for @historySearchSortRelevance.
+  ///
+  /// In en, this message translates to:
+  /// **'Relevance'**
+  String get historySearchSortRelevance;
+
+  /// No description provided for @historySearchSortNewest.
+  ///
+  /// In en, this message translates to:
+  /// **'Newest'**
+  String get historySearchSortNewest;
+
+  /// No description provided for @historySearchSortOldest.
+  ///
+  /// In en, this message translates to:
+  /// **'Oldest'**
+  String get historySearchSortOldest;
+
   /// No description provided for @historySearchProviderFilter.
   ///
   /// In en, this message translates to:
@@ -3901,19 +4171,19 @@ abstract class AppLocalizations {
   /// No description provided for @searchMessagesLoading.
   ///
   /// In en, this message translates to:
-  /// **'Searching messages…'**
+  /// **'Searching messages and conversations…'**
   String get searchMessagesLoading;
 
   /// No description provided for @searchMessagesNoResults.
   ///
   /// In en, this message translates to:
-  /// **'No message matches'**
+  /// **'No matching messages or conversations.'**
   String get searchMessagesNoResults;
 
   /// No description provided for @searchMessagesTooShort.
   ///
   /// In en, this message translates to:
-  /// **'Enter at least two characters to search messages.'**
+  /// **'Enter at least two characters to search.'**
   String get searchMessagesTooShort;
 
   /// No description provided for @searchMessagesTooLong.
@@ -3925,7 +4195,7 @@ abstract class AppLocalizations {
   /// No description provided for @searchMessagesFailed.
   ///
   /// In en, this message translates to:
-  /// **'Messages could not be searched. Try again.'**
+  /// **'Search failed. Try again.'**
   String get searchMessagesFailed;
 
   /// No description provided for @searchMessageUnavailable.
@@ -7898,6 +8168,210 @@ abstract class AppLocalizations {
   /// **'File changes unavailable'**
   String get fileChangesUnavailableTitle;
 
+  /// No description provided for @slashCommandPlanLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Plan'**
+  String get slashCommandPlanLabel;
+
+  /// No description provided for @slashCommandGoalLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Goal'**
+  String get slashCommandGoalLabel;
+
+  /// No description provided for @slashCommandNewLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'New'**
+  String get slashCommandNewLabel;
+
+  /// No description provided for @slashCommandSearchLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Search'**
+  String get slashCommandSearchLabel;
+
+  /// No description provided for @slashCommandSummarizeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Summarize'**
+  String get slashCommandSummarizeLabel;
+
+  /// No description provided for @slashCommandSummarizeDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Create a concise summary of this conversation, including key decisions, results, and unresolved work.'**
+  String get slashCommandSummarizeDescription;
+
+  /// No description provided for @slashCommandSummarizePrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Summarize this conversation. Briefly include key decisions, completed work, and unresolved items.'**
+  String get slashCommandSummarizePrompt;
+
+  /// No description provided for @slashCommandSummarizeNoMessages.
+  ///
+  /// In en, this message translates to:
+  /// **'There are no messages to summarize. Send at least one message in this chat first.'**
+  String get slashCommandSummarizeNoMessages;
+
+  /// No description provided for @slashCommandSummarizeLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages are still loading, so this conversation cannot be summarized yet.'**
+  String get slashCommandSummarizeLoading;
+
+  /// No description provided for @slashCommandSummarizeUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This command cannot run right now. Check the model connection and wait for pending chat operations to finish.'**
+  String get slashCommandSummarizeUnavailable;
+
+  /// No description provided for @slashCommandRenameLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename'**
+  String get slashCommandRenameLabel;
+
+  /// No description provided for @slashCommandRenameDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Rename this conversation. Add a new title after the command.'**
+  String get slashCommandRenameDescription;
+
+  /// No description provided for @slashCommandRenameTitleRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a title after /rename.'**
+  String get slashCommandRenameTitleRequired;
+
+  /// No description provided for @slashCommandRenameNoConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Open a conversation before renaming it.'**
+  String get slashCommandRenameNoConversation;
+
+  /// No description provided for @slashCommandRenameSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation renamed.'**
+  String get slashCommandRenameSuccess;
+
+  /// No description provided for @slashCommandModelLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Model'**
+  String get slashCommandModelLabel;
+
+  /// No description provided for @slashCommandModelDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch to an available model by its exact name or ID.'**
+  String get slashCommandModelDescription;
+
+  /// No description provided for @slashCommandModelNameRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a model name or ID after /model.'**
+  String get slashCommandModelNameRequired;
+
+  /// No description provided for @slashCommandModelNoMatch.
+  ///
+  /// In en, this message translates to:
+  /// **'No available model matches that name or ID for the current provider.'**
+  String get slashCommandModelNoMatch;
+
+  /// No description provided for @slashCommandModelAmbiguous.
+  ///
+  /// In en, this message translates to:
+  /// **'More than one available model matches. Use its exact model ID.'**
+  String get slashCommandModelAmbiguous;
+
+  /// No description provided for @slashCommandModelUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The model selector is unavailable while models load or a response is running.'**
+  String get slashCommandModelUnavailable;
+
+  /// No description provided for @slashCommandCompactLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Compact'**
+  String get slashCommandCompactLabel;
+
+  /// No description provided for @slashCommandCompactDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Locally summarize older messages for future requests while keeping the full history searchable.'**
+  String get slashCommandCompactDescription;
+
+  /// No description provided for @slashCommandCompactNoConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Open a conversation before compacting its context.'**
+  String get slashCommandCompactNoConversation;
+
+  /// No description provided for @slashCommandCompactNoArguments.
+  ///
+  /// In en, this message translates to:
+  /// **'/compact does not take an argument.'**
+  String get slashCommandCompactNoArguments;
+
+  /// No description provided for @slashCommandCompactNoContextWindow.
+  ///
+  /// In en, this message translates to:
+  /// **'A context limit is unavailable for this model. Set one in Model preferences.'**
+  String get slashCommandCompactNoContextWindow;
+
+  /// No description provided for @slashCommandCompactBusy.
+  ///
+  /// In en, this message translates to:
+  /// **'Wait for the current response to finish before compacting.'**
+  String get slashCommandCompactBusy;
+
+  /// No description provided for @slashCommandCompactSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Older conversation context was compacted. The full chat history remains searchable.'**
+  String get slashCommandCompactSuccess;
+
+  /// No description provided for @slashCommandCompactNothing.
+  ///
+  /// In en, this message translates to:
+  /// **'There is not enough older context to compact yet.'**
+  String get slashCommandCompactNothing;
+
+  /// No description provided for @slashCommandCompactFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The older conversation context could not be compacted. Your full history is still available.'**
+  String get slashCommandCompactFailed;
+
+  /// No description provided for @slashCommandReasoningLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Reasoning'**
+  String get slashCommandReasoningLabel;
+
+  /// No description provided for @slashCommandReasoningDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Set a reasoning level supported by the selected model, or choose default.'**
+  String get slashCommandReasoningDescription;
+
+  /// No description provided for @slashCommandReasoningLevelRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a supported level after /reasoning, or use /reasoning default.'**
+  String get slashCommandReasoningLevelRequired;
+
+  /// No description provided for @slashCommandReasoningUnsupported.
+  ///
+  /// In en, this message translates to:
+  /// **'The selected model does not support that reasoning level.'**
+  String get slashCommandReasoningUnsupported;
+
   /// No description provided for @goalSlashCommand.
   ///
   /// In en, this message translates to:
@@ -7913,7 +8387,7 @@ abstract class AppLocalizations {
   /// No description provided for @goalObjectiveRequired.
   ///
   /// In en, this message translates to:
-  /// **'Write a goal after /goal.'**
+  /// **'Write a goal before sending.'**
   String get goalObjectiveRequired;
 
   /// No description provided for @goalWorking.

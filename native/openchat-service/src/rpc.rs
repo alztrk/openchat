@@ -13,7 +13,7 @@ use tokio::sync::watch as tokio_watch;
 use zeroize::Zeroizing;
 
 use crate::{
-    chat_operation::ChatSendContext,
+    chat_operation::{ChatSendContext, TitleGenerationModel, TitleGenerationRequest},
     chatgpt::ChatGptService,
     chatgpt_store, conversation_archive, goals, hugging_face, instructions, local_engines,
     openai_api, openai_compatible,
@@ -691,11 +691,15 @@ pub(crate) async fn dispatch(
                 }
                 None => None,
             };
-            let project_instructions = project_root
-                .as_deref()
-                .map(|root| crate::project_instructions::load(Path::new(root)))
-                .transpose()?
-                .flatten();
+            let project_instructions = if permission_mode == ToolPermissionMode::Plan {
+                None
+            } else {
+                project_root
+                    .as_deref()
+                    .map(|root| crate::project_instructions::load(Path::new(root)))
+                    .transpose()?
+                    .flatten()
+            };
             let project_skill_ids = match request.params.get("projectSkillIds") {
                 None => Vec::new(),
                 Some(Value::Array(values)) => values
@@ -710,20 +714,28 @@ pub(crate) async fn dispatch(
                 _ => return Err(invalid_context_usage_params()),
             };
             crate::project_skills::validate_selected_ids(&project_skill_ids)?;
-            let project_skills = match project_root.as_deref() {
-                Some(root) => {
-                    crate::project_skills::load_selected(Path::new(root), &project_skill_ids)?
+            let project_skills = if permission_mode == ToolPermissionMode::Plan {
+                Vec::new()
+            } else {
+                match project_root.as_deref() {
+                    Some(root) => {
+                        crate::project_skills::load_selected(Path::new(root), &project_skill_ids)?
+                    }
+                    None if project_skill_ids.is_empty() => Vec::new(),
+                    None => return Err(invalid_context_usage_params()),
                 }
-                None if project_skill_ids.is_empty() => Vec::new(),
-                None => return Err(invalid_context_usage_params()),
             };
             let has_project = project_root.is_some();
-            let available_tools = openai_compatible::context_usage_tool_definitions(
-                storage,
-                provider_id,
-                model_id,
-                reported_supports_tool_calls,
-            )?;
+            let available_tools = if permission_mode == ToolPermissionMode::Plan {
+                Vec::new()
+            } else {
+                openai_compatible::context_usage_tool_definitions(
+                    storage,
+                    provider_id,
+                    model_id,
+                    reported_supports_tool_calls,
+                )?
+            };
             let instructions = instructions::shared_instructions(
                 custom_instructions,
                 project_instructions.as_deref(),
@@ -782,6 +794,15 @@ pub(crate) async fn dispatch(
                     false,
                 ));
             }
+            let result_type = optional_history_filter_string(&request.params, "resultType")?
+                .unwrap_or_else(|| "all".to_owned());
+            let sort_order = optional_history_filter_string(&request.params, "sortOrder")?
+                .unwrap_or_else(|| "relevance".to_owned());
+            if !matches!(result_type.as_str(), "all" | "messages" | "conversations")
+                || !matches!(sort_order.as_str(), "relevance" | "newest" | "oldest")
+            {
+                return Err(invalid_history_filter());
+            }
             let filters = chatgpt_store::HistorySearchFilters {
                 from_unix_ms,
                 through_unix_ms,
@@ -790,6 +811,8 @@ pub(crate) async fn dispatch(
                 project_id: optional_history_filter_string(&request.params, "projectId")?,
                 is_archived: optional_history_filter_bool(&request.params, "isArchived")?,
                 tag: optional_history_tag_filter(&request.params)?,
+                result_type,
+                sort_order,
             };
             let results = chatgpt_store::search_chat_history(storage, query, filters)
                 .await
@@ -804,6 +827,7 @@ pub(crate) async fn dispatch(
                 "results": results.into_iter().map(|result| json!({
                     "conversationId": result.conversation_id,
                     "conversationTitle": result.conversation_title,
+                    "isConversationTitleMatch": result.is_conversation_title_match,
                     "messageId": result.message_id,
                     "role": result.role,
                     "excerpt": result.excerpt,
@@ -914,6 +938,7 @@ pub(crate) async fn dispatch(
             Ok(json!({"ready": true}))
         }
         "local.engines.list" => local_engines::list(storage).await,
+        "local.engines.runtime.status" => local_engines::runtime_status(storage).await,
         "local.engines.llama_server_path.set" => local_engines::set_llama_server_executable_path(
             storage,
             optional_string(&request.params, "path")?,
@@ -1065,11 +1090,153 @@ pub(crate) async fn dispatch(
                 })?;
             Ok(json!({"reset": reset}))
         }
+        "chat.memory.compact" => {
+            let conversation_id = required_memory_conversation_id(&request.params)?;
+            let context_window = request
+                .params
+                .get("contextWindow")
+                .and_then(Value::as_i64)
+                .filter(|window| (2048..=2_000_000).contains(window))
+                .ok_or_else(invalid_request_params)?;
+            let connection = storage.connect().map_err(|_| {
+                ServiceError::new(
+                    "storage_unavailable",
+                    "Chat history could not be read.",
+                    false,
+                )
+            })?;
+            let route = connection
+                .query_row(
+                    "SELECT provider_id, model_id, connection_id, workspace_id
+                     FROM conversations WHERE id = ?1",
+                    [conversation_id],
+                    |row| {
+                        Ok((
+                            row.get::<_, Option<String>>(0)?,
+                            row.get::<_, Option<String>>(1)?,
+                            row.get::<_, Option<String>>(2)?,
+                            row.get::<_, Option<String>>(3)?,
+                        ))
+                    },
+                )
+                .optional()
+                .map_err(|_| {
+                    ServiceError::new(
+                        "storage_unavailable",
+                        "Chat history could not be read.",
+                        false,
+                    )
+                })?;
+            let Some((Some(provider_id), Some(model_id), connection_id, workspace_id)) = route
+            else {
+                return Err(ServiceError::new(
+                    "conversation_not_routed",
+                    "Choose a model before compacting this conversation.",
+                    false,
+                ));
+            };
+            let messages =
+                chatgpt_store::conversation_messages(storage, conversation_id).map_err(|_| {
+                    ServiceError::new(
+                        "storage_unavailable",
+                        "Chat history could not be read.",
+                        false,
+                    )
+                })?;
+            let context_state =
+                chatgpt_store::load_conversation_context_state(storage, conversation_id).map_err(
+                    |_| {
+                        ServiceError::new(
+                            "conversation_memory_unavailable",
+                            "Conversation memory could not be loaded.",
+                            true,
+                        )
+                    },
+                )?;
+            let active_compaction_matches = context_state.as_ref().is_some_and(|state| {
+                crate::context_compaction::compaction_payload_matches_route(
+                    state,
+                    &provider_id,
+                    connection_id.as_deref(),
+                    workspace_id.as_deref(),
+                    &model_id,
+                ) && crate::context_compaction::has_compaction_boundary(state, &messages)
+            });
+            let extends_local_summary = active_compaction_matches
+                && context_state
+                    .as_ref()
+                    .is_some_and(|state| state.compaction_kind.as_deref() == Some("summary"));
+            let start_index = extends_local_summary
+                .then(|| {
+                    context_state
+                        .as_ref()
+                        .and_then(|state| state.compacted_through_message_id.as_deref())
+                })
+                .flatten()
+                .and_then(|boundary_id| {
+                    messages
+                        .iter()
+                        .position(|message| message.id == boundary_id)
+                })
+                .map_or(0, |index| index + 1);
+            let Some(compacted_through_index) = crate::context_compaction::compaction_prefix_end(
+                &messages,
+                start_index,
+                context_window,
+            ) else {
+                return Ok(json!({"compacted": false}));
+            };
+            let existing_summary = context_state
+                .as_ref()
+                .filter(|_| active_compaction_matches)
+                .filter(|state| state.compaction_kind.as_deref() == Some("summary"))
+                .and_then(|state| state.compaction_payload.as_deref());
+            let summary = crate::context_compaction::local_extractive_summary(
+                existing_summary,
+                &messages[start_index..=compacted_through_index],
+                crate::context_compaction::local_summary_byte_limit(context_window),
+                &cancellation,
+            )?;
+            let boundary_id = messages[compacted_through_index].id.clone();
+            let compacted_state = chatgpt_store::ConversationContextState {
+                compaction_kind: Some("summary".to_owned()),
+                compaction_payload: Some(summary),
+                compaction_provider_id: Some(provider_id),
+                compaction_connection_id: connection_id,
+                compaction_workspace_id: workspace_id,
+                compaction_model_id: Some(model_id),
+                compacted_through_message_id: Some(boundary_id.clone()),
+                last_prompt_tokens: None,
+                last_prompt_message_id: None,
+                last_prompt_provider_id: None,
+                last_prompt_model_id: None,
+                last_prompt_connection_id: None,
+                last_prompt_workspace_id: None,
+            };
+            chatgpt_store::save_compaction_state(storage, conversation_id, &compacted_state)
+                .map_err(|_| {
+                    ServiceError::new(
+                        "conversation_memory_unavailable",
+                        "The compacted conversation context could not be saved.",
+                        true,
+                    )
+                })?;
+            Ok(json!({
+                "compacted": true,
+                "compactedThroughMessageId": boundary_id,
+            }))
+        }
         "chat.send" => {
             let conversation_id = required_string(&request.params, "conversationId")?;
             let resume_run_id = optional_string(&request.params, "resumeRunId")?;
             let api_key = optional_api_key(&request.params, "apiKey")?;
             let api_key_connection_id = optional_string(&request.params, "apiKeyConnectionId")?;
+            let custom_provider = request
+                .params
+                .get("customProvider")
+                .map(openai_compatible::CustomProviderConfig::from_value)
+                .transpose()?;
+            let title_generation = parse_title_generation(&request.params)?;
             let requested_reasoning_effort = optional_string(&request.params, "reasoningEffort")?;
             let requested_fast_mode = optional_bool(&request.params, "fastMode")?.unwrap_or(false);
             let context_limit_override = match request.params.get("contextLimit") {
@@ -1113,6 +1280,13 @@ pub(crate) async fn dispatch(
                 &request.params,
                 "toolPermissionMode",
             )?)?;
+            if goal_requested && permission_mode == ToolPermissionMode::Plan {
+                return Err(ServiceError::new(
+                    "goal_tool_calls_unavailable",
+                    "Plan mode cannot start a persistent goal because it disables all tools.",
+                    false,
+                ));
+            }
             let tool_permission_rules =
                 tools::parse_tool_permission_rules(request.params.get("toolPermissionRules"))?;
             let excluded_assistant_message_id =
@@ -1208,9 +1382,9 @@ pub(crate) async fn dispatch(
             let (
                 run_id,
                 custom_instructions,
-                project_instructions,
-                project_skills,
-                project_index_context,
+                mut project_instructions,
+                mut project_skills,
+                mut project_index_context,
                 reasoning_effort,
                 fast_mode,
                 goal_execution,
@@ -1334,20 +1508,30 @@ pub(crate) async fn dispatch(
                     goal_execution,
                 )
             } else {
-                let project_instructions = project_root
-                    .as_deref()
-                    .map(|root| crate::project_instructions::load(Path::new(root)))
-                    .transpose()?
-                    .flatten();
-                let project_skills = match project_root.as_deref() {
-                    Some(root) => crate::project_skills::load_selected(
-                        Path::new(root),
-                        &requested_project_skill_ids,
-                    )?,
-                    None if requested_project_skill_ids.is_empty() => Vec::new(),
-                    None => return Err(invalid_request_params()),
+                let project_instructions = if permission_mode == ToolPermissionMode::Plan {
+                    None
+                } else {
+                    project_root
+                        .as_deref()
+                        .map(|root| crate::project_instructions::load(Path::new(root)))
+                        .transpose()?
+                        .flatten()
                 };
-                let project_index_context = if let (Some(project_id), Some(root)) =
+                let project_skills = if permission_mode == ToolPermissionMode::Plan {
+                    Vec::new()
+                } else {
+                    match project_root.as_deref() {
+                        Some(root) => crate::project_skills::load_selected(
+                            Path::new(root),
+                            &requested_project_skill_ids,
+                        )?,
+                        None if requested_project_skill_ids.is_empty() => Vec::new(),
+                        None => return Err(invalid_request_params()),
+                    }
+                };
+                let project_index_context = if permission_mode == ToolPermissionMode::Plan {
+                    None
+                } else if let (Some(project_id), Some(root)) =
                     (project_id.as_deref(), project_root.as_deref())
                 {
                     let index_path = storage.root().join("cache").join("project-index.sqlite3");
@@ -1449,6 +1633,11 @@ pub(crate) async fn dispatch(
                     goal_execution,
                 )
             };
+            if permission_mode == ToolPermissionMode::Plan {
+                project_instructions = None;
+                project_skills.clear();
+                project_index_context = None;
+            }
             if let Some(goal) = goal_execution.as_ref() {
                 events
                     .send(&Response::event(
@@ -1466,22 +1655,28 @@ pub(crate) async fn dispatch(
                     })?;
             }
             #[cfg(windows)]
-            let mcp_configs = if matches!(
-                provider_id.as_deref(),
-                Some(
-                    "chatgpt"
-                        | "chatgpt_api"
-                        | "opencode"
-                        | "gemini"
-                        | "groq"
-                        | "cerebras"
-                        | "openrouter"
-                        | "mistral"
-                        | "llama_cpp"
-                        | "vllm"
-                        | "exllama"
-                )
-            ) {
+            let mcp_configs = if permission_mode != ToolPermissionMode::Plan
+                && matches!(
+                    provider_id.as_deref(),
+                    Some(
+                        "chatgpt"
+                            | "chatgpt_api"
+                            | "opencode"
+                            | "gemini"
+                            | "groq"
+                            | "cerebras"
+                            | "openrouter"
+                            | "mistral"
+                            | "deepseek"
+                            | "xai"
+                            | "perplexity"
+                            | "together"
+                            | "sambanova"
+                            | "llama_cpp"
+                            | "vllm"
+                            | "exllama"
+                    )
+                ) {
                 match project_root.as_deref() {
                     Some(project_root) => {
                         match tools::mcp::load_server_configs(
@@ -1529,11 +1724,27 @@ pub(crate) async fn dispatch(
                 cancellation: &mut cancellation,
                 events,
                 context_limit_override,
+                title_generation,
             };
             let result = match provider_id.as_deref() {
+                Some(id) if id.starts_with("custom_") => {
+                    openai_compatible::send_message(
+                        storage,
+                        service,
+                        context,
+                        api_key,
+                        api_key_connection_id,
+                        stored_api_key_connection_id,
+                        custom_provider,
+                        reasoning_effort.as_deref(),
+                        fast_mode,
+                    )
+                    .await
+                }
                 Some(
                     "opencode" | "chatgpt_api" | "gemini" | "groq" | "cerebras" | "openrouter"
-                    | "mistral" | "llama_cpp" | "vllm" | "exllama",
+                    | "mistral" | "deepseek" | "xai" | "perplexity" | "together" | "sambanova"
+                    | "llama_cpp" | "vllm" | "exllama",
                 ) => {
                     openai_compatible::send_message(
                         storage,
@@ -1542,6 +1753,7 @@ pub(crate) async fn dispatch(
                         api_key,
                         api_key_connection_id,
                         stored_api_key_connection_id,
+                        None,
                         reasoning_effort.as_deref(),
                         fast_mode,
                     )
@@ -1782,20 +1994,37 @@ pub(crate) async fn dispatch(
         }
         "compatible.models.list" => {
             let provider_id = required_string(&request.params, "providerId")?;
-            let api_key = required_string(&request.params, "apiKey")?;
             let force_refresh = request
                 .params
                 .get("forceRefresh")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            openai_compatible::models_for_provider(
-                storage,
-                provider_id,
-                api_key,
-                force_refresh,
-                &mut cancellation,
-            )
-            .await
+            if provider_id.starts_with("custom_") {
+                let api_key = optional_api_key(&request.params, "apiKey")?;
+                let config = openai_compatible::CustomProviderConfig::from_value(&json!({
+                    "id": provider_id,
+                    "baseUrl": required_string(&request.params, "baseUrl")?,
+                    "protocol": required_string(&request.params, "protocol")?,
+                }))?;
+                openai_compatible::models_for_custom_provider(
+                    storage,
+                    &config,
+                    api_key,
+                    force_refresh,
+                    &mut cancellation,
+                )
+                .await
+            } else {
+                let api_key = required_string(&request.params, "apiKey")?;
+                openai_compatible::models_for_provider(
+                    storage,
+                    provider_id,
+                    api_key,
+                    force_refresh,
+                    &mut cancellation,
+                )
+                .await
+            }
         }
         "list_files" => tools::list_files(
             required_string(&request.params, "root")?,
@@ -2384,6 +2613,71 @@ fn optional_api_key<'a>(
         ));
     }
     Ok(api_key)
+}
+
+fn parse_title_generation(params: &Value) -> Result<TitleGenerationRequest, ServiceError> {
+    let Some(settings) = params.get("titleGeneration") else {
+        return Ok(TitleGenerationRequest::Conversation);
+    };
+    let mode = required_string(settings, "mode")?;
+    match mode {
+        "conversation" => Ok(TitleGenerationRequest::Conversation),
+        "disabled" => Ok(TitleGenerationRequest::Disabled),
+        "selectedModel" | "lightweight" => {
+            let target = settings.get("target").ok_or_else(invalid_request_params)?;
+            let provider_id = required_string(target, "providerId")?;
+            let model_id = required_string(target, "modelId")?;
+            if provider_id.is_empty()
+                || provider_id.len() > 128
+                || provider_id.chars().any(char::is_control)
+                || model_id.is_empty()
+                || model_id.len() > 512
+                || model_id.chars().any(char::is_control)
+            {
+                return Err(invalid_request_params());
+            }
+            let optional_route_id = |name| -> Result<Option<String>, ServiceError> {
+                optional_string(target, name)?
+                    .map(|value| {
+                        if value.is_empty()
+                            || value.len() > 256
+                            || value.chars().any(char::is_control)
+                        {
+                            Err(invalid_request_params())
+                        } else {
+                            Ok(value.to_owned())
+                        }
+                    })
+                    .transpose()
+            };
+            let connection_id = optional_route_id("connectionId")?;
+            let workspace_id = optional_route_id("workspaceId")?;
+            let api_key_connection_id = optional_route_id("apiKeyConnectionId")?;
+            let api_key =
+                optional_api_key(target, "apiKey")?.map(|key| Zeroizing::new(key.to_owned()));
+            let custom_provider = target
+                .get("customProvider")
+                .map(openai_compatible::CustomProviderConfig::from_value)
+                .transpose()?;
+            if provider_id.starts_with("custom_")
+                != custom_provider
+                    .as_ref()
+                    .is_some_and(|provider| provider.id == provider_id)
+            {
+                return Err(invalid_request_params());
+            }
+            Ok(TitleGenerationRequest::Model(TitleGenerationModel {
+                provider_id: provider_id.to_owned(),
+                model_id: model_id.to_owned(),
+                connection_id,
+                workspace_id,
+                api_key_connection_id,
+                api_key,
+                custom_provider,
+            }))
+        }
+        _ => Err(invalid_request_params()),
+    }
 }
 
 #[cfg(test)]

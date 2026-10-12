@@ -24,8 +24,8 @@ pub use connections::{
 };
 pub use conversations::{
     apply_generated_title, conversation_messages, conversation_messages_from_boundary,
-    conversation_route, create_title_job, finish_title_job, is_retryable_latest_assistant_message,
-    save_assistant_message, save_assistant_tool_checkpoint,
+    conversation_route, conversation_title_is_automatic, create_title_job, finish_title_job,
+    is_retryable_latest_assistant_message, save_assistant_message, save_assistant_tool_checkpoint,
 };
 pub use memory::{
     ArchiveIndexSettings, ArchiveIndexTool, ArchivedMemoryExcerpt, HistorySearchFilterOptions,

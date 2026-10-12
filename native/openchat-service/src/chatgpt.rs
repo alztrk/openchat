@@ -71,6 +71,10 @@ pub(super) struct StreamRequest<'a> {
 }
 
 impl ChatGptService {
+    pub(crate) fn storage_handle(&self) -> Arc<AppStorage> {
+        Arc::clone(&self.storage)
+    }
+
     pub fn new(storage: Arc<AppStorage>) -> Result<Self, ServiceError> {
         let http = Client::builder()
             .user_agent(concat!("OpenChat/", env!("CARGO_PKG_VERSION")))
@@ -237,7 +241,7 @@ impl ChatGptService {
             tools.extend(goals::control_tool_definitions());
         }
         if context.permission_mode == tools::ToolPermissionMode::Plan {
-            tools::apply_plan_mode_allowlist(&mut tools);
+            tools::disable_tools_for_plan_mode(&mut tools);
         }
         let mut shared_instructions = instructions::shared_instructions(
             custom_instructions,

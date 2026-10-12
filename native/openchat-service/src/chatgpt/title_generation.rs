@@ -9,60 +9,40 @@ use super::{
     database_error, http_error, invalid_response_error, network_error, truncate_chars,
 };
 use crate::{
+    chat_operation::TitleGenerationModel,
     chatgpt_store::{self, ChatGptModel},
     protocol::{EventSink, Response as RpcResponse, ServiceError},
     usage_statistics::{UsageData, UsageRequestTracker},
 };
 
 impl ChatGptService {
-    pub(super) async fn generate_title(
+    pub(crate) async fn generate_title(
         self: &Arc<Self>,
         conversation_id: &str,
         route: &chatgpt_store::ConversationRoute,
         conversation_model_id: &str,
         excluded_assistant_message_id: Option<&str>,
         events: EventSink,
+        target: Option<TitleGenerationModel>,
     ) {
         let started = Instant::now();
         self.record_chatgpt_event("request_started", "title", None, None, None, None);
-        let conversation_models = match self
-            .fetch_models(&route.connection_id, &route.workspace_id)
-            .await
-        {
-            Ok(models) => models,
-            Err(_) => {
-                self.record_title_skip(conversation_id, route, "model_catalog_unavailable");
+        let (title_route, model) = if let Some(target) = target {
+            if target.provider_id != "chatgpt" {
+                self.record_title_skip(conversation_id, route, "unsupported_title_provider");
                 return;
             }
-        };
-        let same_account_model = conversation_models
-            .into_iter()
-            .find(|model| model.is_available && model.id != conversation_model_id);
-        let (title_route, model) = if let Some(model) = same_account_model {
-            (route.clone(), model)
-        } else {
-            let preference = match chatgpt_store::title_preference(&self.storage) {
-                Ok(preference) => preference,
-                Err(_) => {
-                    self.record_title_skip(conversation_id, route, "title_preference_unavailable");
-                    return;
-                }
-            };
             let (Some(connection_id), Some(workspace_id)) = (
-                preference.connection_id.as_deref(),
-                preference.workspace_id.as_deref(),
+                target.connection_id.as_deref(),
+                target.workspace_id.as_deref(),
             ) else {
-                self.record_title_skip(conversation_id, route, "no_alternate_model");
+                self.record_title_skip(conversation_id, route, "title_route_incomplete");
                 return;
             };
-            if connection_id == route.connection_id && workspace_id == route.workspace_id {
-                self.record_title_skip(conversation_id, route, "no_alternate_model");
-                return;
-            }
+            let mut title_route = route.clone();
+            title_route.connection_id = connection_id.to_owned();
+            title_route.workspace_id = workspace_id.to_owned();
             if self.ensure_active_connection(connection_id).is_err() {
-                let mut title_route = route.clone();
-                title_route.connection_id = connection_id.to_owned();
-                title_route.workspace_id = workspace_id.to_owned();
                 self.record_title_skip(
                     conversation_id,
                     &title_route,
@@ -73,9 +53,6 @@ impl ChatGptService {
             let title_models = match self.fetch_models(connection_id, workspace_id).await {
                 Ok(models) => models,
                 Err(_) => {
-                    let mut title_route = route.clone();
-                    title_route.connection_id = connection_id.to_owned();
-                    title_route.workspace_id = workspace_id.to_owned();
                     self.record_title_skip(
                         conversation_id,
                         &title_route,
@@ -86,18 +63,91 @@ impl ChatGptService {
             };
             let Some(model) = title_models
                 .into_iter()
-                .find(|model| model.is_available && model.id != conversation_model_id)
+                .find(|model| model.is_available && model.id == target.model_id)
             else {
+                self.record_title_skip(conversation_id, &title_route, "title_model_unavailable");
+                return;
+            };
+            (title_route, model)
+        } else {
+            let conversation_models = match self
+                .fetch_models(&route.connection_id, &route.workspace_id)
+                .await
+            {
+                Ok(models) => models,
+                Err(_) => {
+                    self.record_title_skip(conversation_id, route, "model_catalog_unavailable");
+                    return;
+                }
+            };
+            let same_account_model = conversation_models
+                .into_iter()
+                .find(|model| model.is_available && model.id != conversation_model_id);
+            if let Some(model) = same_account_model {
+                (route.clone(), model)
+            } else {
+                let preference = match chatgpt_store::title_preference(&self.storage) {
+                    Ok(preference) => preference,
+                    Err(_) => {
+                        self.record_title_skip(
+                            conversation_id,
+                            route,
+                            "title_preference_unavailable",
+                        );
+                        return;
+                    }
+                };
+                let (Some(connection_id), Some(workspace_id)) = (
+                    preference.connection_id.as_deref(),
+                    preference.workspace_id.as_deref(),
+                ) else {
+                    self.record_title_skip(conversation_id, route, "no_alternate_model");
+                    return;
+                };
+                if connection_id == route.connection_id && workspace_id == route.workspace_id {
+                    self.record_title_skip(conversation_id, route, "no_alternate_model");
+                    return;
+                }
+                if self.ensure_active_connection(connection_id).is_err() {
+                    let mut title_route = route.clone();
+                    title_route.connection_id = connection_id.to_owned();
+                    title_route.workspace_id = workspace_id.to_owned();
+                    self.record_title_skip(
+                        conversation_id,
+                        &title_route,
+                        "title_connection_unavailable",
+                    );
+                    return;
+                }
+                let title_models = match self.fetch_models(connection_id, workspace_id).await {
+                    Ok(models) => models,
+                    Err(_) => {
+                        let mut title_route = route.clone();
+                        title_route.connection_id = connection_id.to_owned();
+                        title_route.workspace_id = workspace_id.to_owned();
+                        self.record_title_skip(
+                            conversation_id,
+                            &title_route,
+                            "title_model_catalog_unavailable",
+                        );
+                        return;
+                    }
+                };
+                let Some(model) = title_models
+                    .into_iter()
+                    .find(|model| model.is_available && model.id != conversation_model_id)
+                else {
+                    let mut title_route = route.clone();
+                    title_route.connection_id = connection_id.to_owned();
+                    title_route.workspace_id = workspace_id.to_owned();
+                    self.record_title_skip(conversation_id, &title_route, "no_alternate_model");
+                    return;
+                };
                 let mut title_route = route.clone();
                 title_route.connection_id = connection_id.to_owned();
                 title_route.workspace_id = workspace_id.to_owned();
-                self.record_title_skip(conversation_id, &title_route, "no_alternate_model");
-                return;
-            };
-            let mut title_route = route.clone();
-            title_route.connection_id = connection_id.to_owned();
-            title_route.workspace_id = workspace_id.to_owned();
-            (title_route, model)
+                (title_route, model)
+            }
         };
         let usage = match self
             .refresh_usage(&title_route.connection_id, &title_route.workspace_id)

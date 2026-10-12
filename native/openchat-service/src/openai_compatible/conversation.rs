@@ -1,4 +1,7 @@
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::{
+    sync::Arc,
+    time::{Instant, SystemTime, UNIX_EPOCH},
+};
 
 use serde_json::Value;
 use uuid::Uuid;
@@ -26,11 +29,12 @@ mod tool_round;
 
 pub async fn send_message(
     storage: &AppStorage,
-    image_service: &ChatGptService,
+    image_service: &Arc<ChatGptService>,
     context: ChatSendContext<'_>,
     api_key: Option<&str>,
     requested_api_key_connection_id: Option<&str>,
     stored_api_key_connection_id: Option<String>,
+    custom_provider: Option<super::CustomProviderConfig>,
     reasoning_effort: Option<&str>,
     fast_mode: bool,
 ) -> Result<Value, ServiceError> {
@@ -58,6 +62,7 @@ pub async fn send_message(
         cancellation,
         events,
         context_limit_override,
+        title_generation,
     } = context;
     let route = route::resolve_chat_route(
         storage,
@@ -65,6 +70,7 @@ pub async fn send_message(
         api_key,
         requested_api_key_connection_id,
         stored_api_key_connection_id.as_deref(),
+        custom_provider.as_ref(),
         context_limit_override,
         cancellation,
     )
@@ -314,6 +320,8 @@ pub async fn send_message(
         let current_messages = request::completion_messages(&provider_request, provider_id);
         let mut request_body = if route.uses_responses_api {
             request::responses_api_body(&provider_request, &current_messages)
+        } else if route.is_anthropic() {
+            request::anthropic_messages_body(&provider_request, &current_messages)
         } else {
             request::chat_completion_body(&provider_request, &current_messages, provider_id)
         };
@@ -560,6 +568,81 @@ pub async fn send_message(
         )
         .map_err(|_| storage_error())?;
     }
+    if status == "completed"
+        && chatgpt_store::conversation_title_is_automatic(storage, conversation_id).unwrap_or(false)
+        && !matches!(
+            &title_generation,
+            crate::chat_operation::TitleGenerationRequest::Disabled
+        )
+    {
+        let title_storage = image_service.storage_handle();
+        let title_conversation_id = conversation_id.to_owned();
+        let title_events = events.clone();
+        let title_excluded_message_id = excluded_assistant_message_id.map(str::to_owned);
+        let title_generation = title_generation.clone();
+        let title_model_id = route.model_id.clone();
+        let title_url = route.chat_url.clone();
+        let title_api_key = api_key
+            .map(str::to_owned)
+            .or_else(|| route.local_api_key.as_ref().map(|key| key.to_string()));
+        let title_anthropic = route.is_anthropic();
+        let title_responses_api = route.uses_responses_api;
+        let title_service = Arc::clone(image_service);
+        tokio::spawn(async move {
+            match title_generation {
+                crate::chat_operation::TitleGenerationRequest::Conversation => {
+                    crate::openai_compatible::generate_title_for_route(
+                        &title_storage,
+                        &title_conversation_id,
+                        title_model_id,
+                        title_url,
+                        title_api_key,
+                        title_anthropic,
+                        title_responses_api,
+                        title_excluded_message_id.as_deref(),
+                        title_events,
+                    )
+                    .await;
+                }
+                crate::chat_operation::TitleGenerationRequest::Model(target)
+                    if target.provider_id == "chatgpt" =>
+                {
+                    let (Some(connection_id), Some(workspace_id)) =
+                        (target.connection_id.clone(), target.workspace_id.clone())
+                    else {
+                        return;
+                    };
+                    let title_route = chatgpt_store::ConversationRoute {
+                        connection_id,
+                        workspace_id,
+                        model_id: target.model_id.clone(),
+                        title_is_automatic: true,
+                    };
+                    title_service
+                        .generate_title(
+                            &title_conversation_id,
+                            &title_route,
+                            &title_model_id,
+                            title_excluded_message_id.as_deref(),
+                            title_events,
+                            Some(target),
+                        )
+                        .await;
+                }
+                crate::chat_operation::TitleGenerationRequest::Model(target) => {
+                    crate::openai_compatible::generate_title_for_target(
+                        &title_storage,
+                        &title_conversation_id,
+                        target,
+                        title_excluded_message_id.as_deref(),
+                        title_events,
+                    )
+                    .await;
+                }
+                crate::chat_operation::TitleGenerationRequest::Disabled => {}
+            }
+        });
+    }
     let mut response =
         terminal_result(conversation_id, &message_id, status, elapsed, output_tokens);
     if let Some(goal) = goal.as_ref() {
@@ -607,6 +690,8 @@ async fn stream_conversation(
     loop {
         let mut body = if route.uses_responses_api {
             request::responses_api_body(provider_request, messages)
+        } else if route.is_anthropic() {
+            request::anthropic_messages_body(provider_request, messages)
         } else {
             request::chat_completion_body(provider_request, messages, provider_id)
         };

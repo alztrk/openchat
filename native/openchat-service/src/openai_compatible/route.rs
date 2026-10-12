@@ -11,6 +11,7 @@ use super::{
     storage_error,
 };
 
+#[derive(Clone)]
 pub(super) struct ChatRoute {
     pub(super) model_id: String,
     pub(super) provider_model_id: String,
@@ -30,6 +31,10 @@ pub(super) struct ChatRoute {
 }
 
 impl ChatRoute {
+    pub(super) fn is_anthropic(&self) -> bool {
+        self.chat_url.ends_with("/messages")
+    }
+
     pub(super) fn request_context_limit(&self) -> Option<i64> {
         self.context_limit_override
             .map(|limit| {
@@ -48,6 +53,7 @@ pub(super) async fn resolve_chat_route(
     api_key: Option<&str>,
     requested_api_key_connection_id: Option<&str>,
     stored_api_key_connection_id: Option<&str>,
+    custom_provider: Option<&super::CustomProviderConfig>,
     context_limit_override: Option<i64>,
     cancellation: &mut tokio::sync::watch::Receiver<bool>,
 ) -> Result<ChatRoute, ServiceError> {
@@ -164,6 +170,38 @@ pub(super) async fn resolve_chat_route(
                 None,
             )
         }
+        Some(id) if id.starts_with("custom_") => {
+            let Some(provider) = custom_provider.filter(|provider| provider.id == id) else {
+                return Err(route_error());
+            };
+            if requested_api_key_connection_id != Some(id)
+                || stored_api_key_connection_id != Some(id)
+            {
+                return Err(route_error());
+            }
+            let (context_window, input_token_limit, max_output_tokens) =
+                super::provider_models::custom_context_limits(
+                    storage, provider, api_key, &model_id,
+                )?;
+            (
+                model_id.clone(),
+                if provider.is_anthropic() {
+                    format!("{}/messages", provider.base_url)
+                } else {
+                    format!("{}/chat/completions", provider.base_url)
+                },
+                false,
+                false,
+                context_window,
+                input_token_limit,
+                max_output_tokens,
+                context_limit_override,
+                false,
+                None,
+                Some(id.to_owned()),
+                None,
+            )
+        }
         Some(id) => {
             let Some(provider) = api_compatible_provider(id) else {
                 return Err(route_error());
@@ -198,7 +236,12 @@ pub(super) async fn resolve_chat_route(
         None => return Err(route_error()),
     };
 
-    if !is_free && api_key.is_none() {
+    if !is_free
+        && api_key.is_none()
+        && !provider_id
+            .as_deref()
+            .is_some_and(|provider_id| provider_id.starts_with("custom_"))
+    {
         return Err(authentication_required_error());
     }
 

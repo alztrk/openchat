@@ -1,3 +1,5 @@
+import 'package:openchat/features/settings/data/api_compatible_provider_key_store.dart';
+
 class DefaultModelPreference {
   const DefaultModelPreference({
     required this.providerId,
@@ -27,6 +29,9 @@ class DefaultModelPreference {
       'cerebras' ||
       'openrouter' ||
       'mistral' => apiKeyConnectionId ?? connectionId ?? providerId,
+      final providerId
+          when ApiCompatibleProviderKeyStore.isCustomProviderId(providerId) =>
+        apiKeyConnectionId ?? connectionId ?? providerId,
       _ => null,
     };
     final routeWorkspaceId = providerId == 'chatgpt' ? workspaceId : null;

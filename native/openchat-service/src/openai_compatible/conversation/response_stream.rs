@@ -84,6 +84,12 @@ async fn receive_with_client(
         } else if let Some(api_key) = request.api_key {
             provider_request = provider_request.bearer_auth(api_key);
         }
+    } else if request.route.is_anthropic()
+        && let Some(api_key) = request.api_key
+    {
+        provider_request = provider_request
+            .header("x-api-key", api_key)
+            .header("anthropic-version", "2023-06-01");
     } else if let Some(api_key) = request.route.local_api_key.as_deref() {
         provider_request = provider_request.bearer_auth(api_key.as_str());
     } else if !request.route.is_free
@@ -130,7 +136,7 @@ async fn receive_with_client(
     let mut tool_calls = BTreeMap::<usize, StreamedToolCall>::new();
     let supports_provider_citations = matches!(
         request.route.provider_id.as_deref(),
-        Some("openai" | "chatgpt_api" | "opencode" | "openrouter" | "groq" | "gemini")
+        Some("openai" | "chatgpt_api" | "opencode" | "openrouter" | "groq" | "gemini" | "perplexity")
     );
     let mut provider_citation_sources = Vec::<Value>::new();
     let mut provider_citation_ids = BTreeMap::<(String, String), String>::new();
@@ -172,6 +178,135 @@ async fn receive_with_client(
                 }
                 SseLine::Data(value) => value,
             };
+
+            if request.route.is_anthropic() {
+                match value
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                {
+                    "message_start" => {
+                        if let Some(tokens) = value
+                            .pointer("/message/usage/input_tokens")
+                            .and_then(Value::as_i64)
+                            .filter(|tokens| *tokens >= 0)
+                        {
+                            *request.input_tokens = Some(tokens);
+                            provider_request_usage
+                                .get_or_insert_with(ProviderRequestUsage::default)
+                                .prompt_tokens = Some(tokens);
+                        }
+                    }
+                    "content_block_start" => {
+                        let block = value.get("content_block");
+                        if block
+                            .and_then(|block| block.get("type"))
+                            .and_then(Value::as_str)
+                            == Some("tool_use")
+                        {
+                            let index = value
+                                .get("index")
+                                .and_then(Value::as_u64)
+                                .and_then(|index| usize::try_from(index).ok())
+                                .ok_or_else(invalid_response_error)?;
+                            if tool_calls.len() >= crate::tools::MAX_TOOL_CALLS_PER_TURN
+                                && !tool_calls.contains_key(&index)
+                            {
+                                return Err(crate::tools::tool_call_limit_error());
+                            }
+                            let call = tool_calls.entry(index).or_default();
+                            call.id = block
+                                .and_then(|block| block.get("id"))
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .to_owned();
+                            call.name = block
+                                .and_then(|block| block.get("name"))
+                                .and_then(Value::as_str)
+                                .unwrap_or_default()
+                                .to_owned();
+                        }
+                    }
+                    "content_block_delta" => {
+                        let delta = value.get("delta");
+                        match delta
+                            .and_then(|delta| delta.get("type"))
+                            .and_then(Value::as_str)
+                        {
+                            Some("text_delta") => {
+                                if let Some(text) = delta
+                                    .and_then(|delta| delta.get("text"))
+                                    .and_then(Value::as_str)
+                                {
+                                    request.content.push_str(text);
+                                    round_content.push_str(text);
+                                    request
+                                        .events
+                                        .send(
+                                            &ChatStreamEvent::TextUpdated(ChatStreamSnapshot::new(
+                                                request.conversation_id,
+                                                request.message_id,
+                                                request.content,
+                                                request.created_at,
+                                            ))
+                                            .into_rpc(request.request_id.clone()),
+                                        )
+                                        .await
+                                        .map_err(|_| protocol_error())?;
+                                }
+                            }
+                            Some("input_json_delta") => {
+                                let index = value
+                                    .get("index")
+                                    .and_then(Value::as_u64)
+                                    .and_then(|index| usize::try_from(index).ok())
+                                    .ok_or_else(invalid_response_error)?;
+                                let call = tool_calls
+                                    .get_mut(&index)
+                                    .ok_or_else(invalid_response_error)?;
+                                if let Some(partial_json) = delta
+                                    .and_then(|delta| delta.get("partial_json"))
+                                    .and_then(Value::as_str)
+                                {
+                                    if call.arguments.len().saturating_add(partial_json.len())
+                                        > crate::tools::MAX_TOOL_ARGUMENT_BYTES
+                                    {
+                                        return Err(invalid_response_error());
+                                    }
+                                    call.arguments.push_str(partial_json);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    "message_delta" => {
+                        if let Some(tokens) = value
+                            .pointer("/usage/output_tokens")
+                            .and_then(Value::as_i64)
+                            .filter(|tokens| *tokens >= 0)
+                        {
+                            *request.output_tokens = Some(tokens);
+                            provider_request_usage
+                                .get_or_insert_with(ProviderRequestUsage::default)
+                                .completion_tokens = Some(tokens);
+                        }
+                        saw_finish_reason |= value
+                            .pointer("/delta/stop_reason")
+                            .and_then(Value::as_str)
+                            .is_some();
+                    }
+                    "message_stop" => saw_done = true,
+                    "error" => {
+                        return Err(ServiceError::new(
+                            "model_response_failed",
+                            "The provider returned a streaming error.",
+                            false,
+                        ));
+                    }
+                    _ => {}
+                }
+                continue;
+            }
 
             if request.route.uses_responses_api {
                 if supports_provider_citations {

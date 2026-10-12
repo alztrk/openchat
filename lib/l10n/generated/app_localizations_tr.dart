@@ -180,7 +180,59 @@ class AppLocalizationsTr extends AppLocalizations {
   String get settingsDataRecovery => 'Veri ve kurtarma';
 
   @override
-  String get settingsOtherProviders => 'Diğer sağlayıcılar';
+  String get settingsAccountConnectionsHeading => 'Hesap bağlantıları';
+
+  @override
+  String get settingsModelProvidersHeading => 'Model sağlayıcıları';
+
+  @override
+  String get customProvidersHeading => 'Özel sağlayıcılar';
+
+  @override
+  String get customProvidersDescription =>
+      'OpenAI veya Anthropic API biçimini destekleyen kendi sağlayıcınızı ekleyin.';
+
+  @override
+  String get customProvidersEmpty => 'Henüz özel sağlayıcı eklenmedi.';
+
+  @override
+  String get addCustomProvider => 'Özel sağlayıcı ekle';
+
+  @override
+  String get editCustomProvider => 'Özel sağlayıcıyı düzenle';
+
+  @override
+  String get customProviderName => 'Sağlayıcı adı';
+
+  @override
+  String get customProviderProtocol => 'API biçimi';
+
+  @override
+  String get customProviderBaseUrl => 'Temel API adresi';
+
+  @override
+  String get customProviderApiKey => 'API anahtarı';
+
+  @override
+  String get customProviderApiKeyOptional =>
+      'Bu sunucu anahtar istemiyorsa boş bırakın';
+
+  @override
+  String get customProviderKeyUnchanged =>
+      'Değiştirmek istemiyorsanız boş bırakın';
+
+  @override
+  String get customProviderInvalid => 'Sağlayıcı bilgilerini kontrol edin.';
+
+  @override
+  String get customProviderUrlInvalid =>
+      'HTTP veya HTTPS kullanan geçerli bir API adresi girin. URL kullanıcı bilgisi, sorgu veya parça içeremez.';
+
+  @override
+  String get openAiCompatible => 'OpenAI uyumlu';
+
+  @override
+  String get anthropicCompatible => 'Anthropic uyumlu';
 
   @override
   String get settingsConnectionsDescription =>
@@ -828,6 +880,21 @@ class AppLocalizationsTr extends AppLocalizations {
   String get mistralProvider => 'Mistral';
 
   @override
+  String get deepSeekProvider => 'DeepSeek';
+
+  @override
+  String get xAiProvider => 'xAI';
+
+  @override
+  String get perplexityProvider => 'Perplexity';
+
+  @override
+  String get togetherProvider => 'Together AI';
+
+  @override
+  String get sambaNovaProvider => 'SambaNova';
+
+  @override
   String get geminiApiDescription =>
       'Google AI Studio API anahtarını ekleyerek erişebildiğin modelleri kullan. Ücretsiz kullanım model ve kota sınırına bağlıdır.';
 
@@ -846,6 +913,26 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get mistralApiDescription =>
       'Mistral API anahtarını ekleyerek hesabında erişime açık sohbet modellerini kullan. Ücretsiz kullanım, ücret ve limitler Mistral planına göre değişir.';
+
+  @override
+  String get deepSeekApiDescription =>
+      'DeepSeek-V3 ve DeepSeek-R1 modellerini kullanmak için bir DeepSeek API anahtarı ekleyin. Kullanım sınırları ve fiyatlandırma hesap bakiyenize bağlıdır.';
+
+  @override
+  String get xAiApiDescription =>
+      'Grok modellerini kullanmak için bir xAI API anahtarı ekleyin. Kullanım sınırları ve fiyatlandırma xAI planınıza bağlıdır.';
+
+  @override
+  String get perplexityApiDescription =>
+      'Canlı web araması ve kaynak referansları sunan Sonar modellerini kullanmak için bir Perplexity API anahtarı ekleyin.';
+
+  @override
+  String get togetherApiDescription =>
+      'Açık kaynaklı modellere yüksek hızlı bulut çıkarımı ile erişmek için bir Together AI API anahtarı ekleyin.';
+
+  @override
+  String get sambaNovaApiDescription =>
+      'SambaNova RDU donanımıyla çalışan yüksek hızlı açık modelleri kullanmak için bir SambaNova Cloud API anahtarı ekleyin.';
 
   @override
   String get geminiUnpaidDataNotice =>
@@ -1150,7 +1237,16 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get toolPermissionPlanDescription =>
-      'Yalnızca oku ve araştır. Dosya değişiklikleri, terminal komutları, proje araçları ve entegrasyonlar engellenir.';
+      'Plan modunda araç kullanılamaz. Yapay zeka konuşmaya dayanarak bir plan hazırlar ve onayınızı bekler.';
+
+  @override
+  String get toolPermissionPlanOff => 'Plan modunu kapat';
+
+  @override
+  String get composerGoalModeLabel => 'Hedef modu';
+
+  @override
+  String get composerGoalModeOff => 'Hedef modunu kapat';
 
   @override
   String get toolPermissionRequireApproval => 'Onay iste';
@@ -1458,10 +1554,6 @@ class AppLocalizationsTr extends AppLocalizations {
   String get workspaceUnavailable => 'ChatGPT hesap çalışma alanı bilgisi yok.';
 
   @override
-  String get selectAccountForWorkspace =>
-      'Çalışma alanı seçmek için önce bu hesabı seç.';
-
-  @override
   String get accountEmailUnavailable => 'E-posta bilgisi alınamadı';
 
   @override
@@ -1609,7 +1701,41 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get titleGenerationTargetDescription =>
-      'Sohbet hesabında farklı bir model yoksa OpenChat burada seçtiğin hesabı kullanabilir. Normal kullanım hakkı yoksa başlık oluşturmaz.';
+      'Başlık, sohbet yanıtından ayrı oluşturulur. OpenChat’in başlığı nasıl oluşturacağını seç.';
+
+  @override
+  String get titleUseConversationModel =>
+      'Sohbetin modelini ve hesabını kullan';
+
+  @override
+  String get titleConversationModeDescription =>
+      'Sohbette kullanılan model ve hesapla başlık oluştur.';
+
+  @override
+  String get titleUseSpecificModel => 'Bağlı bir model seç';
+
+  @override
+  String get titleSpecificModelDescription =>
+      'Bağlı sağlayıcılardan veya kayıtlı yerel modellerden birini seç.';
+
+  @override
+  String get titleUseLightweightModel => 'OpenChat en küçük modeli seçsin';
+
+  @override
+  String get titleLightweightModeDescription =>
+      'Parametre sayısı bilinen en küçük modeli seç.';
+
+  @override
+  String get titleSelectModelHint => 'Bağlı bir sağlayıcı veya yerel model seç';
+
+  @override
+  String get titleLightweightUnavailable =>
+      'Parametre sayısı model adında açıkça belirtilen kullanılabilir bir model bulunamadı. Modeli kendin seçebilirsin.';
+
+  @override
+  String titleLightweightModelSelected(String model) {
+    return 'OpenChat, parametre sayısı bilinen en küçük model olarak $model modelini seçti.';
+  }
 
   @override
   String get titleUseConversationAccount => 'Sohbet hesabını kullan';
@@ -2161,6 +2287,30 @@ class AppLocalizationsTr extends AppLocalizations {
       'Sağlayıcı ve model, her yanıtla kaydedilmiş rotayı belirtir.';
 
   @override
+  String get historySearchResultTypeFilter => 'Sonuç türü';
+
+  @override
+  String get historySearchAllResultTypes => 'Mesajlar ve sohbetler';
+
+  @override
+  String get historySearchMessagesOnly => 'Yalnızca mesajlar';
+
+  @override
+  String get historySearchConversationsOnly => 'Yalnızca sohbet başlıkları';
+
+  @override
+  String get historySearchSortFilter => 'Sıralama';
+
+  @override
+  String get historySearchSortRelevance => 'Alaka düzeyi';
+
+  @override
+  String get historySearchSortNewest => 'En yeni';
+
+  @override
+  String get historySearchSortOldest => 'En eski';
+
+  @override
   String get historySearchProviderFilter => 'Yanıt sağlayıcısı';
 
   @override
@@ -2259,21 +2409,20 @@ class AppLocalizationsTr extends AppLocalizations {
   String get searchMessagesHeader => 'Mesaj eşleşmeleri';
 
   @override
-  String get searchMessagesLoading => 'Mesajlar aranıyor…';
+  String get searchMessagesLoading => 'Mesajlar ve sohbetler aranıyor…';
 
   @override
-  String get searchMessagesNoResults => 'Eşleşen mesaj yok.';
+  String get searchMessagesNoResults => 'Eşleşen mesaj veya sohbet yok.';
 
   @override
-  String get searchMessagesTooShort =>
-      'Mesaj aramak için en az iki karakter girin.';
+  String get searchMessagesTooShort => 'Arama için en az iki karakter girin.';
 
   @override
   String get searchMessagesTooLong =>
       'Arama metni en fazla 512 karakter olabilir.';
 
   @override
-  String get searchMessagesFailed => 'Mesajlar aranamadı. Yeniden deneyin.';
+  String get searchMessagesFailed => 'Arama yapılamadı. Yeniden deneyin.';
 
   @override
   String get searchMessageUnavailable => 'Bu mesaj artık kullanılamıyor.';
@@ -4619,6 +4768,132 @@ class AppLocalizationsTr extends AppLocalizations {
       'Dosya değişiklikleri kullanılamıyor';
 
   @override
+  String get slashCommandPlanLabel => 'Plan';
+
+  @override
+  String get slashCommandGoalLabel => 'Hedef';
+
+  @override
+  String get slashCommandNewLabel => 'Yeni';
+
+  @override
+  String get slashCommandSearchLabel => 'Ara';
+
+  @override
+  String get slashCommandSummarizeLabel => 'Özetle';
+
+  @override
+  String get slashCommandSummarizeDescription =>
+      'Önemli kararları, sonuçları ve açık kalan işleri içeren kısa bir sohbet özeti oluştur.';
+
+  @override
+  String get slashCommandSummarizePrompt =>
+      'Bu sohbeti özetle. Önemli kararları, tamamlanan işleri ve açık kalan noktaları kısa biçimde belirt.';
+
+  @override
+  String get slashCommandSummarizeNoMessages =>
+      'Özetlenecek mesaj yok. Önce bu sohbete en az bir mesaj gönder.';
+
+  @override
+  String get slashCommandSummarizeLoading =>
+      'Sohbet mesajları yüklenirken özet oluşturulamıyor.';
+
+  @override
+  String get slashCommandSummarizeUnavailable =>
+      'Bu komut şu anda çalıştırılamıyor. Model bağlantısını ve etkin sohbet işlemlerini kontrol et.';
+
+  @override
+  String get slashCommandRenameLabel => 'Yeniden adlandır';
+
+  @override
+  String get slashCommandRenameDescription =>
+      'Bu sohbetin adını değiştir. Komuttan sonra yeni başlığı yaz.';
+
+  @override
+  String get slashCommandRenameTitleRequired =>
+      '/rename komutundan sonra bir başlık yaz.';
+
+  @override
+  String get slashCommandRenameNoConversation =>
+      'Sohbeti yeniden adlandırmak için önce bir sohbet aç.';
+
+  @override
+  String get slashCommandRenameSuccess => 'Sohbet yeniden adlandırıldı.';
+
+  @override
+  String get slashCommandModelLabel => 'Model';
+
+  @override
+  String get slashCommandModelDescription =>
+      'Tam adı veya kimliğiyle kullanılabilir bir modele geç.';
+
+  @override
+  String get slashCommandModelNameRequired =>
+      '/model komutundan sonra model adı veya kimliği yaz.';
+
+  @override
+  String get slashCommandModelNoMatch =>
+      'Geçerli sağlayıcıda bu ad veya kimlikle eşleşen kullanılabilir model yok.';
+
+  @override
+  String get slashCommandModelAmbiguous =>
+      'Birden fazla kullanılabilir model eşleşti. Tam model kimliğini kullan.';
+
+  @override
+  String get slashCommandModelUnavailable =>
+      'Modeller yüklenirken veya yanıt oluşturulurken model seçilemiyor.';
+
+  @override
+  String get slashCommandCompactLabel => 'Bağlamı kompaktlaştır';
+
+  @override
+  String get slashCommandCompactDescription =>
+      'Eski mesajları sonraki istekler için yerel olarak özetler; sohbet geçmişi arşivde kalır.';
+
+  @override
+  String get slashCommandCompactNoConversation =>
+      'Bağlamı kompaktlaştırmak için önce bir sohbet aç.';
+
+  @override
+  String get slashCommandCompactNoArguments =>
+      '/compact komutu ek parametre almaz.';
+
+  @override
+  String get slashCommandCompactNoContextWindow =>
+      'Bu model için bağlam sınırı bulunamadı. Model tercihlerinden bir sınır belirle.';
+
+  @override
+  String get slashCommandCompactBusy =>
+      'Bağlamı kompaktlaştırmadan önce geçerli yanıtın bitmesini bekle.';
+
+  @override
+  String get slashCommandCompactSuccess =>
+      'Eski sohbet bağlamı kompaktlaştırıldı. Tam sohbet geçmişi aramada kullanılabilir.';
+
+  @override
+  String get slashCommandCompactNothing =>
+      'Henüz kompaktlaştırılabilecek kadar eski bağlam yok.';
+
+  @override
+  String get slashCommandCompactFailed =>
+      'Eski sohbet bağlamı kompaktlaştırılamadı. Tam geçmişin korunuyor.';
+
+  @override
+  String get slashCommandReasoningLabel => 'Akıl yürütme';
+
+  @override
+  String get slashCommandReasoningDescription =>
+      'Seçili modelin desteklediği akıl yürütme düzeyini veya varsayılanı seç.';
+
+  @override
+  String get slashCommandReasoningLevelRequired =>
+      '/reasoning komutundan sonra desteklenen düzeyi yaz veya /reasoning default kullan.';
+
+  @override
+  String get slashCommandReasoningUnsupported =>
+      'Seçili model bu akıl yürütme düzeyini desteklemiyor.';
+
+  @override
   String get goalSlashCommand => '/goal';
 
   @override
@@ -4626,7 +4901,7 @@ class AppLocalizationsTr extends AppLocalizations {
       'Bu mesajı hedef olarak başlat ve tamamlanana ya da senden bilgi gerekene kadar çalışmayı sürdür.';
 
   @override
-  String get goalObjectiveRequired => 'Hedefi /goal komutundan sonra yaz.';
+  String get goalObjectiveRequired => 'Göndermeden önce hedefinizi yazın.';
 
   @override
   String get goalWorking => 'Hedef üzerinde çalışılıyor';

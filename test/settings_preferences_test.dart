@@ -311,7 +311,8 @@ void main() {
   });
 
   test('shared instructions and tool permission mode persist', () async {
-    final writer = SettingsPreferences(SharedPreferencesAsync());
+    final preferences = SharedPreferencesAsync();
+    final writer = SettingsPreferences(preferences);
     expect(await writer.readSharedInstructions(), isEmpty);
     expect(
       await writer.readToolPermissionMode(),
@@ -331,8 +332,15 @@ void main() {
       ToolPermissionMode.fullAccess,
     );
 
-    await writer.writeToolPermissionMode(ToolPermissionMode.plan);
-    expect(await reader.readToolPermissionMode(), ToolPermissionMode.plan);
+    expect(
+      () => writer.writeToolPermissionMode(ToolPermissionMode.plan),
+      throwsArgumentError,
+    );
+    await preferences.setString('tools.permission_mode', 'plan');
+    expect(
+      await reader.readToolPermissionMode(),
+      ToolPermissionMode.requireApproval,
+    );
   });
 
   test('project tool permission rules persist separately by project', () async {

@@ -74,21 +74,26 @@ from Models and from local-engine settings so model management does not
 compete with the main conversation destinations.
 
 On Windows, place page back and forward controls in the custom title bar,
-followed by the sidebar toggle. The navigation history covers Chats, Models,
-Local Models, and Settings; it does not track conversation selection or
-subsections within Settings. Keep the sidebar toggle in the navigation rail on
-other platforms.
+followed by the sidebar toggle. Give the title bar 8 px of vertical padding
+within its 48 px height, and leave 8 px between these navigation controls. The
+navigation history covers Chats, Models, Local Models, and Settings; it does
+not track conversation selection or subsections within Settings. Keep the
+sidebar toggle in the navigation rail on other platforms.
 
 Use Lucide icons consistently. Keep primary navigation icon-only at every
-window width, give its 44 px controls a 4 px horizontal inset for a 52 px rail,
+window width, give its 44 px controls an 8 px horizontal inset for a 60 px rail,
 and show localized labels in tooltips and semantic names. Use distinct selected
 and unselected glyphs for toggle states such as pinning and favorites. Keep
 selected state visible with shape or fill as well as accent color.
 
-Keep the conversation sidebar's search and run controls in a sticky header.
-Put chat creation in the Chats heading, and show conversation titles without
-provider or model route labels. Show batch-selection controls only while
-selection mode is active. Show a bottom border while the list is scrolled.
+Keep the conversation sidebar header sticky, with New chat on the left and
+search on the right. Open message search in a modal with the input in its
+header and results in its scrollable body. Keep search filters and saved
+searches available in the modal. Keep each expanded category's contents
+independently scrollable up to 280 px while the sidebar body scrolls between
+categories. Show a bottom border while the list is scrolled. Show conversation
+titles without provider or model route labels, and show batch-selection
+controls only while selection mode is active.
 
 ## Interaction and accessibility
 

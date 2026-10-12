@@ -20,7 +20,9 @@ import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/platform/windows/openchat_service_client.dart';
 
 import 'package:openchat/features/settings/presentation/chat_gpt_connection_section.dart';
+import 'package:openchat/features/settings/presentation/chat_gpt_title_settings_section.dart';
 import 'package:openchat/features/settings/presentation/compatible_provider_connection_section.dart';
+import 'package:openchat/features/settings/presentation/custom_compatible_providers_section.dart';
 import 'package:openchat/features/settings/presentation/conversation_archive_section.dart';
 import 'package:openchat/features/settings/presentation/local_engines_settings_section.dart';
 import 'package:openchat/features/settings/presentation/models_settings_section.dart';
@@ -242,7 +244,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       child: Align(
                         alignment: Alignment.topLeft,
                         child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 1040),
+                          constraints: const BoxConstraints(maxWidth: 1600),
                           child: OpenChatPageHeader(
                             title: sectionTitle,
                             description:
@@ -355,7 +357,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Align(
         alignment: Alignment.topLeft,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 1040),
+          constraints: const BoxConstraints(maxWidth: 1600),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [child],
@@ -369,31 +371,81 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Text(
+          context.openchatL10n.settingsAccountConnectionsHeading,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 12),
         ChatGptConnectionSection(
           apiKeyStore: widget.chatGptApiKeyStore,
           serviceClient: widget.serviceClient,
           onProviderStateChanged: widget.onProviderStateChanged,
           onConnectionRemoved: widget.onConnectionRemoved,
         ),
-        const SizedBox(height: 22),
-        OpenCodeConnectionSection(
-          apiKeyStore: widget.openCodeApiKeyStore,
-          onChanged: widget.onProviderStateChanged,
-        ),
-        const SizedBox(height: 26),
+        const SizedBox(height: 24),
         Text(
-          context.openchatL10n.settingsOtherProviders,
+          context.openchatL10n.titleGenerationTarget,
           style: Theme.of(context).textTheme.titleMedium,
         ),
-        const SizedBox(height: 10),
-        for (final providerId in ApiCompatibleProviderKeyStore.providerIds) ...[
-          const SizedBox(height: 14),
-          CompatibleProviderConnectionSection(
-            providerId: providerId,
-            apiKeyStore: widget.apiCompatibleProviderKeyStore,
-            onChanged: widget.onProviderStateChanged,
+        const SizedBox(height: 6),
+        Text(
+          context.openchatL10n.titleGenerationTargetDescription,
+          style: TextStyle(
+            color: OpenChatPalette.of(context).secondaryText,
+            fontSize: 13,
+            height: 1.45,
           ),
-        ],
+        ),
+        const SizedBox(height: 12),
+        ChatGptTitleSettingsSection(
+          serviceClient: widget.serviceClient,
+          settingsPreferences: widget.settingsPreferences,
+          chatGptApiKeyStore: widget.chatGptApiKeyStore,
+          apiCompatibleProviderKeyStore: widget.apiCompatibleProviderKeyStore,
+        ),
+        const SizedBox(height: 32),
+        Text(
+          context.openchatL10n.settingsModelProvidersHeading,
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 12),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final cardWidth = constraints.maxWidth >= 760
+                ? (constraints.maxWidth - 16) / 2
+                : constraints.maxWidth;
+            return Wrap(
+              spacing: 16,
+              runSpacing: 16,
+              children: [
+                SizedBox(
+                  width: cardWidth,
+                  child: OpenCodeConnectionSection(
+                    key: const ValueKey('opencode'),
+                    apiKeyStore: widget.openCodeApiKeyStore,
+                    onChanged: widget.onProviderStateChanged,
+                  ),
+                ),
+                for (final providerId
+                    in ApiCompatibleProviderKeyStore.providerIds)
+                  SizedBox(
+                    width: cardWidth,
+                    child: CompatibleProviderConnectionSection(
+                      key: ValueKey(providerId),
+                      providerId: providerId,
+                      apiKeyStore: widget.apiCompatibleProviderKeyStore,
+                      onChanged: widget.onProviderStateChanged,
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 32),
+        CustomCompatibleProvidersSection(
+          store: widget.apiCompatibleProviderKeyStore,
+          onChanged: widget.onProviderStateChanged,
+        ),
       ],
     );
   }

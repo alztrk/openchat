@@ -38,11 +38,14 @@ class ChatGptOAuthConnectionRow extends StatelessWidget {
     final accountName = connection.email ?? l10n.accountEmailUnavailable;
     final planType = connection.planType;
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      margin: const EdgeInsets.symmetric(vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: connection.isSelected ? palette.hover : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
+        color: connection.isSelected ? palette.selected : palette.raisedSurface,
+        borderRadius: BorderRadius.circular(OpenChatRadii.card),
+        border: Border.all(
+          color: connection.isSelected ? palette.accent : palette.subtleBorder,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -140,14 +143,6 @@ class ChatGptOAuthConnectionRow extends StatelessWidget {
               padding: const EdgeInsets.only(left: 30, top: 8),
               child: Text(
                 l10n.workspaceUnavailable,
-                style: TextStyle(color: palette.secondaryText, fontSize: 12),
-              ),
-            )
-          else if (!connection.isSelected && connection.workspaces.length > 1)
-            Padding(
-              padding: const EdgeInsets.only(left: 30, top: 8),
-              child: Text(
-                l10n.selectAccountForWorkspace,
                 style: TextStyle(color: palette.secondaryText, fontSize: 12),
               ),
             ),
