@@ -41,6 +41,7 @@ flutter:
   assets:
     - assets/icons/
     - assets/icons/engines/
+    - assets/icons/providers/
     - assets/icons/conversation/
     - assets/icons/dark/
     - assets/icons/window/light/

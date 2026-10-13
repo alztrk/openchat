@@ -20,50 +20,58 @@ class ProviderIcon extends StatelessWidget {
   Widget build(BuildContext context) {
     final iconWidth = providerId == 'exllama' ? size * 2 : size;
     final icon = switch (providerId) {
-      'chatgpt' => SvgPicture.asset(
-        'assets/icons/chatgpt.svg',
-        width: size,
-        height: size,
-        colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
-        excludeFromSemantics: true,
+      'chatgpt' || 'chatgpt_api' => _providerSvg('assets/icons/chatgpt.svg'),
+      'opencode' => _providerSvg('assets/icons/opencode.svg'),
+      'gemini' => _providerSvg(
+        'assets/icons/providers/gemini.svg',
+        preserveBrandColors: true,
       ),
-      'opencode' => SvgPicture.asset(
-        'assets/icons/opencode.svg',
-        width: size,
-        height: size,
-        colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
-        excludeFromSemantics: true,
+      'groq' => _providerSvg('assets/icons/providers/groq.svg'),
+      'cerebras' => _providerSvg(
+        'assets/icons/providers/cerebras.svg',
+        preserveBrandColors: true,
       ),
-      'gemini' => _ProviderMonogram(label: 'Ge', color: color, size: size),
-      'groq' => _ProviderMonogram(label: 'Gr', color: color, size: size),
-      'cerebras' => _ProviderMonogram(label: 'Ce', color: color, size: size),
-      'openrouter' => SvgPicture.asset(
-        'assets/icons/openrouter.svg',
-        width: size,
-        height: size,
-        colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
-        excludeFromSemantics: true,
+      'openrouter' => _providerSvg('assets/icons/openrouter.svg'),
+      'mistral' => _providerSvg(
+        'assets/icons/providers/mistral.svg',
+        preserveBrandColors: true,
       ),
-      'mistral' => Image.asset(
-        'assets/icons/mistral.png',
-        width: size,
-        height: size,
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.medium,
-        excludeFromSemantics: true,
+      'deepseek' => _providerSvg(
+        'assets/icons/providers/deepseek.svg',
+        preserveBrandColors: true,
       ),
-      'deepseek' => _ProviderMonogram(label: 'Ds', color: color, size: size),
-      'xai' => _ProviderMonogram(label: 'xA', color: color, size: size),
-      'perplexity' => _ProviderMonogram(label: 'Px', color: color, size: size),
-      'together' => _ProviderMonogram(label: 'To', color: color, size: size),
-      'sambanova' => _ProviderMonogram(label: 'Sn', color: color, size: size),
-      'anthropic' => _ProviderMonogram(label: 'An', color: color, size: size),
-      'fireworks' => _ProviderMonogram(label: 'Fw', color: color, size: size),
-      'deepinfra' => _ProviderMonogram(label: 'Di', color: color, size: size),
-      'dashscope' => _ProviderMonogram(label: 'Qw', color: color, size: size),
-      'cohere' => _ProviderMonogram(label: 'Co', color: color, size: size),
-      'ollama' => _ProviderMonogram(label: 'Ol', color: color, size: size),
-      'lmstudio' => _ProviderMonogram(label: 'Lm', color: color, size: size),
+      'xai' => _providerSvg('assets/icons/providers/xai.svg'),
+      'perplexity' => _providerSvg(
+        'assets/icons/providers/perplexity.svg',
+        preserveBrandColors: true,
+      ),
+      'together' => _providerSvg(
+        'assets/icons/providers/together.svg',
+        preserveBrandColors: true,
+      ),
+      'sambanova' => _providerSvg(
+        'assets/icons/providers/sambanova.svg',
+        preserveBrandColors: true,
+      ),
+      'anthropic' => _providerSvg('assets/icons/providers/anthropic.svg'),
+      'fireworks' => _providerSvg(
+        'assets/icons/providers/fireworks.svg',
+        preserveBrandColors: true,
+      ),
+      'deepinfra' => _providerSvg(
+        'assets/icons/providers/deepinfra.svg',
+        preserveBrandColors: true,
+      ),
+      'dashscope' => _providerSvg(
+        'assets/icons/providers/dashscope.svg',
+        preserveBrandColors: true,
+      ),
+      'cohere' => _providerSvg(
+        'assets/icons/providers/cohere.svg',
+        preserveBrandColors: true,
+      ),
+      'ollama' => _providerSvg('assets/icons/providers/ollama.svg'),
+      'lmstudio' => _providerSvg('assets/icons/providers/lmstudio.svg'),
       'llama_cpp' || 'vllm' || 'exllama' => LocalEngineIcon(
         engineId: providerId,
         color: color,
@@ -79,36 +87,16 @@ class ProviderIcon extends StatelessWidget {
       child: Center(child: ExcludeSemantics(child: icon)),
     );
   }
-}
 
-class _ProviderMonogram extends StatelessWidget {
-  const _ProviderMonogram({
-    required this.label,
-    required this.color,
-    required this.size,
-  });
-
-  final String label;
-  final Color color;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox.square(
-      dimension: size,
-      child: Center(
-        child: Text(
-          label,
-          maxLines: 1,
-          style: TextStyle(
-            color: color,
-            fontSize: size * 0.62,
-            fontWeight: FontWeight.w700,
-            height: 1,
-            letterSpacing: -0.3,
-          ),
-        ),
-      ),
+  Widget _providerSvg(String assetPath, {bool preserveBrandColors = false}) {
+    return SvgPicture.asset(
+      assetPath,
+      width: size,
+      height: size,
+      colorFilter: preserveBrandColors
+          ? null
+          : ColorFilter.mode(color, BlendMode.srcIn),
+      excludeFromSemantics: true,
     );
   }
 }
