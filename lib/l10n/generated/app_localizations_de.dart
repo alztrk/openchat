@@ -939,71 +939,71 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get geminiApiDescription =>
-      'Fügen Sie einen Google-AI-Studio-API-Schlüssel hinzu, um die für Ihr Konto verfügbaren Modelle zu verwenden. Der kostenlose Zugriff hängt vom Modell und Ihrem Kontingent ab.';
+      'Mit einem API-Schlüssel auf Gemini-Modelle zugreifen.';
 
   @override
   String get groqApiDescription =>
-      'Verwenden Sie die für Ihr Konto aktivierten Modelle mit einem Groq-API-Schlüssel. Preise und Nutzungslimits unterscheiden sich je nach Tarif und Modell.';
+      'Mit einem API-Schlüssel auf Groq-Modelle zugreifen.';
 
   @override
   String get cerebrasApiDescription =>
-      'Verwenden Sie die für Ihr Konto verfügbaren Modelle mit Tool-Unterstützung und einem Cerebras-API-Schlüssel. Zugriff, Preise und Limits unterscheiden sich je nach Modell und Konto.';
+      'Mit einem API-Schlüssel auf Cerebras-Modelle zugreifen.';
 
   @override
   String get openRouterApiDescription =>
-      'Hier werden nur Modelle mit 0 \$ für Ein- und Ausgabe angezeigt, die Text und Tools unterstützen. Tatsächlicher Zugriff und Limits können sich ändern.';
+      'Unterstützte Modelle über OpenRouter nutzen.';
 
   @override
   String get mistralApiDescription =>
-      'Fügen Sie einen Mistral-API-Schlüssel hinzu, um die für Ihr Konto verfügbaren Chatmodelle zu verwenden. Kostenloser Zugriff, Preise und Nutzungslimits hängen von Ihrem Mistral-Tarif ab.';
+      'Mit einem API-Schlüssel auf Mistral-Modelle zugreifen.';
 
   @override
   String get deepSeekApiDescription =>
-      'Fügen Sie einen DeepSeek-API-Schlüssel hinzu, um DeepSeek-V3- und DeepSeek-R1-Modelle zu verwenden. Nutzungslimits und Preise hängen von Ihrem Guthaben ab.';
+      'Mit einem API-Schlüssel auf DeepSeek-Modelle zugreifen.';
 
   @override
   String get xAiApiDescription =>
-      'Fügen Sie einen xAI-API-Schlüssel hinzu, um Grok-Modelle zu verwenden. Nutzungslimits und Preise hängen von Ihrem xAI-Tarif ab.';
+      'Mit einem xAI-API-Schlüssel auf Grok-Modelle zugreifen.';
 
   @override
   String get perplexityApiDescription =>
-      'Fügen Sie einen Perplexity-API-Schlüssel hinzu, um suchbasierte Sonar-Modelle mit Echtzeit-Webzitaten zu verwenden.';
+      'Mit einem API-Schlüssel auf Perplexity-Sonar-Modelle zugreifen.';
 
   @override
   String get togetherApiDescription =>
-      'Fügen Sie einen Together AI-API-Schlüssel hinzu, um Open-Source-Modelle mit schneller Cloud-Inferenz zu nutzen.';
+      'Mit einem API-Schlüssel auf Together-AI-Modelle zugreifen.';
 
   @override
   String get sambaNovaApiDescription =>
-      'Fügen Sie einen SambaNova Cloud-API-Schlüssel hinzu, um Open-Source-Modelle mit SambaNova RDUs zu nutzen.';
+      'Mit einem API-Schlüssel auf SambaNova-Cloud-Modelle zugreifen.';
 
   @override
   String get anthropicApiDescription =>
-      'Fügen Sie einen Anthropic-API-Schlüssel hinzu, um Claude 3.5- und Claude 3.7-Modelle mit Reasoning und Vision zu verwenden.';
+      'Mit einem Anthropic-API-Schlüssel auf Claude-Modelle zugreifen.';
 
   @override
   String get fireworksApiDescription =>
-      'Fügen Sie einen Fireworks AI-API-Schlüssel hinzu, um schnelle Open-Weights- und Inferenzmodelle zu verwenden.';
+      'Mit einem API-Schlüssel auf Fireworks-AI-Modelle zugreifen.';
 
   @override
   String get deepInfraApiDescription =>
-      'Fügen Sie einen DeepInfra-API-Schlüssel hinzu, um kostengünstige gehostete Open-Source-Modelle zu nutzen.';
+      'Mit einem API-Schlüssel auf DeepInfra-Modelle zugreifen.';
 
   @override
   String get dashScopeApiDescription =>
-      'Fügen Sie einen Alibaba Cloud DashScope-API-Schlüssel hinzu, um Qwen-Modelle im OpenAI-kompatiblen Modus zu verwenden.';
+      'Mit einem DashScope-API-Schlüssel auf Qwen-Modelle zugreifen.';
 
   @override
   String get cohereApiDescription =>
-      'Fügen Sie einen Cohere-API-Schlüssel hinzu, um Command R- und Command R+-Modelle zu verwenden.';
+      'Mit einem API-Schlüssel auf Cohere-Modelle zugreifen.';
 
   @override
   String get ollamaApiDescription =>
-      'Verbinden Sie sich mit einer lokalen Ollama-Instanz unter http://localhost:11434. Standardmäßig ist kein API-Schlüssel erforderlich.';
+      'Mit Ihrem lokalen Ollama-Server verbinden.';
 
   @override
   String get lmStudioApiDescription =>
-      'Verbinden Sie sich mit einem lokalen LM Studio-Server unter http://localhost:1234. Standardmäßig ist kein API-Schlüssel erforderlich.';
+      'Mit Ihrem lokalen LM-Studio-Server verbinden.';
 
   @override
   String get geminiUnpaidDataNotice =>
@@ -1082,7 +1082,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get openCodeConsoleDescription =>
-      'Kostenlose Modelle funktionieren ohne Schlüssel. Fügen Sie für kostenpflichtige Modelle einen Console-API-Schlüssel hinzu; jede Anfrage wird Ihrem Console-Guthaben belastet.';
+      'Mit Modellen aus OpenCode Zen verbinden.';
 
   @override
   String openCodeKeySaved(Object suffix) {

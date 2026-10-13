@@ -917,71 +917,68 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get geminiApiDescription =>
-      'Google AI Studio API anahtarını ekleyerek erişebildiğin modelleri kullan. Ücretsiz kullanım model ve kota sınırına bağlıdır.';
+      'Gemini modellerine API anahtarınla bağlan.';
 
   @override
-  String get groqApiDescription =>
-      'Groq API anahtarıyla hesabında erişime açık modelleri kullan. Ücret ve kullanım limitleri planına ve modele göre değişir.';
+  String get groqApiDescription => 'Groq modellerine API anahtarınla bağlan.';
 
   @override
   String get cerebrasApiDescription =>
-      'Cerebras API anahtarıyla hesabında araç destekli modelleri kullan. Erişim, ücret ve limitler modele ve hesabına göre değişir.';
+      'Cerebras modellerine API anahtarınla bağlan.';
 
   @override
   String get openRouterApiDescription =>
-      'Yalnızca katalogda girdi ve çıktı fiyatı 0 \$ olan, metin ve araç desteği görünen modeller listelenir. Gerçek erişim ve limitler değişebilir.';
+      'OpenRouter üzerinden desteklenen modellere bağlan.';
 
   @override
   String get mistralApiDescription =>
-      'Mistral API anahtarını ekleyerek hesabında erişime açık sohbet modellerini kullan. Ücretsiz kullanım, ücret ve limitler Mistral planına göre değişir.';
+      'Mistral modellerine API anahtarınla bağlan.';
 
   @override
   String get deepSeekApiDescription =>
-      'DeepSeek-V3 ve DeepSeek-R1 modellerini kullanmak için bir DeepSeek API anahtarı ekleyin. Kullanım sınırları ve fiyatlandırma hesap bakiyenize bağlıdır.';
+      'DeepSeek modellerine API anahtarınla bağlan.';
 
   @override
   String get xAiApiDescription =>
-      'Grok modellerini kullanmak için bir xAI API anahtarı ekleyin. Kullanım sınırları ve fiyatlandırma xAI planınıza bağlıdır.';
+      'Grok modellerine xAI API anahtarınla bağlan.';
 
   @override
   String get perplexityApiDescription =>
-      'Canlı web araması ve kaynak referansları sunan Sonar modellerini kullanmak için bir Perplexity API anahtarı ekleyin.';
+      'Perplexity Sonar modellerine API anahtarınla bağlan.';
 
   @override
   String get togetherApiDescription =>
-      'Açık kaynaklı modellere yüksek hızlı bulut çıkarımı ile erişmek için bir Together AI API anahtarı ekleyin.';
+      'Together AI modellerine API anahtarınla bağlan.';
 
   @override
   String get sambaNovaApiDescription =>
-      'SambaNova RDU donanımıyla çalışan yüksek hızlı açık modelleri kullanmak için bir SambaNova Cloud API anahtarı ekleyin.';
+      'SambaNova Cloud modellerine API anahtarınla bağlan.';
 
   @override
   String get anthropicApiDescription =>
-      'Gelişmiş akıl yürütme ve görme özellikli Claude 3.5 ve Claude 3.7 modellerini kullanmak için bir Anthropic API anahtarı ekleyin.';
+      'Claude modellerine Anthropic API anahtarınla bağlan.';
 
   @override
   String get fireworksApiDescription =>
-      'Yüksek hızlı açık ağırlıklı modelleri ve özel çıkarım modellerini kullanmak için bir Fireworks AI API anahtarı ekleyin.';
+      'Fireworks AI modellerine API anahtarınla bağlan.';
 
   @override
   String get deepInfraApiDescription =>
-      'OpenAI uyumlu uygun maliyetli barındırılan açık modelleri kullanmak için bir DeepInfra API anahtarı ekleyin.';
+      'DeepInfra modellerine API anahtarınla bağlan.';
 
   @override
   String get dashScopeApiDescription =>
-      'Qwen modellerini OpenAI uyumlu modda kullanmak için bir Alibaba Cloud DashScope API anahtarı ekleyin.';
+      'Qwen modellerine DashScope API anahtarınla bağlan.';
 
   @override
   String get cohereApiDescription =>
-      'Command R ve Command R+ modellerini uyumluluk API\'si üzerinden kullanmak için bir Cohere API anahtarı ekleyin.';
+      'Cohere modellerine API anahtarınla bağlan.';
 
   @override
-  String get ollamaApiDescription =>
-      'http://localhost:11434 adresinde çalışan yerel Ollama sunucusuna bağlanın. Varsayılan olarak API anahtarı gerekmez.';
+  String get ollamaApiDescription => 'Yerel Ollama sunucuna bağlan.';
 
   @override
-  String get lmStudioApiDescription =>
-      'http://localhost:1234 adresinde çalışan yerel LM Studio sunucusuna bağlanın. Varsayılan olarak API anahtarı gerekmez.';
+  String get lmStudioApiDescription => 'Yerel LM Studio sunucuna bağlan.';
 
   @override
   String get geminiUnpaidDataNotice =>
@@ -1059,7 +1056,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get openCodeConsoleDescription =>
-      'Ücretsiz modeller anahtarsız kullanılabilir. Ücretli modeller için Console API anahtarı ekle; kullanım istek başına Console bakiyenden düşer.';
+      'OpenCode Zen üzerinden sunulan modellere bağlan.';
 
   @override
   String openCodeKeySaved(Object suffix) {

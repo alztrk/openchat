@@ -919,71 +919,68 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get geminiApiDescription =>
-      'Add a Google AI Studio API key to use the models available to your account. Free access depends on the model and your quota.';
+      'Connect to Gemini models with an API key.';
 
   @override
-  String get groqApiDescription =>
-      'Use the models enabled for your account with a Groq API key. Pricing and usage limits vary by plan and model.';
+  String get groqApiDescription => 'Connect to Groq models with an API key.';
 
   @override
   String get cerebrasApiDescription =>
-      'Use the tool-capable models available to your account with a Cerebras API key. Access, pricing, and limits vary by model and account.';
+      'Connect to Cerebras models with an API key.';
 
   @override
   String get openRouterApiDescription =>
-      'Only models listed at \$0 for input and output with text and tool support appear here. Actual access and limits can change.';
+      'Connect to supported models through OpenRouter.';
 
   @override
   String get mistralApiDescription =>
-      'Add a Mistral API key to use the chat models available to your account. Free access, pricing, and usage limits depend on your Mistral plan.';
+      'Connect to Mistral models with an API key.';
 
   @override
   String get deepSeekApiDescription =>
-      'Add a DeepSeek API key to use DeepSeek-V3 and DeepSeek-R1 models. Usage limits and pricing depend on your account balance.';
+      'Connect to DeepSeek models with an API key.';
 
   @override
-  String get xAiApiDescription =>
-      'Add an xAI API key to use Grok models. Usage limits and pricing depend on your xAI plan.';
+  String get xAiApiDescription => 'Connect to Grok models with an xAI API key.';
 
   @override
   String get perplexityApiDescription =>
-      'Add a Perplexity API key to use Sonar search-augmented models with real-time web citations.';
+      'Connect to Perplexity Sonar models with an API key.';
 
   @override
   String get togetherApiDescription =>
-      'Add a Together AI API key to access open-source models with fast cloud inference.';
+      'Connect to Together AI models with an API key.';
 
   @override
   String get sambaNovaApiDescription =>
-      'Add a SambaNova Cloud API key to use high-throughput open models powered by SambaNova RDUs.';
+      'Connect to SambaNova Cloud models with an API key.';
 
   @override
   String get anthropicApiDescription =>
-      'Add an Anthropic API key to use Claude 3.5 and Claude 3.7 models with advanced reasoning and vision.';
+      'Connect to Claude models with an Anthropic API key.';
 
   @override
   String get fireworksApiDescription =>
-      'Add a Fireworks AI API key to use fast open-weights and custom inference models.';
+      'Connect to Fireworks AI models with an API key.';
 
   @override
   String get deepInfraApiDescription =>
-      'Add a DeepInfra API key to access cost-effective hosted open-source models with OpenAI compatibility.';
+      'Connect to DeepInfra models with an API key.';
 
   @override
   String get dashScopeApiDescription =>
-      'Add an Alibaba Cloud DashScope API key to use Qwen models in OpenAI-compatible mode.';
+      'Connect to Qwen models with a DashScope API key.';
 
   @override
   String get cohereApiDescription =>
-      'Add a Cohere API key to use Command R and Command R+ models via the compatibility API.';
+      'Connect to Cohere models with an API key.';
 
   @override
-  String get ollamaApiDescription =>
-      'Connect to a local Ollama instance running at http://localhost:11434. No API key required by default.';
+  String get ollamaApiDescription => 'Connect to your local Ollama server.';
 
   @override
   String get lmStudioApiDescription =>
-      'Connect to a local LM Studio server running at http://localhost:1234. No API key required by default.';
+      'Connect to your local LM Studio server.';
 
   @override
   String get geminiUnpaidDataNotice =>
@@ -1060,7 +1057,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get openCodeConsoleDescription =>
-      'Free models work without a key. Add a Console API key for paid models; each request is charged to your Console balance.';
+      'Connect to models available through OpenCode Zen.';
 
   @override
   String openCodeKeySaved(Object suffix) {

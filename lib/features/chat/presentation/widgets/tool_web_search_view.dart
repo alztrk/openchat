@@ -1,12 +1,10 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:html/dom.dart' as html_dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:intl/intl.dart';
+import 'package:openchat/app/open_url_or_copy.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/presentation/widgets/tool_file_listing.dart';
@@ -108,7 +106,7 @@ class ToolWebSearchResult extends StatelessWidget {
             HtmlWidget(
               attributionHtml,
               onTapUrl: (url) async {
-                await _openUrlOrCopy(context, url);
+                await openUrlOrCopy(context, url);
                 return true;
               },
             ),
@@ -133,7 +131,7 @@ class ToolWebSearchResult extends StatelessWidget {
           HtmlWidget(
             attributionHtml,
             onTapUrl: (url) async {
-              await _openUrlOrCopy(context, url);
+              await openUrlOrCopy(context, url);
               return true;
             },
           ),
@@ -319,7 +317,7 @@ class _WebSearchResultCard extends StatelessWidget {
               ),
               IconButton(
                 tooltip: context.openchatL10n.toolCopyUrl,
-                onPressed: () => _copyText(context, item.url),
+                onPressed: () => copyTextToClipboard(context, item.url),
                 icon: const Icon(LucideIcons.copy),
                 iconSize: 14,
                 visualDensity: VisualDensity.standard,
@@ -332,7 +330,7 @@ class _WebSearchResultCard extends StatelessWidget {
               const SizedBox(width: 4),
               IconButton(
                 tooltip: context.openchatL10n.toolOpenUrl,
-                onPressed: () => _openUrlOrCopy(context, item.url),
+                onPressed: () => openUrlOrCopy(context, item.url),
                 icon: const Icon(LucideIcons.externalLink),
                 color: palette.accentIcon,
                 iconSize: 14,
@@ -347,7 +345,7 @@ class _WebSearchResultCard extends StatelessWidget {
           ),
           const SizedBox(height: 5),
           InkWell(
-            onTap: () => _openUrlOrCopy(context, item.url),
+            onTap: () => openUrlOrCopy(context, item.url),
             child: Text(
               item.title,
               maxLines: 2,
@@ -573,7 +571,7 @@ class ToolReadUrlResult extends StatelessWidget {
               const SizedBox(width: 8),
               IconButton(
                 tooltip: l10n.toolCopyContent,
-                onPressed: () => _copyText(context, content),
+                onPressed: () => copyTextToClipboard(context, content),
                 icon: const Icon(LucideIcons.copy),
                 iconSize: 14,
                 visualDensity: VisualDensity.standard,
@@ -586,7 +584,7 @@ class ToolReadUrlResult extends StatelessWidget {
               const SizedBox(width: 6),
               IconButton(
                 tooltip: l10n.toolOpenUrl,
-                onPressed: () => _openUrlOrCopy(context, targetUrl),
+                onPressed: () => openUrlOrCopy(context, targetUrl),
                 icon: const Icon(LucideIcons.externalLink),
                 color: palette.accentIcon,
                 iconSize: 14,
@@ -693,58 +691,4 @@ class _SourceMetadataTag extends StatelessWidget {
       ),
     ),
   );
-}
-
-Future<void> _copyText(BuildContext context, String value) async {
-  final l10n = context.openchatL10n;
-  try {
-    await Clipboard.setData(ClipboardData(text: value));
-  } on PlatformException {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(l10n.toolCopyFailed)));
-    }
-    return;
-  }
-
-  if (context.mounted) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(l10n.toolTerminalCopied),
-        duration: const Duration(seconds: 1),
-      ),
-    );
-  }
-}
-
-Future<void> _openUrlOrCopy(BuildContext context, String rawUrl) async {
-  final uri = Uri.tryParse(rawUrl);
-  final isWebUrl =
-      uri != null &&
-      uri.host.isNotEmpty &&
-      (uri.scheme == 'http' || uri.scheme == 'https');
-  final executable = switch ((
-    Platform.isWindows,
-    Platform.isMacOS,
-    Platform.isLinux,
-  )) {
-    (true, _, _) => 'explorer.exe',
-    (_, true, _) => 'open',
-    (_, _, true) => 'xdg-open',
-    _ => null,
-  };
-
-  if (!isWebUrl || executable == null) {
-    await _copyText(context, rawUrl);
-    return;
-  }
-
-  try {
-    await Process.start(executable, [
-      uri.toString(),
-    ], mode: ProcessStartMode.detached);
-  } on ProcessException {
-    if (!context.mounted) return;
-    await _copyText(context, rawUrl);
-  }
 }

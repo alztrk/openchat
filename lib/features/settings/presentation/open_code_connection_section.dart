@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/app/open_url_or_copy.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/features/chat/presentation/widgets/provider_icon.dart';
 import 'package:openchat/features/settings/data/open_code_api_key_store.dart';
@@ -166,6 +167,25 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
                         style: TextStyle(
                           color: palette.secondaryText,
                           fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      TextButton(
+                        onPressed: () => unawaited(
+                          openUrlOrCopy(context, 'https://opencode.ai/zen'),
+                        ),
+                        style: TextButton.styleFrom(
+                          alignment: Alignment.centerLeft,
+                          foregroundColor: palette.secondaryText,
+                          minimumSize: const Size(0, 44),
+                          padding: EdgeInsets.zero,
+                        ),
+                        child: const Text(
+                          'https://opencode.ai/zen',
+                          style: TextStyle(
+                            fontSize: 12,
+                            decoration: TextDecoration.underline,
+                          ),
                         ),
                       ),
                     ],

@@ -1661,103 +1661,103 @@ abstract class AppLocalizations {
   /// No description provided for @geminiApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Add a Google AI Studio API key to use the models available to your account. Free access depends on the model and your quota.'**
+  /// **'Connect to Gemini models with an API key.'**
   String get geminiApiDescription;
 
   /// No description provided for @groqApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Use the models enabled for your account with a Groq API key. Pricing and usage limits vary by plan and model.'**
+  /// **'Connect to Groq models with an API key.'**
   String get groqApiDescription;
 
   /// No description provided for @cerebrasApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Use the tool-capable models available to your account with a Cerebras API key. Access, pricing, and limits vary by model and account.'**
+  /// **'Connect to Cerebras models with an API key.'**
   String get cerebrasApiDescription;
 
   /// No description provided for @openRouterApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Only models listed at \$0 for input and output with text and tool support appear here. Actual access and limits can change.'**
+  /// **'Connect to supported models through OpenRouter.'**
   String get openRouterApiDescription;
 
   /// No description provided for @mistralApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Add a Mistral API key to use the chat models available to your account. Free access, pricing, and usage limits depend on your Mistral plan.'**
+  /// **'Connect to Mistral models with an API key.'**
   String get mistralApiDescription;
 
   /// No description provided for @deepSeekApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Add a DeepSeek API key to use DeepSeek-V3 and DeepSeek-R1 models. Usage limits and pricing depend on your account balance.'**
+  /// **'Connect to DeepSeek models with an API key.'**
   String get deepSeekApiDescription;
 
   /// No description provided for @xAiApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Add an xAI API key to use Grok models. Usage limits and pricing depend on your xAI plan.'**
+  /// **'Connect to Grok models with an xAI API key.'**
   String get xAiApiDescription;
 
   /// No description provided for @perplexityApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Add a Perplexity API key to use Sonar search-augmented models with real-time web citations.'**
+  /// **'Connect to Perplexity Sonar models with an API key.'**
   String get perplexityApiDescription;
 
   /// No description provided for @togetherApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Add a Together AI API key to access open-source models with fast cloud inference.'**
+  /// **'Connect to Together AI models with an API key.'**
   String get togetherApiDescription;
 
   /// No description provided for @sambaNovaApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Add a SambaNova Cloud API key to use high-throughput open models powered by SambaNova RDUs.'**
+  /// **'Connect to SambaNova Cloud models with an API key.'**
   String get sambaNovaApiDescription;
 
   /// No description provided for @anthropicApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Add an Anthropic API key to use Claude 3.5 and Claude 3.7 models with advanced reasoning and vision.'**
+  /// **'Connect to Claude models with an Anthropic API key.'**
   String get anthropicApiDescription;
 
   /// No description provided for @fireworksApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Add a Fireworks AI API key to use fast open-weights and custom inference models.'**
+  /// **'Connect to Fireworks AI models with an API key.'**
   String get fireworksApiDescription;
 
   /// No description provided for @deepInfraApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Add a DeepInfra API key to access cost-effective hosted open-source models with OpenAI compatibility.'**
+  /// **'Connect to DeepInfra models with an API key.'**
   String get deepInfraApiDescription;
 
   /// No description provided for @dashScopeApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Add an Alibaba Cloud DashScope API key to use Qwen models in OpenAI-compatible mode.'**
+  /// **'Connect to Qwen models with a DashScope API key.'**
   String get dashScopeApiDescription;
 
   /// No description provided for @cohereApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Add a Cohere API key to use Command R and Command R+ models via the compatibility API.'**
+  /// **'Connect to Cohere models with an API key.'**
   String get cohereApiDescription;
 
   /// No description provided for @ollamaApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to a local Ollama instance running at http://localhost:11434. No API key required by default.'**
+  /// **'Connect to your local Ollama server.'**
   String get ollamaApiDescription;
 
   /// No description provided for @lmStudioApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to a local LM Studio server running at http://localhost:1234. No API key required by default.'**
+  /// **'Connect to your local LM Studio server.'**
   String get lmStudioApiDescription;
 
   /// No description provided for @geminiUnpaidDataNotice.
@@ -1889,7 +1889,7 @@ abstract class AppLocalizations {
   /// No description provided for @openCodeConsoleDescription.
   ///
   /// In en, this message translates to:
-  /// **'Free models work without a key. Add a Console API key for paid models; each request is charged to your Console balance.'**
+  /// **'Connect to models available through OpenCode Zen.'**
   String get openCodeConsoleDescription;
 
   /// No description provided for @openCodeKeySaved.

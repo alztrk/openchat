@@ -931,71 +931,70 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get geminiApiDescription =>
-      'Añade una clave de API de Google AI Studio para usar los modelos disponibles en tu cuenta. El acceso gratuito depende del modelo y de tu cuota.';
+      'Conéctate a los modelos Gemini con una clave de API.';
 
   @override
   String get groqApiDescription =>
-      'Usa los modelos habilitados para tu cuenta con una clave de API de Groq. Los precios y límites de uso varían según el plan y el modelo.';
+      'Conéctate a los modelos de Groq con una clave de API.';
 
   @override
   String get cerebrasApiDescription =>
-      'Usa los modelos compatibles con herramientas disponibles para tu cuenta mediante una clave de API de Cerebras. El acceso, los precios y los límites varían según el modelo y la cuenta.';
+      'Conéctate a los modelos de Cerebras con una clave de API.';
 
   @override
   String get openRouterApiDescription =>
-      'Aquí solo aparecen los modelos con coste de 0 \$ para entrada y salida que admiten texto y herramientas. El acceso y los límites reales pueden cambiar.';
+      'Conéctate a los modelos compatibles mediante OpenRouter.';
 
   @override
   String get mistralApiDescription =>
-      'Añade una clave de API de Mistral para usar los modelos de chat disponibles en tu cuenta. El acceso gratuito, los precios y los límites dependen de tu plan de Mistral.';
+      'Conéctate a los modelos de Mistral con una clave de API.';
 
   @override
   String get deepSeekApiDescription =>
-      'Añade una clave de API de DeepSeek para usar los modelos DeepSeek-V3 y DeepSeek-R1. Los límites de uso y los precios dependen del saldo de tu cuenta.';
+      'Conéctate a los modelos de DeepSeek con una clave de API.';
 
   @override
   String get xAiApiDescription =>
-      'Añade una clave de API de xAI para usar los modelos Grok. Los límites de uso y los precios dependen de tu plan de xAI.';
+      'Conéctate a los modelos Grok con una clave de API de xAI.';
 
   @override
   String get perplexityApiDescription =>
-      'Añade una clave de API de Perplexity para usar los modelos Sonar con citas web en tiempo real.';
+      'Conéctate a los modelos Sonar de Perplexity con una clave de API.';
 
   @override
   String get togetherApiDescription =>
-      'Añade una clave de API de Together AI para acceder a modelos de código abierto con inferencia rápida en la nube.';
+      'Conéctate a los modelos de Together AI con una clave de API.';
 
   @override
   String get sambaNovaApiDescription =>
-      'Añade una clave de API de SambaNova Cloud para usar modelos de código abierto de alto rendimiento impulsados por RDU de SambaNova.';
+      'Conéctate a los modelos de SambaNova Cloud con una clave de API.';
 
   @override
   String get anthropicApiDescription =>
-      'Añada una clave de API de Anthropic para usar modelos Claude 3.5 y Claude 3.7 con razonamiento y visión.';
+      'Conéctate a los modelos Claude con una clave de API de Anthropic.';
 
   @override
   String get fireworksApiDescription =>
-      'Añada una clave de API de Fireworks AI para usar modelos rápidos de pesos abiertos.';
+      'Conéctate a los modelos de Fireworks AI con una clave de API.';
 
   @override
   String get deepInfraApiDescription =>
-      'Añada una clave de API de DeepInfra para acceder a modelos de código abierto alojados y económicos.';
+      'Conéctate a los modelos de DeepInfra con una clave de API.';
 
   @override
   String get dashScopeApiDescription =>
-      'Añada una clave de API de Alibaba Cloud DashScope para usar modelos Qwen en modo compatible con OpenAI.';
+      'Conéctate a los modelos Qwen con una clave de API de DashScope.';
 
   @override
   String get cohereApiDescription =>
-      'Añada una clave de API de Cohere para usar modelos Command R y Command R+.';
+      'Conéctate a los modelos de Cohere con una clave de API.';
 
   @override
-  String get ollamaApiDescription =>
-      'Conéctese a una instancia local de Ollama en http://localhost:11434. No se requiere clave de API por defecto.';
+  String get ollamaApiDescription => 'Conéctate a tu servidor local de Ollama.';
 
   @override
   String get lmStudioApiDescription =>
-      'Conéctese a un servidor local de LM Studio en http://localhost:1234. No se requiere clave de API por defecto.';
+      'Conéctate a tu servidor local de LM Studio.';
 
   @override
   String get geminiUnpaidDataNotice =>
@@ -1074,7 +1073,7 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get openCodeConsoleDescription =>
-      'Los modelos gratuitos funcionan sin clave. Añade una clave de API de la Consola para los modelos de pago; cada solicitud se cobra al saldo de tu Consola.';
+      'Conéctate a los modelos disponibles en OpenCode Zen.';
 
   @override
   String openCodeKeySaved(Object suffix) {

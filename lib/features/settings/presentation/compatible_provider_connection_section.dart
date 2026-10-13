@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import 'package:openchat/app/openchat_theme.dart';
+import 'package:openchat/app/open_url_or_copy.dart';
 import 'package:openchat/features/chat/presentation/widgets/provider_icon.dart';
 import 'package:openchat/features/settings/data/api_compatible_provider_key_store.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
@@ -119,6 +120,7 @@ class _CompatibleProviderConnectionSectionState
     final configured = _status?.isConfigured == true;
     final name = _name(l10n);
     final description = _description(l10n);
+    final url = _url;
     final actions = Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -179,6 +181,26 @@ class _CompatibleProviderConnectionSectionState
                           fontSize: 13,
                         ),
                       ),
+                      if (url.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        TextButton(
+                          onPressed: () =>
+                              unawaited(openUrlOrCopy(context, url)),
+                          style: TextButton.styleFrom(
+                            alignment: Alignment.centerLeft,
+                            foregroundColor: palette.secondaryText,
+                            minimumSize: const Size(0, 44),
+                            padding: EdgeInsets.zero,
+                          ),
+                          child: Text(
+                            url,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              decoration: TextDecoration.underline,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -326,6 +348,27 @@ class _CompatibleProviderConnectionSectionState
     'cohere' => l10n.cohereApiDescription,
     'ollama' => l10n.ollamaApiDescription,
     'lmstudio' => l10n.lmStudioApiDescription,
+    _ => '',
+  };
+
+  String get _url => switch (widget.providerId) {
+    'gemini' => 'https://ai.google.dev/gemini-api/docs',
+    'groq' => 'https://console.groq.com/docs',
+    'cerebras' => 'https://docs.cerebras.ai/',
+    'openrouter' => 'https://openrouter.ai/docs',
+    'mistral' => 'https://docs.mistral.ai/',
+    'deepseek' => 'https://api-docs.deepseek.com/',
+    'xai' => 'https://docs.x.ai/',
+    'perplexity' => 'https://docs.perplexity.ai/',
+    'together' => 'https://docs.together.ai/',
+    'sambanova' => 'https://docs.sambanova.ai/',
+    'anthropic' => 'https://docs.anthropic.com/',
+    'fireworks' => 'https://docs.fireworks.ai/',
+    'deepinfra' => 'https://docs.deepinfra.com/',
+    'dashscope' => 'https://www.alibabacloud.com/help/en/model-studio/',
+    'cohere' => 'https://docs.cohere.com/',
+    'ollama' => 'https://docs.ollama.com/',
+    'lmstudio' => 'https://lmstudio.ai/docs/developer',
     _ => '',
   };
 }
