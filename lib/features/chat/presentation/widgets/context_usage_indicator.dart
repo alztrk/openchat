@@ -877,10 +877,7 @@ class _ContextUsagePopover extends StatelessWidget {
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(2),
-                  border: Border.all(
-                    color: palette.secondaryText.withValues(alpha: 0.48),
-                    width: 0.8,
-                  ),
+                  border: Border.all(color: palette.border, width: 0.8),
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(1.4),
@@ -959,7 +956,7 @@ class _ContextUsagePopover extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           border: Border(
-            left: BorderSide(color: parentColor.withValues(alpha: 0.45)),
+            left: BorderSide(color: parentColor.withValues(alpha: 0.15)),
           ),
         ),
         child: Padding(
@@ -996,7 +993,7 @@ class _ContextUsagePopover extends StatelessWidget {
               decoration: BoxDecoration(
                 color: category.isFreeSpace ? null : category.color,
                 border: category.isFreeSpace
-                    ? Border.all(color: palette.secondaryText)
+                    ? Border.all(color: palette.border)
                     : null,
                 borderRadius: BorderRadius.circular(2),
               ),
