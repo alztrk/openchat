@@ -466,9 +466,7 @@ class ConversationSidebar extends StatelessWidget {
       width: width,
       decoration: BoxDecoration(color: palette.navigation),
       foregroundDecoration: showDivider
-          ? BoxDecoration(
-              border: Border.all(color: palette.border.withValues(alpha: 0.48)),
-            )
+          ? BoxDecoration(border: Border.all(color: palette.border))
           : null,
       child: SafeArea(
         child: Padding(
