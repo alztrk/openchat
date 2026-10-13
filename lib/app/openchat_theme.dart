@@ -64,13 +64,8 @@ class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
   Color get disabledIcon => disabledForeground;
   Color get disabledSurface =>
       Color.alphaBlend(text.withValues(alpha: 0.045), surface);
-  Color get disabledBorder {
-    final highContrastBorder = (border.toARGB32() >> 24) == 0xff;
-    final borderColor = highContrastBorder
-        ? border.withValues(alpha: 0.58)
-        : border;
-    return Color.alphaBlend(borderColor, surface);
-  }
+  Color get disabledBorder =>
+      Color.alphaBlend(border.withValues(alpha: 0.58), surface);
 
   static const light = OpenChatPalette(
     background: Color(0xFFF4F5F6),
@@ -81,8 +76,8 @@ class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
     selected: Color(0xFFE3E7EB),
     hover: Color(0xFFEDF0F2),
     border: Color.fromARGB(_standardBorderAlpha, 0xCC, 0xD1, 0xD7),
-    subtleBorder: Color.fromARGB(_standardBorderAlpha, 0xDF, 0xE3, 0xE7),
-    controlBorder: Color.fromARGB(_standardBorderAlpha, 0x7B, 0x83, 0x8C),
+    subtleBorder: Color(0xFFDFE3E7),
+    controlBorder: Color(0xFF7B838C),
     text: Color(0xFF23272C),
     brandInk: Color(0xFF23272C),
     secondaryText: Color(0xFF56606A),
@@ -108,8 +103,8 @@ class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
     selected: Color(0xFF343940),
     hover: Color(0xFF2B3036),
     border: Color.fromARGB(_standardBorderAlpha, 0x3D, 0x43, 0x4B),
-    subtleBorder: Color.fromARGB(_standardBorderAlpha, 0x30, 0x35, 0x3C),
-    controlBorder: Color.fromARGB(_standardBorderAlpha, 0x50, 0x57, 0x61),
+    subtleBorder: Color(0xFF30353C),
+    controlBorder: Color(0xFF505761),
     text: Color(0xFFF0F2F3),
     brandInk: Color(0xFFF0F2F3),
     secondaryText: Color(0xFFB6BCC4),

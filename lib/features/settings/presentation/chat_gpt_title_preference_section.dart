@@ -124,7 +124,7 @@ class ChatGptTitlePreferenceSection extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: palette.raisedSurface,
                   borderRadius: BorderRadius.circular(OpenChatRadii.button),
-                  border: Border.all(color: palette.subtleBorder),
+                  border: Border.all(color: palette.border),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,

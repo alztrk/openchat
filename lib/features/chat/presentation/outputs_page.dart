@@ -202,7 +202,7 @@ class _SavedOutputCardState extends State<_SavedOutputCard> {
       decoration: BoxDecoration(
         color: palette.surface,
         borderRadius: BorderRadius.circular(OpenChatRadii.panel),
-        border: Border.all(color: palette.subtleBorder),
+        border: Border.all(color: palette.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -332,7 +332,7 @@ class _EmptyOutputs extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.surface,
         borderRadius: BorderRadius.circular(OpenChatRadii.panel),
-        border: Border.all(color: palette.subtleBorder),
+        border: Border.all(color: palette.border),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

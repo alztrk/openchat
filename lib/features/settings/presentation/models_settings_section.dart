@@ -750,7 +750,7 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(10),
-        side: BorderSide(color: palette.subtleBorder),
+        side: BorderSide(color: palette.border),
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -777,10 +777,10 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
               ],
             ),
             const SizedBox(height: 12),
-            Divider(height: 1, color: palette.subtleBorder),
+            Divider(height: 1, color: palette.border),
             const SizedBox(height: 8),
             for (var i = 0; i < filtered.length; i++) ...[
-              if (i > 0) Divider(height: 1, color: palette.subtleBorder),
+              if (i > 0) Divider(height: 1, color: palette.border),
               _buildModelRow(
                 context,
                 filtered[i],

@@ -416,7 +416,7 @@ class _WorkspaceGroup extends StatelessWidget {
       color: palette.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(OpenChatRadii.panel),
-        side: BorderSide(color: palette.subtleBorder),
+        side: BorderSide(color: palette.border),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -478,7 +478,7 @@ class _WorkspaceGroup extends StatelessWidget {
               ],
             ),
           ),
-          Divider(height: 1, color: palette.subtleBorder),
+          Divider(height: 1, color: palette.border),
           if (conversations.isEmpty)
             Padding(
               padding: const EdgeInsets.all(OpenChatSpacing.md),
@@ -578,7 +578,7 @@ class _EmptyWorkspaces extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.surface,
         borderRadius: BorderRadius.circular(OpenChatRadii.panel),
-        border: Border.all(color: palette.subtleBorder),
+        border: Border.all(color: palette.border),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

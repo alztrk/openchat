@@ -44,7 +44,7 @@ class ChatGptOAuthConnectionRow extends StatelessWidget {
         color: connection.isSelected ? palette.selected : palette.raisedSurface,
         borderRadius: BorderRadius.circular(OpenChatRadii.card),
         border: Border.all(
-          color: connection.isSelected ? palette.accent : palette.subtleBorder,
+          color: connection.isSelected ? palette.accent : palette.border,
         ),
       ),
       child: Column(

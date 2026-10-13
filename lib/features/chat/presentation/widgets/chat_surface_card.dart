@@ -22,7 +22,7 @@ class ChatSurfaceCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: palette.surface,
         borderRadius: radius,
-        border: Border.all(color: palette.subtleBorder),
+        border: Border.all(color: palette.border),
       ),
       child: Padding(padding: padding, child: child),
     );
