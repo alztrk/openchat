@@ -6036,7 +6036,8 @@ class _ChatScreenState extends State<ChatScreen> {
     required Widget child,
   }) {
     final reducedMotion = MediaQuery.disableAnimationsOf(context);
-    final borderColor = OpenChatPalette.of(context).border;
+    final borderColor = OpenChatPalette.of(context).border
+        .withValues(alpha: 0.15);
     return LayoutBuilder(
       builder: (context, constraints) {
         final rightInset = constraints.maxWidth >= 480
