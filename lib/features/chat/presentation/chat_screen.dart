@@ -6036,6 +6036,8 @@ class _ChatScreenState extends State<ChatScreen> {
     required Widget child,
   }) {
     final reducedMotion = MediaQuery.disableAnimationsOf(context);
+    final borderColor = OpenChatPalette.of(context).border
+        .withValues(alpha: 0.48);
     return LayoutBuilder(
       builder: (context, constraints) {
         final rightInset = constraints.maxWidth >= 480
@@ -6046,30 +6048,40 @@ class _ChatScreenState extends State<ChatScreen> {
             : 0.0;
         return Padding(
           padding: EdgeInsets.only(right: rightInset, bottom: bottomInset),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(OpenChatRadii.control),
-            clipBehavior: Clip.antiAlias,
-            child: AnimatedSwitcher(
-              duration: reducedMotion
-                  ? Duration.zero
-                  : const Duration(milliseconds: 190),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) {
-                final position = animation.drive(
-                  Tween<Offset>(
-                    begin: const Offset(0, 0.012),
-                    end: Offset.zero,
-                  ).chain(CurveTween(curve: Curves.easeOutCubic)),
-                );
-                return FadeTransition(
-                  opacity: animation,
-                  child: SlideTransition(position: position, child: child),
-                );
-              },
-              child: KeyedSubtree(
-                key: ValueKey<String>(surfaceKey),
-                child: child,
+          child: Container(
+            foregroundDecoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(color: borderColor),
+                bottom: BorderSide(color: borderColor),
+                right: BorderSide(color: borderColor),
+              ),
+              borderRadius: BorderRadius.circular(OpenChatRadii.control),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(OpenChatRadii.control),
+              clipBehavior: Clip.antiAlias,
+              child: AnimatedSwitcher(
+                duration: reducedMotion
+                    ? Duration.zero
+                    : const Duration(milliseconds: 190),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) {
+                  final position = animation.drive(
+                    Tween<Offset>(
+                      begin: const Offset(0, 0.012),
+                      end: Offset.zero,
+                    ).chain(CurveTween(curve: Curves.easeOutCubic)),
+                  );
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(position: position, child: child),
+                  );
+                },
+                child: KeyedSubtree(
+                  key: ValueKey<String>(surfaceKey),
+                  child: child,
+                ),
               ),
             ),
           ),
