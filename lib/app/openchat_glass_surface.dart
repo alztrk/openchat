@@ -15,29 +15,39 @@ class OpenChatGlassSurface extends StatelessWidget {
     this.borderRadius = const BorderRadius.all(
       Radius.circular(OpenChatRadii.panel),
     ),
+    this.surfaceColor,
+    this.surfaceOpacity = 0.9,
+    this.borderColor,
+    this.borderWidth = 1,
+    this.duration = Duration.zero,
     this.padding,
     super.key,
   });
 
   final Widget child;
   final BorderRadius borderRadius;
+  final Color? surfaceColor;
+  final double surfaceOpacity;
+  final Color? borderColor;
+  final double borderWidth;
+  final Duration duration;
   final EdgeInsetsGeometry? padding;
 
   @override
   Widget build(BuildContext context) {
     final palette = OpenChatPalette.of(context);
     final highContrast = MediaQuery.highContrastOf(context);
-    final surfaceColor = highContrast
-        ? palette.raisedSurface
-        : palette.raisedSurface.withValues(
-            alpha: Theme.of(context).brightness == Brightness.dark ? 0.92 : 0.9,
-          );
-    final borderColor = highContrast
-        ? palette.border
-        : palette.border.withValues(alpha: 0.84);
+    final baseSurfaceColor = surfaceColor ?? palette.raisedSurface;
+    final resolvedSurfaceColor = highContrast
+        ? baseSurfaceColor
+        : baseSurfaceColor.withValues(alpha: surfaceOpacity);
+    final baseBorderColor = borderColor ?? palette.border;
+    final resolvedBorderColor = highContrast || borderColor != null
+        ? baseBorderColor
+        : baseBorderColor.withValues(alpha: 0.84);
     final surfaceDecoration = BoxDecoration(
-      color: surfaceColor,
-      border: Border.all(color: borderColor),
+      color: resolvedSurfaceColor,
+      border: Border.all(color: resolvedBorderColor, width: borderWidth),
       borderRadius: borderRadius,
     );
     final content = padding == null
@@ -45,7 +55,12 @@ class OpenChatGlassSurface extends StatelessWidget {
         : Padding(padding: padding!, child: child);
 
     if (highContrast) {
-      return DecoratedBox(decoration: surfaceDecoration, child: content);
+      return AnimatedContainer(
+        duration: duration,
+        curve: Curves.easeOutCubic,
+        decoration: surfaceDecoration,
+        child: content,
+      );
     }
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -66,7 +81,12 @@ class OpenChatGlassSurface extends StatelessWidget {
         borderRadius: borderRadius,
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: DecoratedBox(decoration: surfaceDecoration, child: content),
+          child: AnimatedContainer(
+            duration: duration,
+            curve: Curves.easeOutCubic,
+            decoration: surfaceDecoration,
+            child: content,
+          ),
         ),
       ),
     );

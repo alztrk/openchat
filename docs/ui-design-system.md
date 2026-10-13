@@ -58,15 +58,15 @@ changes conversation content; interface labels use Source Sans 3.
 - Spacing scale: 4, 8, 12, 16, 24, 32, 40, and 48 px.
 - Form controls: 8 px radius; buttons: 12 px radius. Menus use their
   component-specific radius.
-- Cards and panels: 12 px radius.
+- Cards and panels: 12 px radius; the composer: 20 px radius.
 - Dialogs: 16 px radius.
 - Standard icon: 20 px; inline icon: 16 px; primary action icon: 24 px.
 - Desktop control height: 40 px; touch targets: at least 44 px.
 - Conversation reading width: 920 px maximum; composer width: 800 px maximum.
 
-Use `OpenChatGlassSurface` only on a small number of elevated dialogs and
-forms where a translucent layer improves surface depth. Keep it opaque and
-shadow-free in high-contrast themes. Short state feedback uses the
+Use `OpenChatGlassSurface` on the composer and a small number of elevated
+dialogs and forms where translucency improves surface depth. Keep it opaque
+and shadow-free in high-contrast themes. Short state feedback uses the
 `OpenChatMotion.quick` 160 ms token and changes to `Duration.zero` when
 `MediaQuery.disableAnimationsOf` is true; loading feedback remains clear with
 a static icon when motion is disabled.

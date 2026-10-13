@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 
+import 'package:openchat/app/openchat_glass_surface.dart';
 import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
@@ -254,7 +255,9 @@ class ChatComposer extends StatelessWidget {
             MediaQuery.textScalerOf(context).scale(16) > 18;
         final touchTargets = _usesTouchTargets(context);
         final focusRing = _focusRingColor(context);
-        final horizontalPadding = narrow ? 12.0 : 16.0;
+        final horizontalPadding = narrow
+            ? OpenChatSpacing.sm
+            : OpenChatSpacing.md;
         final reducedMotion = MediaQuery.disableAnimationsOf(context);
 
         return ConstrainedBox(
@@ -285,24 +288,20 @@ class ChatComposer extends StatelessWidget {
                   providerNames: providerNames,
                   hiddenModelKeys: hiddenModelKeys,
                   onModelSelected: onModelSelected,
-                  child: AnimatedContainer(
+                  child: OpenChatGlassSurface(
+                    borderRadius: BorderRadius.circular(OpenChatRadii.composer),
+                    surfaceColor: palette.composer,
+                    surfaceOpacity: 0.78,
+                    borderColor: hasFocus ? focusRing : palette.controlBorder,
+                    borderWidth: hasFocus ? 2 : 1,
                     duration: reducedMotion
                         ? Duration.zero
-                        : const Duration(milliseconds: 180),
-                    curve: Curves.easeOutCubic,
-                    decoration: BoxDecoration(
-                      color: palette.composer,
-                      border: Border.all(
-                        color: hasFocus ? focusRing : palette.controlBorder,
-                        width: hasFocus ? 2 : 1,
-                      ),
-                      borderRadius: BorderRadius.circular(narrow ? 16 : 20),
-                    ),
+                        : OpenChatMotion.quick,
                     padding: EdgeInsets.fromLTRB(
                       horizontalPadding,
-                      narrow ? 12 : 15,
+                      narrow ? OpenChatSpacing.sm : OpenChatSpacing.md,
                       horizontalPadding,
-                      narrow ? 12 : 13,
+                      OpenChatSpacing.sm,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -325,21 +324,21 @@ class ChatComposer extends StatelessWidget {
                               ),
                               placeholderStyle: TextStyle(
                                 color: palette.secondaryText,
-                                fontSize: 15,
+                                fontSize: OpenChatTypography.body,
                                 fontWeight: FontWeight.w400,
-                                height: 20 / 15,
+                                height: 20 / OpenChatTypography.body,
                               ),
                               style: TextStyle(
                                 color: palette.text,
-                                fontSize: 15,
+                                fontSize: OpenChatTypography.body,
                                 fontWeight: FontWeight.w400,
-                                height: 20 / 15,
+                                height: 20 / OpenChatTypography.body,
                               ),
                             ),
                           ),
                         ),
                         if (pendingAttachments.isNotEmpty) ...[
-                          const SizedBox(height: 12),
+                          const SizedBox(height: OpenChatSpacing.sm),
                           ChatAttachmentGallery(
                             attachments: pendingAttachments,
                             palette: palette,
@@ -348,7 +347,7 @@ class ChatComposer extends StatelessWidget {
                             onRemoveAttachment: onRemoveAttachment,
                           ),
                         ],
-                        SizedBox(height: narrow ? 14 : 12),
+                        const SizedBox(height: OpenChatSpacing.sm),
                         _ComposerActions(
                           controller: controller,
                           onSendMessage: _sendMessageOrRunSummarizeCommand,

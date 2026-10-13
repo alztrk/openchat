@@ -404,6 +404,7 @@ abstract final class OpenChatRadii {
   static const menu = 8.0;
   static const card = 12.0;
   static const panel = 12.0;
+  static const composer = 20.0;
   static const dialog = 16.0;
 }
 
