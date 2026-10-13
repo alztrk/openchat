@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:intl/intl.dart';
 
+import 'package:openchat/app/openchat_brand_mark.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/openchat_toast.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
@@ -328,6 +329,8 @@ class ConversationPane extends StatelessWidget {
             : isEmptyConversation
             ? _NewConversationEmptyState(
                 isLoading: isLoadingModels,
+                showBrandMark:
+                    !isLoadingModels && hasAvailableModels && hasSelectedModel,
                 title: isLoadingModels
                     ? l10n.modelsLoading
                     : !hasAvailableModels
@@ -1665,6 +1668,7 @@ class _EditConversationBranchDialogState
 class _NewConversationEmptyState extends StatelessWidget {
   const _NewConversationEmptyState({
     required this.isLoading,
+    required this.showBrandMark,
     required this.title,
     required this.description,
     this.onOpenConnections,
@@ -1672,6 +1676,7 @@ class _NewConversationEmptyState extends StatelessWidget {
   });
 
   final bool isLoading;
+  final bool showBrandMark;
   final String title;
   final String? description;
   final VoidCallback? onOpenConnections;
@@ -1695,6 +1700,10 @@ class _NewConversationEmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
+            if (showBrandMark && constraints.maxHeight >= 180) ...[
+              const ExcludeSemantics(child: OpenChatBrandMark(size: 44)),
+              const SizedBox(height: OpenChatSpacing.md),
+            ],
             if (isLoading) ...[
               const SizedBox.square(
                 dimension: 24,
