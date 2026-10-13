@@ -6055,10 +6055,16 @@ class _ChatScreenState extends State<ChatScreen> {
                 bottom: BorderSide(color: borderColor),
                 right: BorderSide(color: borderColor),
               ),
-              borderRadius: BorderRadius.circular(OpenChatRadii.control),
+              borderRadius: const BorderRadius.only(
+                topRight: Radius.circular(OpenChatRadii.control),
+                bottomRight: Radius.circular(OpenChatRadii.control),
+              ),
             ),
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(OpenChatRadii.control),
+              borderRadius: const BorderRadius.only(
+                topRight: Radius.circular(OpenChatRadii.control),
+                bottomRight: Radius.circular(OpenChatRadii.control),
+              ),
               clipBehavior: Clip.antiAlias,
               child: AnimatedSwitcher(
                 duration: reducedMotion
