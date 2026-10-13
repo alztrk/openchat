@@ -1250,7 +1250,10 @@ class _SettingsSidebar extends StatelessWidget {
       width: compact ? 64 : 252,
       decoration: BoxDecoration(color: palette.navigation),
       foregroundDecoration: BoxDecoration(
-        border: Border(right: BorderSide(color: palette.border)),
+        border: Border(
+          left: BorderSide(color: palette.border),
+          right: BorderSide(color: palette.border),
+        ),
       ),
       child: SafeArea(
         child: Padding(
