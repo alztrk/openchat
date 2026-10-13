@@ -939,71 +939,71 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get geminiApiDescription =>
-      'Mit einem API-Schlüssel auf Gemini-Modelle zugreifen.';
+      'Mit unterstützten Modellen Text, Bilder, Audio und Video verarbeiten.';
 
   @override
   String get groqApiDescription =>
-      'Mit einem API-Schlüssel auf Groq-Modelle zugreifen.';
+      'Offene Modelle mit geringer Latenz auf der Groq-Infrastruktur ausführen.';
 
   @override
   String get cerebrasApiDescription =>
-      'Mit einem API-Schlüssel auf Cerebras-Modelle zugreifen.';
+      'Große Sprachmodelle auf der Cerebras-Inference-Infrastruktur ausführen.';
 
   @override
   String get openRouterApiDescription =>
-      'Unterstützte Modelle über OpenRouter nutzen.';
+      'Modelle verschiedener Anbieter über eine API nutzen.';
 
   @override
   String get mistralApiDescription =>
-      'Mit einem API-Schlüssel auf Mistral-Modelle zugreifen.';
+      'Chat-, Agenten- und Dokumentverarbeitungsdienste über die Mistral-API nutzen.';
 
   @override
   String get deepSeekApiDescription =>
-      'Mit einem API-Schlüssel auf DeepSeek-Modelle zugreifen.';
+      'Auf Chat- und Reasoning-Modelle von DeepSeek zugreifen.';
 
   @override
   String get xAiApiDescription =>
-      'Mit einem xAI-API-Schlüssel auf Grok-Modelle zugreifen.';
+      'Über die Chat-API von xAI auf Grok-Modelle zugreifen.';
 
   @override
   String get perplexityApiDescription =>
-      'Mit einem API-Schlüssel auf Perplexity-Sonar-Modelle zugreifen.';
+      'Webgestützte Antworten mit den Modellen von Perplexity erhalten.';
 
   @override
   String get togetherApiDescription =>
-      'Mit einem API-Schlüssel auf Together-AI-Modelle zugreifen.';
+      'Über die Together-AI-API auf einen Katalog offener Modelle zugreifen.';
 
   @override
   String get sambaNovaApiDescription =>
-      'Mit einem API-Schlüssel auf SambaNova-Cloud-Modelle zugreifen.';
+      'Modelle aus der SambaNova-Cloud-Infrastruktur ausführen.';
 
   @override
   String get anthropicApiDescription =>
-      'Mit einem Anthropic-API-Schlüssel auf Claude-Modelle zugreifen.';
+      'Über die Anthropic-Messages-API auf Claude-Modelle zugreifen.';
 
   @override
   String get fireworksApiDescription =>
-      'Mit einem API-Schlüssel auf Fireworks-AI-Modelle zugreifen.';
+      'Offene Modelle über die Inference-API von Fireworks AI ausführen.';
 
   @override
   String get deepInfraApiDescription =>
-      'Mit einem API-Schlüssel auf DeepInfra-Modelle zugreifen.';
+      'Von DeepInfra gehostete offene Modelle über die Chat-API nutzen.';
 
   @override
   String get dashScopeApiDescription =>
-      'Mit einem DashScope-API-Schlüssel auf Qwen-Modelle zugreifen.';
+      'Qwen und weitere unterstützte Modelle über Alibaba Cloud Model Studio nutzen.';
 
   @override
   String get cohereApiDescription =>
-      'Mit einem API-Schlüssel auf Cohere-Modelle zugreifen.';
+      'Cohere-Modelle mit Chat- und Tool-Calling-APIs nutzen.';
 
   @override
   String get ollamaApiDescription =>
-      'Mit Ihrem lokalen Ollama-Server verbinden.';
+      'Lokal in Ollama laufende Modelle über die OpenAI-kompatible API nutzen.';
 
   @override
   String get lmStudioApiDescription =>
-      'Mit Ihrem lokalen LM-Studio-Server verbinden.';
+      'In LM Studio geladene lokale Modelle über die OpenAI-kompatible API verbinden.';
 
   @override
   String get geminiUnpaidDataNotice =>
@@ -1082,7 +1082,7 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get openCodeConsoleDescription =>
-      'Mit Modellen aus OpenCode Zen verbinden.';
+      'Mit OpenCode Zen für Coding-Agenten getestete Modelle nutzen.';
 
   @override
   String openCodeKeySaved(Object suffix) {

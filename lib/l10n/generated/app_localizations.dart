@@ -1661,103 +1661,103 @@ abstract class AppLocalizations {
   /// No description provided for @geminiApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to Gemini models with an API key.'**
+  /// **'Process text, image, audio, and video with models that support them.'**
   String get geminiApiDescription;
 
   /// No description provided for @groqApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to Groq models with an API key.'**
+  /// **'Run open models with low latency on Groq infrastructure.'**
   String get groqApiDescription;
 
   /// No description provided for @cerebrasApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to Cerebras models with an API key.'**
+  /// **'Run large language models on Cerebras Inference infrastructure.'**
   String get cerebrasApiDescription;
 
   /// No description provided for @openRouterApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to supported models through OpenRouter.'**
+  /// **'Access models from different providers through one API.'**
   String get openRouterApiDescription;
 
   /// No description provided for @mistralApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to Mistral models with an API key.'**
+  /// **'Access chat, agent, and document processing services through the Mistral API.'**
   String get mistralApiDescription;
 
   /// No description provided for @deepSeekApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to DeepSeek models with an API key.'**
+  /// **'Access DeepSeek chat and reasoning models.'**
   String get deepSeekApiDescription;
 
   /// No description provided for @xAiApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to Grok models with an xAI API key.'**
+  /// **'Access Grok models through xAI\'s chat API.'**
   String get xAiApiDescription;
 
   /// No description provided for @perplexityApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to Perplexity Sonar models with an API key.'**
+  /// **'Get web-grounded answers from Perplexity\'s models.'**
   String get perplexityApiDescription;
 
   /// No description provided for @togetherApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to Together AI models with an API key.'**
+  /// **'Access an open model catalog through the Together AI API.'**
   String get togetherApiDescription;
 
   /// No description provided for @sambaNovaApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to SambaNova Cloud models with an API key.'**
+  /// **'Run models hosted on SambaNova Cloud infrastructure.'**
   String get sambaNovaApiDescription;
 
   /// No description provided for @anthropicApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to Claude models with an Anthropic API key.'**
+  /// **'Access Claude models through the Anthropic Messages API.'**
   String get anthropicApiDescription;
 
   /// No description provided for @fireworksApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to Fireworks AI models with an API key.'**
+  /// **'Run open models through Fireworks AI\'s inference API.'**
   String get fireworksApiDescription;
 
   /// No description provided for @deepInfraApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to DeepInfra models with an API key.'**
+  /// **'Use open models hosted by DeepInfra through its chat API.'**
   String get deepInfraApiDescription;
 
   /// No description provided for @dashScopeApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to Qwen models with a DashScope API key.'**
+  /// **'Use Qwen and other supported models through Alibaba Cloud Model Studio.'**
   String get dashScopeApiDescription;
 
   /// No description provided for @cohereApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to Cohere models with an API key.'**
+  /// **'Use Cohere models with chat and tool-calling APIs.'**
   String get cohereApiDescription;
 
   /// No description provided for @ollamaApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to your local Ollama server.'**
+  /// **'Use local models running in Ollama through its OpenAI-compatible API.'**
   String get ollamaApiDescription;
 
   /// No description provided for @lmStudioApiDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to your local LM Studio server.'**
+  /// **'Connect to local models loaded in LM Studio through its OpenAI-compatible API.'**
   String get lmStudioApiDescription;
 
   /// No description provided for @geminiUnpaidDataNotice.
@@ -1889,7 +1889,7 @@ abstract class AppLocalizations {
   /// No description provided for @openCodeConsoleDescription.
   ///
   /// In en, this message translates to:
-  /// **'Connect to models available through OpenCode Zen.'**
+  /// **'Use models tested for coding agents through OpenCode Zen.'**
   String get openCodeConsoleDescription;
 
   /// No description provided for @openCodeKeySaved.

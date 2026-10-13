@@ -919,68 +919,70 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get geminiApiDescription =>
-      'Connect to Gemini models with an API key.';
+      'Process text, image, audio, and video with models that support them.';
 
   @override
-  String get groqApiDescription => 'Connect to Groq models with an API key.';
+  String get groqApiDescription =>
+      'Run open models with low latency on Groq infrastructure.';
 
   @override
   String get cerebrasApiDescription =>
-      'Connect to Cerebras models with an API key.';
+      'Run large language models on Cerebras Inference infrastructure.';
 
   @override
   String get openRouterApiDescription =>
-      'Connect to supported models through OpenRouter.';
+      'Access models from different providers through one API.';
 
   @override
   String get mistralApiDescription =>
-      'Connect to Mistral models with an API key.';
+      'Access chat, agent, and document processing services through the Mistral API.';
 
   @override
   String get deepSeekApiDescription =>
-      'Connect to DeepSeek models with an API key.';
+      'Access DeepSeek chat and reasoning models.';
 
   @override
-  String get xAiApiDescription => 'Connect to Grok models with an xAI API key.';
+  String get xAiApiDescription => 'Access Grok models through xAI\'s chat API.';
 
   @override
   String get perplexityApiDescription =>
-      'Connect to Perplexity Sonar models with an API key.';
+      'Get web-grounded answers from Perplexity\'s models.';
 
   @override
   String get togetherApiDescription =>
-      'Connect to Together AI models with an API key.';
+      'Access an open model catalog through the Together AI API.';
 
   @override
   String get sambaNovaApiDescription =>
-      'Connect to SambaNova Cloud models with an API key.';
+      'Run models hosted on SambaNova Cloud infrastructure.';
 
   @override
   String get anthropicApiDescription =>
-      'Connect to Claude models with an Anthropic API key.';
+      'Access Claude models through the Anthropic Messages API.';
 
   @override
   String get fireworksApiDescription =>
-      'Connect to Fireworks AI models with an API key.';
+      'Run open models through Fireworks AI\'s inference API.';
 
   @override
   String get deepInfraApiDescription =>
-      'Connect to DeepInfra models with an API key.';
+      'Use open models hosted by DeepInfra through its chat API.';
 
   @override
   String get dashScopeApiDescription =>
-      'Connect to Qwen models with a DashScope API key.';
+      'Use Qwen and other supported models through Alibaba Cloud Model Studio.';
 
   @override
   String get cohereApiDescription =>
-      'Connect to Cohere models with an API key.';
+      'Use Cohere models with chat and tool-calling APIs.';
 
   @override
-  String get ollamaApiDescription => 'Connect to your local Ollama server.';
+  String get ollamaApiDescription =>
+      'Use local models running in Ollama through its OpenAI-compatible API.';
 
   @override
   String get lmStudioApiDescription =>
-      'Connect to your local LM Studio server.';
+      'Connect to local models loaded in LM Studio through its OpenAI-compatible API.';
 
   @override
   String get geminiUnpaidDataNotice =>
@@ -1057,7 +1059,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get openCodeConsoleDescription =>
-      'Connect to models available through OpenCode Zen.';
+      'Use models tested for coding agents through OpenCode Zen.';
 
   @override
   String openCodeKeySaved(Object suffix) {

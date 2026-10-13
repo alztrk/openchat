@@ -362,7 +362,7 @@ class _CompatibleProviderConnectionSectionState
     'perplexity' => 'https://docs.perplexity.ai/',
     'together' => 'https://docs.together.ai/',
     'sambanova' => 'https://docs.sambanova.ai/',
-    'anthropic' => 'https://docs.anthropic.com/',
+    'anthropic' => 'https://platform.claude.com/docs/en/api/overview',
     'fireworks' => 'https://docs.fireworks.ai/',
     'deepinfra' => 'https://docs.deepinfra.com/',
     'dashscope' => 'https://www.alibabacloud.com/help/en/model-studio/',

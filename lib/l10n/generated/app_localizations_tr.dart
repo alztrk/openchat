@@ -917,68 +917,71 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get geminiApiDescription =>
-      'Gemini modellerine API anahtarınla bağlan.';
+      'Destekleyen modellerle metin, görsel, ses ve video girdilerini işle.';
 
   @override
-  String get groqApiDescription => 'Groq modellerine API anahtarınla bağlan.';
+  String get groqApiDescription =>
+      'Açık modelleri Groq altyapısında düşük gecikmeyle çalıştır.';
 
   @override
   String get cerebrasApiDescription =>
-      'Cerebras modellerine API anahtarınla bağlan.';
+      'Büyük dil modellerini Cerebras Inference altyapısında çalıştır.';
 
   @override
   String get openRouterApiDescription =>
-      'OpenRouter üzerinden desteklenen modellere bağlan.';
+      'Tek API üzerinden farklı sağlayıcıların modellerine eriş.';
 
   @override
   String get mistralApiDescription =>
-      'Mistral modellerine API anahtarınla bağlan.';
+      'Mistral API\'siyle sohbet, ajan ve belge işleme hizmetlerine eriş.';
 
   @override
   String get deepSeekApiDescription =>
-      'DeepSeek modellerine API anahtarınla bağlan.';
+      'DeepSeek\'in sohbet ve akıl yürütme modellerine eriş.';
 
   @override
   String get xAiApiDescription =>
-      'Grok modellerine xAI API anahtarınla bağlan.';
+      'Grok modellerine xAI\'nin sohbet API\'si üzerinden eriş.';
 
   @override
   String get perplexityApiDescription =>
-      'Perplexity Sonar modellerine API anahtarınla bağlan.';
+      'Perplexity\'nin web odaklı modelleriyle kaynaklı yanıtlar al.';
 
   @override
   String get togetherApiDescription =>
-      'Together AI modellerine API anahtarınla bağlan.';
+      'Açık model kataloğuna Together AI API\'siyle eriş.';
 
   @override
   String get sambaNovaApiDescription =>
-      'SambaNova Cloud modellerine API anahtarınla bağlan.';
+      'SambaNova Cloud altyapısındaki modelleri çalıştır.';
 
   @override
   String get anthropicApiDescription =>
-      'Claude modellerine Anthropic API anahtarınla bağlan.';
+      'Claude modellerine Anthropic Messages API üzerinden eriş.';
 
   @override
   String get fireworksApiDescription =>
-      'Fireworks AI modellerine API anahtarınla bağlan.';
+      'Açık modelleri Fireworks AI\'nin çıkarım API\'siyle çalıştır.';
 
   @override
   String get deepInfraApiDescription =>
-      'DeepInfra modellerine API anahtarınla bağlan.';
+      'DeepInfra\'nın barındırdığı açık modelleri sohbet API\'siyle kullan.';
 
   @override
   String get dashScopeApiDescription =>
-      'Qwen modellerine DashScope API anahtarınla bağlan.';
+      'Qwen ve diğer desteklenen modelleri Alibaba Cloud Model Studio üzerinden kullan.';
 
   @override
   String get cohereApiDescription =>
-      'Cohere modellerine API anahtarınla bağlan.';
+      'Cohere modellerini sohbet ve araç çağrısı API\'siyle kullan.';
 
   @override
-  String get ollamaApiDescription => 'Yerel Ollama sunucuna bağlan.';
+  String get ollamaApiDescription =>
+      'Ollama\'da çalışan yerel modelleri OpenAI uyumlu API ile kullan.';
 
   @override
-  String get lmStudioApiDescription => 'Yerel LM Studio sunucuna bağlan.';
+  String get lmStudioApiDescription =>
+      'LM Studio\'da yüklenen yerel modellere OpenAI uyumlu API ile bağlan.';
 
   @override
   String get geminiUnpaidDataNotice =>
@@ -1056,7 +1059,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get openCodeConsoleDescription =>
-      'OpenCode Zen üzerinden sunulan modellere bağlan.';
+      'Kodlama ajanları için test edilmiş modelleri OpenCode Zen üzerinden kullan.';
 
   @override
   String openCodeKeySaved(Object suffix) {
