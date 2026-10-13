@@ -956,7 +956,7 @@ class _ContextUsagePopover extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           border: Border(
-            left: BorderSide(color: parentColor.withValues(alpha: 0.1)),
+            left: BorderSide(color: parentColor.withValues(alpha: 0.05)),
           ),
         ),
         child: Padding(

@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 
 class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
-  // 0x1A is the nearest 8-bit alpha channel value to 10% opacity.
-  static const _standardBorderAlpha = 0x1A;
+  // 0x0D is the nearest 8-bit alpha channel value to 5% opacity.
+  static const _standardBorderAlpha = 0x0D;
 
   const OpenChatPalette({
     required this.background,
