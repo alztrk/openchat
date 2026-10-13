@@ -149,7 +149,7 @@ class ToolSearchResult extends StatelessWidget {
                 height: 1,
                 indent: 12,
                 endIndent: 12,
-                color: palette.border.withValues(alpha: 0.65),
+                color: palette.border,
               ),
               itemBuilder: (context, index) {
                 final match = matches[index];
@@ -295,7 +295,7 @@ class ToolReadResult extends StatelessWidget {
                 height: 1,
                 indent: 48,
                 endIndent: 8,
-                color: palette.border.withValues(alpha: 0.45),
+                color: palette.border,
               ),
               itemBuilder: (context, index) {
                 final line = lines[index];

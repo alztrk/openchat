@@ -108,10 +108,7 @@ class ChatNavigationRail extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Divider(
-                            height: 1,
-                            color: palette.border.withValues(alpha: 0.48),
-                          ),
+                          Divider(height: 1, color: palette.border),
                           const SizedBox(height: 8),
                           Tooltip(
                             message: dark

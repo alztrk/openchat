@@ -121,7 +121,7 @@ class _GoalStatusBarState extends State<GoalStatusBar> {
       padding: const EdgeInsetsDirectional.only(start: 12, top: 7, bottom: 7),
       decoration: BoxDecoration(
         color: palette.raisedSurface,
-        border: Border.all(color: palette.border.withValues(alpha: 0.72)),
+        border: Border.all(color: palette.border),
         borderRadius: BorderRadius.circular(OpenChatRadii.control),
       ),
       child: Column(

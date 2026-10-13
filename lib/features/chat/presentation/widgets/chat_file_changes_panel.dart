@@ -323,7 +323,7 @@ class _ChatFileChangesPanelState extends State<ChatFileChangesPanel> {
                               height: 1,
                               indent: 14,
                               endIndent: 14,
-                              color: palette.border.withValues(alpha: 0.7),
+                              color: palette.border,
                             ),
                             itemBuilder: (context, index) => _FileChangeRow(
                               change: _changes[index],

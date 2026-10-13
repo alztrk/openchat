@@ -230,7 +230,7 @@ class _AgentRunManagerDialogState extends State<AgentRunManagerDialog> {
       shrinkWrap: true,
       itemCount: _runs.length,
       separatorBuilder: (context, index) =>
-          Divider(height: 1, color: palette.border.withValues(alpha: 0.6)),
+          Divider(height: 1, color: palette.border),
       itemBuilder: (context, index) {
         final run = _runs[index];
         final providerLabel = switch (run.providerId) {

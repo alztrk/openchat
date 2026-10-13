@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart' as shad;
 
 class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
+  // 0x26 is the nearest 8-bit alpha channel value to 15% opacity.
+  static const _standardBorderAlpha = 0x26;
+
   const OpenChatPalette({
     required this.background,
     required this.navigation,
@@ -61,8 +64,13 @@ class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
   Color get disabledIcon => disabledForeground;
   Color get disabledSurface =>
       Color.alphaBlend(text.withValues(alpha: 0.045), surface);
-  Color get disabledBorder =>
-      Color.alphaBlend(border.withValues(alpha: 0.58), surface);
+  Color get disabledBorder {
+    final highContrastBorder = (border.toARGB32() >> 24) == 0xff;
+    final borderColor = highContrastBorder
+        ? border.withValues(alpha: 0.58)
+        : border;
+    return Color.alphaBlend(borderColor, surface);
+  }
 
   static const light = OpenChatPalette(
     background: Color(0xFFF4F5F6),
@@ -72,9 +80,9 @@ class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
     composer: Color(0xFFF1F3F5),
     selected: Color(0xFFE3E7EB),
     hover: Color(0xFFEDF0F2),
-    border: Color(0xFFCCD1D7),
-    subtleBorder: Color(0xFFDFE3E7),
-    controlBorder: Color(0xFF7B838C),
+    border: Color.fromARGB(_standardBorderAlpha, 0xCC, 0xD1, 0xD7),
+    subtleBorder: Color.fromARGB(_standardBorderAlpha, 0xDF, 0xE3, 0xE7),
+    controlBorder: Color.fromARGB(_standardBorderAlpha, 0x7B, 0x83, 0x8C),
     text: Color(0xFF23272C),
     brandInk: Color(0xFF23272C),
     secondaryText: Color(0xFF56606A),
@@ -99,9 +107,9 @@ class OpenChatPalette extends ThemeExtension<OpenChatPalette> {
     composer: Color(0xFF24282D),
     selected: Color(0xFF343940),
     hover: Color(0xFF2B3036),
-    border: Color(0xFF3D434B),
-    subtleBorder: Color(0xFF30353C),
-    controlBorder: Color(0xFF505761),
+    border: Color.fromARGB(_standardBorderAlpha, 0x3D, 0x43, 0x4B),
+    subtleBorder: Color.fromARGB(_standardBorderAlpha, 0x30, 0x35, 0x3C),
+    controlBorder: Color.fromARGB(_standardBorderAlpha, 0x50, 0x57, 0x61),
     text: Color(0xFFF0F2F3),
     brandInk: Color(0xFFF0F2F3),
     secondaryText: Color(0xFFB6BCC4),

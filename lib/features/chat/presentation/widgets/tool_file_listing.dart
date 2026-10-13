@@ -128,7 +128,7 @@ class ToolFileListingResult extends StatelessWidget {
                   height: 1,
                   indent: 32,
                   endIndent: 10,
-                  color: palette.border.withValues(alpha: 0.65),
+                  color: palette.border,
                 ),
                 itemBuilder: (context, index) {
                   final entry = listing.entries[index];

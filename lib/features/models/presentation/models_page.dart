@@ -1644,8 +1644,16 @@ String _formatBytes(int? bytes) {
 }
 
 String _cssColor(Color color) {
-  final rgb = color.toARGB32() & 0x00ffffff;
-  return '#${rgb.toRadixString(16).padLeft(6, '0')}';
+  final argb = color.toARGB32();
+  final alpha = (argb >> 24) & 0xff;
+  if (alpha == 0xff) {
+    final rgb = argb & 0x00ffffff;
+    return '#${rgb.toRadixString(16).padLeft(6, '0')}';
+  }
+  final red = (argb >> 16) & 0xff;
+  final green = (argb >> 8) & 0xff;
+  final blue = argb & 0xff;
+  return 'rgba($red, $green, $blue, ${(alpha / 255).toStringAsFixed(3)})';
 }
 
 T? _firstOrNull<T>(Iterable<T> values) {

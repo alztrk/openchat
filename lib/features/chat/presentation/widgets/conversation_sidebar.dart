@@ -466,9 +466,7 @@ class ConversationSidebar extends StatelessWidget {
       width: width,
       decoration: BoxDecoration(color: palette.navigation),
       foregroundDecoration: showDivider
-          ? BoxDecoration(
-              border: Border.all(color: palette.border.withValues(alpha: 0.15)),
-            )
+          ? BoxDecoration(border: Border.all(color: palette.border))
           : null,
       child: SafeArea(
         child: Padding(
@@ -1225,9 +1223,7 @@ class _StickySidebarFrameState extends State<_StickySidebarFrame> {
             color: palette.navigation,
             border: Border(
               bottom: BorderSide(
-                color: _isScrolled
-                    ? palette.border.withValues(alpha: 0.48)
-                    : Colors.transparent,
+                color: _isScrolled ? palette.border : Colors.transparent,
               ),
             ),
           ),
