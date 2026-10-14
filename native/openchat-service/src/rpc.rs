@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     path::Path,
     sync::{
         Arc,
@@ -7,6 +8,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use rusqlite::OptionalExtension;
 use serde_json::{Value, json};
 use tokio::sync::watch as tokio_watch;
@@ -641,8 +643,6 @@ pub(crate) async fn dispatch(
                     | "openrouter"
                     | "mistral"
                     | "llama_cpp"
-                    | "vllm"
-                    | "exllama"
             ) {
                 return Err(invalid_context_usage_params());
             }
@@ -656,6 +656,8 @@ pub(crate) async fn dispatch(
                 &request.params,
                 "toolPermissionMode",
             )?))?;
+            let profile_tool_allowlist =
+                tools::parse_profile_tool_allowlist(request.params.get("profileToolAllowlist"))?;
             let custom_instructions = optional_string(&request.params, "customInstructions")?;
             instructions::validate_custom_instructions(custom_instructions)
                 .map_err(|_| invalid_context_usage_params())?;
@@ -748,6 +750,11 @@ pub(crate) async fn dispatch(
             );
             let tool_definitions = available_tools
                 .into_iter()
+                .filter(|(name, _)| {
+                    profile_tool_allowlist
+                        .as_ref()
+                        .is_none_or(|allowed| allowed.contains(name))
+                })
                 .map(|(name, definition)| {
                     json!({
                         "name": name,
@@ -1226,8 +1233,67 @@ pub(crate) async fn dispatch(
                 "compactedThroughMessageId": boundary_id,
             }))
         }
+        "chat.temporary.send" => {
+            let conversation_id = required_string(&request.params, "conversationId")?.to_owned();
+            if !crate::temporary_conversation::is_valid_temporary_conversation_id(&conversation_id)
+            {
+                return Err(invalid_request_params());
+            }
+            let provider_id = bounded_route_id(&request.params, "providerId")?.to_owned();
+            let model_id = bounded_route_id(&request.params, "modelId")?.to_owned();
+            let api_key = take_optional_api_key(&mut request.params)?;
+            let api_key_connection_id =
+                optional_string(&request.params, "apiKeyConnectionId")?.map(str::to_owned);
+            let custom_provider = request
+                .params
+                .get("customProvider")
+                .map(openai_compatible::CustomProviderConfig::from_value)
+                .transpose()?;
+            let (messages, has_attachments) = parse_temporary_messages(&request.params)?;
+            let api_key_connection_id = api_key_connection_id.as_deref();
+            if provider_id == "chatgpt" {
+                if api_key.is_some() || api_key_connection_id.is_some() || custom_provider.is_some()
+                {
+                    return Err(invalid_request_params());
+                }
+                let connection_id = bounded_route_id(&request.params, "connectionId")?;
+                let workspace_id = bounded_route_id(&request.params, "workspaceId")?;
+                service
+                    .send_temporary_message(
+                        request.id,
+                        &conversation_id,
+                        connection_id,
+                        workspace_id,
+                        &model_id,
+                        messages,
+                        has_attachments,
+                        &mut cancellation,
+                        &events,
+                    )
+                    .await
+            } else {
+                openai_compatible::send_temporary_message(
+                    storage,
+                    request.id,
+                    &conversation_id,
+                    &provider_id,
+                    &model_id,
+                    api_key.as_deref().map(|secret| secret.as_str()),
+                    api_key_connection_id,
+                    custom_provider,
+                    messages,
+                    has_attachments,
+                    &mut cancellation,
+                    &events,
+                )
+                .await
+            }
+        }
         "chat.send" => {
             let conversation_id = required_string(&request.params, "conversationId")?;
+            if crate::temporary_conversation::is_temporary_conversation_id(&conversation_id) {
+                return Err(invalid_request_params());
+            }
             let resume_run_id = optional_string(&request.params, "resumeRunId")?;
             let api_key = optional_api_key(&request.params, "apiKey")?;
             let api_key_connection_id = optional_string(&request.params, "apiKeyConnectionId")?;
@@ -1289,6 +1355,8 @@ pub(crate) async fn dispatch(
             }
             let tool_permission_rules =
                 tools::parse_tool_permission_rules(request.params.get("toolPermissionRules"))?;
+            let mut profile_tool_allowlist =
+                tools::parse_profile_tool_allowlist(request.params.get("profileToolAllowlist"))?;
             let excluded_assistant_message_id =
                 optional_string(&request.params, "excludedAssistantMessageId")?;
             if (resume_run_id.is_some() && goal_requested)
@@ -1402,6 +1470,8 @@ pub(crate) async fn dispatch(
                         false,
                     )
                 })?;
+                profile_tool_allowlist =
+                    tools::parse_profile_tool_allowlist(checkpoint.get("profileToolAllowlist"))?;
                 if checkpoint.get("providerId").and_then(Value::as_str) != provider_id.as_deref()
                     || checkpoint.get("modelId").and_then(Value::as_str) != model_id.as_deref()
                     || checkpoint.get("connectionId").and_then(Value::as_str)
@@ -1599,6 +1669,11 @@ pub(crate) async fn dispatch(
                     "projectIndexContext": project_index_context,
                     "reasoningEffort": requested_reasoning_effort,
                     "fastMode": requested_fast_mode,
+                    "profileToolAllowlist": profile_tool_allowlist.as_ref().map(|names| {
+                        let mut names = names.iter().cloned().collect::<Vec<_>>();
+                        names.sort();
+                        names
+                    }),
                 });
                 if let Some(objective) = requested_goal_objective {
                     goals::initial_checkpoint(&mut checkpoint, objective, current_time_unix_ms()?);
@@ -1677,11 +1752,7 @@ pub(crate) async fn dispatch(
                             | "deepinfra"
                             | "dashscope"
                             | "cohere"
-                            | "ollama"
-                            | "lmstudio"
                             | "llama_cpp"
-                            | "vllm"
-                            | "exllama"
                     )
                 ) {
                 match project_root.as_deref() {
@@ -1722,6 +1793,7 @@ pub(crate) async fn dispatch(
                 storage,
                 permission_mode,
                 tool_permission_rules,
+                profile_tool_allowlist,
                 #[cfg(windows)]
                 mcp_configs,
                 #[cfg(windows)]
@@ -1751,8 +1823,8 @@ pub(crate) async fn dispatch(
                 Some(
                     "opencode" | "chatgpt_api" | "gemini" | "groq" | "cerebras" | "openrouter"
                     | "mistral" | "deepseek" | "xai" | "perplexity" | "together" | "sambanova"
-                    | "anthropic" | "fireworks" | "deepinfra" | "dashscope" | "cohere" | "ollama"
-                    | "lmstudio" | "llama_cpp" | "vllm" | "exllama",
+                    | "anthropic" | "fireworks" | "deepinfra" | "dashscope" | "cohere"
+                    | "llama_cpp",
                 ) => {
                     openai_compatible::send_message(
                         storage,
@@ -1767,7 +1839,12 @@ pub(crate) async fn dispatch(
                     )
                     .await
                 }
-                _ => {
+                Some(_) => Err(ServiceError::new(
+                    "provider_unavailable",
+                    "This provider is not available.",
+                    false,
+                )),
+                None => {
                     service
                         .send_message(context, reasoning_effort.as_deref(), fast_mode)
                         .await
@@ -2023,11 +2100,7 @@ pub(crate) async fn dispatch(
                 )
                 .await
             } else {
-                let api_key = if matches!(provider_id, "ollama" | "lmstudio") {
-                    optional_string(&request.params, "apiKey")?.unwrap_or("local")
-                } else {
-                    required_string(&request.params, "apiKey")?
-                };
+                let api_key = required_string(&request.params, "apiKey")?;
                 openai_compatible::models_for_provider(
                     storage,
                     provider_id,
@@ -2110,6 +2183,144 @@ fn required_string<'a>(params: &'a Value, name: &str) -> Result<&'a str, Service
                 false,
             )
         })
+}
+
+fn bounded_route_id<'a>(params: &'a Value, name: &str) -> Result<&'a str, ServiceError> {
+    let value = required_string(params, name)?;
+    if value.len() > 256 || value.chars().any(char::is_control) {
+        return Err(invalid_request_params());
+    }
+    Ok(value)
+}
+
+fn take_optional_api_key(params: &mut Value) -> Result<Option<Zeroizing<String>>, ServiceError> {
+    let value = params
+        .as_object_mut()
+        .and_then(|object| object.remove("apiKey"));
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(secret))
+            if !secret.trim().is_empty()
+                && secret.len() <= 4096
+                && !secret.chars().any(char::is_control) =>
+        {
+            Ok(Some(Zeroizing::new(secret)))
+        }
+        _ => Err(invalid_request_params()),
+    }
+}
+
+fn parse_temporary_messages(
+    params: &Value,
+) -> Result<(Vec<crate::provider_schema::ProviderMessage>, bool), ServiceError> {
+    let values = params
+        .get("messages")
+        .and_then(Value::as_array)
+        .filter(|messages| !messages.is_empty() && messages.len() <= 100)
+        .ok_or_else(invalid_request_params)?;
+    let mut total_text_bytes = 0usize;
+    let mut total_attachment_bytes = 0usize;
+    let mut previous_role = None;
+    let mut has_attachments = false;
+    let mut messages = Vec::with_capacity(values.len());
+    for value in values {
+        let role = match value.get("role").and_then(Value::as_str) {
+            Some("user") => crate::provider_schema::MessageRole::User,
+            Some("assistant") => crate::provider_schema::MessageRole::Assistant,
+            _ => return Err(invalid_request_params()),
+        };
+        if previous_role == Some(role) {
+            return Err(invalid_request_params());
+        }
+        let original_content = value
+            .get("content")
+            .and_then(Value::as_str)
+            .filter(|content| content.len() <= 64 * 1024)
+            .ok_or_else(invalid_request_params)?;
+        total_text_bytes = total_text_bytes.saturating_add(original_content.len());
+        if total_text_bytes > 768 * 1024 {
+            return Err(ServiceError::new(
+                "temporary_transcript_too_large",
+                "The temporary conversation transcript exceeds its request limit.",
+                false,
+            ));
+        }
+        let raw_attachments = match value.get("attachments") {
+            None => &[][..],
+            Some(Value::Array(attachments)) if attachments.len() <= 10 => attachments,
+            _ => return Err(invalid_request_params()),
+        };
+        if role != crate::provider_schema::MessageRole::User && !raw_attachments.is_empty() {
+            return Err(invalid_request_params());
+        }
+        if original_content.trim().is_empty() && raw_attachments.is_empty() {
+            return Err(invalid_request_params());
+        }
+        let mut content = original_content.to_owned();
+        let mut images = Vec::new();
+        let mut attachment_ids = HashSet::with_capacity(raw_attachments.len());
+        let mut image_count = 0usize;
+        for attachment in raw_attachments {
+            let metadata = serde_json::from_value::<crate::attachments::AttachmentMetadata>(
+                attachment.clone(),
+            )
+            .map_err(|_| invalid_request_params())?;
+            if !attachment_ids.insert(metadata.id.clone()) {
+                return Err(invalid_request_params());
+            }
+            let encoded = attachment
+                .get("data")
+                .and_then(Value::as_str)
+                .filter(|value| value.len() <= 19 * 1024 * 1024)
+                .ok_or_else(invalid_request_params)?;
+            let bytes = STANDARD
+                .decode(encoded)
+                .map_err(|_| invalid_request_params())?;
+            crate::attachments::validate_attachment(&metadata, &bytes)
+                .map_err(|_| invalid_request_params())?;
+            total_attachment_bytes = total_attachment_bytes.saturating_add(bytes.len());
+            if total_attachment_bytes > crate::attachments::MAXIMUM_TOTAL_BYTES {
+                return Err(ServiceError::new(
+                    "temporary_transcript_too_large",
+                    "The temporary conversation attachments exceed their request limit.",
+                    false,
+                ));
+            }
+            has_attachments = true;
+            if metadata.kind == "image" {
+                image_count += 1;
+                if image_count > crate::attachments::MAXIMUM_IMAGE_COUNT {
+                    return Err(invalid_request_params());
+                }
+                images.push(format!("data:{};base64,{}", metadata.mime_type, encoded));
+            } else {
+                let attachment_text =
+                    String::from_utf8(bytes).map_err(|_| invalid_request_params())?;
+                content.push_str(&format!(
+                    "\n\n<openchat-user-file name={:?} mime_type={:?}>\n{}\n</openchat-user-file>",
+                    metadata.name, metadata.mime_type, attachment_text
+                ));
+            }
+        }
+        messages.push(crate::provider_schema::ProviderMessage {
+            role,
+            content,
+            images,
+            tool_calls: Vec::new(),
+            tool_call_id: None,
+        });
+        previous_role = Some(role);
+    }
+    if messages
+        .first()
+        .is_none_or(|message| message.role != crate::provider_schema::MessageRole::User)
+        || messages
+            .last()
+            .is_none_or(|message| message.role != crate::provider_schema::MessageRole::User)
+    {
+        return Err(invalid_request_params());
+    }
+    Ok((messages, has_attachments))
 }
 
 fn project_root_for_mcp(
@@ -2714,9 +2925,44 @@ mod tests {
     };
 
     use super::{
-        dispatch, optional_history_tag_filter, required_memory_conversation_id,
-        required_memory_search_query, required_secret_string, required_string_array,
+        dispatch, optional_history_tag_filter, parse_temporary_messages,
+        required_memory_conversation_id, required_memory_search_query, required_secret_string,
+        required_string_array,
     };
+
+    #[test]
+    fn temporary_transcripts_accept_only_bounded_user_assistant_turns() {
+        let messages = parse_temporary_messages(&json!({
+            "messages": [
+                {"role": "user", "content": "Question"},
+                {"role": "assistant", "content": "Answer"},
+                {"role": "user", "content": "Follow-up"}
+            ]
+        }))
+        .expect("valid temporary transcript");
+        assert_eq!(messages.0.len(), 3);
+        assert!(
+            parse_temporary_messages(&json!({
+                "messages": [{"role": "tool", "content": "not allowed"}]
+            }))
+            .is_err()
+        );
+        assert!(
+            parse_temporary_messages(&json!({
+                "messages": [
+                    {"role": "user", "content": "Question"},
+                    {"role": "user", "content": "Repeated role"}
+                ]
+            }))
+            .is_err()
+        );
+        assert!(
+            parse_temporary_messages(&json!({
+                "messages": [{"role": "user", "content": "x".repeat(768 * 1024 + 1)}]
+            }))
+            .is_err()
+        );
+    }
 
     #[test]
     fn validates_history_tag_filters() {
@@ -2771,6 +3017,42 @@ mod tests {
                 .expect("valid archive query"),
             "archive clue"
         );
+    }
+
+    #[tokio::test]
+    async fn durable_chat_send_rejects_temporary_conversation_ids() {
+        let directory = TestDirectory::new();
+        let storage =
+            Arc::new(AppStorage::open_at(directory.0.clone()).expect("open test storage"));
+        let service = Arc::new(
+            ChatGptService::new(Arc::clone(&storage)).expect("initialize ChatGPT service"),
+        );
+        let request = Request {
+            id: json!(1),
+            method: "chat.send".to_owned(),
+            params: json!({
+                "conversationId": "tmp_0123456789abcdef0123456789abcdef",
+            }),
+        };
+        let (_cancel_sender, cancellation) = watch::channel(false);
+
+        let error = dispatch(
+            &storage,
+            &service,
+            request,
+            cancellation,
+            EventSink::new(),
+            ToolPermissionBroker::default(),
+            UserQuestionBroker::default(),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(AtomicBool::new(true)),
+        )
+        .await
+        .expect_err("temporary IDs must not use the durable send route");
+
+        assert_eq!(error.code, "invalid_request_params");
+        drop(service);
+        drop(storage);
     }
 
     #[tokio::test]

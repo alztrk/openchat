@@ -7,10 +7,10 @@ This roadmap reflects the repository's current implementation and has no calenda
 - Flutter desktop UI with a local Rust child service and SQLite conversation storage under `%LOCALAPPDATA%\OpenChat`.
 - ChatGPT OAuth connections, account/workspace selection, model catalog, account and quota information, streamed Responses, cancellation, and background conversation titles.
 - OpenCode Console through its OpenAI Chat Completions endpoint. Other OpenCode protocol families are not supported.
-- API-key and local providers: Gemini, Groq, Cerebras, OpenRouter, Mistral, DeepSeek, xAI, Perplexity, Together AI, SambaNova, Fireworks AI, DeepInfra, DashScope (Qwen), Cohere, Ollama, and LM Studio, plus custom OpenAI- and Anthropic-compatible endpoints. API keys are stored in platform secure storage with six-hour per-key model catalogs; local engines connect without credentials. Mistral exposes context, vision, and documented reasoning capabilities; OpenRouter models are filtered to current zero-price text-chat entries that advertise tool support.
-- Anthropic Claude Messages API adapter (`/messages`), supporting context limits up to 200K, vision, tools, and Claude 3.7 reasoning.
+- API-key providers: Gemini, Groq, Cerebras, OpenRouter, Mistral, DeepSeek, xAI, Perplexity, Together AI, SambaNova, Fireworks AI, DeepInfra, DashScope (Qwen), and Cohere, plus custom OpenAI- and Anthropic-compatible endpoints. Dedicated Ollama and LM Studio provider connections are planned. Mistral exposes context, vision, and documented reasoning capabilities; OpenRouter models are filtered to current zero-price text-chat entries that advertise tool support.
+- Anthropic Claude Messages API adapter (`/messages`), supporting context limits up to 200K, vision, tools, and model-dependent reasoning controls.
 - Shared provider request, tool, and stream event types across ChatGPT, OpenCode, Anthropic, and all compatible cloud and local providers, plus local shared instructions.
-- Embedded release catalogs and a verified, cancellable installer for llama.cpp on Windows x64. Windows x64 Settings supports a model folder per engine and bounded discovery of unregistered GGUF and Transformers model files, with explicit confirmation before registration. The managed llama.cpp path starts selected GGUF models on demand, waits for health readiness, streams chat through the shared route, and stops individual processes on cancellation or service shutdown. Manual Windows CPU and NVIDIA CUDA checks used real GGUF files; CUDA verification reported the RTX 3060, generated a text answer, and handled an attached PNG with its matching vision projector. These were manual runtime checks, not automated release tests. CUDA offload is recommended only when the detected driver meets the pinned catalog floor. vLLM and ExLlama installation is disabled on Windows while their Linux runtimes remain separately catalogued and await live validation on supported CUDA hosts. Runtime diagnostics record bounded, safe lifecycle fields. GGUF-declared and runtime-active context windows, projector pairing, and reported image and tool-template capabilities are implemented.
+- Embedded release catalogs and a verified, cancellable installer for llama.cpp on Windows x64. Settings supports one llama.cpp model folder and bounded discovery of unregistered GGUF files, with explicit confirmation before registration. The managed llama.cpp path starts selected GGUF models on demand, waits for health readiness, streams chat through the shared route, and stops individual processes on cancellation or service shutdown. Manual Windows CPU and NVIDIA CUDA checks used real GGUF files; CUDA verification reported the RTX 3060, generated a text answer, and handled an attached PNG with its matching vision projector. These were manual runtime checks, not automated release tests. CUDA offload is recommended only when the detected driver meets the pinned catalog floor. llama.cpp is the only OpenChat-managed local inference engine. Runtime diagnostics record bounded, safe lifecycle fields. GGUF-declared and runtime-active context windows, projector pairing, and reported image and tool-template capabilities are implemented.
 - Local workspace tools for file listing, search, reading, metadata, writing, and editing, plus web search, URL reading, and terminal command/session tools. Tool calls, arguments, progress, and results are stored with assistant messages and shown in the conversation UI.
 - Global `Ask for approval`, `Approve safe operations`, and `Full access` settings govern built-in tool approvals. Filesystem calls use canonical path checks. On Windows, each terminal session runs in a temporary AppContainer with access granted to its working tree; non-Windows terminal execution still uses the OpenChat process account without an OS sandbox.
 - ChatGPT OAuth quota snapshots are stored per connection and workspace. Provider-reported input usage informs compaction where available, but there is no normalized per-request usage, cost, or prompt-cache ledger across providers; the context meter can use estimates.
@@ -45,7 +45,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### Validate API-key providers
 
-**Status: implemented in source; live account validation remains open after the first GitHub release.** Hosted cloud providers (Gemini, Groq, Cerebras, OpenRouter, Mistral, DeepSeek, xAI, Perplexity, Together AI, SambaNova, Anthropic, Fireworks AI, DeepInfra, DashScope, Cohere) and local engines (Ollama, LM Studio) are connected. Validation requires configured provider accounts or running local engines and is not part of credential-free CI.
+**Status: implemented in source; live account validation remains open after the first GitHub release.** Hosted cloud providers (Gemini, Groq, Cerebras, OpenRouter, Mistral, DeepSeek, xAI, Perplexity, Together AI, SambaNova, Anthropic, Fireworks AI, DeepInfra, DashScope, Cohere) are connected. Validation requires configured provider accounts and is not part of credential-free CI.
 
 - Verify model catalog loading, streaming, cancellation, errors, local history, and tool calls with real accounts for each provider.
 - Confirm current pricing, quota, tool-use capability, and data handling against each provider's account terms.
@@ -55,17 +55,17 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### Build managed local inference
 
-**Status: Windows llama.cpp first-target implementation and manual CPU/CUDA verification are complete.** OpenChat owns the engine release catalog, installation, model files, process lifecycle, and local request route. Linux/macOS support and live validation of the pinned Linux vLLM and ExLlama paths remain open.
+**Status: llama.cpp is the only managed local inference engine.** OpenChat owns its release catalog, installation, model files, process lifecycle, and local request route. Linux/macOS support remains open.
 
 - Keep release metadata tied to immutable upstream versions. Verify each downloadable engine and model asset by exact size and SHA-256 before publishing it into OpenChat's managed runtime or model directory.
 - Keep Windows llama.cpp runtime selection for NVIDIA CUDA and CPU tied to detected driver compatibility. The Windows CPU package and CUDA path have passed manual runtime checks; repeat them only when a release-catalog or runtime change affects those paths.
-- Keep vLLM and ExLlama disabled for new Windows installs. Their Linux runtime dependencies are pinned to verified artifacts; live inference validation on supported CUDA hosts remains open. Do not install from mutable package indexes or run an unpinned setup script.
+- Evaluate future local engines as separate roadmap items before adding runtime code or dependencies.
 - Add model catalogs and model downloads separately from engine binaries. Show file size, destination, progress, cancellation, integrity verification, and recovery after interrupted downloads.
 - Keep the existing real-GGUF CPU/CUDA and vision-projector smoke checks as release regression validation when their inputs change. They are manual checks and are not repeated for unrelated provider or UI work. Bounded, sanitized lifecycle diagnostics are implemented without model paths or prompt content.
 - Add local context-window metadata and only expose image, reasoning, and tool capabilities when the selected model/runtime supports them. Keep provider payloads and local process details inside the Rust service.
-- Extend package selection, secure storage, process supervision, and data directories to Linux and macOS. Treat WSL2 as a separate managed Linux runtime for vLLM rather than claiming native Windows support.
+- Extend package selection, secure storage, process supervision, and data directories to Linux and macOS. Design platform-specific runtime support explicitly before adding another engine.
 
-**Windows llama.cpp exit criteria:** met for the current CPU/CUDA release catalog, GGUF registration, streamed chat, cancellation, projector-backed image input, persistence, per-model process control, and shutdown. **Remaining scope:** live Linux vLLM/ExLlama inference validation and Linux/macOS packaging.
+**Windows llama.cpp exit criteria:** met for the current CPU/CUDA release catalog, GGUF registration, streamed chat, cancellation, projector-backed image input, persistence, per-model process control, and shutdown. **Remaining scope:** Linux/macOS llama.cpp packaging.
 
 ## Completed implementation milestones
 
@@ -173,7 +173,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 5. Add message branches and durable runs
 
-**Status: implemented in source and covered by deterministic tests.** User messages can be edited into a new conversation branch that copies the prior transcript and attachments while retaining the original. Adjacent retry responses can be selected as versions. Each assistant response stores its provider and model, and a selected version displays its own route. Runs and checkpoints are persisted for chat requests and goal/question continuation, with interrupted runs represented explicitly. The sidebar run manager lists running, paused, and interrupted runs across conversations, opens the related conversation, and the UI notifies users when a run ends in another chat. ChatGPT OAuth and OpenAI Responses API-key requests use their Responses routes for bounded child runs. Gemini, Groq, Cerebras, OpenRouter, and Mistral API-key requests use Chat Completions for bounded child runs when the selected model supports tools. Local llama.cpp, vLLM, and ExLlama requests use the selected model's loopback Chat Completions endpoint, with its configured local API key when present, if the model supports tools. Child runs inherit the selected model and reasoning setting; OAuth runs also inherit speed and workspace settings. Child runs have a read-only built-in tool allowlist, request/tool/output/time/concurrency caps, cancellation, durable run IDs, and separate usage attribution. MCP tools and provider-hosted tools are not available in child runs. The UI shows child objectives and final status/result, with live phase updates while the run manager is open and the last saved phase available when it opens later. On Windows, child runs can invoke user-declared named project tasks through the same permission rules and AppContainer process sandbox as the parent. Arbitrary shell commands, direct file writes, MCP tools, and provider-hosted tools remain outside the child allowlist.
+**Status: implemented in source and covered by deterministic tests.** User messages can be edited into a new conversation branch that copies the prior transcript and attachments while retaining the original. Adjacent retry responses can be selected as versions. Each assistant response stores its provider and model, and a selected version displays its own route. Runs and checkpoints are persisted for chat requests and goal/question continuation, with interrupted runs represented explicitly. The sidebar run manager lists running, paused, and interrupted runs across conversations, opens the related conversation, and the UI notifies users when a run ends in another chat. ChatGPT OAuth and OpenAI Responses API-key requests use their Responses routes for bounded child runs. Gemini, Groq, Cerebras, OpenRouter, and Mistral API-key requests use Chat Completions for bounded child runs when the selected model supports tools. Local llama.cpp requests use the selected model's loopback Chat Completions endpoint, with its configured local API key when present, if the model supports tools. Child runs inherit the selected model and reasoning setting; OAuth runs also inherit speed and workspace settings. Child runs have a read-only built-in tool allowlist, request/tool/output/time/concurrency caps, cancellation, durable run IDs, and separate usage attribution. MCP tools and provider-hosted tools are not available in child runs. The UI shows child objectives and final status/result, with live phase updates while the run manager is open and the last saved phase available when it opens later. On Windows, child runs can invoke user-declared named project tasks through the same permission rules and AppContainer process sandbox as the parent. Arbitrary shell commands, direct file writes, MCP tools, and provider-hosted tools remain outside the child allowlist.
 
 - Support editing a user message and starting a branch from that point while preserving the previous message and response history.
 - Keep regenerated or alternative model responses as versions that can be compared and selected; preserve provider/model provenance for each version.
@@ -198,7 +198,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 7. Broaden API-key provider access
 
-**Status: implemented in source and covered by deterministic tests.** Custom OpenAI- and Anthropic-compatible endpoints, presets for DeepSeek, xAI, Perplexity, Together AI, SambaNova, Fireworks AI, DeepInfra, DashScope (Qwen), Cohere, and local engines (Ollama, LM Studio) are implemented in the local Rust service and Flutter UI. Live account validation remains open.
+**Status: implemented in source and covered by deterministic tests.** Custom OpenAI- and Anthropic-compatible endpoints and presets for DeepSeek, xAI, Perplexity, Together AI, SambaNova, Fireworks AI, DeepInfra, DashScope (Qwen), and Cohere are implemented in the local Rust service and Flutter UI. Dedicated Ollama and LM Studio provider connections are planned. Live account validation remains open.
 
 - Add a user-configured OpenAI-compatible endpoint with a base URL, API key, catalog refresh, and manual model entry when a catalog is unavailable. Implemented with support for both OpenAI and Anthropic protocol targets.
 - Treat context limits, streaming, reasoning, vision, tool calling, and prices as model capabilities. Implemented with per-provider capability mappings and default limits.
@@ -222,10 +222,10 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 9. Build a searchable conversation library
 
-**Status: implemented in source.** Message and completed tool activity search supports provider, model, project, archive-status, date, and tag filters. Per-conversation tags, bookmarks, archive/unarchive, saved searches, transactional multi-select move/archive, and encrypted selected-conversation bulk export are implemented.
+**Status: implemented in source.** Message and completed tool activity search supports provider, model, project, archive-status, date, and tag filters. Per-conversation tags, bookmarks, archive/unarchive, saved searches, transactional multi-select move/archive, encrypted selected-conversation bulk export, and opt-in local text-attachment indexing are implemented.
 
 - Sidebar search covers indexed messages and completed tool activity, with snippets, match highlighting, lazy indexing of opted-in conversations, navigation to the matching message, and optional inclusive local-date, assistant-message provider/model, project, archive-status, and tag filters.
-- Keep attachment-content indexing separately configurable.
+- Keep attachment-content indexing separately configurable. Implemented as off by default; users can rebuild or clear the derived local index in Settings > Local data. It indexes supported UTF-8 text attachments only, caps the index at 5,000 files or 100 MB, and never changes source files. Images are excluded because OCR is not available.
 - Tags are stored per conversation, limited to 12 labels of 32 characters each, and shown accessibly in the sidebar. Bookmarks are stored per conversation and exposed with an accessible sidebar indicator and menu action. Up to 20 named searches preserve their query, filters, and date range in local preferences. Multi-select can move active conversations between projects and the general chat list or archive them atomically. The encrypted conversation archive supports exporting multiple selected conversations.
 - Keep the existing per-conversation memory search as a focused context tool; make the broader library search a separate history workflow.
 
@@ -257,9 +257,9 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 12. Expand local and managed provider connections
 
-**Status: planned.** Make existing local model servers and enterprise gateways easier to connect without duplicating their model runtimes.
+**Status: planned.** Add dedicated Ollama and LM Studio local-server connections. Keep them separate from OpenChat-managed runtimes.
 
-- Add dedicated Ollama and LM Studio connections for health checks, model discovery, and documented model lifecycle controls. Keep these distinct from OpenChat-managed llama.cpp installation.
+- Add dedicated Ollama and LM Studio connections for health checks, model discovery, and documented model lifecycle controls. Require an explicit local server address, show connection failures clearly, and keep these distinct from OpenChat-managed llama.cpp installation.
 - Evaluate Amazon Bedrock Converse/ConverseStream with regional configuration, AWS authentication, model availability, and tool-use capability checks.
 - Evaluate Microsoft AI Foundry endpoints with deployment identifiers, supported authentication modes, and per-model API compatibility.
 - Reuse the shared provider contract and make region, deployment, privacy, pricing, and unavailable capability information visible.
@@ -268,7 +268,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 13. Establish an accessibility and locale quality matrix
 
-**Status: in progress.** Tool approvals, project permission controls, worktree controls (including named-task selection and command confirmation), the run manager, provider citations, conversation selection/bookmark labels, the chat composer send and stop actions, stop-disabled state, assistant response-version controls, and the localized editable name of the composer message field have semantic coverage across five locales and narrow/wide layouts. Citation source actions open their stored source card by keyboard in all supported locales. The conversation sidebar and response-version selector tests cover widths down to 320 logical pixels and text scales through 200%; keyboard-only activation tests cover conversation selection, citation opening, tool approval and denial, response-version selection, and composer sending. The worktree and run-manager matrices also cover simulated display pixel ratios through 200% and reduced animation settings. System high-contrast light/dark themes and key text/focus contrast have focused checks. Flutter widget coverage also exercises settings, model routes, active messages, chat controls, and keyboard-revealed conversation actions at narrow and enlarged layouts. Native Windows UI Automation/screen-reader workflows and real Windows display-scaling validation remain open; widget tests do not substitute for those desktop checks.
+**Status: in progress.** Tool approvals, project permission controls, worktree controls (including named-task selection and command confirmation), the run manager, provider citations, conversation selection/bookmark labels, the chat composer send and stop actions, stop-disabled state, assistant response-version controls, and the localized editable name of the composer message field have semantic coverage across five locales and narrow/wide layouts. Temporary-chat notices and their end action now have locale and width coverage from 320 logical pixels through desktop; the compact empty-chat guide scrolls without losing its setup steps or composer, and its step labels wrap at narrow widths. Citation source actions open their stored source card by keyboard in all supported locales. The conversation sidebar and response-version selector tests cover widths down to 320 logical pixels and text scales through 200%; keyboard-only activation tests cover conversation selection, citation opening, tool approval and denial, response-version selection, and composer sending. The worktree and run-manager matrices also cover simulated display pixel ratios through 200% and reduced animation settings. System high-contrast light/dark themes and key text/focus contrast have focused checks. Flutter widget coverage also exercises settings, model routes, active messages, chat controls, and keyboard-revealed conversation actions at narrow and enlarged layouts. Native Windows UI Automation/screen-reader workflows and real Windows display-scaling validation remain open; widget tests do not substitute for those desktop checks.
 
 - Cover keyboard-only navigation, focus visibility and restoration, screen-reader labels, high contrast, and reduced motion.
 - Test text scaling, 125–200% Windows display scaling, narrow layouts, long translations, and input composition.
@@ -307,14 +307,18 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 17. Package and distribute extensions
 
-**Status: later.** Package MCP servers, first-party tool extensions, Skills, recipes, and provider presets after their schemas and permission boundaries stabilize.
+**Status: local app-wide MCP templates and user-pinned signed metadata sources implemented in source; independent publisher verification and package distribution remain later.** Settings can save, edit, search, and remove reusable MCP connection templates. User-added sources use a pinned Ed25519 key and bounded, user-initiated HTTPS retrieval. The app verifies catalog integrity against that key, not the publisher's real-world identity. Signed entries are limited to Streamable HTTP and are imported as templates. Adding any template copies it to the active project as a disabled MCP server, records `Ask` for its tools, and leaves credentials scoped to that project. Catalog templates do not download or execute software.
 
 - Define versioned manifests with declared tools, permissions, provider requirements, and configuration needs.
-- Support local install, update, disable, and removal before creating a shared catalog.
-- Add signature or trusted-source verification and explain the access each package requests.
+- Extend the local template catalog with safe update and removal flows for servers already installed in the active project.
+- [x] Add user-pinned Ed25519 source verification for Streamable HTTP connector metadata; publisher identity remains unverified.
+- [ ] Define and review a package installation path before distributing executable connector packages. Signed metadata sources do not fetch binaries.
 - Keep package permissions separate from the user's built-in tool permissions and require explicit enablement.
+- Keep catalog entries disabled by default; listing or installing one must not connect it, grant credentials, or send conversation data.
+- Keep connector configuration, permissions, and credentials scoped to each project when adding a catalog entry to that project.
+- Require renewed consent when an update expands a package's declared capabilities. Removing a package must disable it and remove its local data and stored credentials, with cleanup failures shown clearly.
 
-**Exit criteria:** packages are version-pinned, their requested access is visible before installation, and removal leaves no active server or hook behind.
+**Exit criteria:** verified packages are version-pinned, their requested access is visible before installation, and removal leaves no active server or hook behind. These criteria are not yet met for third-party package distribution.
 
 ### 18. Add user-controlled encrypted sync
 
@@ -326,6 +330,327 @@ These bullets describe code present in the repository. They do not mean that eve
 - Build on the portable archive format and integrity checks from the backup stage.
 
 **Exit criteria:** sync is opt-in, users control the destination and recovery material, conflicts are reviewable, and credentials never leave platform secure storage.
+
+## Product experience and capability audit
+
+This section records user-facing gaps identified by the October 2026 product
+and UX review. Competitor documentation is used to discover established
+workflows, not as a commitment to match every hosted product. Keep OpenChat's
+local-first boundary and Windows-first release scope unless a roadmap item
+explicitly changes them. Existing work is tracked under priorities 4, 6–8,
+11–13, and 15–18; the items below cover gaps not already represented there.
+
+### 19. Guide first-time setup and provider recovery
+
+**Status: partially implemented in source, P0.** The empty-chat screen shows a
+four-step connection, provider catalog verification, model selection, and
+message guide. Its active step advances as a provider is configured, a catalog
+loads, and a model is selected; completed steps are announced accessibly.
+Loading, catalog failure, and missing-model states have direct recovery actions.
+API-compatible and OpenCode Console connection cards distinguish a saved key
+from successful provider authentication and a usable model catalog.
+Authentication rejection, rate limits, network failures, and empty catalogs
+have separate recovery copy; cached catalogs never count as successful
+verification, and quota is marked unavailable in OpenChat where no quota query
+exists. ChatGPT OAuth verification forces a model-catalog refresh for the
+selected account and workspace; each saved ChatGPT API key can also be checked
+against a freshly requested model catalog without displaying its secret.
+API-compatible and OpenCode Console checks now retain their result and check
+time in local settings; changing or removing their saved key clears the old
+result. ChatGPT OAuth results are scoped to the account and workspace, while
+ChatGPT API-key results are scoped to each saved connection. Removing either
+connection clears its verification record. Regular chat request outcomes and
+timestamps are stored locally per provider route, account, and workspace, and
+appear beside the matching connection's verification state. Temporary chats do
+not update this durable summary. The record contains only a bounded outcome enum
+and timestamp; it excludes prompts, provider error text, and credentials.
+Failures to save a regular-chat summary are reported in chat without changing
+the provider response. The empty-chat guide now explains ChatGPT sign-in,
+provider API keys, and available local models. It distinguishes saved provider
+credentials from a reachable connection and directs users to verify or refresh
+the catalog before model selection. A stale cached catalog keeps the guide on
+the verification step, announces that it could not verify the connection, and
+offers a direct refresh action. Freshness is tracked per provider/model route,
+so a cached list for another ChatGPT account does not mark a currently selected
+route stale; with no selection, verification is requested only when every
+available route is stale. Focused route-selection tests cover both cases. The
+fourth “send” step stays visible after model selection until a completed
+assistant response exists in durable history. Returning profiles with an
+earlier completed response keep the direct-to-chat welcome state; temporary
+chat responses do not alter that history. The default OpenCode route no longer
+counts as a configured credential by itself. Repository and ChatScreen tests
+cover new profiles, returning profiles, and the step's accessibility at 320 px
+with 200% text scaling in all five supported locales.
+Assistant failures caused by rejected credentials now include a direct action
+to open Connections; rate-limit and network errors retain their retry path. A
+widget regression test now follows the connection, verification, available
+model, and ready-to-chat states in one sequence. The first real response still
+needs an end-to-end run on a clean profile with a configured provider account.
+
+- Provide a first-run path that explains connection choices, configures or
+  connects one provider, verifies its authentication and model catalog, helps
+  select a usable model, and opens the first chat. The choices and recovery
+  guidance are now present on the empty-chat screen; full clean-profile
+  validation against a real provider remains open.
+- Show provider state as distinct steps: credentials configured, connection
+  verified, catalog available, quota known or unavailable, and last request
+  outcome. The connection cards now show verification and last request state,
+  and the empty-chat guide exposes the send step. Never present saved credentials
+  as proof that a provider is working.
+- Give each failed step a localized explanation and a direct recovery action,
+  such as reconnect, refresh the catalog, select another model, or open the
+  relevant provider settings.
+- Keep setup optional after the first connection and preserve the existing
+  direct-to-chat path for returning users.
+
+**Exit criteria:** a clean profile can reach a first response through the
+guided path; invalid credentials, unavailable catalogs, unsupported models,
+and provider outages each show the failed step and a usable next action.
+
+### 20. Add private conversations and user-controlled memory
+
+**Status: partially implemented in source, P1.** The temporary-chat retention
+contract is documented, randomly generated `tmp_` IDs are rejected by durable
+conversation creation, message saving, and the normal chat-send RPC, and an
+in-memory session model validates transcript bounds, immutable save snapshots,
+and discard behavior. A separate `chat.temporary.send` RPC validates bounded
+user/assistant history and in-memory portable attachments, then streams
+responses for compatible provider routes without creating conversation, run,
+tool, or usage records. Text attachments are included as untrusted data and
+images are offered only for models that support them. The chat sidebar can
+start a temporary session, the first send explains provider-side retention,
+messages and files remain in memory, and leaving offers save, discard, or
+  continue. Saving sent messages and attachments is transactional and preserves
+  the selected provider route, including ChatGPT OAuth account and workspace.
+  The selected ChatGPT OAuth account and workspace are supported on this path,
+  with model and image-capability validation and a memory-only response stream.
+  Tool calls remain unsupported.
+Personal memory now supports user-entered local facts, editing and removal,
+with use disabled by default. When enabled, the facts are included as reference
+data in new model requests and the settings explain that their text goes to the
+selected provider. Users can now persist a per-conversation exclusion from the
+chat header; excluded conversations do not include saved facts in requests.
+New standard chats expose the same control before the first message. The
+pending choice is applied to that first request and saved against the generated
+conversation ID before the provider is called. If the privacy preference cannot
+be saved, the request is stopped and the empty conversation is removed. The
+exclusion decision is captured once at send start and reused for both request
+construction and the local retention record. Standard sends also take a
+synchronous preparation lock before asynchronous preference and credential
+reads, and snapshot the selected route, reasoning effort, profile, project, and
+workspace context before those reads can complete.
+Temporary sends use the same preparation lock before credential reads and
+provider-retention confirmation. Leaving a temporary session is blocked during
+preparation and while its provider request is active, preventing the session
+from being discarded before its first message is committed in memory.
+Each assistant response now stores the IDs of personal-memory facts included
+in its request and offers a disclosure that resolves the current saved text.
+Edited or removed facts are identified as no longer available, and fact edits
+create new IDs so an old response cannot show changed text as its source.
+Temporary chats use the selected ChatGPT OAuth account and workspace without
+creating local message, run, or usage records. Make local retention and
+cross-conversation personalization explicit, separate choices.
+The temporary-chat retention contract and provider/tool boundaries are defined
+in [temporary conversations](docs/temporary-conversations.md).
+
+- Continue opt-in, local-only personal memory so it can be paused and excluded
+  per conversation. Show which saved facts informed a response; do not silently
+  infer that archived content should become a durable memory.
+- Keep conversation memory search scoped to its current conversation and
+  project indexing scoped to its selected project unless the user enables a
+  separate cross-conversation memory feature.
+- Add a privacy settings group for these controls and make archive/index
+  behavior understandable at the point where users enable it.
+
+**Exit criteria:** temporary chats do not enter durable history, search,
+project indexes, or exports unless explicitly saved; personal memory is off by
+default and every remembered item and source can be reviewed or removed.
+
+### 21. Add reusable assistant profiles and an editable response workspace
+
+**Status: partially implemented in source, P1.** Assistant profiles can be
+created, edited, activated, deactivated, and removed in settings. Their name,
+bounded instructions, and concise/balanced/detailed response style persist in
+local preferences. The active profile's style and instructions are included in
+new standard chat requests alongside shared and project-specific instructions;
+the active profile is shown in the conversation header before sending. Temporary
+chats do not apply profiles, and the settings explain this boundary. Profiles
+can save a preferred model from the currently selected available model. That
+preference applies to new chats after project-specific defaults and retains its
+reasoning effort where supported. Existing conversations keep their saved
+model. Explicit per-profile tool allowlists and the editable response workspace
+are partly implemented: profiles can restrict built-in tool groups; the service
+validates the allowlist, filters advertised tools, and limits the executor. The
+profile limit takes precedence over global and project tool grants. When a
+project is active, named project tasks and configured project tools can also be
+selected in the profile; the service advertises only entries present in that
+project's validated catalogs. MCP tool discovery is user initiated, and only
+servers containing an allowed tool are connected during the request. An absent
+allowlist preserves existing behavior, while an empty list disables tools.
+Before sending, the conversation header now shows whether the active profile
+sets a tool limit, disables tools, or inherits the app and project permissions.
+The accessible label and tooltip clarify that app and project permissions can
+further limit a profile's selected tools.
+The Saved responses page now opens a side workspace where users can edit a
+working copy, preview safe Markdown (including fenced code blocks), save
+numbered versions, switch the selected version, and export that version as
+Markdown. The source editor is labeled as Markdown and uses a code font.
+Edited versions remain linked to their source conversation and
+message; the original transcript is unchanged. Schema 16 backfills existing
+saved responses as version 1. Source editing now supports syntax highlighting
+and language selection for Markdown, Dart, Go, JavaScript, TypeScript, Python,
+Rust, JSON, YAML, HTML/XML, CSS, and SQL. Language selection only changes local
+editor presentation; it does not alter the saved text or execute code. Profile
+creation and removal restore the previous profile list if updating the active
+profile fails.
+
+- Add personal assistant profiles that combine a name, instructions, response
+  style, preferred model, and explicitly enabled tools. Keep project-specific
+  instructions and Skills available as narrower project context.
+- Keep assistant profiles distinct from recipes in priority 6: profiles shape
+  an ongoing assistant, while recipes launch a bounded, repeatable task.
+- Add a side workspace for substantial documents, plans, and code. Support
+  focused edits, version selection, and export without replacing the source
+  conversation or saved-output collection.
+- Show the active profile, model, and tool access before a request is sent.
+  The profile's tool scope is shown in the conversation header, and the
+  selected model remains visible in the composer. App and project permissions
+  may further reduce the profile's tool allowlist.
+
+**Exit criteria:** users can create, edit, select, and remove a profile; a
+workspace output retains its link to the generating conversation and selected
+version; unsupported editing or export formats fail explicitly.
+
+### 22. Expand library search and reusable file access
+
+**Status: partially implemented in source, P1.** The local-data settings now
+offer a user-reviewed support diagnostics export. It contains only an explicit
+allowlist of app/runtime, history-storage, service-health, and database schema
+fields; the preview and saved JSON are identical. Chat content, credentials,
+and filesystem paths are excluded, including path fields returned by the
+service health RPC. Cross-surface search now combines conversation history
+with project/workspace names, saved responses, and attachment names. Results
+show their type; source conversations and messages can be opened directly.
+The composer also offers a reusable library of conversation attachments. It
+loads recent messages in bounded batches, can continue to older conversation
+files on request, and copies a revalidated file into the new message when
+selected. Result-type filters are implemented. Project results open the
+latest related conversation or start a new conversation in that project.
+Workspace results open the workspace organizer and select the matching
+workspace; conversations created there retain that workspace assignment. The
+dedicated file-library surface lists saved attachments in bounded pages,
+filters available and missing files, and opens each file's source message.
+Attachment-content indexing is optional, local, bounded, and removable without
+deleting source files. Turning it off persists the opt-out before deleting the
+derived index; if cleanup fails, the remaining count and retry action stay
+available. Unified library queries treat `%` and `_` as literal search text
+rather than SQL pattern wildcards. Build on priority 9's
+conversation search and priority 11's document ingestion without mixing
+unrelated content into chat history results.
+
+- Add direct project/workspace destinations to the unified search entry point.
+  Implemented: project results open their latest related conversation or begin
+  a project conversation; workspace results open and select the matching
+  workspace in the workspace organizer.
+- Expand the reusable conversation-attachment picker beyond its bounded recent
+  list. Implemented with on-demand message-page loading and explicit retry on
+  page failure. The separate file-library surface distinguishes conversation
+  attachments from project-indexed content and opens source messages.
+- Make attachment-content indexing a separate opt-in control, consistent with
+  priority 9; report which file types are indexed and provide a clear way to
+  remove derived indexes without deleting original files.
+- Keep support diagnostics user-initiated, previewed, and limited to the
+  documented allowlist. Exclude prompts, conversation content, filesystem
+  paths, and credentials by default. Implemented in local-data settings.
+
+**Exit criteria:** every result identifies its content type and source;
+attachment indexing is off until enabled; removing an index leaves original
+files intact; support bundles pass a documented data-scope review before
+export.
+
+### 23. Make notifications, permissions, and keyboard help configurable
+
+**Status: partially implemented in source, P2.** Settings now persist controls
+for background response alerts, pending-question alerts, response-text
+previews, and quick reply. Notification delivery reads these preferences before
+showing an alert; defaults preserve the existing Windows behavior. Settings
+replace response text with a generic body when response previews are off; the
+delivery body and persisted defaults are covered by regression tests. A
+focused notification-detail test verifies that quick reply adds the localized
+input and action only when enabled, with a bounded conversation/message target.
+Settings also expose the global tool-permission mode and link to the active
+project's rules; the settings summary reports how many project tools are
+allowed, require approval, or denied, and clarifies that other tools inherit
+the global mode. A searchable keyboard reference lists the send, new-line, and
+stop shortcuts that are active in the composer. Windows toast availability now
+comes from the Windows `ToastNotifier` setting, with the reported block reason
+and a direct link to Windows notification settings. The runner creates or
+refreshes a per-user Start menu shortcut carrying the matching AUMID; it reports
+notifications unavailable if that registration cannot be written. The app
+rechecks the status after returning from Settings. When Windows reports
+notifications enabled, the user can request a content-free test toast from
+Settings to check actual delivery. Actual toast display can still be affected
+by Focus Assist or other system-level presentation behavior.
+
+- Add notification settings for background response completion and pending AI
+  questions, including whether previews may show response text and whether
+  quick reply is available. Respect operating-system notification permission
+  and explain when notifications cannot be delivered.
+- Add a settings overview of the global tool-permission mode, with links to
+  per-project rules. Keep the composer control as a quick per-chat entry point
+  and explain when project rules override the global default.
+- Provide a searchable keyboard-shortcut reference. The composer currently
+  lists Enter to send, Shift+Enter for a new line, and Esc to stop a response;
+  user remapping is not included.
+- Group settings by task: appearance and accessibility, chat behavior,
+  providers and models, tools and permissions, notifications, and data and
+  privacy. Keep search available and avoid adding a sidebar item for every
+  individual toggle.
+
+**Exit criteria:** notification changes are persisted and reflected in actual
+delivery; permission summaries match the effective global/project rules; all
+listed shortcuts are keyboard-operable. Windows-reported notification
+availability, recovery navigation, keyboard help, and permission summaries
+are implemented. Native presentation under Focus Assist and other system-level
+notification modes remains a manual Windows validation item.
+
+### 24. Evaluate sharing and first-party connectors within the local-first model
+
+**Status: local encrypted file transfer and an application-wide connector catalog selected.** Alican chose local,
+encrypted archives for conversation sharing. Hosted links, hosted conversation
+storage, and multi-user collaboration are outside the current product scope.
+Readable Markdown exports remain separate, explicitly user-directed exports;
+they are not encrypted by OpenChat. The current transfer formats and
+project-scoped MCP/tool boundaries and the selected local catalog scope are
+documented in [sharing and connector boundaries](docs/sharing-and-connectors.md).
+Connector installation restores the previous project permission map if saving
+the project server catalog fails. Signed catalog refresh saves entries before
+advancing the source revision and restores the previous entries if that source
+metadata update fails.
+The install confirmation also explains the endpoint or local process, the
+project-scoped authentication path, what a signed-source refresh changes, and
+what removing a local template leaves in project settings. These disclosures
+are localized and covered across the supported locales.
+
+- Keep conversation sharing in the existing encrypted archive flow. Review
+  selected conversations and attachments before export; the passphrase stays
+  user supplied and is never stored by OpenChat.
+- Continue priority 17's application-wide catalog from locally defined MCP
+  templates to signed, versioned metadata. Before installation, show
+  each connector's publisher, requested access, destination, data sent,
+  authentication method, update behavior, and removal behavior. Catalog
+  retrieval may not imply hosted execution or send conversation content.
+- Do not add hosted conversation links or live multi-user collaboration under
+  the current local encrypted transfer decision. Revisit only after explicit
+  product approval and a service, access, deletion, and abuse response model.
+
+**Exit criteria:** encrypted local archives remain the conversation-sharing
+path; connector entries are verified, opt-in, and show their data-flow and
+permission model before use; no feature implies cloud sync or public access.
+The user-managed local template catalog and pinned-key signed metadata sources
+are implemented, but independent publisher verification and executable package
+distribution remain open. Hosted sharing
+remains out of scope under the current product decision.
 
 ## Explicit boundaries
 
@@ -371,10 +696,20 @@ These bullets describe code present in the repository. They do not mean that eve
 - [Goose subagents](https://goose-docs.ai/docs/guides/subagents/)
 - [Cline task management](https://docs.cline.bot/core-workflows/task-management)
 - [Goose recipes](https://goose-docs.ai/docs/guides/recipes/session-recipes/)
-- [LM Studio REST API](https://lmstudio.ai/docs/developer/rest)
-- [Ollama OpenAI compatibility](https://github.com/ollama/ollama/blob/main/docs/api/openai-compatibility.mdx)
+- [LM Studio OpenAI-compatible API](https://lmstudio.ai/docs/developer/openai-compat)
+- [Ollama OpenAI compatibility](https://docs.ollama.com/api/openai-compatibility)
 - [Amazon Bedrock Converse API](https://docs.aws.amazon.com/bedrock/latest/userguide/conversation-inference.html)
 - [Microsoft AI Foundry model endpoints](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/endpoints)
 - [llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases)
-- [vLLM installation guide](https://docs.vllm.ai/en/latest/getting_started/installation/)
-- [ExLlamaV3 releases](https://github.com/turboderp-org/exllamav3/releases)
+- [ChatGPT capabilities overview](https://help.openai.com/en/articles/9260256-chatgpt-capabilities-overview)
+- [ChatGPT projects](https://help.openai.com/en/articles/10169521-projects-in-chatgpt)
+- [ChatGPT temporary chat](https://help.openai.com/en/articles/8914046-temporary-chat-faq)
+- [ChatGPT conversation search](https://help.openai.com/en/articles/10056348-finding-your-chats-projects-and-files-in-chatgpt)
+- [ChatGPT shared conversations and scheduled tasks](https://help.openai.com/en/articles/7925741-sharing-conversations-and-scheduled-tasks-in-chatgpt)
+- [Claude personalization features](https://support.anthropic.com/en/articles/10185728-understanding-claude-s-personalization-features)
+- [Claude projects](https://support.anthropic.com/en/articles/9517075-what-are-projects)
+- [Claude styles](https://support.anthropic.com/en/articles/10181068-configuring-and-using-styles)
+- [Claude artifacts](https://support.anthropic.com/en/articles/9487310-what-are-artifacts-and-how-do-i-use-them)
+- [Gemini file upload and analysis](https://support.google.com/gemini/answer/14903178)
+- [Gemini Connected Apps](https://support.google.com/gemini/answer/13695044)
+- [Open WebUI workspace models](https://docs.openwebui.com/features/workspace/models/)

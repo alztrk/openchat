@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:intl/intl.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
 import 'package:openchat/features/chat/domain/tool_permission_request.dart';
 import 'package:openchat/features/chat/presentation/widgets/tool_activity.dart';
 import 'package:openchat/features/chat/presentation/widgets/tool_permission_card.dart';
+import 'package:openchat/features/chat/presentation/widgets/tool_web_search_view.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 
 void main() {
@@ -261,5 +263,62 @@ void main() {
       expect(find.text(l10n.toolUrl), findsOneWidget);
       expect(find.text('https://github.com/rust-lang/rust'), findsAtLeast(1));
     });
+  });
+
+  testWidgets('shows local source identity and retrieval time', (tester) async {
+    const locale = Locale('en');
+    final l10n = await AppLocalizations.delegate.load(locale);
+    const retrievedAtUnixMs = 1800000000000;
+    final activity = ChatToolActivity(
+      callId: 'call-1234',
+      name: 'web_search',
+      status: ChatToolActivityStatus.completed,
+      arguments: const <String, Object?>{'query': 'OpenChat'},
+      output: const <String, Object?>{
+        'query': 'OpenChat',
+        'sourceType': 'local_web_search',
+        'retrievedAtUnixMs': retrievedAtUnixMs,
+        'results': [
+          {
+            'sourceId': 'S1-call1234',
+            'title': 'OpenChat source',
+            'url': 'https://example.org/openchat',
+            'snippet': 'Project information',
+            'engine': 'bing',
+          },
+        ],
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: locale,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.dark,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ToolWebSearchResult(
+              activity: activity,
+              palette: OpenChatPalette.dark,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text(l10n.toolCitationSource('S1-call1234')), findsOneWidget);
+    expect(find.text(l10n.toolLocalWebSource), findsOneWidget);
+    final retrievedAt = DateTime.fromMillisecondsSinceEpoch(retrievedAtUnixMs)
+        .toLocal();
+    expect(
+      find.text(
+        l10n.toolSourceRetrievedAt(
+          DateFormat.yMMMd('en').add_jm().format(retrievedAt),
+        ),
+      ),
+      findsOneWidget,
+    );
   });
 }

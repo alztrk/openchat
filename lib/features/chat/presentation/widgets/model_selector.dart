@@ -98,11 +98,7 @@ class ModelSelector extends StatefulWidget {
 
 class _ModelSelectorState extends State<ModelSelector> {
   static const double _menuHeight = 420;
-  static const Set<String> _localEngineProviderIds = <String>{
-    'llama_cpp',
-    'vllm',
-    'exllama',
-  };
+  static const Set<String> _localEngineProviderIds = <String>{'llama_cpp'};
 
   final _menuController = MenuController();
   final _menuBoundsKey = GlobalKey();
@@ -789,11 +785,7 @@ const _providerIds = <String>[
   'deepinfra',
   'dashscope',
   'cohere',
-  'ollama',
-  'lmstudio',
   'llama_cpp',
-  'vllm',
-  'exllama',
 ];
 
 String _providerLabel(String providerId, AppLocalizations l10n) =>
@@ -815,11 +807,7 @@ String _providerLabel(String providerId, AppLocalizations l10n) =>
       'deepinfra' => l10n.deepInfraProvider,
       'dashscope' => l10n.dashScopeProvider,
       'cohere' => l10n.cohereProvider,
-      'ollama' => l10n.ollamaProvider,
-      'lmstudio' => l10n.lmStudioProvider,
       'llama_cpp' => 'llama.cpp',
-      'vllm' => 'vLLM',
-      'exllama' => 'ExLlamaV3',
       _ => providerId,
     };
 
@@ -996,7 +984,7 @@ class _ModelOption extends StatefulWidget {
 }
 
 class _ModelOptionState extends State<_ModelOption> {
-  static const _localProviders = <String>{'llama_cpp', 'vllm', 'exllama'};
+  static const _localProviders = <String>{'llama_cpp'};
 
   final _detailsOverlayController = OverlayPortalController();
   final _rowFocusNode = FocusNode();

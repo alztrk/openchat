@@ -1460,7 +1460,6 @@ String _providerLabel(String providerId, AppLocalizations l10n) =>
       'mistral' => 'Mistral',
       'cerebras' => 'Cerebras',
       'llama_cpp' => 'llama.cpp',
-      'vllm' => 'vLLM',
       _ => providerId,
     };
 

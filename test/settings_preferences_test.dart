@@ -13,6 +13,9 @@ import 'package:openchat/features/chat/domain/history_storage_status.dart';
 import 'package:openchat/features/chat/domain/history_search_result.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
+import 'package:openchat/features/settings/data/personal_memory_fact.dart';
+import 'package:openchat/features/settings/domain/provider_verification_record.dart';
+import 'package:openchat/features/settings/domain/provider_request_outcome_record.dart';
 import 'package:openchat/features/settings/presentation/settings_screen.dart';
 import 'package:openchat/platform/windows/openchat_service_client.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
@@ -43,6 +46,44 @@ void main() {
         InMemorySharedPreferencesAsync.empty();
   });
 
+  test(
+    'attachment text indexing is disabled by default and persists',
+    () async {
+      final preferences = SettingsPreferences(SharedPreferencesAsync());
+      expect(await preferences.readAttachmentContentIndexEnabled(), isFalse);
+
+      await preferences.writeAttachmentContentIndexEnabled(true);
+
+      expect(
+        await SettingsPreferences(SharedPreferencesAsync())
+            .readAttachmentContentIndexEnabled(),
+        isTrue,
+      );
+    },
+  );
+
+  test('conversation notification choices default on and persist', () async {
+    final preferences = SettingsPreferences(SharedPreferencesAsync());
+    final defaults = await preferences
+        .readConversationNotificationPreferences();
+    expect(defaults.responses, isTrue);
+    expect(defaults.questions, isTrue);
+    expect(defaults.responsePreview, isTrue);
+    expect(defaults.quickReply, isTrue);
+
+    await preferences.writeNotificationResponses(false);
+    await preferences.writeNotificationQuestions(false);
+    await preferences.writeNotificationResponsePreview(false);
+    await preferences.writeNotificationQuickReply(false);
+
+    final reopened = await SettingsPreferences(SharedPreferencesAsync())
+        .readConversationNotificationPreferences();
+    expect(reopened.responses, isFalse);
+    expect(reopened.questions, isFalse);
+    expect(reopened.responsePreview, isFalse);
+    expect(reopened.quickReply, isFalse);
+  });
+
   tearDown(() {
     SharedPreferencesAsyncPlatform.instance = null;
   });
@@ -71,6 +112,210 @@ void main() {
     expect(reopened, hasLength(1));
     expect(reopened.single.toJson(), saved.toJson());
   });
+
+  test(
+    'provider verification records are isolated by connection and workspace',
+    () async {
+      final preferences = SettingsPreferences(SharedPreferencesAsync());
+      final record = ProviderVerificationRecord(
+        outcome: ProviderVerificationOutcome.verified,
+        checkedAt: DateTime.utc(2026, 10, 13, 9),
+      );
+
+      await preferences.writeProviderVerificationRecordForRoute(
+        providerId: 'chatgpt_oauth',
+        connectionId: 'account/one',
+        workspaceId: 'team.a',
+        record: record,
+      );
+      await preferences.writeProviderVerificationRecordForRoute(
+        providerId: 'chatgpt_oauth',
+        connectionId: 'account',
+        workspaceId: 'one/team.a',
+        record: ProviderVerificationRecord(
+          outcome: ProviderVerificationOutcome.emptyCatalog,
+          checkedAt: DateTime.utc(2026, 10, 13, 10),
+        ),
+      );
+
+      final reopened = SettingsPreferences(SharedPreferencesAsync());
+      expect(
+        await reopened.readProviderVerificationRecordForRoute(
+          providerId: 'chatgpt_oauth',
+          connectionId: 'account/one',
+          workspaceId: 'team.a',
+        ),
+        isNotNull,
+      );
+      expect(
+        (await reopened.readProviderVerificationRecordForRoute(
+          providerId: 'chatgpt_oauth',
+          connectionId: 'account/one',
+          workspaceId: 'team.a',
+        ))?.outcome,
+        ProviderVerificationOutcome.verified,
+      );
+      expect(
+        (await reopened.readProviderVerificationRecordForRoute(
+          providerId: 'chatgpt_oauth',
+          connectionId: 'account',
+          workspaceId: 'one/team.a',
+        ))?.outcome,
+        ProviderVerificationOutcome.emptyCatalog,
+      );
+      await reopened.clearProviderVerificationRecordForRoute(
+        providerId: 'chatgpt_oauth',
+        connectionId: 'account/one',
+        workspaceId: 'team.a',
+      );
+      expect(
+        await reopened.readProviderVerificationRecordForRoute(
+          providerId: 'chatgpt_oauth',
+          connectionId: 'account/one',
+          workspaceId: 'team.a',
+        ),
+        isNull,
+      );
+      expect(
+        await reopened.readProviderVerificationRecordForRoute(
+          providerId: 'chatgpt_oauth',
+          connectionId: 'account',
+          workspaceId: 'one/team.a',
+        ),
+        isNotNull,
+      );
+    },
+  );
+
+  test(
+    'personal memories stay disabled by default and persist as editable facts',
+    () async {
+      final preferences = SettingsPreferences(SharedPreferencesAsync());
+      expect(await preferences.readPersonalMemoryEnabled(), isFalse);
+
+      final fact = PersonalMemoryFact.create('Prefers concise answers');
+      await preferences.writePersonalMemoryFacts(<PersonalMemoryFact>[fact]);
+      await preferences.writePersonalMemoryEnabled(true);
+
+      final reopened = SettingsPreferences(SharedPreferencesAsync());
+      expect(await reopened.readPersonalMemoryEnabled(), isTrue);
+      expect(
+        (await reopened.readPersonalMemoryFacts()).single.toJson(),
+        fact.toJson(),
+      );
+    },
+  );
+
+  test(
+    'provider verification records persist their outcome and time',
+    () async {
+      final preferences = SettingsPreferences(SharedPreferencesAsync());
+      final checkedAt = DateTime.utc(2026, 10, 13, 9, 30);
+      final record = ProviderVerificationRecord(
+        outcome: ProviderVerificationOutcome.authenticationFailed,
+        checkedAt: checkedAt,
+      );
+
+      await preferences.writeProviderVerificationRecord('groq', record);
+
+      final reopened = SettingsPreferences(SharedPreferencesAsync());
+      final loaded = await reopened.readProviderVerificationRecord('groq');
+      expect(loaded?.outcome, record.outcome);
+      expect(loaded?.checkedAt, checkedAt);
+
+      await reopened.clearProviderVerificationRecord('groq');
+      expect(await reopened.readProviderVerificationRecord('groq'), isNull);
+    },
+  );
+
+  test('last request outcomes persist per provider route', () async {
+    final preferences = SettingsPreferences(SharedPreferencesAsync());
+    final firstRoute = ProviderRequestOutcomeRecord(
+      outcome: ProviderRequestOutcome.authenticationFailed,
+      occurredAt: DateTime.utc(2026, 10, 13, 11, 20),
+    );
+    final secondRoute = ProviderRequestOutcomeRecord(
+      outcome: ProviderRequestOutcome.completed,
+      occurredAt: DateTime.utc(2026, 10, 13, 11, 21),
+    );
+
+    await preferences.writeProviderRequestOutcomeForRoute(
+      providerId: 'chatgpt_oauth',
+      connectionId: 'account/one',
+      workspaceId: 'team.a',
+      record: firstRoute,
+    );
+    await preferences.writeProviderRequestOutcomeForRoute(
+      providerId: 'chatgpt_oauth',
+      connectionId: 'account/one',
+      workspaceId: 'team.b',
+      record: secondRoute,
+    );
+
+    final reopened = SettingsPreferences(SharedPreferencesAsync());
+    final loadedFirstRoute = await reopened.readProviderRequestOutcomeForRoute(
+      providerId: 'chatgpt_oauth',
+      connectionId: 'account/one',
+      workspaceId: 'team.a',
+    );
+    expect(loadedFirstRoute?.outcome, firstRoute.outcome);
+    expect(loadedFirstRoute?.occurredAt, firstRoute.occurredAt);
+    expect(
+      (await reopened.readProviderRequestOutcomeForRoute(
+        providerId: 'chatgpt_oauth',
+        connectionId: 'account/one',
+        workspaceId: 'team.b',
+      ))?.outcome,
+      ProviderRequestOutcome.completed,
+    );
+    await reopened.clearProviderRequestOutcomeForRoute(
+      providerId: 'chatgpt_oauth',
+      connectionId: 'account/one',
+      workspaceId: 'team.a',
+    );
+    expect(
+      await reopened.readProviderRequestOutcomeForRoute(
+        providerId: 'chatgpt_oauth',
+        connectionId: 'account/one',
+        workspaceId: 'team.a',
+      ),
+      isNull,
+    );
+    final loadedSecondRoute = await reopened.readProviderRequestOutcomeForRoute(
+      providerId: 'chatgpt_oauth',
+      connectionId: 'account/one',
+      workspaceId: 'team.b',
+    );
+    expect(loadedSecondRoute?.outcome, secondRoute.outcome);
+    expect(loadedSecondRoute?.occurredAt, secondRoute.occurredAt);
+  });
+
+  test(
+    'personal memory conversation exclusions persist and reject temp IDs',
+    () async {
+      final preferences = SettingsPreferences(SharedPreferencesAsync());
+      expect(
+        await preferences.readPersonalMemoryExcludedConversationIds(),
+        isEmpty,
+      );
+
+      await preferences.writePersonalMemoryExcludedConversationIds(
+        const <String>{'conversation-1', 'conversation-2'},
+      );
+      final reopened = SettingsPreferences(SharedPreferencesAsync());
+      expect(
+        await reopened.readPersonalMemoryExcludedConversationIds(),
+        const <String>{'conversation-1', 'conversation-2'},
+      );
+
+      await expectLater(
+        reopened.writePersonalMemoryExcludedConversationIds(const <String>{
+          'tmp_123',
+        }),
+        throwsArgumentError,
+      );
+    },
+  );
 
   test(
     'appearance preferences use defaults and survive a new preferences reader',
@@ -188,6 +433,53 @@ void main() {
 
     await writer.writeHiddenModelKeys({});
     expect(await reopenedReader.readHiddenModelKeys(), isEmpty);
+  });
+
+  test('invalid hidden model keys are reported and can be reset', () async {
+    final preferences = SharedPreferencesAsync();
+    final reader = SettingsPreferences(preferences);
+
+    for (final invalidValue in <String>[
+      '{broken',
+      '{}',
+      '["opencode:::model", 3]',
+      '["opencode:::model", "opencode:::model"]',
+    ]) {
+      await preferences.setString('models.hidden_keys', invalidValue);
+      await expectLater(
+        reader.readHiddenModelKeys(),
+        throwsA(isA<FormatException>()),
+      );
+    }
+
+    await reader.clearHiddenModelKeys();
+    expect(await reader.readHiddenModelKeys(), isEmpty);
+  });
+
+  test('invalid default model preferences raise a format error', () async {
+    final preferences = SharedPreferencesAsync();
+    final reader = SettingsPreferences(preferences);
+
+    await preferences.setString('models.default_model', '{broken');
+    await expectLater(
+      reader.readDefaultModel(),
+      throwsA(isA<FormatException>()),
+    );
+
+    await preferences.setString(
+      'models.default_model',
+      '{"providerId":7,"modelId":"model-1"}',
+    );
+    await expectLater(
+      reader.readDefaultModel(),
+      throwsA(isA<FormatException>()),
+    );
+
+    await preferences.setString('models.project_default.project-1', '[]');
+    await expectLater(
+      reader.readProjectDefaultModel('project-1'),
+      throwsA(isA<FormatException>()),
+    );
   });
 
   test(
@@ -1001,6 +1293,59 @@ class _DefaultInstructionsServiceClient extends OpenChatServiceClient {
     if (method == 'instructions.defaults.get') {
       return {'instructions': 'Default assistant guidance.'};
     }
-    return super.call(method, params: params, timeout: timeout);
+    if (method == 'chat.memory.semantic.status') {
+      return const <String, Object?>{'ready': false};
+    }
+    if (method == 'statistics.get') {
+      return <String, Object?>{
+        'summary': <String, Object?>{
+          'inputTokens': 0,
+          'outputTokens': 0,
+          'totalTokens': 0,
+          'reasoningTokens': 0,
+          'cachedInputTokens': 0,
+          'cacheWriteTokens': 0,
+          'providerReportedCostUsd': 0.0,
+          'costReportedRequests': 0,
+          'modelsDevCatalogCostUsd': 0.0,
+          'modelsDevCatalogCostRequests': 0,
+          'totalRequests': 0,
+          'successfulRequests': 0,
+          'failedRequests': 0,
+          'cancelledRequests': 0,
+          'interruptedRequests': 0,
+          'pendingRequests': 0,
+          'conversationCount': 0,
+          'fastRequestedRequests': 0,
+          'inputUsageRequests': 0,
+          'outputUsageRequests': 0,
+          'reasoningUsageRequests': 0,
+          'anyUsageRequests': 0,
+          'legacyOutputMessages': 0,
+        },
+        'modelsDevPricing': <String, Object?>{
+          'source': 'models.dev',
+          'state': 'current',
+        },
+        'providerBreakdown': <Object?>[],
+        'modelBreakdown': <Object?>[],
+        'reasoningBreakdown': <Object?>[],
+        'operationBreakdown': <Object?>[],
+        'fastModeBreakdown': <Object?>[],
+        'serviceTierBreakdown': <Object?>[],
+        'dailyTrend': <Object?>[],
+        'monthlyTrend': <Object?>[],
+        'conversationRanking': <Object?>[],
+        'requestDetailCount': 0,
+        'requestDetails': <Object?>[],
+        'filterOptions': <String, Object?>{
+          'providers': <String>[],
+          'models': <String>[],
+          'reasoningEfforts': <String>[],
+        },
+        'quotaHistory': <Object?>[],
+      };
+    }
+    return const <String, Object?>{};
   }
 }

@@ -44,6 +44,7 @@ pub struct ChatSendContext<'a> {
     pub storage: &'a AppStorage,
     pub permission_mode: ToolPermissionMode,
     pub tool_permission_rules: ToolPermissionRules,
+    pub profile_tool_allowlist: Option<std::collections::HashSet<String>>,
     #[cfg(windows)]
     pub mcp_configs: Vec<crate::tools::mcp::StdioServerConfig>,
     #[cfg(windows)]

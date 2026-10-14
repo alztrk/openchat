@@ -18,7 +18,7 @@ class ProviderIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final iconWidth = providerId == 'exllama' ? size * 2 : size;
+    final iconWidth = size;
     final icon = switch (providerId) {
       'chatgpt' || 'chatgpt_api' => _providerSvg('assets/icons/chatgpt.svg'),
       'opencode' => _providerSvg('assets/icons/opencode.svg'),
@@ -70,9 +70,7 @@ class ProviderIcon extends StatelessWidget {
         'assets/icons/providers/cohere.svg',
         preserveBrandColors: true,
       ),
-      'ollama' => _providerSvg('assets/icons/providers/ollama.svg'),
-      'lmstudio' => _providerSvg('assets/icons/providers/lmstudio.svg'),
-      'llama_cpp' || 'vllm' || 'exllama' => LocalEngineIcon(
+      'llama_cpp' => LocalEngineIcon(
         engineId: providerId,
         color: color,
         size: size,

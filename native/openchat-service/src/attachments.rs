@@ -14,11 +14,11 @@ use crate::chatgpt_store::StoredAttachment;
 use crate::{protocol::ServiceError, storage::AppStorage};
 
 const MESSAGE_CONTENT_PREFIX: &str = "\u{1e}openchat-attachments-v1:";
-const MAXIMUM_FILE_COUNT: usize = 10;
-const MAXIMUM_IMAGE_COUNT: usize = 3;
-const MAXIMUM_IMAGE_BYTES: usize = 10 * 1024 * 1024;
-const MAXIMUM_TEXT_BYTES: usize = 1024 * 1024;
-const MAXIMUM_TOTAL_BYTES: usize = 14 * 1024 * 1024;
+pub(crate) const MAXIMUM_FILE_COUNT: usize = 10;
+pub(crate) const MAXIMUM_IMAGE_COUNT: usize = 3;
+pub(crate) const MAXIMUM_IMAGE_BYTES: usize = 10 * 1024 * 1024;
+pub(crate) const MAXIMUM_TEXT_BYTES: usize = 1024 * 1024;
+pub(crate) const MAXIMUM_TOTAL_BYTES: usize = 14 * 1024 * 1024;
 
 #[derive(Deserialize, Serialize)]
 struct MessageEnvelope {
@@ -65,34 +65,13 @@ pub(crate) fn message_attachment_metadata(
     let mut total_bytes = 0_usize;
     let mut image_count = 0_usize;
     for metadata in &envelope.attachments {
-        if !is_safe_identifier(&metadata.id)
-            || !ids.insert(metadata.id.as_str())
-            || metadata.name.trim().is_empty()
-            || metadata.name.chars().count() > 255
-            || metadata.name.chars().any(char::is_control)
-            || metadata.size_bytes == 0
-        {
+        if !ids.insert(metadata.id.as_str()) {
             return Err(AttachmentMetadataError(
                 "The saved attachment metadata is invalid.",
             ));
         }
-        let maximum_size = match (metadata.kind.as_str(), metadata.mime_type.as_str()) {
-            ("image", "image/png" | "image/jpeg" | "image/webp") => {
-                image_count = image_count.saturating_add(1);
-                MAXIMUM_IMAGE_BYTES
-            }
-            ("text", mime_type) if is_text_mime_type(mime_type) => MAXIMUM_TEXT_BYTES,
-            _ => {
-                return Err(AttachmentMetadataError(
-                    "The saved attachment type is invalid.",
-                ));
-            }
-        };
-        if metadata.size_bytes > maximum_size {
-            return Err(AttachmentMetadataError(
-                "The saved attachment size is invalid.",
-            ));
-        }
+        validate_attachment_metadata(metadata)?;
+        image_count += usize::from(metadata.kind == "image");
         total_bytes = total_bytes.saturating_add(metadata.size_bytes);
         if image_count > MAXIMUM_IMAGE_COUNT || total_bytes > MAXIMUM_TOTAL_BYTES {
             return Err(AttachmentMetadataError(
@@ -101,6 +80,40 @@ pub(crate) fn message_attachment_metadata(
         }
     }
     Ok(envelope.attachments)
+}
+
+pub(crate) fn validate_attachment_metadata(
+    metadata: &AttachmentMetadata,
+) -> Result<(), AttachmentMetadataError> {
+    if !is_safe_identifier(&metadata.id)
+        || metadata.name.trim().is_empty()
+        || metadata.name.chars().count() > 255
+        || metadata.name.chars().any(char::is_control)
+        || metadata.size_bytes == 0
+    {
+        return Err(AttachmentMetadataError(
+            "The attachment metadata is invalid.",
+        ));
+    }
+    let maximum_size = match (metadata.kind.as_str(), metadata.mime_type.as_str()) {
+        ("image", "image/png" | "image/jpeg" | "image/webp") => MAXIMUM_IMAGE_BYTES,
+        ("text", mime_type) if is_text_mime_type(mime_type) => MAXIMUM_TEXT_BYTES,
+        _ => {
+            return Err(AttachmentMetadataError("The attachment type is invalid."));
+        }
+    };
+    if metadata.size_bytes > maximum_size {
+        return Err(AttachmentMetadataError("The attachment size is invalid."));
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_attachment(
+    metadata: &AttachmentMetadata,
+    bytes: &[u8],
+) -> Result<(), AttachmentMetadataError> {
+    validate_attachment_metadata(metadata)?;
+    validate_portable_attachment_content(metadata, bytes)
 }
 
 pub(crate) fn validate_portable_attachment_content(
@@ -319,7 +332,7 @@ pub(crate) fn function_call_output_value(
     }
     let mut content = Vec::with_capacity(attachments.len());
     for attachment in attachments {
-        validate_attachment_metadata(&attachment)
+        validate_generated_image_metadata(&attachment)
             .map_err(|_| image_storage_error("The generated image metadata is invalid."))?;
         let Some(bytes) = read_attachment(
             storage_root,
@@ -412,7 +425,7 @@ fn encode_message_envelope(envelope: &MessageEnvelope) -> Result<String, Attachm
         .map_err(|_| AttachmentMetadataError("The attachment envelope could not be encoded."))
 }
 
-fn validate_attachment_metadata(
+fn validate_generated_image_metadata(
     metadata: &AttachmentMetadata,
 ) -> Result<(), AttachmentMetadataError> {
     if !is_safe_identifier(&metadata.id)
@@ -748,7 +761,7 @@ fn has_valid_image_signature(mime_type: &str, bytes: &[u8]) -> bool {
     }
 }
 
-fn is_safe_identifier(value: &str) -> bool {
+pub(crate) fn is_safe_identifier(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
         && value

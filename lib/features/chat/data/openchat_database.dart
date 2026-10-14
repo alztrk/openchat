@@ -74,6 +74,8 @@ class Messages extends Table {
   TextColumn get providerId => text().nullable()();
   TextColumn get modelId => text().nullable()();
   TextColumn get citationSources => text().withDefault(const Constant('[]'))();
+  TextColumn get personalMemoryFactIds =>
+      text().withDefault(const Constant('[]'))();
   TextColumn get reasoningSummaries =>
       text().withDefault(const Constant('[]'))();
   TextColumn get toolActivities => text().withDefault(const Constant('[]'))();
@@ -102,10 +104,26 @@ class SavedOutputs extends Table {
   TextColumn get content => text()();
   TextColumn get providerId => text().nullable()();
   TextColumn get modelId => text().nullable()();
+  IntColumn get selectedVersion => integer().withDefault(const Constant(1))();
   IntColumn get savedAt => integer()();
 
   @override
   Set<Column<Object>> get primaryKey => {conversationId, messageId};
+}
+
+class SavedOutputVersions extends Table {
+  TextColumn get conversationId => text()();
+  TextColumn get messageId => text()();
+  IntColumn get versionNumber => integer()();
+  TextColumn get content => text()();
+  IntColumn get createdAt => integer()();
+
+  @override
+  Set<Column<Object>> get primaryKey => {
+    conversationId,
+    messageId,
+    versionNumber,
+  };
 }
 
 @DriftDatabase(
@@ -116,6 +134,7 @@ class SavedOutputs extends Table {
     Messages,
     ModelFavorites,
     SavedOutputs,
+    SavedOutputVersions,
   ],
 )
 class OpenChatDatabase extends _$OpenChatDatabase {
@@ -125,7 +144,7 @@ class OpenChatDatabase extends _$OpenChatDatabase {
   OpenChatDatabase.atPath(String databasePath)
     : super(_databaseAtPath(databasePath));
 
-  static const currentSchemaVersion = 15;
+  static const currentSchemaVersion = 18;
   static const minimumSqliteVersionNumber = 3051003;
 
   static bool supportsSqliteRuntime(int versionNumber) =>
@@ -204,6 +223,7 @@ class OpenChatDatabase extends _$OpenChatDatabase {
       }
       if (currentVersion == 0) {
         await migrator.createAll();
+        await _createAttachmentTextIndexTable();
       } else if (currentVersion < schemaVersion) {
         await _upgradeSchema(migrator, currentVersion, schemaVersion);
       }
@@ -333,7 +353,43 @@ class OpenChatDatabase extends _$OpenChatDatabase {
       );
       await migrator.createTable(savedOutputs);
     }
+    if (from < 16 && to >= 16) {
+      await _addColumnIfMissing(
+        migrator,
+        savedOutputs,
+        savedOutputs.selectedVersion,
+      );
+      await migrator.createTable(savedOutputVersions);
+      await customStatement(
+        'INSERT INTO saved_output_versions '
+        '(conversation_id, message_id, version_number, content, created_at) '
+        'SELECT conversation_id, message_id, 1, content, saved_at '
+        'FROM saved_outputs',
+      );
+    }
+    if (from < 17 && to >= 17) {
+      await _createAttachmentTextIndexTable();
+    }
+    if (from < 18 && to >= 18) {
+      await _addColumnIfMissing(
+        migrator,
+        messages,
+        messages.personalMemoryFactIds,
+      );
+    }
   }
+
+  Future<void> _createAttachmentTextIndexTable() => customStatement('''
+    CREATE TABLE IF NOT EXISTS attachment_text_index (
+      conversation_id TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      attachment_id TEXT NOT NULL,
+      attachment_name TEXT NOT NULL,
+      content TEXT NOT NULL,
+      indexed_at INTEGER NOT NULL,
+      PRIMARY KEY (conversation_id, message_id, attachment_id)
+    )
+  ''');
 
   Future<void> _addColumnIfMissing(
     Migrator migrator,

@@ -9,26 +9,27 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('providerIds includes all expected pre-configured providers', () {
-    expect(ApiCompatibleProviderKeyStore.providerIds, containsAll(<String>[
-      'gemini',
-      'groq',
-      'cerebras',
-      'openrouter',
-      'mistral',
-      'deepseek',
-      'xai',
-      'perplexity',
-      'together',
-      'sambanova',
-      'anthropic',
-      'fireworks',
-      'deepinfra',
-      'dashscope',
-      'cohere',
-      'ollama',
-      'lmstudio',
-    ]));
-    expect(ApiCompatibleProviderKeyStore.providerIds.length, equals(17));
+    expect(
+      ApiCompatibleProviderKeyStore.providerIds,
+      containsAll(<String>[
+        'gemini',
+        'groq',
+        'cerebras',
+        'openrouter',
+        'mistral',
+        'deepseek',
+        'xai',
+        'perplexity',
+        'together',
+        'sambanova',
+        'anthropic',
+        'fireworks',
+        'deepinfra',
+        'dashscope',
+        'cohere',
+      ]),
+    );
+    expect(ApiCompatibleProviderKeyStore.providerIds.length, equals(15));
   });
 
   test('localizations provide valid display names and descriptions for all providers', () async {
@@ -50,8 +51,6 @@ void main() {
       expect(l10n.deepInfraProvider, isNotEmpty);
       expect(l10n.dashScopeProvider, isNotEmpty);
       expect(l10n.cohereProvider, isNotEmpty);
-      expect(l10n.ollamaProvider, isNotEmpty);
-      expect(l10n.lmStudioProvider, isNotEmpty);
 
       expect(l10n.deepSeekApiDescription, isNotEmpty);
       expect(l10n.xAiApiDescription, isNotEmpty);
@@ -63,12 +62,12 @@ void main() {
       expect(l10n.deepInfraApiDescription, isNotEmpty);
       expect(l10n.dashScopeApiDescription, isNotEmpty);
       expect(l10n.cohereApiDescription, isNotEmpty);
-      expect(l10n.ollamaApiDescription, isNotEmpty);
-      expect(l10n.lmStudioApiDescription, isNotEmpty);
     }
   });
 
-  testWidgets('renders ProviderIcon for all pre-configured providers', (tester) async {
+  testWidgets('renders ProviderIcon for all pre-configured providers', (
+    tester,
+  ) async {
     for (final providerId in ApiCompatibleProviderKeyStore.providerIds) {
       await tester.pumpWidget(
         MaterialApp(
@@ -85,29 +84,32 @@ void main() {
     }
   });
 
-  test('ApiCompatibleProviderKeyStore saves, reads status, and clears keys', () async {
-    FlutterSecureStorage.setMockInitialValues({});
-    const secureStorage = FlutterSecureStorage();
-    final store = ApiCompatibleProviderKeyStore(secureStorage);
+  test(
+    'ApiCompatibleProviderKeyStore saves, reads status, and clears keys',
+    () async {
+      FlutterSecureStorage.setMockInitialValues({});
+      const secureStorage = FlutterSecureStorage();
+      final store = ApiCompatibleProviderKeyStore(secureStorage);
 
-    final statusBefore = await store.readStatus('deepseek');
-    expect(statusBefore.isConfigured, isFalse);
-    expect(statusBefore.keySuffix, isNull);
+      final statusBefore = await store.readStatus('deepseek');
+      expect(statusBefore.isConfigured, isFalse);
+      expect(statusBefore.keySuffix, isNull);
 
-    await store.saveApiKey('deepseek', 'sk-test-deepseek-123456');
+      await store.saveApiKey('deepseek', 'sk-test-deepseek-123456');
 
-    final key = await store.readApiKey('deepseek');
-    expect(key, 'sk-test-deepseek-123456');
+      final key = await store.readApiKey('deepseek');
+      expect(key, 'sk-test-deepseek-123456');
 
-    final statusAfter = await store.readStatus('deepseek');
-    expect(statusAfter.isConfigured, isTrue);
-    expect(statusAfter.keySuffix, '3456');
+      final statusAfter = await store.readStatus('deepseek');
+      expect(statusAfter.isConfigured, isTrue);
+      expect(statusAfter.keySuffix, '3456');
 
-    final configuredIds = await store.readConfiguredProviderIds();
-    expect(configuredIds, contains('deepseek'));
+      final configuredIds = await store.readConfiguredProviderIds();
+      expect(configuredIds, contains('deepseek'));
 
-    await store.deleteApiKey('deepseek');
-    final statusDeleted = await store.readStatus('deepseek');
-    expect(statusDeleted.isConfigured, isFalse);
-  });
+      await store.deleteApiKey('deepseek');
+      final statusDeleted = await store.readStatus('deepseek');
+      expect(statusDeleted.isConfigured, isFalse);
+    },
+  );
 }

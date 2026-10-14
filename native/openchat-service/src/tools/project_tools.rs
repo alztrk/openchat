@@ -130,7 +130,7 @@ pub(crate) fn load(root: &Path) -> Result<Vec<ProjectTool>, ServiceError> {
     }
     let mut ids = HashSet::with_capacity(catalog.tools.len());
     for tool in &catalog.tools {
-        if !valid_id(&tool.id)
+        if !is_valid_id(&tool.id)
             || !ids.insert(tool.id.as_str())
             || tool.description.trim().is_empty()
             || tool.description.len() > MAX_DESCRIPTION_BYTES
@@ -154,10 +154,11 @@ pub(crate) fn find<'a>(tools: &'a [ProjectTool], tool_name: &str) -> Option<&'a 
 }
 
 pub(crate) fn is_permission_rule_name(name: &str) -> bool {
-    name.strip_prefix(PERMISSION_PREFIX).is_some_and(valid_id)
+    name.strip_prefix(PERMISSION_PREFIX)
+        .is_some_and(is_valid_id)
 }
 
-fn valid_id(id: &str) -> bool {
+pub(crate) fn is_valid_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= MAX_ID_BYTES
         && id.bytes().all(|byte| {

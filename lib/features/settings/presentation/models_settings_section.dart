@@ -45,6 +45,8 @@ class ModelsSettingsSection extends StatefulWidget {
 class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
   final _searchController = TextEditingController();
   bool _isLoading = true;
+  bool _defaultModelPreferenceInvalid = false;
+  bool _hiddenModelKeysInvalid = false;
   String _searchQuery = '';
   Map<String, List<ChatGptModel>> _providerModels = {};
   Set<String> _hiddenModelKeys = {};
@@ -87,19 +89,37 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
+      _defaultModelPreferenceInvalid = false;
+      _hiddenModelKeysInvalid = false;
       _providerErrors.clear();
     });
 
-    final hiddenKeys = await widget.settingsPreferences.readHiddenModelKeys();
+    var hiddenKeys = <String>{};
+    var hiddenModelKeysInvalid = false;
+    try {
+      hiddenKeys = await widget.settingsPreferences.readHiddenModelKeys();
+    } on FormatException {
+      hiddenModelKeysInvalid = true;
+    }
     final contextLimits = await widget.settingsPreferences
         .readModelContextLimits();
-    final defaultModel = await widget.settingsPreferences.readDefaultModel();
+    DefaultModelPreference? defaultModel;
+    try {
+      defaultModel = await widget.settingsPreferences.readDefaultModel();
+    } on FormatException {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _defaultModelPreferenceInvalid = true;
+      });
+      return;
+    }
 
     final service = widget.serviceClient;
     final modelsByProvider = <String, List<ChatGptModel>>{};
 
     if (service != null) {
-      for (final engineId in const ['llama_cpp', 'vllm', 'exllama']) {
+      for (final engineId in const ['llama_cpp']) {
         try {
           final response = await service.call(
             'local.engines.chat_models.list',
@@ -314,9 +334,60 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
       _isLoading = false;
       _providerModels = modelsByProvider;
       _hiddenModelKeys = hiddenKeys;
+      _hiddenModelKeysInvalid = hiddenModelKeysInvalid;
       _modelContextLimits = contextLimits;
       _defaultModel = defaultModel;
     });
+  }
+
+  Future<void> _clearInvalidHiddenModelKeys() async {
+    try {
+      await widget.settingsPreferences.clearHiddenModelKeys();
+      await _loadData();
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription(
+            'while clearing invalid hidden model preferences',
+          ),
+        ),
+      );
+      if (mounted) {
+        showOpenChatToast(
+          context,
+          context.openchatL10n.hiddenModelPreferencesClearFailed,
+          type: OpenChatToastType.error,
+        );
+      }
+    }
+  }
+
+  Future<void> _clearInvalidDefaultModelPreference() async {
+    try {
+      await widget.settingsPreferences.writeDefaultModel(null);
+      await _loadData();
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'settings',
+          context: ErrorDescription(
+            'while clearing the invalid default model preference',
+          ),
+        ),
+      );
+      if (mounted) {
+        showOpenChatToast(
+          context,
+          context.openchatL10n.defaultModelPreferenceClearFailed,
+          type: OpenChatToastType.error,
+        );
+      }
+    }
   }
 
   Future<void> _toggleHideModel(ChatGptModel model) async {
@@ -460,8 +531,6 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
       'deepinfra' => l10n.deepInfraProvider,
       'dashscope' => l10n.dashScopeProvider,
       'cohere' => l10n.cohereProvider,
-      'ollama' => l10n.ollamaProvider,
-      'lmstudio' => l10n.lmStudioProvider,
       _ => providerId,
     };
   }
@@ -516,6 +585,70 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
             height: 1.45,
           ),
         ),
+        if (_defaultModelPreferenceInvalid) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: palette.surface,
+              borderRadius: BorderRadius.circular(OpenChatRadii.card),
+              border: Border.all(color: palette.controlBorder),
+            ),
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: Text(
+                    l10n.defaultModelPreferenceInvalid,
+                    style: TextStyle(color: palette.text),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _isLoading
+                      ? null
+                      : _clearInvalidDefaultModelPreference,
+                  icon: const Icon(LucideIcons.trash2),
+                  label: Text(l10n.clearDefaultModelPreference),
+                ),
+              ],
+            ),
+          ),
+        ],
+        if (_hiddenModelKeysInvalid) ...[
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: palette.surface,
+              borderRadius: BorderRadius.circular(OpenChatRadii.card),
+              border: Border.all(color: palette.controlBorder),
+            ),
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 12,
+              runSpacing: 8,
+              children: [
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 560),
+                  child: Text(
+                    l10n.hiddenModelPreferencesInvalid,
+                    style: TextStyle(color: palette.text),
+                  ),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _isLoading ? null : _clearInvalidHiddenModelKeys,
+                  icon: const Icon(LucideIcons.trash2),
+                  label: Text(l10n.clearHiddenModelPreferences),
+                ),
+              ],
+            ),
+          ),
+        ],
         if (_providerErrors.isNotEmpty) ...[
           const SizedBox(height: 12),
           Container(
@@ -632,6 +765,8 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
               ),
             ),
           )
+        else if (_defaultModelPreferenceInvalid)
+          const SizedBox.shrink()
         else if (filteredModelCount == 0)
           Card(
             margin: EdgeInsets.zero,
@@ -675,35 +810,29 @@ class _ModelsSettingsSectionState extends State<ModelsSettingsSection> {
             'deepinfra',
             'dashscope',
             'cohere',
-            'ollama',
-            'lmstudio',
             'llama_cpp',
-            'vllm',
-            'exllama',
-            ..._providerModels.keys.where((id) => ![
-              'opencode',
-              'chatgpt',
-              'gemini',
-              'groq',
-              'cerebras',
-              'openrouter',
-              'mistral',
-              'deepseek',
-              'xai',
-              'perplexity',
-              'together',
-              'sambanova',
-              'anthropic',
-              'fireworks',
-              'deepinfra',
-              'dashscope',
-              'cohere',
-              'ollama',
-              'lmstudio',
-              'llama_cpp',
-              'vllm',
-              'exllama',
-            ].contains(id)),
+            ..._providerModels.keys.where(
+              (id) => ![
+                'opencode',
+                'chatgpt',
+                'gemini',
+                'groq',
+                'cerebras',
+                'openrouter',
+                'mistral',
+                'deepseek',
+                'xai',
+                'perplexity',
+                'together',
+                'sambanova',
+                'anthropic',
+                'fireworks',
+                'deepinfra',
+                'dashscope',
+                'cohere',
+                'llama_cpp',
+              ].contains(id),
+            ),
           ]) ...[
             if (_providerModels.containsKey(providerId)) ...[
               _buildProviderCard(

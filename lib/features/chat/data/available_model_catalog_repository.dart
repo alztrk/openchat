@@ -4,7 +4,7 @@ import 'package:openchat/features/settings/data/chat_gpt_api_key_store.dart';
 import 'package:openchat/features/settings/domain/chat_gpt_api_key_connection.dart';
 import 'package:openchat/platform/windows/openchat_service_client.dart';
 
-const _localEngineIds = <String>{'llama_cpp', 'vllm', 'exllama'};
+const _localEngineIds = <String>{'llama_cpp'};
 
 class AvailableModelCatalogResult {
   const AvailableModelCatalogResult({

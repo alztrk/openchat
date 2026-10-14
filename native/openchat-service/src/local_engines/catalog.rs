@@ -11,7 +11,7 @@ use url::Url;
 
 const SUPPORTED_SCHEMA_VERSION: u32 = 1;
 
-const ALLOWED_ENGINE_IDS: &[&str] = &["llama_cpp", "vllm", "exllama"];
+const ALLOWED_ENGINE_IDS: &[&str] = &["llama_cpp"];
 const ALLOWED_OS: &[&str] = &["windows", "linux", "macos"];
 const ALLOWED_ARCHITECTURES: &[&str] = &["x86_64", "aarch64"];
 const ALLOWED_ACCELERATORS: &[&str] = &["cpu", "cuda", "vulkan", "metal", "xpu"];
@@ -640,8 +640,6 @@ mod tests {
 
     const LLAMA_CPP_MANIFEST: &[u8] =
         include_bytes!("../../resources/local-engines/llama_cpp.json");
-    const VLLM_MANIFEST: &[u8] = include_bytes!("../../resources/local-engines/vllm.json");
-    const EXLLAMA_MANIFEST: &[u8] = include_bytes!("../../resources/local-engines/exllama.json");
 
     fn llama_value() -> Value {
         serde_json::from_slice(LLAMA_CPP_MANIFEST).expect("current catalog must be JSON")
@@ -658,24 +656,17 @@ mod tests {
     }
 
     #[test]
-    fn all_shipped_engine_catalogs_have_exact_release_asset_pins() {
-        for (engine_id, bytes) in [
-            ("llama_cpp", LLAMA_CPP_MANIFEST),
-            ("vllm", VLLM_MANIFEST),
-            ("exllama", EXLLAMA_MANIFEST),
-        ] {
-            let manifest = parse_manifest(bytes)
-                .unwrap_or_else(|error| panic!("{engine_id} catalog should validate: {error}"));
-            assert_eq!(manifest.engine_id, engine_id);
-            assert!(
-                manifest
-                    .variants
-                    .iter()
-                    .flat_map(|variant| &variant.assets)
-                    .all(|asset| asset.role == "source"
-                        || (asset.release_repository.is_some() && asset.release_tag.is_some()))
-            );
-        }
+    fn shipped_engine_catalog_has_exact_release_asset_pins() {
+        let manifest =
+            parse_manifest(LLAMA_CPP_MANIFEST).expect("llama.cpp catalog should validate");
+        assert_eq!(manifest.engine_id, "llama_cpp");
+        assert!(
+            manifest
+                .variants
+                .iter()
+                .flat_map(|variant| &variant.assets)
+                .all(|asset| asset.release_repository.is_some() && asset.release_tag.is_some())
+        );
     }
 
     #[test]

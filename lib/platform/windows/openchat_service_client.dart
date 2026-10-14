@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart';
 
 class OpenChatServiceClient {
   static const _requestTimeout = Duration(seconds: 15);
-  static const _maximumMessageBytes = 1024 * 1024;
+  static const _maximumMessageBytes = 24 * 1024 * 1024;
   static const _debugDataRoot = String.fromEnvironment(
     'OPENCHAT_DEBUG_DATA_ROOT',
   );

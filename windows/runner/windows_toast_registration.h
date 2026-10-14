@@ -1,0 +1,8 @@
+#ifndef RUNNER_WINDOWS_TOAST_REGISTRATION_H_
+#define RUNNER_WINDOWS_TOAST_REGISTRATION_H_
+
+#include <windows.h>
+
+HRESULT EnsureOpenChatToastRegistration();
+
+#endif  // RUNNER_WINDOWS_TOAST_REGISTRATION_H_

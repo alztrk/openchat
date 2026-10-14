@@ -16,6 +16,70 @@ class AppLocalizationsEn extends AppLocalizations {
   String get newChat => 'New chat';
 
   @override
+  String get temporaryChatStart => 'Temporary chat';
+
+  @override
+  String get temporaryChatTitle => 'Temporary chat';
+
+  @override
+  String get temporaryChatEnd => 'End';
+
+  @override
+  String temporaryChatNotice(String provider) {
+    return 'This chat stays out of saved history unless you save it. Messages and attached files are sent to $provider, which controls its own data retention. Tools are unavailable here.';
+  }
+
+  @override
+  String temporaryChatDisclosureTitle(String provider) {
+    return 'Send this message to $provider?';
+  }
+
+  @override
+  String temporaryChatDisclosureBody(String provider) {
+    return 'Your message, attached files, and this temporary transcript will be sent to $provider. The provider controls how it retains that data. Continue?';
+  }
+
+  @override
+  String get temporaryChatExitTitle => 'Leave this temporary chat?';
+
+  @override
+  String get temporaryChatExitBody =>
+      'Save sent messages to history, discard them, or keep working here. Unsent attachments are discarded when you leave.';
+
+  @override
+  String get temporaryChatSave => 'Save to history';
+
+  @override
+  String get temporaryChatDiscard => 'Discard chat';
+
+  @override
+  String get temporaryChatCancel => 'Keep chatting';
+
+  @override
+  String get temporaryChatSaveFailed =>
+      'This temporary chat could not be saved. It is still available here; try again or discard it.';
+
+  @override
+  String get temporaryChatConnectionRequired =>
+      'Connect and verify a ChatGPT account before starting a temporary chat.';
+
+  @override
+  String get temporaryChatRemoveAttachmentsFirst =>
+      'Remove pending attachments before starting a temporary chat.';
+
+  @override
+  String get temporaryChatStopBeforeLeaving =>
+      'Stop the response before leaving this temporary chat.';
+
+  @override
+  String get temporaryChatMessageLimitReached =>
+      'This temporary chat reached its message or size limit. Save it or start another chat.';
+
+  @override
+  String get temporaryChatResponseFailed =>
+      'No response was received. You can send another message or try again.';
+
+  @override
   String get chats => 'Chats';
 
   @override
@@ -112,6 +176,53 @@ class AppLocalizationsEn extends AppLocalizations {
   String get outputsLoading => 'Loading saved answers…';
 
   @override
+  String get attachments => 'Attachments';
+
+  @override
+  String get attachmentChooseFile => 'Choose a file';
+
+  @override
+  String get attachmentChooseFromLibrary => 'Choose from library';
+
+  @override
+  String get attachmentLibraryTitle => 'Conversation files';
+
+  @override
+  String get attachmentLibraryDescription =>
+      'Browse conversation files and return to their source chats.';
+
+  @override
+  String get attachmentLibraryEmpty =>
+      'No saved conversation files are available.';
+
+  @override
+  String get attachmentLibraryUnavailable =>
+      'This file is no longer available.';
+
+  @override
+  String get attachmentLibraryAllFilter => 'All files';
+
+  @override
+  String get attachmentLibraryAvailableFilter => 'Available';
+
+  @override
+  String get attachmentLibraryMissingFilter => 'Missing';
+
+  @override
+  String get attachmentLibraryOpenConversation => 'Open source conversation';
+
+  @override
+  String get attachmentLibraryLoading => 'Loading conversation files';
+
+  @override
+  String get attachmentLibrarySearchHint =>
+      'Filter by file or conversation name';
+
+  @override
+  String get attachmentLibraryLoadFailed =>
+      'More conversation files could not be loaded. Try again.';
+
+  @override
   String get saveResponse => 'Save response';
 
   @override
@@ -134,6 +245,87 @@ class AppLocalizationsEn extends AppLocalizations {
   String outputSavedAt(String date) {
     return 'Saved $date';
   }
+
+  @override
+  String get outputWorkspaceOpen => 'Edit response';
+
+  @override
+  String get outputWorkspaceTitle => 'Response workspace';
+
+  @override
+  String get outputWorkspaceDescription =>
+      'Edit a working copy. The source conversation stays unchanged.';
+
+  @override
+  String get outputWorkspaceContentLabel => 'Response content';
+
+  @override
+  String get outputWorkspaceMarkdownSource => 'Markdown source';
+
+  @override
+  String get outputWorkspaceSource => 'Source';
+
+  @override
+  String get outputWorkspaceLanguage => 'Language';
+
+  @override
+  String get outputWorkspaceEdit => 'Edit';
+
+  @override
+  String get outputWorkspacePreview => 'Preview';
+
+  @override
+  String outputWorkspaceVersion(int version) {
+    return 'Version $version';
+  }
+
+  @override
+  String get outputWorkspaceSaveVersion => 'Save new version';
+
+  @override
+  String get outputWorkspaceSaveFailed => 'The new version could not be saved.';
+
+  @override
+  String get outputWorkspaceExport => 'Export Markdown';
+
+  @override
+  String get outputExportReviewTitle => 'Review before exporting';
+
+  @override
+  String outputExportReviewScope(int version) {
+    return 'Only selected response version $version will be exported. The source conversation and other messages are not included.';
+  }
+
+  @override
+  String get outputExportReviewSensitiveNotice =>
+      'The Markdown copy will be written to the location you choose. The response may contain sensitive information; deleting it later cannot recall copies made elsewhere.';
+
+  @override
+  String get outputWorkspaceExported => 'Response version exported.';
+
+  @override
+  String get outputWorkspaceExportFailed =>
+      'The response version could not be exported.';
+
+  @override
+  String get outputWorkspaceVersionsFailed =>
+      'Version history could not be loaded.';
+
+  @override
+  String get outputWorkspaceEmpty => 'A response version cannot be empty.';
+
+  @override
+  String get outputWorkspaceUnsavedTitle => 'Discard unsaved edits?';
+
+  @override
+  String get outputWorkspaceUnsavedBody =>
+      'These edits have not been saved as a version.';
+
+  @override
+  String get outputWorkspaceKeepEditing => 'Keep editing';
+
+  @override
+  String get outputWorkspaceDiscard => 'Discard edits';
 
   @override
   String get collapseSidebars => 'Collapse sidebars';
@@ -172,13 +364,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsDescription => 'Connections, appearance, and local data';
 
   @override
-  String get settingsGeneral => 'General';
+  String get settingsAppearanceAccessibilityGroup =>
+      'Appearance and accessibility';
 
   @override
-  String get settingsAdvanced => 'Advanced';
+  String get settingsChatBehaviorGroup => 'Chat behavior';
 
   @override
-  String get settingsDataRecovery => 'Data and recovery';
+  String get settingsProvidersModelsGroup => 'Providers and models';
+
+  @override
+  String get settingsToolsPermissionsGroup => 'Tools and permissions';
+
+  @override
+  String get settingsNotificationsGroup => 'Notifications and alerts';
+
+  @override
+  String get settingsDataPrivacyGroup => 'Data and privacy';
+
+  @override
+  String get settingsSearchPlaceholder => 'Search settings';
+
+  @override
+  String get settingsSearchClear => 'Clear search';
+
+  @override
+  String get settingsSearchEmpty => 'No settings match this search.';
 
   @override
   String get settingsAccountConnectionsHeading => 'Account connections';
@@ -257,11 +468,254 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsConversationMemoryDescription =>
-      'Search and manage the local conversation archive.';
+      'Manage personal memories and search local conversation archives.';
+
+  @override
+  String get personalMemoryDescription =>
+      'Save facts you choose so they can be added to future model requests when personal memory is enabled.';
+
+  @override
+  String get personalMemoryPrivacyNotice =>
+      'Saved copies stay on this device. When enabled, their text is sent to the provider with your request. Review or remove facts here at any time.';
+
+  @override
+  String get personalMemoryEnabled => 'Use personal memories';
+
+  @override
+  String personalMemoryResponseLabel(int count) {
+    return 'Memory · $count';
+  }
+
+  @override
+  String get personalMemorySourcesTitle => 'Saved facts sent with this request';
+
+  @override
+  String get personalMemorySourcesDescription =>
+      'These saved facts were included in the request. The model may not have used all of them.';
+
+  @override
+  String get personalMemorySourceUnavailable =>
+      'This fact has since been edited or removed from saved memory.';
+
+  @override
+  String get personalMemoryEnabledDescription =>
+      'Include your saved facts in new requests. This is off by default.';
+
+  @override
+  String get personalMemoryExcludeHereTooltip =>
+      'Exclude personal memory from this conversation';
+
+  @override
+  String get personalMemoryUseHereTooltip =>
+      'Use personal memory in this conversation';
+
+  @override
+  String get personalMemoryFactsTitle => 'Saved facts';
+
+  @override
+  String get personalMemoryEmpty => 'You have not saved any facts.';
+
+  @override
+  String get personalMemoryAdd => 'Add fact';
+
+  @override
+  String get personalMemoryEdit => 'Edit fact';
+
+  @override
+  String get personalMemoryDelete => 'Delete fact';
+
+  @override
+  String get personalMemoryDeleteTitle => 'Delete this saved fact?';
+
+  @override
+  String get personalMemoryDeleteConfirmation =>
+      'It will be removed from this device and future model requests.';
+
+  @override
+  String get personalMemoryDeleteConfirm => 'Delete';
+
+  @override
+  String get personalMemoryFactLabel => 'Fact to remember';
+
+  @override
+  String get personalMemoryFactHint =>
+      'For example, a preference you want OpenChat to remember';
+
+  @override
+  String get personalMemoryLimitReached =>
+      'You have reached the limit of saved facts.';
+
+  @override
+  String get personalMemoryLoadFailed => 'Saved facts could not be loaded.';
+
+  @override
+  String get personalMemorySaveFailed => 'The saved fact could not be updated.';
+
+  @override
+  String get personalMemoryClearAction => 'Clear saved memories';
+
+  @override
+  String get personalMemoryClearTitle => 'Clear all saved memories?';
+
+  @override
+  String get personalMemoryClearConfirmation =>
+      'All saved facts will be removed from this device, and personal memory will be turned off.';
+
+  @override
+  String get personalMemoryClearConfirm => 'Clear memories';
+
+  @override
+  String get personalMemoryClearFailed =>
+      'Saved memories could not be cleared.';
 
   @override
   String get settingsSharedInstructionsDescription =>
       'Set guidance included in new conversations.';
+
+  @override
+  String get settingsAssistantProfilesDescription =>
+      'Create reusable assistants with their own response guidance.';
+
+  @override
+  String get settingsNotifications => 'Notifications';
+
+  @override
+  String get settingsNotificationsDescription =>
+      'Manage alerts for completed responses and questions waiting for you.';
+
+  @override
+  String get keyboardShortcuts => 'Keyboard shortcuts';
+
+  @override
+  String get keyboardShortcutsDescription =>
+      'Change the keys used to send messages, add a new line, or stop a response.';
+
+  @override
+  String get keyboardShortcutRecord => 'Press a key combination';
+
+  @override
+  String get keyboardShortcutConflict =>
+      'That key combination is already assigned to another action.';
+
+  @override
+  String get keyboardShortcutLoadFailed =>
+      'Keyboard shortcuts could not be loaded.';
+
+  @override
+  String get keyboardShortcutSaveFailed =>
+      'Keyboard shortcuts could not be saved.';
+
+  @override
+  String get keyboardShortcutsReset => 'Restore defaults';
+
+  @override
+  String get keyboardSendMessage => 'Send message';
+
+  @override
+  String get keyboardSendMessageDescription =>
+      'Send the message while the composer is focused.';
+
+  @override
+  String get keyboardNewLine => 'Insert a new line';
+
+  @override
+  String get keyboardNewLineDescription =>
+      'Add a line break without sending the message.';
+
+  @override
+  String get keyboardStopResponse => 'Stop response';
+
+  @override
+  String get keyboardStopResponseDescription =>
+      'Stop the response while the composer is focused.';
+
+  @override
+  String get notificationResponses => 'Response notifications';
+
+  @override
+  String get notificationResponsesDescription =>
+      'Show an alert when a response completes while OpenChat is in the background.';
+
+  @override
+  String get notificationQuestions => 'Pending questions';
+
+  @override
+  String get notificationQuestionsDescription =>
+      'Show an alert when the AI is waiting for your answer.';
+
+  @override
+  String get notificationResponsePreview => 'Show response text';
+
+  @override
+  String get notificationResponsePreviewDescription =>
+      'Include response text in the alert. When off, the alert only says a response is ready.';
+
+  @override
+  String get notificationQuickReply => 'Quick reply from notification';
+
+  @override
+  String get notificationQuickReplyDescription =>
+      'Add a text field and send action to response alerts.';
+
+  @override
+  String get notificationSettingsSaveFailed =>
+      'Notification preference could not be saved.';
+
+  @override
+  String get notificationSettingsUnavailable =>
+      'Notification preferences could not be read.';
+
+  @override
+  String get notificationDeliveryChecking =>
+      'Checking Windows notification availability.';
+
+  @override
+  String get notificationDeliveryEnabled =>
+      'Windows notifications are available.';
+
+  @override
+  String get notificationDeliveryDisabledForApp =>
+      'OpenChat notifications are turned off in Windows.';
+
+  @override
+  String get notificationDeliveryDisabledForUser =>
+      'Notifications are turned off in Windows settings.';
+
+  @override
+  String get notificationDeliveryDisabledByPolicy =>
+      'Notifications are blocked by your organization\'s policy.';
+
+  @override
+  String get notificationDeliveryDisabledByManifest =>
+      'OpenChat is not registered to send Windows notifications.';
+
+  @override
+  String get notificationDeliveryUnavailable =>
+      'Windows notification availability could not be checked.';
+
+  @override
+  String get notificationDeliveryNotSupported =>
+      'Windows notification status is unavailable on this platform.';
+
+  @override
+  String get sendTestNotification => 'Send a test notification';
+
+  @override
+  String get notificationTestTitle => 'OpenChat notification test';
+
+  @override
+  String get notificationTestBody =>
+      'If you can see this, Windows notifications are being delivered.';
+
+  @override
+  String get notificationTestRequested => 'Test notification requested.';
+
+  @override
+  String get notificationTestFailed =>
+      'The test notification could not be sent.';
+
+  @override
+  String get openNotificationSettings => 'Open Windows notification settings';
 
   @override
   String get settingsAppearanceDescription =>
@@ -275,17 +729,101 @@ class AppLocalizationsEn extends AppLocalizations {
   String get connections => 'Connections';
 
   @override
+  String get providerCatalogVerification => 'Verify provider';
+
+  @override
+  String providerConnectionLastChecked(Object dateTime) {
+    return 'Last checked: $dateTime';
+  }
+
+  @override
+  String providerLastRequestOutcome(Object outcome) {
+    return 'Last request: $outcome';
+  }
+
+  @override
+  String providerLastRequestAt(Object dateTime) {
+    return 'Request time: $dateTime';
+  }
+
+  @override
+  String get providerLastRequestReadFailed =>
+      'The last request result could not be read.';
+
+  @override
+  String get providerLastRequestSaveFailed =>
+      'The request finished, but its result could not be saved.';
+
+  @override
+  String get providerRequestCompleted => 'Completed';
+
+  @override
+  String get providerRequestWaitingForInput => 'Waiting for input';
+
+  @override
+  String get providerRequestStopped => 'Stopped';
+
+  @override
+  String get providerRequestAuthenticationFailed => 'Authentication failed';
+
+  @override
+  String get providerRequestRateLimited => 'Rate limited';
+
+  @override
+  String get providerRequestNetworkFailed => 'Network error';
+
+  @override
+  String get providerRequestFailed =>
+      'The provider could not complete the response. Your saved messages are still available.';
+
+  @override
+  String get providerVerificationResultNotSaved =>
+      'The result could not be saved on this device.';
+
+  @override
+  String get providerVerificationRecordUnreadable =>
+      'The saved check result could not be read. Verify the connection again.';
+
+  @override
+  String get setupStepCompleted => 'Completed';
+
+  @override
+  String get setupStepCurrent => 'Current step';
+
+  @override
   String get models => 'Models';
 
   @override
-  String get modelLibrary => 'Find models';
+  String get modelLibrary => 'Library';
 
   @override
-  String get modelPreferences => 'Model preferences';
+  String get modelPreferences => 'Models';
 
   @override
   String get modelsDescription =>
       'Choose the default model for new conversations and hide models you don\'t use.';
+
+  @override
+  String get defaultModelPreferenceInvalid =>
+      'The saved default model setting could not be read. Clear it in Model preferences or Project options.';
+
+  @override
+  String get clearDefaultModelPreference => 'Clear saved default model';
+
+  @override
+  String get defaultModelPreferenceClearFailed =>
+      'The saved default model setting could not be cleared.';
+
+  @override
+  String get hiddenModelPreferencesInvalid =>
+      'Saved hidden model preferences are unreadable. Clear them here to show all models again.';
+
+  @override
+  String get clearHiddenModelPreferences => 'Reset hidden models';
+
+  @override
+  String get hiddenModelPreferencesClearFailed =>
+      'The saved hidden model preferences could not be cleared.';
 
   @override
   String get modelContextAutomatic => 'Automatic';
@@ -325,7 +863,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get localEnginesDescription =>
-      'Install verified local runtimes, register your own model files, and check whether a runtime is healthy. Move or copy models into an engine folder, or keep them where they are.';
+      'Install and manage local model runtimes.';
 
   @override
   String get localEnginesUnavailable =>
@@ -389,10 +927,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get localEngineDeprecated => 'Deprecated';
 
   @override
-  String get localEngineWindowsDeprecatedReason =>
-      'New vLLM and ExLlama installs are disabled on Windows. Existing runtime files and model registrations are kept.';
-
-  @override
   String get localEngineUnsupportedPlatform => 'Unsupported platform';
 
   @override
@@ -404,14 +938,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get localEngineDriverVersionUnavailable =>
       'NVIDIA driver version could not be verified';
-
-  @override
-  String get localEngineVllmBlockedReason =>
-      'vLLM requires an NVIDIA driver version 580 or newer and an existing Linux environment. On Windows, it uses an existing WSL2 distribution with GPU access.';
-
-  @override
-  String get localEngineExllamaBlockedReason =>
-      'The ExLlamaV3 runtime is not ready for installation yet. OpenChat must pin and verify the complete TabbyAPI, PyTorch, Triton, Flash Linear Attention, and Python dependency set before offering it.';
 
   @override
   String localEngineRuntimeRequirements(String requirements) {
@@ -767,9 +1293,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get localEngineStageExtracting => 'Extracting';
 
   @override
-  String get localEngineStageRuntimeSetup => 'Setting up the Python runtime';
-
-  @override
   String get localEngineStagePublishing => 'Finishing installation';
 
   @override
@@ -826,6 +1349,177 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get sharedInstructions => 'Shared instructions';
+
+  @override
+  String get assistantProfiles => 'Assistant profiles';
+
+  @override
+  String get assistantProfilesDescription =>
+      'Choose a profile to apply its instructions and response style to new requests. Profiles are stored on this device.';
+
+  @override
+  String get assistantProfilesEmpty => 'No assistant profiles yet.';
+
+  @override
+  String get assistantProfileCreate => 'Create profile';
+
+  @override
+  String get assistantProfileDeactivate => 'Use no profile';
+
+  @override
+  String get assistantProfileEdit => 'Edit profile';
+
+  @override
+  String get assistantProfileRemoveTitle => 'Remove assistant profile?';
+
+  @override
+  String get assistantProfileRemove => 'Remove';
+
+  @override
+  String assistantProfileRemoveConfirmation(String profileName) {
+    return 'Remove “$profileName”? New requests will no longer use it.';
+  }
+
+  @override
+  String get assistantProfileSaveFailed =>
+      'The assistant profile could not be saved.';
+
+  @override
+  String get assistantProfilesLoadFailed =>
+      'Assistant profiles could not be loaded.';
+
+  @override
+  String get assistantProfileLoadFailed =>
+      'The active assistant profile could not be loaded.';
+
+  @override
+  String get assistantProfilesLimitReached =>
+      'You can save up to 20 assistant profiles.';
+
+  @override
+  String get assistantProfileName => 'Name';
+
+  @override
+  String get assistantProfileNameRequired => 'Enter a name for this profile.';
+
+  @override
+  String get assistantProfileNameTooLong => 'Use 64 characters or fewer.';
+
+  @override
+  String get assistantProfileNameExists =>
+      'A profile with this name already exists.';
+
+  @override
+  String get assistantProfileInstructions => 'Instructions';
+
+  @override
+  String get assistantProfileInstructionsHelp =>
+      'These instructions are sent with new standard chat requests when this profile is active. Temporary chats do not use assistant profiles.';
+
+  @override
+  String get assistantProfilePreferredModel => 'Preferred model';
+
+  @override
+  String get assistantProfilePreferredModelUnavailable =>
+      'Select an available model in chat first.';
+
+  @override
+  String get assistantProfilePreferredModelHelp =>
+      'Used for new chats. A project-specific model takes priority.';
+
+  @override
+  String get assistantProfileRestrictTools => 'Limit tools for this profile';
+
+  @override
+  String get assistantProfileRestrictToolsHelp =>
+      'Only selected tools are offered. App and project permissions can restrict them further.';
+
+  @override
+  String get assistantProfileProjectTools => 'Available in the active project';
+
+  @override
+  String get assistantProfileProjectTasks => 'Run a named project task';
+
+  @override
+  String get assistantProfileMcpUnavailable =>
+      'Some enabled MCP servers are unavailable; their tools could not be loaded.';
+
+  @override
+  String get assistantProfileLoadMcpTools => 'Load MCP tools';
+
+  @override
+  String get assistantProfileLoadingMcpTools => 'Connecting to MCP servers…';
+
+  @override
+  String assistantProfileAllowedToolCount(int count) {
+    return 'Tool limit: $count';
+  }
+
+  @override
+  String get assistantProfileToolAccessUsesAppPermissions =>
+      'App and project permissions';
+
+  @override
+  String get assistantProfileToolAccessInheritsAppPermissions =>
+      'This profile sets no tool limit. App and project permissions control which tools are available.';
+
+  @override
+  String get assistantProfileToolAccessDisabled => 'Tools are off';
+
+  @override
+  String get assistantProfileToolAccessDisabledHelp =>
+      'This profile disables all tools.';
+
+  @override
+  String get assistantToolGroupWebResearch => 'Web search and page reading';
+
+  @override
+  String get assistantToolGroupWorkspaceRead =>
+      'Read and search workspace files';
+
+  @override
+  String get assistantToolGroupWorkspaceWrite =>
+      'Create and edit workspace files';
+
+  @override
+  String get assistantToolGroupTerminal => 'Run terminal commands';
+
+  @override
+  String get assistantToolGroupGitRead => 'Inspect Git status and history';
+
+  @override
+  String get assistantToolGroupImageGeneration => 'Generate images';
+
+  @override
+  String get assistantToolGroupAskUser => 'Ask the user a question';
+
+  @override
+  String get assistantToolGroupDelegateTask => 'Delegate a bounded task';
+
+  @override
+  String get assistantToolGroupGoalControls => 'Manage persistent goals';
+
+  @override
+  String get assistantResponseStyle => 'Response style';
+
+  @override
+  String get assistantResponseStyleConcise => 'Concise';
+
+  @override
+  String get assistantResponseStyleBalanced => 'Balanced';
+
+  @override
+  String get assistantResponseStyleDetailed => 'Detailed';
+
+  @override
+  String assistantProfileStyle(String style) {
+    return 'Style: $style';
+  }
+
+  @override
+  String assistantProfileActive(String profileName) {
+    return 'Assistant profile: $profileName';
+  }
 
   @override
   String get sharedInstructionsDescription =>
@@ -912,12 +1606,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get cohereProvider => 'Cohere';
 
   @override
-  String get ollamaProvider => 'Ollama';
-
-  @override
-  String get lmStudioProvider => 'LM Studio';
-
-  @override
   String get geminiApiDescription =>
       'Process text, image, audio, and video with models that support them.';
 
@@ -977,14 +1665,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Use Cohere models with chat and tool-calling APIs.';
 
   @override
-  String get ollamaApiDescription =>
-      'Use local models running in Ollama through its OpenAI-compatible API.';
-
-  @override
-  String get lmStudioApiDescription =>
-      'Connect to local models loaded in LM Studio through its OpenAI-compatible API.';
-
-  @override
   String get geminiUnpaidDataNotice =>
       'On Gemini API\'s free tier, Google may use submitted content to improve its products. Review Google\'s data-use terms before sending sensitive information.';
 
@@ -1009,6 +1689,48 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get providerKeyStorageFailed =>
       'The API key could not be read or saved securely.';
+
+  @override
+  String get verifyProviderConnection => 'Verify connection';
+
+  @override
+  String get providerConnectionNotVerified =>
+      'Connection has not been verified yet.';
+
+  @override
+  String get verifyingProviderConnection => 'Checking provider connection…';
+
+  @override
+  String get providerConnectionVerified =>
+      'Connection verified; model catalog is available.';
+
+  @override
+  String get providerVerificationStaleCatalog =>
+      'Only cached models were returned; the provider connection could not be verified. Try again.';
+
+  @override
+  String get providerModelCatalogEmpty =>
+      'The provider accepted the request, but returned no models.';
+
+  @override
+  String get providerVerificationAuthenticationFailed =>
+      'The provider rejected this key. Check it and try again.';
+
+  @override
+  String get providerVerificationRateLimited =>
+      'The provider rate limit prevented verification. Try again later.';
+
+  @override
+  String get providerVerificationNetworkFailed =>
+      'Could not reach the provider. Check your network and try again.';
+
+  @override
+  String get providerConnectionVerificationFailed =>
+      'Verification failed. Retry or review the provider settings.';
+
+  @override
+  String get providerQuotaUnavailable =>
+      'OpenChat does not currently show quota data for this provider.';
 
   @override
   String get favoriteModels => 'Favorites';
@@ -1451,10 +2173,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get providerAuthenticationRequired =>
       'The provider rejected the request. Check the connection and model access.';
-
-  @override
-  String get providerRequestFailed =>
-      'The provider could not complete the response. Your saved messages are still available.';
 
   @override
   String get providerToolRequestRejected =>
@@ -1904,6 +2622,32 @@ class AppLocalizationsEn extends AppLocalizations {
   String get darkTheme => 'Dark';
 
   @override
+  String get attachmentIndexTitle => 'Search inside text attachments';
+
+  @override
+  String get attachmentIndexDescription =>
+      'Supported text files are copied into a local searchable index, up to 5,000 files or 100 MB. Source files stay unchanged; images are not indexed.';
+
+  @override
+  String get attachmentIndexSupportedTypes =>
+      'Indexed types: .txt, .md, .csv, .json, .jsonl, .xml, .html, .css, .js, .jsx, .ts, .tsx, .dart, .rs, .py, .go, .java, .kt, .swift, .c, .h, .cpp, .hpp, .cs, .sh, .ps1, .yaml, .yml, .toml, .ini, .sql, .log';
+
+  @override
+  String attachmentIndexCount(int count) {
+    return '$count files indexed';
+  }
+
+  @override
+  String get attachmentIndexRebuild => 'Rebuild index';
+
+  @override
+  String get attachmentIndexClear => 'Clear index';
+
+  @override
+  String get attachmentIndexFailed =>
+      'The attachment text index could not be updated.';
+
+  @override
   String get localData => 'Local data';
 
   @override
@@ -2321,10 +3065,29 @@ class AppLocalizationsEn extends AppLocalizations {
       'The theme preference could not be saved. Try again.';
 
   @override
-  String get searchChats => 'Search chats';
+  String get searchChats => 'Search OpenChat';
 
   @override
-  String get searchChatsHint => 'Search chats and messages';
+  String get searchChatsHint =>
+      'Search chats, projects, workspaces, saved responses, and file names';
+
+  @override
+  String get searchFilterAll => 'All';
+
+  @override
+  String get searchFilterChats => 'Chats';
+
+  @override
+  String get searchFilterProjects => 'Projects';
+
+  @override
+  String get searchFilterWorkspaces => 'Workspaces';
+
+  @override
+  String get searchFilterSavedResponses => 'Saved responses';
+
+  @override
+  String get searchFilterAttachments => 'Attachments';
 
   @override
   String get searchMessagesTooltip => 'Search messages';
@@ -2472,8 +3235,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get searchMessagesLoading => 'Searching messages and conversations…';
 
   @override
-  String get searchMessagesNoResults =>
-      'No matching messages or conversations.';
+  String get searchMessagesNoResults => 'No matching items found.';
 
   @override
   String get searchMessagesTooShort =>
@@ -2563,6 +3325,23 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get projectToolRulesDescription =>
       'Choose a rule for each tool. Unset tools use the global permission mode. Allow still follows file scope and process sandbox limits.';
+
+  @override
+  String get projectToolRulesSummaryLoading =>
+      'Loading this project\'s tool permission rules.';
+
+  @override
+  String get projectToolRulesSummaryUnavailable =>
+      'This project\'s tool permission summary could not be loaded.';
+
+  @override
+  String get projectToolRulesSummaryInherit =>
+      'This project has no overrides. All tools use the global permission mode.';
+
+  @override
+  String projectToolRulesSummary(int allowed, int approval, int denied) {
+    return 'Project rules: $allowed allow, $approval require approval, $denied deny. Tools without a rule use the global mode.';
+  }
 
   @override
   String get projectToolRuleInherit => 'Use global setting';
@@ -3560,7 +4339,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get noModelConnectedBody =>
-      'Connect a provider and choose one of its models to start a conversation.';
+      'Sign in with ChatGPT, add an API key for a supported provider, or choose an available local model in Connections. Verify the connection, then select a model below.';
+
+  @override
+  String get providerNeedsVerificationTitle => 'Check your provider connection';
+
+  @override
+  String get providerNeedsVerificationBody =>
+      'A saved sign-in or API key does not confirm that the provider is reachable. Open Connections to verify it and refresh its model list.';
 
   @override
   String get close => 'Close';
@@ -4543,12 +5329,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get modelFormatGguf => 'GGUF · llama.cpp';
 
   @override
-  String get modelFormatTransformers => 'Transformers · vLLM';
-
-  @override
-  String get modelFormatExllama => 'ExLlama · EXL3';
-
-  @override
   String get huggingFaceModelSearchHint => 'Search open models';
 
   @override
@@ -4747,6 +5527,9 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get userQuestionNotificationBody =>
       'The AI is waiting for your response.';
+
+  @override
+  String get notificationResponseReady => 'A response is ready.';
 
   @override
   String get assistantResponseNotificationReplyEmpty =>
@@ -5039,4 +5822,266 @@ class AppLocalizationsEn extends AppLocalizations {
   String goalTasksCount(int completed, int total) {
     return 'Tasks: $completed of $total';
   }
+
+  @override
+  String get supportDiagnosticsTitle => 'Support diagnostics';
+
+  @override
+  String get supportDiagnosticsDescription =>
+      'Review app and storage health details before saving a support file.';
+
+  @override
+  String get reviewSupportDiagnostics => 'Review export';
+
+  @override
+  String get supportDiagnosticsPreviewTitle => 'Review support diagnostics';
+
+  @override
+  String get supportDiagnosticsPreviewDescription =>
+      'This file contains the details below. Chat content, credentials, and file paths are excluded.';
+
+  @override
+  String get supportDiagnosticsExportAction => 'Save JSON';
+
+  @override
+  String get supportDiagnosticsSaved => 'Support diagnostics saved.';
+
+  @override
+  String get supportDiagnosticsLoadFailed =>
+      'Diagnostics could not be loaded. Check the local service and try again.';
+
+  @override
+  String get supportDiagnosticsInvalidResponse =>
+      'The local service returned unexpected diagnostic data.';
+
+  @override
+  String get supportDiagnosticsExportFailed =>
+      'The support diagnostics file could not be saved.';
+
+  @override
+  String get supportDiagnosticsPrivacyNote =>
+      'Only the fields shown in the preview are saved. The file is not sent to OpenChat.';
+
+  @override
+  String get supportDiagnosticsPreparing => 'Preparing…';
+
+  @override
+  String get settingsConnectors => 'Connectors';
+
+  @override
+  String get settingsConnectorsDescription =>
+      'Manage local connector templates and add them to projects.';
+
+  @override
+  String get connectorCatalogIntro =>
+      'Save reusable MCP connection details in this app. Adding one to a project creates a disabled server; credentials and permissions stay with that project.';
+
+  @override
+  String get connectorCatalogEmpty => 'No connector templates have been added.';
+
+  @override
+  String get connectorCatalogAdd => 'Add template';
+
+  @override
+  String get connectorCatalogEdit => 'Edit template';
+
+  @override
+  String get connectorCatalogDelete => 'Delete template';
+
+  @override
+  String get connectorCatalogDeleteConfirm =>
+      'This removes the template from the app. Connectors already added to projects remain there.';
+
+  @override
+  String get connectorCatalogInstall => 'Add to active project';
+
+  @override
+  String get connectorCatalogNoProject =>
+      'Open a project to add a connector to it.';
+
+  @override
+  String get connectorCatalogSecurityNotice =>
+      'Templates are stored locally without secret values. Installing adds a disabled project server and sets its tools to require approval. OpenChat does not download or verify server software.';
+
+  @override
+  String get connectorCatalogName => 'Template name';
+
+  @override
+  String get connectorCatalogId => 'Server ID';
+
+  @override
+  String get connectorCatalogPublisher => 'Publisher claim';
+
+  @override
+  String get connectorCatalogSourceUrl => 'Source URL';
+
+  @override
+  String get connectorCatalogDataDisclosure =>
+      'Data this connector may receive';
+
+  @override
+  String get connectorCatalogTransport => 'Connection type';
+
+  @override
+  String get connectorCatalogProgram => 'Absolute program path';
+
+  @override
+  String get connectorCatalogArguments => 'Arguments, one per line';
+
+  @override
+  String get connectorCatalogEnvironmentVariables =>
+      'Credential variable names, one per line';
+
+  @override
+  String get connectorCatalogEndpoint => 'HTTPS endpoint';
+
+  @override
+  String get connectorCatalogAuthVariable => 'Credential variable name';
+
+  @override
+  String get connectorCatalogSave => 'Save template';
+
+  @override
+  String get connectorCatalogInstallPrompt =>
+      'Review the publisher, destination, and data disclosure. The server will be added disabled and its tools will require approval. Tool calls may send their arguments to the connector and their results to the selected model provider.';
+
+  @override
+  String get connectorCatalogInvalid =>
+      'Check the required fields, HTTPS URLs, server ID, and connection details.';
+
+  @override
+  String get connectorCatalogDuplicate =>
+      'A template or project server already uses this ID or name.';
+
+  @override
+  String get connectorCatalogLoadFailed =>
+      'The local connector catalog could not be read.';
+
+  @override
+  String get connectorCatalogSaveFailed =>
+      'The connector template could not be saved.';
+
+  @override
+  String get connectorCatalogInstallFailed =>
+      'The connector could not be added to the project. Check the local service and project settings.';
+
+  @override
+  String get connectorCatalogInstalled =>
+      'The disabled connector was added to the project. Add its credentials in project MCP settings if needed.';
+
+  @override
+  String get connectorCatalogSearch => 'Search templates';
+
+  @override
+  String get connectorCatalogNoResults => 'No templates match this search.';
+
+  @override
+  String get connectorCatalogVersion => 'Declared version';
+
+  @override
+  String get connectorCatalogRequestedAccess => 'Access requested';
+
+  @override
+  String get connectorCatalogAuthentication => 'Authentication';
+
+  @override
+  String get connectorCatalogNoBearerCredential =>
+      'No bearer credential is declared. The server may still enforce its own access policy.';
+
+  @override
+  String get connectorCatalogProjectBearerCredential =>
+      'If configured, a bearer credential is scoped to this project and server, then sent to this HTTPS endpoint when connected.';
+
+  @override
+  String get connectorCatalogNoCredentialVariables =>
+      'This local process requests no environment variables.';
+
+  @override
+  String get connectorCatalogProjectEnvironmentCredentials =>
+      'When configured, declared environment values are scoped to this project and server, then passed only to its local process.';
+
+  @override
+  String get connectorCatalogRemovalImpact =>
+      'Removing this template does not remove project servers or their saved credentials. Remove those separately in project MCP settings.';
+
+  @override
+  String get libraryTabModels => 'Models';
+
+  @override
+  String get libraryTabMcp => 'MCP Tools';
+
+  @override
+  String get libraryTabPrompts => 'Prompts (Coming soon)';
+
+  @override
+  String get libraryTabPersonalities => 'Personalities (Coming soon)';
+
+  @override
+  String get mcpCatalogDescription =>
+      'Discover, install, and configure Model Context Protocol servers to enhance your AI assistant.';
+
+  @override
+  String get mcpSearchHint => 'Search MCP tools...';
+
+  @override
+  String get mcpInstalled => 'Installed';
+
+  @override
+  String get mcpNotInstalled => 'Not installed';
+
+  @override
+  String get mcpActive => 'Active (Added to Instructions)';
+
+  @override
+  String get mcpInactive => 'Inactive';
+
+  @override
+  String get mcpInstall => 'Install';
+
+  @override
+  String get mcpConfigureEnv => 'Environment Variables (Env)';
+
+  @override
+  String get mcpEnvDialogTitle => 'MCP Environment Variables';
+
+  @override
+  String get mcpEnvDialogDescription =>
+      'These values are stored securely using OS-level credential management (Windows Credential Manager).';
+
+  @override
+  String get mcpEnvSaveSuccess => 'Environment variables saved securely.';
+
+  @override
+  String get mcpEnabledSuccess =>
+      'MCP tool activated and added to instructions.';
+
+  @override
+  String get mcpDisabledSuccess =>
+      'MCP tool deactivated and removed from instructions.';
+
+  @override
+  String get mcpNoToolsFound => 'No tools found for this MCP.';
+
+  @override
+  String get mcpUninstall => 'Uninstall';
+
+  @override
+  String get mcpUninstallConfirm =>
+      'Are you sure you want to uninstall this MCP tool?';
+
+  @override
+  String get mcpDiscoverTools => 'Fetch Definitions';
+
+  @override
+  String get mcpDiscovering => 'Fetching definitions...';
+
+  @override
+  String get mcpDiscoverSuccess => 'Tool definitions fetched successfully.';
+
+  @override
+  String get mcpDiscoverFailed =>
+      'Failed to fetch tool definitions. Check command and environment variables.';
+
+  @override
+  String get mcpNoToolsDiscovered => 'No tool definitions fetched yet.';
 }

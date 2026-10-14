@@ -13,6 +13,7 @@ import 'package:openchat/features/chat/domain/chat_attachment.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/chat/domain/model_favorite.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
+import 'package:openchat/features/settings/domain/keyboard_shortcut_bindings.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 
@@ -97,6 +98,7 @@ class ChatComposer extends StatelessWidget {
     this.conversationMemoryRepository,
     this.modelPricingRepository,
     this.settingsPreferences,
+    this.keyboardShortcuts = KeyboardShortcutBindings.defaults,
     this.pendingAttachments = const <ChatAttachment>[],
     this.onAddAttachments,
     this.onRemoveAttachment,
@@ -167,6 +169,7 @@ class ChatComposer extends StatelessWidget {
   final ConversationMemoryRepository? conversationMemoryRepository;
   final ModelPricingRepository? modelPricingRepository;
   final SettingsPreferences? settingsPreferences;
+  final KeyboardShortcutBindings keyboardShortcuts;
   final List<ChatAttachment> pendingAttachments;
   final VoidCallback? onAddAttachments;
   final ValueChanged<String>? onRemoveAttachment;
@@ -288,6 +291,7 @@ class ChatComposer extends StatelessWidget {
                   providerNames: providerNames,
                   hiddenModelKeys: hiddenModelKeys,
                   onModelSelected: onModelSelected,
+                  keyboardShortcuts: keyboardShortcuts,
                   child: OpenChatGlassSurface(
                     borderRadius: BorderRadius.circular(OpenChatRadii.composer),
                     surfaceColor: palette.composer,
@@ -437,6 +441,7 @@ class _SlashCommandInput extends StatefulWidget {
     required this.providerNames,
     required this.hiddenModelKeys,
     required this.onModelSelected,
+    required this.keyboardShortcuts,
     required this.child,
   });
 
@@ -460,6 +465,7 @@ class _SlashCommandInput extends StatefulWidget {
   final Map<String, String> providerNames;
   final Set<String> hiddenModelKeys;
   final ValueChanged<ChatGptModel>? onModelSelected;
+  final KeyboardShortcutBindings keyboardShortcuts;
   final Widget child;
 
   @override
@@ -664,13 +670,25 @@ class _SlashCommandInputState extends State<_SlashCommandInput> {
         return KeyEventResult.handled;
       }
     }
-    if (widget.isSending && event.logicalKey == LogicalKeyboardKey.escape) {
+    final keyboard = HardwareKeyboard.instance;
+    if (widget.isSending &&
+        widget.keyboardShortcuts.stopResponse.matches(event, keyboard)) {
       widget.onStopMessage?.call();
       return KeyEventResult.handled;
     }
-    if ((event.logicalKey == LogicalKeyboardKey.enter ||
-            event.logicalKey == LogicalKeyboardKey.numpadEnter) &&
-        !HardwareKeyboard.instance.isShiftPressed) {
+    if (widget.keyboardShortcuts.insertNewLine.matches(event, keyboard)) {
+      final defaultShiftEnter =
+          widget.keyboardShortcuts.insertNewLine.keyId ==
+              LogicalKeyboardKey.enter.keyId &&
+          widget.keyboardShortcuts.insertNewLine.shift &&
+          !widget.keyboardShortcuts.insertNewLine.control &&
+          !widget.keyboardShortcuts.insertNewLine.alt &&
+          !widget.keyboardShortcuts.insertNewLine.meta;
+      if (defaultShiftEnter) return KeyEventResult.ignored;
+      _insertNewLine();
+      return KeyEventResult.handled;
+    }
+    if (widget.keyboardShortcuts.sendMessage.matches(event, keyboard)) {
       if (widget.canSendMessage &&
           (widget.controller.text.trim().isNotEmpty ||
               widget.hasPendingAttachments)) {
@@ -681,15 +699,23 @@ class _SlashCommandInputState extends State<_SlashCommandInput> {
     return KeyEventResult.ignored;
   }
 
+  void _insertNewLine() {
+    final value = widget.controller.value;
+    final selection = value.selection;
+    if (!selection.isValid) return;
+    final start = selection.start;
+    final end = selection.end;
+    final text = value.text.replaceRange(start, end, '\n');
+    widget.controller.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: start + 1),
+    );
+  }
+
   List<ChatGptModel> get _availableModels => widget.slashModels
       .where(
         (model) =>
-            (model.isAvailable ||
-                const {
-                  'llama_cpp',
-                  'vllm',
-                  'exllama',
-                }.contains(model.providerId)) &&
+            (model.isAvailable || model.providerId == 'llama_cpp') &&
             !widget.hiddenModelKeys.contains(model.routeKey) &&
             !widget.hiddenModelKeys.contains('${model.providerId}:${model.id}'),
       )
@@ -1123,11 +1149,7 @@ String _providerLabel(String providerId, AppLocalizations l10n) =>
       'deepinfra' => l10n.deepInfraProvider,
       'dashscope' => l10n.dashScopeProvider,
       'cohere' => l10n.cohereProvider,
-      'ollama' => l10n.ollamaProvider,
-      'lmstudio' => l10n.lmStudioProvider,
       'llama_cpp' => 'llama.cpp',
-      'vllm' => 'vLLM',
-      'exllama' => 'ExLlamaV3',
       _ => providerId,
     };
 
@@ -1392,55 +1414,22 @@ class _ComposerActions extends StatelessWidget {
     );
     final attachmentSize = touchTargets ? 44.0 : 36.0;
     final sendSize = touchTargets ? 44.0 : 40.0;
-    final attachmentButton = Tooltip(
-      message: attachmentsEnabled
+    final attachmentButton = IconButton(
+      tooltip: attachmentsEnabled
           ? l10n.attachFile
           : l10n.attachmentsUnavailable,
-      child: Semantics(
-        button: true,
-        enabled: attachmentsEnabled,
-        label: attachmentsEnabled
-            ? l10n.attachFile
-            : l10n.attachmentsUnavailable,
-        onTap: attachmentsEnabled ? onAddAttachments : null,
-        child: ExcludeSemantics(
-          child: SizedBox.square(
-            dimension: attachmentSize,
-            child: Focus(
-              skipTraversal: true,
-              child: Builder(
-                builder: (focusContext) {
-                  final focused = Focus.of(focusContext).hasFocus;
-                  return shad.ShadIconButton.outline(
-                    icon: Icon(
-                      LucideIcons.paperclip,
-                      size: 18,
-                      color: attachmentsEnabled
-                          ? palette.secondaryIcon
-                          : palette.disabledIcon,
-                    ),
-                    onPressed: attachmentsEnabled ? onAddAttachments : null,
-                    enabled: attachmentsEnabled,
-                    width: attachmentSize,
-                    height: attachmentSize,
-                    padding: EdgeInsets.zero,
-                    backgroundColor: focused
-                        ? palette.hover
-                        : Colors.transparent,
-                    foregroundColor: attachmentsEnabled
-                        ? palette.secondaryIcon
-                        : palette.disabledIcon,
-                    decoration: const shad.ShadDecoration(
-                      shape: BoxShape.circle,
-                      border: shad.ShadBorder.none,
-                      focusedBorder: shad.ShadBorder.none,
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-        ),
+      onPressed: attachmentsEnabled ? onAddAttachments : null,
+      padding: EdgeInsets.zero,
+      iconSize: 18,
+      constraints: BoxConstraints.tightFor(
+        width: attachmentSize,
+        height: attachmentSize,
+      ),
+      icon: Icon(
+        LucideIcons.paperclip,
+        color: attachmentsEnabled
+            ? palette.secondaryIcon
+            : palette.disabledIcon,
       ),
     );
     final sendButton = ValueListenableBuilder<TextEditingValue>(

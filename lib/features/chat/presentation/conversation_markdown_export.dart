@@ -26,8 +26,6 @@ String buildConversationMarkdown(
     'deepinfra' => l10n.deepInfraProvider,
     'dashscope' => l10n.dashScopeProvider,
     'cohere' => l10n.cohereProvider,
-    'ollama' => l10n.ollamaProvider,
-    'lmstudio' => l10n.lmStudioProvider,
     _ => l10n.chatGptProvider,
   };
   final modelLabel = conversation.modelId ?? l10n.messageModelUnavailable;

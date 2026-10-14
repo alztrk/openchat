@@ -47,7 +47,7 @@ jobs:
         run: flutter gen-l10n
 
       - name: Check Dart formatting
-        run: dart format --output=none --set-exit-if-changed lib test
+        run: dart format --output=none --set-exit-if-changed lib test benchmarks
 
       - name: Analyze Flutter application
         run: flutter analyze

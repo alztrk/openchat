@@ -25,6 +25,7 @@ mod provider_schema;
 mod rpc;
 mod service;
 mod storage;
+mod temporary_conversation;
 mod tools;
 mod usage_statistics;
 mod user_question_broker;

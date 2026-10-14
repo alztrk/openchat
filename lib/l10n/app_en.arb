@@ -2,6 +2,23 @@
   "@@locale": "en",
   "appTitle": "OpenChat",
   "newChat": "New chat",
+  "temporaryChatStart": "Temporary chat",
+  "temporaryChatTitle": "Temporary chat",
+  "temporaryChatEnd": "End",
+  "temporaryChatNotice": "This chat stays out of saved history unless you save it. Messages and attached files are sent to {provider}, which controls its own data retention. Tools are unavailable here.",
+  "temporaryChatDisclosureTitle": "Send this message to {provider}?",
+  "temporaryChatDisclosureBody": "Your message, attached files, and this temporary transcript will be sent to {provider}. The provider controls how it retains that data. Continue?",
+  "temporaryChatExitTitle": "Leave this temporary chat?",
+  "temporaryChatExitBody": "Save sent messages to history, discard them, or keep working here. Unsent attachments are discarded when you leave.",
+  "temporaryChatSave": "Save to history",
+  "temporaryChatDiscard": "Discard chat",
+  "temporaryChatCancel": "Keep chatting",
+  "temporaryChatSaveFailed": "This temporary chat could not be saved. It is still available here; try again or discard it.",
+  "temporaryChatConnectionRequired": "Connect and verify a ChatGPT account before starting a temporary chat.",
+  "temporaryChatRemoveAttachmentsFirst": "Remove pending attachments before starting a temporary chat.",
+  "temporaryChatStopBeforeLeaving": "Stop the response before leaving this temporary chat.",
+  "temporaryChatMessageLimitReached": "This temporary chat reached its message or size limit. Save it or start another chat.",
+  "temporaryChatResponseFailed": "No response was received. You can send another message or try again.",
   "chats": "Chats",
   "workspaces": "Workspaces",
   "workspacesDescription": "Group conversations by topic. Files and tools stay in code projects.",
@@ -31,6 +48,20 @@
   "outputsEmptyDescription": "Use Save response under an answer to keep it here.",
   "outputsLoadFailed": "Saved responses could not be loaded.",
   "outputsLoading": "Loading saved answers…",
+  "attachments": "Attachments",
+  "attachmentChooseFile": "Choose a file",
+  "attachmentChooseFromLibrary": "Choose from library",
+  "attachmentLibraryTitle": "Conversation files",
+  "attachmentLibraryDescription": "Browse conversation files and return to their source chats.",
+  "attachmentLibraryEmpty": "No saved conversation files are available.",
+  "attachmentLibraryUnavailable": "This file is no longer available.",
+  "attachmentLibraryAllFilter": "All files",
+  "attachmentLibraryAvailableFilter": "Available",
+  "attachmentLibraryMissingFilter": "Missing",
+  "attachmentLibraryOpenConversation": "Open source conversation",
+  "attachmentLibraryLoading": "Loading conversation files",
+  "attachmentLibrarySearchHint": "Filter by file or conversation name",
+  "attachmentLibraryLoadFailed": "More conversation files could not be loaded. Try again.",
   "saveResponse": "Save response",
   "removeSavedResponse": "Remove saved response",
   "outputSaveFailed": "The response could not be saved.",
@@ -38,9 +69,86 @@
   "outputOpenConversation": "Open conversation",
   "outputConversationUnavailable": "Conversation is no longer available",
   "outputSavedAt": "Saved {date}",
-  "@workspaceConversationCount": { "placeholders": { "count": { "type": "int" } } },
-  "@workspaceDeleteConfirmation": { "placeholders": { "name": { "type": "String" } } },
-  "@outputSavedAt": { "placeholders": { "date": { "type": "String" } } },
+  "outputWorkspaceOpen": "Edit response",
+  "outputWorkspaceTitle": "Response workspace",
+  "outputWorkspaceDescription": "Edit a working copy. The source conversation stays unchanged.",
+  "outputWorkspaceContentLabel": "Response content",
+  "outputWorkspaceMarkdownSource": "Markdown source",
+  "outputWorkspaceSource": "Source",
+  "outputWorkspaceLanguage": "Language",
+  "outputWorkspaceEdit": "Edit",
+  "outputWorkspacePreview": "Preview",
+  "outputWorkspaceVersion": "Version {version}",
+  "@outputWorkspaceVersion": {
+    "placeholders": {
+      "version": {
+        "type": "int"
+      }
+    }
+  },
+  "outputWorkspaceSaveVersion": "Save new version",
+  "outputWorkspaceSaveFailed": "The new version could not be saved.",
+  "outputWorkspaceExport": "Export Markdown",
+  "outputExportReviewTitle": "Review before exporting",
+  "outputExportReviewScope": "Only selected response version {version} will be exported. The source conversation and other messages are not included.",
+  "@outputExportReviewScope": {
+    "placeholders": {
+      "version": {
+        "type": "int"
+      }
+    }
+  },
+  "outputExportReviewSensitiveNotice": "The Markdown copy will be written to the location you choose. The response may contain sensitive information; deleting it later cannot recall copies made elsewhere.",
+  "outputWorkspaceExported": "Response version exported.",
+  "outputWorkspaceExportFailed": "The response version could not be exported.",
+  "outputWorkspaceVersionsFailed": "Version history could not be loaded.",
+  "outputWorkspaceEmpty": "A response version cannot be empty.",
+  "outputWorkspaceUnsavedTitle": "Discard unsaved edits?",
+  "outputWorkspaceUnsavedBody": "These edits have not been saved as a version.",
+  "outputWorkspaceKeepEditing": "Keep editing",
+  "outputWorkspaceDiscard": "Discard edits",
+  "@workspaceConversationCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@temporaryChatNotice": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "@temporaryChatDisclosureTitle": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "@temporaryChatDisclosureBody": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "@workspaceDeleteConfirmation": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@outputSavedAt": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "collapseSidebars": "Collapse sidebars",
   "showSidebars": "Show sidebars",
   "previousPage": "Previous page",
@@ -53,9 +161,15 @@
   "sectionUnavailable": "This section is not available yet.",
   "settings": "Settings",
   "settingsDescription": "Connections, appearance, and local data",
-  "settingsGeneral": "General",
-  "settingsAdvanced": "Advanced",
-  "settingsDataRecovery": "Data and recovery",
+  "settingsAppearanceAccessibilityGroup": "Appearance and accessibility",
+  "settingsChatBehaviorGroup": "Chat behavior",
+  "settingsProvidersModelsGroup": "Providers and models",
+  "settingsToolsPermissionsGroup": "Tools and permissions",
+  "settingsNotificationsGroup": "Notifications and alerts",
+  "settingsDataPrivacyGroup": "Data and privacy",
+  "settingsSearchPlaceholder": "Search settings",
+  "settingsSearchClear": "Clear search",
+  "settingsSearchEmpty": "No settings match this search.",
   "settingsAccountConnectionsHeading": "Account connections",
   "settingsModelProvidersHeading": "Model providers",
   "customProvidersHeading": "Custom providers",
@@ -78,36 +192,167 @@
   "settingsStatisticsDescription": "Review conversation and model usage over time.",
   "settingsModelPreferencesDescription": "Choose which models appear and how they are selected.",
   "settingsLocalEnginesDescription": "Manage the software that runs models on this device.",
-  "settingsConversationMemoryDescription": "Search and manage the local conversation archive.",
+  "settingsConversationMemoryDescription": "Manage personal memories and search local conversation archives.",
+  "personalMemoryDescription": "Save facts you choose so they can be added to future model requests when personal memory is enabled.",
+  "personalMemoryPrivacyNotice": "Saved copies stay on this device. When enabled, their text is sent to the provider with your request. Review or remove facts here at any time.",
+  "personalMemoryEnabled": "Use personal memories",
+  "personalMemoryResponseLabel": "Memory · {count}",
+  "@personalMemoryResponseLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "personalMemorySourcesTitle": "Saved facts sent with this request",
+  "personalMemorySourcesDescription": "These saved facts were included in the request. The model may not have used all of them.",
+  "personalMemorySourceUnavailable": "This fact has since been edited or removed from saved memory.",
+  "personalMemoryEnabledDescription": "Include your saved facts in new requests. This is off by default.",
+  "personalMemoryExcludeHereTooltip": "Exclude personal memory from this conversation",
+  "personalMemoryUseHereTooltip": "Use personal memory in this conversation",
+  "personalMemoryFactsTitle": "Saved facts",
+  "personalMemoryEmpty": "You have not saved any facts.",
+  "personalMemoryAdd": "Add fact",
+  "personalMemoryEdit": "Edit fact",
+  "personalMemoryDelete": "Delete fact",
+  "personalMemoryDeleteTitle": "Delete this saved fact?",
+  "personalMemoryDeleteConfirmation": "It will be removed from this device and future model requests.",
+  "personalMemoryDeleteConfirm": "Delete",
+  "personalMemoryFactLabel": "Fact to remember",
+  "personalMemoryFactHint": "For example, a preference you want OpenChat to remember",
+  "personalMemoryLimitReached": "You have reached the limit of saved facts.",
+  "personalMemoryLoadFailed": "Saved facts could not be loaded.",
+  "personalMemorySaveFailed": "The saved fact could not be updated.",
+  "personalMemoryClearAction": "Clear saved memories",
+  "personalMemoryClearTitle": "Clear all saved memories?",
+  "personalMemoryClearConfirmation": "All saved facts will be removed from this device, and personal memory will be turned off.",
+  "personalMemoryClearConfirm": "Clear memories",
+  "personalMemoryClearFailed": "Saved memories could not be cleared.",
   "settingsSharedInstructionsDescription": "Set guidance included in new conversations.",
+  "settingsAssistantProfilesDescription": "Create reusable assistants with their own response guidance.",
+  "settingsNotifications": "Notifications",
+  "settingsNotificationsDescription": "Manage alerts for completed responses and questions waiting for you.",
+  "keyboardShortcuts": "Keyboard shortcuts",
+  "keyboardShortcutsDescription": "Change the keys used to send messages, add a new line, or stop a response.",
+  "keyboardShortcutRecord": "Press a key combination",
+  "keyboardShortcutConflict": "That key combination is already assigned to another action.",
+  "keyboardShortcutLoadFailed": "Keyboard shortcuts could not be loaded.",
+  "keyboardShortcutSaveFailed": "Keyboard shortcuts could not be saved.",
+  "keyboardShortcutsReset": "Restore defaults",
+  "keyboardSendMessage": "Send message",
+  "keyboardSendMessageDescription": "Send the message while the composer is focused.",
+  "keyboardNewLine": "Insert a new line",
+  "keyboardNewLineDescription": "Add a line break without sending the message.",
+  "keyboardStopResponse": "Stop response",
+  "keyboardStopResponseDescription": "Stop the response while the composer is focused.",
+  "notificationResponses": "Response notifications",
+  "notificationResponsesDescription": "Show an alert when a response completes while OpenChat is in the background.",
+  "notificationQuestions": "Pending questions",
+  "notificationQuestionsDescription": "Show an alert when the AI is waiting for your answer.",
+  "notificationResponsePreview": "Show response text",
+  "notificationResponsePreviewDescription": "Include response text in the alert. When off, the alert only says a response is ready.",
+  "notificationQuickReply": "Quick reply from notification",
+  "notificationQuickReplyDescription": "Add a text field and send action to response alerts.",
+  "notificationSettingsSaveFailed": "Notification preference could not be saved.",
+  "notificationSettingsUnavailable": "Notification preferences could not be read.",
+  "notificationDeliveryChecking": "Checking Windows notification availability.",
+  "notificationDeliveryEnabled": "Windows notifications are available.",
+  "notificationDeliveryDisabledForApp": "OpenChat notifications are turned off in Windows.",
+  "notificationDeliveryDisabledForUser": "Notifications are turned off in Windows settings.",
+  "notificationDeliveryDisabledByPolicy": "Notifications are blocked by your organization's policy.",
+  "notificationDeliveryDisabledByManifest": "OpenChat is not registered to send Windows notifications.",
+  "notificationDeliveryUnavailable": "Windows notification availability could not be checked.",
+  "notificationDeliveryNotSupported": "Windows notification status is unavailable on this platform.",
+  "sendTestNotification": "Send a test notification",
+  "notificationTestTitle": "OpenChat notification test",
+  "notificationTestBody": "If you can see this, Windows notifications are being delivered.",
+  "notificationTestRequested": "Test notification requested.",
+  "notificationTestFailed": "The test notification could not be sent.",
+  "openNotificationSettings": "Open Windows notification settings",
   "settingsAppearanceDescription": "Adjust language, theme, text size, and conversation width.",
   "settingsLocalDataDescription": "Check where history is stored and manage local archives.",
   "connections": "Connections",
+  "providerCatalogVerification": "Verify provider",
+  "providerConnectionLastChecked": "Last checked: {dateTime}",
+  "providerLastRequestOutcome": "Last request: {outcome}",
+  "providerLastRequestAt": "Request time: {dateTime}",
+  "providerLastRequestReadFailed": "The last request result could not be read.",
+  "providerLastRequestSaveFailed": "The request finished, but its result could not be saved.",
+  "providerRequestCompleted": "Completed",
+  "providerRequestWaitingForInput": "Waiting for input",
+  "providerRequestStopped": "Stopped",
+  "providerRequestAuthenticationFailed": "Authentication failed",
+  "providerRequestRateLimited": "Rate limited",
+  "providerRequestNetworkFailed": "Network error",
+  "providerRequestFailed": "The provider could not complete the response. Your saved messages are still available.",
+  "providerVerificationResultNotSaved": "The result could not be saved on this device.",
+  "providerVerificationRecordUnreadable": "The saved check result could not be read. Verify the connection again.",
+  "setupStepCompleted": "Completed",
+  "setupStepCurrent": "Current step",
   "models": "Models",
-  "modelLibrary": "Find models",
-  "modelPreferences": "Model preferences",
+  "modelLibrary": "Library",
+  "modelPreferences": "Models",
   "modelsDescription": "Choose the default model for new conversations and hide models you don't use.",
+  "defaultModelPreferenceInvalid": "The saved default model setting could not be read. Clear it in Model preferences or Project options.",
+  "clearDefaultModelPreference": "Clear saved default model",
+  "defaultModelPreferenceClearFailed": "The saved default model setting could not be cleared.",
+  "hiddenModelPreferencesInvalid": "Saved hidden model preferences are unreadable. Clear them here to show all models again.",
+  "clearHiddenModelPreferences": "Reset hidden models",
+  "hiddenModelPreferencesClearFailed": "The saved hidden model preferences could not be cleared.",
   "modelContextAutomatic": "Automatic",
   "modelContextCustom": "Limit: {count}",
-  "@modelContextCustom": {"placeholders": {"count": {"type": "String"}}},
+  "@modelContextCustom": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
   "modelContextTitle": "Context budget · {model}",
-  "@modelContextTitle": {"placeholders": {"model": {"type": "String"}}},
+  "@modelContextTitle": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
   "modelContextMaximum": "Model maximum: {limit}",
-  "@modelContextMaximum": {"placeholders": {"limit": {"type": "String"}}},
+  "@modelContextMaximum": {
+    "placeholders": {
+      "limit": {
+        "type": "String"
+      }
+    }
+  },
   "modelContextCustomLabel": "Your context limit in tokens",
   "modelContextExplanation": "OpenChat uses this limit to compact older chat history before sending. It does not change the provider model’s actual capacity or guarantee lower quota use.",
   "modelContextInvalid": "Enter a value from 2,048 to 2,000,000 tokens.",
   "modelContextAboveMaximum": "The limit cannot exceed the model maximum.",
   "localEngines": "Local engines",
-  "localEnginesDescription": "Install verified local runtimes, register your own model files, and check whether a runtime is healthy. Move or copy models into an engine folder, or keep them where they are.",
+  "localEnginesDescription": "Install and manage local model runtimes.",
   "localEnginesUnavailable": "The local engine service is not available yet.",
   "localEnginesLoadFailed": "Local engine information could not be loaded.",
   "localEnginesEmpty": "No local engine releases are available.",
   "localEnginesReload": "Reload",
   "localEngineRelease": "Release {tag}",
-  "@localEngineRelease": { "placeholders": { "tag": { "type": "String" } } },
+  "@localEngineRelease": {
+    "placeholders": {
+      "tag": {
+        "type": "String"
+      }
+    }
+  },
   "localEngineNewerReleaseIncompatible": "Upstream has released {latest}; {compatible} is the newest release compatible with this runtime.",
-  "@localEngineNewerReleaseIncompatible": { "placeholders": { "latest": { "type": "String" }, "compatible": { "type": "String" } } },
+  "@localEngineNewerReleaseIncompatible": {
+    "placeholders": {
+      "latest": {
+        "type": "String"
+      },
+      "compatible": {
+        "type": "String"
+      }
+    }
+  },
   "localEngineReleaseCheckUnavailable": "New releases could not be checked. Check your connection and reload; installation is disabled until a release is verified.",
   "localEngineVariants": "Packages",
   "localEngineStable": "Stable",
@@ -120,15 +365,18 @@
   "localEngineNotInstalled": "Not installed",
   "localEngineBlocked": "Blocked",
   "localEngineDeprecated": "Deprecated",
-  "localEngineWindowsDeprecatedReason": "New vLLM and ExLlama installs are disabled on Windows. Existing runtime files and model registrations are kept.",
   "localEngineUnsupportedPlatform": "Unsupported platform",
   "localEngineHardwareUnavailable": "Hardware unavailable",
   "localEngineDriverUnsupported": "Update NVIDIA driver",
   "localEngineDriverVersionUnavailable": "NVIDIA driver version could not be verified",
-  "localEngineVllmBlockedReason": "vLLM requires an NVIDIA driver version 580 or newer and an existing Linux environment. On Windows, it uses an existing WSL2 distribution with GPU access.",
-  "localEngineExllamaBlockedReason": "The ExLlamaV3 runtime is not ready for installation yet. OpenChat must pin and verify the complete TabbyAPI, PyTorch, Triton, Flash Linear Attention, and Python dependency set before offering it.",
   "localEngineRuntimeRequirements": "Requirements: {requirements}",
-  "@localEngineRuntimeRequirements": { "placeholders": { "requirements": { "type": "String" } } },
+  "@localEngineRuntimeRequirements": {
+    "placeholders": {
+      "requirements": {
+        "type": "String"
+      }
+    }
+  },
   "localEngineInstall": "Install",
   "localEngineUpdate": "Update",
   "localEngineInstalling": "Preparing installation...",
@@ -150,16 +398,43 @@
   "localEngineExternalServerConnecting": "Checking the selected local server...",
   "localEngineExternalServerFoundTitle": "Running llama-server found",
   "localEngineExternalServerFoundDescription": "A llama.cpp server is listening on port {port}. OpenChat will connect to it and list its models. Disconnecting in OpenChat will not stop the server.",
-  "@localEngineExternalServerFoundDescription": { "placeholders": { "port": { "type": "int" } } },
+  "@localEngineExternalServerFoundDescription": {
+    "placeholders": {
+      "port": {
+        "type": "int"
+      }
+    }
+  },
   "localEngineExternalServerNotNow": "Not now",
   "localEngineExternalServerConnect": "Connect",
   "localEngineExternalServerConnected": "Connected on port {port}. {count, plural, =1{1 model available} other{{count} models available}}.",
-  "@localEngineExternalServerConnected": { "placeholders": { "port": { "type": "int" }, "count": { "type": "int" } } },
+  "@localEngineExternalServerConnected": {
+    "placeholders": {
+      "port": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "localEngineManagedModelSection": "OpenChat-managed models",
   "localEngineManagedServerModelSection": "OpenChat server · 127.0.0.1:{port}",
-  "@localEngineManagedServerModelSection": { "placeholders": { "port": { "type": "int" } } },
+  "@localEngineManagedServerModelSection": {
+    "placeholders": {
+      "port": {
+        "type": "int"
+      }
+    }
+  },
   "localEngineExternalModelSection": "User server · 127.0.0.1:{port}",
-  "@localEngineExternalModelSection": { "placeholders": { "port": { "type": "int" } } },
+  "@localEngineExternalModelSection": {
+    "placeholders": {
+      "port": {
+        "type": "int"
+      }
+    }
+  },
   "localEngineExternalServerDisconnect": "Disconnect",
   "localEngineExternalServerNotFound": "No running llama-server was found.",
   "localEngineExternalServerScanFailed": "Running llama-server processes could not be checked.",
@@ -184,7 +459,13 @@
   "localModelAddFolder": "Add model folder",
   "localModelStorageChoiceTitle": "Choose where to keep the model",
   "localModelStorageChoiceTarget": "Selected model folder: {folder}",
-  "@localModelStorageChoiceTarget": { "placeholders": { "folder": { "type": "String" } } },
+  "@localModelStorageChoiceTarget": {
+    "placeholders": {
+      "folder": {
+        "type": "String"
+      }
+    }
+  },
   "localModelDirectoryTitle": "Model folder",
   "localModelDirectoryDescription": "Choose where models for this engine are stored. Changing this folder does not move models already registered.",
   "localModelChooseDirectory": "Choose folder",
@@ -193,14 +474,35 @@
   "localModelScanningDirectory": "Scanning folder...",
   "localModelDiscoveryTitle": "Unregistered models found",
   "localModelDiscoveryPrompt": "{count, plural, =1{OpenChat found 1 supported model in this folder that is not registered. Register it?} other{OpenChat found {count} supported models in this folder that are not registered. Register them?}}",
-  "@localModelDiscoveryPrompt": { "placeholders": { "count": { "type": "int" } } },
+  "@localModelDiscoveryPrompt": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "localModelDiscoveryTruncated": "The scan reached its safe limit. Choose a smaller folder to find more models.",
   "localModelDiscoveryEmpty": "No new supported models were found in this folder.",
   "localModelDiscoveryRegisterAll": "Register found models",
   "localModelDiscoveryRegistered": "{count, plural, =1{Registered 1 model.} other{Registered {count} models.}}",
-  "@localModelDiscoveryRegistered": { "placeholders": { "count": { "type": "int" } } },
+  "@localModelDiscoveryRegistered": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "localModelDiscoveryPartial": "Registered {registered} of {total} models. Some models could not be registered.",
-  "@localModelDiscoveryPartial": { "placeholders": { "registered": { "type": "int" }, "total": { "type": "int" } } },
+  "@localModelDiscoveryPartial": {
+    "placeholders": {
+      "registered": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "localModelDirectoryUnavailable": "This model folder is unavailable. Choose a folder that exists and that OpenChat can access.",
   "localModelDiscoveryFailed": "The model folder could not be scanned. Check access permissions and try again.",
   "localModelMoveToFolder": "Move model to this folder",
@@ -230,7 +532,6 @@
   "localEngineStageDownloading": "Downloading",
   "localEngineStageVerifying": "Verifying",
   "localEngineStageExtracting": "Extracting",
-  "localEngineStageRuntimeSetup": "Setting up the Python runtime",
   "localEngineStagePublishing": "Finishing installation",
   "localEngineStageReady": "Ready",
   "defaultModel": "Default",
@@ -269,6 +570,83 @@
   "connectedProvidersModels": "Connected provider models",
   "noConnectedProviders": "No providers connected yet. Connect accounts or add API keys in the Connections tab.",
   "sharedInstructions": "Shared instructions",
+  "assistantProfiles": "Assistant profiles",
+  "assistantProfilesDescription": "Choose a profile to apply its instructions and response style to new requests. Profiles are stored on this device.",
+  "assistantProfilesEmpty": "No assistant profiles yet.",
+  "assistantProfileCreate": "Create profile",
+  "assistantProfileDeactivate": "Use no profile",
+  "assistantProfileEdit": "Edit profile",
+  "assistantProfileRemoveTitle": "Remove assistant profile?",
+  "assistantProfileRemove": "Remove",
+  "assistantProfileRemoveConfirmation": "Remove “{profileName}”? New requests will no longer use it.",
+  "@assistantProfileRemoveConfirmation": {
+    "placeholders": {
+      "profileName": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantProfileSaveFailed": "The assistant profile could not be saved.",
+  "assistantProfilesLoadFailed": "Assistant profiles could not be loaded.",
+  "assistantProfileLoadFailed": "The active assistant profile could not be loaded.",
+  "assistantProfilesLimitReached": "You can save up to 20 assistant profiles.",
+  "assistantProfileName": "Name",
+  "assistantProfileNameRequired": "Enter a name for this profile.",
+  "assistantProfileNameTooLong": "Use 64 characters or fewer.",
+  "assistantProfileNameExists": "A profile with this name already exists.",
+  "assistantProfileInstructions": "Instructions",
+  "assistantProfileInstructionsHelp": "These instructions are sent with new standard chat requests when this profile is active. Temporary chats do not use assistant profiles.",
+  "assistantProfilePreferredModel": "Preferred model",
+  "assistantProfilePreferredModelUnavailable": "Select an available model in chat first.",
+  "assistantProfilePreferredModelHelp": "Used for new chats. A project-specific model takes priority.",
+  "assistantProfileRestrictTools": "Limit tools for this profile",
+  "assistantProfileRestrictToolsHelp": "Only selected tools are offered. App and project permissions can restrict them further.",
+  "assistantProfileProjectTools": "Available in the active project",
+  "assistantProfileProjectTasks": "Run a named project task",
+  "assistantProfileMcpUnavailable": "Some enabled MCP servers are unavailable; their tools could not be loaded.",
+  "assistantProfileLoadMcpTools": "Load MCP tools",
+  "assistantProfileLoadingMcpTools": "Connecting to MCP servers…",
+  "assistantProfileAllowedToolCount": "Tool limit: {count}",
+  "@assistantProfileAllowedToolCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "assistantProfileToolAccessUsesAppPermissions": "App and project permissions",
+  "assistantProfileToolAccessInheritsAppPermissions": "This profile sets no tool limit. App and project permissions control which tools are available.",
+  "assistantProfileToolAccessDisabled": "Tools are off",
+  "assistantProfileToolAccessDisabledHelp": "This profile disables all tools.",
+  "assistantToolGroupWebResearch": "Web search and page reading",
+  "assistantToolGroupWorkspaceRead": "Read and search workspace files",
+  "assistantToolGroupWorkspaceWrite": "Create and edit workspace files",
+  "assistantToolGroupTerminal": "Run terminal commands",
+  "assistantToolGroupGitRead": "Inspect Git status and history",
+  "assistantToolGroupImageGeneration": "Generate images",
+  "assistantToolGroupAskUser": "Ask the user a question",
+  "assistantToolGroupDelegateTask": "Delegate a bounded task",
+  "assistantToolGroupGoalControls": "Manage persistent goals",
+  "assistantResponseStyle": "Response style",
+  "assistantResponseStyleConcise": "Concise",
+  "assistantResponseStyleBalanced": "Balanced",
+  "assistantResponseStyleDetailed": "Detailed",
+  "assistantProfileStyle": "Style: {style}",
+  "@assistantProfileStyle": {
+    "placeholders": {
+      "style": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantProfileActive": "Assistant profile: {profileName}",
+  "@assistantProfileActive": {
+    "placeholders": {
+      "profileName": {
+        "type": "String"
+      }
+    }
+  },
   "sharedInstructionsDescription": "These instructions are sent with every connected provider. File tool access follows the Tool access setting.",
   "restoreDefaults": "Restore defaults",
   "sharedInstructionsRestored": "Default instructions restored.",
@@ -295,8 +673,6 @@
   "deepInfraProvider": "DeepInfra",
   "dashScopeProvider": "DashScope (Qwen)",
   "cohereProvider": "Cohere",
-  "ollamaProvider": "Ollama",
-  "lmStudioProvider": "LM Studio",
   "geminiApiDescription": "Process text, image, audio, and video with models that support them.",
   "groqApiDescription": "Run open models with low latency on Groq infrastructure.",
   "cerebrasApiDescription": "Run large language models on Cerebras Inference infrastructure.",
@@ -312,16 +688,29 @@
   "deepInfraApiDescription": "Use open models hosted by DeepInfra through its chat API.",
   "dashScopeApiDescription": "Use Qwen and other supported models through Alibaba Cloud Model Studio.",
   "cohereApiDescription": "Use Cohere models with chat and tool-calling APIs.",
-  "ollamaApiDescription": "Use local models running in Ollama through its OpenAI-compatible API.",
-  "lmStudioApiDescription": "Connect to local models loaded in LM Studio through its OpenAI-compatible API.",
   "geminiUnpaidDataNotice": "On Gemini API's free tier, Google may use submitted content to improve its products. Review Google's data-use terms before sending sensitive information.",
   "providerApiKey": "API key",
   "providerKeySaved": "API key is saved securely on this device.",
   "providerKeySavedSuffix": "API key ending in ••••{suffix} is saved securely on this device.",
-  "@providerKeySavedSuffix": { "placeholders": { "suffix": {} } },
+  "@providerKeySavedSuffix": {
+    "placeholders": {
+      "suffix": {}
+    }
+  },
   "providerNoKey": "No API key is connected.",
   "providerKeyInvalid": "Enter a valid API key for this provider. Do not include spaces; the key can be up to 4096 characters.",
   "providerKeyStorageFailed": "The API key could not be read or saved securely.",
+  "verifyProviderConnection": "Verify connection",
+  "providerConnectionNotVerified": "Connection has not been verified yet.",
+  "verifyingProviderConnection": "Checking provider connection…",
+  "providerConnectionVerified": "Connection verified; model catalog is available.",
+  "providerVerificationStaleCatalog": "Only cached models were returned; the provider connection could not be verified. Try again.",
+  "providerModelCatalogEmpty": "The provider accepted the request, but returned no models.",
+  "providerVerificationAuthenticationFailed": "The provider rejected this key. Check it and try again.",
+  "providerVerificationRateLimited": "The provider rate limit prevented verification. Try again later.",
+  "providerVerificationNetworkFailed": "Could not reach the provider. Check your network and try again.",
+  "providerConnectionVerificationFailed": "Verification failed. Retry or review the provider settings.",
+  "providerQuotaUnavailable": "OpenChat does not currently show quota data for this provider.",
   "favoriteModels": "Favorites",
   "favoriteModelsEmpty": "No favorite models yet.",
   "modelSearchHint": "Search models...",
@@ -338,7 +727,11 @@
   "openCodeConsole": "OpenCode Console",
   "openCodeConsoleDescription": "Use models tested for coding agents through OpenCode Zen.",
   "openCodeKeySaved": "Console API key ending in ••••{suffix} is saved securely on this device.",
-  "@openCodeKeySaved": { "placeholders": { "suffix": {} } },
+  "@openCodeKeySaved": {
+    "placeholders": {
+      "suffix": {}
+    }
+  },
   "openCodeNoKey": "No Console API key. Free models are available.",
   "openCodeApiKey": "OpenCode Console API key",
   "openCodeKeyInvalid": "Enter a non-empty API key without spaces or line breaks (up to 4096 characters).",
@@ -350,7 +743,13 @@
   "openCodeFreeModels": "Free models",
   "openCodeApiModels": "API models",
   "modelContextWindow": "Context window · {value} tokens",
-  "@modelContextWindow": { "placeholders": { "value": { "type": "String" } } },
+  "@modelContextWindow": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
   "modelDetailsProvider": "Provider",
   "modelDetailsContext": "Context window",
   "modelDetailsMaximumOutput": "Maximum output",
@@ -371,14 +770,41 @@
   "modelDetailsPricingStale": "Cached prices shown; models.dev is currently unavailable.",
   "modelDetailsPricingUnavailable": "No exact price is listed for this model.",
   "modelDetailsPerMillion": "{value} / 1M tokens",
-  "@modelDetailsPerMillion": { "placeholders": { "value": { "type": "String" } } },
+  "@modelDetailsPerMillion": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
   "modelDetailsTier": "Context tier · {context}",
-  "@modelDetailsTier": { "placeholders": { "context": { "type": "String" } } },
+  "@modelDetailsTier": {
+    "placeholders": {
+      "context": {
+        "type": "String"
+      }
+    }
+  },
   "modelDetailsInputOutputPrices": "Input {input} · output {output}",
-  "@modelDetailsInputOutputPrices": { "placeholders": { "input": { "type": "String" }, "output": { "type": "String" } } },
+  "@modelDetailsInputOutputPrices": {
+    "placeholders": {
+      "input": {
+        "type": "String"
+      },
+      "output": {
+        "type": "String"
+      }
+    }
+  },
   "modelDetailsPricingSource": "USD list prices from models.dev, not a provider invoice.",
   "openCodeModelContextWindow": "OpenCode catalog (Models.dev) · context: {value} tokens",
-  "@openCodeModelContextWindow": { "placeholders": { "value": { "type": "String" } } },
+  "@openCodeModelContextWindow": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
   "add": "Add",
   "edit": "Edit",
   "exportConversation": "Export conversation",
@@ -394,7 +820,13 @@
   "conversationRestoreFailed": "The conversation could not be restored. Try again.",
   "confirmDeleteConversationTitle": "Delete this conversation?",
   "confirmDeleteConversation": "This will permanently delete “{title}” and all its messages from this device.",
-  "@confirmDeleteConversation": { "placeholders": { "title": { "type": "String" } } },
+  "@confirmDeleteConversation": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "stopResponseBeforeDelete": "Stop the active response before deleting this conversation.",
   "conversationDeleted": "Conversation deleted.",
   "conversationDeletedFileChangesCleanupFailed": "The conversation was deleted, but its file-change backups could not be removed.",
@@ -456,15 +888,18 @@
   "responseVersionCount": "Response {current} of {total}",
   "@responseVersionCount": {
     "placeholders": {
-      "current": { "type": "int" },
-      "total": { "type": "int" }
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
     }
   },
   "previousResponseVersion": "Previous response",
   "nextResponseVersion": "Next response",
   "providerRateLimited": "The provider reported a usage limit. Try again later.",
   "providerAuthenticationRequired": "The provider rejected the request. Check the connection and model access.",
-  "providerRequestFailed": "The provider could not complete the response. Your saved messages are still available.",
   "providerToolRequestRejected": "The provider rejected a request containing tools. Check the model's tool support or choose a model that advertises tool use.",
   "providerNetworkUnavailable": "The provider could not be reached. Check your connection and try again.",
   "contextWindowExceeded": "The conversation is too large for this model's context window. Shorten the latest message or choose a model with a larger context window. Your chat history is saved.",
@@ -481,7 +916,9 @@
   "savedApiKeyWithSuffix": "Key ending in ••••{suffix}",
   "@savedApiKeyWithSuffix": {
     "placeholders": {
-      "suffix": { "type": "String" }
+      "suffix": {
+        "type": "String"
+      }
     }
   },
   "showApiKey": "Show API key",
@@ -500,14 +937,26 @@
   "removeChatGptConnection": "Remove ChatGPT connection",
   "removeConnectionAction": "Remove",
   "confirmRemoveConnection": "Remove {name} and its saved credentials? Existing chats and messages will remain on this device.",
-  "@confirmRemoveConnection": { "placeholders": { "name": { "type": "String" } } },
+  "@confirmRemoveConnection": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "connectionRemoveSucceeded": "Connection removed. Existing chats and messages are still available.",
   "connectionRemoveFailed": "The connection could not be removed. Try again.",
   "workspaceSelectionFailed": "The ChatGPT workspace could not be selected.",
   "chatGptAccount": "ChatGPT account",
   "planUnavailable": "Plan unavailable",
   "accountPlan": "Plan: {plan}",
-  "@accountPlan": { "placeholders": { "plan": { "type": "String" } } },
+  "@accountPlan": {
+    "placeholders": {
+      "plan": {
+        "type": "String"
+      }
+    }
+  },
   "connectionNeedsSignIn": "Sign in again to use this account.",
   "connectionSelected": "Selected",
   "useConnection": "Use account",
@@ -517,31 +966,79 @@
   "workspaceUnavailable": "No ChatGPT account workspace information is available.",
   "accountEmailUnavailable": "Email address unavailable",
   "accountUsage": "Usage · {plan}",
-  "@accountUsage": { "placeholders": { "plan": { "type": "String" } } },
+  "@accountUsage": {
+    "placeholders": {
+      "plan": {
+        "type": "String"
+      }
+    }
+  },
   "refreshUsage": "Refresh usage",
   "ordinaryUsageAvailable": "Ordinary usage is available.",
   "ordinaryUsageUnavailable": "Ordinary usage is currently unavailable.",
   "ordinaryUsageUnknown": "Usage availability could not be determined.",
   "usageUpdatedAt": "Updated {time}",
-  "@usageUpdatedAt": { "placeholders": { "time": { "type": "String" } } },
+  "@usageUpdatedAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "usageLoadFailed": "Usage information could not be loaded.",
   "usageFiveHour": "5-hour",
   "usageWeekly": "Weekly",
   "usageMonthly": "Monthly",
   "workspaceNumbered": "ChatGPT account workspace {number}",
-  "@workspaceNumbered": { "placeholders": { "number": { "type": "int" } } },
+  "@workspaceNumbered": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
   "quotaResetsAt": "Resets {time}",
-  "@quotaResetsAt": { "placeholders": { "time": { "type": "String" } } },
+  "@quotaResetsAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "creditExpiresAt": "Expires {time}",
-  "@creditExpiresAt": { "placeholders": { "time": { "type": "String" } } },
+  "@creditExpiresAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "creditGrantedAt": "Granted {time}",
-  "@creditGrantedAt": { "placeholders": { "time": { "type": "String" } } },
+  "@creditGrantedAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "noResetCredits": "No reset credits are available.",
   "usageUsedPercent": "{percent}% used",
-  "@usageUsedPercent": { "placeholders": { "percent": { "type": "String" } } },
+  "@usageUsedPercent": {
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
   "resetCreditCountUnavailable": "Reset credit count is unavailable.",
   "resetCreditsAvailable": "Available reset credits: {count}",
-  "@resetCreditsAvailable": { "placeholders": { "count": { "type": "int" } } },
+  "@resetCreditsAvailable": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "resetCredit": "Reset credit",
   "statusUnavailable": "Status unavailable",
   "resetCreditDetailsUnavailable": "Reset credit details were not returned.",
@@ -573,7 +1070,13 @@
   "titleSelectModelHint": "Choose a connected provider or local model",
   "titleLightweightUnavailable": "No available model has a parameter count stated in its name. You can choose a model directly.",
   "titleLightweightModelSelected": "OpenChat chose {model}, the smallest model with a known parameter count.",
-  "@titleLightweightModelSelected": { "placeholders": { "model": { "type": "String" } } },
+  "@titleLightweightModelSelected": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
   "titleUseConversationAccount": "Use the conversation account",
   "titleAccountUnavailable": "Selected title account is unavailable",
   "titleWorkspaceHint": "Choose a workspace for titles",
@@ -607,6 +1110,20 @@
   "systemTheme": "System",
   "lightTheme": "Light",
   "darkTheme": "Dark",
+  "attachmentIndexTitle": "Search inside text attachments",
+  "attachmentIndexDescription": "Supported text files are copied into a local searchable index, up to 5,000 files or 100 MB. Source files stay unchanged; images are not indexed.",
+  "attachmentIndexSupportedTypes": "Indexed types: .txt, .md, .csv, .json, .jsonl, .xml, .html, .css, .js, .jsx, .ts, .tsx, .dart, .rs, .py, .go, .java, .kt, .swift, .c, .h, .cpp, .hpp, .cs, .sh, .ps1, .yaml, .yml, .toml, .ini, .sql, .log",
+  "attachmentIndexCount": "{count} files indexed",
+  "@attachmentIndexCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "attachmentIndexRebuild": "Rebuild index",
+  "attachmentIndexClear": "Clear index",
+  "attachmentIndexFailed": "The attachment text index could not be updated.",
   "localData": "Local data",
   "conversationArchiveTitle": "Conversation archives",
   "conversationArchiveDescription": "Create or restore an encrypted archive of selected conversations on this device.",
@@ -618,7 +1135,13 @@
   "conversationArchiveSelectTitle": "Choose conversations to export",
   "conversationArchiveSearch": "Search conversations",
   "conversationArchiveSelectedCount": "{count, plural, =0{No conversations selected} one{# conversation selected} other{# conversations selected}}",
-  "@conversationArchiveSelectedCount": {"placeholders": {"count": {"type": "int"}}},
+  "@conversationArchiveSelectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "conversationArchiveSelectAll": "Select all shown",
   "conversationArchiveDeselectAll": "Deselect all shown",
   "conversationArchiveNoMatches": "No matching conversations.",
@@ -632,9 +1155,21 @@
   "conversationArchiveChooseFolder": "Choose where to save the encrypted archive",
   "conversationArchiveChooseFile": "Choose an OpenChat conversation archive",
   "conversationArchiveExportSuccess": "{count, plural, one{Encrypted archive created for # conversation.} other{Encrypted archive created for # conversations.}}",
-  "@conversationArchiveExportSuccess": {"placeholders": {"count": {"type": "int"}}},
+  "@conversationArchiveExportSuccess": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "conversationArchiveImportSuccess": "{count, plural, =0{No conversations were imported.} one{# conversation imported.} other{# conversations imported.}}",
-  "@conversationArchiveImportSuccess": {"placeholders": {"count": {"type": "int"}}},
+  "@conversationArchiveImportSuccess": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "conversationArchivePickerFailed": "The file or folder picker could not be opened.",
   "conversationArchiveInvalidFile": "The selected archive has no usable file path.",
   "conversationArchiveInvalidResponse": "The archive service returned invalid data.",
@@ -649,13 +1184,37 @@
   "profileArchiveChooseFolder": "Choose where to save the encrypted profile backup",
   "profileArchiveChooseFile": "Choose an OpenChat profile backup",
   "profileArchiveExportSuccess": "Encrypted backup created: {conversationCount} conversations, {messageCount} messages, {attachmentCount} attachments.",
-  "@profileArchiveExportSuccess": {"placeholders": {"conversationCount": {"type": "String"}, "messageCount": {"type": "String"}, "attachmentCount": {"type": "String"}}},
+  "@profileArchiveExportSuccess": {
+    "placeholders": {
+      "conversationCount": {
+        "type": "String"
+      },
+      "messageCount": {
+        "type": "String"
+      },
+      "attachmentCount": {
+        "type": "String"
+      }
+    }
+  },
   "profileArchiveRestoreConfirmTitle": "Replace application data?",
   "profileArchiveRestoreConfirmBody": "The selected backup will replace the conversation database and referenced attachments the next time OpenChat starts. The current database and attachments will be kept in a recovery folder. Provider credentials, global preferences and model or runtime files are not part of the backup.",
   "profileArchiveRestoreConfirmButton": "Restore and close OpenChat",
   "profileArchiveRestartTitle": "Close OpenChat to apply the backup",
   "profileArchiveRestoreReady": "The backup contains {conversationCount} conversations, {messageCount} messages and {attachmentCount} attachments. Close OpenChat now. The restored data will be checked during startup, and your current profile will remain available for recovery.",
-  "@profileArchiveRestoreReady": {"placeholders": {"conversationCount": {"type": "int"}, "messageCount": {"type": "int"}, "attachmentCount": {"type": "int"}}},
+  "@profileArchiveRestoreReady": {
+    "placeholders": {
+      "conversationCount": {
+        "type": "int"
+      },
+      "messageCount": {
+        "type": "int"
+      },
+      "attachmentCount": {
+        "type": "int"
+      }
+    }
+  },
   "profileArchiveCloseApp": "Close OpenChat",
   "profileArchiveCloseFailed": "OpenChat could not be closed. Close the window to apply the backup.",
   "profileArchiveProcessing": "Encrypting or validating the profile backup. Large backups can take several minutes.",
@@ -718,8 +1277,14 @@
   "clearHistorySucceeded": "Chat history was deleted.",
   "clearHistoryFailed": "Chat history could not be deleted. Try again.",
   "themeSaveFailed": "The theme preference could not be saved. Try again.",
-  "searchChats": "Search chats",
-  "searchChatsHint": "Search chats and messages",
+  "searchChats": "Search OpenChat",
+  "searchChatsHint": "Search chats, projects, workspaces, saved responses, and file names",
+  "searchFilterAll": "All",
+  "searchFilterChats": "Chats",
+  "searchFilterProjects": "Projects",
+  "searchFilterWorkspaces": "Workspaces",
+  "searchFilterSavedResponses": "Saved responses",
+  "searchFilterAttachments": "Attachments",
   "searchMessagesTooltip": "Search messages",
   "historySearchDateFilter": "Filter by date",
   "historySearchDateFilterApplied": "Date filter is active",
@@ -752,9 +1317,21 @@
   "conversationBookmarkFailed": "The conversation bookmark could not be updated.",
   "conversationBookmarked": "Bookmarked",
   "selectConversation": "Select {title}",
-  "@selectConversation": {"placeholders": {"title": {"type": "String"}}},
+  "@selectConversation": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "conversationsSelected": "{count, plural, =0{No chats selected} one{# chat selected} other{# chats selected}}",
-  "@conversationsSelected": {"placeholders": {"count": {"type": "int"}}},
+  "@conversationsSelected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "historySearchAllTags": "All tags",
   "historySearchAllStatuses": "All conversations",
   "historySearchActiveConversations": "Active conversations",
@@ -766,7 +1343,7 @@
   "historySearchClearDateFilter": "Clear date filter",
   "searchMessagesHeader": "Message matches",
   "searchMessagesLoading": "Searching messages and conversations…",
-  "searchMessagesNoResults": "No matching messages or conversations.",
+  "searchMessagesNoResults": "No matching items found.",
   "searchMessagesTooShort": "Enter at least two characters to search.",
   "searchMessagesTooLong": "Search text must be 512 characters or fewer.",
   "searchMessagesFailed": "Search failed. Try again.",
@@ -795,6 +1372,23 @@
   "projectOptions": "Project options",
   "projectToolRulesTitle": "Project tool permissions",
   "projectToolRulesDescription": "Choose a rule for each tool. Unset tools use the global permission mode. Allow still follows file scope and process sandbox limits.",
+  "projectToolRulesSummaryLoading": "Loading this project's tool permission rules.",
+  "projectToolRulesSummaryUnavailable": "This project's tool permission summary could not be loaded.",
+  "projectToolRulesSummaryInherit": "This project has no overrides. All tools use the global permission mode.",
+  "projectToolRulesSummary": "Project rules: {allowed} allow, {approval} require approval, {denied} deny. Tools without a rule use the global mode.",
+  "@projectToolRulesSummary": {
+    "placeholders": {
+      "allowed": {
+        "type": "int"
+      },
+      "approval": {
+        "type": "int"
+      },
+      "denied": {
+        "type": "int"
+      }
+    }
+  },
   "projectToolRuleInherit": "Use global setting",
   "projectToolRuleAsk": "Ask for approval",
   "projectToolRuleAllow": "Allow",
@@ -808,7 +1402,13 @@
   "projectDefaultModelSelectFirst": "Select a model before setting a project default.",
   "projectDefaultModelSaveFailed": "The project model default could not be saved.",
   "projectDefaultModelSaved": "Project default model set to {model}.",
-  "@projectDefaultModelSaved": {"placeholders": {"model": {"type": "String"}}},
+  "@projectDefaultModelSaved": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
   "projectDefaultModelCleared": "Project model default cleared.",
   "projectOptionsToolPermissions": "Tool permissions",
   "projectOptionsMcpServers": "MCP servers",
@@ -831,7 +1431,13 @@
   "projectIndexActionFailed": "The project index operation failed.",
   "projectIndexStale": "The project index is incomplete. Sync it from project options or disable it.",
   "projectIndexStatus": "Status: {status}. Files: {files}. Indexed bytes: {bytes}.",
-  "@projectIndexStatus": { "placeholders": { "status": {}, "files": {}, "bytes": {} } },
+  "@projectIndexStatus": {
+    "placeholders": {
+      "status": {},
+      "files": {},
+      "bytes": {}
+    }
+  },
   "projectSkillsTitle": "Project Skills",
   "projectSkillsDescription": "Choose project Skills from .openchat/skills/<id>/SKILL.md. Selected content is sent with new responses. Skill selection is saved locally for this project.",
   "projectSkillsEmpty": "No Skills found. Add a SKILL.md file under .openchat/skills/<id>/.",
@@ -839,7 +1445,16 @@
   "projectSkillsSaveFailed": "The project Skill selection could not be saved.",
   "projectSkillsClearSelection": "Clear selection",
   "projectSkillsStale": "This selected Skill is no longer available. Uncheck it to clear the saved selection.",
-  "@projectInstructionsSize": { "placeholders": { "bytes": { "type": "int" }, "maxBytes": { "type": "int" } } },
+  "@projectInstructionsSize": {
+    "placeholders": {
+      "bytes": {
+        "type": "int"
+      },
+      "maxBytes": {
+        "type": "int"
+      }
+    }
+  },
   "projectMcpTitle": "Project MCP servers",
   "projectMcpDescription": "Configure local stdio MCP servers for this project. Enabled servers start only when a tool-capable chat needs their tools.",
   "projectMcpPermissionsLocal": "Permission choices are saved locally for this project and are not stored in the repository.",
@@ -857,7 +1472,13 @@
   "projectMcpCheck": "Check connection",
   "projectMcpChecking": "Checking connection…",
   "projectMcpConnected": "Connected; discovered {count} tools",
-  "@projectMcpConnected": { "placeholders": { "count": { "type": "int" } } },
+  "@projectMcpConnected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "projectMcpCheckFailed": "The server could not start or return its tool list.",
   "projectMcpLoadFailed": "The project MCP catalog could not be loaded. Check `.openchat/mcp.json` for invalid or unsafe entries.",
   "projectMcpSaveFailed": "The MCP catalog could not be saved. Check the server IDs and absolute program paths.",
@@ -896,18 +1517,42 @@
   "projectWorktreeOperationFailed": "The Git operation failed. Check the repository state and try again.",
   "projectWorktreeNotRepository": "This project folder is not inside a Git repository.",
   "projectWorktreeBranch": "Branch: {branch}",
-  "@projectWorktreeBranch": { "placeholders": { "branch": { "type": "String" } } },
+  "@projectWorktreeBranch": {
+    "placeholders": {
+      "branch": {
+        "type": "String"
+      }
+    }
+  },
   "projectWorktreePath": "Folder: {path}",
-  "@projectWorktreePath": { "placeholders": { "path": { "type": "String" } } },
+  "@projectWorktreePath": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
   "projectWorktreeStatusClean": "No uncommitted changes",
   "projectWorktreeStatusChanges": "Changed files: {count}",
-  "@projectWorktreeStatusChanges": { "placeholders": { "count": { "type": "int" } } },
+  "@projectWorktreeStatusChanges": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "projectWorktreeReview": "Review changes",
   "projectWorktreeUse": "Use as project",
   "projectWorktreeRemove": "Remove worktree",
   "projectWorktreeRemoveTitle": "Remove worktree?",
   "projectWorktreeRemoveDescription": "This discards uncommitted and untracked files in {branch}. The branch and its commits are kept.",
-  "@projectWorktreeRemoveDescription": { "placeholders": { "branch": { "type": "String" } } },
+  "@projectWorktreeRemoveDescription": {
+    "placeholders": {
+      "branch": {
+        "type": "String"
+      }
+    }
+  },
   "projectWorktreeReviewTitle": "Worktree changes",
   "projectWorktreeNoChanges": "There are no uncommitted changes. Committed changes are on this branch.",
   "projectWorktreeStagedDiff": "Staged changes",
@@ -921,21 +1566,45 @@
   "projectWorktreeTaskConfirmationTitle": "Run this check?",
   "projectWorktreeTaskCommand": "Command",
   "projectWorktreeTaskTimeout": "Time limit: {seconds} seconds",
-  "@projectWorktreeTaskTimeout": { "placeholders": { "seconds": { "type": "int" } } },
+  "@projectWorktreeTaskTimeout": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
   "projectWorktreeTaskRun": "Run check",
   "projectWorktreeTaskRunning": "Check running: {task}",
-  "@projectWorktreeTaskRunning": { "placeholders": { "task": { "type": "String" } } },
+  "@projectWorktreeTaskRunning": {
+    "placeholders": {
+      "task": {
+        "type": "String"
+      }
+    }
+  },
   "projectWorktreeTaskStopping": "Stopping check…",
   "projectWorktreeTaskStop": "Stop check",
   "projectWorktreeTaskCancelled": "The check was cancelled.",
   "projectWorktreeTaskTimedOut": "The check reached its time limit.",
   "projectWorktreeTaskExitCode": "Check finished with exit code {code}.",
-  "@projectWorktreeTaskExitCode": { "placeholders": { "code": { "type": "int" } } },
+  "@projectWorktreeTaskExitCode": {
+    "placeholders": {
+      "code": {
+        "type": "int"
+      }
+    }
+  },
   "projectWorktreeTaskExitCodeUnavailable": "The check finished without an exit code.",
   "projectWorktreeTaskOutputTruncated": "The output is truncated to the first 128 KiB.",
   "projectWorktreeTaskRunFailed": "The check could not run in the worktree sandbox.",
   "projectWorktreeTaskResultTitle": "Check result: {task}",
-  "@projectWorktreeTaskResultTitle": { "placeholders": { "task": { "type": "String" } } },
+  "@projectWorktreeTaskResultTitle": {
+    "placeholders": {
+      "task": {
+        "type": "String"
+      }
+    }
+  },
   "projectWorktreeTaskOutput": "Output",
   "projectWorktreeTaskNoOutput": "The check did not produce output.",
   "projectWorktreeTaskDenied": "Project permissions deny running named checks.",
@@ -955,11 +1624,23 @@
   "agentRunStatusCancelled": "Cancelled",
   "agentRunSubagent": "Child run",
   "agentRunSubagentTask": "Child task: {objective}",
-  "@agentRunSubagentTask": {"placeholders": {"objective": {"type": "String"}}},
+  "@agentRunSubagentTask": {
+    "placeholders": {
+      "objective": {
+        "type": "String"
+      }
+    }
+  },
   "agentRunLiveStarting": "Starting delegated analysis…",
   "agentRunLiveThinking": "Analyzing delegated task…",
   "agentRunLiveUsingTool": "Using {tool}",
-  "@agentRunLiveUsingTool": {"placeholders": {"tool": {"type": "String"}}},
+  "@agentRunLiveUsingTool": {
+    "placeholders": {
+      "tool": {
+        "type": "String"
+      }
+    }
+  },
   "agentRunEndedInAnotherChat": "A run in another chat ended.",
   "newProjectConversation": "Start a new project chat",
   "newConversation": "Start a new conversation",
@@ -969,7 +1650,9 @@
   "conversationMemoryCurrentConversation": "Selected conversation: {title}",
   "@conversationMemoryCurrentConversation": {
     "placeholders": {
-      "title": { "type": "String" }
+      "title": {
+        "type": "String"
+      }
     }
   },
   "conversationMemoryNoConversation": "Open a conversation to inspect its memory.",
@@ -977,120 +1660,186 @@
   "contextUsageUsed": "Usage: about {count} tokens",
   "@contextUsageUsed": {
     "placeholders": {
-      "count": { "type": "String" }
+      "count": {
+        "type": "String"
+      }
     }
   },
   "contextUsageSummary": "~{used} / {limit} tokens ({percent})",
   "@contextUsageSummary": {
     "placeholders": {
-      "used": { "type": "String" },
-      "limit": { "type": "String" },
-      "percent": { "type": "String" }
+      "used": {
+        "type": "String"
+      },
+      "limit": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageModelLimit": "{count} tokens",
   "@contextUsageModelLimit": {
     "placeholders": {
-      "count": { "type": "String" }
+      "count": {
+        "type": "String"
+      }
     }
   },
   "contextUsageNoModelLimit": "Model limit unknown.",
   "contextUsageProviderMeasurement": "Last provider measurement: {count} tokens",
   "@contextUsageProviderMeasurement": {
     "placeholders": {
-      "count": { "type": "String" }
+      "count": {
+        "type": "String"
+      }
     }
   },
   "contextUsageInstructionsEstimate": "Instructions: {count} tokens · {percent}",
   "@contextUsageInstructionsEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageToolDefinitionsEstimate": "Tool definitions: {count} tokens · {percent}",
   "@contextUsageToolDefinitionsEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageMessagesEstimate": "Messages: {count} tokens · {percent}",
   "@contextUsageMessagesEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageAttachmentsEstimate": "Attachments: {count} tokens · {percent}",
   "@contextUsageAttachmentsEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageAttachmentEstimate": "{name}: {count} tokens · {percent}",
   "@contextUsageAttachmentEstimate": {
     "placeholders": {
-      "name": { "type": "String" },
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageDraftAttachment": "Draft · {name}",
   "@contextUsageDraftAttachment": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "contextUsageUserMessagesEstimate": "User: {count} tokens · {percent}",
   "@contextUsageUserMessagesEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageAssistantMessagesEstimate": "Assistant: {count} tokens · {percent}",
   "@contextUsageAssistantMessagesEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageToolsEstimate": "Tool use: {count} tokens · {percent}",
   "@contextUsageToolsEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageToolUsageEstimate": "{name}: {count} tokens · {percent}",
   "@contextUsageToolUsageEstimate": {
     "placeholders": {
-      "name": { "type": "String" },
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageMemoryEstimate": "Compacted memory: {count} tokens · {percent}",
   "@contextUsageMemoryEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageDraftEstimate": "Draft: {count} tokens · {percent}",
   "@contextUsageDraftEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageFreeSpaceEstimate": "Free space: {count} tokens · {percent}",
   "@contextUsageFreeSpaceEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageOverLimit": "Model limit exceeded.",
@@ -1106,9 +1855,15 @@
   "conversationMemorySemanticDownloadProgress": "{percent}% downloaded · {downloaded} / {total} MB",
   "@conversationMemorySemanticDownloadProgress": {
     "placeholders": {
-      "percent": { "type": "String" },
-      "downloaded": { "type": "String" },
-      "total": { "type": "String" }
+      "percent": {
+        "type": "String"
+      },
+      "downloaded": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
     }
   },
   "conversationMemorySemanticIndexing": "Building the local archive index…",
@@ -1124,18 +1879,42 @@
   "conversationMemoryLastPromptTokens": "Last request · {provider} · {model} · {count} input tokens",
   "@conversationMemoryLastPromptTokens": {
     "placeholders": {
-      "provider": { "type": "String" },
-      "model": { "type": "String" },
-      "count": { "type": "String" }
+      "provider": {
+        "type": "String"
+      },
+      "model": {
+        "type": "String"
+      },
+      "count": {
+        "type": "String"
+      }
     }
   },
   "conversationMemorySearchTitle": "Search the archive",
   "conversationWorkspaceContext": "Workspace: {workspace}",
-  "@conversationWorkspaceContext": { "placeholders": { "workspace": { "type": "String" } } },
+  "@conversationWorkspaceContext": {
+    "placeholders": {
+      "workspace": {
+        "type": "String"
+      }
+    }
+  },
   "outputSourceProvider": "Provider: {provider}",
-  "@outputSourceProvider": { "placeholders": { "provider": { "type": "String" } } },
+  "@outputSourceProvider": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
   "outputSourceModel": "Model: {model}",
-  "@outputSourceModel": { "placeholders": { "model": { "type": "String" } } },
+  "@outputSourceModel": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
   "conversationMemorySearching": "Searching the conversation archive…",
   "conversationMemorySearchHint": "Enter an older topic or phrase...",
   "conversationMemorySearchAction": "Search",
@@ -1208,7 +1987,9 @@
   "restoreWindow": "Restore window",
   "modelSelection": "Choose model",
   "noModelConnected": "No model is connected yet",
-  "noModelConnectedBody": "Connect a provider and choose one of its models to start a conversation.",
+  "noModelConnectedBody": "Sign in with ChatGPT, add an API key for a supported provider, or choose an available local model in Connections. Verify the connection, then select a model below.",
+  "providerNeedsVerificationTitle": "Check your provider connection",
+  "providerNeedsVerificationBody": "A saved sign-in or API key does not confirm that the provider is reachable. Open Connections to verify it and refresh its model list.",
   "close": "Close",
   "reasoning": "Reasoning",
   "reasoningMedium": "Medium",
@@ -1265,31 +2046,49 @@
   "unavailableValue": "—",
   "responseTokenRate": "{rate} tok/s",
   "@responseTokenRate": {
-    "placeholders": { "rate": { "type": "String" } }
+    "placeholders": {
+      "rate": {
+        "type": "String"
+      }
+    }
   },
   "responseTokenCount": "{count} tokens",
   "@responseTokenCount": {
-    "placeholders": { "count": { "type": "String" } }
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
   },
   "responseCompleted": "Response complete",
   "responseCompletedWithDuration": "Response complete · {duration}",
   "@responseCompletedWithDuration": {
     "placeholders": {
-      "duration": { "type": "String" }
+      "duration": {
+        "type": "String"
+      }
     }
   },
   "reasoningSummary": "Reasoning summary",
   "reasoningSummaryWithDuration": "Reasoning summary · {duration}",
   "@reasoningSummaryWithDuration": {
     "placeholders": {
-      "duration": { "type": "String" }
+      "duration": {
+        "type": "String"
+      }
     }
   },
   "reasoningSummaryTooltip": "A summary provided by the model. The duration is how long it took to arrive in the stream; it is not hidden chain-of-thought data.",
   "toolRunning": "Running",
   "unknownTool": "Other tool",
   "terminalSession": "Terminal · {terminal}",
-  "@terminalSession": { "placeholders": { "terminal": { "type": "String" } } },
+  "@terminalSession": {
+    "placeholders": {
+      "terminal": {
+        "type": "String"
+      }
+    }
+  },
   "toolWaitingForUser": "Waiting for your answer",
   "toolCompleted": "Completed",
   "toolFailed": "Failed",
@@ -1304,7 +2103,13 @@
   "toolExecuteCommand": "Execute command",
   "toolRunProjectTask": "Run project task",
   "toolConfiguredProjectTool": "Project tool: {name}",
-  "@toolConfiguredProjectTool": {"placeholders": {"name": {"type": "String"}}},
+  "@toolConfiguredProjectTool": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "toolDelegateTask": "Delegate analysis",
   "toolPermissionTask": "Task",
   "toolPermissionTimeout": "Timeout (seconds)",
@@ -1328,16 +2133,40 @@
   "toolLocalPageSource": "Local page read",
   "toolProviderSource": "Provider source",
   "toolSourceRetrievedAt": "Retrieved {time}",
-  "@toolSourceRetrievedAt": { "placeholders": { "time": { "type": "String" } } },
+  "@toolSourceRetrievedAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "toolSourceDetails": "Source details",
   "toolCitationSource": "Source {sourceId}",
-  "@toolCitationSource": { "placeholders": { "sourceId": { "type": "String" } } },
+  "@toolCitationSource": {
+    "placeholders": {
+      "sourceId": {
+        "type": "String"
+      }
+    }
+  },
   "toolWebSearchNoResults": "No web results found.",
   "toolWebSearchResultCount": "{count, plural, =0{0 results} one{1 result} other{{count} results}}",
-  "@toolWebSearchResultCount": { "placeholders": { "count": { "type": "int" } } },
+  "@toolWebSearchResultCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "toolUrl": "URL",
   "toolReadUrlLength": "{count} characters",
-  "@toolReadUrlLength": { "placeholders": { "count": { "type": "int" } } },
+  "@toolReadUrlLength": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "toolOpenUrl": "Open in browser",
   "toolCopyUrl": "Copy URL",
   "toolCopyContent": "Copy content",
@@ -1349,18 +2178,42 @@
   "toolSearchNoMatches": "No matches found.",
   "toolSearchMoreResults": "More matches are available.",
   "toolSearchMatchCount": "{count, plural, =0{0 matches} one{1 match} other{{count} matches}}",
-  "@toolSearchMatchCount": { "placeholders": { "count": { "type": "int" } } },
+  "@toolSearchMatchCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "toolReadNoLines": "There are no lines in this range.",
   "toolReadMoreLines": "More lines are available.",
   "toolReadLineCount": "{count, plural, =0{0 lines} one{1 line} other{{count} lines}}",
-  "@toolReadLineCount": { "placeholders": { "count": { "type": "int" } } },
+  "@toolReadLineCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "toolFileTypeFile": "File",
   "toolFileTypeDirectory": "Folder",
   "toolWriteSuccess": "{size} written",
-  "@toolWriteSuccess": { "placeholders": { "size": { "type": "String" } } },
+  "@toolWriteSuccess": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
   "toolFilePreview": "Written content preview",
   "toolEditSuccess": "{count, plural, one{# change applied} other{# changes applied}}",
-  "@toolEditSuccess": { "placeholders": { "count": { "type": "int" } } },
+  "@toolEditSuccess": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "toolEditBefore": "Before",
   "toolEditAfter": "After",
   "toolPermissionCommand": "Command",
@@ -1374,7 +2227,9 @@
   "toolTerminalExitCode": "Exit code: {code}",
   "@toolTerminalExitCode": {
     "placeholders": {
-      "code": { "type": "int" }
+      "code": {
+        "type": "int"
+      }
     }
   },
   "toolTerminalCopied": "Copied to clipboard",
@@ -1382,7 +2237,9 @@
   "toolFileCount": "{count, plural, =0{No items} one{1 item} other{{count} items}}",
   "@toolFileCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "toolEmptyListing": "There are no items to show in this folder.",
@@ -1397,7 +2254,9 @@
   "secondsShort": "{count} sec",
   "@secondsShort": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "usageQuotas": "Usage Quotas",
@@ -1413,7 +2272,13 @@
   "statisticsProvider": "Provider",
   "statisticsRunId": "Run ID",
   "statisticsRunIdValue": "Run ID: {runId}",
-  "@statisticsRunIdValue": { "placeholders": { "runId": { "type": "String" } } },
+  "@statisticsRunIdValue": {
+    "placeholders": {
+      "runId": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsModel": "Model",
   "statisticsOperation": "Operation type",
   "statisticsReasoningEffort": "Reasoning effort",
@@ -1439,17 +2304,50 @@
   "statisticsOutputCoverage": "Requests with reported output tokens",
   "statisticsReasoningCoverage": "Requests with reported reasoning tokens",
   "statisticsCoverageText": "The provider returned token usage for {reported} of {total} requests.",
-  "@statisticsCoverageText": { "placeholders": { "total": { "type": "int" }, "reported": { "type": "int" } } },
+  "@statisticsCoverageText": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "reported": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsProviderReportedCost": "Provider reported cost",
   "statisticsCostCoverage": "Cost information is available for {reported} requests.",
-  "@statisticsCostCoverage": { "placeholders": { "reported": { "type": "int" } } },
+  "@statisticsCostCoverage": {
+    "placeholders": {
+      "reported": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsModelsDevCatalogCost": "Cost at models.dev list prices",
   "statisticsModelsDevCatalogCostCoverage": "List-price equivalent calculated for {priced} requests.",
-  "@statisticsModelsDevCatalogCostCoverage": { "placeholders": { "priced": { "type": "int" } } },
+  "@statisticsModelsDevCatalogCostCoverage": {
+    "placeholders": {
+      "priced": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsModelsDevPricingCurrent": "models.dev pricing catalog fetched {date}.",
-  "@statisticsModelsDevPricingCurrent": { "placeholders": { "date": { "type": "String" } } },
+  "@statisticsModelsDevPricingCurrent": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsModelsDevPricingStale": "models.dev is unreachable; cached prices from {date} are being used.",
-  "@statisticsModelsDevPricingStale": { "placeholders": { "date": { "type": "String" } } },
+  "@statisticsModelsDevPricingStale": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsModelsDevPricingUnavailable": "models.dev pricing is unavailable. Costs are not calculated without an exact provider and model match.",
   "statisticsUsageTrend": "Usage over time",
   "statisticsDaily": "Daily",
@@ -1470,28 +2368,94 @@
   "statisticsRequestPayload": "Sent request data",
   "statisticsRequestContextUnavailable": "The sent request summary is unavailable.",
   "statisticsRequestSourceMessages": "Included message IDs: {ids}",
-  "@statisticsRequestSourceMessages": { "placeholders": { "ids": { "type": "String" } } },
+  "@statisticsRequestSourceMessages": {
+    "placeholders": {
+      "ids": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestArchivedMessages": "Retrieved message IDs: {ids}",
-  "@statisticsRequestArchivedMessages": { "placeholders": { "ids": { "type": "String" } } },
+  "@statisticsRequestArchivedMessages": {
+    "placeholders": {
+      "ids": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestSummaryBoundary": "Summary includes messages through: {id}",
-  "@statisticsRequestSummaryBoundary": { "placeholders": { "id": { "type": "String" } } },
+  "@statisticsRequestSummaryBoundary": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestSourceAttachments": "Attachments sent: {files}",
-  "@statisticsRequestSourceAttachments": { "placeholders": { "files": { "type": "String" } } },
+  "@statisticsRequestSourceAttachments": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestSourcesTruncated": "Some source details are omitted from this record.",
   "statisticsRequestMessageCount": "Messages sent: {count}",
-  "@statisticsRequestMessageCount": { "placeholders": { "count": { "type": "int" } } },
+  "@statisticsRequestMessageCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsRequestImageCount": "Images sent: {count}",
-  "@statisticsRequestImageCount": { "placeholders": { "count": { "type": "int" } } },
+  "@statisticsRequestImageCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsRequestToolResultCount": "Tool results sent: {count}",
-  "@statisticsRequestToolResultCount": { "placeholders": { "count": { "type": "int" } } },
+  "@statisticsRequestToolResultCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsRequestInstructionBytes": "Instruction bytes: {count}",
-  "@statisticsRequestInstructionBytes": { "placeholders": { "count": { "type": "int" } } },
+  "@statisticsRequestInstructionBytes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsRequestRoles": "Message roles: {roles}",
-  "@statisticsRequestRoles": { "placeholders": { "roles": { "type": "String" } } },
+  "@statisticsRequestRoles": {
+    "placeholders": {
+      "roles": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestTools": "Tool definitions: {names}",
-  "@statisticsRequestTools": { "placeholders": { "names": { "type": "String" } } },
+  "@statisticsRequestTools": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestCacheControls": "Cache controls: {names}",
-  "@statisticsRequestCacheControls": { "placeholders": { "names": { "type": "String" } } },
+  "@statisticsRequestCacheControls": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsNone": "None",
   "statisticsRequestTime": "Request time",
   "statisticsConversationTitle": "Conversation title",
@@ -1499,7 +2463,19 @@
   "statisticsUsageSource": "Usage data source",
   "statisticsNoRequestData": "No requests match these filters.",
   "statisticsShowingRows": "{start} - {end} of {total}",
-  "@statisticsShowingRows": { "placeholders": { "start": { "type": "int" }, "end": { "type": "int" }, "total": { "type": "int" } } },
+  "@statisticsShowingRows": {
+    "placeholders": {
+      "start": {
+        "type": "int"
+      },
+      "end": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsExportCsv": "Export CSV",
   "statisticsExporting": "Exporting",
   "statisticsExported": "Statistics were exported to a CSV file.",
@@ -1540,7 +2516,9 @@
   "workspaceQuotaLabel": "ChatGPT workspace: {name}",
   "@workspaceQuotaLabel": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "modelsPageDescription": "Find open models to run on this device. Downloaded models appear in Local models.",
@@ -1552,12 +2530,12 @@
   "modelPageLabel": "Page {page}",
   "@modelPageLabel": {
     "placeholders": {
-      "page": { "type": "int" }
+      "page": {
+        "type": "int"
+      }
     }
   },
   "modelFormatGguf": "GGUF · llama.cpp",
-  "modelFormatTransformers": "Transformers · vLLM",
-  "modelFormatExllama": "ExLlama · EXL3",
   "huggingFaceModelSearchHint": "Search open models",
   "otherProvider": "Other provider",
   "modelSearchRefresh": "Refresh model results",
@@ -1592,9 +2570,15 @@
   "modelDownloadRunning": "File {fileIndex} of {fileCount}: {fileName}",
   "@modelDownloadRunning": {
     "placeholders": {
-      "fileName": { "type": "String" },
-      "fileIndex": { "type": "int" },
-      "fileCount": { "type": "int" }
+      "fileName": {
+        "type": "String"
+      },
+      "fileIndex": {
+        "type": "int"
+      },
+      "fileCount": {
+        "type": "int"
+      }
     }
   },
   "modelDownloadComplete": "Model downloaded and added to Local Models.",
@@ -1624,15 +2608,29 @@
   "userQuestionResumeFailed": "The saved answer is ready, but the assistant could not continue. Try again.",
   "userQuestionNotificationTitle": "OpenChat is waiting for you",
   "userQuestionNotificationBody": "The AI is waiting for your response.",
+  "notificationResponseReady": "A response is ready.",
   "assistantResponseNotificationReplyEmpty": "Enter a reply before sending.",
   "assistantResponseNotificationReplyTooLong": "This reply is too long to send from a notification. Use the chat composer to send it.",
   "assistantResponseNotificationReplyUnavailable": "This notification is out of date or the chat is unavailable. Open the chat and send a new message.",
   "assistantResponseNotificationReplyNotSent": "The quick reply could not be sent right now. Review the chat and try again.",
   "fileChangesSummary": "{count, plural, one{# file changed} other{# files changed}}",
-  "@fileChangesSummary": { "placeholders": { "count": { "type": "int" } } },
+  "@fileChangesSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "fileChangesLineCounts": "+{added} / -{removed}",
   "@fileChangesLineCounts": {
-    "placeholders": { "added": { "type": "int" }, "removed": { "type": "int" } }
+    "placeholders": {
+      "added": {
+        "type": "int"
+      },
+      "removed": {
+        "type": "int"
+      }
+    }
   },
   "fileChangesSomeCountsUnavailable": "Line counts unavailable",
   "fileChangesView": "View changes",
@@ -1652,7 +2650,13 @@
   "fileChangesReverted": "Reverted",
   "fileChangesRevert": "Revert",
   "fileChangesMoreFiles": "{count, plural, one{# more file} other{# more files}}",
-  "@fileChangesMoreFiles": { "placeholders": { "count": { "type": "int" } } },
+  "@fileChangesMoreFiles": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "fileChangesUnavailableTitle": "File changes unavailable",
   "slashCommandPlanLabel": "Plan",
   "slashCommandGoalLabel": "Goal",
@@ -1706,7 +2710,99 @@
   "goalResumeAction": "Resume goal",
   "goalStopAction": "Stop goal",
   "goalElapsedTime": "Elapsed: {time}",
-  "@goalElapsedTime": { "placeholders": { "time": { "type": "String" } } },
+  "@goalElapsedTime": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "goalTasksCount": "Tasks: {completed} of {total}",
-  "@goalTasksCount": { "placeholders": { "completed": { "type": "int" }, "total": { "type": "int" } } }
+  "@goalTasksCount": {
+    "placeholders": {
+      "completed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "supportDiagnosticsTitle": "Support diagnostics",
+  "supportDiagnosticsDescription": "Review app and storage health details before saving a support file.",
+  "reviewSupportDiagnostics": "Review export",
+  "supportDiagnosticsPreviewTitle": "Review support diagnostics",
+  "supportDiagnosticsPreviewDescription": "This file contains the details below. Chat content, credentials, and file paths are excluded.",
+  "supportDiagnosticsExportAction": "Save JSON",
+  "supportDiagnosticsSaved": "Support diagnostics saved.",
+  "supportDiagnosticsLoadFailed": "Diagnostics could not be loaded. Check the local service and try again.",
+  "supportDiagnosticsInvalidResponse": "The local service returned unexpected diagnostic data.",
+  "supportDiagnosticsExportFailed": "The support diagnostics file could not be saved.",
+  "supportDiagnosticsPrivacyNote": "Only the fields shown in the preview are saved. The file is not sent to OpenChat.",
+  "supportDiagnosticsPreparing": "Preparing…",
+  "settingsConnectors": "Connectors",
+  "settingsConnectorsDescription": "Manage local connector templates and add them to projects.",
+  "connectorCatalogIntro": "Save reusable MCP connection details in this app. Adding one to a project creates a disabled server; credentials and permissions stay with that project.",
+  "connectorCatalogEmpty": "No connector templates have been added.",
+  "connectorCatalogAdd": "Add template",
+  "connectorCatalogEdit": "Edit template",
+  "connectorCatalogDelete": "Delete template",
+  "connectorCatalogDeleteConfirm": "This removes the template from the app. Connectors already added to projects remain there.",
+  "connectorCatalogInstall": "Add to active project",
+  "connectorCatalogNoProject": "Open a project to add a connector to it.",
+  "connectorCatalogSecurityNotice": "Templates are stored locally without secret values. Installing adds a disabled project server and sets its tools to require approval. OpenChat does not download or verify server software.",
+  "connectorCatalogName": "Template name",
+  "connectorCatalogId": "Server ID",
+  "connectorCatalogPublisher": "Publisher claim",
+  "connectorCatalogSourceUrl": "Source URL",
+  "connectorCatalogDataDisclosure": "Data this connector may receive",
+  "connectorCatalogTransport": "Connection type",
+  "connectorCatalogProgram": "Absolute program path",
+  "connectorCatalogArguments": "Arguments, one per line",
+  "connectorCatalogEnvironmentVariables": "Credential variable names, one per line",
+  "connectorCatalogEndpoint": "HTTPS endpoint",
+  "connectorCatalogAuthVariable": "Credential variable name",
+  "connectorCatalogSave": "Save template",
+  "connectorCatalogInstallPrompt": "Review the publisher, destination, and data disclosure. The server will be added disabled and its tools will require approval. Tool calls may send their arguments to the connector and their results to the selected model provider.",
+  "connectorCatalogInvalid": "Check the required fields, HTTPS URLs, server ID, and connection details.",
+  "connectorCatalogDuplicate": "A template or project server already uses this ID or name.",
+  "connectorCatalogLoadFailed": "The local connector catalog could not be read.",
+  "connectorCatalogSaveFailed": "The connector template could not be saved.",
+  "connectorCatalogInstallFailed": "The connector could not be added to the project. Check the local service and project settings.",
+  "connectorCatalogInstalled": "The disabled connector was added to the project. Add its credentials in project MCP settings if needed.",
+  "connectorCatalogSearch": "Search templates",
+  "connectorCatalogNoResults": "No templates match this search.",
+  "connectorCatalogVersion": "Declared version",
+  "connectorCatalogRequestedAccess": "Access requested",
+  "connectorCatalogAuthentication": "Authentication",
+  "connectorCatalogNoBearerCredential": "No bearer credential is declared. The server may still enforce its own access policy.",
+  "connectorCatalogProjectBearerCredential": "If configured, a bearer credential is scoped to this project and server, then sent to this HTTPS endpoint when connected.",
+  "connectorCatalogNoCredentialVariables": "This local process requests no environment variables.",
+  "connectorCatalogProjectEnvironmentCredentials": "When configured, declared environment values are scoped to this project and server, then passed only to its local process.",
+  "connectorCatalogRemovalImpact": "Removing this template does not remove project servers or their saved credentials. Remove those separately in project MCP settings.",
+  "libraryTabModels": "Models",
+  "libraryTabMcp": "MCP Tools",
+  "libraryTabPrompts": "Prompts (Coming soon)",
+  "libraryTabPersonalities": "Personalities (Coming soon)",
+  "mcpCatalogDescription": "Discover, install, and configure Model Context Protocol servers to enhance your AI assistant.",
+  "mcpSearchHint": "Search MCP tools...",
+  "mcpInstalled": "Installed",
+  "mcpNotInstalled": "Not installed",
+  "mcpActive": "Active (Added to Instructions)",
+  "mcpInactive": "Inactive",
+  "mcpInstall": "Install",
+  "mcpConfigureEnv": "Environment Variables (Env)",
+  "mcpEnvDialogTitle": "MCP Environment Variables",
+  "mcpEnvDialogDescription": "These values are stored securely using OS-level credential management (Windows Credential Manager).",
+  "mcpEnvSaveSuccess": "Environment variables saved securely.",
+  "mcpEnabledSuccess": "MCP tool activated and added to instructions.",
+  "mcpDisabledSuccess": "MCP tool deactivated and removed from instructions.",
+  "mcpNoToolsFound": "No tools found for this MCP.",
+  "mcpUninstall": "Uninstall",
+  "mcpUninstallConfirm": "Are you sure you want to uninstall this MCP tool?",
+  "mcpDiscoverTools": "Fetch Definitions",
+  "mcpDiscovering": "Fetching definitions...",
+  "mcpDiscoverSuccess": "Tool definitions fetched successfully.",
+  "mcpDiscoverFailed": "Failed to fetch tool definitions. Check command and environment variables.",
+  "mcpNoToolsDiscovered": "No tool definitions fetched yet."
 }

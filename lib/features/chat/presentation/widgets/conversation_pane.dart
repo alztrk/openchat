@@ -23,6 +23,7 @@ import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/chat/domain/model_favorite.dart';
 import 'package:openchat/features/chat/domain/tool_permission_request.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
+import 'package:openchat/features/settings/domain/keyboard_shortcut_bindings.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 
 import 'package:openchat/features/chat/presentation/widgets/assistant_message.dart';
@@ -50,7 +51,10 @@ class ConversationPane extends StatelessWidget {
     this.isLoadingModels = false,
     this.hasAvailableModels = false,
     this.hasSelectedModel = false,
+    this.showFirstRunGuide = false,
     this.modelCatalogFailed = false,
+    this.modelCatalogStale = false,
+    this.hasConfiguredProvider = false,
     this.onOpenConnections,
     this.onRetryModels,
     this.models = const <ChatGptModel>[],
@@ -81,13 +85,15 @@ class ConversationPane extends StatelessWidget {
     this.savedOutputMessageIds = const <String>{},
     this.pendingSavedOutputMessageIds = const <String>{},
     this.onToggleSavedOutput,
+    this.onViewPersonalMemorySources,
     this.messagesLoading = false,
     this.showAssistantLoading = false,
     this.messagesErrorDescription,
     this.onRetryMessageHistory,
     this.conversationTitle,
-    this.productWorkspaceName,
     this.conversationId,
+    this.personalMemoryExcluded = false,
+    this.onPersonalMemoryExcludedChanged,
     this.contextProviderId,
     this.contextModelId,
     this.contextSupportsTools,
@@ -104,6 +110,7 @@ class ConversationPane extends StatelessWidget {
     this.onCloseFileChanges,
     this.onFileChangesUpdated,
     this.settingsPreferences,
+    this.keyboardShortcuts = KeyboardShortcutBindings.defaults,
     this.pendingAttachments = const <ChatAttachment>[],
     this.onAddAttachments,
     this.onRemoveAttachment,
@@ -127,6 +134,9 @@ class ConversationPane extends StatelessWidget {
     this.onModelCommand,
     this.onReasoningCommand,
     this.onCompactCommand,
+    this.isTemporaryConversation = false,
+    this.temporaryProviderName,
+    this.onEndTemporaryConversation,
     this.toolPermissionRequest,
     this.isRespondingToToolPermission = false,
     this.toolPermissionError,
@@ -168,7 +178,10 @@ class ConversationPane extends StatelessWidget {
   final bool isLoadingModels;
   final bool hasAvailableModels;
   final bool hasSelectedModel;
+  final bool showFirstRunGuide;
   final bool modelCatalogFailed;
+  final bool modelCatalogStale;
+  final bool hasConfiguredProvider;
   final VoidCallback? onOpenConnections;
   final VoidCallback? onRetryModels;
   final List<ChatGptModel> models;
@@ -206,13 +219,15 @@ class ConversationPane extends StatelessWidget {
   final Set<String> savedOutputMessageIds;
   final Set<String> pendingSavedOutputMessageIds;
   final ValueChanged<ChatMessage>? onToggleSavedOutput;
+  final ValueChanged<List<String>>? onViewPersonalMemorySources;
   final bool messagesLoading;
   final bool showAssistantLoading;
   final String? messagesErrorDescription;
   final VoidCallback? onRetryMessageHistory;
   final String? conversationTitle;
-  final String? productWorkspaceName;
   final String? conversationId;
+  final bool personalMemoryExcluded;
+  final ValueChanged<bool>? onPersonalMemoryExcludedChanged;
   final String? contextProviderId;
   final String? contextModelId;
   final bool? contextSupportsTools;
@@ -229,6 +244,7 @@ class ConversationPane extends StatelessWidget {
   final VoidCallback? onCloseFileChanges;
   final ValueChanged<List<ChatFileChange>>? onFileChangesUpdated;
   final SettingsPreferences? settingsPreferences;
+  final KeyboardShortcutBindings keyboardShortcuts;
   final List<ChatAttachment> pendingAttachments;
   final VoidCallback? onAddAttachments;
   final ValueChanged<String>? onRemoveAttachment;
@@ -253,6 +269,9 @@ class ConversationPane extends StatelessWidget {
   final ValueChanged<String>? onModelCommand;
   final ValueChanged<String>? onReasoningCommand;
   final ValueChanged<String?>? onCompactCommand;
+  final bool isTemporaryConversation;
+  final String? temporaryProviderName;
+  final VoidCallback? onEndTemporaryConversation;
   final ToolPermissionRequest? toolPermissionRequest;
   final bool isRespondingToToolPermission;
   final String? toolPermissionError;
@@ -280,6 +299,8 @@ class ConversationPane extends StatelessWidget {
     final content = LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 640;
+        final largeText = MediaQuery.textScalerOf(context).scale(1) > 1.3;
+        final keepEmptyComposerVisible = compact || largeText;
         final keyboardVisible = MediaQuery.viewInsetsOf(context).bottom > 0;
         final horizontalPadding = compact
             ? OpenChatSpacing.compactPageHorizontal
@@ -299,12 +320,19 @@ class ConversationPane extends StatelessWidget {
             !showAssistantLoading &&
             historySearchTargetMessageId == null;
         final centerNewConversation =
-            isEmptyConversation && !compact && constraints.maxHeight >= 640;
+            isEmptyConversation &&
+            !keepEmptyComposerVisible &&
+            constraints.maxHeight >= 640;
+        final scrollPinnedEmptyHistory =
+            isEmptyConversation && keepEmptyComposerVisible;
         final header = _ConversationHeader(
           showHistoryButton: showHistoryButton,
-          title: conversationTitle ?? l10n.conversationTitle,
-          productWorkspaceName: productWorkspaceName,
+          title: isTemporaryConversation
+              ? l10n.temporaryChatTitle
+              : conversationTitle ?? l10n.conversationTitle,
           conversationId: conversationId,
+          personalMemoryExcluded: personalMemoryExcluded,
+          onPersonalMemoryExcludedChanged: onPersonalMemoryExcludedChanged,
           titleEditRequestId: titleEditRequestId,
           onRenameConversation: onRenameConversation,
           onTitleEditFinished: onConversationTitleEditFinished,
@@ -329,6 +357,16 @@ class ConversationPane extends StatelessWidget {
             : isEmptyConversation
             ? _NewConversationEmptyState(
                 isLoading: isLoadingModels,
+                showSetupSteps: showFirstRunGuide && !isLoadingModels,
+                activeSetupStep: modelCatalogStale
+                    ? 1
+                    : hasSelectedModel
+                    ? 3
+                    : hasAvailableModels
+                    ? 2
+                    : hasConfiguredProvider
+                    ? 1
+                    : 0,
                 showBrandMark:
                     !isLoadingModels && hasAvailableModels && hasSelectedModel,
                 title: isLoadingModels
@@ -336,6 +374,8 @@ class ConversationPane extends StatelessWidget {
                     : !hasAvailableModels
                     ? modelCatalogFailed
                           ? l10n.modelsUnavailable
+                          : hasConfiguredProvider
+                          ? l10n.providerNeedsVerificationTitle
                           : l10n.noModelConnected
                     : !hasSelectedModel
                     ? l10n.emptyChatSelectModelTitle
@@ -345,14 +385,19 @@ class ConversationPane extends StatelessWidget {
                     : !hasAvailableModels
                     ? modelCatalogFailed
                           ? l10n.modelCatalogUnavailable
+                          : hasConfiguredProvider
+                          ? l10n.providerNeedsVerificationBody
                           : l10n.noModelConnectedBody
                     : !hasSelectedModel
                     ? l10n.emptyChatSelectModelBody
                     : l10n.emptyChatWelcomeBody,
+                modelCatalogStale: modelCatalogStale,
                 onOpenConnections: !isLoadingModels && !hasAvailableModels
                     ? onOpenConnections
                     : null,
-                onRetryModels: modelCatalogFailed ? onRetryModels : null,
+                onRetryModels: modelCatalogFailed || modelCatalogStale
+                    ? onRetryModels
+                    : null,
               )
             : _ConversationHistory(
                 messages: messages,
@@ -360,6 +405,7 @@ class ConversationPane extends StatelessWidget {
                 showAssistantLoading: showAssistantLoading,
                 assistantModelLabel: assistantModelLabel,
                 onRetryResponse: onRetryResponse,
+                onOpenConnections: onOpenConnections,
                 onBranchMessage: onBranchMessage,
                 onOpenFileChanges: onOpenFileChanges,
                 latestFileChanges: latestFileChanges,
@@ -368,6 +414,7 @@ class ConversationPane extends StatelessWidget {
                 savedOutputMessageIds: savedOutputMessageIds,
                 pendingSavedOutputMessageIds: pendingSavedOutputMessageIds,
                 onToggleSavedOutput: onToggleSavedOutput,
+                onViewPersonalMemorySources: onViewPersonalMemorySources,
                 targetMessageId: historySearchTargetMessageId,
                 targetRequestId: historySearchTargetRequestId,
                 onTargetHandled: onHistorySearchTargetHandled,
@@ -464,6 +511,7 @@ class ConversationPane extends StatelessWidget {
                     const SizedBox(height: 10),
                   ],
                   ChatComposer(
+                    keyboardShortcuts: keyboardShortcuts,
                     controller: messageController,
                     onSendMessage: onSendMessage,
                     canSendMessage: canSendMessage,
@@ -552,6 +600,68 @@ class ConversationPane extends StatelessWidget {
         final mainContent = Column(
           children: [
             header,
+            if (isTemporaryConversation)
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  horizontalPadding,
+                  0,
+                  horizontalPadding,
+                  10,
+                ),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: composerMaxWidth),
+                    child: ChatSurfaceCard(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      child: LayoutBuilder(
+                        builder: (context, noticeConstraints) {
+                          final noticeText = Text(
+                            l10n.temporaryChatNotice(
+                              temporaryProviderName ?? providerId,
+                            ),
+                            style: Theme.of(context).textTheme.bodySmall,
+                          );
+                          final endAction = TextButton(
+                            onPressed: onEndTemporaryConversation,
+                            child: Text(l10n.temporaryChatEnd),
+                          );
+                          if (noticeConstraints.maxWidth < 360) {
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Icon(LucideIcons.timer, size: 17),
+                                    const SizedBox(width: 9),
+                                    Expanded(child: noticeText),
+                                  ],
+                                ),
+                                Align(
+                                  alignment: AlignmentDirectional.centerEnd,
+                                  child: endAction,
+                                ),
+                              ],
+                            );
+                          }
+                          return Row(
+                            children: [
+                              const Icon(LucideIcons.timer, size: 17),
+                              const SizedBox(width: 9),
+                              Expanded(child: noticeText),
+                              const SizedBox(width: 8),
+                              endAction,
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              ),
             if (centerNewConversation)
               Expanded(
                 child: LayoutBuilder(
@@ -575,7 +685,10 @@ class ConversationPane extends StatelessWidget {
                   ),
                 ),
               )
-            else ...[
+            else if (scrollPinnedEmptyHistory) ...[
+              Expanded(child: SingleChildScrollView(child: conversationBody)),
+              composerArea,
+            ] else ...[
               Expanded(child: conversationBody),
               composerArea,
             ],
@@ -658,12 +771,14 @@ class _ConversationHistory extends StatefulWidget {
     required this.showAssistantLoading,
     required this.assistantModelLabel,
     required this.onRetryResponse,
+    required this.onOpenConnections,
     required this.onBranchMessage,
     required this.controller,
     required this.providerId,
     required this.savedOutputMessageIds,
     required this.pendingSavedOutputMessageIds,
     required this.onToggleSavedOutput,
+    required this.onViewPersonalMemorySources,
     required this.onOpenFileChanges,
     required this.latestFileChanges,
     required this.targetMessageId,
@@ -676,6 +791,7 @@ class _ConversationHistory extends StatefulWidget {
   final bool showAssistantLoading;
   final String? assistantModelLabel;
   final ValueChanged<ChatMessage>? onRetryResponse;
+  final VoidCallback? onOpenConnections;
   final Future<void> Function(ChatMessage message, String editedContent)?
   onBranchMessage;
   final ScrollController? controller;
@@ -683,6 +799,7 @@ class _ConversationHistory extends StatefulWidget {
   final Set<String> savedOutputMessageIds;
   final Set<String> pendingSavedOutputMessageIds;
   final ValueChanged<ChatMessage>? onToggleSavedOutput;
+  final ValueChanged<List<String>>? onViewPersonalMemorySources;
   final VoidCallback? onOpenFileChanges;
   final List<ChatFileChange> latestFileChanges;
   final String? targetMessageId;
@@ -1257,6 +1374,9 @@ class _ConversationHistoryState extends State<_ConversationHistory> {
                                         : () => widget.onToggleSavedOutput!(
                                             message,
                                           ),
+                                    onViewPersonalMemorySources:
+                                        widget.onViewPersonalMemorySources,
+                                    onOpenConnections: widget.onOpenConnections,
                                     modelLabel:
                                         message.modelId ?? assistantModelLabel,
                                     providerId:
@@ -1668,17 +1788,23 @@ class _EditConversationBranchDialogState
 class _NewConversationEmptyState extends StatelessWidget {
   const _NewConversationEmptyState({
     required this.isLoading,
+    required this.showSetupSteps,
+    required this.activeSetupStep,
     required this.showBrandMark,
     required this.title,
     required this.description,
+    required this.modelCatalogStale,
     this.onOpenConnections,
     this.onRetryModels,
   });
 
   final bool isLoading;
+  final bool showSetupSteps;
+  final int activeSetupStep;
   final bool showBrandMark;
   final String title;
   final String? description;
+  final bool modelCatalogStale;
   final VoidCallback? onOpenConnections;
   final VoidCallback? onRetryModels;
 
@@ -1739,10 +1865,34 @@ class _NewConversationEmptyState extends StatelessWidget {
                 ),
               ),
             ],
+            if (modelCatalogStale) ...[
+              const SizedBox(height: OpenChatSpacing.sm),
+              Semantics(
+                liveRegion: true,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 480),
+                  child: Text(
+                    context.openchatL10n.providerVerificationStaleCatalog,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: palette.warning,
+                      fontSize: OpenChatTypography.body,
+                      height: 22 / OpenChatTypography.body,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+            if (showSetupSteps && constraints.maxHeight >= 400) ...[
+              const SizedBox(height: OpenChatSpacing.lg),
+              _NewConversationSetupSteps(activeStep: activeSetupStep),
+            ],
             if (onOpenConnections != null || onRetryModels != null) ...[
               SizedBox(
                 height: constraints.maxHeight < 120
                     ? 4
+                    : constraints.maxHeight < 180
+                    ? 8
                     : descriptionText != null
                     ? 20
                     : 12,
@@ -1762,7 +1912,11 @@ class _NewConversationEmptyState extends StatelessWidget {
                     OutlinedButton.icon(
                       onPressed: onRetryModels,
                       icon: const Icon(LucideIcons.refreshCw),
-                      label: Text(context.openchatL10n.retry),
+                      label: Text(
+                        modelCatalogStale
+                            ? context.openchatL10n.refreshModels
+                            : context.openchatL10n.retry,
+                      ),
                     ),
                 ],
               ),
@@ -1774,12 +1928,106 @@ class _NewConversationEmptyState extends StatelessWidget {
   }
 }
 
+class _NewConversationSetupSteps extends StatelessWidget {
+  const _NewConversationSetupSteps({required this.activeStep});
+
+  final int activeStep;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = OpenChatPalette.of(context);
+    final l10n = context.openchatL10n;
+    final labels = <String>[
+      l10n.connections,
+      l10n.providerCatalogVerification,
+      l10n.modelSelection,
+      l10n.send,
+    ];
+
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 520),
+      child: Wrap(
+        alignment: WrapAlignment.center,
+        runAlignment: WrapAlignment.center,
+        spacing: OpenChatSpacing.lg,
+        runSpacing: OpenChatSpacing.sm,
+        children: [
+          for (var index = 0; index < labels.length; index++)
+            Semantics(
+              label: '${index + 1}. ${labels[index]}',
+              value: index < activeStep
+                  ? l10n.setupStepCompleted
+                  : index == activeStep
+                  ? l10n.setupStepCurrent
+                  : null,
+              child: ExcludeSemantics(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 24,
+                      height: 24,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: index < activeStep
+                            ? palette.accent
+                            : palette.surface,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: index == activeStep
+                              ? palette.accent
+                              : palette.border,
+                        ),
+                      ),
+                      child: index < activeStep
+                          ? Icon(
+                              LucideIcons.check,
+                              size: 14,
+                              color: palette.accentForeground,
+                            )
+                          : Text(
+                              '${index + 1}',
+                              style: TextStyle(
+                                color: index == activeStep
+                                    ? palette.accentForeground
+                                    : palette.secondaryText,
+                                fontSize: OpenChatTypography.metadata,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                    const SizedBox(width: OpenChatSpacing.sm),
+                    Flexible(
+                      child: Text(
+                        labels[index],
+                        style: TextStyle(
+                          color: index == activeStep
+                              ? palette.text
+                              : palette.secondaryText,
+                          fontSize: OpenChatTypography.body,
+                          fontWeight: index == activeStep
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ConversationHeader extends StatefulWidget {
   const _ConversationHeader({
     required this.showHistoryButton,
     required this.title,
-    required this.productWorkspaceName,
     required this.conversationId,
+    required this.personalMemoryExcluded,
+    required this.onPersonalMemoryExcludedChanged,
     required this.titleEditRequestId,
     required this.onRenameConversation,
     required this.onTitleEditFinished,
@@ -1789,8 +2037,9 @@ class _ConversationHeader extends StatefulWidget {
 
   final bool showHistoryButton;
   final String title;
-  final String? productWorkspaceName;
   final String? conversationId;
+  final bool personalMemoryExcluded;
+  final ValueChanged<bool>? onPersonalMemoryExcludedChanged;
   final String? titleEditRequestId;
   final Future<void> Function(String conversationId, String title)?
   onRenameConversation;
@@ -1923,24 +2172,13 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
         widget.conversationId != null && widget.onRenameConversation != null;
     final showTitle =
         widget.conversationId != null || widget.title != l10n.conversationTitle;
-    final workspaceName = widget.productWorkspaceName?.trim();
-    final hasWorkspaceContext =
-        workspaceName != null && workspaceName.isNotEmpty;
     final scaledHeaderHeight = MediaQuery.textScalerOf(context).scale(22) + 12;
 
     return ConstrainedBox(
       key: const ValueKey<String>('conversation-header'),
       constraints: BoxConstraints(
         minHeight: OpenChatSpacing.conversationHeaderHeight,
-        maxHeight: hasWorkspaceContext
-            ? math.max(
-                math.max(
-                  OpenChatSpacing.conversationHeaderHeight,
-                  scaledHeaderHeight,
-                ),
-                MediaQuery.textScalerOf(context).scale(13) * 2 + 34,
-              )
-            : showTitle
+        maxHeight: showTitle
             ? math.max(
                 math.max(
                   OpenChatSpacing.conversationHeaderHeight,
@@ -2093,46 +2331,23 @@ class _ConversationHeaderState extends State<_ConversationHeader> {
                             ),
                           ),
                         ),
-                        if (hasWorkspaceContext)
-                          Semantics(
-                            label: l10n.conversationWorkspaceContext(
-                              workspaceName,
-                            ),
-                            child: ExcludeSemantics(
-                              child: Padding(
-                                padding: const EdgeInsetsDirectional.only(
-                                  start: 4,
-                                  top: 1,
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(
-                                      LucideIcons.folder,
-                                      size: 12,
-                                      color: palette.secondaryIcon,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Flexible(
-                                      child: Text(
-                                        workspaceName,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(
-                                          color: palette.secondaryText,
-                                          fontSize: OpenChatTypography.metadata,
-                                          height: 14 / 10,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
                       ],
                     ),
             ),
+            if (widget.onPersonalMemoryExcludedChanged != null)
+              Tooltip(
+                message: widget.personalMemoryExcluded
+                    ? l10n.personalMemoryUseHereTooltip
+                    : l10n.personalMemoryExcludeHereTooltip,
+                child: IconButton(
+                  isSelected: widget.personalMemoryExcluded,
+                  onPressed: () => widget.onPersonalMemoryExcludedChanged!(
+                    !widget.personalMemoryExcluded,
+                  ),
+                  icon: const Icon(LucideIcons.brain, size: 18),
+                  selectedIcon: const Icon(LucideIcons.brain, size: 18),
+                ),
+              ),
           ],
         ),
       ),

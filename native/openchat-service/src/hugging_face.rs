@@ -36,8 +36,6 @@ static MODEL_DOWNLOAD_LOCK: Mutex<()> = Mutex::const_new(());
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ModelFormat {
     Gguf,
-    Transformers,
-    Exllama,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -70,8 +68,6 @@ impl ModelFormat {
     fn parse(value: &str) -> Result<Self, ServiceError> {
         match value {
             "gguf" => Ok(Self::Gguf),
-            "transformers" => Ok(Self::Transformers),
-            "exllama" => Ok(Self::Exllama),
             _ => Err(invalid_request_error()),
         }
     }
@@ -79,16 +75,12 @@ impl ModelFormat {
     fn filter(self) -> &'static str {
         match self {
             Self::Gguf => "gguf",
-            Self::Transformers => "transformers",
-            Self::Exllama => "exl3",
         }
     }
 
     fn engine_id(self) -> &'static str {
         match self {
             Self::Gguf => "llama_cpp",
-            Self::Transformers => "vllm",
-            Self::Exllama => "exllama",
         }
     }
 }
@@ -147,15 +139,12 @@ pub(crate) async fn search(
     }
 
     let client = client()?;
-    let mut parameters = vec![
+    let parameters = vec![
         ("filter", format.filter()),
         ("limit", MODEL_SEARCH_LIMIT),
         ("sort", sort.hub_value()),
         ("direction", "-1"),
     ];
-    if format == ModelFormat::Transformers {
-        parameters.push(("pipeline_tag", "text-generation"));
-    }
     let mut request = client
         .get(format!("{HUB_BASE}/api/models"))
         .query(&parameters)
@@ -325,7 +314,6 @@ pub(crate) async fn download(
                     .ok_or_else(unsupported_file_set_error)?;
                 destination.join(&primary_file.path)
             }
-            ModelFormat::Transformers | ModelFormat::Exllama => destination.clone(),
         };
         Some(register_downloaded_model(storage, format.engine_id(), registered_path).await?)
     } else {
@@ -616,8 +604,6 @@ fn parse_hub_file(value: &Value) -> Result<HubFile, ServiceError> {
 fn compatible_groups(format: ModelFormat, files: &[HubFile]) -> Vec<DownloadGroup> {
     match format {
         ModelFormat::Gguf => gguf_groups(files),
-        ModelFormat::Transformers => transformers_group(files, false),
-        ModelFormat::Exllama => transformers_group(files, true),
     }
 }
 
@@ -669,67 +655,6 @@ fn gguf_groups(files: &[HubFile]) -> Vec<DownloadGroup> {
     result
 }
 
-fn transformers_group(files: &[HubFile], exllama: bool) -> Vec<DownloadGroup> {
-    let has_safetensors = files
-        .iter()
-        .any(|file| model_file_kind(&file.path) == "model" && is_model_weight(file, "safetensors"));
-    let weight_extension = if has_safetensors || exllama {
-        "safetensors"
-    } else {
-        "bin"
-    };
-    let weights = files
-        .iter()
-        .filter(|file| {
-            model_file_kind(&file.path) == "model" && is_model_weight(file, weight_extension)
-        })
-        .cloned()
-        .collect::<Vec<_>>();
-    if weights.is_empty() || !has_root_file(files, "config.json") {
-        return Vec::new();
-    }
-    if exllama && !has_tokenizer_file(files) {
-        return Vec::new();
-    }
-
-    let mut selected = weights;
-    let index_name = if weight_extension == "safetensors" {
-        "model.safetensors.index.json"
-    } else {
-        "pytorch_model.bin.index.json"
-    };
-    if let Some(index_file) = files.iter().find(|file| file.path == index_name) {
-        selected.push(index_file.clone());
-    }
-    selected.extend(
-        files
-            .iter()
-            .filter(|file| is_model_metadata(&file.path))
-            .cloned(),
-    );
-    selected.sort_by(|left, right| left.path.cmp(&right.path));
-    selected.dedup_by(|left, right| left.path == right.path);
-
-    let label = if exllama {
-        "EXL3 model snapshot"
-    } else if weight_extension == "safetensors" {
-        "Transformers · safetensors"
-    } else {
-        "Transformers · PyTorch weights"
-    };
-    vec![DownloadGroup {
-        id: if exllama {
-            "exl3-snapshot"
-        } else {
-            "transformers-snapshot"
-        }
-        .to_owned(),
-        display_name: label.to_owned(),
-        total_size: sum_sizes(&selected),
-        files: selected,
-    }]
-}
-
 fn details_to_json(details: &ModelDetails, readme: &ModelReadme) -> Value {
     let (readme_status, readme_text, readme_error_code) = match readme {
         ModelReadme::Available(text) => ("available", Some(text.as_str()), None),
@@ -748,9 +673,7 @@ fn details_to_json(details: &ModelDetails, readme: &ModelReadme) -> Value {
         "readmeStatus": readme_status,
         "readmeErrorCode": readme_error_code,
         "files": details.files.iter().filter(|file| {
-            has_extension(&file.path, "gguf") || is_model_metadata(&file.path) ||
-                is_model_weight(file, "safetensors") || is_model_weight(file, "bin") ||
-                is_auxiliary_model_weight(file)
+            has_extension(&file.path, "gguf") || is_model_metadata(&file.path)
         }).map(file_to_json).collect::<Vec<_>>(),
         "downloadGroups": details.groups.iter().map(|group| json!({
             "id": group.id,
@@ -1247,30 +1170,6 @@ fn shard_info(filename: &str) -> Option<(String, usize, usize)> {
     Some((prefix.to_owned(), index, total))
 }
 
-fn is_model_weight(file: &HubFile, extension: &str) -> bool {
-    if !has_extension(&file.path, extension) || file.path.contains('/') {
-        return false;
-    }
-    let filename = file_name(&file.path).to_ascii_lowercase();
-    if ["cal_", "trace", "measurement", "noise", "recipe", "qbench"]
-        .iter()
-        .any(|marker| filename.contains(marker))
-    {
-        return false;
-    }
-    filename.starts_with("model")
-        || filename.starts_with("pytorch_model")
-        || filename.starts_with("consolidated")
-        || filename.starts_with("weights")
-}
-
-fn is_auxiliary_model_weight(file: &HubFile) -> bool {
-    model_file_kind(&file.path) != "model"
-        && ["safetensors", "bin", "pt", "pth", "onnx"]
-            .iter()
-            .any(|extension| has_extension(&file.path, extension))
-}
-
 fn model_file_kind(path: &str) -> &'static str {
     let normalized = path.to_ascii_lowercase();
     let tokens = normalized
@@ -1316,22 +1215,6 @@ fn is_model_metadata(path: &str) -> bool {
             | "preprocessor_config.json"
             | "processor_config.json"
     )
-}
-
-fn has_root_file(files: &[HubFile], name: &str) -> bool {
-    files.iter().any(|file| file.path == name)
-}
-
-fn has_tokenizer_file(files: &[HubFile]) -> bool {
-    [
-        "tokenizer.json",
-        "tokenizer.model",
-        "spiece.model",
-        "sentencepiece.bpe.model",
-        "vocab.json",
-    ]
-    .iter()
-    .any(|name| has_root_file(files, name))
 }
 
 fn has_extension(path: &str, extension: &str) -> bool {

@@ -2,10 +2,15 @@
 
 #include <flutter/encodable_value.h>
 #include <flutter/standard_method_codec.h>
+#include <shellapi.h>
+
+#include <winrt/Windows.UI.Notifications.h>
 
 #include <optional>
+#include <string>
 
 #include "flutter/generated_plugin_registrant.h"
+#include "windows_toast_registration.h"
 
 FlutterWindow::FlutterWindow(const flutter::DartProject& project)
     : project_(project) {}
@@ -60,6 +65,56 @@ bool FlutterWindow::OnCreate() {
           ReleaseCapture();
           SendMessage(window, WM_NCLBUTTONDOWN, HTCAPTION, 0);
           result->Success();
+        } else if (call.method_name() == "notificationStatus") {
+          const HRESULT registration_result = EnsureOpenChatToastRegistration();
+          if (FAILED(registration_result)) {
+            result->Error(
+                "notification_registration_failed",
+                "Windows could not register OpenChat notifications.",
+                flutter::EncodableValue(registration_result));
+            return;
+          }
+          try {
+            using winrt::Windows::UI::Notifications::NotificationSetting;
+            const auto setting =
+                winrt::Windows::UI::Notifications::ToastNotificationManager::
+                    CreateToastNotifier(L"OpenChat.Desktop")
+                        .Setting();
+            const char* status = "unavailable";
+            switch (setting) {
+              case NotificationSetting::Enabled:
+                status = "enabled";
+                break;
+              case NotificationSetting::DisabledForApplication:
+                status = "disabled_for_application";
+                break;
+              case NotificationSetting::DisabledForUser:
+                status = "disabled_for_user";
+                break;
+              case NotificationSetting::DisabledByGroupPolicy:
+                status = "disabled_by_group_policy";
+                break;
+              case NotificationSetting::DisabledByManifest:
+                status = "disabled_by_manifest";
+                break;
+            }
+            result->Success(flutter::EncodableValue(std::string(status)));
+          } catch (const winrt::hresult_error& error) {
+            result->Error(
+                "notification_status_failed",
+                "Windows could not read notification status.",
+                flutter::EncodableValue(error.code().value));
+          }
+        } else if (call.method_name() == "openNotificationSettings") {
+          const auto launch_result = ShellExecuteW(
+              nullptr, L"open", L"ms-settings:notifications", nullptr,
+              nullptr, SW_SHOWNORMAL);
+          if (reinterpret_cast<INT_PTR>(launch_result) <= 32) {
+            result->Error("settings_launch_failed",
+                          "Could not open Windows notification settings.");
+          } else {
+            result->Success();
+          }
         } else {
           result->NotImplemented();
         }

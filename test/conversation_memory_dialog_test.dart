@@ -5,9 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
 import 'package:openchat/features/chat/domain/conversation_memory.dart';
+import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_memory_dialog.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 import 'package:openchat/platform/windows/openchat_service_client.dart';
+
+import 'support/shad_test_scope.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -238,6 +241,48 @@ void main() {
 
     expect(find.text('Sıkıştırılmış bağlam sıfırlansın mı?'), findsNothing);
     expect(service.resetCount, 0);
+  });
+
+  testWidgets('can exclude personal memory before sending a new conversation', (
+    tester,
+  ) async {
+    final messageController = TextEditingController();
+    var requestedExclusion = false;
+    addTearDown(messageController.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.light,
+        builder: openChatShadTestBuilder,
+        home: StatefulBuilder(
+          builder: (context, setState) => Scaffold(
+            body: ConversationPane(
+              messageController: messageController,
+              showHistoryButton: false,
+              onOpenHistory: () {},
+              onSendMessage: () {},
+              providerId: 'chatgpt',
+              personalMemoryExcluded: requestedExclusion,
+              onPersonalMemoryExcludedChanged: (excluded) {
+                setState(() => requestedExclusion = excluded);
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    const excludeMemory = 'Exclude personal memory from this conversation';
+    const includeMemory = 'Use personal memory in this conversation';
+    expect(find.byTooltip(excludeMemory), findsOneWidget);
+    await tester.tap(find.byTooltip(excludeMemory));
+    await tester.pumpAndSettle();
+    expect(requestedExclusion, isTrue);
+    expect(find.byTooltip(includeMemory), findsOneWidget);
   });
 }
 

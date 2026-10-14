@@ -46,6 +46,88 @@ void main() {
     SharedPreferencesAsyncPlatform.instance = null;
   });
 
+  testWidgets('invalid saved default model can be cleared in settings', (
+    tester,
+  ) async {
+    final storedPreferences = SharedPreferencesAsync();
+    await storedPreferences.setString('models.default_model', '{broken');
+    final preferences = SettingsPreferences(storedPreferences);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.light,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ModelsSettingsSection(
+              serviceClient: null,
+              chatGptApiKeyStore: null,
+              apiCompatibleProviderKeyStore: null,
+              openCodeApiKeyStore: null,
+              settingsPreferences: preferences,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'The saved default model setting could not be read. Clear it in Model preferences or Project options.',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Clear saved default model'));
+    await tester.pumpAndSettle();
+
+    expect(await preferences.readDefaultModel(), isNull);
+    expect(find.text('Clear saved default model'), findsNothing);
+  });
+
+  testWidgets('invalid hidden model preferences can be reset in settings', (
+    tester,
+  ) async {
+    final storedPreferences = SharedPreferencesAsync();
+    await storedPreferences.setString('models.hidden_keys', '["model", 3]');
+    final preferences = SettingsPreferences(storedPreferences);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        locale: const Locale('en'),
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        theme: OpenChatTheme.light,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ModelsSettingsSection(
+              serviceClient: null,
+              chatGptApiKeyStore: null,
+              apiCompatibleProviderKeyStore: null,
+              openCodeApiKeyStore: null,
+              settingsPreferences: preferences,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(
+        'Saved hidden model preferences are unreadable. Clear them here to show all models again.',
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('Reset hidden models'));
+    await tester.pumpAndSettle();
+
+    expect(await preferences.readHiddenModelKeys(), isEmpty);
+    expect(find.text('Reset hidden models'), findsNothing);
+  });
+
   testWidgets(
     'ModelsSettingsSection lists models, sets default, and toggles hide',
     (tester) async {

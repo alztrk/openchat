@@ -113,6 +113,53 @@ void main() {
     );
   });
 
+  test(
+    'quick reply preference controls the Windows response toast actions',
+    () {
+      final enabled = UserQuestionNotifications.assistantResponseDetails(
+        conversationId: 'conversation_1',
+        assistantMessageId: 'assistant-message-1',
+        providerId: 'opencode',
+        replyLabel: 'Reply',
+        sendLabel: 'Send',
+        allowQuickReply: true,
+      );
+
+      expect(enabled.inputs, hasLength(1));
+      expect(
+        enabled.inputs.single.id,
+        UserQuestionNotifications.assistantReplyInputId,
+      );
+      expect(enabled.inputs.single.title, 'Reply');
+      expect(enabled.actions, hasLength(1));
+      expect(enabled.actions.single.content, 'Send');
+      expect(
+        enabled.actions.single.inputId,
+        UserQuestionNotifications.assistantReplyInputId,
+      );
+      final replyTarget = ConversationNotificationTarget.fromPayload(
+        enabled.actions.single.arguments,
+      );
+      expect(
+        replyTarget?.kind,
+        ConversationNotificationKind.assistantResponseReply,
+      );
+      expect(replyTarget?.conversationId, 'conversation_1');
+      expect(replyTarget?.assistantMessageId, 'assistant-message-1');
+
+      final disabled = UserQuestionNotifications.assistantResponseDetails(
+        conversationId: 'conversation_1',
+        assistantMessageId: 'assistant-message-1',
+        providerId: 'opencode',
+        replyLabel: 'Reply',
+        sendLabel: 'Send',
+        allowQuickReply: false,
+      );
+      expect(disabled.inputs, isEmpty);
+      expect(disabled.actions, isEmpty);
+    },
+  );
+
   test('assistant response preview is a normalized 160-character excerpt', () {
     expect(
       UserQuestionNotifications.assistantResponsePreview(
@@ -126,6 +173,33 @@ void main() {
     expect(preview.runes.length, 160);
     expect(preview.endsWith('…'), isTrue);
   });
+
+  test(
+    'notification preview setting suppresses assistant response content',
+    () {
+      const privateResponse =
+          'A private response that must stay out of the toast.';
+      const genericBody = 'Open OpenChat to read the completed response.';
+
+      final hiddenBody =
+          UserQuestionNotifications.assistantResponseNotificationBody(
+            content: privateResponse,
+            genericBody: genericBody,
+            showPreview: false,
+          );
+      expect(hiddenBody, genericBody);
+      expect(hiddenBody, isNot(contains(privateResponse)));
+
+      expect(
+        UserQuestionNotifications.assistantResponseNotificationBody(
+          content: privateResponse,
+          genericBody: genericBody,
+          showPreview: true,
+        ),
+        privateResponse,
+      );
+    },
+  );
 
   test('assistant response notifications require a non-resumed lifecycle', () {
     expect(
@@ -152,14 +226,15 @@ void main() {
     const expectedAssets = <String, String>{
       'chatgpt': 'assets/icons/notification_chatgpt.svg',
       'opencode': 'assets/icons/notification_opencode.svg',
-      'gemini': 'assets/icons/notification_sparkles.svg',
-      'groq': 'assets/icons/notification_zap.svg',
-      'cerebras': 'assets/icons/notification_microchip.svg',
-      'openrouter': 'assets/icons/notification_openrouter.svg',
+      'gemini': 'assets/icons/providers/gemini.svg',
+      'groq': 'assets/icons/providers/groq.svg',
+      'cerebras': 'assets/icons/providers/cerebras.svg',
+      'openrouter': 'assets/icons/openrouter.svg',
+      'anthropic': 'assets/icons/providers/anthropic.svg',
+      'deepseek': 'assets/icons/providers/deepseek.svg',
+      'unknown-provider': 'assets/icons/openchat-mark.svg',
       'mistral': 'assets/icons/mistral.png',
       'llama_cpp': 'assets/icons/notification_llama_cpp.svg',
-      'vllm': 'assets/icons/notification_vllm.svg',
-      'exllama': 'assets/icons/engines/exllama-v3.png',
     };
     for (final entry in expectedAssets.entries) {
       final iconAsset = UserQuestionNotifications.providerIconAssetFor(

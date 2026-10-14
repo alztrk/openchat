@@ -195,6 +195,79 @@ class ChatAttachmentStore {
     return List<ChatAttachment>.unmodifiable(attachments);
   }
 
+  Future<Uint8List> readReusableAttachmentBytes({
+    required String conversationId,
+    required String messageId,
+    required ChatAttachment attachment,
+  }) async {
+    _validateIdentifier(conversationId, 'conversationId');
+    _validateIdentifier(messageId, 'messageId');
+    _validateIdentifier(attachment.id, 'attachmentId');
+    final maximumBytes = attachment.isImage
+        ? maximumImageBytes
+        : ChatAttachmentTypes.maximumTextBytes;
+    if (attachment.sizeBytes <= 0 || attachment.sizeBytes > maximumBytes) {
+      throw const ChatAttachmentStorageException(
+        'The saved attachment exceeds its supported size.',
+      );
+    }
+    final separator = attachment.name.lastIndexOf('.');
+    final extension = separator < 0
+        ? ''
+        : attachment.name.substring(separator + 1).toLowerCase();
+    if (ChatAttachmentTypes.kindForExtension(extension) != attachment.kind ||
+        ChatAttachmentTypes.mimeTypeForExtension(extension) !=
+            attachment.mimeType) {
+      throw const ChatAttachmentStorageException(
+        'The saved attachment type did not match its name.',
+      );
+    }
+
+    final source = File(
+      _attachmentPath(_messagePath(conversationId, messageId), attachment.id),
+    );
+    try {
+      if (await FileSystemEntity.type(source.path, followLinks: false) !=
+              FileSystemEntityType.file ||
+          await source.length() != attachment.sizeBytes) {
+        throw const ChatAttachmentStorageException(
+          'The saved attachment is no longer available.',
+        );
+      }
+      final bytes = await source.readAsBytes();
+      if (bytes.length != attachment.sizeBytes) {
+        throw const ChatAttachmentStorageException(
+          'The saved attachment changed while it was being read.',
+        );
+      }
+      if (attachment.isImage &&
+          !ChatAttachmentTypes.hasValidImageSignature(
+            attachment.mimeType,
+            bytes,
+          )) {
+        throw const ChatAttachmentStorageException(
+          'The saved image data did not match its file type.',
+        );
+      }
+      if (!attachment.isImage) {
+        try {
+          const Utf8Decoder(allowMalformed: false).convert(bytes);
+        } on FormatException catch (error) {
+          throw ChatAttachmentStorageException(
+            'The saved text attachment is not valid UTF-8.',
+            error,
+          );
+        }
+      }
+      return bytes;
+    } on FileSystemException catch (error) {
+      throw ChatAttachmentStorageException(
+        'The saved attachment could not be read.',
+        error,
+      );
+    }
+  }
+
   Future<void> copyMessageAttachments({
     required String sourceConversationId,
     required String sourceMessageId,

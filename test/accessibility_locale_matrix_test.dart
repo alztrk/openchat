@@ -5,20 +5,163 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart';
+import 'package:openchat/features/chat/domain/history_storage_status.dart';
 import 'package:openchat/features/chat/presentation/widgets/assistant_message.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_composer.dart';
 import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
+import 'package:openchat/features/chat/presentation/widgets/conversation_pane.dart';
 import 'package:openchat/features/chat/presentation/widgets/conversation_sidebar.dart';
 import 'package:openchat/features/chat/presentation/widgets/sidebar_conversation_tile.dart';
 import 'package:openchat/features/chat/domain/tool_permission_request.dart';
 import 'package:openchat/features/chat/presentation/widgets/tool_permission_card.dart';
 import 'package:openchat/features/chat/presentation/widgets/project_tool_permissions_dialog.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
+import 'package:openchat/features/settings/presentation/settings_screen.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 import 'support/shad_test_scope.dart';
 
 void main() {
+  testWidgets(
+    'temporary chat notice and end action remain accessible across locales and widths',
+    (tester) async {
+      final semantics = tester.ensureSemantics();
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      var endCount = 0;
+      var expectedEndCount = 0;
+
+      try {
+        for (final size in <Size>[
+          const Size(320, 640),
+          const Size(768, 720),
+          const Size(1440, 900),
+        ]) {
+          tester.view.physicalSize = size;
+          tester.view.devicePixelRatio = 1;
+          for (final locale in AppLocalizations.supportedLocales) {
+            await tester.pumpWidget(
+              MaterialApp(
+                key: ValueKey<String>(
+                  'temporary-chat-${locale.languageCode}-${size.width}',
+                ),
+                locale: locale,
+                localizationsDelegates: AppLocalizations.localizationsDelegates,
+                supportedLocales: AppLocalizations.supportedLocales,
+                theme: OpenChatTheme.dark,
+                builder: (context, child) => openChatShadTestScope(
+                  OpenChatTheme.dark,
+                  child ?? const SizedBox.shrink(),
+                ),
+                home: Scaffold(
+                  body: SizedBox.expand(
+                    child: ConversationPane(
+                      messageController: controller,
+                      showHistoryButton: false,
+                      onOpenHistory: () {},
+                      onSendMessage: () {},
+                      providerId: 'gemini',
+                      hasConfiguredProvider: true,
+                      isTemporaryConversation: true,
+                      temporaryProviderName: 'OpenRouter',
+                      onEndTemporaryConversation: () => endCount++,
+                    ),
+                  ),
+                ),
+              ),
+            );
+            await tester.pumpAndSettle();
+
+            final pane = tester.element(find.byType(ConversationPane));
+            final l10n = AppLocalizations.of(pane)!;
+            expect(
+              find.bySemanticsLabel(l10n.temporaryChatNotice('OpenRouter')),
+              findsOneWidget,
+              reason: '${locale.languageCode}, width ${size.width}',
+            );
+            final endAction = find.bySemanticsLabel(l10n.temporaryChatEnd);
+            expect(
+              endAction,
+              findsOneWidget,
+              reason: '${locale.languageCode}, width ${size.width}',
+            );
+            await tester.tap(endAction);
+            await tester.pump();
+            expectedEndCount++;
+            expect(endCount, expectedEndCount);
+            final layoutException = tester.takeException();
+            expect(
+              layoutException,
+              isNull,
+              reason: '${locale.languageCode}, width ${size.width}',
+            );
+          }
+        }
+      } finally {
+        semantics.dispose();
+      }
+    },
+  );
+
+  testWidgets('settings task groups render in every supported locale', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1200, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    SharedPreferencesAsyncPlatform.instance =
+        InMemorySharedPreferencesAsync.empty();
+    addTearDown(() => SharedPreferencesAsyncPlatform.instance = null);
+    for (final locale in AppLocalizations.supportedLocales) {
+      await tester.pumpWidget(
+        MaterialApp(
+          key: ValueKey<String>('settings-groups-${locale.languageCode}'),
+          locale: locale,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          theme: OpenChatTheme.dark,
+          builder: (context, child) => openChatShadTestScope(
+            OpenChatTheme.dark,
+            child ?? const SizedBox.shrink(),
+          ),
+          home: Scaffold(
+            body: SettingsScreen(
+              themeMode: ThemeMode.dark,
+              onThemeModeChanged: (_) async {},
+              historyStorageStatus: HistoryStorageStatus.available,
+              hasConversationHistory: false,
+              settingsPreferences: SettingsPreferences(
+                SharedPreferencesAsync(),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final l10n = AppLocalizations.of(
+        tester.element(find.byType(SettingsScreen)),
+      )!;
+      for (final label in <String>[
+        l10n.settingsAppearanceAccessibilityGroup,
+        l10n.settingsChatBehaviorGroup,
+        l10n.settingsProvidersModelsGroup,
+        l10n.settingsToolsPermissionsGroup,
+        l10n.settingsNotificationsGroup,
+        l10n.settingsDataPrivacyGroup,
+      ]) {
+        expect(find.text(label), findsOneWidget, reason: locale.languageCode);
+      }
+      expect(tester.takeException(), isNull, reason: locale.languageCode);
+    }
+  });
+
   testWidgets(
     'chat composer send action is labeled in every supported locale',
     (tester) async {
@@ -587,7 +730,12 @@ void main() {
                 'Selection matrix conversation, Research, '
                 '${localizations.conversationBookmarked}',
               );
-              expect(tester.takeException(), isNull);
+              final layoutException = tester.takeException();
+              expect(
+                layoutException,
+                isNull,
+                reason: '${locale.languageCode}, width $width, scale $scale',
+              );
             }
           }
         }

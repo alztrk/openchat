@@ -326,8 +326,6 @@ class _ModelListTile extends StatelessWidget {
 
   String _engineName(String engineId) => switch (engineId) {
     'llama_cpp' => 'llama.cpp',
-    'vllm' => 'vLLM',
-    'exllama' => 'ExLlamaV3',
     _ => engineId,
   };
 }

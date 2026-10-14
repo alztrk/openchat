@@ -18,14 +18,14 @@ use tokio::{
     sync::{Mutex, RwLock, watch},
     time::{Instant, sleep},
 };
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 use crate::{protocol::ServiceError, storage::AppStorage};
 
 use super::{
     external_server::{self, ExternalLlamaServerCandidate},
     installer::{InstalledEngine, installed_engine},
-    manifests, models, settings, wsl,
+    manifests, models, settings,
 };
 
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(300);
@@ -34,8 +34,6 @@ const MAX_RUNTIME_PROPERTIES_BYTES: usize = 4 * 1024 * 1024;
 const MAX_EXTERNAL_MODEL_CATALOG_BYTES: usize = 1024 * 1024;
 const MAX_EXTERNAL_MODEL_COUNT: usize = 128;
 
-static RUNNING_SERVER: OnceLock<Mutex<Option<RunningServer>>> = OnceLock::new();
-static RUNNING_SERVER_OPERATION: OnceLock<Mutex<()>> = OnceLock::new();
 static RUNNING_LLAMA_SERVERS: OnceLock<Mutex<HashMap<String, RunningServer>>> = OnceLock::new();
 static RUNTIME_OPERATION_GATE: OnceLock<RwLock<()>> = OnceLock::new();
 static MODEL_LIFECYCLES: OnceLock<Mutex<HashMap<String, Weak<ModelLifecycle>>>> = OnceLock::new();
@@ -82,7 +80,6 @@ struct RunningServer {
     child: Child,
     capabilities: Option<RuntimeCapabilities>,
     api_key: Option<Zeroizing<String>>,
-    session_directory: Option<PathBuf>,
 }
 
 struct ModelLifecycle {
@@ -91,13 +88,11 @@ struct ModelLifecycle {
 }
 
 struct RuntimeLaunch {
-    arguments: Vec<OsString>,
+    arguments: Vec<std::ffi::OsString>,
     current_directory: PathBuf,
-    use_wsl: bool,
     initial_capabilities: Option<RuntimeCapabilities>,
     provider_model_id: String,
     api_key: Option<Zeroizing<String>>,
-    session_directory: Option<PathBuf>,
 }
 
 pub(crate) async fn start_model(
@@ -157,18 +152,7 @@ pub(crate) async fn start_model(
             return result;
         }
 
-        let _slot_guard = running_server_operation().lock().await;
-        let mut state = running_state().lock().await.take();
-        let result = start_model_in_slot(
-            storage,
-            &model,
-            installed,
-            &mut state,
-            &mut operation_cancellation,
-        )
-        .await;
-        *running_state().lock().await = state;
-        result
+        Err(model_unavailable_error())
     }
     .await;
     cancellation_bridge.abort();
@@ -218,21 +202,13 @@ async fn start_model_in_slot(
         "llama_cpp" => RuntimeLaunch {
             arguments: llama_server_arguments(model, port)?,
             current_directory: installed.root.clone(),
-            use_wsl: false,
             initial_capabilities: None,
             provider_model_id: model.id.clone(),
             api_key: None,
-            session_directory: None,
         },
-        "exllama" => prepare_tabby_session(model, &installed, port)?,
-        "vllm" => prepare_vllm_session(model, &installed, port).await?,
         _ => return Err(model_unavailable_error()),
     };
-    let mut command = if launch.use_wsl {
-        wsl::command(&installed.entrypoint, true).map_err(|_| runtime_error())?
-    } else {
-        Command::new(&installed.entrypoint)
-    };
+    let mut command = Command::new(&installed.entrypoint);
     let child = match command
         .args(&launch.arguments)
         .current_dir(&launch.current_directory)
@@ -244,7 +220,6 @@ async fn start_model_in_slot(
     {
         Ok(child) => child,
         Err(_) => {
-            cleanup_session_directory(launch.session_directory.as_deref()).await?;
             log_runtime_event(
                 storage,
                 "runtime_start_failed",
@@ -262,11 +237,10 @@ async fn start_model_in_slot(
         child,
         capabilities: launch.initial_capabilities,
         api_key: launch.api_key,
-        session_directory: launch.session_directory,
     });
 
     loop {
-        let (port, has_exited, exited_session) = {
+        let (port, has_exited) = {
             let Some(server) = state.as_mut() else {
                 return Err(runtime_error());
             };
@@ -275,16 +249,10 @@ async fn start_model_in_slot(
                 .try_wait()
                 .map_err(|_| runtime_error())?
                 .is_some();
-            let session = if has_exited {
-                server.session_directory.take()
-            } else {
-                None
-            };
-            (server.port, has_exited, session)
+            (server.port, has_exited)
         };
         if has_exited {
             *state = None;
-            cleanup_session_directory(exited_session.as_deref()).await?;
             log_runtime_event(
                 storage,
                 "runtime_start_failed",
@@ -374,13 +342,6 @@ pub(crate) async fn stop(storage: &AppStorage) -> Result<Value, ServiceError> {
     drop(lifecycles);
 
     let mut first_error = None;
-    {
-        let _slot_guard = running_server_operation().lock().await;
-        let mut state = running_state().lock().await;
-        if let Err(error) = stop_server(storage, &mut state).await {
-            first_error = Some(error);
-        }
-    }
     let model_ids = running_llama_state()
         .lock()
         .await
@@ -429,55 +390,12 @@ pub(crate) async fn stop_model(
         }
         result?;
     }
-    {
-        let _slot_guard = running_server_operation().lock().await;
-        let mut state = running_state().lock().await;
-        if state
-            .as_ref()
-            .is_some_and(|server| server.model_id == model_id)
-        {
-            stop_server(storage, &mut state).await?;
-        }
-    }
     drop(runtime_guard);
     status(storage).await
 }
 
 pub(crate) async fn status(storage: &AppStorage) -> Result<Value, ServiceError> {
     let mut servers = Vec::new();
-    let mut legacy_status = None;
-    {
-        let mut state = running_state().lock().await;
-        if let Some(server) = state.as_mut() {
-            let has_exited = server
-                .child
-                .try_wait()
-                .map_err(|_| runtime_error())?
-                .is_some();
-            if has_exited {
-                let session_directory = server.session_directory.take();
-                *state = None;
-                cleanup_session_directory(session_directory.as_deref()).await?;
-                log_runtime_event(
-                    storage,
-                    "runtime_exited",
-                    Some("local_engine_runtime_unavailable"),
-                    None,
-                );
-            } else if let Some(server) = state.as_ref() {
-                let status =
-                    if health_check(server.port, server.api_key.as_deref().map(String::as_str))
-                        .await
-                    {
-                        "running"
-                    } else {
-                        "unhealthy"
-                    };
-                legacy_status = Some(status);
-                servers.push(server_status_json(server, status));
-            }
-        }
-    }
     let managed_snapshots = {
         let mut managed = running_llama_state().lock().await;
         let model_ids = managed.keys().cloned().collect::<Vec<_>>();
@@ -491,9 +409,7 @@ pub(crate) async fn status(storage: &AppStorage) -> Result<Value, ServiceError> 
                 .map_err(|_| runtime_error())?
                 .is_some();
             if has_exited {
-                let mut server = managed.remove(&model_id).ok_or_else(runtime_error)?;
-                let session_directory = server.session_directory.take();
-                cleanup_session_directory(session_directory.as_deref()).await?;
+                managed.remove(&model_id).ok_or_else(runtime_error)?;
                 log_runtime_event(
                     storage,
                     "runtime_exited",
@@ -536,7 +452,7 @@ pub(crate) async fn status(storage: &AppStorage) -> Result<Value, ServiceError> 
     } else if !servers.is_empty() {
         "unhealthy"
     } else {
-        legacy_status.unwrap_or("stopped")
+        "stopped"
     };
     Ok(runtime_status_json(servers, status))
 }
@@ -574,15 +490,6 @@ fn excluding_managed_server_processes(
 
 async fn managed_server_process_ids() -> HashSet<u32> {
     let mut process_ids = HashSet::new();
-    if let Some(process_id) = running_state()
-        .lock()
-        .await
-        .as_ref()
-        .filter(|server| server.engine_id == "llama_cpp")
-        .and_then(|server| server.child.id())
-    {
-        process_ids.insert(process_id);
-    }
     process_ids.extend(
         running_llama_state()
             .lock()
@@ -664,7 +571,7 @@ pub(crate) async fn chat_model_catalog(
     storage: &AppStorage,
     engine_id: &str,
 ) -> Result<Value, ServiceError> {
-    if !["llama_cpp", "vllm", "exllama"].contains(&engine_id) {
+    if engine_id != "llama_cpp" {
         return Err(ServiceError::new(
             "local_engine_unknown",
             "The selected local inference engine is not available.",
@@ -672,43 +579,35 @@ pub(crate) async fn chat_model_catalog(
         ));
     }
 
-    let managed_model_groups = if engine_id == "llama_cpp" {
-        status(storage)
-            .await?
-            .get("servers")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-            .filter(|server| server["engineId"] == "llama_cpp" && server["status"] == "running")
-            .filter_map(|server| {
-                let model_id = server["modelId"].as_str()?.to_owned();
-                let process_id = u32::try_from(server["processId"].as_u64()?).ok()?;
-                let port = u16::try_from(server["port"].as_u64()?).ok()?;
-                Some((model_id, managed_server_group_id(process_id, port)))
-            })
-            .collect::<HashMap<_, _>>()
-    } else {
-        HashMap::new()
-    };
+    let managed_model_groups = status(storage)
+        .await?
+        .get("servers")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|server| server["engineId"] == "llama_cpp" && server["status"] == "running")
+        .filter_map(|server| {
+            let model_id = server["modelId"].as_str()?.to_owned();
+            let process_id = u32::try_from(server["processId"].as_u64()?).ok()?;
+            let port = u16::try_from(server["port"].as_u64()?).ok()?;
+            Some((model_id, managed_server_group_id(process_id, port)))
+        })
+        .collect::<HashMap<_, _>>();
     let mut catalog_models = models::list(storage)?
         .into_iter()
         .filter(|model| model.engine_id == engine_id)
         .map(|model| {
             let available = is_model_available(storage, &model)?;
             let mut model_json = models::to_json(&model, available)?;
-            if engine_id == "llama_cpp" {
-                let group_id = managed_model_groups
-                    .get(&model.id)
-                    .cloned()
-                    .unwrap_or_else(|| "managed".to_owned());
-                model_json["groupId"] = Value::String(group_id);
-            }
+            let group_id = managed_model_groups
+                .get(&model.id)
+                .cloned()
+                .unwrap_or_else(|| "managed".to_owned());
+            model_json["groupId"] = Value::String(group_id);
             Ok(model_json)
         })
         .collect::<Result<Vec<_>, ServiceError>>()?;
-    if engine_id == "llama_cpp" {
-        catalog_models.extend(external_chat_models().await?);
-    }
+    catalog_models.extend(external_chat_models().await?);
     Ok(json!({"freshness": "current", "models": catalog_models}))
 }
 
@@ -726,26 +625,10 @@ pub(crate) async fn chat_url(
         .and_then(Value::as_u64)
         .and_then(|value| u16::try_from(value).ok())
         .ok_or_else(runtime_error)?;
-    let model = models::find(storage, model_id)?.ok_or_else(model_unavailable_error)?;
-    let state = if model.engine_id == "llama_cpp" {
-        let state = running_llama_state().lock().await;
-        let server = state
-            .get(model_id)
-            .filter(|server| server.port == port)
-            .ok_or_else(runtime_error)?;
-        let capabilities = server.capabilities.ok_or_else(runtime_capability_error)?;
-        return Ok(RuntimeChatEndpoint {
-            chat_url: format!("http://127.0.0.1:{port}/v1/chat/completions"),
-            model_id: server.provider_model_id.clone(),
-            capabilities,
-            api_key: server.api_key.clone(),
-        });
-    } else {
-        running_state().lock().await
-    };
+    let state = running_llama_state().lock().await;
     let server = state
-        .as_ref()
-        .filter(|server| server.model_id == model_id && server.port == port)
+        .get(model_id)
+        .filter(|server| server.port == port)
         .ok_or_else(runtime_error)?;
     let capabilities = server.capabilities.ok_or_else(runtime_capability_error)?;
     Ok(RuntimeChatEndpoint {
@@ -1278,24 +1161,14 @@ fn llama_server_arguments(
 }
 
 fn model_path_matches_engine(model: &models::RegisteredModel) -> Result<bool, ServiceError> {
-    Ok(match model.engine_id.as_str() {
-        "llama_cpp" => {
-            model.path_kind == "file"
-                && model.path.is_file()
-                && model
-                    .path
-                    .extension()
-                    .and_then(|extension| extension.to_str())
-                    .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"))
-        }
-        "exllama" => model.path_kind == "directory" && model.path.is_dir(),
-        "vllm" => {
-            model.path_kind == "directory"
-                && model.path.is_dir()
-                && models::has_transformers_model_files(&model.path)?
-        }
-        _ => false,
-    })
+    Ok(model.engine_id == "llama_cpp"
+        && model.path_kind == "file"
+        && model.path.is_file()
+        && model
+            .path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf")))
 }
 
 fn installed_engine_for(
@@ -1335,196 +1208,6 @@ fn installed_engine_for(
         }
     }
     Ok(None)
-}
-
-fn prepare_tabby_session(
-    model: &models::RegisteredModel,
-    installed: &InstalledEngine,
-    port: u16,
-) -> Result<RuntimeLaunch, ServiceError> {
-    let model_directory = model.path.parent().ok_or_else(model_unavailable_error)?;
-    let model_name = model
-        .path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .filter(|name| !name.trim().is_empty())
-        .ok_or_else(model_unavailable_error)?;
-    let model_directory = model_directory
-        .to_str()
-        .ok_or_else(model_unavailable_error)?;
-    let session_directory = installed
-        .root
-        .join("sessions")
-        .join(uuid::Uuid::new_v4().simple().to_string());
-    let api_key = Zeroizing::new(uuid::Uuid::new_v4().simple().to_string());
-    let admin_key = Zeroizing::new(uuid::Uuid::new_v4().simple().to_string());
-    let configuration = json!({
-        "network": {
-            "host": "127.0.0.1",
-            "port": port,
-            "disable_auth": false,
-            "allowed_origins": [],
-            "disable_fetch_requests": true,
-            "send_tracebacks": false,
-            "api_servers": ["OAI"],
-            "access_log": false,
-        },
-        "logging": {
-            "log_prompt": false,
-            "log_generation_parameters": false,
-            "log_chat_completion_requests": false,
-        },
-        "model": {
-            "model_dir": model_directory,
-            "model_name": model_name,
-            "backend": "exllamav3",
-            "max_seq_len": -1,
-        },
-    });
-    create_private_runtime_session(&session_directory)?;
-    let write_result = (|| {
-        write_private_runtime_file(
-            &session_directory.join("config.yml"),
-            &serde_json::to_vec(&configuration).map_err(|_| runtime_error())?,
-        )?;
-        let mut auth_file = serde_json::to_vec(&TabbyAuthFile {
-            api_key: api_key.as_str(),
-            admin_key: admin_key.as_str(),
-        })
-        .map_err(|_| runtime_error())?;
-        let auth_result =
-            write_private_runtime_file(&session_directory.join("api_tokens.yml"), &auth_file);
-        auth_file.zeroize();
-        auth_result?;
-        Ok::<(), ServiceError>(())
-    })();
-    if let Err(error) = write_result {
-        std::fs::remove_dir_all(&session_directory).map_err(|_| runtime_error())?;
-        return Err(error);
-    }
-
-    let main_script = installed.root.join("tabbyAPI").join("main.py");
-    let config_path = session_directory.join("config.yml");
-    Ok(RuntimeLaunch {
-        arguments: vec![
-            main_script.into_os_string(),
-            OsString::from("--config"),
-            config_path.into_os_string(),
-        ],
-        current_directory: session_directory.clone(),
-        use_wsl: false,
-        initial_capabilities: None,
-        provider_model_id: model_name.to_owned(),
-        api_key: Some(api_key),
-        session_directory: Some(session_directory),
-    })
-}
-
-async fn prepare_vllm_session(
-    model: &models::RegisteredModel,
-    installed: &InstalledEngine,
-    port: u16,
-) -> Result<RuntimeLaunch, ServiceError> {
-    let metadata = models::transformers_model_metadata(&model.path)
-        .filter(|metadata| metadata.context_window.is_some())
-        .ok_or_else(runtime_capability_error)?;
-    let use_wsl = installed.variant_id.starts_with("windows-wsl2-");
-    let model_path = wsl::path(&model.path, use_wsl)
-        .await
-        .map_err(|_| model_unavailable_error())?;
-    let arguments = vllm_server_arguments(&model_path, &model.id, port);
-    Ok(RuntimeLaunch {
-        arguments,
-        current_directory: installed.root.clone(),
-        use_wsl,
-        initial_capabilities: Some(RuntimeCapabilities {
-            context_window: Some(
-                metadata
-                    .context_window
-                    .ok_or_else(runtime_capability_error)?,
-            ),
-            supports_images: metadata.supports_images,
-            supports_tool_calls: None,
-        }),
-        provider_model_id: model.id.clone(),
-        api_key: None,
-        session_directory: None,
-    })
-}
-
-fn vllm_server_arguments(model_path: &std::path::Path, model_id: &str, port: u16) -> Vec<OsString> {
-    vec![
-        OsString::from("serve"),
-        model_path.as_os_str().to_owned(),
-        OsString::from("--host"),
-        OsString::from("127.0.0.1"),
-        OsString::from("--port"),
-        OsString::from(port.to_string()),
-        OsString::from("--served-model-name"),
-        OsString::from(model_id),
-    ]
-}
-
-fn create_private_runtime_session(path: &std::path::Path) -> Result<(), ServiceError> {
-    let parent = path.parent().ok_or_else(runtime_error)?;
-    std::fs::create_dir_all(parent).map_err(|_| runtime_error())?;
-    let parent_metadata = std::fs::symlink_metadata(parent).map_err(|_| runtime_error())?;
-    if parent_metadata.file_type().is_symlink() || !parent_metadata.is_dir() {
-        return Err(runtime_error());
-    }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        let mut builder = std::fs::DirBuilder::new();
-        builder.mode(0o700);
-        builder.create(path).map_err(|_| runtime_error())?;
-    }
-    #[cfg(not(unix))]
-    std::fs::create_dir(path).map_err(|_| runtime_error())?;
-    Ok(())
-}
-
-fn write_private_runtime_file(path: &std::path::Path, content: &[u8]) -> Result<(), ServiceError> {
-    let mut options = std::fs::OpenOptions::new();
-    options.write(true).create_new(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut file = options.open(path).map_err(|_| runtime_error())?;
-    use std::io::Write;
-    file.write_all(content).map_err(|_| runtime_error())?;
-    file.sync_all().map_err(|_| runtime_error())
-}
-
-async fn cleanup_session_directory(
-    session_directory: Option<&std::path::Path>,
-) -> Result<(), ServiceError> {
-    if let Some(session_directory) = session_directory {
-        let metadata = std::fs::symlink_metadata(session_directory).map_err(|_| runtime_error())?;
-        if metadata.file_type().is_symlink() || !metadata.is_dir() {
-            return Err(runtime_error());
-        }
-        tokio::fs::remove_dir_all(session_directory)
-            .await
-            .map_err(|_| runtime_error())?;
-    }
-    Ok(())
-}
-
-#[derive(serde::Serialize)]
-struct TabbyAuthFile<'a> {
-    api_key: &'a str,
-    admin_key: &'a str,
-}
-
-fn running_state() -> &'static Mutex<Option<RunningServer>> {
-    RUNNING_SERVER.get_or_init(|| Mutex::new(None))
-}
-
-fn running_server_operation() -> &'static Mutex<()> {
-    RUNNING_SERVER_OPERATION.get_or_init(|| Mutex::new(()))
 }
 
 fn running_llama_state() -> &'static Mutex<HashMap<String, RunningServer>> {
@@ -1624,10 +1307,9 @@ async fn stop_server(
         );
         return Err(runtime_error());
     }
-    let Some(server) = state.take() else {
+    let Some(_server) = state.take() else {
         return Err(runtime_error());
     };
-    cleanup_session_directory(server.session_directory.as_deref()).await?;
     log_runtime_event(storage, "runtime_stopped", None, None);
     Ok(())
 }
@@ -1795,9 +1477,8 @@ mod tests {
         external_model_route_id, external_server_for_route, external_server_group_id,
         health_check_or_cancel, installed_engine_for, llama_server_arguments,
         managed_server_group_id, model_lifecycle, parse_external_capabilities,
-        parse_external_model_ids, parse_runtime_capabilities, prepare_tabby_session,
-        read_runtime_capabilities, remove_external_server, retain_detected_external_servers,
-        runtime_status_json, start_model, vllm_server_arguments,
+        parse_external_model_ids, parse_runtime_capabilities, read_runtime_capabilities,
+        remove_external_server, retain_detected_external_servers, runtime_status_json, start_model,
     };
 
     struct TestDirectory(PathBuf);
@@ -2053,110 +1734,6 @@ mod tests {
     }
 
     #[test]
-    fn tabby_session_is_authenticated_loopback_only_and_uses_model_folder_name() {
-        let temporary = TestDirectory::new();
-        let model_directory = temporary.0.join("models").join("exllama-model");
-        let models_root = model_directory
-            .parent()
-            .expect("model directory should have a parent");
-        fs::create_dir_all(models_root).expect("model parent should be created");
-        fs::create_dir_all(&model_directory).expect("model directory should be created");
-        let installed_root = temporary.0.join("engine");
-        fs::create_dir_all(&installed_root).expect("engine directory should be created");
-
-        let model = crate::local_engines::models::RegisteredModel {
-            id: "local-model-id".to_owned(),
-            engine_id: "exllama".to_owned(),
-            display_name: "ExLlama model".to_owned(),
-            path: model_directory.clone(),
-            path_kind: "directory".to_owned(),
-            created_at_unix_ms: 0,
-        };
-        let installed = InstalledEngine {
-            engine_id: "exllama".to_owned(),
-            variant_id: "windows-x86_64-cuda12.8-python3.12-torch2.9".to_owned(),
-            release_tag: "v1.5.2".to_owned(),
-            root: installed_root.clone(),
-            entrypoint: installed_root.join("python/environment/.venv/Scripts/python.exe"),
-        };
-
-        let launch = prepare_tabby_session(&model, &installed, 49183)
-            .expect("the TabbyAPI session should be created");
-        let session_directory = launch
-            .session_directory
-            .as_ref()
-            .expect("the session directory should be retained for cleanup");
-        let configuration: serde_json::Value = serde_json::from_slice(
-            &fs::read(session_directory.join("config.yml"))
-                .expect("the private TabbyAPI configuration should exist"),
-        )
-        .expect("JSON configuration should also parse as YAML");
-        assert_eq!(configuration["network"]["host"], "127.0.0.1");
-        assert_eq!(configuration["network"]["port"], 49183);
-        assert_eq!(configuration["network"]["disable_auth"], false);
-        assert_eq!(
-            configuration["network"]["allowed_origins"],
-            serde_json::json!([])
-        );
-        assert_eq!(configuration["network"]["disable_fetch_requests"], true);
-        assert_eq!(configuration["logging"]["log_prompt"], false);
-        assert_eq!(configuration["model"]["model_name"], "exllama-model");
-        assert_eq!(
-            configuration["model"]["model_dir"],
-            models_root.to_string_lossy().as_ref()
-        );
-        assert!(configuration.get("api_key").is_none());
-
-        let auth: serde_json::Value = serde_json::from_slice(
-            &fs::read(session_directory.join("api_tokens.yml"))
-                .expect("the TabbyAPI auth file should exist"),
-        )
-        .expect("the TabbyAPI auth file should parse");
-        let api_key = launch
-            .api_key
-            .as_deref()
-            .map(String::as_str)
-            .expect("the runtime should retain the generated API key");
-        let file_api_key = auth["api_key"]
-            .as_str()
-            .expect("the auth file should include an API key");
-        let admin_key = auth["admin_key"]
-            .as_str()
-            .expect("the auth file should include an admin key");
-        assert!(file_api_key == api_key);
-        assert!(!file_api_key.is_empty());
-        assert!(!admin_key.is_empty());
-        assert!(file_api_key != admin_key);
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            assert_eq!(
-                fs::metadata(session_directory)
-                    .expect("the session metadata should be readable")
-                    .permissions()
-                    .mode()
-                    & 0o777,
-                0o700
-            );
-            assert_eq!(
-                fs::metadata(session_directory.join("api_tokens.yml"))
-                    .expect("the auth file metadata should be readable")
-                    .permissions()
-                    .mode()
-                    & 0o777,
-                0o600
-            );
-        }
-
-        assert_eq!(launch.provider_model_id, "exllama-model");
-        assert_eq!(
-            launch.current_directory.as_path(),
-            session_directory.as_path()
-        );
-    }
-
-    #[test]
     fn llama_server_arguments_pass_a_single_matching_vision_projector() {
         let temporary = TestDirectory::new();
         let model_path = temporary.0.join("vision-model.gguf");
@@ -2202,24 +1779,6 @@ mod tests {
         let arguments = llama_server_arguments(&model, 12345).expect("arguments should build");
 
         assert!(!arguments.iter().any(|argument| argument == "--mmproj"));
-    }
-
-    #[test]
-    fn vllm_arguments_use_the_local_model_and_loopback_only() {
-        let arguments = vllm_server_arguments(
-            std::path::Path::new("/mnt/d/models/local-transformer"),
-            "registered-model-id",
-            49183,
-        );
-
-        assert_eq!(arguments[0], "serve");
-        assert_eq!(arguments[1], "/mnt/d/models/local-transformer");
-        assert_eq!(arguments[2], "--host");
-        assert_eq!(arguments[3], "127.0.0.1");
-        assert_eq!(arguments[4], "--port");
-        assert_eq!(arguments[5], "49183");
-        assert_eq!(arguments[6], "--served-model-name");
-        assert_eq!(arguments[7], "registered-model-id");
     }
 
     #[tokio::test]

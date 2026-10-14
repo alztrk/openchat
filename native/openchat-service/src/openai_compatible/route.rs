@@ -73,6 +73,62 @@ pub(super) async fn resolve_chat_route(
         .optional()
         .map_err(|_| storage_error())?
         .ok_or_else(route_error)?;
+    resolve_chat_route_for_model(
+        storage,
+        provider_id,
+        model_id,
+        api_key,
+        requested_api_key_connection_id,
+        stored_api_key_connection_id,
+        custom_provider,
+        context_limit_override,
+        cancellation,
+    )
+    .await
+}
+
+pub(super) async fn resolve_temporary_chat_route(
+    storage: &AppStorage,
+    provider_id: &str,
+    model_id: &str,
+    api_key: Option<&str>,
+    api_key_connection_id: Option<&str>,
+    custom_provider: Option<&super::CustomProviderConfig>,
+    context_limit_override: Option<i64>,
+    cancellation: &mut tokio::sync::watch::Receiver<bool>,
+) -> Result<ChatRoute, ServiceError> {
+    if provider_id == "chatgpt" {
+        return Err(ServiceError::new(
+            "temporary_provider_unsupported",
+            "Temporary conversations are not available for this provider yet.",
+            false,
+        ));
+    }
+    resolve_chat_route_for_model(
+        storage,
+        Some(provider_id.to_owned()),
+        Some(model_id.to_owned()),
+        api_key,
+        api_key_connection_id,
+        api_key_connection_id,
+        custom_provider,
+        context_limit_override,
+        cancellation,
+    )
+    .await
+}
+
+async fn resolve_chat_route_for_model(
+    storage: &AppStorage,
+    provider_id: Option<String>,
+    model_id: Option<String>,
+    api_key: Option<&str>,
+    requested_api_key_connection_id: Option<&str>,
+    stored_api_key_connection_id: Option<&str>,
+    custom_provider: Option<&super::CustomProviderConfig>,
+    context_limit_override: Option<i64>,
+    cancellation: &mut tokio::sync::watch::Receiver<bool>,
+) -> Result<ChatRoute, ServiceError> {
     let model_id = model_id
         .filter(|id| !id.trim().is_empty())
         .ok_or_else(model_error)?;
@@ -125,7 +181,7 @@ pub(super) async fn resolve_chat_route(
                 None,
             )
         }
-        Some("llama_cpp" | "exllama" | "vllm") => {
+        Some("llama_cpp") => {
             if requested_api_key_connection_id.is_some()
                 || stored_api_key_connection_id.is_some()
                 || api_key.is_some()
@@ -211,11 +267,7 @@ pub(super) async fn resolve_chat_route(
             {
                 return Err(route_error());
             }
-            let api_key = if let Some(key) = api_key {
-                key
-            } else if matches!(id, "ollama" | "lmstudio") {
-                "local"
-            } else {
+            let Some(api_key) = api_key else {
                 return Err(provider_authentication_required_error(id));
             };
             let (context_window, input_token_limit, max_output_tokens) =
@@ -248,7 +300,6 @@ pub(super) async fn resolve_chat_route(
 
     if !is_free
         && api_key.is_none()
-        && !matches!(provider_id.as_deref(), Some("ollama" | "lmstudio"))
         && !provider_id
             .as_deref()
             .is_some_and(|provider_id| provider_id.starts_with("custom_"))

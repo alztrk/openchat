@@ -2,6 +2,23 @@
   "@@locale": "es",
   "appTitle": "OpenChat",
   "newChat": "Nuevo chat",
+  "temporaryChatStart": "Chat temporal",
+  "temporaryChatTitle": "Chat temporal",
+  "temporaryChatEnd": "Finalizar",
+  "temporaryChatNotice": "Este chat no aparecerá en el historial guardado salvo que lo guardes. Los mensajes y archivos adjuntos se envían a {provider}, que decide cómo conserva esos datos. Aquí no se pueden usar herramientas.",
+  "temporaryChatDisclosureTitle": "¿Enviar este mensaje a {provider}?",
+  "temporaryChatDisclosureBody": "Tu mensaje, los archivos adjuntos y este historial temporal se enviarán a {provider}. El proveedor decide cómo conserva esos datos. ¿Quieres continuar?",
+  "temporaryChatExitTitle": "¿Salir de este chat temporal?",
+  "temporaryChatExitBody": "Guarda los mensajes enviados en el historial, descártalos o sigue trabajando aquí. Los archivos adjuntos sin enviar se descartan al salir.",
+  "temporaryChatSave": "Guardar en el historial",
+  "temporaryChatDiscard": "Descartar chat",
+  "temporaryChatCancel": "Seguir en el chat",
+  "temporaryChatSaveFailed": "No se pudo guardar este chat temporal. Sigue disponible aquí; inténtalo de nuevo o descártalo.",
+  "temporaryChatConnectionRequired": "Conecta y verifica una cuenta de ChatGPT antes de iniciar un chat temporal.",
+  "temporaryChatRemoveAttachmentsFirst": "Quita los archivos adjuntos pendientes antes de iniciar un chat temporal.",
+  "temporaryChatStopBeforeLeaving": "Detén la respuesta antes de salir de este chat temporal.",
+  "temporaryChatMessageLimitReached": "Este chat temporal alcanzó su límite de mensajes o tamaño. Guárdalo o inicia otro chat.",
+  "temporaryChatResponseFailed": "No se recibió ninguna respuesta. Puedes enviar otro mensaje o volver a intentarlo.",
   "chats": "Chats",
   "workspaces": "Espacios de trabajo",
   "workspacesDescription": "Agrupa conversaciones por tema. Los archivos y las herramientas se gestionan en proyectos de código.",
@@ -31,6 +48,20 @@
   "outputsEmptyDescription": "Usa Guardar respuesta debajo de una respuesta para conservarla aquí.",
   "outputsLoadFailed": "No se pudieron cargar las respuestas guardadas.",
   "outputsLoading": "Cargando respuestas guardadas…",
+  "attachments": "Archivos adjuntos",
+  "attachmentChooseFile": "Elegir un archivo",
+  "attachmentChooseFromLibrary": "Elegir de la biblioteca",
+  "attachmentLibraryTitle": "Archivos de conversaciones",
+  "attachmentLibraryDescription": "Consulta los archivos de tus conversaciones y vuelve a su chat de origen.",
+  "attachmentLibraryEmpty": "No hay archivos guardados de conversaciones disponibles.",
+  "attachmentLibraryUnavailable": "Este archivo ya no está disponible.",
+  "attachmentLibraryAllFilter": "Todos los archivos",
+  "attachmentLibraryAvailableFilter": "Disponible",
+  "attachmentLibraryMissingFilter": "No disponible",
+  "attachmentLibraryOpenConversation": "Abrir conversación de origen",
+  "attachmentLibraryLoading": "Cargando archivos de conversaciones",
+  "attachmentLibrarySearchHint": "Filtrar por nombre de archivo o conversación",
+  "attachmentLibraryLoadFailed": "No se pudieron cargar más archivos de conversaciones. Inténtalo de nuevo.",
   "saveResponse": "Guardar respuesta",
   "removeSavedResponse": "Quitar respuesta guardada",
   "outputSaveFailed": "No se pudo guardar la respuesta.",
@@ -38,9 +69,86 @@
   "outputOpenConversation": "Abrir conversación",
   "outputConversationUnavailable": "La conversación ya no está disponible",
   "outputSavedAt": "Guardada {date}",
-  "@workspaceConversationCount": { "placeholders": { "count": { "type": "int" } } },
-  "@workspaceDeleteConfirmation": { "placeholders": { "name": { "type": "String" } } },
-  "@outputSavedAt": { "placeholders": { "date": { "type": "String" } } },
+  "outputWorkspaceOpen": "Editar respuesta",
+  "outputWorkspaceTitle": "Espacio de trabajo de respuesta",
+  "outputWorkspaceDescription": "Edita una copia de trabajo. La conversación original no cambia.",
+  "outputWorkspaceContentLabel": "Contenido de la respuesta",
+  "outputWorkspaceMarkdownSource": "Código fuente Markdown",
+  "outputWorkspaceSource": "Código fuente",
+  "outputWorkspaceLanguage": "Lenguaje",
+  "outputWorkspaceEdit": "Editar",
+  "outputWorkspacePreview": "Vista previa",
+  "outputWorkspaceVersion": "Versión {version}",
+  "@outputWorkspaceVersion": {
+    "placeholders": {
+      "version": {
+        "type": "int"
+      }
+    }
+  },
+  "outputWorkspaceSaveVersion": "Guardar como nueva versión",
+  "outputWorkspaceSaveFailed": "No se pudo guardar la nueva versión.",
+  "outputWorkspaceExport": "Exportar Markdown",
+  "outputExportReviewTitle": "Revisa antes de exportar",
+  "outputExportReviewScope": "Solo se exportará la versión {version} de la respuesta seleccionada. No se incluirán la conversación de origen ni otros mensajes.",
+  "@outputExportReviewScope": {
+    "placeholders": {
+      "version": {
+        "type": "int"
+      }
+    }
+  },
+  "outputExportReviewSensitiveNotice": "La copia Markdown se guardará en la ubicación que elijas. La respuesta puede contener información sensible; eliminarla después no recupera otras copias.",
+  "outputWorkspaceExported": "Se exportó la versión de la respuesta.",
+  "outputWorkspaceExportFailed": "No se pudo exportar la versión de la respuesta.",
+  "outputWorkspaceVersionsFailed": "No se pudo cargar el historial de versiones.",
+  "outputWorkspaceEmpty": "La versión de una respuesta no puede estar vacía.",
+  "outputWorkspaceUnsavedTitle": "¿Descartar los cambios sin guardar?",
+  "outputWorkspaceUnsavedBody": "Estos cambios no se guardaron como una versión.",
+  "outputWorkspaceKeepEditing": "Seguir editando",
+  "outputWorkspaceDiscard": "Descartar cambios",
+  "@workspaceConversationCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@temporaryChatNotice": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "@temporaryChatDisclosureTitle": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "@temporaryChatDisclosureBody": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "@workspaceDeleteConfirmation": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@outputSavedAt": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "collapseSidebars": "Contraer barras laterales",
   "showSidebars": "Mostrar barras laterales",
   "previousPage": "Página anterior",
@@ -53,9 +161,15 @@
   "sectionUnavailable": "Esta sección aún no está disponible.",
   "settings": "Ajustes",
   "settingsDescription": "Conexiones, apariencia y datos locales",
-  "settingsGeneral": "General",
-  "settingsAdvanced": "Avanzado",
-  "settingsDataRecovery": "Datos y recuperación",
+  "settingsAppearanceAccessibilityGroup": "Apariencia y accesibilidad",
+  "settingsChatBehaviorGroup": "Comportamiento del chat",
+  "settingsProvidersModelsGroup": "Proveedores y modelos",
+  "settingsToolsPermissionsGroup": "Herramientas y permisos",
+  "settingsNotificationsGroup": "Notificaciones y alertas",
+  "settingsDataPrivacyGroup": "Datos y privacidad",
+  "settingsSearchPlaceholder": "Buscar en ajustes",
+  "settingsSearchClear": "Borrar búsqueda",
+  "settingsSearchEmpty": "Ningún ajuste coincide con esta búsqueda.",
   "settingsAccountConnectionsHeading": "Conexiones de cuentas",
   "settingsModelProvidersHeading": "Proveedores de modelos",
   "customProvidersHeading": "Proveedores personalizados",
@@ -78,28 +192,145 @@
   "settingsStatisticsDescription": "Revisa el uso de conversaciones y modelos a lo largo del tiempo.",
   "settingsModelPreferencesDescription": "Elige qué modelos aparecen y cómo se seleccionan.",
   "settingsLocalEnginesDescription": "Administra el software que ejecuta modelos en este dispositivo.",
-  "settingsConversationMemoryDescription": "Busca y administra el archivo local de conversaciones.",
+  "settingsConversationMemoryDescription": "Administra la memoria personal y busca en los archivos locales de conversaciones.",
+  "personalMemoryDescription": "Guarda los datos que elijas para incluirlos en futuras solicitudes al modelo cuando la memoria personal esté activada.",
+  "personalMemoryPrivacyNotice": "Las copias guardadas permanecen en este dispositivo. Si se activa, su texto se envía al proveedor junto con tu solicitud. Puedes revisar o eliminar los datos cuando quieras.",
+  "personalMemoryEnabled": "Usar memoria personal",
+  "personalMemoryResponseLabel": "Memoria · {count}",
+  "@personalMemoryResponseLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "personalMemorySourcesTitle": "Datos guardados enviados con esta solicitud",
+  "personalMemorySourcesDescription": "Estos datos guardados se incluyeron en la solicitud. Es posible que el modelo no los haya usado todos.",
+  "personalMemorySourceUnavailable": "Este dato se ha editado o eliminado de la memoria guardada.",
+  "personalMemoryEnabledDescription": "Incluye los datos guardados en nuevas solicitudes. Esta opción está desactivada de forma predeterminada.",
+  "personalMemoryExcludeHereTooltip": "Excluir la memoria personal de esta conversación",
+  "personalMemoryUseHereTooltip": "Usar la memoria personal en esta conversación",
+  "personalMemoryFactsTitle": "Datos guardados",
+  "personalMemoryEmpty": "Aún no has guardado ningún dato.",
+  "personalMemoryAdd": "Añadir dato",
+  "personalMemoryEdit": "Editar dato",
+  "personalMemoryDelete": "Eliminar dato",
+  "personalMemoryDeleteTitle": "¿Eliminar este dato guardado?",
+  "personalMemoryDeleteConfirmation": "Se eliminará de este dispositivo y de futuras solicitudes al modelo.",
+  "personalMemoryDeleteConfirm": "Eliminar",
+  "personalMemoryFactLabel": "Dato para recordar",
+  "personalMemoryFactHint": "Por ejemplo, una preferencia que quieres que OpenChat recuerde",
+  "personalMemoryLimitReached": "Has alcanzado el límite de datos guardados.",
+  "personalMemoryLoadFailed": "No se pudieron cargar los datos guardados.",
+  "personalMemorySaveFailed": "No se pudo actualizar el dato guardado.",
+  "personalMemoryClearAction": "Borrar recuerdos guardados",
+  "personalMemoryClearTitle": "¿Borrar todos los recuerdos guardados?",
+  "personalMemoryClearConfirmation": "Se eliminarán todos los datos guardados de este dispositivo y se desactivará la memoria personal.",
+  "personalMemoryClearConfirm": "Borrar recuerdos",
+  "personalMemoryClearFailed": "No se pudieron borrar los recuerdos guardados.",
   "settingsSharedInstructionsDescription": "Define indicaciones que se incluyen en las conversaciones nuevas.",
+  "settingsAssistantProfilesDescription": "Crea asistentes reutilizables con sus propias indicaciones de respuesta.",
+  "settingsNotifications": "Notificaciones",
+  "settingsNotificationsDescription": "Configura avisos para respuestas completadas y preguntas pendientes.",
+  "keyboardShortcuts": "Atajos de teclado",
+  "keyboardShortcutsDescription": "Cambia las teclas para enviar mensajes, insertar saltos de línea y detener respuestas.",
+  "keyboardShortcutRecord": "Pulsa una combinación de teclas",
+  "keyboardShortcutConflict": "Esa combinación ya está asignada a otra acción.",
+  "keyboardShortcutLoadFailed": "No se pudieron cargar los atajos de teclado.",
+  "keyboardShortcutSaveFailed": "No se pudieron guardar los atajos de teclado.",
+  "keyboardShortcutsReset": "Restablecer valores predeterminados",
+  "keyboardSearchPlaceholder": "Buscar atajos de teclado",
+  "keyboardSendMessage": "Enviar mensaje",
+  "keyboardSendMessageDescription": "Envía el mensaje cuando el campo está enfocado.",
+  "keyboardNewLine": "Insertar una línea nueva",
+  "keyboardNewLineDescription": "Añade un salto de línea sin enviar el mensaje.",
+  "keyboardStopResponse": "Detener respuesta",
+  "keyboardStopResponseDescription": "Detiene la respuesta cuando el campo está enfocado.",
+  "notificationResponses": "Notificaciones de respuestas",
+  "notificationResponsesDescription": "Avisar cuando termina una respuesta mientras OpenChat está en segundo plano.",
+  "notificationQuestions": "Preguntas pendientes",
+  "notificationQuestionsDescription": "Avisar cuando la IA espera una respuesta tuya.",
+  "notificationResponsePreview": "Mostrar el texto de la respuesta",
+  "notificationResponsePreviewDescription": "Incluir el texto de la respuesta en el aviso. Si se desactiva, solo se indicará que hay una respuesta lista.",
+  "notificationQuickReply": "Responder desde la notificación",
+  "notificationQuickReplyDescription": "Añadir un campo de texto y una acción de envío a los avisos de respuesta.",
+  "notificationSettingsSaveFailed": "No se pudo guardar la preferencia de notificaciones.",
+  "notificationSettingsUnavailable": "No se pudieron leer las preferencias de notificaciones.",
+  "notificationDeliveryChecking": "Comprobando la disponibilidad de las notificaciones de Windows.",
+  "notificationDeliveryEnabled": "Las notificaciones de Windows están disponibles.",
+  "notificationDeliveryDisabledForApp": "Las notificaciones de OpenChat están desactivadas en Windows.",
+  "notificationDeliveryDisabledForUser": "Las notificaciones están desactivadas en la configuración de Windows.",
+  "notificationDeliveryDisabledByPolicy": "La política de tu organización bloquea las notificaciones.",
+  "notificationDeliveryDisabledByManifest": "OpenChat no está registrado para enviar notificaciones de Windows.",
+  "notificationDeliveryUnavailable": "No se pudo comprobar la disponibilidad de las notificaciones de Windows.",
+  "notificationDeliveryNotSupported": "El estado de las notificaciones de Windows no está disponible en esta plataforma.",
+  "sendTestNotification": "Enviar una notificación de prueba",
+  "notificationTestTitle": "Prueba de notificaciones de OpenChat",
+  "notificationTestBody": "Si ves este mensaje, Windows está entregando las notificaciones.",
+  "notificationTestRequested": "Se solicitó la notificación de prueba.",
+  "notificationTestFailed": "No se pudo enviar la notificación de prueba.",
+  "openNotificationSettings": "Abrir la configuración de notificaciones de Windows",
   "settingsAppearanceDescription": "Ajusta el idioma, el tema, el tamaño del texto y el ancho de la conversación.",
   "settingsLocalDataDescription": "Consulta dónde se guarda el historial y administra los archivos locales.",
   "connections": "Conexiones",
+  "providerCatalogVerification": "Verificar proveedor",
+  "providerConnectionLastChecked": "Última comprobación: {dateTime}",
+  "providerLastRequestOutcome": "Última solicitud: {outcome}",
+  "providerLastRequestAt": "Hora de la solicitud: {dateTime}",
+  "providerLastRequestReadFailed": "No se pudo leer el resultado de la última solicitud.",
+  "providerLastRequestSaveFailed": "La solicitud terminó, pero no se pudo guardar el resultado.",
+  "providerRequestCompleted": "Completada",
+  "providerRequestWaitingForInput": "Esperando una respuesta",
+  "providerRequestStopped": "Detenida",
+  "providerRequestAuthenticationFailed": "Error de autenticación",
+  "providerRequestRateLimited": "Límite de solicitudes alcanzado",
+  "providerRequestNetworkFailed": "Error de red",
+  "providerRequestFailed": "El proveedor no pudo completar la respuesta. Tus mensajes guardados siguen disponibles.",
+  "providerVerificationResultNotSaved": "No se pudo guardar el resultado en este dispositivo.",
+  "providerVerificationRecordUnreadable": "No se pudo leer el resultado guardado. Verifica la conexión de nuevo.",
+  "setupStepCompleted": "Completado",
+  "setupStepCurrent": "Paso actual",
   "models": "Modelos",
-  "modelLibrary": "Buscar modelos",
-  "modelPreferences": "Preferencias de modelos",
+  "modelLibrary": "Biblioteca",
+  "modelPreferences": "Modelos",
   "modelsDescription": "Elige el modelo predeterminado para las conversaciones nuevas y oculta los que no uses.",
+  "defaultModelPreferenceInvalid": "No se pudo leer la preferencia del modelo predeterminado. Bórrala en Preferencias de modelos u Opciones del proyecto.",
+  "clearDefaultModelPreference": "Borrar modelo predeterminado guardado",
+  "defaultModelPreferenceClearFailed": "No se pudo borrar la preferencia del modelo predeterminado.",
+  "hiddenModelPreferencesInvalid": "No se pueden leer las preferencias de modelos ocultos. Bórralas aquí para volver a mostrar todos los modelos.",
+  "clearHiddenModelPreferences": "Restablecer modelos ocultos",
+  "hiddenModelPreferencesClearFailed": "No se pudieron borrar las preferencias de modelos ocultos.",
   "modelContextAutomatic": "Automático",
   "modelContextCustom": "Límite: {count}",
-  "@modelContextCustom": {"placeholders": {"count": {"type": "String"}}},
+  "@modelContextCustom": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
   "modelContextTitle": "Presupuesto de contexto · {model}",
-  "@modelContextTitle": {"placeholders": {"model": {"type": "String"}}},
+  "@modelContextTitle": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
   "modelContextMaximum": "Máximo del modelo: {limit}",
-  "@modelContextMaximum": {"placeholders": {"limit": {"type": "String"}}},
+  "@modelContextMaximum": {
+    "placeholders": {
+      "limit": {
+        "type": "String"
+      }
+    }
+  },
   "modelContextCustomLabel": "Tu límite de contexto en tokens",
   "modelContextExplanation": "OpenChat compacta el historial anterior según este límite antes de enviarlo. No cambia la capacidad real del modelo ni garantiza un menor consumo de cuota.",
   "modelContextInvalid": "Introduce un valor entre 2.048 y 2.000.000 tokens.",
   "modelContextAboveMaximum": "El límite no puede superar el máximo del modelo.",
   "localEngines": "Motores locales",
-  "localEnginesDescription": "Instala runtimes locales verificados, registra tus propios archivos de modelo y comprueba si un runtime funciona correctamente. Mueve o copia los modelos a una carpeta del motor, o déjalos donde están.",
+  "localEnginesDescription": "Instala y administra los motores de modelos locales.",
   "localEnginesUnavailable": "El servicio de motores locales aún no está disponible.",
   "localEnginesLoadFailed": "No se pudo cargar la información de los motores locales.",
   "localEnginesEmpty": "No hay versiones de motores locales disponibles.",
@@ -113,7 +344,16 @@
     }
   },
   "localEngineNewerReleaseIncompatible": "Upstream publicó {latest}; {compatible} es la versión más reciente compatible con este entorno.",
-  "@localEngineNewerReleaseIncompatible": { "placeholders": { "latest": { "type": "String" }, "compatible": { "type": "String" } } },
+  "@localEngineNewerReleaseIncompatible": {
+    "placeholders": {
+      "latest": {
+        "type": "String"
+      },
+      "compatible": {
+        "type": "String"
+      }
+    }
+  },
   "localEngineReleaseCheckUnavailable": "No se pudieron comprobar las versiones nuevas. Comprueba la conexión y vuelve a cargar; la instalación requiere una versión verificada.",
   "localEngineVariants": "Paquetes",
   "localEngineStable": "Estable",
@@ -126,13 +366,10 @@
   "localEngineNotInstalled": "No instalado",
   "localEngineBlocked": "Bloqueado",
   "localEngineDeprecated": "En desuso",
-  "localEngineWindowsDeprecatedReason": "Las nuevas instalaciones de vLLM y ExLlama están desactivadas en Windows. Se conservan los archivos y los modelos ya registrados.",
   "localEngineUnsupportedPlatform": "Plataforma no compatible",
   "localEngineHardwareUnavailable": "Hardware no disponible",
   "localEngineDriverUnsupported": "Actualiza el controlador NVIDIA",
   "localEngineDriverVersionUnavailable": "No se pudo verificar la versión del controlador NVIDIA",
-  "localEngineVllmBlockedReason": "vLLM requiere un controlador NVIDIA versión 580 o posterior y un entorno Linux existente. En Windows, usa una distribución WSL2 existente con acceso a la GPU.",
-  "localEngineExllamaBlockedReason": "El runtime ExLlamaV3 todavía no está listo para instalarse. OpenChat debe fijar y verificar el conjunto completo de dependencias de TabbyAPI, PyTorch, Triton, Flash Linear Attention y Python antes de ofrecerlo.",
   "localEngineRuntimeRequirements": "Requisitos: {requirements}",
   "@localEngineRuntimeRequirements": {
     "placeholders": {
@@ -162,16 +399,43 @@
   "localEngineExternalServerConnecting": "Comprobando el servidor local seleccionado...",
   "localEngineExternalServerFoundTitle": "Se encontró un llama-server en ejecución",
   "localEngineExternalServerFoundDescription": "Hay un servidor llama.cpp escuchando en el puerto {port}. OpenChat se conectará y mostrará sus modelos. Desconectarlo en OpenChat no detendrá el servidor.",
-  "@localEngineExternalServerFoundDescription": { "placeholders": { "port": { "type": "int" } } },
+  "@localEngineExternalServerFoundDescription": {
+    "placeholders": {
+      "port": {
+        "type": "int"
+      }
+    }
+  },
   "localEngineExternalServerNotNow": "Ahora no",
   "localEngineExternalServerConnect": "Conectar",
   "localEngineExternalServerConnected": "Conectado al puerto {port}. {count, plural, =1{Hay 1 modelo disponible} other{Hay {count} modelos disponibles}}.",
-  "@localEngineExternalServerConnected": { "placeholders": { "port": { "type": "int" }, "count": { "type": "int" } } },
+  "@localEngineExternalServerConnected": {
+    "placeholders": {
+      "port": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "localEngineManagedModelSection": "Modelos gestionados por OpenChat",
   "localEngineManagedServerModelSection": "Servidor de OpenChat · 127.0.0.1:{port}",
-  "@localEngineManagedServerModelSection": { "placeholders": { "port": { "type": "int" } } },
+  "@localEngineManagedServerModelSection": {
+    "placeholders": {
+      "port": {
+        "type": "int"
+      }
+    }
+  },
   "localEngineExternalModelSection": "Servidor del usuario · 127.0.0.1:{port}",
-  "@localEngineExternalModelSection": { "placeholders": { "port": { "type": "int" } } },
+  "@localEngineExternalModelSection": {
+    "placeholders": {
+      "port": {
+        "type": "int"
+      }
+    }
+  },
   "localEngineExternalServerDisconnect": "Desconectar",
   "localEngineExternalServerNotFound": "No se encontró ningún llama-server en ejecución.",
   "localEngineExternalServerScanFailed": "No se pudieron comprobar los procesos llama-server en ejecución.",
@@ -211,14 +475,35 @@
   "localModelScanningDirectory": "Buscando en la carpeta...",
   "localModelDiscoveryTitle": "Se encontraron modelos sin registrar",
   "localModelDiscoveryPrompt": "{count, plural, =1{OpenChat encontró 1 modelo compatible sin registrar en esta carpeta. ¿Quieres registrarlo?} other{OpenChat encontró {count} modelos compatibles sin registrar en esta carpeta. ¿Quieres registrarlos?}}",
-  "@localModelDiscoveryPrompt": { "placeholders": { "count": { "type": "int" } } },
+  "@localModelDiscoveryPrompt": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "localModelDiscoveryTruncated": "La búsqueda alcanzó su límite seguro. Elige una carpeta más pequeña para encontrar más modelos.",
   "localModelDiscoveryEmpty": "No se encontraron modelos compatibles nuevos en esta carpeta.",
   "localModelDiscoveryRegisterAll": "Registrar modelos encontrados",
   "localModelDiscoveryRegistered": "{count, plural, =1{Se registró 1 modelo.} other{Se registraron {count} modelos.}}",
-  "@localModelDiscoveryRegistered": { "placeholders": { "count": { "type": "int" } } },
+  "@localModelDiscoveryRegistered": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "localModelDiscoveryPartial": "Se registraron {registered} de {total} modelos. No se pudieron registrar algunos modelos.",
-  "@localModelDiscoveryPartial": { "placeholders": { "registered": { "type": "int" }, "total": { "type": "int" } } },
+  "@localModelDiscoveryPartial": {
+    "placeholders": {
+      "registered": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "localModelDirectoryUnavailable": "Esta carpeta de modelos no está disponible. Elige una carpeta existente a la que OpenChat pueda acceder.",
   "localModelDiscoveryFailed": "No se pudo analizar la carpeta de modelos. Comprueba los permisos de acceso e inténtalo de nuevo.",
   "localModelMoveToFolder": "Mover el modelo a esta carpeta",
@@ -248,7 +533,6 @@
   "localEngineStageDownloading": "Descargando",
   "localEngineStageVerifying": "Verificando",
   "localEngineStageExtracting": "Extrayendo",
-  "localEngineStageRuntimeSetup": "Preparando el entorno de Python",
   "localEngineStagePublishing": "Finalizando la instalación",
   "localEngineStageReady": "Listo",
   "defaultModel": "Predeterminado",
@@ -287,6 +571,83 @@
   "connectedProvidersModels": "Modelos de proveedores conectados",
   "noConnectedProviders": "Todavía no hay proveedores conectados. Conecta cuentas o añade claves de API en la pestaña Conexiones.",
   "sharedInstructions": "Instrucciones compartidas",
+  "assistantProfiles": "Perfiles de asistente",
+  "assistantProfilesDescription": "Elige un perfil para aplicar sus instrucciones y estilo de respuesta a las nuevas solicitudes. Los perfiles se guardan en este dispositivo.",
+  "assistantProfilesEmpty": "Todavía no hay perfiles de asistente.",
+  "assistantProfileCreate": "Crear perfil",
+  "assistantProfileDeactivate": "No usar ningún perfil",
+  "assistantProfileEdit": "Editar perfil",
+  "assistantProfileRemoveTitle": "¿Quitar el perfil de asistente?",
+  "assistantProfileRemove": "Quitar",
+  "assistantProfileRemoveConfirmation": "¿Quitar “{profileName}”? Ya no se usará en las nuevas solicitudes.",
+  "@assistantProfileRemoveConfirmation": {
+    "placeholders": {
+      "profileName": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantProfileSaveFailed": "No se pudo guardar el perfil de asistente.",
+  "assistantProfilesLoadFailed": "No se pudieron cargar los perfiles de asistente.",
+  "assistantProfileLoadFailed": "No se pudo cargar el perfil de asistente activo.",
+  "assistantProfilesLimitReached": "Puedes guardar hasta 20 perfiles de asistente.",
+  "assistantProfileName": "Nombre",
+  "assistantProfileNameRequired": "Escribe un nombre para este perfil.",
+  "assistantProfileNameTooLong": "Usa 64 caracteres o menos.",
+  "assistantProfileNameExists": "Ya existe un perfil con este nombre.",
+  "assistantProfileInstructions": "Instrucciones",
+  "assistantProfileInstructionsHelp": "Con el perfil activo, estas instrucciones se envían con las nuevas solicitudes de chat normales. Los chats temporales no usan perfiles de asistente.",
+  "assistantProfilePreferredModel": "Modelo preferido",
+  "assistantProfilePreferredModelUnavailable": "Selecciona primero un modelo disponible en el chat.",
+  "assistantProfilePreferredModelHelp": "Se usa en los chats nuevos. El modelo específico del proyecto tiene prioridad.",
+  "assistantProfileRestrictTools": "Limitar las herramientas de este perfil",
+  "assistantProfileRestrictToolsHelp": "Solo se ofrecen las herramientas seleccionadas. Los permisos de la aplicación y del proyecto pueden restringirlas más.",
+  "assistantProfileProjectTools": "Disponibles en el proyecto activo",
+  "assistantProfileProjectTasks": "Ejecutar una tarea del proyecto",
+  "assistantProfileMcpUnavailable": "Algunos servidores MCP habilitados no están disponibles; no se pudieron cargar sus herramientas.",
+  "assistantProfileLoadMcpTools": "Cargar herramientas MCP",
+  "assistantProfileLoadingMcpTools": "Conectando con los servidores MCP…",
+  "assistantProfileAllowedToolCount": "Límite de herramientas: {count}",
+  "@assistantProfileAllowedToolCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "assistantProfileToolAccessUsesAppPermissions": "Permisos de la aplicación y del proyecto",
+  "assistantProfileToolAccessInheritsAppPermissions": "Este perfil no limita las herramientas. Los permisos de la aplicación y del proyecto determinan cuáles están disponibles.",
+  "assistantProfileToolAccessDisabled": "Herramientas desactivadas",
+  "assistantProfileToolAccessDisabledHelp": "Este perfil desactiva todas las herramientas.",
+  "assistantToolGroupWebResearch": "Buscar en la web y leer páginas",
+  "assistantToolGroupWorkspaceRead": "Leer y buscar archivos del espacio de trabajo",
+  "assistantToolGroupWorkspaceWrite": "Crear y editar archivos del espacio de trabajo",
+  "assistantToolGroupTerminal": "Ejecutar comandos de terminal",
+  "assistantToolGroupGitRead": "Consultar el estado y el historial de Git",
+  "assistantToolGroupImageGeneration": "Generar imágenes",
+  "assistantToolGroupAskUser": "Hacer una pregunta al usuario",
+  "assistantToolGroupDelegateTask": "Delegar una tarea acotada",
+  "assistantToolGroupGoalControls": "Gestionar objetivos persistentes",
+  "assistantResponseStyle": "Estilo de respuesta",
+  "assistantResponseStyleConcise": "Conciso",
+  "assistantResponseStyleBalanced": "Equilibrado",
+  "assistantResponseStyleDetailed": "Detallado",
+  "assistantProfileStyle": "Estilo: {style}",
+  "@assistantProfileStyle": {
+    "placeholders": {
+      "style": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantProfileActive": "Perfil de asistente: {profileName}",
+  "@assistantProfileActive": {
+    "placeholders": {
+      "profileName": {
+        "type": "String"
+      }
+    }
+  },
   "sharedInstructionsDescription": "Estas instrucciones se envían a todos los proveedores conectados. El acceso a las herramientas de archivos sigue el ajuste Acceso a herramientas.",
   "restoreDefaults": "Restablecer valores predeterminados",
   "sharedInstructionsRestored": "Se restauraron las instrucciones predeterminadas.",
@@ -313,8 +674,6 @@
   "deepInfraProvider": "DeepInfra",
   "dashScopeProvider": "DashScope (Qwen)",
   "cohereProvider": "Cohere",
-  "ollamaProvider": "Ollama",
-  "lmStudioProvider": "LM Studio",
   "geminiApiDescription": "Procesa texto, imágenes, audio y vídeo con los modelos compatibles.",
   "groqApiDescription": "Ejecuta modelos abiertos con baja latencia en la infraestructura de Groq.",
   "cerebrasApiDescription": "Ejecuta modelos de lenguaje grandes en la infraestructura Cerebras Inference.",
@@ -330,8 +689,6 @@
   "deepInfraApiDescription": "Usa modelos abiertos alojados por DeepInfra mediante su API de chat.",
   "dashScopeApiDescription": "Usa Qwen y otros modelos compatibles mediante Alibaba Cloud Model Studio.",
   "cohereApiDescription": "Usa modelos de Cohere con API de chat y llamadas a herramientas.",
-  "ollamaApiDescription": "Usa modelos locales de Ollama mediante su API compatible con OpenAI.",
-  "lmStudioApiDescription": "Conecta con modelos locales cargados en LM Studio mediante su API compatible con OpenAI.",
   "geminiUnpaidDataNotice": "En el nivel gratuito de la API de Gemini, Google puede usar el contenido enviado para mejorar sus productos. Revisa las condiciones de uso de datos de Google antes de enviar información sensible.",
   "providerApiKey": "Clave de API",
   "providerKeySaved": "La clave de API se guarda de forma segura en este dispositivo.",
@@ -344,6 +701,17 @@
   "providerNoKey": "No hay ninguna clave de API conectada.",
   "providerKeyInvalid": "Introduce una clave de API válida para este proveedor. No incluyas espacios; la clave puede tener hasta 4096 caracteres.",
   "providerKeyStorageFailed": "No se pudo leer ni guardar la clave de API de forma segura.",
+  "verifyProviderConnection": "Verificar conexión",
+  "providerConnectionNotVerified": "La conexión aún no se ha verificado.",
+  "verifyingProviderConnection": "Comprobando la conexión del proveedor…",
+  "providerConnectionVerified": "Conexión verificada; el catálogo de modelos está disponible.",
+  "providerVerificationStaleCatalog": "Solo se devolvieron modelos en caché; no se pudo verificar la conexión con el proveedor. Inténtalo de nuevo.",
+  "providerModelCatalogEmpty": "El proveedor aceptó la solicitud, pero no devolvió modelos.",
+  "providerVerificationAuthenticationFailed": "El proveedor rechazó esta clave. Revísala e inténtalo de nuevo.",
+  "providerVerificationRateLimited": "El límite de solicitudes del proveedor impidió la verificación. Inténtalo más tarde.",
+  "providerVerificationNetworkFailed": "No se pudo acceder al proveedor. Comprueba la red e inténtalo de nuevo.",
+  "providerConnectionVerificationFailed": "La verificación falló. Inténtalo de nuevo o revisa los ajustes del proveedor.",
+  "providerQuotaUnavailable": "OpenChat no muestra actualmente datos de cuota para este proveedor.",
   "favoriteModels": "Favoritos",
   "favoriteModelsEmpty": "Todavía no hay modelos favoritos.",
   "modelSearchHint": "Buscar modelos...",
@@ -403,11 +771,32 @@
   "modelDetailsPricingStale": "Se muestran precios guardados; models.dev no está disponible.",
   "modelDetailsPricingUnavailable": "No hay un precio exacto publicado para este modelo.",
   "modelDetailsPerMillion": "{value} / 1 millón de tokens",
-  "@modelDetailsPerMillion": { "placeholders": { "value": { "type": "String" } } },
+  "@modelDetailsPerMillion": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
   "modelDetailsTier": "Nivel de contexto · {context}",
-  "@modelDetailsTier": { "placeholders": { "context": { "type": "String" } } },
+  "@modelDetailsTier": {
+    "placeholders": {
+      "context": {
+        "type": "String"
+      }
+    }
+  },
   "modelDetailsInputOutputPrices": "Entrada {input} · salida {output}",
-  "@modelDetailsInputOutputPrices": { "placeholders": { "input": { "type": "String" }, "output": { "type": "String" } } },
+  "@modelDetailsInputOutputPrices": {
+    "placeholders": {
+      "input": {
+        "type": "String"
+      },
+      "output": {
+        "type": "String"
+      }
+    }
+  },
   "modelDetailsPricingSource": "Precios de lista en USD de models.dev, no una factura del proveedor.",
   "openCodeModelContextWindow": "Catálogo de OpenCode (Models.dev) · contexto: {value} tokens",
   "@openCodeModelContextWindow": {
@@ -500,15 +889,18 @@
   "responseVersionCount": "Respuesta {current} de {total}",
   "@responseVersionCount": {
     "placeholders": {
-      "current": { "type": "int" },
-      "total": { "type": "int" }
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
     }
   },
   "previousResponseVersion": "Respuesta anterior",
   "nextResponseVersion": "Respuesta siguiente",
   "providerRateLimited": "El proveedor ha informado de un límite de uso. Vuelve a intentarlo más tarde.",
   "providerAuthenticationRequired": "El proveedor rechazó la solicitud. Comprueba la conexión y el acceso al modelo.",
-  "providerRequestFailed": "El proveedor no pudo completar la respuesta. Tus mensajes guardados siguen disponibles.",
   "providerToolRequestRejected": "El proveedor rechazó una solicitud que incluía herramientas. Comprueba si el modelo admite herramientas o elige uno que lo indique.",
   "providerNetworkUnavailable": "No se pudo conectar con el proveedor. Comprueba tu conexión e inténtalo de nuevo.",
   "contextWindowExceeded": "La conversación es demasiado grande para la ventana de contexto de este modelo. Acorta el último mensaje o elige un modelo con una ventana de contexto mayor. Tu historial de chat está guardado.",
@@ -679,7 +1071,13 @@
   "titleSelectModelHint": "Elige un proveedor conectado o un modelo local",
   "titleLightweightUnavailable": "Ningún modelo disponible indica explícitamente su número de parámetros en el nombre. Puedes elegir uno directamente.",
   "titleLightweightModelSelected": "OpenChat eligió {model}, el modelo más pequeño con un número de parámetros conocido.",
-  "@titleLightweightModelSelected": { "placeholders": { "model": { "type": "String" } } },
+  "@titleLightweightModelSelected": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
   "titleUseConversationAccount": "Usar la cuenta de la conversación",
   "titleAccountUnavailable": "La cuenta seleccionada para los títulos no está disponible",
   "titleWorkspaceHint": "Elige un espacio de trabajo para los títulos",
@@ -713,6 +1111,20 @@
   "systemTheme": "Sistema",
   "lightTheme": "Claro",
   "darkTheme": "Oscuro",
+  "attachmentIndexTitle": "Buscar dentro de archivos de texto",
+  "attachmentIndexDescription": "Los archivos de texto compatibles se copian en un índice local, hasta 5.000 archivos o 100 MB. Los archivos originales no cambian; las imágenes no se indexan.",
+  "attachmentIndexSupportedTypes": "Tipos indexados: .txt, .md, .csv, .json, .jsonl, .xml, .html, .css, .js, .jsx, .ts, .tsx, .dart, .rs, .py, .go, .java, .kt, .swift, .c, .h, .cpp, .hpp, .cs, .sh, .ps1, .yaml, .yml, .toml, .ini, .sql, .log",
+  "attachmentIndexCount": "{count} archivos indexados",
+  "@attachmentIndexCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "attachmentIndexRebuild": "Reconstruir índice",
+  "attachmentIndexClear": "Borrar índice",
+  "attachmentIndexFailed": "No se pudo actualizar el índice de texto de los archivos.",
   "localData": "Datos locales",
   "conversationArchiveTitle": "Archivos de conversaciones",
   "conversationArchiveDescription": "Crea o restaura un archivo cifrado con las conversaciones seleccionadas de este dispositivo.",
@@ -724,7 +1136,13 @@
   "conversationArchiveSelectTitle": "Elige las conversaciones que quieres exportar",
   "conversationArchiveSearch": "Buscar conversaciones",
   "conversationArchiveSelectedCount": "{count, plural, =0{No hay conversaciones seleccionadas} one{# conversación seleccionada} other{# conversaciones seleccionadas}}",
-  "@conversationArchiveSelectedCount": {"placeholders": {"count": {"type": "int"}}},
+  "@conversationArchiveSelectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "conversationArchiveSelectAll": "Seleccionar todas las visibles",
   "conversationArchiveDeselectAll": "Deseleccionar todas las visibles",
   "conversationArchiveNoMatches": "No hay conversaciones coincidentes.",
@@ -738,9 +1156,21 @@
   "conversationArchiveChooseFolder": "Elige dónde guardar el archivo cifrado",
   "conversationArchiveChooseFile": "Elige un archivo de conversaciones de OpenChat",
   "conversationArchiveExportSuccess": "{count, plural, one{Se creó un archivo cifrado para # conversación.} other{Se creó un archivo cifrado para # conversaciones.}}",
-  "@conversationArchiveExportSuccess": {"placeholders": {"count": {"type": "int"}}},
+  "@conversationArchiveExportSuccess": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "conversationArchiveImportSuccess": "{count, plural, =0{No se importaron conversaciones.} one{Se importó # conversación.} other{Se importaron # conversaciones.}}",
-  "@conversationArchiveImportSuccess": {"placeholders": {"count": {"type": "int"}}},
+  "@conversationArchiveImportSuccess": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "conversationArchivePickerFailed": "No se pudo abrir el selector de archivos o carpetas.",
   "conversationArchiveInvalidFile": "El archivo seleccionado no tiene una ruta válida.",
   "conversationArchiveInvalidResponse": "El servicio de archivos devolvió datos no válidos.",
@@ -755,13 +1185,37 @@
   "profileArchiveChooseFolder": "Elige dónde guardar la copia cifrada del perfil",
   "profileArchiveChooseFile": "Elige una copia del perfil de OpenChat",
   "profileArchiveExportSuccess": "Copia cifrada creada: {conversationCount} conversaciones, {messageCount} mensajes y {attachmentCount} archivos adjuntos.",
-  "@profileArchiveExportSuccess": {"placeholders": {"conversationCount": {"type": "String"}, "messageCount": {"type": "String"}, "attachmentCount": {"type": "String"}}},
+  "@profileArchiveExportSuccess": {
+    "placeholders": {
+      "conversationCount": {
+        "type": "String"
+      },
+      "messageCount": {
+        "type": "String"
+      },
+      "attachmentCount": {
+        "type": "String"
+      }
+    }
+  },
   "profileArchiveRestoreConfirmTitle": "¿Reemplazar los datos de la aplicación?",
   "profileArchiveRestoreConfirmBody": "La copia seleccionada reemplazará la base de datos de conversaciones y sus archivos adjuntos la próxima vez que se inicie OpenChat. La base de datos y los adjuntos actuales se conservarán en una carpeta de recuperación. No se incluyen las credenciales, preferencias globales ni archivos de modelos o motores.",
   "profileArchiveRestoreConfirmButton": "Restaurar y cerrar OpenChat",
   "profileArchiveRestartTitle": "Cierra OpenChat para aplicar la copia",
   "profileArchiveRestoreReady": "La copia contiene {conversationCount} conversaciones, {messageCount} mensajes y {attachmentCount} archivos adjuntos. Cierra OpenChat ahora. Los datos restaurados se comprobarán al iniciar y el perfil actual se conservará para recuperarlo.",
-  "@profileArchiveRestoreReady": {"placeholders": {"conversationCount": {"type": "int"}, "messageCount": {"type": "int"}, "attachmentCount": {"type": "int"}}},
+  "@profileArchiveRestoreReady": {
+    "placeholders": {
+      "conversationCount": {
+        "type": "int"
+      },
+      "messageCount": {
+        "type": "int"
+      },
+      "attachmentCount": {
+        "type": "int"
+      }
+    }
+  },
   "profileArchiveCloseApp": "Cerrar OpenChat",
   "profileArchiveCloseFailed": "No se pudo cerrar OpenChat. Cierra la ventana para aplicar la copia.",
   "profileArchiveProcessing": "Se está cifrando o validando la copia del perfil. Las copias grandes pueden tardar varios minutos.",
@@ -824,8 +1278,14 @@
   "clearHistorySucceeded": "Se eliminó el historial de chats.",
   "clearHistoryFailed": "No se pudo eliminar el historial de chats. Vuelve a intentarlo.",
   "themeSaveFailed": "No se pudo guardar la preferencia de tema. Vuelve a intentarlo.",
-  "searchChats": "Buscar chats",
-  "searchChatsHint": "Buscar chats y mensajes",
+  "searchChats": "Buscar en OpenChat",
+  "searchChatsHint": "Buscar chats, proyectos, espacios de trabajo, respuestas guardadas y nombres de archivo",
+  "searchFilterAll": "Todo",
+  "searchFilterChats": "Chats",
+  "searchFilterProjects": "Proyectos",
+  "searchFilterWorkspaces": "Espacios de trabajo",
+  "searchFilterSavedResponses": "Respuestas guardadas",
+  "searchFilterAttachments": "Archivos adjuntos",
   "searchMessagesTooltip": "Buscar mensajes",
   "historySearchDateFilter": "Filtrar por fecha",
   "historySearchDateFilterApplied": "El filtro de fecha está activo",
@@ -858,9 +1318,21 @@
   "conversationBookmarkFailed": "No se pudo actualizar el marcador de la conversación.",
   "conversationBookmarked": "En marcadores",
   "selectConversation": "Seleccionar {title}",
-  "@selectConversation": {"placeholders": {"title": {"type": "String"}}},
+  "@selectConversation": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "conversationsSelected": "{count, plural, =0{No hay chats seleccionados} one{# chat seleccionado} other{# chats seleccionados}}",
-  "@conversationsSelected": {"placeholders": {"count": {"type": "int"}}},
+  "@conversationsSelected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "historySearchAllTags": "Todas las etiquetas",
   "historySearchAllStatuses": "Todas las conversaciones",
   "historySearchActiveConversations": "Conversaciones activas",
@@ -872,7 +1344,7 @@
   "historySearchClearDateFilter": "Quitar filtro de fecha",
   "searchMessagesHeader": "Coincidencias en mensajes",
   "searchMessagesLoading": "Buscando mensajes y conversaciones…",
-  "searchMessagesNoResults": "No hay mensajes ni conversaciones coincidentes.",
+  "searchMessagesNoResults": "No se encontraron elementos coincidentes.",
   "searchMessagesTooShort": "Escribe al menos dos caracteres para buscar.",
   "searchMessagesTooLong": "El texto de búsqueda no puede superar los 512 caracteres.",
   "searchMessagesFailed": "La búsqueda falló. Inténtalo de nuevo.",
@@ -901,6 +1373,23 @@
   "projectOptions": "Opciones del proyecto",
   "projectToolRulesTitle": "Permisos de herramientas del proyecto",
   "projectToolRulesDescription": "Elige una regla para cada herramienta. Las herramientas sin regla usan el permiso global. Permitir sigue respetando el alcance de archivos y el aislamiento de procesos.",
+  "projectToolRulesSummaryLoading": "Cargando las reglas de permisos de herramientas de este proyecto.",
+  "projectToolRulesSummaryUnavailable": "No se pudo cargar el resumen de permisos de herramientas de este proyecto.",
+  "projectToolRulesSummaryInherit": "Este proyecto no tiene excepciones. Todas las herramientas usan el permiso global.",
+  "projectToolRulesSummary": "Reglas del proyecto: {allowed} permiten, {approval} requieren aprobación y {denied} bloquean. Las herramientas sin regla usan el modo global.",
+  "@projectToolRulesSummary": {
+    "placeholders": {
+      "allowed": {
+        "type": "int"
+      },
+      "approval": {
+        "type": "int"
+      },
+      "denied": {
+        "type": "int"
+      }
+    }
+  },
   "projectToolRuleInherit": "Usar el ajuste global",
   "projectToolRuleAsk": "Pedir aprobación",
   "projectToolRuleAllow": "Permitir",
@@ -914,7 +1403,13 @@
   "projectDefaultModelSelectFirst": "Selecciona un modelo antes de establecer el predeterminado del proyecto.",
   "projectDefaultModelSaveFailed": "No se pudo guardar el modelo predeterminado del proyecto.",
   "projectDefaultModelSaved": "El modelo predeterminado del proyecto es {model}.",
-  "@projectDefaultModelSaved": {"placeholders": {"model": {"type": "String"}}},
+  "@projectDefaultModelSaved": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
   "projectDefaultModelCleared": "Se borró el modelo predeterminado del proyecto.",
   "projectOptionsToolPermissions": "Permisos de herramientas",
   "projectOptionsMcpServers": "Servidores MCP",
@@ -937,7 +1432,13 @@
   "projectIndexActionFailed": "La operación del índice del proyecto falló.",
   "projectIndexStale": "El índice del proyecto está incompleto. Sincronízalo en las opciones del proyecto o desactívalo.",
   "projectIndexStatus": "Estado: {status}. Archivos: {files}. Bytes indexados: {bytes}.",
-  "@projectIndexStatus": { "placeholders": { "status": {}, "files": {}, "bytes": {} } },
+  "@projectIndexStatus": {
+    "placeholders": {
+      "status": {},
+      "files": {},
+      "bytes": {}
+    }
+  },
   "projectSkillsTitle": "Skills del proyecto",
   "projectSkillsDescription": "Elige Skills del proyecto en .openchat/skills/<id>/SKILL.md. El contenido seleccionado se envía con las respuestas nuevas. La selección se guarda localmente para este proyecto.",
   "projectSkillsEmpty": "No se encontraron Skills. Añade un archivo SKILL.md en .openchat/skills/<id>/.",
@@ -945,7 +1446,16 @@
   "projectSkillsSaveFailed": "No se pudo guardar la selección de Skills del proyecto.",
   "projectSkillsClearSelection": "Borrar selección",
   "projectSkillsStale": "Este Skill seleccionado ya no está disponible. Desmárcalo para borrar la selección guardada.",
-  "@projectInstructionsSize": { "placeholders": { "bytes": { "type": "int" }, "maxBytes": { "type": "int" } } },
+  "@projectInstructionsSize": {
+    "placeholders": {
+      "bytes": {
+        "type": "int"
+      },
+      "maxBytes": {
+        "type": "int"
+      }
+    }
+  },
   "projectMcpTitle": "Servidores MCP del proyecto",
   "projectMcpDescription": "Configura servidores MCP locales por stdio para este proyecto. Los servidores habilitados solo se inician cuando un chat compatible con herramientas necesita sus herramientas.",
   "projectMcpPermissionsLocal": "Los permisos se guardan localmente para este proyecto y no se almacenan en el repositorio.",
@@ -963,7 +1473,13 @@
   "projectMcpCheck": "Comprobar conexión",
   "projectMcpChecking": "Comprobando conexión…",
   "projectMcpConnected": "Conectado; se encontraron {count} herramientas",
-  "@projectMcpConnected": { "placeholders": { "count": { "type": "int" } } },
+  "@projectMcpConnected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "projectMcpCheckFailed": "No se pudo iniciar el servidor ni obtener su lista de herramientas.",
   "projectMcpLoadFailed": "No se pudo cargar el catálogo MCP del proyecto. Comprueba si `.openchat/mcp.json` contiene entradas no válidas o inseguras.",
   "projectMcpSaveFailed": "No se pudo guardar el catálogo MCP. Comprueba los ID de servidor y las rutas absolutas del programa.",
@@ -1002,18 +1518,42 @@
   "projectWorktreeOperationFailed": "La operación de Git falló. Comprueba el estado del repositorio e inténtalo de nuevo.",
   "projectWorktreeNotRepository": "Esta carpeta del proyecto no está dentro de un repositorio de Git.",
   "projectWorktreeBranch": "Rama: {branch}",
-  "@projectWorktreeBranch": { "placeholders": { "branch": { "type": "String" } } },
+  "@projectWorktreeBranch": {
+    "placeholders": {
+      "branch": {
+        "type": "String"
+      }
+    }
+  },
   "projectWorktreePath": "Carpeta: {path}",
-  "@projectWorktreePath": { "placeholders": { "path": { "type": "String" } } },
+  "@projectWorktreePath": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
   "projectWorktreeStatusClean": "No hay cambios sin confirmar",
   "projectWorktreeStatusChanges": "Archivos modificados: {count}",
-  "@projectWorktreeStatusChanges": { "placeholders": { "count": { "type": "int" } } },
+  "@projectWorktreeStatusChanges": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "projectWorktreeReview": "Revisar cambios",
   "projectWorktreeUse": "Usar como proyecto",
   "projectWorktreeRemove": "Eliminar worktree",
   "projectWorktreeRemoveTitle": "¿Eliminar worktree?",
   "projectWorktreeRemoveDescription": "Se descartarán los archivos sin confirmar y sin seguimiento de {branch}. La rama y sus commits se conservarán.",
-  "@projectWorktreeRemoveDescription": { "placeholders": { "branch": { "type": "String" } } },
+  "@projectWorktreeRemoveDescription": {
+    "placeholders": {
+      "branch": {
+        "type": "String"
+      }
+    }
+  },
   "projectWorktreeReviewTitle": "Cambios del worktree",
   "projectWorktreeNoChanges": "No hay cambios sin confirmar. Los commits están en esta rama.",
   "projectWorktreeStagedDiff": "Cambios preparados",
@@ -1027,21 +1567,45 @@
   "projectWorktreeTaskConfirmationTitle": "¿Ejecutar esta comprobación?",
   "projectWorktreeTaskCommand": "Comando",
   "projectWorktreeTaskTimeout": "Límite de tiempo: {seconds} segundos",
-  "@projectWorktreeTaskTimeout": { "placeholders": { "seconds": { "type": "int" } } },
+  "@projectWorktreeTaskTimeout": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
   "projectWorktreeTaskRun": "Ejecutar comprobación",
   "projectWorktreeTaskRunning": "Comprobación en curso: {task}",
-  "@projectWorktreeTaskRunning": { "placeholders": { "task": { "type": "String" } } },
+  "@projectWorktreeTaskRunning": {
+    "placeholders": {
+      "task": {
+        "type": "String"
+      }
+    }
+  },
   "projectWorktreeTaskStopping": "Deteniendo comprobación…",
   "projectWorktreeTaskStop": "Detener comprobación",
   "projectWorktreeTaskCancelled": "La comprobación se canceló.",
   "projectWorktreeTaskTimedOut": "La comprobación alcanzó su límite de tiempo.",
   "projectWorktreeTaskExitCode": "La comprobación terminó con el código {code}.",
-  "@projectWorktreeTaskExitCode": { "placeholders": { "code": { "type": "int" } } },
+  "@projectWorktreeTaskExitCode": {
+    "placeholders": {
+      "code": {
+        "type": "int"
+      }
+    }
+  },
   "projectWorktreeTaskExitCodeUnavailable": "La comprobación terminó sin un código de salida.",
   "projectWorktreeTaskOutputTruncated": "La salida está limitada a los primeros 128 KiB.",
   "projectWorktreeTaskRunFailed": "No se pudo ejecutar la comprobación en el espacio aislado del worktree.",
   "projectWorktreeTaskResultTitle": "Resultado de la comprobación: {task}",
-  "@projectWorktreeTaskResultTitle": { "placeholders": { "task": { "type": "String" } } },
+  "@projectWorktreeTaskResultTitle": {
+    "placeholders": {
+      "task": {
+        "type": "String"
+      }
+    }
+  },
   "projectWorktreeTaskOutput": "Salida",
   "projectWorktreeTaskNoOutput": "La comprobación no produjo salida.",
   "projectWorktreeTaskDenied": "Los permisos del proyecto impiden ejecutar comprobaciones con nombre.",
@@ -1061,11 +1625,23 @@
   "agentRunStatusCancelled": "Cancelada",
   "agentRunSubagent": "Ejecución secundaria",
   "agentRunSubagentTask": "Tarea secundaria: {objective}",
-  "@agentRunSubagentTask": {"placeholders": {"objective": {"type": "String"}}},
+  "@agentRunSubagentTask": {
+    "placeholders": {
+      "objective": {
+        "type": "String"
+      }
+    }
+  },
   "agentRunLiveStarting": "Iniciando el análisis delegado…",
   "agentRunLiveThinking": "Analizando la tarea delegada…",
   "agentRunLiveUsingTool": "Usando {tool}",
-  "@agentRunLiveUsingTool": {"placeholders": {"tool": {"type": "String"}}},
+  "@agentRunLiveUsingTool": {
+    "placeholders": {
+      "tool": {
+        "type": "String"
+      }
+    }
+  },
   "agentRunEndedInAnotherChat": "Terminó una ejecución en otro chat.",
   "newProjectConversation": "Iniciar un chat de proyecto nuevo",
   "newConversation": "Iniciar una conversación nueva",
@@ -1317,11 +1893,29 @@
   },
   "conversationMemorySearchTitle": "Buscar en el archivo",
   "conversationWorkspaceContext": "Espacio de trabajo: {workspace}",
-  "@conversationWorkspaceContext": { "placeholders": { "workspace": { "type": "String" } } },
+  "@conversationWorkspaceContext": {
+    "placeholders": {
+      "workspace": {
+        "type": "String"
+      }
+    }
+  },
   "outputSourceProvider": "Proveedor: {provider}",
-  "@outputSourceProvider": { "placeholders": { "provider": { "type": "String" } } },
+  "@outputSourceProvider": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
   "outputSourceModel": "Modelo: {model}",
-  "@outputSourceModel": { "placeholders": { "model": { "type": "String" } } },
+  "@outputSourceModel": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
   "conversationMemorySearching": "Buscando en el archivo de conversaciones…",
   "conversationMemorySearchHint": "Introduce un tema o una frase anterior...",
   "conversationMemorySearchAction": "Buscar",
@@ -1394,7 +1988,9 @@
   "restoreWindow": "Restaurar ventana",
   "modelSelection": "Elegir modelo",
   "noModelConnected": "Todavía no hay ningún modelo conectado",
-  "noModelConnectedBody": "Conecta un proveedor y elige uno de sus modelos para iniciar una conversación.",
+  "noModelConnectedBody": "En Conexiones, inicia sesión en ChatGPT, añade una clave API de un proveedor compatible o elige un modelo local disponible. Verifica la conexión y selecciona un modelo abajo.",
+  "providerNeedsVerificationTitle": "Comprueba la conexión del proveedor",
+  "providerNeedsVerificationBody": "Tener una sesión o clave API guardada no confirma que se pueda acceder al proveedor. Abre Conexiones para verificarla y actualizar su lista de modelos.",
   "close": "Cerrar",
   "reasoning": "Razonamiento",
   "reasoningMedium": "Medio",
@@ -1451,11 +2047,19 @@
   "unavailableValue": "—",
   "responseTokenRate": "{rate} tok/s",
   "@responseTokenRate": {
-    "placeholders": { "rate": { "type": "String" } }
+    "placeholders": {
+      "rate": {
+        "type": "String"
+      }
+    }
   },
   "responseTokenCount": "{count} tokens",
   "@responseTokenCount": {
-    "placeholders": { "count": { "type": "String" } }
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
   },
   "responseCompleted": "Respuesta completada",
   "responseCompletedWithDuration": "Respuesta completada · {duration}",
@@ -1479,7 +2083,13 @@
   "toolRunning": "En ejecución",
   "unknownTool": "Otra herramienta",
   "terminalSession": "Terminal · {terminal}",
-  "@terminalSession": { "placeholders": { "terminal": { "type": "String" } } },
+  "@terminalSession": {
+    "placeholders": {
+      "terminal": {
+        "type": "String"
+      }
+    }
+  },
   "toolWaitingForUser": "Esperando tu respuesta",
   "toolCompleted": "Completado",
   "toolFailed": "Error",
@@ -1494,7 +2104,13 @@
   "toolExecuteCommand": "Ejecutar comando",
   "toolRunProjectTask": "Ejecutar tarea del proyecto",
   "toolConfiguredProjectTool": "Herramienta del proyecto: {name}",
-  "@toolConfiguredProjectTool": {"placeholders": {"name": {"type": "String"}}},
+  "@toolConfiguredProjectTool": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "toolDelegateTask": "Delegar análisis",
   "toolPermissionTask": "Tarea",
   "toolPermissionTimeout": "Tiempo límite (segundos)",
@@ -1519,12 +2135,20 @@
   "toolProviderSource": "Fuente del proveedor",
   "toolSourceRetrievedAt": "Consultado: {time}",
   "@toolSourceRetrievedAt": {
-    "placeholders": { "time": { "type": "String" } }
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
   },
   "toolSourceDetails": "Detalles de la fuente",
   "toolCitationSource": "Fuente {sourceId}",
   "@toolCitationSource": {
-    "placeholders": { "sourceId": { "type": "String" } }
+    "placeholders": {
+      "sourceId": {
+        "type": "String"
+      }
+    }
   },
   "toolWebSearchNoResults": "No se encontraron resultados web.",
   "toolWebSearchResultCount": "{count, plural, =0{0 resultados} one{1 resultado} other{{count} resultados}}",
@@ -1649,7 +2273,13 @@
   "statisticsProvider": "Proveedor",
   "statisticsRunId": "ID de ejecución",
   "statisticsRunIdValue": "ID de ejecución: {runId}",
-  "@statisticsRunIdValue": { "placeholders": { "runId": { "type": "String" } } },
+  "@statisticsRunIdValue": {
+    "placeholders": {
+      "runId": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsModel": "Modelo",
   "statisticsOperation": "Tipo de operación",
   "statisticsReasoningEffort": "Nivel de razonamiento",
@@ -1675,17 +2305,50 @@
   "statisticsOutputCoverage": "Solicitudes con tokens de salida informados",
   "statisticsReasoningCoverage": "Solicitudes con tokens de razonamiento informados",
   "statisticsCoverageText": "El proveedor devolvió el uso de tokens en {reported} de {total} solicitudes.",
-  "@statisticsCoverageText": { "placeholders": { "total": { "type": "int" }, "reported": { "type": "int" } } },
+  "@statisticsCoverageText": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "reported": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsProviderReportedCost": "Coste informado por el proveedor",
   "statisticsCostCoverage": "Hay datos de coste para {reported} solicitudes.",
-  "@statisticsCostCoverage": { "placeholders": { "reported": { "type": "int" } } },
+  "@statisticsCostCoverage": {
+    "placeholders": {
+      "reported": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsModelsDevCatalogCost": "Coste según los precios de lista de models.dev",
   "statisticsModelsDevCatalogCostCoverage": "Equivalente al precio de lista calculado para {priced} solicitudes.",
-  "@statisticsModelsDevCatalogCostCoverage": { "placeholders": { "priced": { "type": "int" } } },
+  "@statisticsModelsDevCatalogCostCoverage": {
+    "placeholders": {
+      "priced": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsModelsDevPricingCurrent": "Catálogo de precios de models.dev obtenido el {date}.",
-  "@statisticsModelsDevPricingCurrent": { "placeholders": { "date": { "type": "String" } } },
+  "@statisticsModelsDevPricingCurrent": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsModelsDevPricingStale": "models.dev no está disponible; se usan los precios guardados del {date}.",
-  "@statisticsModelsDevPricingStale": { "placeholders": { "date": { "type": "String" } } },
+  "@statisticsModelsDevPricingStale": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsModelsDevPricingUnavailable": "Los precios de models.dev no están disponibles. No se calculan costes sin una coincidencia exacta de proveedor y modelo.",
   "statisticsUsageTrend": "Uso a lo largo del tiempo",
   "statisticsDaily": "Diario",
@@ -1706,28 +2369,94 @@
   "statisticsRequestPayload": "Datos de la solicitud enviada",
   "statisticsRequestContextUnavailable": "El resumen de la solicitud enviada no está disponible.",
   "statisticsRequestSourceMessages": "Identificadores de mensajes incluidos: {ids}",
-  "@statisticsRequestSourceMessages": { "placeholders": { "ids": { "type": "String" } } },
+  "@statisticsRequestSourceMessages": {
+    "placeholders": {
+      "ids": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestArchivedMessages": "Identificadores de mensajes recuperados: {ids}",
-  "@statisticsRequestArchivedMessages": { "placeholders": { "ids": { "type": "String" } } },
+  "@statisticsRequestArchivedMessages": {
+    "placeholders": {
+      "ids": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestSummaryBoundary": "El resumen incluye mensajes hasta: {id}",
-  "@statisticsRequestSummaryBoundary": { "placeholders": { "id": { "type": "String" } } },
+  "@statisticsRequestSummaryBoundary": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestSourceAttachments": "Archivos adjuntos enviados: {files}",
-  "@statisticsRequestSourceAttachments": { "placeholders": { "files": { "type": "String" } } },
+  "@statisticsRequestSourceAttachments": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestSourcesTruncated": "Este registro omite algunos detalles de las fuentes.",
   "statisticsRequestMessageCount": "Mensajes enviados: {count}",
-  "@statisticsRequestMessageCount": { "placeholders": { "count": { "type": "int" } } },
+  "@statisticsRequestMessageCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsRequestImageCount": "Imágenes enviadas: {count}",
-  "@statisticsRequestImageCount": { "placeholders": { "count": { "type": "int" } } },
+  "@statisticsRequestImageCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsRequestToolResultCount": "Resultados de herramientas enviados: {count}",
-  "@statisticsRequestToolResultCount": { "placeholders": { "count": { "type": "int" } } },
+  "@statisticsRequestToolResultCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsRequestInstructionBytes": "Tamaño de instrucciones: {count} bytes",
-  "@statisticsRequestInstructionBytes": { "placeholders": { "count": { "type": "int" } } },
+  "@statisticsRequestInstructionBytes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsRequestRoles": "Roles de mensajes: {roles}",
-  "@statisticsRequestRoles": { "placeholders": { "roles": { "type": "String" } } },
+  "@statisticsRequestRoles": {
+    "placeholders": {
+      "roles": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestTools": "Definiciones de herramientas: {names}",
-  "@statisticsRequestTools": { "placeholders": { "names": { "type": "String" } } },
+  "@statisticsRequestTools": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestCacheControls": "Controles de caché: {names}",
-  "@statisticsRequestCacheControls": { "placeholders": { "names": { "type": "String" } } },
+  "@statisticsRequestCacheControls": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsNone": "Ninguno",
   "statisticsRequestTime": "Hora de la solicitud",
   "statisticsConversationTitle": "Título de la conversación",
@@ -1735,7 +2464,19 @@
   "statisticsUsageSource": "Origen de los datos de uso",
   "statisticsNoRequestData": "Ninguna solicitud coincide con estos filtros.",
   "statisticsShowingRows": "{start} - {end} de {total}",
-  "@statisticsShowingRows": { "placeholders": { "start": { "type": "int" }, "end": { "type": "int" }, "total": { "type": "int" } } },
+  "@statisticsShowingRows": {
+    "placeholders": {
+      "start": {
+        "type": "int"
+      },
+      "end": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsExportCsv": "Exportar CSV",
   "statisticsExporting": "Exportando",
   "statisticsExported": "Las estadísticas se exportaron a un archivo CSV.",
@@ -1796,8 +2537,6 @@
     }
   },
   "modelFormatGguf": "GGUF · llama.cpp",
-  "modelFormatTransformers": "Transformers · vLLM",
-  "modelFormatExllama": "ExLlama · EXL3",
   "huggingFaceModelSearchHint": "Buscar modelos",
   "otherProvider": "Otro proveedor",
   "modelSearchRefresh": "Actualizar resultados de modelos",
@@ -1870,15 +2609,29 @@
   "userQuestionResumeFailed": "La respuesta está guardada, pero el asistente no pudo continuar. Inténtalo de nuevo.",
   "userQuestionNotificationTitle": "OpenChat te está esperando",
   "userQuestionNotificationBody": "La IA está esperando tu respuesta.",
+  "notificationResponseReady": "Hay una respuesta lista.",
   "assistantResponseNotificationReplyEmpty": "Escribe una respuesta antes de enviarla.",
   "assistantResponseNotificationReplyTooLong": "Esta respuesta es demasiado larga para enviarla desde una notificación. Usa el campo de mensaje del chat.",
   "assistantResponseNotificationReplyUnavailable": "La notificación ya no está actualizada o el chat no está disponible. Abre el chat y envía un mensaje nuevo.",
   "assistantResponseNotificationReplyNotSent": "No se pudo enviar la respuesta rápida. Revisa el chat e inténtalo de nuevo.",
   "fileChangesSummary": "{count, plural, one{# archivo cambiado} other{# archivos cambiados}}",
-  "@fileChangesSummary": { "placeholders": { "count": { "type": "int" } } },
+  "@fileChangesSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "fileChangesLineCounts": "+{added} / -{removed}",
   "@fileChangesLineCounts": {
-    "placeholders": { "added": { "type": "int" }, "removed": { "type": "int" } }
+    "placeholders": {
+      "added": {
+        "type": "int"
+      },
+      "removed": {
+        "type": "int"
+      }
+    }
   },
   "fileChangesSomeCountsUnavailable": "No se pudo calcular el número de líneas",
   "fileChangesView": "Ver cambios",
@@ -1898,7 +2651,13 @@
   "fileChangesReverted": "Revertido",
   "fileChangesRevert": "Revertir",
   "fileChangesMoreFiles": "{count, plural, one{# archivo más} other{# archivos más}}",
-  "@fileChangesMoreFiles": { "placeholders": { "count": { "type": "int" } } },
+  "@fileChangesMoreFiles": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "fileChangesUnavailableTitle": "Cambios no disponibles",
   "slashCommandPlanLabel": "Plan",
   "slashCommandGoalLabel": "Objetivo",
@@ -1952,7 +2711,99 @@
   "goalResumeAction": "Reanudar objetivo",
   "goalStopAction": "Detener objetivo",
   "goalElapsedTime": "Tiempo transcurrido: {time}",
-  "@goalElapsedTime": { "placeholders": { "time": { "type": "String" } } },
+  "@goalElapsedTime": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "goalTasksCount": "Tareas: {completed} de {total}",
-  "@goalTasksCount": { "placeholders": { "completed": { "type": "int" }, "total": { "type": "int" } } }
+  "@goalTasksCount": {
+    "placeholders": {
+      "completed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "supportDiagnosticsTitle": "Diagnóstico de soporte",
+  "supportDiagnosticsDescription": "Revisa el estado de la aplicación y el almacenamiento antes de guardar el archivo de soporte.",
+  "reviewSupportDiagnostics": "Revisar exportación",
+  "supportDiagnosticsPreviewTitle": "Revisar diagnóstico de soporte",
+  "supportDiagnosticsPreviewDescription": "El archivo incluye los datos siguientes. Se excluyen el contenido de chats, las credenciales y las rutas de archivos.",
+  "supportDiagnosticsExportAction": "Guardar JSON",
+  "supportDiagnosticsSaved": "Diagnóstico de soporte guardado.",
+  "supportDiagnosticsLoadFailed": "No se pudo cargar el diagnóstico. Comprueba el servicio local e inténtalo de nuevo.",
+  "supportDiagnosticsInvalidResponse": "El servicio local devolvió datos de diagnóstico inesperados.",
+  "supportDiagnosticsExportFailed": "No se pudo guardar el archivo de diagnóstico de soporte.",
+  "supportDiagnosticsPrivacyNote": "Solo se guardan los campos de la vista previa. El archivo no se envía a OpenChat.",
+  "supportDiagnosticsPreparing": "Preparando…",
+  "settingsConnectors": "Conectores",
+  "settingsConnectorsDescription": "Administra plantillas locales y añádelas a proyectos.",
+  "connectorCatalogIntro": "Guarda en esta aplicación los datos de conexión MCP que quieras reutilizar. Los servidores añadidos a un proyecto quedan desactivados; las credenciales y los permisos se mantienen en ese proyecto.",
+  "connectorCatalogEmpty": "Aún no se han añadido plantillas de conexión.",
+  "connectorCatalogAdd": "Añadir plantilla",
+  "connectorCatalogEdit": "Editar plantilla",
+  "connectorCatalogDelete": "Eliminar plantilla",
+  "connectorCatalogDeleteConfirm": "La plantilla se quitará de la aplicación. Los conectores ya añadidos a proyectos seguirán allí.",
+  "connectorCatalogInstall": "Añadir al proyecto activo",
+  "connectorCatalogNoProject": "Abre un proyecto para añadirle un conector.",
+  "connectorCatalogSecurityNotice": "Las plantillas se guardan localmente sin valores secretos. Al añadirla, el servidor del proyecto queda desactivado y sus herramientas requieren aprobación. OpenChat no descarga ni verifica el software del servidor.",
+  "connectorCatalogName": "Nombre de la plantilla",
+  "connectorCatalogId": "ID del servidor",
+  "connectorCatalogPublisher": "Editor declarado",
+  "connectorCatalogSourceUrl": "URL de origen",
+  "connectorCatalogDataDisclosure": "Datos que puede recibir este conector",
+  "connectorCatalogTransport": "Tipo de conexión",
+  "connectorCatalogProgram": "Ruta absoluta del programa",
+  "connectorCatalogArguments": "Argumentos, uno por línea",
+  "connectorCatalogEnvironmentVariables": "Nombres de variables de credenciales, uno por línea",
+  "connectorCatalogEndpoint": "Punto de conexión HTTPS",
+  "connectorCatalogAuthVariable": "Nombre de la variable de credenciales",
+  "connectorCatalogSave": "Guardar plantilla",
+  "connectorCatalogInstallPrompt": "Revisa el editor, el destino y la información sobre los datos. El servidor se añadirá desactivado y sus herramientas requerirán aprobación. Las llamadas pueden enviar sus argumentos al conector y sus resultados al proveedor del modelo seleccionado.",
+  "connectorCatalogInvalid": "Revisa los campos obligatorios, las URL HTTPS, el ID y los datos de conexión.",
+  "connectorCatalogDuplicate": "Otra plantilla o servidor del proyecto ya usa este ID o nombre.",
+  "connectorCatalogLoadFailed": "No se pudo leer el catálogo local de conectores.",
+  "connectorCatalogSaveFailed": "No se pudo guardar la plantilla de conexión.",
+  "connectorCatalogInstallFailed": "No se pudo añadir el conector al proyecto. Revisa el servicio local y la configuración del proyecto.",
+  "connectorCatalogInstalled": "El conector desactivado se añadió al proyecto. Si hace falta, añade las credenciales en la configuración MCP del proyecto.",
+  "connectorCatalogSearch": "Buscar plantillas",
+  "connectorCatalogNoResults": "No hay plantillas que coincidan con esta búsqueda.",
+  "connectorCatalogVersion": "Versión declarada",
+  "connectorCatalogRequestedAccess": "Acceso solicitado",
+  "connectorCatalogAuthentication": "Autenticación",
+  "connectorCatalogNoBearerCredential": "No se declara ninguna credencial Bearer. El servidor aún puede aplicar su propia política de acceso.",
+  "connectorCatalogProjectBearerCredential": "Si se configura, la credencial Bearer se limita a este proyecto y servidor, y se envía a este punto HTTPS al conectarse.",
+  "connectorCatalogNoCredentialVariables": "Este proceso local no solicita variables de entorno.",
+  "connectorCatalogProjectEnvironmentCredentials": "Al configurarse, los valores de entorno declarados se limitan a este proyecto y servidor, y solo se pasan a su proceso local.",
+  "connectorCatalogRemovalImpact": "Eliminar esta plantilla no quita los servidores de los proyectos ni sus credenciales guardadas. Quítalos por separado en la configuración MCP del proyecto.",
+  "libraryTabModels": "Modelos",
+  "libraryTabMcp": "Herramientas MCP",
+  "libraryTabPrompts": "Instrucciones (Próximamente)",
+  "libraryTabPersonalities": "Personalidades (Próximamente)",
+  "mcpCatalogDescription": "Descubre, instala y configura servidores Model Context Protocol.",
+  "mcpSearchHint": "Buscar herramientas MCP...",
+  "mcpInstalled": "Instalado",
+  "mcpNotInstalled": "No instalado",
+  "mcpActive": "Activo (Añadido a instrucciones)",
+  "mcpInactive": "Inactivo",
+  "mcpInstall": "Instalar",
+  "mcpConfigureEnv": "Variables de entorno (Env)",
+  "mcpEnvDialogTitle": "Variables de entorno MCP",
+  "mcpEnvDialogDescription": "Estos valores se almacenan de forma segura con el Administrador de credenciales de Windows.",
+  "mcpEnvSaveSuccess": "Variables de entorno guardadas de forma segura.",
+  "mcpEnabledSuccess": "Herramienta MCP activada y añadida a las instrucciones.",
+  "mcpDisabledSuccess": "Herramienta MCP desactivada y eliminada de las instrucciones.",
+  "mcpNoToolsFound": "No se encontraron herramientas para este MCP.",
+  "mcpUninstall": "Desinstalar",
+  "mcpUninstallConfirm": "¿Estás seguro de que deseas desinstalar esta herramienta MCP?",
+  "mcpDiscoverTools": "Obtener definiciones",
+  "mcpDiscovering": "Obteniendo definiciones...",
+  "mcpDiscoverSuccess": "Definiciones de herramientas obtenidas con éxito.",
+  "mcpDiscoverFailed": "No se pudieron obtener las definiciones de herramientas. Verifique el comando y las variables de entorno.",
+  "mcpNoToolsDiscovered": "Aún no se han obtenido definiciones de herramientas."
 }

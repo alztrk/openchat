@@ -12,6 +12,8 @@ import 'package:openchat/app/openchat_select.dart';
 import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/safe_markdown.dart';
 import 'package:openchat/features/chat/presentation/widgets/chat_surface_card.dart';
+import 'package:openchat/features/mcp/data/global_mcp_repository.dart';
+import 'package:openchat/features/mcp/presentation/widgets/mcp_catalog_view.dart';
 import 'package:openchat/features/models/data/hugging_face_models_repository.dart';
 import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
@@ -38,7 +40,11 @@ class ModelsPage extends StatefulWidget {
   State<ModelsPage> createState() => _ModelsPageState();
 }
 
+enum LibraryTab { models, mcpTools }
+
 class _ModelsPageState extends State<ModelsPage> {
+  LibraryTab _activeTab = LibraryTab.models;
+  late final GlobalMcpRepository _mcpRepository = GlobalMcpRepository();
   final TextEditingController _searchController = TextEditingController();
   HuggingFaceModelFormat _format = HuggingFaceModelFormat.gguf;
   HuggingFaceModelSort _sort = HuggingFaceModelSort.downloads;
@@ -390,50 +396,118 @@ class _ModelsPageState extends State<ModelsPage> {
             children: [
               OpenChatPageHeader(
                 title: l10n.modelLibrary,
-                description: l10n.modelsPageDescription,
+                description: _activeTab == LibraryTab.models
+                    ? l10n.modelsPageDescription
+                    : l10n.mcpCatalogDescription,
                 focusNode: widget.pageHeadingFocusNode,
                 actions: [
-                  OutlinedButton.icon(
-                    onPressed: widget.onOpenLocalModels,
-                    icon: const Icon(LucideIcons.microchip),
-                    label: Text(l10n.localModelsPageTitle),
-                  ),
+                  if (_activeTab == LibraryTab.models)
+                    OutlinedButton.icon(
+                      onPressed: widget.onOpenLocalModels,
+                      icon: const Icon(LucideIcons.microchip),
+                      label: Text(l10n.localModelsPageTitle),
+                    ),
                 ],
               ),
-              const SizedBox(height: 20),
-              _formatSelector(palette),
-              const SizedBox(height: 14),
-              TextField(
-                controller: _searchController,
-                onChanged: _scheduleSearch,
-                onSubmitted: (_) => unawaited(_searchModels()),
-                decoration: InputDecoration(
-                  labelText: l10n.searchModels,
-                  hintText: l10n.huggingFaceModelSearchHint,
-                  prefixIcon: const Icon(LucideIcons.search),
-                  suffixIcon: _isSearching
-                      ? Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Semantics(
-                            liveRegion: true,
-                            label: l10n.modelsLoading,
-                            child: SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          ),
-                        )
-                      : IconButton(
-                          tooltip: l10n.modelSearchRefresh,
-                          onPressed: () => unawaited(_searchModels()),
-                          icon: const Icon(LucideIcons.refreshCw),
-                        ),
+              const SizedBox(height: 16),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildTabButton(
+                      palette: palette,
+                      label: l10n.libraryTabModels,
+                      icon: LucideIcons.cpu,
+                      selected: _activeTab == LibraryTab.models,
+                      onTap: () => setState(() => _activeTab = LibraryTab.models),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildTabButton(
+                      palette: palette,
+                      label: l10n.libraryTabMcp,
+                      icon: LucideIcons.blocks,
+                      selected: _activeTab == LibraryTab.mcpTools,
+                      onTap: () =>
+                          setState(() => _activeTab = LibraryTab.mcpTools),
+                    ),
+                    const SizedBox(width: 8),
+                    _buildTabButton(
+                      palette: palette,
+                      label: l10n.libraryTabPrompts,
+                      icon: LucideIcons.fileText,
+                      selected: false,
+                      disabled: true,
+                      onTap: () {},
+                    ),
+                    const SizedBox(width: 8),
+                    _buildTabButton(
+                      palette: palette,
+                      label: l10n.libraryTabPersonalities,
+                      icon: LucideIcons.userCheck,
+                      selected: false,
+                      disabled: true,
+                      onTap: () {},
+                    ),
+                  ],
                 ),
               ),
+              const SizedBox(height: 16),
+              if (_activeTab == LibraryTab.models) ...[
+                _formatSelector(palette),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _searchController,
+                  onChanged: _scheduleSearch,
+                  onSubmitted: (_) => unawaited(_searchModels()),
+                  decoration: InputDecoration(
+                    labelText: l10n.searchModels,
+                    hintText: l10n.huggingFaceModelSearchHint,
+                    prefixIcon: const Icon(LucideIcons.search),
+                    suffixIcon: _isSearching
+                        ? Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Semantics(
+                              liveRegion: true,
+                              label: l10n.modelsLoading,
+                              child: SizedBox(
+                                width: 16,
+                                height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            ),
+                          )
+                        : IconButton(
+                            tooltip: l10n.modelSearchRefresh,
+                            onPressed: () => unawaited(_searchModels()),
+                            icon: const Icon(LucideIcons.refreshCw),
+                          ),
+                  ),
+                ),
+              ],
             ],
           ),
         );
+
+        if (_activeTab == LibraryTab.mcpTools) {
+          return ColoredBox(
+            color: palette.surface,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                headerPadding,
+                0,
+                headerPadding,
+                32,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  header,
+                  McpCatalogView(repository: _mcpRepository),
+                ],
+              ),
+            ),
+          );
+        }
 
         final resultList = _buildResultList(palette);
         final details = _buildDetailsPanel(palette);
@@ -498,12 +572,63 @@ class _ModelsPageState extends State<ModelsPage> {
     );
   }
 
+  Widget _buildTabButton({
+    required OpenChatPalette palette,
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+    bool disabled = false,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: disabled ? null : onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? palette.selected : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: selected
+                  ? palette.accent.withValues(alpha: 0.4)
+                  : palette.border.withValues(alpha: 0.1),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: disabled
+                    ? palette.secondaryIcon.withValues(alpha: 0.4)
+                    : (selected ? palette.accentIcon : palette.secondaryIcon),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: OpenChatTypography.body,
+                  fontFamily: OpenChatTypography.uiFontFamily,
+                  color: disabled
+                      ? palette.secondaryText.withValues(alpha: 0.4)
+                      : (selected ? palette.text : palette.secondaryText),
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _formatSelector(OpenChatPalette palette) {
     final l10n = context.openchatL10n;
     final options = <(HuggingFaceModelFormat, String)>[
       (HuggingFaceModelFormat.gguf, l10n.modelFormatGguf),
-      (HuggingFaceModelFormat.transformers, l10n.modelFormatTransformers),
-      (HuggingFaceModelFormat.exllama, l10n.modelFormatExllama),
     ];
     return Wrap(
       spacing: 8,

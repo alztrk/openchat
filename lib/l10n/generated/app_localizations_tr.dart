@@ -16,6 +16,70 @@ class AppLocalizationsTr extends AppLocalizations {
   String get newChat => 'Yeni sohbet';
 
   @override
+  String get temporaryChatStart => 'Geçici sohbet';
+
+  @override
+  String get temporaryChatTitle => 'Geçici sohbet';
+
+  @override
+  String get temporaryChatEnd => 'Bitir';
+
+  @override
+  String temporaryChatNotice(String provider) {
+    return 'Bu sohbeti kaydetmediğiniz sürece geçmişe eklenmez. Mesajlar ve eklediğiniz dosyalar verileri nasıl saklayacağını belirleyen $provider sağlayıcısına gönderilir. Burada araçlar kullanılamaz.';
+  }
+
+  @override
+  String temporaryChatDisclosureTitle(String provider) {
+    return 'Bu mesaj $provider sağlayıcısına gönderilsin mi?';
+  }
+
+  @override
+  String temporaryChatDisclosureBody(String provider) {
+    return 'Mesajınız, eklediğiniz dosyalar ve bu geçici sohbetin geçmişi $provider sağlayıcısına gönderilecek. Verileri nasıl saklayacağını sağlayıcı belirler. Devam edilsin mi?';
+  }
+
+  @override
+  String get temporaryChatExitTitle => 'Geçici sohbetten çıkılsın mı?';
+
+  @override
+  String get temporaryChatExitBody =>
+      'Gönderilmiş mesajları geçmişe kaydedin, atın veya burada devam edin. Gönderilmemiş ekler çıkarken silinir.';
+
+  @override
+  String get temporaryChatSave => 'Geçmişe kaydet';
+
+  @override
+  String get temporaryChatDiscard => 'Sohbeti at';
+
+  @override
+  String get temporaryChatCancel => 'Sohbete devam et';
+
+  @override
+  String get temporaryChatSaveFailed =>
+      'Geçici sohbet kaydedilemedi. Sohbet hâlâ burada; yeniden deneyin veya atın.';
+
+  @override
+  String get temporaryChatConnectionRequired =>
+      'Geçici sohbet başlatmadan önce bir ChatGPT hesabı bağlayıp doğrulayın.';
+
+  @override
+  String get temporaryChatRemoveAttachmentsFirst =>
+      'Geçici sohbet başlatmadan önce bekleyen ekleri kaldırın.';
+
+  @override
+  String get temporaryChatStopBeforeLeaving =>
+      'Bu geçici sohbetten çıkmadan önce yanıtı durdurun.';
+
+  @override
+  String get temporaryChatMessageLimitReached =>
+      'Bu geçici sohbetin mesaj veya boyut sınırına ulaşıldı. Sohbeti kaydedin ya da yeni bir sohbet başlatın.';
+
+  @override
+  String get temporaryChatResponseFailed =>
+      'Yanıt alınamadı. Yeni bir mesaj gönderebilir veya yeniden deneyebilirsiniz.';
+
+  @override
   String get chats => 'Sohbetler';
 
   @override
@@ -112,6 +176,52 @@ class AppLocalizationsTr extends AppLocalizations {
   String get outputsLoading => 'Kaydedilmiş yanıtlar yükleniyor…';
 
   @override
+  String get attachments => 'Ekler';
+
+  @override
+  String get attachmentChooseFile => 'Dosya seç';
+
+  @override
+  String get attachmentChooseFromLibrary => 'Kitaplıktan seç';
+
+  @override
+  String get attachmentLibraryTitle => 'Sohbet dosyaları';
+
+  @override
+  String get attachmentLibraryDescription =>
+      'Sohbet dosyalarına göz atın ve kaynak sohbetlerine dönün.';
+
+  @override
+  String get attachmentLibraryEmpty =>
+      'Kullanılabilir kayıtlı sohbet dosyası yok.';
+
+  @override
+  String get attachmentLibraryUnavailable => 'Bu dosyaya artık erişilemiyor.';
+
+  @override
+  String get attachmentLibraryAllFilter => 'Tüm dosyalar';
+
+  @override
+  String get attachmentLibraryAvailableFilter => 'Mevcut';
+
+  @override
+  String get attachmentLibraryMissingFilter => 'Bulunamayan';
+
+  @override
+  String get attachmentLibraryOpenConversation => 'Kaynak sohbeti aç';
+
+  @override
+  String get attachmentLibraryLoading => 'Sohbet dosyaları yükleniyor';
+
+  @override
+  String get attachmentLibrarySearchHint =>
+      'Dosya veya sohbet adına göre filtrele';
+
+  @override
+  String get attachmentLibraryLoadFailed =>
+      'Daha fazla sohbet dosyası yüklenemedi. Yeniden deneyin.';
+
+  @override
   String get saveResponse => 'Yanıtı kaydet';
 
   @override
@@ -133,6 +243,86 @@ class AppLocalizationsTr extends AppLocalizations {
   String outputSavedAt(String date) {
     return 'Kaydedilme tarihi: $date';
   }
+
+  @override
+  String get outputWorkspaceOpen => 'Yanıtı düzenle';
+
+  @override
+  String get outputWorkspaceTitle => 'Yanıt çalışma alanı';
+
+  @override
+  String get outputWorkspaceDescription =>
+      'Bir çalışma kopyasını düzenleyin. Kaynak sohbet değişmeden kalır.';
+
+  @override
+  String get outputWorkspaceContentLabel => 'Yanıt içeriği';
+
+  @override
+  String get outputWorkspaceMarkdownSource => 'Markdown kaynağı';
+
+  @override
+  String get outputWorkspaceSource => 'Kaynak';
+
+  @override
+  String get outputWorkspaceLanguage => 'Dil';
+
+  @override
+  String get outputWorkspaceEdit => 'Düzenle';
+
+  @override
+  String get outputWorkspacePreview => 'Önizle';
+
+  @override
+  String outputWorkspaceVersion(int version) {
+    return 'Sürüm $version';
+  }
+
+  @override
+  String get outputWorkspaceSaveVersion => 'Yeni sürüm olarak kaydet';
+
+  @override
+  String get outputWorkspaceSaveFailed => 'Yeni sürüm kaydedilemedi.';
+
+  @override
+  String get outputWorkspaceExport => 'Markdown olarak dışa aktar';
+
+  @override
+  String get outputExportReviewTitle => 'Dışa aktarmadan önce gözden geçirin';
+
+  @override
+  String outputExportReviewScope(int version) {
+    return 'Yalnızca seçili yanıtın $version. sürümü dışa aktarılır. Kaynak sohbet ve diğer mesajlar dosyaya eklenmez.';
+  }
+
+  @override
+  String get outputExportReviewSensitiveNotice =>
+      'Markdown kopyası seçtiğiniz konuma yazılır. Yanıt hassas bilgiler içerebilir; sonradan silmek başka yerlere kopyalanmış dosyaları geri almaz.';
+
+  @override
+  String get outputWorkspaceExported => 'Yanıt sürümü dışa aktarıldı.';
+
+  @override
+  String get outputWorkspaceExportFailed => 'Yanıt sürümü dışa aktarılamadı.';
+
+  @override
+  String get outputWorkspaceVersionsFailed => 'Sürüm geçmişi yüklenemedi.';
+
+  @override
+  String get outputWorkspaceEmpty => 'Yanıt sürümü boş olamaz.';
+
+  @override
+  String get outputWorkspaceUnsavedTitle =>
+      'Kaydedilmemiş düzenlemeler silinsin mi?';
+
+  @override
+  String get outputWorkspaceUnsavedBody =>
+      'Bu düzenlemeler yeni bir sürüm olarak kaydedilmedi.';
+
+  @override
+  String get outputWorkspaceKeepEditing => 'Düzenlemeye devam et';
+
+  @override
+  String get outputWorkspaceDiscard => 'Düzenlemeleri sil';
 
   @override
   String get collapseSidebars => 'Kenar çubuklarını daralt';
@@ -171,13 +361,32 @@ class AppLocalizationsTr extends AppLocalizations {
   String get settingsDescription => 'Bağlantılar, görünüm ve yerel veriler';
 
   @override
-  String get settingsGeneral => 'Genel';
+  String get settingsAppearanceAccessibilityGroup =>
+      'Görünüm ve erişilebilirlik';
 
   @override
-  String get settingsAdvanced => 'Gelişmiş';
+  String get settingsChatBehaviorGroup => 'Sohbet davranışı';
 
   @override
-  String get settingsDataRecovery => 'Veri ve kurtarma';
+  String get settingsProvidersModelsGroup => 'Sağlayıcılar ve modeller';
+
+  @override
+  String get settingsToolsPermissionsGroup => 'Araçlar ve izinler';
+
+  @override
+  String get settingsNotificationsGroup => 'Bildirimler ve uyarılar';
+
+  @override
+  String get settingsDataPrivacyGroup => 'Veri ve gizlilik';
+
+  @override
+  String get settingsSearchPlaceholder => 'Ayarlarda ara';
+
+  @override
+  String get settingsSearchClear => 'Aramayı temizle';
+
+  @override
+  String get settingsSearchEmpty => 'Bu aramayla eşleşen ayar yok.';
 
   @override
   String get settingsAccountConnectionsHeading => 'Hesap bağlantıları';
@@ -256,11 +465,251 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get settingsConversationMemoryDescription =>
-      'Sohbet arşivini ve bağlam aramasını yönetin.';
+      'Kişisel belleği ve yerel sohbet arşivini yönetin.';
+
+  @override
+  String get personalMemoryDescription =>
+      'Seçtiğin bilgileri kaydet. Kişisel bellek açıkken bu bilgiler sonraki model isteklerine eklenir.';
+
+  @override
+  String get personalMemoryPrivacyNotice =>
+      'Kaydedilen kopyalar bu cihazda kalır. Özellik açıkken metinleri isteğinle birlikte sağlayıcıya gönderilir. Bilgileri buradan istediğin zaman inceleyebilir veya silebilirsin.';
+
+  @override
+  String get personalMemoryEnabled => 'Kişisel belleği kullan';
+
+  @override
+  String personalMemoryResponseLabel(int count) {
+    return 'Bellek · $count';
+  }
+
+  @override
+  String get personalMemorySourcesTitle =>
+      'Bu istekte gönderilen kayıtlı bilgiler';
+
+  @override
+  String get personalMemorySourcesDescription =>
+      'Bu kayıtlı bilgiler isteğe eklendi. Model bunların tümünü kullanmış olmayabilir.';
+
+  @override
+  String get personalMemorySourceUnavailable =>
+      'Bu bilgi kayıtlı bellekten sonradan düzenlendi veya silindi.';
+
+  @override
+  String get personalMemoryEnabledDescription =>
+      'Kaydettiğin bilgileri yeni isteklere ekle. Bu seçenek varsayılan olarak kapalıdır.';
+
+  @override
+  String get personalMemoryExcludeHereTooltip =>
+      'Kişisel belleği bu konuşmada kullanma';
+
+  @override
+  String get personalMemoryUseHereTooltip =>
+      'Kişisel belleği bu konuşmada kullan';
+
+  @override
+  String get personalMemoryFactsTitle => 'Kaydedilen bilgiler';
+
+  @override
+  String get personalMemoryEmpty => 'Henüz bilgi kaydetmedin.';
+
+  @override
+  String get personalMemoryAdd => 'Bilgi ekle';
+
+  @override
+  String get personalMemoryEdit => 'Bilgiyi düzenle';
+
+  @override
+  String get personalMemoryDelete => 'Bilgiyi sil';
+
+  @override
+  String get personalMemoryDeleteTitle => 'Kaydedilen bilgi silinsin mi?';
+
+  @override
+  String get personalMemoryDeleteConfirmation =>
+      'Bu bilgi cihazdan ve sonraki model isteklerinden kaldırılır.';
+
+  @override
+  String get personalMemoryDeleteConfirm => 'Sil';
+
+  @override
+  String get personalMemoryFactLabel => 'Hatırlanacak bilgi';
+
+  @override
+  String get personalMemoryFactHint =>
+      'Örneğin OpenChat\'in hatırlamasını istediğin bir tercih';
+
+  @override
+  String get personalMemoryLimitReached =>
+      'Kaydedilebilecek bilgi sınırına ulaştın.';
+
+  @override
+  String get personalMemoryLoadFailed => 'Kaydedilen bilgiler yüklenemedi.';
+
+  @override
+  String get personalMemorySaveFailed => 'Kaydedilen bilgi güncellenemedi.';
+
+  @override
+  String get personalMemoryClearAction => 'Kaydedilen belleği temizle';
+
+  @override
+  String get personalMemoryClearTitle =>
+      'Kaydedilen belleğin tamamı temizlensin mi?';
+
+  @override
+  String get personalMemoryClearConfirmation =>
+      'Tüm kayıtlı bilgiler bu cihazdan silinir ve kişisel bellek kapatılır.';
+
+  @override
+  String get personalMemoryClearConfirm => 'Belleği temizle';
+
+  @override
+  String get personalMemoryClearFailed => 'Kaydedilen bellek temizlenemedi.';
 
   @override
   String get settingsSharedInstructionsDescription =>
       'Yeni sohbetlere eklenecek ortak yönlendirmeleri belirleyin.';
+
+  @override
+  String get settingsAssistantProfilesDescription =>
+      'Kendi yanıt yönergeleri olan, tekrar kullanabileceğin asistanlar oluştur.';
+
+  @override
+  String get settingsNotifications => 'Bildirimler';
+
+  @override
+  String get settingsNotificationsDescription =>
+      'Arka planda tamamlanan yanıtlar ve bekleyen sorular için bildirim tercihlerini yönetin.';
+
+  @override
+  String get keyboardShortcuts => 'Klavye kısayolları';
+
+  @override
+  String get keyboardShortcutsDescription =>
+      'Mesaj gönderme, yeni satır ekleme ve yanıtı durdurma tuşlarını değiştirin.';
+
+  @override
+  String get keyboardShortcutRecord => 'Bir tuş kombinasyonuna basın';
+
+  @override
+  String get keyboardShortcutConflict =>
+      'Bu tuş kombinasyonu başka bir işlem için kullanılıyor.';
+
+  @override
+  String get keyboardShortcutLoadFailed => 'Klavye kısayolları yüklenemedi.';
+
+  @override
+  String get keyboardShortcutSaveFailed => 'Klavye kısayolları kaydedilemedi.';
+
+  @override
+  String get keyboardShortcutsReset => 'Varsayılanlara dön';
+
+  @override
+  String get keyboardSendMessage => 'Mesajı gönder';
+
+  @override
+  String get keyboardSendMessageDescription =>
+      'Mesaj alanı odaktayken mesajı gönderir.';
+
+  @override
+  String get keyboardNewLine => 'Yeni satır ekle';
+
+  @override
+  String get keyboardNewLineDescription =>
+      'Mesajı göndermeden satır sonu ekler.';
+
+  @override
+  String get keyboardStopResponse => 'Yanıtı durdur';
+
+  @override
+  String get keyboardStopResponseDescription =>
+      'Mesaj alanı odaktayken yanıtı durdurur.';
+
+  @override
+  String get notificationResponses => 'Yanıt bildirimleri';
+
+  @override
+  String get notificationResponsesDescription =>
+      'Sohbet arka plandayken yanıt tamamlandığında bildirim göster.';
+
+  @override
+  String get notificationQuestions => 'Bekleyen sorular';
+
+  @override
+  String get notificationQuestionsDescription =>
+      'Yapay zekâ senden yanıt beklediğinde bildirim göster.';
+
+  @override
+  String get notificationResponsePreview => 'Yanıt metnini göster';
+
+  @override
+  String get notificationResponsePreviewDescription =>
+      'Yanıt metnini bildirimde göster. Kapalıysa yalnızca yanıtın hazır olduğu bildirilir.';
+
+  @override
+  String get notificationQuickReply => 'Bildirimden hızlı yanıtla';
+
+  @override
+  String get notificationQuickReplyDescription =>
+      'Yanıt bildirimine metin alanı ve gönderme eylemi ekle.';
+
+  @override
+  String get notificationSettingsSaveFailed => 'Bildirim ayarı kaydedilemedi.';
+
+  @override
+  String get notificationSettingsUnavailable =>
+      'Bildirim tercihleri okunamadı.';
+
+  @override
+  String get notificationDeliveryChecking =>
+      'Windows bildirim durumu denetleniyor.';
+
+  @override
+  String get notificationDeliveryEnabled =>
+      'Windows bildirimleri kullanılabilir.';
+
+  @override
+  String get notificationDeliveryDisabledForApp =>
+      'Windows\'ta OpenChat bildirimleri kapalı.';
+
+  @override
+  String get notificationDeliveryDisabledForUser =>
+      'Windows ayarlarında bildirimler kapalı.';
+
+  @override
+  String get notificationDeliveryDisabledByPolicy =>
+      'Bildirimler kuruluş ilkeniz tarafından engelleniyor.';
+
+  @override
+  String get notificationDeliveryDisabledByManifest =>
+      'OpenChat, Windows bildirimi gönderecek şekilde kayıtlı değil.';
+
+  @override
+  String get notificationDeliveryUnavailable =>
+      'Windows bildirim durumu denetlenemedi.';
+
+  @override
+  String get notificationDeliveryNotSupported =>
+      'Bu platformda Windows bildirim durumu kullanılamıyor.';
+
+  @override
+  String get sendTestNotification => 'Test bildirimi gönder';
+
+  @override
+  String get notificationTestTitle => 'OpenChat bildirim testi';
+
+  @override
+  String get notificationTestBody =>
+      'Bu bildirimi görüyorsanız Windows bildirimleri iletiliyor.';
+
+  @override
+  String get notificationTestRequested => 'Test bildirimi istendi.';
+
+  @override
+  String get notificationTestFailed => 'Test bildirimi gönderilemedi.';
+
+  @override
+  String get openNotificationSettings => 'Windows bildirim ayarlarını aç';
 
   @override
   String get settingsAppearanceDescription =>
@@ -274,17 +723,101 @@ class AppLocalizationsTr extends AppLocalizations {
   String get connections => 'Bağlantılar';
 
   @override
+  String get providerCatalogVerification => 'Sağlayıcıyı doğrula';
+
+  @override
+  String providerConnectionLastChecked(Object dateTime) {
+    return 'Son kontrol: $dateTime';
+  }
+
+  @override
+  String providerLastRequestOutcome(Object outcome) {
+    return 'Son istek: $outcome';
+  }
+
+  @override
+  String providerLastRequestAt(Object dateTime) {
+    return 'İstek zamanı: $dateTime';
+  }
+
+  @override
+  String get providerLastRequestReadFailed => 'Son istek sonucu okunamadı.';
+
+  @override
+  String get providerLastRequestSaveFailed =>
+      'İstek tamamlandı ancak sonucu kaydedilemedi.';
+
+  @override
+  String get providerRequestCompleted => 'Tamamlandı';
+
+  @override
+  String get providerRequestWaitingForInput => 'Kullanıcı yanıtı bekleniyor';
+
+  @override
+  String get providerRequestStopped => 'Durduruldu';
+
+  @override
+  String get providerRequestAuthenticationFailed =>
+      'Kimlik doğrulama başarısız';
+
+  @override
+  String get providerRequestRateLimited => 'İstek sınırına ulaşıldı';
+
+  @override
+  String get providerRequestNetworkFailed => 'Ağ hatası';
+
+  @override
+  String get providerRequestFailed =>
+      'Sağlayıcı yanıtı tamamlayamadı. Kayıtlı mesajların kullanılabilir durumda.';
+
+  @override
+  String get providerVerificationResultNotSaved =>
+      'Sonuç bu cihaza kaydedilemedi.';
+
+  @override
+  String get providerVerificationRecordUnreadable =>
+      'Kaydedilmiş kontrol sonucu okunamadı. Bağlantıyı yeniden doğrulayın.';
+
+  @override
+  String get setupStepCompleted => 'Tamamlandı';
+
+  @override
+  String get setupStepCurrent => 'Geçerli adım';
+
+  @override
   String get models => 'Modeller';
 
   @override
-  String get modelLibrary => 'Model bul';
+  String get modelLibrary => 'Kütüphane';
 
   @override
-  String get modelPreferences => 'Model tercihleri';
+  String get modelPreferences => 'Modeller';
 
   @override
   String get modelsDescription =>
       'Yeni sohbetlerde kullanılacak varsayılan modeli seçin ve kullanmadığınız modelleri gizleyin.';
+
+  @override
+  String get defaultModelPreferenceInvalid =>
+      'Kaydedilmiş varsayılan model ayarı okunamıyor. Model tercihlerinden veya proje seçeneklerinden temizleyin.';
+
+  @override
+  String get clearDefaultModelPreference => 'Varsayılan model ayarını temizle';
+
+  @override
+  String get defaultModelPreferenceClearFailed =>
+      'Kaydedilmiş varsayılan model ayarı temizlenemedi.';
+
+  @override
+  String get hiddenModelPreferencesInvalid =>
+      'Kaydedilmiş gizli model tercihleri okunamıyor. Tüm modelleri yeniden göstermek için bu tercihleri temizleyin.';
+
+  @override
+  String get clearHiddenModelPreferences => 'Gizli modelleri sıfırla';
+
+  @override
+  String get hiddenModelPreferencesClearFailed =>
+      'Kaydedilmiş gizli model tercihleri temizlenemedi.';
 
   @override
   String get modelContextAutomatic => 'Otomatik';
@@ -324,7 +857,7 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get localEnginesDescription =>
-      'Doğrulanmış yerel motorları kurun, kendi model dosyalarınızı kaydedin ve motorun çalışma durumunu kontrol edin. Modelleri motor klasörüne taşıyabilir, kopyalayabilir veya mevcut konumunda bırakabilirsiniz.';
+      'Yerel model motorlarını kurun ve yönetin.';
 
   @override
   String get localEnginesUnavailable =>
@@ -387,10 +920,6 @@ class AppLocalizationsTr extends AppLocalizations {
   String get localEngineDeprecated => 'Kullanımdan kaldırıldı';
 
   @override
-  String get localEngineWindowsDeprecatedReason =>
-      'Windows\'ta vLLM ve ExLlama\'nın yeni kurulumları devre dışı. Mevcut motor dosyaları ve model kayıtları korunur.';
-
-  @override
   String get localEngineUnsupportedPlatform => 'Desteklenmeyen platform';
 
   @override
@@ -402,14 +931,6 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get localEngineDriverVersionUnavailable =>
       'NVIDIA sürücü sürümü doğrulanamadı';
-
-  @override
-  String get localEngineVllmBlockedReason =>
-      'vLLM için 580 veya üzeri NVIDIA sürücüsü ve mevcut bir Linux ortamı gerekir. Windows\'ta GPU erişimi olan, önceden kurulmuş bir WSL2 dağıtımı kullanılır.';
-
-  @override
-  String get localEngineExllamaBlockedReason =>
-      'ExLlamaV3 çalışma zamanı henüz kurulum için hazır değil. Kurulum seçeneği sunulmadan önce TabbyAPI, PyTorch, Triton, Flash Linear Attention ve Python bağımlılıklarının tamamı sabitlenip doğrulanmalı.';
 
   @override
   String localEngineRuntimeRequirements(String requirements) {
@@ -764,10 +1285,6 @@ class AppLocalizationsTr extends AppLocalizations {
   String get localEngineStageExtracting => 'Çıkartılıyor';
 
   @override
-  String get localEngineStageRuntimeSetup =>
-      'Python çalışma zamanı hazırlanıyor';
-
-  @override
   String get localEngineStagePublishing => 'Kurulum tamamlanıyor';
 
   @override
@@ -824,6 +1341,176 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get sharedInstructions => 'Ortak talimatlar';
+
+  @override
+  String get assistantProfiles => 'Asistan profilleri';
+
+  @override
+  String get assistantProfilesDescription =>
+      'Bir profil seçerek yönergelerini ve yanıt tarzını yeni isteklere uygula. Profiller bu cihazda saklanır.';
+
+  @override
+  String get assistantProfilesEmpty => 'Henüz asistan profili yok.';
+
+  @override
+  String get assistantProfileCreate => 'Profil oluştur';
+
+  @override
+  String get assistantProfileDeactivate => 'Profil kullanma';
+
+  @override
+  String get assistantProfileEdit => 'Profili düzenle';
+
+  @override
+  String get assistantProfileRemoveTitle => 'Asistan profili kaldırılsın mı?';
+
+  @override
+  String get assistantProfileRemove => 'Kaldır';
+
+  @override
+  String assistantProfileRemoveConfirmation(String profileName) {
+    return '“$profileName” kaldırılsın mı? Yeni isteklerde artık kullanılmayacak.';
+  }
+
+  @override
+  String get assistantProfileSaveFailed => 'Asistan profili kaydedilemedi.';
+
+  @override
+  String get assistantProfilesLoadFailed => 'Asistan profilleri yüklenemedi.';
+
+  @override
+  String get assistantProfileLoadFailed => 'Etkin asistan profili yüklenemedi.';
+
+  @override
+  String get assistantProfilesLimitReached =>
+      'En fazla 20 asistan profili kaydedebilirsin.';
+
+  @override
+  String get assistantProfileName => 'Ad';
+
+  @override
+  String get assistantProfileNameRequired => 'Bu profil için bir ad gir.';
+
+  @override
+  String get assistantProfileNameTooLong =>
+      'Profil adı en fazla 64 karakter olabilir.';
+
+  @override
+  String get assistantProfileNameExists => 'Bu adda bir profil zaten var.';
+
+  @override
+  String get assistantProfileInstructions => 'Talimatlar';
+
+  @override
+  String get assistantProfileInstructionsHelp =>
+      'Bu profil etkinken yönergeleri normal sohbet isteklerine gönderilir. Geçici sohbetlerde asistan profilleri kullanılmaz.';
+
+  @override
+  String get assistantProfilePreferredModel => 'Tercih edilen model';
+
+  @override
+  String get assistantProfilePreferredModelUnavailable =>
+      'Önce sohbette kullanılabilir bir model seç.';
+
+  @override
+  String get assistantProfilePreferredModelHelp =>
+      'Yeni sohbetlerde kullanılır. Projeye özel model tercihi önceliklidir.';
+
+  @override
+  String get assistantProfileRestrictTools => 'Bu profilin araçlarını sınırla';
+
+  @override
+  String get assistantProfileRestrictToolsHelp =>
+      'Profile yalnızca seçilen araçlar sunulur. Uygulama ve proje izinleri bu araçları ayrıca kısıtlayabilir.';
+
+  @override
+  String get assistantProfileProjectTools => 'Etkin projede kullanılabilenler';
+
+  @override
+  String get assistantProfileProjectTasks =>
+      'Adlandırılmış proje görevini çalıştır';
+
+  @override
+  String get assistantProfileMcpUnavailable =>
+      'Etkin MCP sunucularından bazılarına erişilemiyor; araçları yüklenemedi.';
+
+  @override
+  String get assistantProfileLoadMcpTools => 'MCP araçlarını yükle';
+
+  @override
+  String get assistantProfileLoadingMcpTools =>
+      'MCP sunucularına bağlanılıyor…';
+
+  @override
+  String assistantProfileAllowedToolCount(int count) {
+    return 'Araç sınırı: $count';
+  }
+
+  @override
+  String get assistantProfileToolAccessUsesAppPermissions =>
+      'Uygulama ve proje izinleri';
+
+  @override
+  String get assistantProfileToolAccessInheritsAppPermissions =>
+      'Bu profilde araç sınırı yok. Kullanılabilecek araçları uygulama ve proje izinleri belirler.';
+
+  @override
+  String get assistantProfileToolAccessDisabled => 'Araçlar kapalı';
+
+  @override
+  String get assistantProfileToolAccessDisabledHelp =>
+      'Bu profil tüm araçları devre dışı bırakır.';
+
+  @override
+  String get assistantToolGroupWebResearch => 'Web\'de ara ve sayfa oku';
+
+  @override
+  String get assistantToolGroupWorkspaceRead =>
+      'Çalışma alanı dosyalarını oku ve ara';
+
+  @override
+  String get assistantToolGroupWorkspaceWrite =>
+      'Çalışma alanında dosya oluştur ve düzenle';
+
+  @override
+  String get assistantToolGroupTerminal => 'Terminal komutları çalıştır';
+
+  @override
+  String get assistantToolGroupGitRead => 'Git durumunu ve geçmişini incele';
+
+  @override
+  String get assistantToolGroupImageGeneration => 'Görsel oluştur';
+
+  @override
+  String get assistantToolGroupAskUser => 'Kullanıcıya soru sor';
+
+  @override
+  String get assistantToolGroupDelegateTask => 'Sınırlı bir görevi devret';
+
+  @override
+  String get assistantToolGroupGoalControls => 'Kalıcı hedefleri yönet';
+
+  @override
+  String get assistantResponseStyle => 'Yanıt tarzı';
+
+  @override
+  String get assistantResponseStyleConcise => 'Kısa';
+
+  @override
+  String get assistantResponseStyleBalanced => 'Dengeli';
+
+  @override
+  String get assistantResponseStyleDetailed => 'Ayrıntılı';
+
+  @override
+  String assistantProfileStyle(String style) {
+    return 'Tarz: $style';
+  }
+
+  @override
+  String assistantProfileActive(String profileName) {
+    return 'Asistan profili: $profileName';
+  }
 
   @override
   String get sharedInstructionsDescription =>
@@ -910,12 +1597,6 @@ class AppLocalizationsTr extends AppLocalizations {
   String get cohereProvider => 'Cohere';
 
   @override
-  String get ollamaProvider => 'Ollama';
-
-  @override
-  String get lmStudioProvider => 'LM Studio';
-
-  @override
   String get geminiApiDescription =>
       'Destekleyen modellerle metin, görsel, ses ve video girdilerini işle.';
 
@@ -976,14 +1657,6 @@ class AppLocalizationsTr extends AppLocalizations {
       'Cohere modellerini sohbet ve araç çağrısı API\'siyle kullan.';
 
   @override
-  String get ollamaApiDescription =>
-      'Ollama\'da çalışan yerel modelleri OpenAI uyumlu API ile kullan.';
-
-  @override
-  String get lmStudioApiDescription =>
-      'LM Studio\'da yüklenen yerel modellere OpenAI uyumlu API ile bağlan.';
-
-  @override
   String get geminiUnpaidDataNotice =>
       'Gemini API\'nin ücretsiz katmanında gönderdiğin içerikler Google ürünlerini geliştirmek için kullanılabilir. Hassas içerik göndermeden önce Google\'ın veri kullanım koşullarını incele.';
 
@@ -1009,6 +1682,48 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get providerKeyStorageFailed =>
       'API anahtarı güvenli şekilde okunamadı veya kaydedilemedi.';
+
+  @override
+  String get verifyProviderConnection => 'Bağlantıyı doğrula';
+
+  @override
+  String get providerConnectionNotVerified => 'Bağlantı henüz doğrulanmadı.';
+
+  @override
+  String get verifyingProviderConnection =>
+      'Sağlayıcı bağlantısı denetleniyor…';
+
+  @override
+  String get providerConnectionVerified =>
+      'Bağlantı doğrulandı; model kataloğuna erişilebiliyor.';
+
+  @override
+  String get providerVerificationStaleCatalog =>
+      'Yalnızca önbellekteki modeller alındı; sağlayıcı bağlantısı doğrulanamadı. Yeniden deneyin.';
+
+  @override
+  String get providerModelCatalogEmpty =>
+      'Sağlayıcı isteği kabul etti ancak model döndürmedi.';
+
+  @override
+  String get providerVerificationAuthenticationFailed =>
+      'Sağlayıcı bu anahtarı kabul etmedi. Anahtarı kontrol edip yeniden deneyin.';
+
+  @override
+  String get providerVerificationRateLimited =>
+      'Sağlayıcının istek sınırı doğrulamayı engelledi. Daha sonra yeniden deneyin.';
+
+  @override
+  String get providerVerificationNetworkFailed =>
+      'Sağlayıcıya ulaşılamadı. Ağ bağlantınızı kontrol edip yeniden deneyin.';
+
+  @override
+  String get providerConnectionVerificationFailed =>
+      'Bağlantı doğrulanamadı. Yeniden deneyin veya sağlayıcı ayarlarını kontrol edin.';
+
+  @override
+  String get providerQuotaUnavailable =>
+      'OpenChat şu anda bu sağlayıcının kota bilgisini göstermiyor.';
 
   @override
   String get favoriteModels => 'Favoriler';
@@ -1452,10 +2167,6 @@ class AppLocalizationsTr extends AppLocalizations {
       'Sağlayıcı isteği reddetti. Bağlantıyı ve model erişimini kontrol et.';
 
   @override
-  String get providerRequestFailed =>
-      'Sağlayıcı yanıtı tamamlayamadı. Kayıtlı mesajların kullanılabilir durumda.';
-
-  @override
   String get providerToolRequestRejected =>
       'Sağlayıcı, araç içeren isteği reddetti. Modelin araç desteğini kontrol et veya araç kullanabildiği belirtilen bir model seç.';
 
@@ -1894,6 +2605,31 @@ class AppLocalizationsTr extends AppLocalizations {
   String get darkTheme => 'Koyu';
 
   @override
+  String get attachmentIndexTitle => 'Metin eklerinde ara';
+
+  @override
+  String get attachmentIndexDescription =>
+      'Desteklenen metin dosyaları en fazla 5.000 dosya veya 100 MB olacak şekilde yerel arama dizinine kopyalanır. Kaynak dosyalar değişmez; görseller dizine eklenmez.';
+
+  @override
+  String get attachmentIndexSupportedTypes =>
+      'Dizine eklenen türler: .txt, .md, .csv, .json, .jsonl, .xml, .html, .css, .js, .jsx, .ts, .tsx, .dart, .rs, .py, .go, .java, .kt, .swift, .c, .h, .cpp, .hpp, .cs, .sh, .ps1, .yaml, .yml, .toml, .ini, .sql, .log';
+
+  @override
+  String attachmentIndexCount(int count) {
+    return 'Dizinde $count dosya var';
+  }
+
+  @override
+  String get attachmentIndexRebuild => 'Dizini yeniden oluştur';
+
+  @override
+  String get attachmentIndexClear => 'Dizini temizle';
+
+  @override
+  String get attachmentIndexFailed => 'Ek metin dizini güncellenemedi.';
+
+  @override
   String get localData => 'Yerel veriler';
 
   @override
@@ -2311,10 +3047,29 @@ class AppLocalizationsTr extends AppLocalizations {
       'Tema tercihi kaydedilemedi. Lütfen tekrar deneyin.';
 
   @override
-  String get searchChats => 'Sohbetlerde ara';
+  String get searchChats => 'OpenChat\'te ara';
 
   @override
-  String get searchChatsHint => 'Sohbet ve mesajlarda ara';
+  String get searchChatsHint =>
+      'Sohbet, proje, çalışma alanı, kayıtlı yanıt ve dosya adlarında ara';
+
+  @override
+  String get searchFilterAll => 'Tümü';
+
+  @override
+  String get searchFilterChats => 'Sohbetler';
+
+  @override
+  String get searchFilterProjects => 'Projeler';
+
+  @override
+  String get searchFilterWorkspaces => 'Çalışma alanları';
+
+  @override
+  String get searchFilterSavedResponses => 'Kaydedilen yanıtlar';
+
+  @override
+  String get searchFilterAttachments => 'Ekler';
 
   @override
   String get searchMessagesTooltip => 'Mesajları ara';
@@ -2461,7 +3216,7 @@ class AppLocalizationsTr extends AppLocalizations {
   String get searchMessagesLoading => 'Mesajlar ve sohbetler aranıyor…';
 
   @override
-  String get searchMessagesNoResults => 'Eşleşen mesaj veya sohbet yok.';
+  String get searchMessagesNoResults => 'Eşleşen öğe bulunamadı.';
 
   @override
   String get searchMessagesTooShort => 'Arama için en az iki karakter girin.';
@@ -2549,6 +3304,23 @@ class AppLocalizationsTr extends AppLocalizations {
   @override
   String get projectToolRulesDescription =>
       'Her araç için bir kural seçin. Kural belirlenmeyen araçlar genel izin ayarını kullanır. İzin verme, dosya kapsamı ve işlem yalıtımı sınırlarına uymaya devam eder.';
+
+  @override
+  String get projectToolRulesSummaryLoading =>
+      'Bu projenin araç izin kuralları yükleniyor.';
+
+  @override
+  String get projectToolRulesSummaryUnavailable =>
+      'Bu projenin araç izin özeti yüklenemedi.';
+
+  @override
+  String get projectToolRulesSummaryInherit =>
+      'Bu projede özel kural yok. Tüm araçlar genel izin ayarını kullanıyor.';
+
+  @override
+  String projectToolRulesSummary(int allowed, int approval, int denied) {
+    return 'Proje kuralları: $allowed izinli, $approval onay gerektiriyor, $denied engelli. Kuralı olmayan araçlar genel ayarı kullanıyor.';
+  }
 
   @override
   String get projectToolRuleInherit => 'Genel ayarı kullan';
@@ -3538,7 +4310,15 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get noModelConnectedBody =>
-      'Sohbet başlatmak için bir sağlayıcı bağlayıp model seç.';
+      'Bağlantılar bölümünden ChatGPT hesabınla oturum aç, desteklenen bir sağlayıcı için API anahtarı ekle ya da kullanılabilir bir yerel model seç. Bağlantıyı doğruladıktan sonra aşağıdan model seç.';
+
+  @override
+  String get providerNeedsVerificationTitle =>
+      'Sağlayıcı bağlantısını kontrol et';
+
+  @override
+  String get providerNeedsVerificationBody =>
+      'Kaydedilmiş oturum veya API anahtarı, sağlayıcıya erişilebildiğini doğrulamaz. Bağlantılar bölümünden bağlantıyı doğrula ve model listesini yenile.';
 
   @override
   String get close => 'Kapat';
@@ -4519,12 +5299,6 @@ class AppLocalizationsTr extends AppLocalizations {
   String get modelFormatGguf => 'GGUF · llama.cpp';
 
   @override
-  String get modelFormatTransformers => 'Transformers · vLLM';
-
-  @override
-  String get modelFormatExllama => 'ExLlama · EXL3';
-
-  @override
   String get huggingFaceModelSearchHint => 'Modellerde ara';
 
   @override
@@ -4723,6 +5497,9 @@ class AppLocalizationsTr extends AppLocalizations {
 
   @override
   String get userQuestionNotificationBody => 'Yapay zekâ yanıtını bekliyor.';
+
+  @override
+  String get notificationResponseReady => 'Yanıt hazır.';
 
   @override
   String get assistantResponseNotificationReplyEmpty =>
@@ -5005,4 +5782,265 @@ class AppLocalizationsTr extends AppLocalizations {
   String goalTasksCount(int completed, int total) {
     return 'Görevler: $completed/$total';
   }
+
+  @override
+  String get supportDiagnosticsTitle => 'Destek tanılama bilgileri';
+
+  @override
+  String get supportDiagnosticsDescription =>
+      'Destek dosyasına kaydedilecek uygulama ve depolama durumu bilgilerini incele.';
+
+  @override
+  String get reviewSupportDiagnostics => 'Dışa aktarmayı incele';
+
+  @override
+  String get supportDiagnosticsPreviewTitle => 'Destek bilgilerini incele';
+
+  @override
+  String get supportDiagnosticsPreviewDescription =>
+      'Dosya aşağıdaki bilgileri içerir. Sohbet içerikleri, kimlik bilgileri ve dosya yolları eklenmez.';
+
+  @override
+  String get supportDiagnosticsExportAction => 'JSON\'u kaydet';
+
+  @override
+  String get supportDiagnosticsSaved => 'Destek tanılama dosyası kaydedildi.';
+
+  @override
+  String get supportDiagnosticsLoadFailed =>
+      'Tanılama bilgileri alınamadı. Yerel hizmeti kontrol edip yeniden dene.';
+
+  @override
+  String get supportDiagnosticsInvalidResponse =>
+      'Yerel hizmet beklenmeyen tanılama bilgileri döndürdü.';
+
+  @override
+  String get supportDiagnosticsExportFailed =>
+      'Destek tanılama dosyası kaydedilemedi.';
+
+  @override
+  String get supportDiagnosticsPrivacyNote =>
+      'Yalnızca önizlemede gösterilen alanlar kaydedilir. Dosya OpenChat\'e gönderilmez.';
+
+  @override
+  String get supportDiagnosticsPreparing => 'Hazırlanıyor…';
+
+  @override
+  String get settingsConnectors => 'Bağlantılar';
+
+  @override
+  String get settingsConnectorsDescription =>
+      'Yerel bağlantı şablonlarını yönetip projelere ekleyin.';
+
+  @override
+  String get connectorCatalogIntro =>
+      'Yeniden kullanabileceğiniz MCP bağlantı bilgilerini uygulamada saklayın. Bir projeye eklenen sunucu devre dışı başlar; kimlik bilgileri ve izinler o projede kalır.';
+
+  @override
+  String get connectorCatalogEmpty => 'Henüz bağlantı şablonu eklenmedi.';
+
+  @override
+  String get connectorCatalogAdd => 'Şablon ekle';
+
+  @override
+  String get connectorCatalogEdit => 'Şablonu düzenle';
+
+  @override
+  String get connectorCatalogDelete => 'Şablonu sil';
+
+  @override
+  String get connectorCatalogDeleteConfirm =>
+      'Şablon uygulamadan silinir. Projelere daha önce eklenmiş bağlantılar kalır.';
+
+  @override
+  String get connectorCatalogInstall => 'Etkin projeye ekle';
+
+  @override
+  String get connectorCatalogNoProject =>
+      'Bir bağlantı eklemek için önce proje açın.';
+
+  @override
+  String get connectorCatalogSecurityNotice =>
+      'Şablonlar gizli değerler olmadan yerel olarak saklanır. Yükleme, proje sunucusunu devre dışı ekler ve araç iznini onaya ayarlar. OpenChat sunucu yazılımını indirmez veya doğrulamaz.';
+
+  @override
+  String get connectorCatalogName => 'Şablon adı';
+
+  @override
+  String get connectorCatalogId => 'Sunucu kimliği';
+
+  @override
+  String get connectorCatalogPublisher => 'Yayıncı beyanı';
+
+  @override
+  String get connectorCatalogSourceUrl => 'Kaynak URL\'si';
+
+  @override
+  String get connectorCatalogDataDisclosure =>
+      'Bağlantının alabileceği veriler';
+
+  @override
+  String get connectorCatalogTransport => 'Bağlantı türü';
+
+  @override
+  String get connectorCatalogProgram => 'Programın mutlak yolu';
+
+  @override
+  String get connectorCatalogArguments => 'Her satıra bir bağımsız değişken';
+
+  @override
+  String get connectorCatalogEnvironmentVariables =>
+      'Her satıra bir kimlik bilgisi değişken adı';
+
+  @override
+  String get connectorCatalogEndpoint => 'HTTPS uç noktası';
+
+  @override
+  String get connectorCatalogAuthVariable => 'Kimlik bilgisi değişken adı';
+
+  @override
+  String get connectorCatalogSave => 'Şablonu kaydet';
+
+  @override
+  String get connectorCatalogInstallPrompt =>
+      'Yayıncıyı, hedefi ve veri açıklamasını inceleyin. Sunucu devre dışı eklenecek ve araçları onay isteyecek. Araç çağrıları bağımsız değişkenlerini bağlantıya, sonuçlarını da seçili model sağlayıcısına gönderebilir.';
+
+  @override
+  String get connectorCatalogInvalid =>
+      'Zorunlu alanları, HTTPS adreslerini, sunucu kimliğini ve bağlantı bilgilerini kontrol edin.';
+
+  @override
+  String get connectorCatalogDuplicate =>
+      'Bu kimlik veya ad başka bir şablon ya da proje sunucusunda kullanılıyor.';
+
+  @override
+  String get connectorCatalogLoadFailed => 'Yerel bağlantı kataloğu okunamadı.';
+
+  @override
+  String get connectorCatalogSaveFailed => 'Bağlantı şablonu kaydedilemedi.';
+
+  @override
+  String get connectorCatalogInstallFailed =>
+      'Bağlantı projeye eklenemedi. Yerel hizmeti ve proje ayarlarını kontrol edin.';
+
+  @override
+  String get connectorCatalogInstalled =>
+      'Devre dışı bağlantı projeye eklendi. Gerekirse kimlik bilgilerini proje MCP ayarlarından ekleyin.';
+
+  @override
+  String get connectorCatalogSearch => 'Şablonlarda ara';
+
+  @override
+  String get connectorCatalogNoResults => 'Bu aramayla eşleşen şablon yok.';
+
+  @override
+  String get connectorCatalogVersion => 'Beyan edilen sürüm';
+
+  @override
+  String get connectorCatalogRequestedAccess => 'İstenen erişim';
+
+  @override
+  String get connectorCatalogAuthentication => 'Kimlik doğrulama';
+
+  @override
+  String get connectorCatalogNoBearerCredential =>
+      'Bearer kimlik bilgisi beyan edilmemiş. Sunucu yine de kendi erişim politikasını uygulayabilir.';
+
+  @override
+  String get connectorCatalogProjectBearerCredential =>
+      'Yapılandırılırsa bearer kimlik bilgisi bu proje ve sunucuya özel saklanır; bağlantı kurulunca bu HTTPS uç noktasına gönderilir.';
+
+  @override
+  String get connectorCatalogNoCredentialVariables =>
+      'Bu yerel işlem ortam değişkeni istemiyor.';
+
+  @override
+  String get connectorCatalogProjectEnvironmentCredentials =>
+      'Yapılandırıldığında beyan edilen ortam değerleri bu proje ve sunucuya özel saklanır ve yalnızca yerel işleme aktarılır.';
+
+  @override
+  String get connectorCatalogRemovalImpact =>
+      'Bu şablonu kaldırmak proje sunucularını veya kayıtlı kimlik bilgilerini silmez. Bunları proje MCP ayarlarından ayrıca kaldırın.';
+
+  @override
+  String get libraryTabModels => 'Modeller';
+
+  @override
+  String get libraryTabMcp => 'MCP Araçları';
+
+  @override
+  String get libraryTabPrompts => 'Promptlar (Yakında)';
+
+  @override
+  String get libraryTabPersonalities => 'Karakterler (Yakında)';
+
+  @override
+  String get mcpCatalogDescription =>
+      'Gelişmiş Model Context Protocol araçlarını keşfedin, kurun ve sohbet asistanınızın yeteneklerini artırın.';
+
+  @override
+  String get mcpSearchHint => 'MCP araçlarında ara...';
+
+  @override
+  String get mcpInstalled => 'Kurulu';
+
+  @override
+  String get mcpNotInstalled => 'Kurulu Değil';
+
+  @override
+  String get mcpActive => 'Aktif (Talimatlara Eklendi)';
+
+  @override
+  String get mcpInactive => 'Pasif';
+
+  @override
+  String get mcpInstall => 'Yükle';
+
+  @override
+  String get mcpConfigureEnv => 'Ortam Değişkenleri (Env)';
+
+  @override
+  String get mcpEnvDialogTitle => 'MCP Ortam Değişkenleri';
+
+  @override
+  String get mcpEnvDialogDescription =>
+      'Bu değerler işletim sistemi düzeyinde güvenli depolama (Windows Credential Manager) ile şifrelenerek saklanır.';
+
+  @override
+  String get mcpEnvSaveSuccess =>
+      'Ortam değişkenleri güvenli bir şekilde kaydedildi.';
+
+  @override
+  String get mcpEnabledSuccess =>
+      'MCP aracı aktif edildi ve sistem talimatlarına eklendi.';
+
+  @override
+  String get mcpDisabledSuccess =>
+      'MCP aracı pasife alındı ve sistem talimatlarından kaldırıldı.';
+
+  @override
+  String get mcpNoToolsFound => 'Bu MCP için henüz araç bulunamadı.';
+
+  @override
+  String get mcpUninstall => 'Kaldır';
+
+  @override
+  String get mcpUninstallConfirm =>
+      'Bu MCP aracını kaldırmak istediğinize emin misiniz?';
+
+  @override
+  String get mcpDiscoverTools => 'Tanımları Otomatik Çek';
+
+  @override
+  String get mcpDiscovering => 'Tanımlar çekiliyor...';
+
+  @override
+  String get mcpDiscoverSuccess => 'Araç tanımları başarıyla çekildi.';
+
+  @override
+  String get mcpDiscoverFailed =>
+      'Araç tanımları çekilemedi. Komut ve ortam değişkenlerini kontrol edin.';
+
+  @override
+  String get mcpNoToolsDiscovered => 'Henüz araç tanımları çekilmedi.';
 }

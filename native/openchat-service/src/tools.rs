@@ -1,5 +1,5 @@
 use std::{
-    collections::BinaryHeap,
+    collections::{BinaryHeap, HashSet},
     fs::{self, File},
     io::{BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::{Component, Path, PathBuf},
@@ -33,6 +33,86 @@ const MAX_OUTPUT_BYTES: usize = 64 * 1024;
 pub(crate) const MAX_TOOL_ARGUMENT_BYTES: usize = 16 * 1024;
 pub(crate) const MAX_TOOL_ROUNDS: usize = 6;
 pub(crate) const MAX_TOOL_CALLS_PER_TURN: usize = 16;
+const MAX_PROFILE_TOOL_ALLOWLIST: usize = 32;
+
+pub(crate) fn parse_profile_tool_allowlist(
+    value: Option<&Value>,
+) -> Result<Option<HashSet<String>>, ServiceError> {
+    let Some(value) = value.filter(|value| !value.is_null()) else {
+        return Ok(None);
+    };
+    let Some(values) = value.as_array() else {
+        return Err(invalid_profile_tool_allowlist());
+    };
+    if values.len() > MAX_PROFILE_TOOL_ALLOWLIST {
+        return Err(invalid_profile_tool_allowlist());
+    }
+    let mut supported = definitions()
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect::<HashSet<_>>();
+    supported.extend([
+        "run_project_task".to_owned(),
+        "delegate_task".to_owned(),
+        crate::goals::START_GOAL_TOOL_NAME.to_owned(),
+        crate::goals::CONTROL_TOOL_NAME.to_owned(),
+        crate::goals::STOP_GOAL_TOOL_NAME.to_owned(),
+    ]);
+    let mut allowed = HashSet::with_capacity(values.len());
+    for value in values {
+        let Some(name) = value.as_str() else {
+            return Err(invalid_profile_tool_allowlist());
+        };
+        let is_project_tool = name
+            .strip_prefix("project_tool__")
+            .is_some_and(crate::tools::project_tools::is_valid_id);
+        let is_mcp_tool = valid_profile_mcp_tool_name(name);
+        if (!supported.contains(name) && !is_project_tool && !is_mcp_tool)
+            || !allowed.insert(name.to_owned())
+        {
+            return Err(invalid_profile_tool_allowlist());
+        }
+    }
+    Ok(Some(allowed))
+}
+
+fn valid_profile_mcp_tool_name(name: &str) -> bool {
+    if name.len() > 64 {
+        return false;
+    }
+    let Some((server_id, tool_name)) = name
+        .strip_prefix("mcp__")
+        .and_then(|suffix| suffix.split_once("__"))
+    else {
+        return false;
+    };
+    !server_id.is_empty()
+        && server_id.len() <= 24
+        && server_id
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+        && !tool_name.is_empty()
+        && tool_name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
+fn invalid_profile_tool_allowlist() -> ServiceError {
+    ServiceError::new(
+        "invalid_profile_tool_allowlist",
+        "The assistant profile tool allowlist is invalid.",
+        false,
+    )
+}
+
+pub(crate) fn apply_profile_tool_allowlist(
+    definitions: &mut Vec<ToolDefinition>,
+    allowed_names: Option<&HashSet<String>>,
+) {
+    if let Some(allowed_names) = allowed_names {
+        definitions.retain(|tool| allowed_names.contains(&tool.name));
+    }
+}
 
 struct DirectoryListing {
     entries: Vec<(String, bool)>,
@@ -1053,10 +1133,63 @@ pub(crate) use executor::{
 #[cfg(test)]
 mod image_tool_tests {
     use super::{
-        ToolDefinition, context_usage_definitions, definitions, definitions_for_chatgpt_api,
-        definitions_for_chatgpt_model, definitions_for_model, definitions_for_provider,
-        definitions_for_request, disable_tools_for_plan_mode,
+        ToolDefinition, apply_profile_tool_allowlist, context_usage_definitions, definitions,
+        definitions_for_chatgpt_api, definitions_for_chatgpt_model, definitions_for_model,
+        definitions_for_provider, definitions_for_request, disable_tools_for_plan_mode,
+        parse_profile_tool_allowlist,
     };
+
+    #[test]
+    fn profile_tool_allowlist_distinguishes_inherit_from_empty_and_rejects_unknown_tools() {
+        assert!(
+            parse_profile_tool_allowlist(None)
+                .expect("missing allowlist")
+                .is_none()
+        );
+        let empty = parse_profile_tool_allowlist(Some(&serde_json::json!([])))
+            .expect("empty allowlist")
+            .expect("restricted allowlist");
+        assert!(empty.is_empty());
+
+        let selected =
+            parse_profile_tool_allowlist(Some(&serde_json::json!(["web_search", "read_file"])))
+                .expect("valid allowlist")
+                .expect("restricted allowlist");
+        assert_eq!(selected.len(), 2);
+        assert!(selected.contains("web_search"));
+        assert!(selected.contains("read_file"));
+
+        let mcp = parse_profile_tool_allowlist(Some(&serde_json::json!(["mcp__workspace__read"])))
+            .expect("valid MCP tool name")
+            .expect("restricted allowlist");
+        assert!(mcp.contains("mcp__workspace__read"));
+
+        for invalid in [
+            serde_json::json!(["web_search", "web_search"]),
+            serde_json::json!([42]),
+        ] {
+            let error =
+                parse_profile_tool_allowlist(Some(&invalid)).expect_err("invalid allowlist");
+            assert_eq!(error.code, "invalid_profile_tool_allowlist");
+        }
+    }
+
+    #[test]
+    fn profile_tool_allowlist_only_advertises_selected_tools() {
+        let mut tools = definitions();
+        let selected = parse_profile_tool_allowlist(Some(&serde_json::json!(["web_search"])))
+            .expect("valid allowlist");
+
+        apply_profile_tool_allowlist(&mut tools, selected.as_ref());
+
+        assert_eq!(
+            tools
+                .iter()
+                .map(|tool| tool.name.as_str())
+                .collect::<Vec<_>>(),
+            ["web_search"]
+        );
+    }
 
     #[test]
     fn plan_mode_does_not_advertise_tools() {

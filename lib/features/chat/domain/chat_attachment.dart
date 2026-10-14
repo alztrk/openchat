@@ -84,21 +84,23 @@ class ChatAttachment {
 }
 
 abstract final class ChatMessageContentCodec {
-  static const _prefix = '\u001eopenchat-attachments-v1:';
+  static const metadataPrefix = '\u001eopenchat-attachments-v1:';
 
   static String encode(String content, List<ChatAttachment> attachments) {
     if (attachments.isEmpty) return content;
-    return '$_prefix${jsonEncode(<String, Object?>{'content': content, 'attachments': attachments.map((attachment) => attachment.toMetadataJson()).toList(growable: false)})}';
+    return '$metadataPrefix${jsonEncode(<String, Object?>{'content': content, 'attachments': attachments.map((attachment) => attachment.toMetadataJson()).toList(growable: false)})}';
   }
 
   static ({String content, List<ChatAttachment> attachments}) decode(
     String storedContent,
   ) {
-    if (!storedContent.startsWith(_prefix)) {
+    if (!storedContent.startsWith(metadataPrefix)) {
       return (content: storedContent, attachments: const <ChatAttachment>[]);
     }
     try {
-      final payload = jsonDecode(storedContent.substring(_prefix.length));
+      final payload = jsonDecode(
+        storedContent.substring(metadataPrefix.length),
+      );
       if (payload is! Map<String, Object?> ||
           payload['content'] is! String ||
           payload['attachments'] is! List<Object?>) {

@@ -35,7 +35,6 @@ use crate::{
 
 const INSTALL_PROGRESS_EVENT: &str = "local.engines.install.progress";
 const INSTALL_MARKER: &str = ".openchat-engine.json";
-const PENDING_INSTALL_MARKER: &str = ".openchat-installing.json";
 const INSTALL_MARKER_VERSION: u32 = 1;
 const MAX_ARCHIVE_ENTRIES: usize = 100_000;
 const MAX_ARCHIVE_ENTRY_BYTES: u64 = 4 * 1024 * 1024 * 1024;
@@ -66,15 +65,6 @@ struct InstalledMarker {
     entrypoint: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct PendingInstallMarker {
-    marker_version: u32,
-    engine_id: String,
-    variant_id: String,
-    release_tag: String,
-}
-
 /// Install one validated catalog variant and publish it atomically.
 pub async fn install_engine_variant(
     storage: &AppStorage,
@@ -96,9 +86,6 @@ pub async fn install_engine_variant(
     check_cancelled(cancellation)?;
 
     let target = installed_engine_path(storage, manifest, variant)?;
-    if uses_managed_python_runtime(&manifest.engine_id) && target.exists() {
-        remove_interrupted_python_installation(&target, manifest, variant)?;
-    }
     let runtimes_root = storage.root().join("runtimes");
     let staging_root = runtimes_root
         .join(".staging")
@@ -317,82 +304,17 @@ async fn install_staged(
             asset.size_bytes,
         )
         .await?;
-        extract_downloaded_asset(&archive_path, payload_root, manifest, asset)?;
-        if asset.name.to_ascii_lowercase().ends_with(".whl") {
-            let wheel_directory = payload_root.join("wheels");
-            async_fs::create_dir_all(&wheel_directory)
-                .await
-                .map_err(|_| storage_error())?;
-            async_fs::rename(&archive_path, wheel_directory.join(&asset.name))
-                .await
-                .map_err(|_| storage_error())?;
-        } else {
-            async_fs::remove_file(&archive_path)
-                .await
-                .map_err(|_| storage_error())?;
-        }
+        extract_downloaded_asset(&archive_path, payload_root, asset)?;
+        async_fs::remove_file(&archive_path)
+            .await
+            .map_err(|_| storage_error())?;
     }
 
     check_cancelled(cancellation)?;
 
-    let published_root = if uses_managed_python_runtime(&manifest.engine_id) {
-        if manifest.engine_id == "exllama" {
-            normalize_exllama_source_tree(payload_root, variant)?;
-        }
-        write_pending_install_marker(payload_root, manifest, variant).await?;
-        let target_parent = target.parent().ok_or_else(storage_error)?;
-        async_fs::create_dir_all(target_parent)
-            .await
-            .map_err(|_| storage_error())?;
-        if target.exists() {
-            return Err(installation_exists_error());
-        }
-        async_fs::rename(payload_root, &target)
-            .await
-            .map_err(|_| publish_error())?;
-        if let Some(asset) = variant.assets.last() {
-            send_progress(
-                request_id,
-                events,
-                manifest,
-                variant,
-                asset,
-                asset_count.saturating_sub(1),
-                asset_count,
-                "setting_up_runtime",
-                0,
-            )
-            .await?;
-        }
-        let install_result = match manifest.engine_id.as_str() {
-            "exllama" => {
-                super::python_runtime::install_exllama(target, manifest, variant, cancellation)
-                    .await
-            }
-            "vllm" => {
-                super::vllm_runtime::install_vllm(target, manifest, variant, cancellation).await
-            }
-            _ => Err(invalid_install_error()),
-        };
-        if let Err(error) = install_result {
-            async_fs::remove_dir_all(&target)
-                .await
-                .map_err(|_| storage_error())?;
-            return Err(error);
-        }
-        target
-    } else {
-        payload_root
-    };
-
     check_cancelled(cancellation)?;
-    verify_required_files(published_root, manifest, variant)?;
-    write_install_marker(published_root, manifest, variant).await?;
-    if uses_managed_python_runtime(&manifest.engine_id) {
-        async_fs::remove_file(published_root.join(PENDING_INSTALL_MARKER))
-            .await
-            .map_err(|_| storage_error())?;
-    }
+    verify_required_files(payload_root, manifest, variant)?;
+    write_install_marker(payload_root, manifest, variant).await?;
     check_cancelled(cancellation)?;
 
     if let Some(asset) = variant.assets.last() {
@@ -410,18 +332,16 @@ async fn install_staged(
         .await?;
     }
 
-    if !uses_managed_python_runtime(&manifest.engine_id) {
-        let target_parent = target.parent().ok_or_else(storage_error)?;
-        async_fs::create_dir_all(target_parent)
-            .await
-            .map_err(|_| storage_error())?;
-        if target.exists() {
-            return Err(installation_exists_error());
-        }
-        async_fs::rename(payload_root, &target)
-            .await
-            .map_err(|_| publish_error())?;
+    let target_parent = target.parent().ok_or_else(storage_error)?;
+    async_fs::create_dir_all(target_parent)
+        .await
+        .map_err(|_| storage_error())?;
+    if target.exists() {
+        return Err(installation_exists_error());
     }
+    async_fs::rename(payload_root, &target)
+        .await
+        .map_err(|_| publish_error())?;
 
     let installed = installed_engine(storage, manifest, variant)?.ok_or_else(publish_error)?;
     Ok(installed)
@@ -437,49 +357,12 @@ async fn remove_directory_if_present(path: &Path) -> Result<(), ServiceError> {
     }
 }
 
-fn remove_interrupted_python_installation(
-    target: &Path,
-    manifest: &EngineManifest,
-    variant: &EngineVariant,
-) -> Result<(), ServiceError> {
-    let metadata = fs::symlink_metadata(target).map_err(|_| storage_error())?;
-    if metadata.file_type().is_symlink() || !metadata.is_dir() {
-        return Err(installation_exists_error());
-    }
-    let pending_path = target.join(PENDING_INSTALL_MARKER);
-    let pending = fs::read(&pending_path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice::<PendingInstallMarker>(&bytes).ok());
-    let Some(pending) = pending else {
-        return Err(installation_exists_error());
-    };
-    if pending.marker_version != INSTALL_MARKER_VERSION
-        || pending.engine_id != manifest.engine_id
-        || pending.variant_id != variant.variant_id
-        || pending.release_tag != manifest.release_tag
-    {
-        return Err(installation_exists_error());
-    }
-    fs::remove_dir_all(target).map_err(|_| storage_error())
-}
-
-fn uses_managed_python_runtime(engine_id: &str) -> bool {
-    matches!(engine_id, "exllama" | "vllm")
-}
-
 fn extract_downloaded_asset(
     archive_path: &Path,
     destination: &Path,
-    manifest: &EngineManifest,
     asset: &EngineAsset,
 ) -> Result<(), ServiceError> {
     let name = asset.name.to_ascii_lowercase();
-    if name.ends_with(".whl") {
-        if !uses_managed_python_runtime(&manifest.engine_id) || asset.role != "primary" {
-            return Err(unsupported_archive_error());
-        }
-        return Ok(());
-    }
     if name.ends_with(".zip") {
         return extract_zip_archive(archive_path, destination);
     }
@@ -563,46 +446,6 @@ fn extract_tar_gz_archive(archive_path: &Path, destination: &Path) -> Result<(),
         return Err(archive_error());
     }
     Ok(())
-}
-
-fn normalize_exllama_source_tree(
-    payload_root: &Path,
-    variant: &EngineVariant,
-) -> Result<(), ServiceError> {
-    let commit = variant
-        .assets
-        .iter()
-        .find(|asset| asset.role == "source")
-        .and_then(|asset| asset.source_commit.as_deref())
-        .ok_or_else(invalid_install_error)?;
-    let source_root = payload_root.join(format!("tabbyAPI-{commit}"));
-    let expected_start = source_root.join("start.py");
-    if !expected_start.is_file() || payload_root.join("tabbyAPI").exists() {
-        return Err(required_file_error());
-    }
-    fs::rename(source_root, payload_root.join("tabbyAPI")).map_err(|_| storage_error())
-}
-
-async fn write_pending_install_marker(
-    destination: &Path,
-    manifest: &EngineManifest,
-    variant: &EngineVariant,
-) -> Result<(), ServiceError> {
-    let marker = PendingInstallMarker {
-        marker_version: INSTALL_MARKER_VERSION,
-        engine_id: manifest.engine_id.clone(),
-        variant_id: variant.variant_id.clone(),
-        release_tag: manifest.release_tag.clone(),
-    };
-    let encoded = serde_json::to_vec(&marker).map_err(|_| storage_error())?;
-    let marker_path = destination.join(PENDING_INSTALL_MARKER);
-    let mut file = async_fs::File::create(marker_path)
-        .await
-        .map_err(|_| storage_error())?;
-    file.write_all(&encoded)
-        .await
-        .map_err(|_| storage_error())?;
-    file.sync_all().await.map_err(|_| storage_error())
 }
 
 async fn download_asset(
@@ -813,7 +656,6 @@ async fn send_progress(
     phase: &str,
     downloaded_bytes: u64,
 ) -> Result<(), ServiceError> {
-    let is_runtime_setup = phase == "setting_up_runtime";
     events
         .send(&Response::event(
             request_id.clone(),
@@ -825,8 +667,8 @@ async fn send_progress(
                 "assetName": asset.name,
                 "assetIndex": asset_index,
                 "assetCount": asset_count,
-                "downloadedBytes": if is_runtime_setup { 0 } else { downloaded_bytes },
-                "totalBytes": if is_runtime_setup { 0 } else { asset.size_bytes },
+                "downloadedBytes": downloaded_bytes,
+                "totalBytes": asset.size_bytes,
             }),
         ))
         .await
@@ -913,11 +755,7 @@ fn validate_install_request(
         }
         validate_digest_text(&asset.sha256)?;
         let name = asset.name.to_ascii_lowercase();
-        let supported_asset = name.ends_with(".zip")
-            || name.ends_with(".tar.gz")
-            || (uses_managed_python_runtime(&manifest.engine_id)
-                && asset.role == "primary"
-                && name.ends_with(".whl"));
+        let supported_asset = name.ends_with(".zip") || name.ends_with(".tar.gz");
         if !supported_asset {
             return Err(unsupported_archive_error());
         }
@@ -1180,34 +1018,6 @@ mod tests {
 
     const LLAMA_CPP_MANIFEST: &[u8] =
         include_bytes!("../../resources/local-engines/llama_cpp.json");
-    const VLLM_MANIFEST: &[u8] = include_bytes!("../../resources/local-engines/vllm.json");
-
-    #[test]
-    fn validates_locked_vllm_assets_for_linux_and_windows_wsl() {
-        let manifest = parse_manifest(VLLM_MANIFEST).expect("vLLM catalog should validate");
-        for variant_id in ["linux-x86_64-cuda13", "windows-wsl2-linux-x86_64-cuda13"] {
-            let variant = manifest
-                .variants
-                .iter()
-                .find(|variant| variant.variant_id == variant_id)
-                .expect("supported vLLM variant should exist");
-            validate_install_request(&manifest, variant)
-                .expect("pinned release assets should pass installer validation");
-            let wheel = variant
-                .assets
-                .iter()
-                .find(|asset| asset.name.ends_with(".whl"))
-                .expect("vLLM wheel should be pinned");
-            extract_downloaded_asset(
-                std::path::Path::new("not-read-for-verified-wheel"),
-                std::path::Path::new("unused-destination"),
-                &manifest,
-                wheel,
-            )
-            .expect("verified vLLM wheel should be retained for managed installation");
-        }
-    }
-
     #[test]
     fn rejects_unsafe_archive_paths() {
         assert!(archive_relative_path("../payload.exe", false).is_err());

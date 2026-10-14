@@ -25,21 +25,25 @@ class AssistantMessage extends StatelessWidget {
     required this.modelLabel,
     required this.providerId,
     this.onRetry,
+    this.onOpenConnections,
     this.responseVersionIndex,
     this.responseVersionCount,
     this.onSelectResponseVersion,
     this.isSavedOutput = false,
     this.isSavingSavedOutput = false,
     this.onToggleSavedOutput,
+    this.onViewPersonalMemorySources,
   });
 
   final ChatMessage message;
   final String? modelLabel;
   final String providerId;
   final VoidCallback? onRetry;
+  final VoidCallback? onOpenConnections;
   final int? responseVersionIndex;
   final int? responseVersionCount;
   final ValueChanged<int>? onSelectResponseVersion;
+  final ValueChanged<List<String>>? onViewPersonalMemorySources;
   final bool isSavedOutput;
   final bool isSavingSavedOutput;
   final VoidCallback? onToggleSavedOutput;
@@ -118,6 +122,10 @@ class AssistantMessage extends StatelessWidget {
                 const SizedBox(height: 6),
                 _AssistantFailureCard(
                   description: _failureDescription(l10n, message.failureCode),
+                  onOpenConnections:
+                      _needsConnectionRecovery(message.failureCode)
+                      ? onOpenConnections
+                      : null,
                 ),
               ] else ...[
                 const SizedBox(height: 6),
@@ -161,6 +169,24 @@ class AssistantMessage extends StatelessWidget {
                         fontSize: 12,
                         fontWeight: FontWeight.w400,
                         height: 18 / 12,
+                      ),
+                    ),
+                  if (message.personalMemoryFactIds.isNotEmpty &&
+                      onViewPersonalMemorySources != null)
+                    TextButton.icon(
+                      onPressed: () => onViewPersonalMemorySources!(
+                        message.personalMemoryFactIds,
+                      ),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                      ),
+                      icon: const Icon(LucideIcons.brain, size: 15),
+                      label: Text(
+                        l10n.personalMemoryResponseLabel(
+                          message.personalMemoryFactIds.length,
+                        ),
                       ),
                     ),
                   if (onRetry != null)
@@ -243,12 +269,23 @@ class AssistantMessage extends StatelessWidget {
         'invalid_provider_response' => l10n.providerRequestFailed,
         _ => l10n.chatRequestFailed,
       };
+
+  bool _needsConnectionRecovery(String? code) => switch (code) {
+    'authentication_required' ||
+    'refresh_rejected' ||
+    'invalid_api_key' => true,
+    _ => false,
+  };
 }
 
 class _AssistantFailureCard extends StatelessWidget {
-  const _AssistantFailureCard({required this.description});
+  const _AssistantFailureCard({
+    required this.description,
+    this.onOpenConnections,
+  });
 
   final String description;
+  final VoidCallback? onOpenConnections;
 
   @override
   Widget build(BuildContext context) {
@@ -294,6 +331,17 @@ class _AssistantFailureCard extends StatelessWidget {
                       color: palette.text,
                     ),
                   ),
+                  if (onOpenConnections != null) ...[
+                    const SizedBox(height: OpenChatSpacing.sm),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: OutlinedButton.icon(
+                        onPressed: onOpenConnections,
+                        icon: const Icon(LucideIcons.link, size: 16),
+                        label: Text(context.openchatL10n.goToConnections),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),

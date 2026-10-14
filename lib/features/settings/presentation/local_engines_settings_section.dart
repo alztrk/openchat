@@ -38,6 +38,7 @@ class _LocalEnginesSettingsSectionState
     extends State<LocalEnginesSettingsSection> {
   _LocalEnginesLoadState _loadState = _LocalEnginesLoadState.loading;
   LocalEngineCatalog? _catalog;
+  final Set<String> _expandedEngineIds = <String>{};
   String? _installError;
   String? _installingEngineId;
   String? _installingVariantId;
@@ -780,20 +781,10 @@ class _LocalEnginesSettingsSectionState
   @override
   Widget build(BuildContext context) {
     final l10n = context.openchatL10n;
-    final palette = OpenChatPalette.of(context);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          l10n.localEnginesDescription,
-          style: TextStyle(
-            color: palette.secondaryText,
-            fontSize: 13,
-            height: 1.45,
-          ),
-        ),
-        const SizedBox(height: 16),
         if (_installError != null) ...[
           _buildMessageCard(
             context,
@@ -878,8 +869,10 @@ class _LocalEnginesSettingsSectionState
     final palette = OpenChatPalette.of(context);
     final isBlocked = engine.catalogStatus == 'blocked';
     final isDeprecated = engine.catalogStatus == 'deprecated';
+    final isExpanded = _expandedEngineIds.contains(engine.engineId);
 
     return Card(
+      key: ValueKey<String>('local-engine-card-${engine.engineId}'),
       margin: EdgeInsets.zero,
       elevation: 0,
       color: palette.surface,
@@ -887,107 +880,152 @@ class _LocalEnginesSettingsSectionState
         borderRadius: BorderRadius.circular(OpenChatRadii.card),
         side: BorderSide(color: palette.border),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                LocalEngineIcon(
-                  engineId: engine.engineId,
-                  color: palette.accentIcon,
-                  size: 24,
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 6,
-                        crossAxisAlignment: WrapCrossAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Semantics(
+            button: true,
+            expanded: isExpanded,
+            child: InkWell(
+              onTap: () => setState(() {
+                if (isExpanded) {
+                  _expandedEngineIds.remove(engine.engineId);
+                } else {
+                  _expandedEngineIds.add(engine.engineId);
+                }
+              }),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    LocalEngineIcon(
+                      engineId: engine.engineId,
+                      color: palette.accentIcon,
+                      size: 24,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 6,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              Text(
+                                engine.displayName,
+                                style: Theme.of(context).textTheme.titleMedium,
+                              ),
+                              _buildBadge(
+                                context,
+                                _channelLabel(l10n, engine.channel),
+                                emphasized: engine.channel != 'stable',
+                              ),
+                              if (isDeprecated)
+                                _buildBadge(
+                                  context,
+                                  l10n.localEngineDeprecated,
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
                           Text(
-                            engine.displayName,
-                            style: Theme.of(context).textTheme.titleMedium,
+                            l10n.localEngineRelease(engine.releaseTag),
+                            style: TextStyle(
+                              color: palette.secondaryText,
+                              fontSize: 12,
+                            ),
                           ),
-                          _buildBadge(
-                            context,
-                            _channelLabel(l10n, engine.channel),
-                            emphasized: engine.channel != 'stable',
-                          ),
-                          if (isDeprecated)
-                            _buildBadge(context, l10n.localEngineDeprecated),
+                          const SizedBox(height: 6),
+                          _buildRuntimeStatus(context, engine),
                         ],
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        l10n.localEngineRelease(engine.releaseTag),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(
+                      isExpanded
+                          ? LucideIcons.chevronUp
+                          : LucideIcons.chevronDown,
+                      size: 18,
+                      color: palette.secondaryIcon,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (isExpanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (engine.releaseCheckStatus != 'current') ...[
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        l10n.localEngineReleaseCheckUnavailable,
                         style: TextStyle(
                           color: palette.secondaryText,
                           fontSize: 12,
                         ),
                       ),
-                      if (engine.releaseCheckStatus != 'current') ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          l10n.localEngineReleaseCheckUnavailable,
-                          style: TextStyle(
-                            color: palette.secondaryText,
-                            fontSize: 12,
-                          ),
+                    ),
+                    const SizedBox(height: 8),
+                  ] else if (engine.latestUpstreamReleaseTag
+                      case final latestTag?
+                      when latestTag != engine.releaseTag) ...[
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        l10n.localEngineNewerReleaseIncompatible(
+                          latestTag,
+                          engine.releaseTag,
                         ),
-                      ] else if (engine.latestUpstreamReleaseTag
-                          case final latestTag?
-                          when latestTag != engine.releaseTag) ...[
-                        const SizedBox(height: 8),
-                        Text(
-                          l10n.localEngineNewerReleaseIncompatible(
-                            latestTag,
-                            engine.releaseTag,
-                          ),
-                          style: TextStyle(
-                            color: palette.secondaryText,
-                            fontSize: 12,
-                          ),
+                        style: TextStyle(
+                          color: palette.secondaryText,
+                          fontSize: 12,
                         ),
-                      ],
-                    ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if ((isBlocked || isDeprecated) &&
+                      engine.statusReason != null) ...[
+                    _buildReasonBanner(
+                      context,
+                      _statusReasonLabel(l10n, engine),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                  if (engine.engineId == 'llama_cpp') ...[
+                    _buildLlamaServerExecutable(context),
+                    const SizedBox(height: 12),
+                  ],
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      l10n.localEngineVariants,
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            if ((isBlocked || isDeprecated) && engine.statusReason != null) ...[
-              const SizedBox(height: 14),
-              _buildReasonBanner(context, _statusReasonLabel(l10n, engine)),
-            ],
-            if (engine.engineId == 'llama_cpp') ...[
-              const SizedBox(height: 16),
-              _buildLlamaServerExecutable(context),
-            ],
-            const SizedBox(height: 14),
-            Text(
-              l10n.localEngineVariants,
-              style: TextStyle(
-                color: palette.secondaryText,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+                  const SizedBox(height: 8),
+                  for (
+                    var index = 0;
+                    index < engine.variants.length;
+                    index++
+                  ) ...[
+                    if (index > 0) const SizedBox(height: 8),
+                    _buildVariantTile(context, engine, engine.variants[index]),
+                  ],
+                  const SizedBox(height: 12),
+                  _buildRegisteredModels(context, engine),
+                ],
               ),
             ),
-            const SizedBox(height: 8),
-            for (var index = 0; index < engine.variants.length; index++) ...[
-              if (index > 0) const SizedBox(height: 8),
-              _buildVariantTile(context, engine, engine.variants[index]),
-            ],
-            const SizedBox(height: 16),
-            _buildRuntimeStatus(context, engine),
-            const SizedBox(height: 16),
-            _buildRegisteredModels(context, engine),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -1591,7 +1629,7 @@ class _LocalEnginesSettingsSectionState
                 ),
               ),
             ),
-            if (latest != null && latest.stage != 'setting_up_runtime')
+            if (latest != null)
               Text(
                 latest.assetName,
                 overflow: TextOverflow.ellipsis,
@@ -1605,7 +1643,7 @@ class _LocalEnginesSettingsSectionState
           value: fraction == null ? null : '${(fraction * 100).round()}%',
           child: LinearProgressIndicator(value: fraction),
         ),
-        if (latest != null && latest.stage != 'setting_up_runtime') ...[
+        if (latest != null) ...[
           const SizedBox(height: 6),
           Text(
             _progressDetails(l10n, latest),
@@ -1783,13 +1821,7 @@ class _LocalEnginesSettingsSectionState
   String _statusReasonLabel(AppLocalizations l10n, LocalEngine engine) =>
       engine.statusReason == 'release_check_unavailable'
       ? l10n.localEngineReleaseCheckUnavailable
-      : engine.catalogStatus == 'deprecated'
-      ? l10n.localEngineWindowsDeprecatedReason
-      : switch (engine.engineId) {
-          'vllm' => l10n.localEngineVllmBlockedReason,
-          'exllama' => l10n.localEngineExllamaBlockedReason,
-          _ => engine.statusReason ?? l10n.localEngineBlocked,
-        };
+      : engine.statusReason ?? l10n.localEngineBlocked;
 
   String _variantStatusLabel(AppLocalizations l10n, String status) =>
       switch (status) {
@@ -1810,7 +1842,6 @@ class _LocalEnginesSettingsSectionState
     'downloading' => l10n.localEngineStageDownloading,
     'verifying' => l10n.localEngineStageVerifying,
     'extracting' => l10n.localEngineStageExtracting,
-    'setting_up_runtime' => l10n.localEngineStageRuntimeSetup,
     'publishing' => l10n.localEngineStagePublishing,
     'ready' => l10n.localEngineStageReady,
     _ => stage,

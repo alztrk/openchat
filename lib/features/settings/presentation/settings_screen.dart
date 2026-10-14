@@ -10,8 +10,6 @@ import 'package:openchat/app/openchat_toast.dart';
 import 'package:openchat/app/openchat_page_header.dart';
 import 'package:openchat/features/chat/data/chat_repository.dart';
 import 'package:openchat/features/chat/domain/history_storage_status.dart';
-import 'package:openchat/features/chat/data/conversation_memory_repository.dart';
-import 'package:openchat/features/chat/presentation/widgets/conversation_memory_dialog.dart';
 import 'package:openchat/features/settings/data/api_compatible_provider_key_store.dart';
 import 'package:openchat/features/settings/data/chat_gpt_api_key_store.dart';
 import 'package:openchat/features/settings/data/open_code_api_key_store.dart';
@@ -26,9 +24,12 @@ import 'package:openchat/features/settings/presentation/custom_compatible_provid
 import 'package:openchat/features/settings/presentation/conversation_archive_section.dart';
 import 'package:openchat/features/settings/presentation/local_engines_settings_section.dart';
 import 'package:openchat/features/settings/presentation/models_settings_section.dart';
+import 'package:openchat/features/settings/presentation/notification_settings_section.dart';
 import 'package:openchat/features/settings/presentation/open_code_connection_section.dart';
 import 'package:openchat/features/settings/presentation/profile_archive_section.dart';
 import 'package:openchat/features/settings/presentation/statistics_settings_section.dart';
+import 'package:openchat/features/settings/presentation/support_diagnostics_section.dart';
+import 'package:openchat/features/settings/presentation/connector_catalog_settings_section.dart';
 import 'package:openchat/features/settings/presentation/usage_quotas_settings_section.dart';
 
 const _sharedInstructionsMaxLength = 4096;
@@ -39,19 +40,11 @@ enum _SettingsSection {
   statistics,
   models,
   localEngines,
-  conversationMemory,
   sharedInstructions,
+  connectors,
+  notifications,
   appearance,
   localData;
-
-  bool get isAdvanced => switch (this) {
-    usageQuotas ||
-    statistics ||
-    models ||
-    localEngines ||
-    conversationMemory => true,
-    connections || sharedInstructions || appearance || localData => false,
-  };
 
   IconData get icon => switch (this) {
     connections => LucideIcons.link,
@@ -59,8 +52,9 @@ enum _SettingsSection {
     statistics => LucideIcons.chartBarIncreasing,
     models => LucideIcons.slidersHorizontal,
     localEngines => LucideIcons.microchip,
-    conversationMemory => LucideIcons.brain,
     sharedInstructions => LucideIcons.notebookPen,
+    connectors => LucideIcons.plug,
+    notifications => LucideIcons.bell,
     appearance => LucideIcons.palette,
     localData => LucideIcons.database,
   };
@@ -72,9 +66,7 @@ class SettingsScreen extends StatefulWidget {
     required this.onThemeModeChanged,
     required this.historyStorageStatus,
     required this.hasConversationHistory,
-    this.activeConversationId,
-    this.activeConversationTitle,
-    this.isActiveConversationSending = false,
+    this.activeProjectId,
     required this.settingsPreferences,
     this.pageHeadingFocusNode,
     this.locale,
@@ -94,6 +86,7 @@ class SettingsScreen extends StatefulWidget {
     this.onProviderStateChanged,
     this.onConnectionRemoved,
     this.onOpenConversation,
+    this.onSendTestNotification,
     super.key,
   });
 
@@ -111,9 +104,7 @@ class SettingsScreen extends StatefulWidget {
   final Future<void> Function(AppFontPreference)? onAppFontChanged;
   final HistoryStorageStatus historyStorageStatus;
   final bool hasConversationHistory;
-  final String? activeConversationId;
-  final String? activeConversationTitle;
-  final bool isActiveConversationSending;
+  final String? activeProjectId;
   final SettingsPreferences settingsPreferences;
   final FocusNode? pageHeadingFocusNode;
   final Future<void> Function()? onClearConversationHistory;
@@ -125,6 +116,7 @@ class SettingsScreen extends StatefulWidget {
   final Future<void> Function()? onProviderStateChanged;
   final Future<void> Function(String connectionId)? onConnectionRemoved;
   final ValueChanged<String>? onOpenConversation;
+  final Future<bool> Function()? onSendTestNotification;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -142,29 +134,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String? _defaultInstructionsError;
   String? _sharedInstructionsError;
   _SettingsSection _selectedSection = _SettingsSection.connections;
-  bool _advancedSettingsExpanded = false;
-  ConversationMemoryRepository? _conversationMemoryRepository;
 
   @override
   void initState() {
     super.initState();
     _sharedInstructionsController = TextEditingController();
-    final serviceClient = widget.serviceClient;
-    _conversationMemoryRepository = serviceClient == null
-        ? null
-        : ConversationMemoryRepository(serviceClient);
     unawaited(_loadSharedInstructions());
   }
 
   @override
   void didUpdateWidget(covariant SettingsScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.serviceClient != widget.serviceClient) {
-      final serviceClient = widget.serviceClient;
-      _conversationMemoryRepository = serviceClient == null
-          ? null
-          : ConversationMemoryRepository(serviceClient);
-    }
   }
 
   @override
@@ -176,10 +156,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   void _selectSection(_SettingsSection section) {
     setState(() {
       _selectedSection = section;
-      _advancedSettingsExpanded = section.isAdvanced;
-    });
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) widget.pageHeadingFocusNode?.requestFocus();
     });
   }
 
@@ -192,14 +168,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
       builder: (context, constraints) {
         final compactSidebar = constraints.maxWidth < 960;
         final horizontalInset = constraints.maxWidth < 640 ? 16.0 : 24.0;
+        final activeProjectId = widget.activeProjectId;
         final sectionTitle = switch (_selectedSection) {
           _SettingsSection.connections => l10n.connections,
           _SettingsSection.usageQuotas => l10n.usageQuotas,
           _SettingsSection.statistics => l10n.statistics,
-          _SettingsSection.models => l10n.modelPreferences,
+          _SettingsSection.models => l10n.models,
           _SettingsSection.localEngines => l10n.localEngines,
-          _SettingsSection.conversationMemory => l10n.conversationMemory,
           _SettingsSection.sharedInstructions => l10n.sharedInstructions,
+          _SettingsSection.connectors => l10n.settingsConnectors,
+          _SettingsSection.notifications => l10n.settingsNotifications,
           _SettingsSection.appearance => l10n.appearance,
           _SettingsSection.localData => l10n.localData,
         };
@@ -209,15 +187,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _SettingsSection.statistics => l10n.settingsStatisticsDescription,
           _SettingsSection.models => l10n.settingsModelPreferencesDescription,
           _SettingsSection.localEngines => l10n.settingsLocalEnginesDescription,
-          _SettingsSection.conversationMemory =>
-            l10n.settingsConversationMemoryDescription,
           _SettingsSection.sharedInstructions =>
             l10n.settingsSharedInstructionsDescription,
+          _SettingsSection.connectors => l10n.settingsConnectorsDescription,
+          _SettingsSection.notifications =>
+            l10n.settingsNotificationsDescription,
           _SettingsSection.appearance => l10n.settingsAppearanceDescription,
           _SettingsSection.localData => l10n.settingsLocalDataDescription,
         };
 
-        return ColoredBox(
+        return Material(
           color: palette.surface,
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -225,10 +204,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _SettingsSidebar(
                 compact: compactSidebar,
                 selectedSection: _selectedSection,
-                advancedExpanded: _advancedSettingsExpanded,
-                onToggleAdvanced: () => setState(
-                  () => _advancedSettingsExpanded = !_advancedSettingsExpanded,
-                ),
                 onSelectSection: _selectSection,
               ),
               Expanded(
@@ -273,7 +248,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               serviceClient: widget.serviceClient,
                               onNavigateToConnections: () => setState(() {
                                 _selectedSection = _SettingsSection.connections;
-                                _advancedSettingsExpanded = false;
                               }),
                             ),
                           ),
@@ -308,20 +282,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                           _buildSectionPage(
-                            section: _SettingsSection.conversationMemory,
-                            horizontalInset: horizontalInset,
-                            child: ConversationMemorySection(
-                              repository: _conversationMemoryRepository,
-                              conversationId: widget.activeConversationId,
-                              conversationTitle: widget.activeConversationTitle,
-                              isSending: widget.isActiveConversationSending,
-                              embedded: true,
-                            ),
-                          ),
-                          _buildSectionPage(
                             section: _SettingsSection.sharedInstructions,
                             horizontalInset: horizontalInset,
                             child: _buildSharedInstructionsSection(),
+                          ),
+                          _buildSectionPage(
+                            section: _SettingsSection.connectors,
+                            horizontalInset: horizontalInset,
+                            child: ConnectorCatalogSettingsSection(
+                              settingsPreferences: widget.settingsPreferences,
+                              serviceClient: widget.serviceClient,
+                              projectId: activeProjectId,
+                            ),
+                          ),
+                          _buildSectionPage(
+                            section: _SettingsSection.notifications,
+                            horizontalInset: horizontalInset,
+                            child: NotificationSettingsSection(
+                              settingsPreferences: widget.settingsPreferences,
+                              onSendTestNotification:
+                                  widget.onSendTestNotification,
+                            ),
                           ),
                           _buildSectionPage(
                             section: _SettingsSection.appearance,
@@ -378,6 +359,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         const SizedBox(height: 12),
         ChatGptConnectionSection(
           apiKeyStore: widget.chatGptApiKeyStore,
+          settingsPreferences: widget.settingsPreferences,
           serviceClient: widget.serviceClient,
           onProviderStateChanged: widget.onProviderStateChanged,
           onConnectionRemoved: widget.onConnectionRemoved,
@@ -423,6 +405,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   child: OpenCodeConnectionSection(
                     key: const ValueKey('opencode'),
                     apiKeyStore: widget.openCodeApiKeyStore,
+                    settingsPreferences: widget.settingsPreferences,
+                    serviceClient: widget.serviceClient,
                     onChanged: widget.onProviderStateChanged,
                   ),
                 ),
@@ -434,6 +418,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       key: ValueKey(providerId),
                       providerId: providerId,
                       apiKeyStore: widget.apiCompatibleProviderKeyStore,
+                      settingsPreferences: widget.settingsPreferences,
+                      serviceClient: widget.serviceClient,
                       onChanged: widget.onProviderStateChanged,
                     ),
                   ),
@@ -785,6 +771,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
         const SizedBox(height: 16),
         ProfileArchiveSection(serviceClient: widget.serviceClient),
+        const SizedBox(height: 22),
+        SupportDiagnosticsSection(
+          serviceClient: widget.serviceClient,
+          historyStorageStatus: widget.historyStorageStatus,
+        ),
         const SizedBox(height: 22),
         _SettingsRow(
           title: l10n.clearConversationHistory,
@@ -1204,50 +1195,89 @@ class _SettingsRow extends StatelessWidget {
   }
 }
 
-class _SettingsSidebar extends StatelessWidget {
+class _SettingsSidebar extends StatefulWidget {
   const _SettingsSidebar({
     required this.compact,
     required this.selectedSection,
-    required this.advancedExpanded,
-    required this.onToggleAdvanced,
     required this.onSelectSection,
   });
 
   final bool compact;
   final _SettingsSection selectedSection;
-  final bool advancedExpanded;
-  final VoidCallback onToggleAdvanced;
   final ValueChanged<_SettingsSection> onSelectSection;
 
+  @override
+  State<_SettingsSidebar> createState() => _SettingsSidebarState();
+}
+
+class _SettingsSidebarState extends State<_SettingsSidebar> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
-    final generalEntries = [
-      (section: _SettingsSection.connections, label: l10n.connections),
-      (
-        section: _SettingsSection.sharedInstructions,
-        label: l10n.sharedInstructions,
-      ),
-      (section: _SettingsSection.appearance, label: l10n.appearance),
-    ];
-    final recoveryEntry = (
-      section: _SettingsSection.localData,
-      label: l10n.localData,
-    );
-    final advancedEntries = [
-      (section: _SettingsSection.usageQuotas, label: l10n.usageQuotas),
-      (section: _SettingsSection.statistics, label: l10n.statistics),
-      (section: _SettingsSection.models, label: l10n.modelPreferences),
-      (section: _SettingsSection.localEngines, label: l10n.localEngines),
-      (
-        section: _SettingsSection.conversationMemory,
-        label: l10n.conversationMemory,
-      ),
-    ];
+    final groups =
+        <
+          ({
+            String label,
+            List<({_SettingsSection section, String label})> entries,
+          })
+        >[
+          (
+            label: l10n.settingsAppearanceAccessibilityGroup,
+            entries: [
+              (section: _SettingsSection.appearance, label: l10n.appearance),
+            ],
+          ),
+          (
+            label: l10n.settingsChatBehaviorGroup,
+            entries: [
+              (
+                section: _SettingsSection.sharedInstructions,
+                label: l10n.sharedInstructions,
+              ),
+            ],
+          ),
+          (
+            label: l10n.settingsProvidersModelsGroup,
+            entries: [
+              (section: _SettingsSection.connections, label: l10n.connections),
+              (section: _SettingsSection.usageQuotas, label: l10n.usageQuotas),
+              (section: _SettingsSection.statistics, label: l10n.statistics),
+              (section: _SettingsSection.models, label: l10n.models),
+              (
+                section: _SettingsSection.localEngines,
+                label: l10n.localEngines,
+              ),
+            ],
+          ),
+          (
+            label: l10n.settingsToolsPermissionsGroup,
+            entries: [
+              (
+                section: _SettingsSection.connectors,
+                label: l10n.settingsConnectors,
+              ),
+            ],
+          ),
+          (
+            label: l10n.settingsNotificationsGroup,
+            entries: [
+              (
+                section: _SettingsSection.notifications,
+                label: l10n.settingsNotifications,
+              ),
+            ],
+          ),
+          (
+            label: l10n.settingsDataPrivacyGroup,
+            entries: [
+              (section: _SettingsSection.localData, label: l10n.localData),
+            ],
+          ),
+        ];
 
     return Container(
-      width: compact ? 64 : 252,
+      width: widget.compact ? 64 : 272,
       decoration: BoxDecoration(color: palette.navigation),
       foregroundDecoration: BoxDecoration(
         border: Border(
@@ -1258,9 +1288,9 @@ class _SettingsSidebar extends StatelessWidget {
       child: SafeArea(
         child: Padding(
           padding: EdgeInsets.fromLTRB(
-            compact ? 8 : 18,
-            18,
-            compact ? 8 : 14,
+            widget.compact ? 8 : 16,
+            16,
+            widget.compact ? 8 : 12,
             16,
           ),
           child: SingleChildScrollView(
@@ -1268,7 +1298,7 @@ class _SettingsSidebar extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                if (compact)
+                if (widget.compact)
                   SizedBox(
                     height: 38,
                     child: Center(
@@ -1285,117 +1315,33 @@ class _SettingsSidebar extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
                 ],
-                const SizedBox(height: 16),
-                Divider(height: 1, color: palette.border),
-                const SizedBox(height: 12),
-                if (!compact) ...[
-                  _SettingsGroupLabel(label: l10n.settingsGeneral),
-                  const SizedBox(height: 6),
-                ],
-                for (final entry in generalEntries) ...[
-                  _SettingsSidebarItem(
-                    compact: compact,
-                    label: entry.label,
-                    icon: entry.section.icon,
-                    selected: selectedSection == entry.section,
-                    onPressed: () => onSelectSection(entry.section),
-                  ),
-                  const SizedBox(height: 4),
-                ],
-                if (!compact) ...[
-                  const SizedBox(height: 8),
-                  Divider(height: 1, color: palette.border),
-                  const SizedBox(height: 10),
-                  _SettingsGroupLabel(label: l10n.settingsDataRecovery),
-                  const SizedBox(height: 6),
-                ],
-                _SettingsSidebarItem(
-                  compact: compact,
-                  label: recoveryEntry.label,
-                  icon: recoveryEntry.section.icon,
-                  selected: selectedSection == recoveryEntry.section,
-                  onPressed: () => onSelectSection(recoveryEntry.section),
+                SizedBox(
+                  height: widget.compact
+                      ? OpenChatSpacing.sm
+                      : OpenChatSpacing.md,
                 ),
-                const SizedBox(height: 8),
-                if (!compact) Divider(height: 1, color: palette.border),
-                if (!compact) const SizedBox(height: 10),
-                Semantics(
-                  button: true,
-                  expanded: advancedExpanded,
-                  label: l10n.settingsAdvanced,
-                  onTap: onToggleAdvanced,
-                  child: ExcludeSemantics(
-                    child: Tooltip(
-                      message: l10n.settingsAdvanced,
-                      child: Material(
-                        color: Colors.transparent,
-                        borderRadius: BorderRadius.circular(
-                          OpenChatRadii.button,
+                for (final group in groups)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      if (!widget.compact) ...[
+                        _SettingsGroupLabel(label: group.label),
+                        const SizedBox(height: OpenChatSpacing.xxs),
+                      ],
+                      for (final entry in group.entries) ...[
+                        _SettingsSidebarItem(
+                          compact: widget.compact,
+                          label: entry.label,
+                          icon: entry.section.icon,
+                          selected: widget.selectedSection == entry.section,
+                          onPressed: () =>
+                              widget.onSelectSection(entry.section),
                         ),
-                        child: InkWell(
-                          onTap: onToggleAdvanced,
-                          borderRadius: BorderRadius.circular(
-                            OpenChatRadii.button,
-                          ),
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(minHeight: 44),
-                            child: Padding(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: compact ? 0 : 12,
-                              ),
-                              child: Row(
-                                mainAxisAlignment: compact
-                                    ? MainAxisAlignment.center
-                                    : MainAxisAlignment.start,
-                                children: [
-                                  Icon(
-                                    LucideIcons.slidersHorizontal,
-                                    size: 18,
-                                    color: advancedExpanded
-                                        ? palette.text
-                                        : palette.secondaryIcon,
-                                  ),
-                                  if (!compact) ...[
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Text(
-                                        l10n.settingsAdvanced,
-                                        style: TextStyle(
-                                          color: palette.secondaryText,
-                                          fontSize: 13,
-                                        ),
-                                      ),
-                                    ),
-                                    Icon(
-                                      advancedExpanded
-                                          ? LucideIcons.chevronDown
-                                          : LucideIcons.chevronRight,
-                                      size: 16,
-                                      color: palette.secondaryIcon,
-                                    ),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                        const SizedBox(height: OpenChatSpacing.xxs),
+                      ],
+                      const SizedBox(height: OpenChatSpacing.sm),
+                    ],
                   ),
-                ),
-                if (advancedExpanded) ...[
-                  const SizedBox(height: 6),
-                  for (final entry in advancedEntries) ...[
-                    _SettingsSidebarItem(
-                      compact: compact,
-                      label: entry.label,
-                      icon: entry.section.icon,
-                      selected: selectedSection == entry.section,
-                      onPressed: () => onSelectSection(entry.section),
-                    ),
-                    const SizedBox(height: 4),
-                  ],
-                ],
               ],
             ),
           ),

@@ -117,7 +117,7 @@ async fn resolve_target(
                 responses_api,
             })
         }
-        "llama_cpp" | "vllm" | "exllama" => {
+        "llama_cpp" => {
             let (_sender, mut cancellation) = watch::channel(false);
             let endpoint =
                 crate::local_engines::chat_url(storage, &target.model_id, &mut cancellation)

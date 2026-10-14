@@ -1745,6 +1745,18 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     requiredDuringInsert: false,
     defaultValue: const Constant('[]'),
   );
+  static const VerificationMeta _personalMemoryFactIdsMeta =
+      const VerificationMeta('personalMemoryFactIds');
+  @override
+  late final GeneratedColumn<String> personalMemoryFactIds =
+      GeneratedColumn<String>(
+        'personal_memory_fact_ids',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant('[]'),
+      );
   static const VerificationMeta _reasoningSummariesMeta =
       const VerificationMeta('reasoningSummaries');
   @override
@@ -1802,6 +1814,7 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
     providerId,
     modelId,
     citationSources,
+    personalMemoryFactIds,
     reasoningSummaries,
     toolActivities,
     status,
@@ -1905,6 +1918,15 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         ),
       );
     }
+    if (data.containsKey('personal_memory_fact_ids')) {
+      context.handle(
+        _personalMemoryFactIdsMeta,
+        personalMemoryFactIds.isAcceptableOrUnknown(
+          data['personal_memory_fact_ids']!,
+          _personalMemoryFactIdsMeta,
+        ),
+      );
+    }
     if (data.containsKey('reasoning_summaries')) {
       context.handle(
         _reasoningSummariesMeta,
@@ -1993,6 +2015,10 @@ class $MessagesTable extends Messages with TableInfo<$MessagesTable, Message> {
         DriftSqlType.string,
         data['${effectivePrefix}citation_sources'],
       )!,
+      personalMemoryFactIds: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}personal_memory_fact_ids'],
+      )!,
       reasoningSummaries: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}reasoning_summaries'],
@@ -2030,6 +2056,7 @@ class Message extends DataClass implements Insertable<Message> {
   final String? providerId;
   final String? modelId;
   final String citationSources;
+  final String personalMemoryFactIds;
   final String reasoningSummaries;
   final String toolActivities;
   final String status;
@@ -2046,6 +2073,7 @@ class Message extends DataClass implements Insertable<Message> {
     this.providerId,
     this.modelId,
     required this.citationSources,
+    required this.personalMemoryFactIds,
     required this.reasoningSummaries,
     required this.toolActivities,
     required this.status,
@@ -2077,6 +2105,7 @@ class Message extends DataClass implements Insertable<Message> {
       map['model_id'] = Variable<String>(modelId);
     }
     map['citation_sources'] = Variable<String>(citationSources);
+    map['personal_memory_fact_ids'] = Variable<String>(personalMemoryFactIds);
     map['reasoning_summaries'] = Variable<String>(reasoningSummaries);
     map['tool_activities'] = Variable<String>(toolActivities);
     map['status'] = Variable<String>(status);
@@ -2111,6 +2140,7 @@ class Message extends DataClass implements Insertable<Message> {
           ? const Value.absent()
           : Value(modelId),
       citationSources: Value(citationSources),
+      personalMemoryFactIds: Value(personalMemoryFactIds),
       reasoningSummaries: Value(reasoningSummaries),
       toolActivities: Value(toolActivities),
       status: Value(status),
@@ -2139,6 +2169,9 @@ class Message extends DataClass implements Insertable<Message> {
       providerId: serializer.fromJson<String?>(json['providerId']),
       modelId: serializer.fromJson<String?>(json['modelId']),
       citationSources: serializer.fromJson<String>(json['citationSources']),
+      personalMemoryFactIds: serializer.fromJson<String>(
+        json['personalMemoryFactIds'],
+      ),
       reasoningSummaries: serializer.fromJson<String>(
         json['reasoningSummaries'],
       ),
@@ -2162,6 +2195,7 @@ class Message extends DataClass implements Insertable<Message> {
       'providerId': serializer.toJson<String?>(providerId),
       'modelId': serializer.toJson<String?>(modelId),
       'citationSources': serializer.toJson<String>(citationSources),
+      'personalMemoryFactIds': serializer.toJson<String>(personalMemoryFactIds),
       'reasoningSummaries': serializer.toJson<String>(reasoningSummaries),
       'toolActivities': serializer.toJson<String>(toolActivities),
       'status': serializer.toJson<String>(status),
@@ -2181,6 +2215,7 @@ class Message extends DataClass implements Insertable<Message> {
     Value<String?> providerId = const Value.absent(),
     Value<String?> modelId = const Value.absent(),
     String? citationSources,
+    String? personalMemoryFactIds,
     String? reasoningSummaries,
     String? toolActivities,
     String? status,
@@ -2201,6 +2236,7 @@ class Message extends DataClass implements Insertable<Message> {
     providerId: providerId.present ? providerId.value : this.providerId,
     modelId: modelId.present ? modelId.value : this.modelId,
     citationSources: citationSources ?? this.citationSources,
+    personalMemoryFactIds: personalMemoryFactIds ?? this.personalMemoryFactIds,
     reasoningSummaries: reasoningSummaries ?? this.reasoningSummaries,
     toolActivities: toolActivities ?? this.toolActivities,
     status: status ?? this.status,
@@ -2231,6 +2267,9 @@ class Message extends DataClass implements Insertable<Message> {
       citationSources: data.citationSources.present
           ? data.citationSources.value
           : this.citationSources,
+      personalMemoryFactIds: data.personalMemoryFactIds.present
+          ? data.personalMemoryFactIds.value
+          : this.personalMemoryFactIds,
       reasoningSummaries: data.reasoningSummaries.present
           ? data.reasoningSummaries.value
           : this.reasoningSummaries,
@@ -2258,6 +2297,7 @@ class Message extends DataClass implements Insertable<Message> {
           ..write('providerId: $providerId, ')
           ..write('modelId: $modelId, ')
           ..write('citationSources: $citationSources, ')
+          ..write('personalMemoryFactIds: $personalMemoryFactIds, ')
           ..write('reasoningSummaries: $reasoningSummaries, ')
           ..write('toolActivities: $toolActivities, ')
           ..write('status: $status, ')
@@ -2279,6 +2319,7 @@ class Message extends DataClass implements Insertable<Message> {
     providerId,
     modelId,
     citationSources,
+    personalMemoryFactIds,
     reasoningSummaries,
     toolActivities,
     status,
@@ -2299,6 +2340,7 @@ class Message extends DataClass implements Insertable<Message> {
           other.providerId == this.providerId &&
           other.modelId == this.modelId &&
           other.citationSources == this.citationSources &&
+          other.personalMemoryFactIds == this.personalMemoryFactIds &&
           other.reasoningSummaries == this.reasoningSummaries &&
           other.toolActivities == this.toolActivities &&
           other.status == this.status &&
@@ -2317,6 +2359,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
   final Value<String?> providerId;
   final Value<String?> modelId;
   final Value<String> citationSources;
+  final Value<String> personalMemoryFactIds;
   final Value<String> reasoningSummaries;
   final Value<String> toolActivities;
   final Value<String> status;
@@ -2334,6 +2377,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.providerId = const Value.absent(),
     this.modelId = const Value.absent(),
     this.citationSources = const Value.absent(),
+    this.personalMemoryFactIds = const Value.absent(),
     this.reasoningSummaries = const Value.absent(),
     this.toolActivities = const Value.absent(),
     this.status = const Value.absent(),
@@ -2352,6 +2396,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     this.providerId = const Value.absent(),
     this.modelId = const Value.absent(),
     this.citationSources = const Value.absent(),
+    this.personalMemoryFactIds = const Value.absent(),
     this.reasoningSummaries = const Value.absent(),
     this.toolActivities = const Value.absent(),
     required String status,
@@ -2374,6 +2419,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Expression<String>? providerId,
     Expression<String>? modelId,
     Expression<String>? citationSources,
+    Expression<String>? personalMemoryFactIds,
     Expression<String>? reasoningSummaries,
     Expression<String>? toolActivities,
     Expression<String>? status,
@@ -2393,6 +2439,8 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       if (providerId != null) 'provider_id': providerId,
       if (modelId != null) 'model_id': modelId,
       if (citationSources != null) 'citation_sources': citationSources,
+      if (personalMemoryFactIds != null)
+        'personal_memory_fact_ids': personalMemoryFactIds,
       if (reasoningSummaries != null) 'reasoning_summaries': reasoningSummaries,
       if (toolActivities != null) 'tool_activities': toolActivities,
       if (status != null) 'status': status,
@@ -2413,6 +2461,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     Value<String?>? providerId,
     Value<String?>? modelId,
     Value<String>? citationSources,
+    Value<String>? personalMemoryFactIds,
     Value<String>? reasoningSummaries,
     Value<String>? toolActivities,
     Value<String>? status,
@@ -2431,6 +2480,8 @@ class MessagesCompanion extends UpdateCompanion<Message> {
       providerId: providerId ?? this.providerId,
       modelId: modelId ?? this.modelId,
       citationSources: citationSources ?? this.citationSources,
+      personalMemoryFactIds:
+          personalMemoryFactIds ?? this.personalMemoryFactIds,
       reasoningSummaries: reasoningSummaries ?? this.reasoningSummaries,
       toolActivities: toolActivities ?? this.toolActivities,
       status: status ?? this.status,
@@ -2475,6 +2526,11 @@ class MessagesCompanion extends UpdateCompanion<Message> {
     if (citationSources.present) {
       map['citation_sources'] = Variable<String>(citationSources.value);
     }
+    if (personalMemoryFactIds.present) {
+      map['personal_memory_fact_ids'] = Variable<String>(
+        personalMemoryFactIds.value,
+      );
+    }
     if (reasoningSummaries.present) {
       map['reasoning_summaries'] = Variable<String>(reasoningSummaries.value);
     }
@@ -2507,6 +2563,7 @@ class MessagesCompanion extends UpdateCompanion<Message> {
           ..write('providerId: $providerId, ')
           ..write('modelId: $modelId, ')
           ..write('citationSources: $citationSources, ')
+          ..write('personalMemoryFactIds: $personalMemoryFactIds, ')
           ..write('reasoningSummaries: $reasoningSummaries, ')
           ..write('toolActivities: $toolActivities, ')
           ..write('status: $status, ')
@@ -2986,6 +3043,18 @@ class $SavedOutputsTable extends SavedOutputs
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _selectedVersionMeta = const VerificationMeta(
+    'selectedVersion',
+  );
+  @override
+  late final GeneratedColumn<int> selectedVersion = GeneratedColumn<int>(
+    'selected_version',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(1),
+  );
   static const VerificationMeta _savedAtMeta = const VerificationMeta(
     'savedAt',
   );
@@ -3005,6 +3074,7 @@ class $SavedOutputsTable extends SavedOutputs
     content,
     providerId,
     modelId,
+    selectedVersion,
     savedAt,
   ];
   @override
@@ -3069,6 +3139,15 @@ class $SavedOutputsTable extends SavedOutputs
         modelId.isAcceptableOrUnknown(data['model_id']!, _modelIdMeta),
       );
     }
+    if (data.containsKey('selected_version')) {
+      context.handle(
+        _selectedVersionMeta,
+        selectedVersion.isAcceptableOrUnknown(
+          data['selected_version']!,
+          _selectedVersionMeta,
+        ),
+      );
+    }
     if (data.containsKey('saved_at')) {
       context.handle(
         _savedAtMeta,
@@ -3110,6 +3189,10 @@ class $SavedOutputsTable extends SavedOutputs
         DriftSqlType.string,
         data['${effectivePrefix}model_id'],
       ),
+      selectedVersion: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}selected_version'],
+      )!,
       savedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}saved_at'],
@@ -3130,6 +3213,7 @@ class SavedOutput extends DataClass implements Insertable<SavedOutput> {
   final String content;
   final String? providerId;
   final String? modelId;
+  final int selectedVersion;
   final int savedAt;
   const SavedOutput({
     required this.conversationId,
@@ -3138,6 +3222,7 @@ class SavedOutput extends DataClass implements Insertable<SavedOutput> {
     required this.content,
     this.providerId,
     this.modelId,
+    required this.selectedVersion,
     required this.savedAt,
   });
   @override
@@ -3153,6 +3238,7 @@ class SavedOutput extends DataClass implements Insertable<SavedOutput> {
     if (!nullToAbsent || modelId != null) {
       map['model_id'] = Variable<String>(modelId);
     }
+    map['selected_version'] = Variable<int>(selectedVersion);
     map['saved_at'] = Variable<int>(savedAt);
     return map;
   }
@@ -3169,6 +3255,7 @@ class SavedOutput extends DataClass implements Insertable<SavedOutput> {
       modelId: modelId == null && nullToAbsent
           ? const Value.absent()
           : Value(modelId),
+      selectedVersion: Value(selectedVersion),
       savedAt: Value(savedAt),
     );
   }
@@ -3185,6 +3272,7 @@ class SavedOutput extends DataClass implements Insertable<SavedOutput> {
       content: serializer.fromJson<String>(json['content']),
       providerId: serializer.fromJson<String?>(json['providerId']),
       modelId: serializer.fromJson<String?>(json['modelId']),
+      selectedVersion: serializer.fromJson<int>(json['selectedVersion']),
       savedAt: serializer.fromJson<int>(json['savedAt']),
     );
   }
@@ -3198,6 +3286,7 @@ class SavedOutput extends DataClass implements Insertable<SavedOutput> {
       'content': serializer.toJson<String>(content),
       'providerId': serializer.toJson<String?>(providerId),
       'modelId': serializer.toJson<String?>(modelId),
+      'selectedVersion': serializer.toJson<int>(selectedVersion),
       'savedAt': serializer.toJson<int>(savedAt),
     };
   }
@@ -3209,6 +3298,7 @@ class SavedOutput extends DataClass implements Insertable<SavedOutput> {
     String? content,
     Value<String?> providerId = const Value.absent(),
     Value<String?> modelId = const Value.absent(),
+    int? selectedVersion,
     int? savedAt,
   }) => SavedOutput(
     conversationId: conversationId ?? this.conversationId,
@@ -3217,6 +3307,7 @@ class SavedOutput extends DataClass implements Insertable<SavedOutput> {
     content: content ?? this.content,
     providerId: providerId.present ? providerId.value : this.providerId,
     modelId: modelId.present ? modelId.value : this.modelId,
+    selectedVersion: selectedVersion ?? this.selectedVersion,
     savedAt: savedAt ?? this.savedAt,
   );
   SavedOutput copyWithCompanion(SavedOutputsCompanion data) {
@@ -3233,6 +3324,9 @@ class SavedOutput extends DataClass implements Insertable<SavedOutput> {
           ? data.providerId.value
           : this.providerId,
       modelId: data.modelId.present ? data.modelId.value : this.modelId,
+      selectedVersion: data.selectedVersion.present
+          ? data.selectedVersion.value
+          : this.selectedVersion,
       savedAt: data.savedAt.present ? data.savedAt.value : this.savedAt,
     );
   }
@@ -3246,6 +3340,7 @@ class SavedOutput extends DataClass implements Insertable<SavedOutput> {
           ..write('content: $content, ')
           ..write('providerId: $providerId, ')
           ..write('modelId: $modelId, ')
+          ..write('selectedVersion: $selectedVersion, ')
           ..write('savedAt: $savedAt')
           ..write(')'))
         .toString();
@@ -3259,6 +3354,7 @@ class SavedOutput extends DataClass implements Insertable<SavedOutput> {
     content,
     providerId,
     modelId,
+    selectedVersion,
     savedAt,
   );
   @override
@@ -3271,6 +3367,7 @@ class SavedOutput extends DataClass implements Insertable<SavedOutput> {
           other.content == this.content &&
           other.providerId == this.providerId &&
           other.modelId == this.modelId &&
+          other.selectedVersion == this.selectedVersion &&
           other.savedAt == this.savedAt);
 }
 
@@ -3281,6 +3378,7 @@ class SavedOutputsCompanion extends UpdateCompanion<SavedOutput> {
   final Value<String> content;
   final Value<String?> providerId;
   final Value<String?> modelId;
+  final Value<int> selectedVersion;
   final Value<int> savedAt;
   final Value<int> rowid;
   const SavedOutputsCompanion({
@@ -3290,6 +3388,7 @@ class SavedOutputsCompanion extends UpdateCompanion<SavedOutput> {
     this.content = const Value.absent(),
     this.providerId = const Value.absent(),
     this.modelId = const Value.absent(),
+    this.selectedVersion = const Value.absent(),
     this.savedAt = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -3300,6 +3399,7 @@ class SavedOutputsCompanion extends UpdateCompanion<SavedOutput> {
     required String content,
     this.providerId = const Value.absent(),
     this.modelId = const Value.absent(),
+    this.selectedVersion = const Value.absent(),
     required int savedAt,
     this.rowid = const Value.absent(),
   }) : conversationId = Value(conversationId),
@@ -3314,6 +3414,7 @@ class SavedOutputsCompanion extends UpdateCompanion<SavedOutput> {
     Expression<String>? content,
     Expression<String>? providerId,
     Expression<String>? modelId,
+    Expression<int>? selectedVersion,
     Expression<int>? savedAt,
     Expression<int>? rowid,
   }) {
@@ -3324,6 +3425,7 @@ class SavedOutputsCompanion extends UpdateCompanion<SavedOutput> {
       if (content != null) 'content': content,
       if (providerId != null) 'provider_id': providerId,
       if (modelId != null) 'model_id': modelId,
+      if (selectedVersion != null) 'selected_version': selectedVersion,
       if (savedAt != null) 'saved_at': savedAt,
       if (rowid != null) 'rowid': rowid,
     });
@@ -3336,6 +3438,7 @@ class SavedOutputsCompanion extends UpdateCompanion<SavedOutput> {
     Value<String>? content,
     Value<String?>? providerId,
     Value<String?>? modelId,
+    Value<int>? selectedVersion,
     Value<int>? savedAt,
     Value<int>? rowid,
   }) {
@@ -3346,6 +3449,7 @@ class SavedOutputsCompanion extends UpdateCompanion<SavedOutput> {
       content: content ?? this.content,
       providerId: providerId ?? this.providerId,
       modelId: modelId ?? this.modelId,
+      selectedVersion: selectedVersion ?? this.selectedVersion,
       savedAt: savedAt ?? this.savedAt,
       rowid: rowid ?? this.rowid,
     );
@@ -3372,6 +3476,9 @@ class SavedOutputsCompanion extends UpdateCompanion<SavedOutput> {
     if (modelId.present) {
       map['model_id'] = Variable<String>(modelId.value);
     }
+    if (selectedVersion.present) {
+      map['selected_version'] = Variable<int>(selectedVersion.value);
+    }
     if (savedAt.present) {
       map['saved_at'] = Variable<int>(savedAt.value);
     }
@@ -3390,7 +3497,391 @@ class SavedOutputsCompanion extends UpdateCompanion<SavedOutput> {
           ..write('content: $content, ')
           ..write('providerId: $providerId, ')
           ..write('modelId: $modelId, ')
+          ..write('selectedVersion: $selectedVersion, ')
           ..write('savedAt: $savedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $SavedOutputVersionsTable extends SavedOutputVersions
+    with TableInfo<$SavedOutputVersionsTable, SavedOutputVersion> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $SavedOutputVersionsTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _conversationIdMeta = const VerificationMeta(
+    'conversationId',
+  );
+  @override
+  late final GeneratedColumn<String> conversationId = GeneratedColumn<String>(
+    'conversation_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _messageIdMeta = const VerificationMeta(
+    'messageId',
+  );
+  @override
+  late final GeneratedColumn<String> messageId = GeneratedColumn<String>(
+    'message_id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _versionNumberMeta = const VerificationMeta(
+    'versionNumber',
+  );
+  @override
+  late final GeneratedColumn<int> versionNumber = GeneratedColumn<int>(
+    'version_number',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _contentMeta = const VerificationMeta(
+    'content',
+  );
+  @override
+  late final GeneratedColumn<String> content = GeneratedColumn<String>(
+    'content',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _createdAtMeta = const VerificationMeta(
+    'createdAt',
+  );
+  @override
+  late final GeneratedColumn<int> createdAt = GeneratedColumn<int>(
+    'created_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    conversationId,
+    messageId,
+    versionNumber,
+    content,
+    createdAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'saved_output_versions';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<SavedOutputVersion> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('conversation_id')) {
+      context.handle(
+        _conversationIdMeta,
+        conversationId.isAcceptableOrUnknown(
+          data['conversation_id']!,
+          _conversationIdMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_conversationIdMeta);
+    }
+    if (data.containsKey('message_id')) {
+      context.handle(
+        _messageIdMeta,
+        messageId.isAcceptableOrUnknown(data['message_id']!, _messageIdMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_messageIdMeta);
+    }
+    if (data.containsKey('version_number')) {
+      context.handle(
+        _versionNumberMeta,
+        versionNumber.isAcceptableOrUnknown(
+          data['version_number']!,
+          _versionNumberMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_versionNumberMeta);
+    }
+    if (data.containsKey('content')) {
+      context.handle(
+        _contentMeta,
+        content.isAcceptableOrUnknown(data['content']!, _contentMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_contentMeta);
+    }
+    if (data.containsKey('created_at')) {
+      context.handle(
+        _createdAtMeta,
+        createdAt.isAcceptableOrUnknown(data['created_at']!, _createdAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_createdAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {
+    conversationId,
+    messageId,
+    versionNumber,
+  };
+  @override
+  SavedOutputVersion map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return SavedOutputVersion(
+      conversationId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}conversation_id'],
+      )!,
+      messageId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}message_id'],
+      )!,
+      versionNumber: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}version_number'],
+      )!,
+      content: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}content'],
+      )!,
+      createdAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}created_at'],
+      )!,
+    );
+  }
+
+  @override
+  $SavedOutputVersionsTable createAlias(String alias) {
+    return $SavedOutputVersionsTable(attachedDatabase, alias);
+  }
+}
+
+class SavedOutputVersion extends DataClass
+    implements Insertable<SavedOutputVersion> {
+  final String conversationId;
+  final String messageId;
+  final int versionNumber;
+  final String content;
+  final int createdAt;
+  const SavedOutputVersion({
+    required this.conversationId,
+    required this.messageId,
+    required this.versionNumber,
+    required this.content,
+    required this.createdAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['conversation_id'] = Variable<String>(conversationId);
+    map['message_id'] = Variable<String>(messageId);
+    map['version_number'] = Variable<int>(versionNumber);
+    map['content'] = Variable<String>(content);
+    map['created_at'] = Variable<int>(createdAt);
+    return map;
+  }
+
+  SavedOutputVersionsCompanion toCompanion(bool nullToAbsent) {
+    return SavedOutputVersionsCompanion(
+      conversationId: Value(conversationId),
+      messageId: Value(messageId),
+      versionNumber: Value(versionNumber),
+      content: Value(content),
+      createdAt: Value(createdAt),
+    );
+  }
+
+  factory SavedOutputVersion.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return SavedOutputVersion(
+      conversationId: serializer.fromJson<String>(json['conversationId']),
+      messageId: serializer.fromJson<String>(json['messageId']),
+      versionNumber: serializer.fromJson<int>(json['versionNumber']),
+      content: serializer.fromJson<String>(json['content']),
+      createdAt: serializer.fromJson<int>(json['createdAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'conversationId': serializer.toJson<String>(conversationId),
+      'messageId': serializer.toJson<String>(messageId),
+      'versionNumber': serializer.toJson<int>(versionNumber),
+      'content': serializer.toJson<String>(content),
+      'createdAt': serializer.toJson<int>(createdAt),
+    };
+  }
+
+  SavedOutputVersion copyWith({
+    String? conversationId,
+    String? messageId,
+    int? versionNumber,
+    String? content,
+    int? createdAt,
+  }) => SavedOutputVersion(
+    conversationId: conversationId ?? this.conversationId,
+    messageId: messageId ?? this.messageId,
+    versionNumber: versionNumber ?? this.versionNumber,
+    content: content ?? this.content,
+    createdAt: createdAt ?? this.createdAt,
+  );
+  SavedOutputVersion copyWithCompanion(SavedOutputVersionsCompanion data) {
+    return SavedOutputVersion(
+      conversationId: data.conversationId.present
+          ? data.conversationId.value
+          : this.conversationId,
+      messageId: data.messageId.present ? data.messageId.value : this.messageId,
+      versionNumber: data.versionNumber.present
+          ? data.versionNumber.value
+          : this.versionNumber,
+      content: data.content.present ? data.content.value : this.content,
+      createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SavedOutputVersion(')
+          ..write('conversationId: $conversationId, ')
+          ..write('messageId: $messageId, ')
+          ..write('versionNumber: $versionNumber, ')
+          ..write('content: $content, ')
+          ..write('createdAt: $createdAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(conversationId, messageId, versionNumber, content, createdAt);
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is SavedOutputVersion &&
+          other.conversationId == this.conversationId &&
+          other.messageId == this.messageId &&
+          other.versionNumber == this.versionNumber &&
+          other.content == this.content &&
+          other.createdAt == this.createdAt);
+}
+
+class SavedOutputVersionsCompanion extends UpdateCompanion<SavedOutputVersion> {
+  final Value<String> conversationId;
+  final Value<String> messageId;
+  final Value<int> versionNumber;
+  final Value<String> content;
+  final Value<int> createdAt;
+  final Value<int> rowid;
+  const SavedOutputVersionsCompanion({
+    this.conversationId = const Value.absent(),
+    this.messageId = const Value.absent(),
+    this.versionNumber = const Value.absent(),
+    this.content = const Value.absent(),
+    this.createdAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  SavedOutputVersionsCompanion.insert({
+    required String conversationId,
+    required String messageId,
+    required int versionNumber,
+    required String content,
+    required int createdAt,
+    this.rowid = const Value.absent(),
+  }) : conversationId = Value(conversationId),
+       messageId = Value(messageId),
+       versionNumber = Value(versionNumber),
+       content = Value(content),
+       createdAt = Value(createdAt);
+  static Insertable<SavedOutputVersion> custom({
+    Expression<String>? conversationId,
+    Expression<String>? messageId,
+    Expression<int>? versionNumber,
+    Expression<String>? content,
+    Expression<int>? createdAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (conversationId != null) 'conversation_id': conversationId,
+      if (messageId != null) 'message_id': messageId,
+      if (versionNumber != null) 'version_number': versionNumber,
+      if (content != null) 'content': content,
+      if (createdAt != null) 'created_at': createdAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  SavedOutputVersionsCompanion copyWith({
+    Value<String>? conversationId,
+    Value<String>? messageId,
+    Value<int>? versionNumber,
+    Value<String>? content,
+    Value<int>? createdAt,
+    Value<int>? rowid,
+  }) {
+    return SavedOutputVersionsCompanion(
+      conversationId: conversationId ?? this.conversationId,
+      messageId: messageId ?? this.messageId,
+      versionNumber: versionNumber ?? this.versionNumber,
+      content: content ?? this.content,
+      createdAt: createdAt ?? this.createdAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (conversationId.present) {
+      map['conversation_id'] = Variable<String>(conversationId.value);
+    }
+    if (messageId.present) {
+      map['message_id'] = Variable<String>(messageId.value);
+    }
+    if (versionNumber.present) {
+      map['version_number'] = Variable<int>(versionNumber.value);
+    }
+    if (content.present) {
+      map['content'] = Variable<String>(content.value);
+    }
+    if (createdAt.present) {
+      map['created_at'] = Variable<int>(createdAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('SavedOutputVersionsCompanion(')
+          ..write('conversationId: $conversationId, ')
+          ..write('messageId: $messageId, ')
+          ..write('versionNumber: $versionNumber, ')
+          ..write('content: $content, ')
+          ..write('createdAt: $createdAt, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3406,6 +3897,8 @@ abstract class _$OpenChatDatabase extends GeneratedDatabase {
   late final $MessagesTable messages = $MessagesTable(this);
   late final $ModelFavoritesTable modelFavorites = $ModelFavoritesTable(this);
   late final $SavedOutputsTable savedOutputs = $SavedOutputsTable(this);
+  late final $SavedOutputVersionsTable savedOutputVersions =
+      $SavedOutputVersionsTable(this);
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -3417,6 +3910,7 @@ abstract class _$OpenChatDatabase extends GeneratedDatabase {
     messages,
     modelFavorites,
     savedOutputs,
+    savedOutputVersions,
   ];
   @override
   StreamQueryUpdateRules get streamUpdateRules => const StreamQueryUpdateRules([
@@ -4778,6 +5272,7 @@ typedef $$MessagesTableCreateCompanionBuilder = MessagesCompanion Function({
   Value<String?> providerId,
   Value<String?> modelId,
   Value<String> citationSources,
+  Value<String> personalMemoryFactIds,
   Value<String> reasoningSummaries,
   Value<String> toolActivities,
   required String status,
@@ -4796,6 +5291,7 @@ typedef $$MessagesTableUpdateCompanionBuilder = MessagesCompanion Function({
   Value<String?> providerId,
   Value<String?> modelId,
   Value<String> citationSources,
+  Value<String> personalMemoryFactIds,
   Value<String> reasoningSummaries,
   Value<String> toolActivities,
   Value<String> status,
@@ -4882,6 +5378,11 @@ class $$MessagesTableFilterComposer
 
   ColumnFilters<String> get citationSources => $composableBuilder(
     column: $table.citationSources,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get personalMemoryFactIds => $composableBuilder(
+    column: $table.personalMemoryFactIds,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -4988,6 +5489,11 @@ class $$MessagesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get personalMemoryFactIds => $composableBuilder(
+    column: $table.personalMemoryFactIds,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get reasoningSummaries => $composableBuilder(
     column: $table.reasoningSummaries,
     builder: (column) => ColumnOrderings(column),
@@ -5081,6 +5587,11 @@ class $$MessagesTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<String> get personalMemoryFactIds => $composableBuilder(
+    column: $table.personalMemoryFactIds,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get reasoningSummaries => $composableBuilder(
     column: $table.reasoningSummaries,
     builder: (column) => column,
@@ -5162,6 +5673,7 @@ class $$MessagesTableTableManager
                 Value<String?> providerId = const Value.absent(),
                 Value<String?> modelId = const Value.absent(),
                 Value<String> citationSources = const Value.absent(),
+                Value<String> personalMemoryFactIds = const Value.absent(),
                 Value<String> reasoningSummaries = const Value.absent(),
                 Value<String> toolActivities = const Value.absent(),
                 Value<String> status = const Value.absent(),
@@ -5179,6 +5691,7 @@ class $$MessagesTableTableManager
                 providerId: providerId,
                 modelId: modelId,
                 citationSources: citationSources,
+                personalMemoryFactIds: personalMemoryFactIds,
                 reasoningSummaries: reasoningSummaries,
                 toolActivities: toolActivities,
                 status: status,
@@ -5198,6 +5711,7 @@ class $$MessagesTableTableManager
                 Value<String?> providerId = const Value.absent(),
                 Value<String?> modelId = const Value.absent(),
                 Value<String> citationSources = const Value.absent(),
+                Value<String> personalMemoryFactIds = const Value.absent(),
                 Value<String> reasoningSummaries = const Value.absent(),
                 Value<String> toolActivities = const Value.absent(),
                 required String status,
@@ -5215,6 +5729,7 @@ class $$MessagesTableTableManager
                 providerId: providerId,
                 modelId: modelId,
                 citationSources: citationSources,
+                personalMemoryFactIds: personalMemoryFactIds,
                 reasoningSummaries: reasoningSummaries,
                 toolActivities: toolActivities,
                 status: status,
@@ -5517,6 +6032,7 @@ typedef $$SavedOutputsTableCreateCompanionBuilder =
       required String content,
       Value<String?> providerId,
       Value<String?> modelId,
+      Value<int> selectedVersion,
       required int savedAt,
       Value<int> rowid,
     });
@@ -5528,6 +6044,7 @@ typedef $$SavedOutputsTableUpdateCompanionBuilder =
       Value<String> content,
       Value<String?> providerId,
       Value<String?> modelId,
+      Value<int> selectedVersion,
       Value<int> savedAt,
       Value<int> rowid,
     });
@@ -5568,6 +6085,11 @@ class $$SavedOutputsTableFilterComposer
 
   ColumnFilters<String> get modelId => $composableBuilder(
     column: $table.modelId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get selectedVersion => $composableBuilder(
+    column: $table.selectedVersion,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -5616,6 +6138,11 @@ class $$SavedOutputsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get selectedVersion => $composableBuilder(
+    column: $table.selectedVersion,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get savedAt => $composableBuilder(
     column: $table.savedAt,
     builder: (column) => ColumnOrderings(column),
@@ -5654,6 +6181,11 @@ class $$SavedOutputsTableAnnotationComposer
 
   GeneratedColumn<String> get modelId =>
       $composableBuilder(column: $table.modelId, builder: (column) => column);
+
+  GeneratedColumn<int> get selectedVersion => $composableBuilder(
+    column: $table.selectedVersion,
+    builder: (column) => column,
+  );
 
   GeneratedColumn<int> get savedAt =>
       $composableBuilder(column: $table.savedAt, builder: (column) => column);
@@ -5698,6 +6230,7 @@ class $$SavedOutputsTableTableManager
                 Value<String> content = const Value.absent(),
                 Value<String?> providerId = const Value.absent(),
                 Value<String?> modelId = const Value.absent(),
+                Value<int> selectedVersion = const Value.absent(),
                 Value<int> savedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => SavedOutputsCompanion(
@@ -5707,6 +6240,7 @@ class $$SavedOutputsTableTableManager
                 content: content,
                 providerId: providerId,
                 modelId: modelId,
+                selectedVersion: selectedVersion,
                 savedAt: savedAt,
                 rowid: rowid,
               ),
@@ -5718,6 +6252,7 @@ class $$SavedOutputsTableTableManager
                 required String content,
                 Value<String?> providerId = const Value.absent(),
                 Value<String?> modelId = const Value.absent(),
+                Value<int> selectedVersion = const Value.absent(),
                 required int savedAt,
                 Value<int> rowid = const Value.absent(),
               }) => SavedOutputsCompanion.insert(
@@ -5727,6 +6262,7 @@ class $$SavedOutputsTableTableManager
                 content: content,
                 providerId: providerId,
                 modelId: modelId,
+                selectedVersion: selectedVersion,
                 savedAt: savedAt,
                 rowid: rowid,
               ),
@@ -5764,6 +6300,237 @@ typedef $$SavedOutputsTableProcessedTableManager =
       SavedOutput,
       PrefetchHooks Function()
     >;
+typedef $$SavedOutputVersionsTableCreateCompanionBuilder =
+    SavedOutputVersionsCompanion Function({
+      required String conversationId,
+      required String messageId,
+      required int versionNumber,
+      required String content,
+      required int createdAt,
+      Value<int> rowid,
+    });
+typedef $$SavedOutputVersionsTableUpdateCompanionBuilder =
+    SavedOutputVersionsCompanion Function({
+      Value<String> conversationId,
+      Value<String> messageId,
+      Value<int> versionNumber,
+      Value<String> content,
+      Value<int> createdAt,
+      Value<int> rowid,
+    });
+
+class $$SavedOutputVersionsTableFilterComposer
+    extends Composer<_$OpenChatDatabase, $SavedOutputVersionsTable> {
+  $$SavedOutputVersionsTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get conversationId => $composableBuilder(
+    column: $table.conversationId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get messageId => $composableBuilder(
+    column: $table.messageId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get versionNumber => $composableBuilder(
+    column: $table.versionNumber,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$SavedOutputVersionsTableOrderingComposer
+    extends Composer<_$OpenChatDatabase, $SavedOutputVersionsTable> {
+  $$SavedOutputVersionsTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get conversationId => $composableBuilder(
+    column: $table.conversationId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get messageId => $composableBuilder(
+    column: $table.messageId,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get versionNumber => $composableBuilder(
+    column: $table.versionNumber,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get content => $composableBuilder(
+    column: $table.content,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get createdAt => $composableBuilder(
+    column: $table.createdAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$SavedOutputVersionsTableAnnotationComposer
+    extends Composer<_$OpenChatDatabase, $SavedOutputVersionsTable> {
+  $$SavedOutputVersionsTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get conversationId => $composableBuilder(
+    column: $table.conversationId,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get messageId =>
+      $composableBuilder(column: $table.messageId, builder: (column) => column);
+
+  GeneratedColumn<int> get versionNumber => $composableBuilder(
+    column: $table.versionNumber,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get content =>
+      $composableBuilder(column: $table.content, builder: (column) => column);
+
+  GeneratedColumn<int> get createdAt =>
+      $composableBuilder(column: $table.createdAt, builder: (column) => column);
+}
+
+class $$SavedOutputVersionsTableTableManager
+    extends
+        RootTableManager<
+          _$OpenChatDatabase,
+          $SavedOutputVersionsTable,
+          SavedOutputVersion,
+          $$SavedOutputVersionsTableFilterComposer,
+          $$SavedOutputVersionsTableOrderingComposer,
+          $$SavedOutputVersionsTableAnnotationComposer,
+          $$SavedOutputVersionsTableCreateCompanionBuilder,
+          $$SavedOutputVersionsTableUpdateCompanionBuilder,
+          (
+            SavedOutputVersion,
+            BaseReferences<
+              _$OpenChatDatabase,
+              $SavedOutputVersionsTable,
+              SavedOutputVersion
+            >,
+          ),
+          SavedOutputVersion,
+          PrefetchHooks Function()
+        > {
+  $$SavedOutputVersionsTableTableManager(
+    _$OpenChatDatabase db,
+    $SavedOutputVersionsTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$SavedOutputVersionsTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$SavedOutputVersionsTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$SavedOutputVersionsTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> conversationId = const Value.absent(),
+                Value<String> messageId = const Value.absent(),
+                Value<int> versionNumber = const Value.absent(),
+                Value<String> content = const Value.absent(),
+                Value<int> createdAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => SavedOutputVersionsCompanion(
+                conversationId: conversationId,
+                messageId: messageId,
+                versionNumber: versionNumber,
+                content: content,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String conversationId,
+                required String messageId,
+                required int versionNumber,
+                required String content,
+                required int createdAt,
+                Value<int> rowid = const Value.absent(),
+              }) => SavedOutputVersionsCompanion.insert(
+                conversationId: conversationId,
+                messageId: messageId,
+                versionNumber: versionNumber,
+                content: content,
+                createdAt: createdAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$SavedOutputVersionsTable, SavedOutputVersion>(
+                    table,
+                  ),
+                  BaseReferences<
+                    _$OpenChatDatabase,
+                    $SavedOutputVersionsTable,
+                    SavedOutputVersion
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$SavedOutputVersionsTableProcessedTableManager =
+    ProcessedTableManager<
+      _$OpenChatDatabase,
+      $SavedOutputVersionsTable,
+      SavedOutputVersion,
+      $$SavedOutputVersionsTableFilterComposer,
+      $$SavedOutputVersionsTableOrderingComposer,
+      $$SavedOutputVersionsTableAnnotationComposer,
+      $$SavedOutputVersionsTableCreateCompanionBuilder,
+      $$SavedOutputVersionsTableUpdateCompanionBuilder,
+      (
+        SavedOutputVersion,
+        BaseReferences<
+          _$OpenChatDatabase,
+          $SavedOutputVersionsTable,
+          SavedOutputVersion
+        >,
+      ),
+      SavedOutputVersion,
+      PrefetchHooks Function()
+    >;
 
 class $OpenChatDatabaseManager {
   final _$OpenChatDatabase _db;
@@ -5780,4 +6547,6 @@ class $OpenChatDatabaseManager {
       $$ModelFavoritesTableTableManager(_db, _db.modelFavorites);
   $$SavedOutputsTableTableManager get savedOutputs =>
       $$SavedOutputsTableTableManager(_db, _db.savedOutputs);
+  $$SavedOutputVersionsTableTableManager get savedOutputVersions =>
+      $$SavedOutputVersionsTableTableManager(_db, _db.savedOutputVersions);
 }

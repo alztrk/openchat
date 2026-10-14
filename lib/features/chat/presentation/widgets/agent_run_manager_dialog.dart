@@ -129,8 +129,6 @@ class _AgentRunManagerDialogState extends State<AgentRunManagerDialog> {
       'openrouter' => 'OpenRouter',
       'mistral' => 'Mistral',
       'llama_cpp' => 'llama.cpp',
-      'vllm' => 'vLLM',
-      'exllama' => 'ExLlama',
       _ => providerId,
     };
   }

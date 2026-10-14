@@ -277,11 +277,7 @@ class LocalDiscoveredModel {
       path: _requiredString(json, 'path'),
       pathKind: _requiredString(json, 'pathKind'),
     );
-    if (!const <String>{
-          'llama_cpp',
-          'exllama',
-          'vllm',
-        }.contains(model.engineId) ||
+    if (model.engineId != 'llama_cpp' ||
         !const <String>{'file', 'directory'}.contains(model.pathKind)) {
       throw const FormatException(
         'Discovered local model metadata was invalid.',
@@ -406,7 +402,6 @@ class LocalEngineInstallProgress {
   final int? assetCount;
 
   double? get fraction {
-    if (stage == 'setting_up_runtime') return null;
     if (totalBytes <= 0) return null;
     return (downloadedBytes / totalBytes).clamp(0, 1).toDouble();
   }

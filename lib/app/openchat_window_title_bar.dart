@@ -51,7 +51,7 @@ class OpenChatWindowTitleBar extends StatelessWidget {
               final showIdentity = constraints.maxWidth >= 280;
               final showBrandName =
                   showIdentity &&
-                  constraints.maxWidth >= 360 &&
+                  constraints.maxWidth >= 440 &&
                   MediaQuery.textScalerOf(context).scale(14) <= 20;
               final showWindowControls = constraints.maxWidth >= 128;
               return Row(

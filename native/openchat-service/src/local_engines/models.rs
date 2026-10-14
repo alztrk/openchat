@@ -14,7 +14,6 @@ use crate::{protocol::ServiceError, storage::AppStorage};
 const MAX_MODEL_SCAN_DEPTH: usize = 5;
 const MAX_MODEL_SCAN_ENTRIES: usize = 20_000;
 const MAX_DISCOVERED_MODELS: usize = 100;
-const MAX_TRANSFORMERS_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct RegisteredModel {
@@ -26,18 +25,13 @@ pub(crate) struct RegisteredModel {
     pub(crate) created_at_unix_ms: i64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct TransformersModelMetadata {
-    pub(crate) context_window: Option<i64>,
-    pub(crate) supports_images: bool,
-}
-
 pub(crate) fn list(storage: &AppStorage) -> Result<Vec<RegisteredModel>, ServiceError> {
     let connection = connect(storage)?;
     let mut statement = connection
         .prepare(
             "SELECT id, engine_id, display_name, model_path, path_kind, created_at_unix_ms
-             FROM local_models ORDER BY engine_id, display_name COLLATE NOCASE, id",
+             FROM local_models WHERE engine_id = 'llama_cpp'
+             ORDER BY display_name COLLATE NOCASE, id",
         )
         .map_err(|_| database_error())?;
     let rows = statement
@@ -152,23 +146,6 @@ fn scan_model_directory(
                 continue;
             }
 
-            if engine_id != "llama_cpp"
-                && !registered_paths.contains(&path)
-                && has_transformers_model_files(&path)?
-            {
-                let display_name = path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .filter(|name| !name.trim().is_empty())
-                    .ok_or_else(model_discovery_error)?
-                    .to_owned();
-                candidates.push(DiscoveredModel {
-                    display_name,
-                    path,
-                    path_kind: "directory",
-                });
-                continue;
-            }
             if depth < MAX_MODEL_SCAN_DEPTH {
                 directories.push((path, depth + 1));
             }
@@ -217,10 +194,8 @@ pub(crate) fn find(
 }
 
 pub(crate) fn ensure_storage_directories(root: &Path) -> Result<(), ServiceError> {
-    for directory in ["llama", "exllama", "vllm"] {
-        fs::create_dir_all(root.join("models").join(directory))
-            .map_err(|_| model_storage_path_error())?;
-    }
+    fs::create_dir_all(root.join("models").join("llama"))
+        .map_err(|_| model_storage_path_error())?;
     Ok(())
 }
 
@@ -412,30 +387,22 @@ fn validate_model_path(
     engine_id: &str,
     model_path: &str,
 ) -> Result<(PathBuf, &'static str), ServiceError> {
-    if !matches!(engine_id, "llama_cpp" | "vllm" | "exllama") {
+    if engine_id != "llama_cpp" {
         return Err(invalid_model_error());
     }
 
     let selected_path = selected_entry_path(Path::new(model_path))?;
     let metadata = fs::metadata(&selected_path).map_err(|_| invalid_model_path_error())?;
-    let path_kind = if engine_id == "llama_cpp" {
-        if !metadata.is_file()
-            || selected_path
-                .extension()
-                .and_then(|extension| extension.to_str())
-                .is_none_or(|extension| !extension.eq_ignore_ascii_case("gguf"))
-            || is_vision_projector(&selected_path)
-        {
-            return Err(invalid_model_error());
-        }
-        "file"
-    } else {
-        if !metadata.is_dir() || !has_transformers_model_files(&selected_path)? {
-            return Err(invalid_model_error());
-        }
-        "directory"
-    };
-    Ok((selected_path, path_kind))
+    if !metadata.is_file()
+        || selected_path
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_none_or(|extension| !extension.eq_ignore_ascii_case("gguf"))
+        || is_vision_projector(&selected_path)
+    {
+        return Err(invalid_model_error());
+    }
+    Ok((selected_path, "file"))
 }
 
 fn selected_entry_path(path: &Path) -> Result<PathBuf, ServiceError> {
@@ -473,28 +440,16 @@ pub(crate) fn to_json(model: &RegisteredModel, available: bool) -> Result<Value,
             metadata.is_dir()
         }
     });
-    let transformers_metadata = if model.engine_id == "vllm" && path_exists {
-        transformers_model_metadata(&model.path)
-    } else {
-        None
-    };
-    let context_window = if model.engine_id == "llama_cpp" && model.path_kind == "file" {
+    let context_window = if model.path_kind == "file" {
         super::gguf::context_window(&model.path)
             .ok()
             .flatten()
             .map_or(Value::Null, |context_window| json!(context_window))
-    } else if let Some(context_window) =
-        transformers_metadata.and_then(|metadata| metadata.context_window)
-    {
-        json!(context_window)
     } else {
         Value::Null
     };
-    let supports_images = path_exists
-        && ((model.engine_id == "llama_cpp"
-            && model.path_kind == "file"
-            && vision_projector_path(&model.path)?.is_some())
-            || transformers_metadata.is_some_and(|metadata| metadata.supports_images));
+    let supports_images =
+        path_exists && model.path_kind == "file" && vision_projector_path(&model.path)?.is_some();
     Ok(json!({
         "id": model.id,
         "engineId": model.engine_id,
@@ -536,7 +491,7 @@ fn connect_at_root(root: &Path) -> Result<Connection, ServiceError> {
             "PRAGMA journal_mode = WAL;
              CREATE TABLE IF NOT EXISTS local_models (
                 id TEXT PRIMARY KEY NOT NULL,
-                engine_id TEXT NOT NULL CHECK (engine_id IN ('llama_cpp', 'vllm', 'exllama')),
+                engine_id TEXT NOT NULL CHECK (engine_id = 'llama_cpp'),
                 display_name TEXT NOT NULL,
                 model_path TEXT NOT NULL,
                 path_kind TEXT NOT NULL CHECK (path_kind IN ('file', 'directory')),
@@ -565,8 +520,6 @@ struct ModelTransfer {
 fn model_folder_name(engine_id: &str) -> Option<&'static str> {
     match engine_id {
         "llama_cpp" => Some("llama"),
-        "exllama" => Some("exllama"),
-        "vllm" => Some("vllm"),
         _ => None,
     }
 }
@@ -849,79 +802,6 @@ fn remove_model_path(path: &Path, path_kind: &str) -> io::Result<()> {
     }
 }
 
-pub(crate) fn has_transformers_model_files(path: &Path) -> Result<bool, ServiceError> {
-    let config_path = path.join("config.json");
-    if !config_path.is_file() {
-        return Ok(false);
-    }
-    let entries = fs::read_dir(path).map_err(|_| invalid_model_path_error())?;
-    for entry in entries {
-        let entry = entry.map_err(|_| invalid_model_path_error())?;
-        if !entry
-            .file_type()
-            .map_err(|_| invalid_model_path_error())?
-            .is_file()
-        {
-            continue;
-        }
-        let name = entry.file_name();
-        let Some(name) = name.to_str() else {
-            continue;
-        };
-        let name = name.to_ascii_lowercase();
-        if name.ends_with(".safetensors")
-            || name.ends_with(".safetensors.index.json")
-            || name.ends_with(".bin")
-        {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
-pub(crate) fn transformers_model_metadata(path: &Path) -> Option<TransformersModelMetadata> {
-    let config_path = path.join("config.json");
-    let metadata = fs::symlink_metadata(&config_path).ok()?;
-    if !metadata.is_file()
-        || metadata.file_type().is_symlink()
-        || metadata.len() > MAX_TRANSFORMERS_CONFIG_BYTES
-    {
-        return None;
-    }
-    let contents = fs::read(config_path).ok()?;
-    if contents.len() as u64 > MAX_TRANSFORMERS_CONFIG_BYTES {
-        return None;
-    }
-    let config = serde_json::from_slice::<Value>(&contents).ok()?;
-    let text_config = config.get("text_config");
-    let context_window = [
-        config.get("max_position_embeddings"),
-        config.get("n_positions"),
-        config.get("max_sequence_length"),
-        config.get("seq_length"),
-        text_config.and_then(|config| config.get("max_position_embeddings")),
-        text_config.and_then(|config| config.get("n_positions")),
-        text_config.and_then(|config| config.get("max_sequence_length")),
-        text_config.and_then(|config| config.get("seq_length")),
-    ]
-    .into_iter()
-    .flatten()
-    .filter_map(Value::as_i64)
-    .find(|window| *window > 0);
-    let supports_images = [
-        config.get("vision_config"),
-        text_config.and_then(|value| value.get("vision_config")),
-    ]
-    .into_iter()
-    .flatten()
-    .any(Value::is_object);
-
-    Some(TransformersModelMetadata {
-        context_window,
-        supports_images,
-    })
-}
-
 fn current_time_millis() -> Result<i64, ServiceError> {
     let elapsed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1019,7 +899,7 @@ mod tests {
 
     use super::{
         MAX_DISCOVERED_MODELS, discover, is_vision_projector, register_with_storage_action,
-        scan_model_directory, to_json, transformers_model_metadata, vision_projector_path,
+        scan_model_directory, to_json, vision_projector_path,
     };
 
     struct TestDirectory(PathBuf);
@@ -1062,103 +942,6 @@ mod tests {
         assert_eq!(found[0].path_kind, "file");
         assert!(is_vision_projector(&projector));
         assert!(!is_vision_projector(&nested.join("mmprojector-model.gguf")));
-    }
-
-    #[test]
-    fn discovers_transformers_models_for_the_selected_engine() {
-        let temporary = TestDirectory::new();
-        let model_directory = temporary.0.join("models");
-        let model = model_directory.join("Qwen-7B");
-        fs::create_dir_all(&model).expect("model directory should be created");
-        fs::write(model.join("config.json"), b"{}")
-            .expect("model config fixture should be written");
-        fs::write(model.join("model.safetensors"), b"weights")
-            .expect("model weights fixture should be written");
-
-        for engine_id in ["vllm", "exllama"] {
-            let (found, truncated) =
-                scan_model_directory(engine_id, &model_directory, &HashSet::new())
-                    .expect("scan should succeed");
-
-            assert!(!truncated);
-            assert_eq!(found.len(), 1);
-            assert_eq!(found[0].path, model);
-            assert_eq!(found[0].path_kind, "directory");
-        }
-    }
-
-    #[test]
-    fn reads_vllm_context_and_vision_capabilities_from_bounded_model_config() {
-        let temporary = TestDirectory::new();
-        fs::write(
-            temporary.0.join("config.json"),
-            br#"{"max_position_embeddings":32768,"vision_config":{}}"#,
-        )
-        .expect("model configuration should be written");
-
-        assert_eq!(
-            transformers_model_metadata(&temporary.0),
-            Some(super::TransformersModelMetadata {
-                context_window: Some(32_768),
-                supports_images: true,
-            })
-        );
-    }
-
-    #[test]
-    fn vllm_model_json_exposes_configured_context_and_vision_only() {
-        let temporary = TestDirectory::new();
-        fs::write(
-            temporary.0.join("config.json"),
-            br#"{"text_config":{"max_position_embeddings":65536},"vision_config":{}}"#,
-        )
-        .expect("model configuration should be written");
-        fs::write(temporary.0.join("model.safetensors"), b"weights")
-            .expect("model weights should be written");
-        let model = super::RegisteredModel {
-            id: "model-id".to_owned(),
-            engine_id: "vllm".to_owned(),
-            display_name: "transformer-model".to_owned(),
-            path: temporary.0.clone(),
-            path_kind: "directory".to_owned(),
-            created_at_unix_ms: 0,
-        };
-
-        let metadata = to_json(&model, true).expect("model metadata should serialize");
-
-        assert_eq!(metadata["contextWindow"], 65_536);
-        assert_eq!(metadata["supportsImages"], true);
-        assert!(metadata["supportsTools"].is_null());
-    }
-
-    #[test]
-    fn reads_nested_text_context_without_inventing_image_or_tool_support() {
-        let temporary = TestDirectory::new();
-        fs::write(
-            temporary.0.join("config.json"),
-            br#"{"text_config":{"n_positions":16384}}"#,
-        )
-        .expect("model configuration should be written");
-
-        assert_eq!(
-            transformers_model_metadata(&temporary.0),
-            Some(super::TransformersModelMetadata {
-                context_window: Some(16_384),
-                supports_images: false,
-            })
-        );
-    }
-
-    #[test]
-    fn ignores_malformed_or_oversized_transformers_configuration() {
-        let temporary = TestDirectory::new();
-        let config_path = temporary.0.join("config.json");
-        fs::write(&config_path, b"not json").expect("malformed fixture should be written");
-        assert_eq!(transformers_model_metadata(&temporary.0), None);
-
-        let oversized = vec![b' '; super::MAX_TRANSFORMERS_CONFIG_BYTES as usize + 1];
-        fs::write(config_path, oversized).expect("oversized fixture should be written");
-        assert_eq!(transformers_model_metadata(&temporary.0), None);
     }
 
     #[test]

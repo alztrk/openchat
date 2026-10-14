@@ -136,7 +136,9 @@ async fn receive_with_client(
     let mut tool_calls = BTreeMap::<usize, StreamedToolCall>::new();
     let supports_provider_citations = matches!(
         request.route.provider_id.as_deref(),
-        Some("openai" | "chatgpt_api" | "opencode" | "openrouter" | "groq" | "gemini" | "perplexity")
+        Some(
+            "openai" | "chatgpt_api" | "opencode" | "openrouter" | "groq" | "gemini" | "perplexity"
+        )
     );
     let mut provider_citation_sources = Vec::<Value>::new();
     let mut provider_citation_ids = BTreeMap::<(String, String), String>::new();
@@ -793,7 +795,7 @@ fn connection_error(route: &super::super::route::ChatRoute) -> ServiceError {
 }
 
 fn is_local_runtime(provider_id: Option<&str>) -> bool {
-    matches!(provider_id, Some("llama_cpp" | "exllama" | "vllm"))
+    matches!(provider_id, Some("llama_cpp"))
 }
 
 fn local_inference_error() -> ServiceError {
@@ -1509,14 +1511,6 @@ mod tests {
         assert_eq!(
             connection_error(&route("opencode")).code,
             "network_unavailable"
-        );
-        assert_eq!(
-            connection_error(&route("exllama")).code,
-            "local_engine_runtime_unavailable"
-        );
-        assert_eq!(
-            connection_error(&route("vllm")).code,
-            "local_engine_runtime_unavailable"
         );
     }
 

@@ -13,10 +13,8 @@ The file inventory separates auxiliary model artifacts from the main model files
 | Page option | Hub selection | Files downloaded | OpenChat folder |
 | --- | --- | --- | --- |
 | GGUF · llama.cpp | Models tagged for GGUF | One selected `.gguf` file, or every shard in a complete shard set | `models/llama` |
-| Transformers · vLLM | Text-generation model repositories | Root model weights in Safetensors or PyTorch format, the weight index when present, and supported config/tokenizer files | `models/vllm` |
-| ExLlama · EXL3 | Repositories carrying the Hub `exl3` tag | Safetensors weights and supported config/tokenizer files | `models/exllama` |
 
-The ExLlama option downloads an already prepared EXL3 model snapshot. OpenChat does not convert ordinary Transformers weights to EXL3. Incomplete GGUF shard sets and repositories without a compatible weight/configuration set are not offered for download.
+Incomplete GGUF shard sets are not offered for download.
 
 Downloads are pinned to the repository commit selected from Hub metadata. Files are streamed to the app data directory, report progress through the local service, and use HTTP range requests to continue partial files after a retry. The completed file or directory is registered through the same local-model catalog used by Settings.
 
@@ -33,4 +31,4 @@ Downloading a model and being able to run it are separate states. The local mode
 - Pinned model card: `GET https://huggingface.co/{owner}/{repo}/resolve/{commit}/README.md`
 - Pinned file download: `GET https://huggingface.co/{owner}/{repo}/resolve/{commit}/{path}`
 
-See the [Hugging Face Hub API](https://huggingface.co/docs/hub/en/api), [Hub downloads guide](https://huggingface.co/docs/huggingface_hub/main/en/guides/download), [GGUF documentation](https://huggingface.co/docs/hub/gguf), and [ExLlamaV3 conversion guide](https://github.com/turboderp-org/exllamav3/blob/master/doc/convert.md) for upstream format behavior.
+See the [Hugging Face Hub API](https://huggingface.co/docs/hub/en/api), [Hub downloads guide](https://huggingface.co/docs/huggingface_hub/main/en/guides/download), [GGUF documentation](https://huggingface.co/docs/hub/gguf) for upstream format behavior.

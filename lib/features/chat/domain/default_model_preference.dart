@@ -23,7 +23,7 @@ class DefaultModelPreference {
     final routeConnectionId = switch (providerId) {
       'chatgpt' => connectionId,
       'chatgpt_api' => apiKeyConnectionId ?? connectionId,
-      'opencode' || 'llama_cpp' || 'vllm' || 'exllama' => null,
+      'opencode' || 'llama_cpp' => null,
       final providerId
           when ApiCompatibleProviderKeyStore.isApiKeyProviderId(providerId) =>
         apiKeyConnectionId ?? connectionId ?? providerId,
@@ -44,15 +44,30 @@ class DefaultModelPreference {
   };
 
   factory DefaultModelPreference.fromJson(Map<String, Object?> json) {
+    final providerId = _requiredString(json, 'providerId');
+    final modelId = _requiredString(json, 'modelId');
     return DefaultModelPreference(
-      providerId: json['providerId'] as String,
-      modelId: json['modelId'] as String,
-      displayName: json['displayName'] as String? ?? json['modelId'] as String,
-      reasoningEffort: json['reasoningEffort'] as String?,
-      connectionId: json['connectionId'] as String?,
-      workspaceId: json['workspaceId'] as String?,
-      apiKeyConnectionId: json['apiKeyConnectionId'] as String?,
+      providerId: providerId,
+      modelId: modelId,
+      displayName: _optionalString(json, 'displayName') ?? modelId,
+      reasoningEffort: _optionalString(json, 'reasoningEffort'),
+      connectionId: _optionalString(json, 'connectionId'),
+      workspaceId: _optionalString(json, 'workspaceId'),
+      apiKeyConnectionId: _optionalString(json, 'apiKeyConnectionId'),
     );
+  }
+
+  static String _requiredString(Map<String, Object?> json, String key) {
+    final value = json[key];
+    if (value is String && value.trim().isNotEmpty) return value;
+    throw FormatException('The saved default model field "$key" is invalid.');
+  }
+
+  static String? _optionalString(Map<String, Object?> json, String key) {
+    final value = json[key];
+    if (value == null) return null;
+    if (value is String) return value;
+    throw FormatException('The saved default model field "$key" is invalid.');
   }
 
   @override

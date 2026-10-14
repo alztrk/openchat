@@ -10,9 +10,13 @@ import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/platform/windows/openchat_service_client.dart';
 import 'package:openchat/features/chat/domain/chatgpt_connection.dart';
 import 'package:openchat/features/settings/data/chat_gpt_api_key_store.dart';
+import 'package:openchat/features/settings/data/settings_preferences.dart';
 import 'package:openchat/features/settings/domain/chat_gpt_api_key_connection.dart';
+import 'package:openchat/features/settings/domain/provider_verification_record.dart';
+import 'package:openchat/features/settings/domain/provider_request_outcome_record.dart';
 import 'package:openchat/features/settings/presentation/chat_gpt_oauth_connection_row.dart';
 import 'package:openchat/features/settings/presentation/chat_gpt_api_key_form.dart';
+import 'package:openchat/features/settings/presentation/provider_connection_status.dart';
 import 'package:openchat/features/settings/presentation/settings_widgets.dart';
 
 enum _ConnectionLoadState { loading, loaded, failed }
@@ -21,12 +25,14 @@ class ChatGptConnectionSection extends StatefulWidget {
   const ChatGptConnectionSection({
     super.key,
     required this.apiKeyStore,
+    required this.settingsPreferences,
     required this.serviceClient,
     required this.onProviderStateChanged,
     required this.onConnectionRemoved,
   });
 
   final ChatGptApiKeyStore? apiKeyStore;
+  final SettingsPreferences settingsPreferences;
   final OpenChatServiceClient? serviceClient;
   final Future<void> Function()? onProviderStateChanged;
   final Future<void> Function(String connectionId)? onConnectionRemoved;
@@ -45,6 +51,22 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
   OpenChatServiceOperation? _oauthOperation;
   String? _oauthError;
   String? _selectedWorkspaceId;
+  ProviderVerificationState _oauthVerificationState =
+      ProviderVerificationState.notChecked;
+  DateTime? _oauthVerificationCheckedAt;
+  bool _oauthVerificationSaveFailed = false;
+  bool _oauthVerificationRecordReadFailed = false;
+  ProviderRequestOutcomeRecord? _oauthLastRequestOutcome;
+  bool _oauthLastRequestReadFailed = false;
+  final Map<String, ProviderVerificationState> _apiKeyVerificationStates =
+      <String, ProviderVerificationState>{};
+  final Map<String, DateTime> _apiKeyVerificationCheckedAt =
+      <String, DateTime>{};
+  final Set<String> _apiKeyVerificationSaveFailures = <String>{};
+  final Set<String> _apiKeyVerificationRecordReadFailures = <String>{};
+  final Map<String, ProviderRequestOutcomeRecord> _apiKeyLastRequests =
+      <String, ProviderRequestOutcomeRecord>{};
+  final Set<String> _apiKeyLastRequestReadFailures = <String>{};
   String? _formError;
   bool _showApiKeyForm = false;
   bool _isSaving = false;
@@ -78,9 +100,57 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
     setState(() => _loadState = _ConnectionLoadState.loading);
     try {
       final connections = await store.readConnections();
+      final verificationRecords = await Future.wait(
+        connections.map(
+          (connection) => _readRouteVerificationRecord(
+            providerId: 'chatgpt_api',
+            connectionId: connection.id,
+          ),
+        ),
+      );
       if (!mounted || requestGeneration != _loadRequestGeneration) return;
+      final verificationStates = <String, ProviderVerificationState>{};
+      final verificationTimes = <String, DateTime>{};
+      final unreadableRecords = <String>{};
+      final requestOutcomes = <String, ProviderRequestOutcomeRecord>{};
+      final unreadableRequestOutcomes = <String>{};
+      for (var index = 0; index < connections.length; index++) {
+        final connection = connections[index];
+        final result = verificationRecords[index];
+        final verificationRecord = result.record;
+        if (verificationRecord != null) {
+          verificationStates[connection.id] = _stateForOutcome(
+            verificationRecord.outcome,
+          );
+          verificationTimes[connection.id] = verificationRecord.checkedAt;
+        }
+        if (result.readFailed) unreadableRecords.add(connection.id);
+        final requestOutcome = result.requestOutcome;
+        if (requestOutcome != null) {
+          requestOutcomes[connection.id] = requestOutcome;
+        }
+        if (result.requestOutcomeReadFailed) {
+          unreadableRequestOutcomes.add(connection.id);
+        }
+      }
       setState(() {
         _connections = connections;
+        _apiKeyVerificationStates
+          ..clear()
+          ..addAll(verificationStates);
+        _apiKeyVerificationCheckedAt
+          ..clear()
+          ..addAll(verificationTimes);
+        _apiKeyVerificationRecordReadFailures
+          ..clear()
+          ..addAll(unreadableRecords);
+        _apiKeyLastRequests
+          ..clear()
+          ..addAll(requestOutcomes);
+        _apiKeyLastRequestReadFailures
+          ..clear()
+          ..addAll(unreadableRequestOutcomes);
+        _apiKeyVerificationSaveFailures.clear();
         _loadState = _ConnectionLoadState.loaded;
       });
     } on ChatGptApiKeyStorageException {
@@ -121,10 +191,32 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
           break;
         }
       }
+      final verificationResult =
+          selectedConnection == null || selectedWorkspace == null
+          ? (
+              record: null,
+              readFailed: false,
+              requestOutcome: null,
+              requestOutcomeReadFailed: false,
+            )
+          : await _readRouteVerificationRecord(
+              providerId: 'chatgpt_oauth',
+              connectionId: selectedConnection.id,
+              workspaceId: selectedWorkspace.id,
+            );
       if (!mounted) return;
       setState(() {
         _oauthConnections = connections;
         _selectedWorkspaceId = selectedWorkspace?.id;
+        _oauthVerificationState = verificationResult.record == null
+            ? ProviderVerificationState.notChecked
+            : _stateForOutcome(verificationResult.record!.outcome);
+        _oauthVerificationCheckedAt = verificationResult.record?.checkedAt;
+        _oauthVerificationSaveFailed = false;
+        _oauthVerificationRecordReadFailed = verificationResult.readFailed;
+        _oauthLastRequestOutcome = verificationResult.requestOutcome;
+        _oauthLastRequestReadFailed =
+            verificationResult.requestOutcomeReadFailed;
         _oauthLoadState = _ConnectionLoadState.loaded;
       });
     } on OpenChatServiceException {
@@ -135,6 +227,109 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
       setState(() => _oauthLoadState = _ConnectionLoadState.failed);
     }
   }
+
+  Future<
+    ({
+      ProviderVerificationRecord? record,
+      bool readFailed,
+      ProviderRequestOutcomeRecord? requestOutcome,
+      bool requestOutcomeReadFailed,
+    })
+  >
+  _readRouteVerificationRecord({
+    required String providerId,
+    required String connectionId,
+    String? workspaceId,
+  }) async {
+    ProviderVerificationRecord? record;
+    var readFailed = false;
+    try {
+      record = await widget.settingsPreferences
+          .readProviderVerificationRecordForRoute(
+            providerId: providerId,
+            connectionId: connectionId,
+            workspaceId: workspaceId,
+          );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription(
+            'while loading a ChatGPT verification record',
+          ),
+        ),
+      );
+      readFailed = true;
+    }
+    ProviderRequestOutcomeRecord? requestOutcome;
+    var requestOutcomeReadFailed = false;
+    try {
+      requestOutcome = await widget.settingsPreferences
+          .readProviderRequestOutcomeForRoute(
+            providerId: providerId,
+            connectionId: connectionId,
+            workspaceId: workspaceId,
+          );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription(
+            'while loading a ChatGPT last request outcome',
+          ),
+        ),
+      );
+      requestOutcomeReadFailed = true;
+    }
+    return (
+      record: record,
+      readFailed: readFailed,
+      requestOutcome: requestOutcome,
+      requestOutcomeReadFailed: requestOutcomeReadFailed,
+    );
+  }
+
+  ProviderVerificationState _stateForOutcome(
+    ProviderVerificationOutcome outcome,
+  ) => switch (outcome) {
+    ProviderVerificationOutcome.verified => ProviderVerificationState.verified,
+    ProviderVerificationOutcome.emptyCatalog =>
+      ProviderVerificationState.emptyCatalog,
+    ProviderVerificationOutcome.staleCatalog =>
+      ProviderVerificationState.staleCatalog,
+    ProviderVerificationOutcome.authenticationFailed =>
+      ProviderVerificationState.authenticationFailed,
+    ProviderVerificationOutcome.rateLimited =>
+      ProviderVerificationState.rateLimited,
+    ProviderVerificationOutcome.networkFailed =>
+      ProviderVerificationState.networkFailed,
+    ProviderVerificationOutcome.failed => ProviderVerificationState.failed,
+  };
+
+  ProviderVerificationOutcome _outcomeForState(
+    ProviderVerificationState state,
+  ) => switch (state) {
+    ProviderVerificationState.verified => ProviderVerificationOutcome.verified,
+    ProviderVerificationState.emptyCatalog =>
+      ProviderVerificationOutcome.emptyCatalog,
+    ProviderVerificationState.staleCatalog =>
+      ProviderVerificationOutcome.staleCatalog,
+    ProviderVerificationState.authenticationFailed =>
+      ProviderVerificationOutcome.authenticationFailed,
+    ProviderVerificationState.rateLimited =>
+      ProviderVerificationOutcome.rateLimited,
+    ProviderVerificationState.networkFailed =>
+      ProviderVerificationOutcome.networkFailed,
+    ProviderVerificationState.failed => ProviderVerificationOutcome.failed,
+    ProviderVerificationState.notChecked ||
+    ProviderVerificationState.checking => throw StateError(
+      'Only completed provider checks can be saved.',
+    ),
+  };
 
   Future<void> _startOAuth() async {
     final service = widget.serviceClient;
@@ -207,6 +402,245 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
       await widget.onProviderStateChanged?.call();
     } on OpenChatServiceException {
       if (mounted) _showMessage(context.openchatL10n.connectionSelectionFailed);
+    }
+  }
+
+  Future<void> _verifyOAuthConnection() async {
+    final service = widget.serviceClient;
+    final connection = _firstSelectedOAuthConnection();
+    final workspaceId = _selectedWorkspaceId;
+    if (service == null ||
+        connection == null ||
+        workspaceId == null ||
+        _isSigningIn ||
+        _oauthVerificationState == ProviderVerificationState.checking) {
+      return;
+    }
+    setState(() {
+      _oauthVerificationState = ProviderVerificationState.checking;
+      _oauthVerificationSaveFailed = false;
+      _oauthVerificationRecordReadFailed = false;
+    });
+    try {
+      final response = await service.call(
+        'chatgpt.models.list',
+        params: <String, Object?>{
+          'connectionId': connection.id,
+          'workspaceId': workspaceId,
+          'forceRefresh': true,
+        },
+      );
+      final models = response['models'];
+      if (models is! List<Object?>) {
+        throw const FormatException('The ChatGPT model catalog was invalid.');
+      }
+      if (!mounted || !_isSelectedOAuthRoute(connection.id, workspaceId)) {
+        return;
+      }
+      await _recordRouteVerification(
+        providerId: 'chatgpt_oauth',
+        connectionId: connection.id,
+        workspaceId: workspaceId,
+        state: response['freshness'] == 'stale'
+            ? ProviderVerificationState.staleCatalog
+            : response['freshness'] != 'current'
+            ? ProviderVerificationState.failed
+            : models.isEmpty
+            ? ProviderVerificationState.emptyCatalog
+            : ProviderVerificationState.verified,
+      );
+    } on OpenChatServiceException catch (error) {
+      if (!mounted || !_isSelectedOAuthRoute(connection.id, workspaceId)) {
+        return;
+      }
+      await _recordRouteVerification(
+        providerId: 'chatgpt_oauth',
+        connectionId: connection.id,
+        workspaceId: workspaceId,
+        state: providerVerificationFailureForCode(error.code),
+      );
+    } on FormatException {
+      await _recordRouteVerification(
+        providerId: 'chatgpt_oauth',
+        connectionId: connection.id,
+        workspaceId: workspaceId,
+        state: ProviderVerificationState.failed,
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription('while verifying a ChatGPT OAuth route'),
+        ),
+      );
+      await _recordRouteVerification(
+        providerId: 'chatgpt_oauth',
+        connectionId: connection.id,
+        workspaceId: workspaceId,
+        state: ProviderVerificationState.failed,
+      );
+    }
+  }
+
+  ChatGptConnection? _firstSelectedOAuthConnection() {
+    for (final connection in _oauthConnections) {
+      if (connection.isSelected) return connection;
+    }
+    return null;
+  }
+
+  bool _isSelectedOAuthRoute(String connectionId, String workspaceId) =>
+      _firstSelectedOAuthConnection()?.id == connectionId &&
+      _selectedWorkspaceId == workspaceId;
+
+  Future<void> _recordRouteVerification({
+    required String providerId,
+    required String connectionId,
+    String? workspaceId,
+    required ProviderVerificationState state,
+  }) async {
+    if (providerId == 'chatgpt_oauth' &&
+        (workspaceId == null ||
+            !_isSelectedOAuthRoute(connectionId, workspaceId))) {
+      return;
+    }
+    if (providerId == 'chatgpt_api' &&
+        !_connections.any((item) => item.id == connectionId)) {
+      return;
+    }
+
+    final checkedAt = DateTime.now().toUtc();
+    var saveFailed = false;
+    try {
+      await widget.settingsPreferences.writeProviderVerificationRecordForRoute(
+        providerId: providerId,
+        connectionId: connectionId,
+        workspaceId: workspaceId,
+        record: ProviderVerificationRecord(
+          outcome: _outcomeForState(state),
+          checkedAt: checkedAt,
+        ),
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription(
+            'while saving a ChatGPT verification record',
+          ),
+        ),
+      );
+      saveFailed = true;
+    }
+
+    if (!mounted) return;
+    if (providerId == 'chatgpt_oauth' &&
+        workspaceId != null &&
+        _isSelectedOAuthRoute(connectionId, workspaceId)) {
+      setState(() {
+        _oauthVerificationState = state;
+        _oauthVerificationCheckedAt = saveFailed ? null : checkedAt;
+        _oauthVerificationSaveFailed = saveFailed;
+        _oauthVerificationRecordReadFailed = false;
+      });
+    } else if (providerId == 'chatgpt_api' &&
+        _connections.any((item) => item.id == connectionId)) {
+      setState(() {
+        _apiKeyVerificationStates[connectionId] = state;
+        if (saveFailed) {
+          _apiKeyVerificationCheckedAt.remove(connectionId);
+          _apiKeyVerificationSaveFailures.add(connectionId);
+        } else {
+          _apiKeyVerificationCheckedAt[connectionId] = checkedAt;
+          _apiKeyVerificationSaveFailures.remove(connectionId);
+        }
+        _apiKeyVerificationRecordReadFailures.remove(connectionId);
+      });
+    }
+  }
+
+  Future<void> _verifyApiKeyConnection(
+    ChatGptApiKeyConnection connection,
+  ) async {
+    final service = widget.serviceClient;
+    final store = widget.apiKeyStore;
+    if (service == null ||
+        store == null ||
+        _apiKeyVerificationStates[connection.id] ==
+            ProviderVerificationState.checking) {
+      return;
+    }
+    setState(() {
+      _apiKeyVerificationStates[connection.id] =
+          ProviderVerificationState.checking;
+      _apiKeyVerificationSaveFailures.remove(connection.id);
+      _apiKeyVerificationRecordReadFailures.remove(connection.id);
+    });
+    try {
+      final apiKey = await store.readApiKey(connection.id);
+      final response = await service.call(
+        'chatgpt.api.models.list',
+        params: <String, Object?>{'apiKey': apiKey, 'forceRefresh': true},
+      );
+      final models = response['models'];
+      if (models is! List<Object?>) {
+        throw const FormatException(
+          'The ChatGPT API model catalog was invalid.',
+        );
+      }
+      if (!mounted || !_connections.any((item) => item.id == connection.id)) {
+        return;
+      }
+      await _recordRouteVerification(
+        providerId: 'chatgpt_api',
+        connectionId: connection.id,
+        state: response['freshness'] == 'stale'
+            ? ProviderVerificationState.staleCatalog
+            : response['freshness'] != 'current'
+            ? ProviderVerificationState.failed
+            : models.isEmpty
+            ? ProviderVerificationState.emptyCatalog
+            : ProviderVerificationState.verified,
+      );
+    } on OpenChatServiceException catch (error) {
+      if (!mounted || !_connections.any((item) => item.id == connection.id)) {
+        return;
+      }
+      await _recordRouteVerification(
+        providerId: 'chatgpt_api',
+        connectionId: connection.id,
+        state: providerVerificationFailureForCode(error.code),
+      );
+    } on ChatGptApiKeyStorageException {
+      await _recordRouteVerification(
+        providerId: 'chatgpt_api',
+        connectionId: connection.id,
+        state: ProviderVerificationState.failed,
+      );
+    } on FormatException {
+      await _recordRouteVerification(
+        providerId: 'chatgpt_api',
+        connectionId: connection.id,
+        state: ProviderVerificationState.failed,
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription('while verifying a ChatGPT API-key route'),
+        ),
+      );
+      await _recordRouteVerification(
+        providerId: 'chatgpt_api',
+        connectionId: connection.id,
+        state: ProviderVerificationState.failed,
+      );
     }
   }
 
@@ -334,6 +768,10 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
     setState(() => _removingConnectionIds.add(connection.id));
     try {
       await store.deleteApiKey(connection.id);
+      await _clearRouteVerificationRecord(
+        providerId: 'chatgpt_api',
+        connectionId: connection.id,
+      );
       await _loadConnections();
       if (mounted) {
         _showMessage(
@@ -381,6 +819,13 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
         'chatgpt.connections.delete',
         params: <String, Object?>{'connectionId': connection.id},
       );
+      for (final workspace in connection.workspaces) {
+        await _clearRouteVerificationRecord(
+          providerId: 'chatgpt_oauth',
+          connectionId: connection.id,
+          workspaceId: workspace.id,
+        );
+      }
       await widget.onConnectionRemoved?.call(connection.id);
       await _loadOAuthConnections();
       if (mounted) {
@@ -401,6 +846,36 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
       if (mounted) _showMessage(context.openchatL10n.connectionRemoveFailed);
     } finally {
       if (mounted) setState(() => _removingConnectionIds.remove(connection.id));
+    }
+  }
+
+  Future<void> _clearRouteVerificationRecord({
+    required String providerId,
+    required String connectionId,
+    String? workspaceId,
+  }) async {
+    try {
+      await widget.settingsPreferences.clearProviderVerificationRecordForRoute(
+        providerId: providerId,
+        connectionId: connectionId,
+        workspaceId: workspaceId,
+      );
+      await widget.settingsPreferences.clearProviderRequestOutcomeForRoute(
+        providerId: providerId,
+        connectionId: connectionId,
+        workspaceId: workspaceId,
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription(
+            'while clearing a ChatGPT verification record',
+          ),
+        ),
+      );
     }
   }
 
@@ -581,8 +1056,29 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
                     ],
                   ),
                 )
-              else if (_oauthConnections.isNotEmpty)
+              else if (_oauthConnections.isNotEmpty) ...<Widget>[
                 _buildOAuthConnections(),
+                if (_firstSelectedOAuthConnection() != null &&
+                    _selectedWorkspaceId != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                    child: ProviderConnectionStatus(
+                      state: _oauthVerificationState,
+                      checkedAt: _oauthVerificationCheckedAt,
+                      saveFailed: _oauthVerificationSaveFailed,
+                      recordReadFailed: _oauthVerificationRecordReadFailed,
+                      lastRequestOutcome: _oauthLastRequestOutcome,
+                      lastRequestReadFailed: _oauthLastRequestReadFailed,
+                      showQuotaUnavailable: false,
+                      onVerify:
+                          _oauthVerificationState ==
+                                  ProviderVerificationState.checking ||
+                              _isSigningIn
+                          ? null
+                          : _verifyOAuthConnection,
+                    ),
+                  ),
+              ],
               if (_connections.isNotEmpty ||
                   _loadState != _ConnectionLoadState.loaded)
                 Divider(height: 1, color: palette.border),
@@ -623,6 +1119,27 @@ class _ChatGptConnectionSectionState extends State<ChatGptConnectionSection> {
                         _ChatGptConnectionThread(
                           key: ValueKey(_connections[index].id),
                           connection: _connections[index],
+                          verificationState:
+                              _apiKeyVerificationStates[_connections[index]
+                                  .id] ??
+                              ProviderVerificationState.notChecked,
+                          checkedAt:
+                              _apiKeyVerificationCheckedAt[_connections[index]
+                                  .id],
+                          saveFailed: _apiKeyVerificationSaveFailures.contains(
+                            _connections[index].id,
+                          ),
+                          recordReadFailed:
+                              _apiKeyVerificationRecordReadFailures.contains(
+                                _connections[index].id,
+                              ),
+                          lastRequestOutcome:
+                              _apiKeyLastRequests[_connections[index].id],
+                          lastRequestReadFailed: _apiKeyLastRequestReadFailures
+                              .contains(_connections[index].id),
+                          onVerify: () => unawaited(
+                            _verifyApiKeyConnection(_connections[index]),
+                          ),
                           isRemoving: _removingConnectionIds.contains(
                             _connections[index].id,
                           ),
@@ -698,12 +1215,26 @@ Map<String, Object?> _serviceObjectMap(Object? value) {
 class _ChatGptConnectionThread extends StatelessWidget {
   const _ChatGptConnectionThread({
     required this.connection,
+    required this.verificationState,
+    required this.checkedAt,
+    required this.saveFailed,
+    required this.recordReadFailed,
+    required this.lastRequestOutcome,
+    required this.lastRequestReadFailed,
+    required this.onVerify,
     required this.isRemoving,
     required this.onRemove,
     super.key,
   });
 
   final ChatGptApiKeyConnection connection;
+  final ProviderVerificationState verificationState;
+  final DateTime? checkedAt;
+  final bool saveFailed;
+  final bool recordReadFailed;
+  final ProviderRequestOutcomeRecord? lastRequestOutcome;
+  final bool lastRequestReadFailed;
+  final VoidCallback onVerify;
   final bool isRemoving;
   final VoidCallback onRemove;
 
@@ -714,36 +1245,59 @@ class _ChatGptConnectionThread extends StatelessWidget {
     final keySuffix = connection.keySuffix;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(LucideIcons.keyRound, size: 18, color: palette.secondaryIcon),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              keySuffix == null
-                  ? l10n.savedApiKey
-                  : l10n.savedApiKeyWithSuffix(keySuffix),
-              style: TextStyle(
-                color: palette.text,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+          Row(
+            children: [
+              Icon(
+                LucideIcons.keyRound,
+                size: 18,
+                color: palette.secondaryIcon,
               ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  keySuffix == null
+                      ? l10n.savedApiKey
+                      : l10n.savedApiKeyWithSuffix(keySuffix),
+                  style: TextStyle(
+                    color: palette.text,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              Text(
+                l10n.apiKey,
+                style: TextStyle(color: palette.secondaryText, fontSize: 12),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                tooltip: l10n.removeChatGptConnection,
+                onPressed: isRemoving ? null : onRemove,
+                icon: isRemoving
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(LucideIcons.trash2, size: 18),
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(left: 28, right: 8),
+            child: ProviderConnectionStatus(
+              state: verificationState,
+              checkedAt: checkedAt,
+              saveFailed: saveFailed,
+              recordReadFailed: recordReadFailed,
+              lastRequestOutcome: lastRequestOutcome,
+              lastRequestReadFailed: lastRequestReadFailed,
+              onVerify: verificationState == ProviderVerificationState.checking
+                  ? null
+                  : onVerify,
             ),
-          ),
-          Text(
-            l10n.apiKey,
-            style: TextStyle(color: palette.secondaryText, fontSize: 12),
-          ),
-          const SizedBox(width: 4),
-          IconButton(
-            tooltip: l10n.removeChatGptConnection,
-            onPressed: isRemoving ? null : onRemove,
-            icon: isRemoving
-                ? const SizedBox.square(
-                    dimension: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(LucideIcons.trash2, size: 18),
           ),
         ],
       ),

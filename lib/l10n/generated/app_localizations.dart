@@ -116,6 +116,108 @@ abstract class AppLocalizations {
   /// **'New chat'**
   String get newChat;
 
+  /// No description provided for @temporaryChatStart.
+  ///
+  /// In en, this message translates to:
+  /// **'Temporary chat'**
+  String get temporaryChatStart;
+
+  /// No description provided for @temporaryChatTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Temporary chat'**
+  String get temporaryChatTitle;
+
+  /// No description provided for @temporaryChatEnd.
+  ///
+  /// In en, this message translates to:
+  /// **'End'**
+  String get temporaryChatEnd;
+
+  /// No description provided for @temporaryChatNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'This chat stays out of saved history unless you save it. Messages and attached files are sent to {provider}, which controls its own data retention. Tools are unavailable here.'**
+  String temporaryChatNotice(String provider);
+
+  /// No description provided for @temporaryChatDisclosureTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Send this message to {provider}?'**
+  String temporaryChatDisclosureTitle(String provider);
+
+  /// No description provided for @temporaryChatDisclosureBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Your message, attached files, and this temporary transcript will be sent to {provider}. The provider controls how it retains that data. Continue?'**
+  String temporaryChatDisclosureBody(String provider);
+
+  /// No description provided for @temporaryChatExitTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave this temporary chat?'**
+  String get temporaryChatExitTitle;
+
+  /// No description provided for @temporaryChatExitBody.
+  ///
+  /// In en, this message translates to:
+  /// **'Save sent messages to history, discard them, or keep working here. Unsent attachments are discarded when you leave.'**
+  String get temporaryChatExitBody;
+
+  /// No description provided for @temporaryChatSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save to history'**
+  String get temporaryChatSave;
+
+  /// No description provided for @temporaryChatDiscard.
+  ///
+  /// In en, this message translates to:
+  /// **'Discard chat'**
+  String get temporaryChatDiscard;
+
+  /// No description provided for @temporaryChatCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep chatting'**
+  String get temporaryChatCancel;
+
+  /// No description provided for @temporaryChatSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'This temporary chat could not be saved. It is still available here; try again or discard it.'**
+  String get temporaryChatSaveFailed;
+
+  /// No description provided for @temporaryChatConnectionRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Connect and verify a ChatGPT account before starting a temporary chat.'**
+  String get temporaryChatConnectionRequired;
+
+  /// No description provided for @temporaryChatRemoveAttachmentsFirst.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove pending attachments before starting a temporary chat.'**
+  String get temporaryChatRemoveAttachmentsFirst;
+
+  /// No description provided for @temporaryChatStopBeforeLeaving.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop the response before leaving this temporary chat.'**
+  String get temporaryChatStopBeforeLeaving;
+
+  /// No description provided for @temporaryChatMessageLimitReached.
+  ///
+  /// In en, this message translates to:
+  /// **'This temporary chat reached its message or size limit. Save it or start another chat.'**
+  String get temporaryChatMessageLimitReached;
+
+  /// No description provided for @temporaryChatResponseFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'No response was received. You can send another message or try again.'**
+  String get temporaryChatResponseFailed;
+
   /// No description provided for @chats.
   ///
   /// In en, this message translates to:
@@ -290,6 +392,90 @@ abstract class AppLocalizations {
   /// **'Loading saved answers…'**
   String get outputsLoading;
 
+  /// No description provided for @attachments.
+  ///
+  /// In en, this message translates to:
+  /// **'Attachments'**
+  String get attachments;
+
+  /// No description provided for @attachmentChooseFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a file'**
+  String get attachmentChooseFile;
+
+  /// No description provided for @attachmentChooseFromLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose from library'**
+  String get attachmentChooseFromLibrary;
+
+  /// No description provided for @attachmentLibraryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversation files'**
+  String get attachmentLibraryTitle;
+
+  /// No description provided for @attachmentLibraryDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse conversation files and return to their source chats.'**
+  String get attachmentLibraryDescription;
+
+  /// No description provided for @attachmentLibraryEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No saved conversation files are available.'**
+  String get attachmentLibraryEmpty;
+
+  /// No description provided for @attachmentLibraryUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This file is no longer available.'**
+  String get attachmentLibraryUnavailable;
+
+  /// No description provided for @attachmentLibraryAllFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'All files'**
+  String get attachmentLibraryAllFilter;
+
+  /// No description provided for @attachmentLibraryAvailableFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'Available'**
+  String get attachmentLibraryAvailableFilter;
+
+  /// No description provided for @attachmentLibraryMissingFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'Missing'**
+  String get attachmentLibraryMissingFilter;
+
+  /// No description provided for @attachmentLibraryOpenConversation.
+  ///
+  /// In en, this message translates to:
+  /// **'Open source conversation'**
+  String get attachmentLibraryOpenConversation;
+
+  /// No description provided for @attachmentLibraryLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading conversation files'**
+  String get attachmentLibraryLoading;
+
+  /// No description provided for @attachmentLibrarySearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Filter by file or conversation name'**
+  String get attachmentLibrarySearchHint;
+
+  /// No description provided for @attachmentLibraryLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'More conversation files could not be loaded. Try again.'**
+  String get attachmentLibraryLoadFailed;
+
   /// No description provided for @saveResponse.
   ///
   /// In en, this message translates to:
@@ -331,6 +517,150 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Saved {date}'**
   String outputSavedAt(String date);
+
+  /// No description provided for @outputWorkspaceOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit response'**
+  String get outputWorkspaceOpen;
+
+  /// No description provided for @outputWorkspaceTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Response workspace'**
+  String get outputWorkspaceTitle;
+
+  /// No description provided for @outputWorkspaceDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit a working copy. The source conversation stays unchanged.'**
+  String get outputWorkspaceDescription;
+
+  /// No description provided for @outputWorkspaceContentLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Response content'**
+  String get outputWorkspaceContentLabel;
+
+  /// No description provided for @outputWorkspaceMarkdownSource.
+  ///
+  /// In en, this message translates to:
+  /// **'Markdown source'**
+  String get outputWorkspaceMarkdownSource;
+
+  /// No description provided for @outputWorkspaceSource.
+  ///
+  /// In en, this message translates to:
+  /// **'Source'**
+  String get outputWorkspaceSource;
+
+  /// No description provided for @outputWorkspaceLanguage.
+  ///
+  /// In en, this message translates to:
+  /// **'Language'**
+  String get outputWorkspaceLanguage;
+
+  /// No description provided for @outputWorkspaceEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit'**
+  String get outputWorkspaceEdit;
+
+  /// No description provided for @outputWorkspacePreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Preview'**
+  String get outputWorkspacePreview;
+
+  /// No description provided for @outputWorkspaceVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Version {version}'**
+  String outputWorkspaceVersion(int version);
+
+  /// No description provided for @outputWorkspaceSaveVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Save new version'**
+  String get outputWorkspaceSaveVersion;
+
+  /// No description provided for @outputWorkspaceSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The new version could not be saved.'**
+  String get outputWorkspaceSaveFailed;
+
+  /// No description provided for @outputWorkspaceExport.
+  ///
+  /// In en, this message translates to:
+  /// **'Export Markdown'**
+  String get outputWorkspaceExport;
+
+  /// No description provided for @outputExportReviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Review before exporting'**
+  String get outputExportReviewTitle;
+
+  /// No description provided for @outputExportReviewScope.
+  ///
+  /// In en, this message translates to:
+  /// **'Only selected response version {version} will be exported. The source conversation and other messages are not included.'**
+  String outputExportReviewScope(int version);
+
+  /// No description provided for @outputExportReviewSensitiveNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'The Markdown copy will be written to the location you choose. The response may contain sensitive information; deleting it later cannot recall copies made elsewhere.'**
+  String get outputExportReviewSensitiveNotice;
+
+  /// No description provided for @outputWorkspaceExported.
+  ///
+  /// In en, this message translates to:
+  /// **'Response version exported.'**
+  String get outputWorkspaceExported;
+
+  /// No description provided for @outputWorkspaceExportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The response version could not be exported.'**
+  String get outputWorkspaceExportFailed;
+
+  /// No description provided for @outputWorkspaceVersionsFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Version history could not be loaded.'**
+  String get outputWorkspaceVersionsFailed;
+
+  /// No description provided for @outputWorkspaceEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'A response version cannot be empty.'**
+  String get outputWorkspaceEmpty;
+
+  /// No description provided for @outputWorkspaceUnsavedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Discard unsaved edits?'**
+  String get outputWorkspaceUnsavedTitle;
+
+  /// No description provided for @outputWorkspaceUnsavedBody.
+  ///
+  /// In en, this message translates to:
+  /// **'These edits have not been saved as a version.'**
+  String get outputWorkspaceUnsavedBody;
+
+  /// No description provided for @outputWorkspaceKeepEditing.
+  ///
+  /// In en, this message translates to:
+  /// **'Keep editing'**
+  String get outputWorkspaceKeepEditing;
+
+  /// No description provided for @outputWorkspaceDiscard.
+  ///
+  /// In en, this message translates to:
+  /// **'Discard edits'**
+  String get outputWorkspaceDiscard;
 
   /// No description provided for @collapseSidebars.
   ///
@@ -404,23 +734,59 @@ abstract class AppLocalizations {
   /// **'Connections, appearance, and local data'**
   String get settingsDescription;
 
-  /// No description provided for @settingsGeneral.
+  /// No description provided for @settingsAppearanceAccessibilityGroup.
   ///
   /// In en, this message translates to:
-  /// **'General'**
-  String get settingsGeneral;
+  /// **'Appearance and accessibility'**
+  String get settingsAppearanceAccessibilityGroup;
 
-  /// No description provided for @settingsAdvanced.
+  /// No description provided for @settingsChatBehaviorGroup.
   ///
   /// In en, this message translates to:
-  /// **'Advanced'**
-  String get settingsAdvanced;
+  /// **'Chat behavior'**
+  String get settingsChatBehaviorGroup;
 
-  /// No description provided for @settingsDataRecovery.
+  /// No description provided for @settingsProvidersModelsGroup.
   ///
   /// In en, this message translates to:
-  /// **'Data and recovery'**
-  String get settingsDataRecovery;
+  /// **'Providers and models'**
+  String get settingsProvidersModelsGroup;
+
+  /// No description provided for @settingsToolsPermissionsGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Tools and permissions'**
+  String get settingsToolsPermissionsGroup;
+
+  /// No description provided for @settingsNotificationsGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications and alerts'**
+  String get settingsNotificationsGroup;
+
+  /// No description provided for @settingsDataPrivacyGroup.
+  ///
+  /// In en, this message translates to:
+  /// **'Data and privacy'**
+  String get settingsDataPrivacyGroup;
+
+  /// No description provided for @settingsSearchPlaceholder.
+  ///
+  /// In en, this message translates to:
+  /// **'Search settings'**
+  String get settingsSearchPlaceholder;
+
+  /// No description provided for @settingsSearchClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear search'**
+  String get settingsSearchClear;
+
+  /// No description provided for @settingsSearchEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No settings match this search.'**
+  String get settingsSearchEmpty;
 
   /// No description provided for @settingsAccountConnectionsHeading.
   ///
@@ -557,14 +923,422 @@ abstract class AppLocalizations {
   /// No description provided for @settingsConversationMemoryDescription.
   ///
   /// In en, this message translates to:
-  /// **'Search and manage the local conversation archive.'**
+  /// **'Manage personal memories and search local conversation archives.'**
   String get settingsConversationMemoryDescription;
+
+  /// No description provided for @personalMemoryDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Save facts you choose so they can be added to future model requests when personal memory is enabled.'**
+  String get personalMemoryDescription;
+
+  /// No description provided for @personalMemoryPrivacyNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved copies stay on this device. When enabled, their text is sent to the provider with your request. Review or remove facts here at any time.'**
+  String get personalMemoryPrivacyNotice;
+
+  /// No description provided for @personalMemoryEnabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Use personal memories'**
+  String get personalMemoryEnabled;
+
+  /// No description provided for @personalMemoryResponseLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Memory · {count}'**
+  String personalMemoryResponseLabel(int count);
+
+  /// No description provided for @personalMemorySourcesTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved facts sent with this request'**
+  String get personalMemorySourcesTitle;
+
+  /// No description provided for @personalMemorySourcesDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'These saved facts were included in the request. The model may not have used all of them.'**
+  String get personalMemorySourcesDescription;
+
+  /// No description provided for @personalMemorySourceUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This fact has since been edited or removed from saved memory.'**
+  String get personalMemorySourceUnavailable;
+
+  /// No description provided for @personalMemoryEnabledDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Include your saved facts in new requests. This is off by default.'**
+  String get personalMemoryEnabledDescription;
+
+  /// No description provided for @personalMemoryExcludeHereTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Exclude personal memory from this conversation'**
+  String get personalMemoryExcludeHereTooltip;
+
+  /// No description provided for @personalMemoryUseHereTooltip.
+  ///
+  /// In en, this message translates to:
+  /// **'Use personal memory in this conversation'**
+  String get personalMemoryUseHereTooltip;
+
+  /// No description provided for @personalMemoryFactsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved facts'**
+  String get personalMemoryFactsTitle;
+
+  /// No description provided for @personalMemoryEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'You have not saved any facts.'**
+  String get personalMemoryEmpty;
+
+  /// No description provided for @personalMemoryAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add fact'**
+  String get personalMemoryAdd;
+
+  /// No description provided for @personalMemoryEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit fact'**
+  String get personalMemoryEdit;
+
+  /// No description provided for @personalMemoryDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete fact'**
+  String get personalMemoryDelete;
+
+  /// No description provided for @personalMemoryDeleteTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete this saved fact?'**
+  String get personalMemoryDeleteTitle;
+
+  /// No description provided for @personalMemoryDeleteConfirmation.
+  ///
+  /// In en, this message translates to:
+  /// **'It will be removed from this device and future model requests.'**
+  String get personalMemoryDeleteConfirmation;
+
+  /// No description provided for @personalMemoryDeleteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete'**
+  String get personalMemoryDeleteConfirm;
+
+  /// No description provided for @personalMemoryFactLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Fact to remember'**
+  String get personalMemoryFactLabel;
+
+  /// No description provided for @personalMemoryFactHint.
+  ///
+  /// In en, this message translates to:
+  /// **'For example, a preference you want OpenChat to remember'**
+  String get personalMemoryFactHint;
+
+  /// No description provided for @personalMemoryLimitReached.
+  ///
+  /// In en, this message translates to:
+  /// **'You have reached the limit of saved facts.'**
+  String get personalMemoryLimitReached;
+
+  /// No description provided for @personalMemoryLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved facts could not be loaded.'**
+  String get personalMemoryLoadFailed;
+
+  /// No description provided for @personalMemorySaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The saved fact could not be updated.'**
+  String get personalMemorySaveFailed;
+
+  /// No description provided for @personalMemoryClearAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear saved memories'**
+  String get personalMemoryClearAction;
+
+  /// No description provided for @personalMemoryClearTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear all saved memories?'**
+  String get personalMemoryClearTitle;
+
+  /// No description provided for @personalMemoryClearConfirmation.
+  ///
+  /// In en, this message translates to:
+  /// **'All saved facts will be removed from this device, and personal memory will be turned off.'**
+  String get personalMemoryClearConfirmation;
+
+  /// No description provided for @personalMemoryClearConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear memories'**
+  String get personalMemoryClearConfirm;
+
+  /// No description provided for @personalMemoryClearFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved memories could not be cleared.'**
+  String get personalMemoryClearFailed;
 
   /// No description provided for @settingsSharedInstructionsDescription.
   ///
   /// In en, this message translates to:
   /// **'Set guidance included in new conversations.'**
   String get settingsSharedInstructionsDescription;
+
+  /// No description provided for @settingsAssistantProfilesDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Create reusable assistants with their own response guidance.'**
+  String get settingsAssistantProfilesDescription;
+
+  /// No description provided for @settingsNotifications.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications'**
+  String get settingsNotifications;
+
+  /// No description provided for @settingsNotificationsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage alerts for completed responses and questions waiting for you.'**
+  String get settingsNotificationsDescription;
+
+  /// No description provided for @keyboardShortcuts.
+  ///
+  /// In en, this message translates to:
+  /// **'Keyboard shortcuts'**
+  String get keyboardShortcuts;
+
+  /// No description provided for @keyboardShortcutsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Change the keys used to send messages, add a new line, or stop a response.'**
+  String get keyboardShortcutsDescription;
+
+  /// No description provided for @keyboardShortcutRecord.
+  ///
+  /// In en, this message translates to:
+  /// **'Press a key combination'**
+  String get keyboardShortcutRecord;
+
+  /// No description provided for @keyboardShortcutConflict.
+  ///
+  /// In en, this message translates to:
+  /// **'That key combination is already assigned to another action.'**
+  String get keyboardShortcutConflict;
+
+  /// No description provided for @keyboardShortcutLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Keyboard shortcuts could not be loaded.'**
+  String get keyboardShortcutLoadFailed;
+
+  /// No description provided for @keyboardShortcutSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Keyboard shortcuts could not be saved.'**
+  String get keyboardShortcutSaveFailed;
+
+  /// No description provided for @keyboardShortcutsReset.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore defaults'**
+  String get keyboardShortcutsReset;
+
+  /// No description provided for @keyboardSendMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Send message'**
+  String get keyboardSendMessage;
+
+  /// No description provided for @keyboardSendMessageDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Send the message while the composer is focused.'**
+  String get keyboardSendMessageDescription;
+
+  /// No description provided for @keyboardNewLine.
+  ///
+  /// In en, this message translates to:
+  /// **'Insert a new line'**
+  String get keyboardNewLine;
+
+  /// No description provided for @keyboardNewLineDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a line break without sending the message.'**
+  String get keyboardNewLineDescription;
+
+  /// No description provided for @keyboardStopResponse.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop response'**
+  String get keyboardStopResponse;
+
+  /// No description provided for @keyboardStopResponseDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop the response while the composer is focused.'**
+  String get keyboardStopResponseDescription;
+
+  /// No description provided for @notificationResponses.
+  ///
+  /// In en, this message translates to:
+  /// **'Response notifications'**
+  String get notificationResponses;
+
+  /// No description provided for @notificationResponsesDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Show an alert when a response completes while OpenChat is in the background.'**
+  String get notificationResponsesDescription;
+
+  /// No description provided for @notificationQuestions.
+  ///
+  /// In en, this message translates to:
+  /// **'Pending questions'**
+  String get notificationQuestions;
+
+  /// No description provided for @notificationQuestionsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Show an alert when the AI is waiting for your answer.'**
+  String get notificationQuestionsDescription;
+
+  /// No description provided for @notificationResponsePreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Show response text'**
+  String get notificationResponsePreview;
+
+  /// No description provided for @notificationResponsePreviewDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Include response text in the alert. When off, the alert only says a response is ready.'**
+  String get notificationResponsePreviewDescription;
+
+  /// No description provided for @notificationQuickReply.
+  ///
+  /// In en, this message translates to:
+  /// **'Quick reply from notification'**
+  String get notificationQuickReply;
+
+  /// No description provided for @notificationQuickReplyDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a text field and send action to response alerts.'**
+  String get notificationQuickReplyDescription;
+
+  /// No description provided for @notificationSettingsSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Notification preference could not be saved.'**
+  String get notificationSettingsSaveFailed;
+
+  /// No description provided for @notificationSettingsUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Notification preferences could not be read.'**
+  String get notificationSettingsUnavailable;
+
+  /// No description provided for @notificationDeliveryChecking.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking Windows notification availability.'**
+  String get notificationDeliveryChecking;
+
+  /// No description provided for @notificationDeliveryEnabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Windows notifications are available.'**
+  String get notificationDeliveryEnabled;
+
+  /// No description provided for @notificationDeliveryDisabledForApp.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenChat notifications are turned off in Windows.'**
+  String get notificationDeliveryDisabledForApp;
+
+  /// No description provided for @notificationDeliveryDisabledForUser.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications are turned off in Windows settings.'**
+  String get notificationDeliveryDisabledForUser;
+
+  /// No description provided for @notificationDeliveryDisabledByPolicy.
+  ///
+  /// In en, this message translates to:
+  /// **'Notifications are blocked by your organization\'s policy.'**
+  String get notificationDeliveryDisabledByPolicy;
+
+  /// No description provided for @notificationDeliveryDisabledByManifest.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenChat is not registered to send Windows notifications.'**
+  String get notificationDeliveryDisabledByManifest;
+
+  /// No description provided for @notificationDeliveryUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Windows notification availability could not be checked.'**
+  String get notificationDeliveryUnavailable;
+
+  /// No description provided for @notificationDeliveryNotSupported.
+  ///
+  /// In en, this message translates to:
+  /// **'Windows notification status is unavailable on this platform.'**
+  String get notificationDeliveryNotSupported;
+
+  /// No description provided for @sendTestNotification.
+  ///
+  /// In en, this message translates to:
+  /// **'Send a test notification'**
+  String get sendTestNotification;
+
+  /// No description provided for @notificationTestTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenChat notification test'**
+  String get notificationTestTitle;
+
+  /// No description provided for @notificationTestBody.
+  ///
+  /// In en, this message translates to:
+  /// **'If you can see this, Windows notifications are being delivered.'**
+  String get notificationTestBody;
+
+  /// No description provided for @notificationTestRequested.
+  ///
+  /// In en, this message translates to:
+  /// **'Test notification requested.'**
+  String get notificationTestRequested;
+
+  /// No description provided for @notificationTestFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The test notification could not be sent.'**
+  String get notificationTestFailed;
+
+  /// No description provided for @openNotificationSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Open Windows notification settings'**
+  String get openNotificationSettings;
 
   /// No description provided for @settingsAppearanceDescription.
   ///
@@ -584,6 +1358,108 @@ abstract class AppLocalizations {
   /// **'Connections'**
   String get connections;
 
+  /// No description provided for @providerCatalogVerification.
+  ///
+  /// In en, this message translates to:
+  /// **'Verify provider'**
+  String get providerCatalogVerification;
+
+  /// No description provided for @providerConnectionLastChecked.
+  ///
+  /// In en, this message translates to:
+  /// **'Last checked: {dateTime}'**
+  String providerConnectionLastChecked(Object dateTime);
+
+  /// No description provided for @providerLastRequestOutcome.
+  ///
+  /// In en, this message translates to:
+  /// **'Last request: {outcome}'**
+  String providerLastRequestOutcome(Object outcome);
+
+  /// No description provided for @providerLastRequestAt.
+  ///
+  /// In en, this message translates to:
+  /// **'Request time: {dateTime}'**
+  String providerLastRequestAt(Object dateTime);
+
+  /// No description provided for @providerLastRequestReadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The last request result could not be read.'**
+  String get providerLastRequestReadFailed;
+
+  /// No description provided for @providerLastRequestSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The request finished, but its result could not be saved.'**
+  String get providerLastRequestSaveFailed;
+
+  /// No description provided for @providerRequestCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get providerRequestCompleted;
+
+  /// No description provided for @providerRequestWaitingForInput.
+  ///
+  /// In en, this message translates to:
+  /// **'Waiting for input'**
+  String get providerRequestWaitingForInput;
+
+  /// No description provided for @providerRequestStopped.
+  ///
+  /// In en, this message translates to:
+  /// **'Stopped'**
+  String get providerRequestStopped;
+
+  /// No description provided for @providerRequestAuthenticationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Authentication failed'**
+  String get providerRequestAuthenticationFailed;
+
+  /// No description provided for @providerRequestRateLimited.
+  ///
+  /// In en, this message translates to:
+  /// **'Rate limited'**
+  String get providerRequestRateLimited;
+
+  /// No description provided for @providerRequestNetworkFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Network error'**
+  String get providerRequestNetworkFailed;
+
+  /// No description provided for @providerRequestFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The provider could not complete the response. Your saved messages are still available.'**
+  String get providerRequestFailed;
+
+  /// No description provided for @providerVerificationResultNotSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'The result could not be saved on this device.'**
+  String get providerVerificationResultNotSaved;
+
+  /// No description provided for @providerVerificationRecordUnreadable.
+  ///
+  /// In en, this message translates to:
+  /// **'The saved check result could not be read. Verify the connection again.'**
+  String get providerVerificationRecordUnreadable;
+
+  /// No description provided for @setupStepCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get setupStepCompleted;
+
+  /// No description provided for @setupStepCurrent.
+  ///
+  /// In en, this message translates to:
+  /// **'Current step'**
+  String get setupStepCurrent;
+
   /// No description provided for @models.
   ///
   /// In en, this message translates to:
@@ -593,13 +1469,13 @@ abstract class AppLocalizations {
   /// No description provided for @modelLibrary.
   ///
   /// In en, this message translates to:
-  /// **'Find models'**
+  /// **'Library'**
   String get modelLibrary;
 
   /// No description provided for @modelPreferences.
   ///
   /// In en, this message translates to:
-  /// **'Model preferences'**
+  /// **'Models'**
   String get modelPreferences;
 
   /// No description provided for @modelsDescription.
@@ -607,6 +1483,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Choose the default model for new conversations and hide models you don\'t use.'**
   String get modelsDescription;
+
+  /// No description provided for @defaultModelPreferenceInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'The saved default model setting could not be read. Clear it in Model preferences or Project options.'**
+  String get defaultModelPreferenceInvalid;
+
+  /// No description provided for @clearDefaultModelPreference.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear saved default model'**
+  String get clearDefaultModelPreference;
+
+  /// No description provided for @defaultModelPreferenceClearFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The saved default model setting could not be cleared.'**
+  String get defaultModelPreferenceClearFailed;
+
+  /// No description provided for @hiddenModelPreferencesInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved hidden model preferences are unreadable. Clear them here to show all models again.'**
+  String get hiddenModelPreferencesInvalid;
+
+  /// No description provided for @clearHiddenModelPreferences.
+  ///
+  /// In en, this message translates to:
+  /// **'Reset hidden models'**
+  String get clearHiddenModelPreferences;
+
+  /// No description provided for @hiddenModelPreferencesClearFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The saved hidden model preferences could not be cleared.'**
+  String get hiddenModelPreferencesClearFailed;
 
   /// No description provided for @modelContextAutomatic.
   ///
@@ -665,7 +1577,7 @@ abstract class AppLocalizations {
   /// No description provided for @localEnginesDescription.
   ///
   /// In en, this message translates to:
-  /// **'Install verified local runtimes, register your own model files, and check whether a runtime is healthy. Move or copy models into an engine folder, or keep them where they are.'**
+  /// **'Install and manage local model runtimes.'**
   String get localEnginesDescription;
 
   /// No description provided for @localEnginesUnavailable.
@@ -776,12 +1688,6 @@ abstract class AppLocalizations {
   /// **'Deprecated'**
   String get localEngineDeprecated;
 
-  /// No description provided for @localEngineWindowsDeprecatedReason.
-  ///
-  /// In en, this message translates to:
-  /// **'New vLLM and ExLlama installs are disabled on Windows. Existing runtime files and model registrations are kept.'**
-  String get localEngineWindowsDeprecatedReason;
-
   /// No description provided for @localEngineUnsupportedPlatform.
   ///
   /// In en, this message translates to:
@@ -805,18 +1711,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'NVIDIA driver version could not be verified'**
   String get localEngineDriverVersionUnavailable;
-
-  /// No description provided for @localEngineVllmBlockedReason.
-  ///
-  /// In en, this message translates to:
-  /// **'vLLM requires an NVIDIA driver version 580 or newer and an existing Linux environment. On Windows, it uses an existing WSL2 distribution with GPU access.'**
-  String get localEngineVllmBlockedReason;
-
-  /// No description provided for @localEngineExllamaBlockedReason.
-  ///
-  /// In en, this message translates to:
-  /// **'The ExLlamaV3 runtime is not ready for installation yet. OpenChat must pin and verify the complete TabbyAPI, PyTorch, Triton, Flash Linear Attention, and Python dependency set before offering it.'**
-  String get localEngineExllamaBlockedReason;
 
   /// No description provided for @localEngineRuntimeRequirements.
   ///
@@ -1382,12 +2276,6 @@ abstract class AppLocalizations {
   /// **'Extracting'**
   String get localEngineStageExtracting;
 
-  /// No description provided for @localEngineStageRuntimeSetup.
-  ///
-  /// In en, this message translates to:
-  /// **'Setting up the Python runtime'**
-  String get localEngineStageRuntimeSetup;
-
   /// No description provided for @localEngineStagePublishing.
   ///
   /// In en, this message translates to:
@@ -1489,6 +2377,300 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Shared instructions'**
   String get sharedInstructions;
+
+  /// No description provided for @assistantProfiles.
+  ///
+  /// In en, this message translates to:
+  /// **'Assistant profiles'**
+  String get assistantProfiles;
+
+  /// No description provided for @assistantProfilesDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Choose a profile to apply its instructions and response style to new requests. Profiles are stored on this device.'**
+  String get assistantProfilesDescription;
+
+  /// No description provided for @assistantProfilesEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No assistant profiles yet.'**
+  String get assistantProfilesEmpty;
+
+  /// No description provided for @assistantProfileCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'Create profile'**
+  String get assistantProfileCreate;
+
+  /// No description provided for @assistantProfileDeactivate.
+  ///
+  /// In en, this message translates to:
+  /// **'Use no profile'**
+  String get assistantProfileDeactivate;
+
+  /// No description provided for @assistantProfileEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit profile'**
+  String get assistantProfileEdit;
+
+  /// No description provided for @assistantProfileRemoveTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove assistant profile?'**
+  String get assistantProfileRemoveTitle;
+
+  /// No description provided for @assistantProfileRemove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get assistantProfileRemove;
+
+  /// No description provided for @assistantProfileRemoveConfirmation.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove “{profileName}”? New requests will no longer use it.'**
+  String assistantProfileRemoveConfirmation(String profileName);
+
+  /// No description provided for @assistantProfileSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The assistant profile could not be saved.'**
+  String get assistantProfileSaveFailed;
+
+  /// No description provided for @assistantProfilesLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Assistant profiles could not be loaded.'**
+  String get assistantProfilesLoadFailed;
+
+  /// No description provided for @assistantProfileLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The active assistant profile could not be loaded.'**
+  String get assistantProfileLoadFailed;
+
+  /// No description provided for @assistantProfilesLimitReached.
+  ///
+  /// In en, this message translates to:
+  /// **'You can save up to 20 assistant profiles.'**
+  String get assistantProfilesLimitReached;
+
+  /// No description provided for @assistantProfileName.
+  ///
+  /// In en, this message translates to:
+  /// **'Name'**
+  String get assistantProfileName;
+
+  /// No description provided for @assistantProfileNameRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Enter a name for this profile.'**
+  String get assistantProfileNameRequired;
+
+  /// No description provided for @assistantProfileNameTooLong.
+  ///
+  /// In en, this message translates to:
+  /// **'Use 64 characters or fewer.'**
+  String get assistantProfileNameTooLong;
+
+  /// No description provided for @assistantProfileNameExists.
+  ///
+  /// In en, this message translates to:
+  /// **'A profile with this name already exists.'**
+  String get assistantProfileNameExists;
+
+  /// No description provided for @assistantProfileInstructions.
+  ///
+  /// In en, this message translates to:
+  /// **'Instructions'**
+  String get assistantProfileInstructions;
+
+  /// No description provided for @assistantProfileInstructionsHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'These instructions are sent with new standard chat requests when this profile is active. Temporary chats do not use assistant profiles.'**
+  String get assistantProfileInstructionsHelp;
+
+  /// No description provided for @assistantProfilePreferredModel.
+  ///
+  /// In en, this message translates to:
+  /// **'Preferred model'**
+  String get assistantProfilePreferredModel;
+
+  /// No description provided for @assistantProfilePreferredModelUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Select an available model in chat first.'**
+  String get assistantProfilePreferredModelUnavailable;
+
+  /// No description provided for @assistantProfilePreferredModelHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Used for new chats. A project-specific model takes priority.'**
+  String get assistantProfilePreferredModelHelp;
+
+  /// No description provided for @assistantProfileRestrictTools.
+  ///
+  /// In en, this message translates to:
+  /// **'Limit tools for this profile'**
+  String get assistantProfileRestrictTools;
+
+  /// No description provided for @assistantProfileRestrictToolsHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Only selected tools are offered. App and project permissions can restrict them further.'**
+  String get assistantProfileRestrictToolsHelp;
+
+  /// No description provided for @assistantProfileProjectTools.
+  ///
+  /// In en, this message translates to:
+  /// **'Available in the active project'**
+  String get assistantProfileProjectTools;
+
+  /// No description provided for @assistantProfileProjectTasks.
+  ///
+  /// In en, this message translates to:
+  /// **'Run a named project task'**
+  String get assistantProfileProjectTasks;
+
+  /// No description provided for @assistantProfileMcpUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Some enabled MCP servers are unavailable; their tools could not be loaded.'**
+  String get assistantProfileMcpUnavailable;
+
+  /// No description provided for @assistantProfileLoadMcpTools.
+  ///
+  /// In en, this message translates to:
+  /// **'Load MCP tools'**
+  String get assistantProfileLoadMcpTools;
+
+  /// No description provided for @assistantProfileLoadingMcpTools.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting to MCP servers…'**
+  String get assistantProfileLoadingMcpTools;
+
+  /// No description provided for @assistantProfileAllowedToolCount.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool limit: {count}'**
+  String assistantProfileAllowedToolCount(int count);
+
+  /// No description provided for @assistantProfileToolAccessUsesAppPermissions.
+  ///
+  /// In en, this message translates to:
+  /// **'App and project permissions'**
+  String get assistantProfileToolAccessUsesAppPermissions;
+
+  /// No description provided for @assistantProfileToolAccessInheritsAppPermissions.
+  ///
+  /// In en, this message translates to:
+  /// **'This profile sets no tool limit. App and project permissions control which tools are available.'**
+  String get assistantProfileToolAccessInheritsAppPermissions;
+
+  /// No description provided for @assistantProfileToolAccessDisabled.
+  ///
+  /// In en, this message translates to:
+  /// **'Tools are off'**
+  String get assistantProfileToolAccessDisabled;
+
+  /// No description provided for @assistantProfileToolAccessDisabledHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'This profile disables all tools.'**
+  String get assistantProfileToolAccessDisabledHelp;
+
+  /// No description provided for @assistantToolGroupWebResearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Web search and page reading'**
+  String get assistantToolGroupWebResearch;
+
+  /// No description provided for @assistantToolGroupWorkspaceRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Read and search workspace files'**
+  String get assistantToolGroupWorkspaceRead;
+
+  /// No description provided for @assistantToolGroupWorkspaceWrite.
+  ///
+  /// In en, this message translates to:
+  /// **'Create and edit workspace files'**
+  String get assistantToolGroupWorkspaceWrite;
+
+  /// No description provided for @assistantToolGroupTerminal.
+  ///
+  /// In en, this message translates to:
+  /// **'Run terminal commands'**
+  String get assistantToolGroupTerminal;
+
+  /// No description provided for @assistantToolGroupGitRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Inspect Git status and history'**
+  String get assistantToolGroupGitRead;
+
+  /// No description provided for @assistantToolGroupImageGeneration.
+  ///
+  /// In en, this message translates to:
+  /// **'Generate images'**
+  String get assistantToolGroupImageGeneration;
+
+  /// No description provided for @assistantToolGroupAskUser.
+  ///
+  /// In en, this message translates to:
+  /// **'Ask the user a question'**
+  String get assistantToolGroupAskUser;
+
+  /// No description provided for @assistantToolGroupDelegateTask.
+  ///
+  /// In en, this message translates to:
+  /// **'Delegate a bounded task'**
+  String get assistantToolGroupDelegateTask;
+
+  /// No description provided for @assistantToolGroupGoalControls.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage persistent goals'**
+  String get assistantToolGroupGoalControls;
+
+  /// No description provided for @assistantResponseStyle.
+  ///
+  /// In en, this message translates to:
+  /// **'Response style'**
+  String get assistantResponseStyle;
+
+  /// No description provided for @assistantResponseStyleConcise.
+  ///
+  /// In en, this message translates to:
+  /// **'Concise'**
+  String get assistantResponseStyleConcise;
+
+  /// No description provided for @assistantResponseStyleBalanced.
+  ///
+  /// In en, this message translates to:
+  /// **'Balanced'**
+  String get assistantResponseStyleBalanced;
+
+  /// No description provided for @assistantResponseStyleDetailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Detailed'**
+  String get assistantResponseStyleDetailed;
+
+  /// No description provided for @assistantProfileStyle.
+  ///
+  /// In en, this message translates to:
+  /// **'Style: {style}'**
+  String assistantProfileStyle(String style);
+
+  /// No description provided for @assistantProfileActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Assistant profile: {profileName}'**
+  String assistantProfileActive(String profileName);
 
   /// No description provided for @sharedInstructionsDescription.
   ///
@@ -1646,18 +2828,6 @@ abstract class AppLocalizations {
   /// **'Cohere'**
   String get cohereProvider;
 
-  /// No description provided for @ollamaProvider.
-  ///
-  /// In en, this message translates to:
-  /// **'Ollama'**
-  String get ollamaProvider;
-
-  /// No description provided for @lmStudioProvider.
-  ///
-  /// In en, this message translates to:
-  /// **'LM Studio'**
-  String get lmStudioProvider;
-
   /// No description provided for @geminiApiDescription.
   ///
   /// In en, this message translates to:
@@ -1748,18 +2918,6 @@ abstract class AppLocalizations {
   /// **'Use Cohere models with chat and tool-calling APIs.'**
   String get cohereApiDescription;
 
-  /// No description provided for @ollamaApiDescription.
-  ///
-  /// In en, this message translates to:
-  /// **'Use local models running in Ollama through its OpenAI-compatible API.'**
-  String get ollamaApiDescription;
-
-  /// No description provided for @lmStudioApiDescription.
-  ///
-  /// In en, this message translates to:
-  /// **'Connect to local models loaded in LM Studio through its OpenAI-compatible API.'**
-  String get lmStudioApiDescription;
-
   /// No description provided for @geminiUnpaidDataNotice.
   ///
   /// In en, this message translates to:
@@ -1801,6 +2959,72 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The API key could not be read or saved securely.'**
   String get providerKeyStorageFailed;
+
+  /// No description provided for @verifyProviderConnection.
+  ///
+  /// In en, this message translates to:
+  /// **'Verify connection'**
+  String get verifyProviderConnection;
+
+  /// No description provided for @providerConnectionNotVerified.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection has not been verified yet.'**
+  String get providerConnectionNotVerified;
+
+  /// No description provided for @verifyingProviderConnection.
+  ///
+  /// In en, this message translates to:
+  /// **'Checking provider connection…'**
+  String get verifyingProviderConnection;
+
+  /// No description provided for @providerConnectionVerified.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection verified; model catalog is available.'**
+  String get providerConnectionVerified;
+
+  /// No description provided for @providerVerificationStaleCatalog.
+  ///
+  /// In en, this message translates to:
+  /// **'Only cached models were returned; the provider connection could not be verified. Try again.'**
+  String get providerVerificationStaleCatalog;
+
+  /// No description provided for @providerModelCatalogEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'The provider accepted the request, but returned no models.'**
+  String get providerModelCatalogEmpty;
+
+  /// No description provided for @providerVerificationAuthenticationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The provider rejected this key. Check it and try again.'**
+  String get providerVerificationAuthenticationFailed;
+
+  /// No description provided for @providerVerificationRateLimited.
+  ///
+  /// In en, this message translates to:
+  /// **'The provider rate limit prevented verification. Try again later.'**
+  String get providerVerificationRateLimited;
+
+  /// No description provided for @providerVerificationNetworkFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not reach the provider. Check your network and try again.'**
+  String get providerVerificationNetworkFailed;
+
+  /// No description provided for @providerConnectionVerificationFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Verification failed. Retry or review the provider settings.'**
+  String get providerConnectionVerificationFailed;
+
+  /// No description provided for @providerQuotaUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'OpenChat does not currently show quota data for this provider.'**
+  String get providerQuotaUnavailable;
 
   /// No description provided for @favoriteModels.
   ///
@@ -2576,12 +3800,6 @@ abstract class AppLocalizations {
   /// **'The provider rejected the request. Check the connection and model access.'**
   String get providerAuthenticationRequired;
 
-  /// No description provided for @providerRequestFailed.
-  ///
-  /// In en, this message translates to:
-  /// **'The provider could not complete the response. Your saved messages are still available.'**
-  String get providerRequestFailed;
-
   /// No description provided for @providerToolRequestRejected.
   ///
   /// In en, this message translates to:
@@ -3338,6 +4556,48 @@ abstract class AppLocalizations {
   /// **'Dark'**
   String get darkTheme;
 
+  /// No description provided for @attachmentIndexTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Search inside text attachments'**
+  String get attachmentIndexTitle;
+
+  /// No description provided for @attachmentIndexDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Supported text files are copied into a local searchable index, up to 5,000 files or 100 MB. Source files stay unchanged; images are not indexed.'**
+  String get attachmentIndexDescription;
+
+  /// No description provided for @attachmentIndexSupportedTypes.
+  ///
+  /// In en, this message translates to:
+  /// **'Indexed types: .txt, .md, .csv, .json, .jsonl, .xml, .html, .css, .js, .jsx, .ts, .tsx, .dart, .rs, .py, .go, .java, .kt, .swift, .c, .h, .cpp, .hpp, .cs, .sh, .ps1, .yaml, .yml, .toml, .ini, .sql, .log'**
+  String get attachmentIndexSupportedTypes;
+
+  /// No description provided for @attachmentIndexCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} files indexed'**
+  String attachmentIndexCount(int count);
+
+  /// No description provided for @attachmentIndexRebuild.
+  ///
+  /// In en, this message translates to:
+  /// **'Rebuild index'**
+  String get attachmentIndexRebuild;
+
+  /// No description provided for @attachmentIndexClear.
+  ///
+  /// In en, this message translates to:
+  /// **'Clear index'**
+  String get attachmentIndexClear;
+
+  /// No description provided for @attachmentIndexFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The attachment text index could not be updated.'**
+  String get attachmentIndexFailed;
+
   /// No description provided for @localData.
   ///
   /// In en, this message translates to:
@@ -3985,14 +5245,50 @@ abstract class AppLocalizations {
   /// No description provided for @searchChats.
   ///
   /// In en, this message translates to:
-  /// **'Search chats'**
+  /// **'Search OpenChat'**
   String get searchChats;
 
   /// No description provided for @searchChatsHint.
   ///
   /// In en, this message translates to:
-  /// **'Search chats and messages'**
+  /// **'Search chats, projects, workspaces, saved responses, and file names'**
   String get searchChatsHint;
+
+  /// No description provided for @searchFilterAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get searchFilterAll;
+
+  /// No description provided for @searchFilterChats.
+  ///
+  /// In en, this message translates to:
+  /// **'Chats'**
+  String get searchFilterChats;
+
+  /// No description provided for @searchFilterProjects.
+  ///
+  /// In en, this message translates to:
+  /// **'Projects'**
+  String get searchFilterProjects;
+
+  /// No description provided for @searchFilterWorkspaces.
+  ///
+  /// In en, this message translates to:
+  /// **'Workspaces'**
+  String get searchFilterWorkspaces;
+
+  /// No description provided for @searchFilterSavedResponses.
+  ///
+  /// In en, this message translates to:
+  /// **'Saved responses'**
+  String get searchFilterSavedResponses;
+
+  /// No description provided for @searchFilterAttachments.
+  ///
+  /// In en, this message translates to:
+  /// **'Attachments'**
+  String get searchFilterAttachments;
 
   /// No description provided for @searchMessagesTooltip.
   ///
@@ -4261,7 +5557,7 @@ abstract class AppLocalizations {
   /// No description provided for @searchMessagesNoResults.
   ///
   /// In en, this message translates to:
-  /// **'No matching messages or conversations.'**
+  /// **'No matching items found.'**
   String get searchMessagesNoResults;
 
   /// No description provided for @searchMessagesTooShort.
@@ -4431,6 +5727,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Choose a rule for each tool. Unset tools use the global permission mode. Allow still follows file scope and process sandbox limits.'**
   String get projectToolRulesDescription;
+
+  /// No description provided for @projectToolRulesSummaryLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading this project\'s tool permission rules.'**
+  String get projectToolRulesSummaryLoading;
+
+  /// No description provided for @projectToolRulesSummaryUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'This project\'s tool permission summary could not be loaded.'**
+  String get projectToolRulesSummaryUnavailable;
+
+  /// No description provided for @projectToolRulesSummaryInherit.
+  ///
+  /// In en, this message translates to:
+  /// **'This project has no overrides. All tools use the global permission mode.'**
+  String get projectToolRulesSummaryInherit;
+
+  /// No description provided for @projectToolRulesSummary.
+  ///
+  /// In en, this message translates to:
+  /// **'Project rules: {allowed} allow, {approval} require approval, {denied} deny. Tools without a rule use the global mode.'**
+  String projectToolRulesSummary(int allowed, int approval, int denied);
 
   /// No description provided for @projectToolRuleInherit.
   ///
@@ -6065,8 +7385,20 @@ abstract class AppLocalizations {
   /// No description provided for @noModelConnectedBody.
   ///
   /// In en, this message translates to:
-  /// **'Connect a provider and choose one of its models to start a conversation.'**
+  /// **'Sign in with ChatGPT, add an API key for a supported provider, or choose an available local model in Connections. Verify the connection, then select a model below.'**
   String get noModelConnectedBody;
+
+  /// No description provided for @providerNeedsVerificationTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Check your provider connection'**
+  String get providerNeedsVerificationTitle;
+
+  /// No description provided for @providerNeedsVerificationBody.
+  ///
+  /// In en, this message translates to:
+  /// **'A saved sign-in or API key does not confirm that the provider is reachable. Open Connections to verify it and refresh its model list.'**
+  String get providerNeedsVerificationBody;
 
   /// No description provided for @close.
   ///
@@ -7736,18 +9068,6 @@ abstract class AppLocalizations {
   /// **'GGUF · llama.cpp'**
   String get modelFormatGguf;
 
-  /// No description provided for @modelFormatTransformers.
-  ///
-  /// In en, this message translates to:
-  /// **'Transformers · vLLM'**
-  String get modelFormatTransformers;
-
-  /// No description provided for @modelFormatExllama.
-  ///
-  /// In en, this message translates to:
-  /// **'ExLlama · EXL3'**
-  String get modelFormatExllama;
-
   /// No description provided for @huggingFaceModelSearchHint.
   ///
   /// In en, this message translates to:
@@ -8101,6 +9421,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'The AI is waiting for your response.'**
   String get userQuestionNotificationBody;
+
+  /// No description provided for @notificationResponseReady.
+  ///
+  /// In en, this message translates to:
+  /// **'A response is ready.'**
+  String get notificationResponseReady;
 
   /// No description provided for @assistantResponseNotificationReplyEmpty.
   ///
@@ -8569,6 +9895,468 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Tasks: {completed} of {total}'**
   String goalTasksCount(int completed, int total);
+
+  /// No description provided for @supportDiagnosticsTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Support diagnostics'**
+  String get supportDiagnosticsTitle;
+
+  /// No description provided for @supportDiagnosticsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Review app and storage health details before saving a support file.'**
+  String get supportDiagnosticsDescription;
+
+  /// No description provided for @reviewSupportDiagnostics.
+  ///
+  /// In en, this message translates to:
+  /// **'Review export'**
+  String get reviewSupportDiagnostics;
+
+  /// No description provided for @supportDiagnosticsPreviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Review support diagnostics'**
+  String get supportDiagnosticsPreviewTitle;
+
+  /// No description provided for @supportDiagnosticsPreviewDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'This file contains the details below. Chat content, credentials, and file paths are excluded.'**
+  String get supportDiagnosticsPreviewDescription;
+
+  /// No description provided for @supportDiagnosticsExportAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Save JSON'**
+  String get supportDiagnosticsExportAction;
+
+  /// No description provided for @supportDiagnosticsSaved.
+  ///
+  /// In en, this message translates to:
+  /// **'Support diagnostics saved.'**
+  String get supportDiagnosticsSaved;
+
+  /// No description provided for @supportDiagnosticsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Diagnostics could not be loaded. Check the local service and try again.'**
+  String get supportDiagnosticsLoadFailed;
+
+  /// No description provided for @supportDiagnosticsInvalidResponse.
+  ///
+  /// In en, this message translates to:
+  /// **'The local service returned unexpected diagnostic data.'**
+  String get supportDiagnosticsInvalidResponse;
+
+  /// No description provided for @supportDiagnosticsExportFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The support diagnostics file could not be saved.'**
+  String get supportDiagnosticsExportFailed;
+
+  /// No description provided for @supportDiagnosticsPrivacyNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Only the fields shown in the preview are saved. The file is not sent to OpenChat.'**
+  String get supportDiagnosticsPrivacyNote;
+
+  /// No description provided for @supportDiagnosticsPreparing.
+  ///
+  /// In en, this message translates to:
+  /// **'Preparing…'**
+  String get supportDiagnosticsPreparing;
+
+  /// No description provided for @settingsConnectors.
+  ///
+  /// In en, this message translates to:
+  /// **'Connectors'**
+  String get settingsConnectors;
+
+  /// No description provided for @settingsConnectorsDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Manage local connector templates and add them to projects.'**
+  String get settingsConnectorsDescription;
+
+  /// No description provided for @connectorCatalogIntro.
+  ///
+  /// In en, this message translates to:
+  /// **'Save reusable MCP connection details in this app. Adding one to a project creates a disabled server; credentials and permissions stay with that project.'**
+  String get connectorCatalogIntro;
+
+  /// No description provided for @connectorCatalogEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No connector templates have been added.'**
+  String get connectorCatalogEmpty;
+
+  /// No description provided for @connectorCatalogAdd.
+  ///
+  /// In en, this message translates to:
+  /// **'Add template'**
+  String get connectorCatalogAdd;
+
+  /// No description provided for @connectorCatalogEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit template'**
+  String get connectorCatalogEdit;
+
+  /// No description provided for @connectorCatalogDelete.
+  ///
+  /// In en, this message translates to:
+  /// **'Delete template'**
+  String get connectorCatalogDelete;
+
+  /// No description provided for @connectorCatalogDeleteConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'This removes the template from the app. Connectors already added to projects remain there.'**
+  String get connectorCatalogDeleteConfirm;
+
+  /// No description provided for @connectorCatalogInstall.
+  ///
+  /// In en, this message translates to:
+  /// **'Add to active project'**
+  String get connectorCatalogInstall;
+
+  /// No description provided for @connectorCatalogNoProject.
+  ///
+  /// In en, this message translates to:
+  /// **'Open a project to add a connector to it.'**
+  String get connectorCatalogNoProject;
+
+  /// No description provided for @connectorCatalogSecurityNotice.
+  ///
+  /// In en, this message translates to:
+  /// **'Templates are stored locally without secret values. Installing adds a disabled project server and sets its tools to require approval. OpenChat does not download or verify server software.'**
+  String get connectorCatalogSecurityNotice;
+
+  /// No description provided for @connectorCatalogName.
+  ///
+  /// In en, this message translates to:
+  /// **'Template name'**
+  String get connectorCatalogName;
+
+  /// No description provided for @connectorCatalogId.
+  ///
+  /// In en, this message translates to:
+  /// **'Server ID'**
+  String get connectorCatalogId;
+
+  /// No description provided for @connectorCatalogPublisher.
+  ///
+  /// In en, this message translates to:
+  /// **'Publisher claim'**
+  String get connectorCatalogPublisher;
+
+  /// No description provided for @connectorCatalogSourceUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Source URL'**
+  String get connectorCatalogSourceUrl;
+
+  /// No description provided for @connectorCatalogDataDisclosure.
+  ///
+  /// In en, this message translates to:
+  /// **'Data this connector may receive'**
+  String get connectorCatalogDataDisclosure;
+
+  /// No description provided for @connectorCatalogTransport.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection type'**
+  String get connectorCatalogTransport;
+
+  /// No description provided for @connectorCatalogProgram.
+  ///
+  /// In en, this message translates to:
+  /// **'Absolute program path'**
+  String get connectorCatalogProgram;
+
+  /// No description provided for @connectorCatalogArguments.
+  ///
+  /// In en, this message translates to:
+  /// **'Arguments, one per line'**
+  String get connectorCatalogArguments;
+
+  /// No description provided for @connectorCatalogEnvironmentVariables.
+  ///
+  /// In en, this message translates to:
+  /// **'Credential variable names, one per line'**
+  String get connectorCatalogEnvironmentVariables;
+
+  /// No description provided for @connectorCatalogEndpoint.
+  ///
+  /// In en, this message translates to:
+  /// **'HTTPS endpoint'**
+  String get connectorCatalogEndpoint;
+
+  /// No description provided for @connectorCatalogAuthVariable.
+  ///
+  /// In en, this message translates to:
+  /// **'Credential variable name'**
+  String get connectorCatalogAuthVariable;
+
+  /// No description provided for @connectorCatalogSave.
+  ///
+  /// In en, this message translates to:
+  /// **'Save template'**
+  String get connectorCatalogSave;
+
+  /// No description provided for @connectorCatalogInstallPrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'Review the publisher, destination, and data disclosure. The server will be added disabled and its tools will require approval. Tool calls may send their arguments to the connector and their results to the selected model provider.'**
+  String get connectorCatalogInstallPrompt;
+
+  /// No description provided for @connectorCatalogInvalid.
+  ///
+  /// In en, this message translates to:
+  /// **'Check the required fields, HTTPS URLs, server ID, and connection details.'**
+  String get connectorCatalogInvalid;
+
+  /// No description provided for @connectorCatalogDuplicate.
+  ///
+  /// In en, this message translates to:
+  /// **'A template or project server already uses this ID or name.'**
+  String get connectorCatalogDuplicate;
+
+  /// No description provided for @connectorCatalogLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The local connector catalog could not be read.'**
+  String get connectorCatalogLoadFailed;
+
+  /// No description provided for @connectorCatalogSaveFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The connector template could not be saved.'**
+  String get connectorCatalogSaveFailed;
+
+  /// No description provided for @connectorCatalogInstallFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'The connector could not be added to the project. Check the local service and project settings.'**
+  String get connectorCatalogInstallFailed;
+
+  /// No description provided for @connectorCatalogInstalled.
+  ///
+  /// In en, this message translates to:
+  /// **'The disabled connector was added to the project. Add its credentials in project MCP settings if needed.'**
+  String get connectorCatalogInstalled;
+
+  /// No description provided for @connectorCatalogSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Search templates'**
+  String get connectorCatalogSearch;
+
+  /// No description provided for @connectorCatalogNoResults.
+  ///
+  /// In en, this message translates to:
+  /// **'No templates match this search.'**
+  String get connectorCatalogNoResults;
+
+  /// No description provided for @connectorCatalogVersion.
+  ///
+  /// In en, this message translates to:
+  /// **'Declared version'**
+  String get connectorCatalogVersion;
+
+  /// No description provided for @connectorCatalogRequestedAccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Access requested'**
+  String get connectorCatalogRequestedAccess;
+
+  /// No description provided for @connectorCatalogAuthentication.
+  ///
+  /// In en, this message translates to:
+  /// **'Authentication'**
+  String get connectorCatalogAuthentication;
+
+  /// No description provided for @connectorCatalogNoBearerCredential.
+  ///
+  /// In en, this message translates to:
+  /// **'No bearer credential is declared. The server may still enforce its own access policy.'**
+  String get connectorCatalogNoBearerCredential;
+
+  /// No description provided for @connectorCatalogProjectBearerCredential.
+  ///
+  /// In en, this message translates to:
+  /// **'If configured, a bearer credential is scoped to this project and server, then sent to this HTTPS endpoint when connected.'**
+  String get connectorCatalogProjectBearerCredential;
+
+  /// No description provided for @connectorCatalogNoCredentialVariables.
+  ///
+  /// In en, this message translates to:
+  /// **'This local process requests no environment variables.'**
+  String get connectorCatalogNoCredentialVariables;
+
+  /// No description provided for @connectorCatalogProjectEnvironmentCredentials.
+  ///
+  /// In en, this message translates to:
+  /// **'When configured, declared environment values are scoped to this project and server, then passed only to its local process.'**
+  String get connectorCatalogProjectEnvironmentCredentials;
+
+  /// No description provided for @connectorCatalogRemovalImpact.
+  ///
+  /// In en, this message translates to:
+  /// **'Removing this template does not remove project servers or their saved credentials. Remove those separately in project MCP settings.'**
+  String get connectorCatalogRemovalImpact;
+
+  /// No description provided for @libraryTabModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Models'**
+  String get libraryTabModels;
+
+  /// No description provided for @libraryTabMcp.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP Tools'**
+  String get libraryTabMcp;
+
+  /// No description provided for @libraryTabPrompts.
+  ///
+  /// In en, this message translates to:
+  /// **'Prompts (Coming soon)'**
+  String get libraryTabPrompts;
+
+  /// No description provided for @libraryTabPersonalities.
+  ///
+  /// In en, this message translates to:
+  /// **'Personalities (Coming soon)'**
+  String get libraryTabPersonalities;
+
+  /// No description provided for @mcpCatalogDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'Discover, install, and configure Model Context Protocol servers to enhance your AI assistant.'**
+  String get mcpCatalogDescription;
+
+  /// No description provided for @mcpSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search MCP tools...'**
+  String get mcpSearchHint;
+
+  /// No description provided for @mcpInstalled.
+  ///
+  /// In en, this message translates to:
+  /// **'Installed'**
+  String get mcpInstalled;
+
+  /// No description provided for @mcpNotInstalled.
+  ///
+  /// In en, this message translates to:
+  /// **'Not installed'**
+  String get mcpNotInstalled;
+
+  /// No description provided for @mcpActive.
+  ///
+  /// In en, this message translates to:
+  /// **'Active (Added to Instructions)'**
+  String get mcpActive;
+
+  /// No description provided for @mcpInactive.
+  ///
+  /// In en, this message translates to:
+  /// **'Inactive'**
+  String get mcpInactive;
+
+  /// No description provided for @mcpInstall.
+  ///
+  /// In en, this message translates to:
+  /// **'Install'**
+  String get mcpInstall;
+
+  /// No description provided for @mcpConfigureEnv.
+  ///
+  /// In en, this message translates to:
+  /// **'Environment Variables (Env)'**
+  String get mcpConfigureEnv;
+
+  /// No description provided for @mcpEnvDialogTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP Environment Variables'**
+  String get mcpEnvDialogTitle;
+
+  /// No description provided for @mcpEnvDialogDescription.
+  ///
+  /// In en, this message translates to:
+  /// **'These values are stored securely using OS-level credential management (Windows Credential Manager).'**
+  String get mcpEnvDialogDescription;
+
+  /// No description provided for @mcpEnvSaveSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Environment variables saved securely.'**
+  String get mcpEnvSaveSuccess;
+
+  /// No description provided for @mcpEnabledSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP tool activated and added to instructions.'**
+  String get mcpEnabledSuccess;
+
+  /// No description provided for @mcpDisabledSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP tool deactivated and removed from instructions.'**
+  String get mcpDisabledSuccess;
+
+  /// No description provided for @mcpNoToolsFound.
+  ///
+  /// In en, this message translates to:
+  /// **'No tools found for this MCP.'**
+  String get mcpNoToolsFound;
+
+  /// No description provided for @mcpUninstall.
+  ///
+  /// In en, this message translates to:
+  /// **'Uninstall'**
+  String get mcpUninstall;
+
+  /// No description provided for @mcpUninstallConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Are you sure you want to uninstall this MCP tool?'**
+  String get mcpUninstallConfirm;
+
+  /// No description provided for @mcpDiscoverTools.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetch Definitions'**
+  String get mcpDiscoverTools;
+
+  /// No description provided for @mcpDiscovering.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetching definitions...'**
+  String get mcpDiscovering;
+
+  /// No description provided for @mcpDiscoverSuccess.
+  ///
+  /// In en, this message translates to:
+  /// **'Tool definitions fetched successfully.'**
+  String get mcpDiscoverSuccess;
+
+  /// No description provided for @mcpDiscoverFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to fetch tool definitions. Check command and environment variables.'**
+  String get mcpDiscoverFailed;
+
+  /// No description provided for @mcpNoToolsDiscovered.
+  ///
+  /// In en, this message translates to:
+  /// **'No tool definitions fetched yet.'**
+  String get mcpNoToolsDiscovered;
 }
 
 class _AppLocalizationsDelegate

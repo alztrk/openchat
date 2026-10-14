@@ -24,7 +24,7 @@ use tokio::{
 };
 use zeroize::Zeroize;
 
-const MAX_REQUEST_BYTES: usize = 1024 * 1024;
+const MAX_REQUEST_BYTES: usize = 24 * 1024 * 1024;
 
 #[derive(Debug)]
 pub enum RunError {

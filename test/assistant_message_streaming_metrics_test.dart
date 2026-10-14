@@ -6,6 +6,42 @@ import 'package:openchat/features/chat/presentation/widgets/assistant_message.da
 import 'package:openchat/l10n/generated/app_localizations.dart';
 
 void main() {
+  testWidgets('shows which saved facts were included with the response', (
+    tester,
+  ) async {
+    const factId = '0123456789abcdef0123456789abcdef';
+    List<String>? viewedFactIds;
+    for (final locale in AppLocalizations.supportedLocales) {
+      final l10n = await AppLocalizations.delegate.load(locale);
+      await tester.pumpWidget(
+        MaterialApp(
+          locale: locale,
+          localizationsDelegates: AppLocalizations.localizationsDelegates,
+          supportedLocales: AppLocalizations.supportedLocales,
+          theme: OpenChatTheme.light,
+          home: Scaffold(
+            body: AssistantMessage(
+              message: const ChatMessage(
+                id: 'assistant-message',
+                role: ChatMessageRole.assistant,
+                content: 'Response',
+                personalMemoryFactIds: <String>[factId],
+              ),
+              modelLabel: 'Test model',
+              providerId: 'opencode',
+              onViewPersonalMemorySources: (ids) => viewedFactIds = ids,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(l10n.personalMemoryResponseLabel(1)));
+
+      expect(viewedFactIds, <String>[factId]);
+    }
+  });
+
   testWidgets('explains local engine failures in the assistant card', (
     tester,
   ) async {

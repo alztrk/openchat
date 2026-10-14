@@ -118,7 +118,7 @@ Kodda uygulamaya özel `ImageCache` sınırı ayarı bulunmadı. Flutter'ın var
 
 ### Flutter konuşma geçmişi eşleme
 
-`test/chat_repository_performance_test.dart` yalnızca `OPENCHAT_RUN_PERF_BENCHMARK=true` ile çalışan tekrarlanabilir bir debug mikrobenchmark içeriyor. `NativeDatabase.memory()` üzerinde 256 sabit mesaj, 12 warm-up çifti ve 100 ölçüm çifti kullanıldı. Her mesajın gövdesi sabit metin, ek/citation/reasoning/tool metadata alanları boş. Her metrik için üç bağımsız test çalıştırması yapıldı; tabloda bu üç çalıştırmadaki p50/p95/p99 değerlerinin medyanı var. DB kurulumu ve warm-up ölçüm dışında; `getMessages` ile stream'in ilk snapshot'ı aynı mesaj sırasını ve sayısını doğruluyor.
+Mikrobenchmark kaynağı, raporda kaydedilen çalıştırmalardan sonra varsayılan test keşfinden ayrılması için `benchmarks/chat_repository_performance_test.dart` konumuna taşındı. Yalnızca `OPENCHAT_RUN_PERF_BENCHMARK=true` ile çalışan tekrarlanabilir bir debug mikrobenchmark içeriyor. `NativeDatabase.memory()` üzerinde 256 sabit mesaj, 12 warm-up çifti ve 100 ölçüm çifti kullanıldı. Her mesajın gövdesi sabit metin, ek/citation/reasoning/tool metadata alanları boş. Her metrik için üç bağımsız test çalıştırması yapıldı; tabloda bu üç çalıştırmadaki p50/p95/p99 değerlerinin medyanı var. DB kurulumu ve warm-up ölçüm dışında; `getMessages` ile stream'in ilk snapshot'ı aynı mesaj sırasını ve sayısını doğruluyor.
 
 | Yol | Quantile | Önce | Sonra | Süre değişimi |
 | --- | --- | ---: | ---: | ---: |
@@ -180,6 +180,7 @@ Arşiv arama benchmarkı 50.000 mesaj ve 500 araç etkinliği üzerinde bir sefe
 - `cargo fmt --manifest-path native/openchat-launcher/Cargo.toml -- --check`: geçti.
 - `cargo clippy --manifest-path native/openchat-service/Cargo.toml --all-targets --all-features`: exit code 0; mevcut kodda 54 kütüphane ve 66 test hedefi lint uyarısı var. `-D warnings` biçimi bu uyarılar yüzünden başarısızdır. Semantik worker dosyasına yönelik yeni Clippy uyarısı görünmedi.
 - `flutter analyze --no-pub`: temiz.
+- Aşağıdaki iki dosya yolunu kullanan doğrulamalar, dosyalar taşınmadan/yeniden adlandırılmadan önceki tarihsel kayıtlardır; güncel çalıştırma komutları en altta verilmiştir.
 - `flutter analyze --no-pub lib/features/chat/presentation/widgets/chat_attachment_gallery.dart test/chat_attachment_gallery_memory_test.dart`: değiştirilen dosyalar temiz.
 - `flutter test --no-pub test/chat_attachment_gallery_memory_test.dart`: geçti; thumbnail decode sınırını, aspect-preserving policy'yi, tam çözünürlüklü preview kaynağını doğruladı. Test gerçek image-cache byte sayısını veya süreç RSS'sini ölçmez.
 - `flutter test --no-pub test/chat_composer_tool_capability_test.dart`: 10 test geçti.
@@ -188,6 +189,7 @@ Arşiv arama benchmarkı 50.000 mesaj ve 500 araç etkinliği üzerinde bir sefe
 - `flutter analyze --no-pub lib/features/chat/data/chat_repository.dart lib/features/chat/presentation/chat_screen.dart test/chat_repository_test.dart`: temiz.
 - `dart format --output=none --set-exit-if-changed lib/features/chat/data/chat_repository.dart lib/features/chat/presentation/chat_screen.dart test/chat_repository_test.dart`: biçim farkı yok.
 - `flutter test --no-pub --dart-define=OPENCHAT_RUN_PERF_BENCHMARK=true test/chat_repository_performance_test.dart`: önce ve sonra üçer çalıştırmada geçti; her çalıştırma 100 örnek/işlem ve 12 warm-up çifti kullandı.
+- Güncel tekrar komutları: `flutter analyze --no-pub lib/features/chat/presentation/widgets/chat_attachment_gallery.dart test/chat_composer_test.dart`, `flutter test --no-pub test/chat_composer_test.dart` ve `flutter test --no-pub --dart-define=OPENCHAT_RUN_PERF_BENCHMARK=true benchmarks/chat_repository_performance_test.dart`.
 - Güncel tam `flutter test --no-pub --reporter=failures-only`: 282 geçti, 1 atlandı, başarısız yok. `test/fidelity_screenshot_test.dart` golden testleri de geçti. Bu optimizasyon çalışmasında golden dosyaları değiştirilmedi.
 - Önceki tam Flutter koşularında kullanıcı çalışma ağacındaki UI değişiklikleri nedeniyle farklı sonuçlar alınmıştı; son analyzer ve tam test çalıştırması o sıradaki güncel ağaç içindir.
 - `dart format --output=none --set-exit-if-changed lib test` altı kullanıcı çalışma ağacı dosyası için biçim farkı bildirdi: `openchat_page_header.dart`, `outputs_page.dart`, `goal_status_bar.dart`, `tool_permission_card.dart`, `tool_web_search_view.dart` ve `openchat_theme_test.dart`. Bu dosyalara formatter uygulanmadı; bu görevde eklediğim Flutter benchmark testi format kontrolünden geçti.

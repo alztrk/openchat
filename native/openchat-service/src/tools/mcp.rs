@@ -225,7 +225,7 @@ fn validate_stdio_settings(
     Ok(())
 }
 
-fn validate_remote_endpoint(value: &str) -> Result<url::Url, String> {
+pub(crate) fn validate_remote_endpoint(value: &str) -> Result<url::Url, String> {
     let endpoint =
         url::Url::parse(value).map_err(|_| "The remote MCP endpoint URL is invalid.".to_owned())?;
     if endpoint.scheme() != "https" || endpoint.query().is_some() || endpoint.fragment().is_some() {

@@ -444,6 +444,7 @@ impl ChatGptService {
                                     created_at,
                                     request_id: &request_id,
                                     events: &events,
+                                    persist_message: true,
                                 },
                             )
                             .await
@@ -1182,6 +1183,183 @@ impl ChatGptService {
             result["runId"] = json!(goal.run_id);
         }
         Ok(result)
+    }
+}
+
+impl ChatGptService {
+    pub(super) async fn stream_temporary_response(
+        &self,
+        request_id: Value,
+        conversation_id: &str,
+        connection_id: &str,
+        external_workspace_id: &str,
+        model_id: &str,
+        payload: Value,
+        cancellation: &mut tokio::sync::watch::Receiver<bool>,
+        events: &crate::protocol::EventSink,
+    ) -> Result<Value, ServiceError> {
+        let message_id = Uuid::new_v4().simple().to_string();
+        let created_at = super::now_unix_millis()?;
+        let started = Instant::now();
+        let provider_context_id = conversation_id
+            .strip_prefix("tmp_")
+            .filter(|suffix| {
+                suffix.len() == 32
+                    && suffix
+                        .bytes()
+                        .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            })
+            .ok_or_else(|| {
+                ServiceError::new(
+                    "invalid_request_params",
+                    "The temporary conversation identifier is invalid.",
+                    false,
+                )
+            })?;
+        let mut content = String::new();
+        let mut output_tokens = None;
+        let mut input_tokens = None;
+        let mut usage = UsageData::default();
+        let mut reasoning_summaries = Vec::new();
+        let mut response_output_items = Vec::new();
+
+        events
+            .send(
+                &ChatStreamEvent::Started(ChatStreamSnapshot::new(
+                    conversation_id,
+                    &message_id,
+                    &content,
+                    created_at,
+                ))
+                .into_rpc(request_id.clone()),
+            )
+            .await
+            .map_err(|_| protocol_error())?;
+
+        let response = self
+            .authorized_stream_request(
+                StreamRequest {
+                    method: Method::POST,
+                    url: format!("{CHATGPT_CODEX_BASE}/responses"),
+                    connection_id,
+                    external_workspace_id,
+                    body: Some(payload),
+                    response_context_id: provider_context_id,
+                },
+                cancellation,
+            )
+            .await?
+            .ok_or_else(super::request_cancelled)?;
+        if !response.status().is_success() {
+            return Err(http_error(response.status()));
+        }
+
+        let mut body_stream = response.bytes_stream();
+        let mut pending_bytes = Vec::new();
+        let mut event_data = Vec::<String>::new();
+        let mut event_bytes = 0_usize;
+        let mut completed = false;
+        while !completed {
+            let chunk = tokio::select! {
+                changed = cancellation.changed() => {
+                    let _ = changed;
+                    return Err(super::request_cancelled());
+                }
+                chunk = body_stream.next() => chunk,
+            };
+            let Some(chunk) = chunk else { break };
+            pending_bytes.extend_from_slice(&chunk.map_err(|_| network_error())?);
+            if pending_bytes.len() > MAX_STREAM_EVENT_BYTES {
+                return Err(ServiceError::new(
+                    "response_event_too_large",
+                    "ChatGPT returned an oversized stream event. The partial answer remains in this temporary chat.",
+                    false,
+                ));
+            }
+            while let Some(line_end) = pending_bytes.iter().position(|byte| *byte == b'\n') {
+                let mut line = pending_bytes.drain(..=line_end).collect::<Vec<_>>();
+                line.pop();
+                if line.last() == Some(&b'\r') {
+                    line.pop();
+                }
+                if line.is_empty() {
+                    if event_data.is_empty() {
+                        event_bytes = 0;
+                        continue;
+                    }
+                    let data = event_data.join("\n");
+                    event_data.clear();
+                    event_bytes = 0;
+                    completed = self
+                        .process_response_event(
+                            &data,
+                            ResponseEventContext {
+                                content: &mut content,
+                                output_tokens: &mut output_tokens,
+                                input_tokens: &mut input_tokens,
+                                usage: &mut usage,
+                                reasoning_summaries: &mut reasoning_summaries,
+                                response_output_items: &mut response_output_items,
+                                conversation_id,
+                                message_id: &message_id,
+                                created_at,
+                                request_id: &request_id,
+                                events,
+                                persist_message: false,
+                            },
+                        )
+                        .await?;
+                    if completed {
+                        break;
+                    }
+                } else if let Some(data) = line.strip_prefix(b"data:") {
+                    let data = data.strip_prefix(b" ").unwrap_or(data);
+                    event_bytes = event_bytes.saturating_add(data.len());
+                    if event_bytes > MAX_STREAM_EVENT_BYTES {
+                        return Err(ServiceError::new(
+                            "response_event_too_large",
+                            "ChatGPT returned an oversized stream event. The partial answer remains in this temporary chat.",
+                            false,
+                        ));
+                    }
+                    event_data.push(String::from_utf8(data.to_vec()).map_err(|_| {
+                        ServiceError::new(
+                            "invalid_provider_response",
+                            "ChatGPT returned a malformed stream event. The partial answer remains in this temporary chat.",
+                            false,
+                        )
+                    })?);
+                }
+            }
+        }
+
+        if !completed {
+            return Err(ServiceError::new(
+                "response_incomplete",
+                "The ChatGPT response ended before completion. The partial answer remains in this temporary chat.",
+                true,
+            ));
+        }
+        if response_output_items
+            .iter()
+            .any(|item| item.get("type").and_then(Value::as_str) == Some("function_call"))
+        {
+            return Err(ServiceError::new(
+                "temporary_tools_unavailable",
+                "The provider returned a tool call, which temporary conversations cannot run.",
+                false,
+            ));
+        }
+
+        Ok(json!({
+            "conversationId": conversation_id,
+            "messageId": message_id,
+            "content": content,
+            "createdAtUnixMs": created_at,
+            "providerId": "chatgpt",
+            "modelId": model_id,
+            "elapsedMicroseconds": started.elapsed().as_micros(),
+        }))
     }
 }
 

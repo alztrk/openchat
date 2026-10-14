@@ -48,7 +48,9 @@ class OpenChatPageHeader extends StatelessWidget {
                       child: ExcludeSemantics(
                         child: DecoratedBox(
                           decoration: BoxDecoration(
-                            color: focused ? palette.hover : null,
+                            border: focused
+                                ? Border.all(color: palette.focusRing, width: 2)
+                                : null,
                             borderRadius: BorderRadius.circular(
                               OpenChatRadii.control,
                             ),

@@ -5,16 +5,11 @@ mod external_server;
 mod gguf;
 pub(crate) mod installer;
 pub(crate) mod models;
-mod python_runtime;
-mod releases;
 mod runtime;
 mod settings;
-mod vllm_runtime;
-mod wsl;
 
 use std::time::Duration;
 
-use futures_util::future::join_all;
 use serde_json::{Value, json};
 use tokio::{process::Command, time::timeout};
 
@@ -29,20 +24,10 @@ enum NvidiaDriverStatus {
     Detected(DriverVersion),
 }
 
-const CATALOGS: &[(&str, &[u8])] = &[
-    (
-        "llama_cpp",
-        include_bytes!("../../resources/local-engines/llama_cpp.json"),
-    ),
-    (
-        "vllm",
-        include_bytes!("../../resources/local-engines/vllm.json"),
-    ),
-    (
-        "exllama",
-        include_bytes!("../../resources/local-engines/exllama.json"),
-    ),
-];
+const CATALOGS: &[(&str, &[u8])] = &[(
+    "llama_cpp",
+    include_bytes!("../../resources/local-engines/llama_cpp.json"),
+)];
 
 pub(crate) fn manifests() -> Result<Vec<EngineManifest>, ServiceError> {
     CATALOGS
@@ -62,13 +47,6 @@ pub(crate) fn manifests() -> Result<Vec<EngineManifest>, ServiceError> {
 pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
     models::ensure_storage_directories(storage.root())?;
     let nvidia_driver = nvidia_driver_status().await;
-    let wsl_nvidia_driver = if host_os() == "windows"
-        && catalog_status_for_host("vllm", "installable", host_os()) == "installable"
-    {
-        wsl_nvidia_driver_status().await
-    } else {
-        nvidia_driver
-    };
     let cuda_available = matches!(nvidia_driver, NvidiaDriverStatus::Detected(_));
     let runtime = runtime::status(storage).await?;
     let external_llama_servers = runtime::external_server_status().await;
@@ -78,40 +56,11 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
         .and_then(settings::validate_saved_executable_path)
         .is_some();
     let registered_models = models::list(storage)?;
-    let mut manifests = manifests()?;
-    let release_checks = manifests
-        .iter_mut()
-        .filter(|manifest| matches!(manifest.engine_id.as_str(), "vllm" | "exllama"))
-        .map(|manifest| async move {
-            let engine_id = manifest.engine_id.clone();
-            let result = releases::refresh_compatible_release(manifest).await;
-            (engine_id, result)
-        });
-    let release_statuses = join_all(release_checks)
-        .await
-        .into_iter()
-        .map(|(engine_id, result)| (engine_id, result.ok()))
-        .collect::<std::collections::HashMap<_, _>>();
-    let engines = manifests
+    let engines = manifests()?
         .into_iter()
         .map(|manifest| {
-            let checked_tag = release_statuses
-                .get(&manifest.engine_id)
-                .cloned()
-                .unwrap_or(Some(manifest.release_tag.clone()));
-            let release_check_succeeded = checked_tag.is_some();
-            let latest_upstream_tag = checked_tag;
-            let mut catalog_status =
-                catalog_status_for_host(&manifest.engine_id, &manifest.catalog_status, host_os());
-            let mut status_reason = status_reason_for_host(
-                &manifest.engine_id,
-                manifest.status_reason.as_deref(),
-                host_os(),
-            );
-            if !release_check_succeeded {
-                catalog_status = "blocked";
-                status_reason = Some("release_check_unavailable");
-            }
+            let catalog_status = manifest.catalog_status.as_str();
+            let status_reason = manifest.status_reason.as_deref();
             let model_directory =
                 models::default_model_directory(storage.root(), &manifest.engine_id)?
                     .to_str()
@@ -123,13 +72,8 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
                         )
                     })?
                     .to_owned();
-            let manifest_driver = if manifest.engine_id == "vllm" && host_os() == "windows" {
-                wsl_nvidia_driver
-            } else {
-                nvidia_driver
-            };
             let recommended_variant = if catalog_status == "installable" {
-                recommended_variant_id(&manifest, manifest_driver, host_os(), host_architecture())
+                recommended_variant_id(&manifest, nvidia_driver, host_os(), host_architecture())
             } else {
                 None
             };
@@ -143,7 +87,7 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
                         &manifest,
                         variant,
                         catalog_status,
-                        driver_status_for_variant(variant, nvidia_driver, wsl_nvidia_driver),
+                        nvidia_driver,
                         recommended_variant.as_deref(),
                     )
                 })
@@ -152,8 +96,8 @@ pub(crate) async fn list(storage: &AppStorage) -> Result<Value, ServiceError> {
                 "engineId": manifest.engine_id,
                 "displayName": manifest.display_name,
                 "releaseTag": manifest.release_tag,
-                "latestUpstreamReleaseTag": latest_upstream_tag,
-                "releaseCheckStatus": if release_check_succeeded { "current" } else { "unavailable" },
+                "latestUpstreamReleaseTag": manifest.release_tag,
+                "releaseCheckStatus": "current",
                 "channel": manifest.channel,
                 "catalogStatus": catalog_status,
                 "statusReason": status_reason,
@@ -364,15 +308,10 @@ pub(crate) async fn find_variant(
     engine_id: &str,
     variant_id: &str,
 ) -> Result<(EngineManifest, EngineVariant), ServiceError> {
-    let mut manifest = manifests()?
+    let manifest = manifests()?
         .into_iter()
         .find(|manifest| manifest.engine_id == engine_id)
         .ok_or_else(unknown_engine_error)?;
-    if matches!(manifest.engine_id.as_str(), "vllm" | "exllama") {
-        releases::refresh_compatible_release(&mut manifest)
-            .await
-            .map_err(|()| release_check_error())?;
-    }
     let variant = manifest
         .variants
         .iter()
@@ -382,23 +321,11 @@ pub(crate) async fn find_variant(
     Ok((manifest, variant))
 }
 
-fn release_check_error() -> ServiceError {
-    ServiceError::new(
-        "local_engine_release_check_unavailable",
-        "The latest compatible local engine release could not be verified. Check your connection and try again.",
-        true,
-    )
-}
-
 pub(crate) async fn can_install(manifest: &EngineManifest, variant: &EngineVariant) -> bool {
     if !can_install_on_host(manifest, variant, host_os(), host_architecture()) {
         return false;
     }
-    let driver_status = if variant_uses_wsl(variant) {
-        wsl_nvidia_driver_status().await
-    } else {
-        nvidia_driver_status().await
-    };
+    let driver_status = nvidia_driver_status().await;
     variant.accelerator != "cuda" || variant_hardware_status(variant, driver_status).is_none()
 }
 
@@ -563,35 +490,6 @@ async fn nvidia_driver_status() -> NvidiaDriverStatus {
     }
 }
 
-#[cfg(windows)]
-async fn wsl_nvidia_driver_status() -> NvidiaDriverStatus {
-    let output = match wsl::nvidia_driver_output().await {
-        Ok(output) => output,
-        Err(()) => return NvidiaDriverStatus::VersionUnavailable,
-    };
-    let Ok(stdout) = std::str::from_utf8(&output) else {
-        return NvidiaDriverStatus::VersionUnavailable;
-    };
-    match parse_nvidia_driver_output(stdout) {
-        Ok(Some(version)) => NvidiaDriverStatus::Detected(version),
-        Ok(None) => NvidiaDriverStatus::NotDetected,
-        Err(()) => NvidiaDriverStatus::VersionUnavailable,
-    }
-}
-
-#[cfg(not(windows))]
-async fn wsl_nvidia_driver_status() -> NvidiaDriverStatus {
-    NvidiaDriverStatus::NotDetected
-}
-
-fn driver_status_for_variant(
-    variant: &EngineVariant,
-    host: NvidiaDriverStatus,
-    wsl: NvidiaDriverStatus,
-) -> NvidiaDriverStatus {
-    if variant_uses_wsl(variant) { wsl } else { host }
-}
-
 fn variant_host_os(variant: &EngineVariant) -> &str {
     variant.host_os.as_deref().unwrap_or(&variant.os)
 }
@@ -602,18 +500,6 @@ fn variant_visible_for_host(engine_id: &str, variant: &EngineVariant, os: &str) 
 
 fn catalog_status_for_host<'a>(_engine_id: &str, catalog_status: &'a str, _os: &str) -> &'a str {
     catalog_status
-}
-
-fn status_reason_for_host<'a>(
-    _engine_id: &str,
-    status_reason: Option<&'a str>,
-    _os: &str,
-) -> Option<&'a str> {
-    status_reason
-}
-
-fn variant_uses_wsl(variant: &EngineVariant) -> bool {
-    variant.os == "linux" && variant.host_os.as_deref() == Some("windows")
 }
 
 fn parse_nvidia_driver_output(value: &str) -> Result<Option<DriverVersion>, ()> {
@@ -728,100 +614,7 @@ mod tests {
             .map(|manifest| manifest.engine_id.as_str())
             .collect::<Vec<_>>();
 
-        assert_eq!(engine_ids, ["llama_cpp", "vllm", "exllama"]);
-    }
-
-    #[test]
-    fn llama_engine_status_ignores_other_runtime_processes() {
-        let runtime = serde_json::json!({
-            "status": "running",
-            "servers": [
-                {"engineId": "vllm", "modelId": "transformers", "status": "running"}
-            ]
-        });
-        assert_eq!(runtime_status_for_engine(&runtime, "llama_cpp"), "stopped");
-
-        let runtime = serde_json::json!({
-            "servers": [
-                {"engineId": "llama_cpp", "modelId": "one", "status": "unhealthy"},
-                {"engineId": "llama_cpp", "modelId": "two", "status": "running"}
-            ]
-        });
-        assert_eq!(runtime_status_for_engine(&runtime, "llama_cpp"), "running");
-    }
-
-    #[test]
-    fn catalog_support_is_not_overridden_by_the_host_platform() {
-        for engine_id in ["vllm", "exllama"] {
-            assert_eq!(
-                super::catalog_status_for_host(engine_id, "installable", "windows"),
-                "installable"
-            );
-            assert_eq!(
-                super::status_reason_for_host(engine_id, None, "windows"),
-                None
-            );
-            assert_eq!(
-                super::catalog_status_for_host(engine_id, "installable", "linux"),
-                "installable"
-            );
-        }
-
-        assert_eq!(
-            super::catalog_status_for_host("llama_cpp", "installable", "windows"),
-            "installable"
-        );
-    }
-
-    #[test]
-    fn windows_local_engine_variants_remain_installable_when_supported() {
-        for engine_id in ["vllm", "exllama"] {
-            let manifest = CATALOGS
-                .iter()
-                .find(|(candidate_id, _)| *candidate_id == engine_id)
-                .and_then(|(_, bytes)| parse_manifest(bytes).ok())
-                .expect("engine catalog should validate");
-            let windows_variant = manifest
-                .variants
-                .iter()
-                .find(|variant| super::variant_host_os(variant) == "windows")
-                .expect("Windows variant should exist");
-            let linux_variant = manifest
-                .variants
-                .iter()
-                .find(|variant| super::variant_host_os(variant) == "linux")
-                .expect("Linux variant should exist");
-
-            assert!(super::can_install_on_host(
-                &manifest,
-                windows_variant,
-                "windows",
-                "x86_64"
-            ));
-            assert!(super::can_install_on_host(
-                &manifest,
-                linux_variant,
-                "linux",
-                "x86_64"
-            ));
-        }
-
-        let llama_manifest = CATALOGS
-            .iter()
-            .find(|(candidate_id, _)| *candidate_id == "llama_cpp")
-            .and_then(|(_, bytes)| parse_manifest(bytes).ok())
-            .expect("llama.cpp catalog should validate");
-        let windows_variant = llama_manifest
-            .variants
-            .iter()
-            .find(|variant| super::variant_host_os(variant) == "windows")
-            .expect("Windows variant should exist");
-        assert!(super::can_install_on_host(
-            &llama_manifest,
-            windows_variant,
-            "windows",
-            "x86_64"
-        ));
+        assert_eq!(engine_ids, ["llama_cpp"]);
     }
 
     #[test]
@@ -851,114 +644,6 @@ mod tests {
             super::variant_host_os(variant) == "macos"
                 && !super::variant_visible_for_host("llama_cpp", variant, "windows")
         }));
-    }
-
-    #[test]
-    fn exllama_catalog_matches_the_pinned_tabbyapi_dependency_versions() {
-        let manifest = parse_manifest(
-            CATALOGS
-                .iter()
-                .find(|(engine_id, _)| *engine_id == "exllama")
-                .expect("ExLlama catalog should be embedded")
-                .1,
-        )
-        .expect("ExLlama catalog should validate");
-
-        assert_eq!(manifest.release_tag, "v1.5.2");
-        assert_eq!(
-            manifest.source_commit.as_deref(),
-            Some("12414d0af7b3beeabdda5990f6b554b996fa1416")
-        );
-        assert_eq!(manifest.catalog_status, "installable");
-
-        for (variant_id, asset_name, expected_size, expected_sha256) in [
-            (
-                "windows-x86_64-cuda12.8-python3.12-torch2.9",
-                "exllamav3-1.5.2+cu128.torch2.9.0-cp312-cp312-win_amd64.whl",
-                467_957_953,
-                "sha256:08431208effacecda8cf852678a248ce142d14cd2a326533d319cb4cc25cb5a2",
-            ),
-            (
-                "linux-x86_64-cuda12.8-python3.12-torch2.9",
-                "exllamav3-1.5.2+cu128.torch2.9.0-cp312-cp312-linux_x86_64.whl",
-                504_426_976,
-                "sha256:e4e2af239e4db71f090cfaf6698b3c3100ee8f31a0b575013f6cd6ca4822c5e5",
-            ),
-        ] {
-            let variant = manifest
-                .variants
-                .iter()
-                .find(|variant| variant.variant_id == variant_id)
-                .expect("pinned ExLlama variant should exist");
-            assert!(
-                variant
-                    .runtime_requirements
-                    .iter()
-                    .any(|requirement| { requirement == "PyTorch 2.9.0 with CUDA 12.8" })
-            );
-            let asset = variant
-                .assets
-                .iter()
-                .find(|asset| asset.name == asset_name)
-                .expect("matching ExLlama wheel should exist");
-            assert_eq!(asset.size_bytes, expected_size);
-            assert_eq!(asset.sha256, expected_sha256);
-            assert!(
-                variant
-                    .required_files
-                    .iter()
-                    .any(|path| path == "tabbyAPI/main.py")
-            );
-            let uv_asset = variant
-                .assets
-                .iter()
-                .find(|asset| asset.role == "companion")
-                .expect("pinned uv runtime asset should exist");
-            assert!(uv_asset.name.starts_with("uv-"));
-            assert!(uv_asset.sha256.starts_with("sha256:"));
-            let source_asset = variant
-                .assets
-                .iter()
-                .find(|asset| asset.role == "source")
-                .expect("pinned TabbyAPI source should exist");
-            assert_eq!(
-                source_asset.source_repository.as_deref(),
-                Some("theroyallab/tabbyAPI")
-            );
-            assert_eq!(
-                source_asset.source_commit.as_deref(),
-                Some("be74bf0a00bcb3a518e6feb7606f150c189be637")
-            );
-        }
-    }
-
-    #[test]
-    fn vllm_windows_variant_targets_the_existing_wsl2_host() {
-        let manifest = parse_manifest(
-            CATALOGS
-                .iter()
-                .find(|(engine_id, _)| *engine_id == "vllm")
-                .expect("vLLM catalog should be embedded")
-                .1,
-        )
-        .expect("vLLM catalog should validate");
-        let variant = manifest
-            .variants
-            .iter()
-            .find(|variant| variant.variant_id == "windows-wsl2-linux-x86_64-cuda13")
-            .expect("Windows WSL2 variant should exist");
-        let driver = NvidiaDriverStatus::Detected(
-            DriverVersion::parse("610.62").expect("the supported driver version should parse"),
-        );
-
-        assert_eq!(variant.host_os.as_deref(), Some("windows"));
-        assert_eq!(variant.os, "linux");
-        assert_eq!(super::variant_host_os(variant), "windows");
-        assert_eq!(super::variant_hardware_status(variant, driver), None);
-        assert_eq!(
-            recommended_variant_id(&manifest, driver, "windows", "x86_64").as_deref(),
-            Some("windows-wsl2-linux-x86_64-cuda13")
-        );
     }
 
     fn llama_cpp_manifest() -> super::catalog::EngineManifest {

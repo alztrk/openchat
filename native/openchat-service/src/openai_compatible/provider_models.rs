@@ -210,8 +210,6 @@ pub async fn models(
                 .query(&[("limit", MAX_MODELS)])
                 .header("x-api-key", api_key)
                 .header("anthropic-version", "2023-06-01");
-        } else if matches!(provider.id, "ollama" | "lmstudio") && (api_key == "local" || api_key.is_empty()) {
-            // Local providers do not require bearer token authentication.
         } else {
             request = request.bearer_auth(api_key);
         }
@@ -299,8 +297,6 @@ fn default_provider_context_window(provider_id: &str, model_id: &str) -> Option<
         "deepinfra" => Some(131_072),
         "dashscope" => Some(131_072),
         "cohere" => Some(128_000),
-        "ollama" => Some(131_072),
-        "lmstudio" => Some(131_072),
         _ => None,
     }
 }
@@ -477,7 +473,7 @@ fn provider_tool_support(provider_id: &str, model_id: &str, model: &Value) -> Op
             .pointer("/capabilities/function_calling")
             .and_then(Value::as_bool)
             .or(Some(true)),
-        "deepinfra" | "dashscope" | "cohere" | "ollama" | "lmstudio" => Some(true),
+        "deepinfra" | "dashscope" | "cohere" => Some(true),
         _ => None,
     }
 }
@@ -602,7 +598,7 @@ fn supports_images(
                 || model_id.contains("claude-3")
                 || model_id.contains("claude")
         }
-        "fireworks" | "deepinfra" | "lmstudio" => {
+        "fireworks" | "deepinfra" => {
             advertised_vision
                 || modalities_include_image
                 || model_id.to_ascii_lowercase().contains("vision")
@@ -612,12 +608,6 @@ fn supports_images(
                 || modalities_include_image
                 || model_id.to_ascii_lowercase().contains("vl")
                 || model_id.to_ascii_lowercase().contains("vision")
-        }
-        "ollama" => {
-            advertised_vision
-                || modalities_include_image
-                || model_id.to_ascii_lowercase().contains("vision")
-                || model_id.to_ascii_lowercase().contains("llava")
         }
         "deepseek" | "perplexity" | "cohere" => false,
         _ => false,

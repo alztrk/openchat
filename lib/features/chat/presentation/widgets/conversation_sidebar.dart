@@ -10,6 +10,7 @@ import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/features/chat/domain/conversation_sidebar_data.dart';
 import 'package:openchat/features/chat/domain/history_search_result.dart';
+import 'package:openchat/features/chat/domain/local_library_search_result.dart';
 import 'package:openchat/features/chat/presentation/widgets/project_sidebar_section.dart';
 import 'package:openchat/features/chat/presentation/widgets/sidebar_section_heading.dart';
 import 'package:openchat/features/chat/presentation/widgets/sidebar_conversation_section.dart';
@@ -32,9 +33,13 @@ class ConversationSidebar extends StatelessWidget {
     this.historySearchFilters = const HistorySearchFilters(),
     this.onApplyHistorySearchFilters,
     this.historySearchResults = const <HistorySearchResult>[],
+    this.localLibrarySearchResults = const <LocalLibrarySearchResult>[],
+    this.unifiedLibrarySearchFilter = UnifiedLibrarySearchFilter.all,
     this.isHistorySearchLoading = false,
     this.historySearchErrorCode,
     this.onSelectHistoryResult,
+    this.onSelectLocalLibraryResult,
+    this.onUnifiedLibrarySearchFilterChanged,
     this.width = OpenChatSpacing.sidebarWidth,
     this.showDivider = true,
     this.isLoading = false,
@@ -70,6 +75,7 @@ class ConversationSidebar extends StatelessWidget {
     this.onCreateProjectConversation,
     this.onShowMoreProjectConversations,
     this.onCreateConversation,
+    this.onCreateTemporaryConversation,
     this.onMoveConversationToChats,
     this.onPinConversation,
     this.collapsedSections = const <String>{},
@@ -93,9 +99,14 @@ class ConversationSidebar extends StatelessWidget {
   final HistorySearchFilters historySearchFilters;
   final ValueChanged<HistorySearchFilters>? onApplyHistorySearchFilters;
   final List<HistorySearchResult> historySearchResults;
+  final List<LocalLibrarySearchResult> localLibrarySearchResults;
+  final UnifiedLibrarySearchFilter unifiedLibrarySearchFilter;
   final bool isHistorySearchLoading;
   final String? historySearchErrorCode;
   final ValueChanged<HistorySearchResult>? onSelectHistoryResult;
+  final ValueChanged<LocalLibrarySearchResult>? onSelectLocalLibraryResult;
+  final ValueChanged<UnifiedLibrarySearchFilter>?
+  onUnifiedLibrarySearchFilterChanged;
   final double width;
   final bool showDivider;
   final bool isLoading;
@@ -133,6 +144,7 @@ class ConversationSidebar extends StatelessWidget {
   final ValueChanged<String>? onCreateProjectConversation;
   final ValueChanged<String>? onShowMoreProjectConversations;
   final VoidCallback? onCreateConversation;
+  final VoidCallback? onCreateTemporaryConversation;
   final ValueChanged<String>? onMoveConversationToChats;
   final ValueChanged<String>? onPinConversation;
   final Set<String> collapsedSections;
@@ -837,7 +849,7 @@ class _ConversationSidebarHeaderState
   Future<void> _showSearchDialog() async {
     if (_isSearchDialogOpen) return;
     _isSearchDialogOpen = true;
-    final result = await showDialog<HistorySearchResult>(
+    final result = await showDialog<Object>(
       context: context,
       animationStyle: MediaQuery.disableAnimationsOf(context)
           ? AnimationStyle.noAnimation
@@ -856,8 +868,10 @@ class _ConversationSidebarHeaderState
     final sidebar = widget.sidebar;
     if (result == null) {
       sidebar.onCloseHistorySearch?.call();
-    } else {
+    } else if (result is HistorySearchResult) {
       sidebar.onSelectHistoryResult?.call(result);
+    } else if (result is LocalLibrarySearchResult) {
+      sidebar.onSelectLocalLibraryResult?.call(result);
     }
   }
 
@@ -887,16 +901,32 @@ class _ConversationSidebarHeaderState
         ),
         child: Row(
           children: [
-            FilledButton.tonalIcon(
-              onPressed: widget.sidebar.onCreateConversation,
-              icon: const Icon(LucideIcons.plus, size: 17),
-              label: Text(l10n.newChat),
-              style: FilledButton.styleFrom(
-                minimumSize: const Size(0, 40),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
+            Flexible(
+              child: FilledButton.tonalIcon(
+                onPressed: widget.sidebar.onCreateConversation,
+                icon: const Icon(LucideIcons.plus, size: 17),
+                label: Text(
+                  l10n.newChat,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size(0, 40),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                ),
               ),
             ),
-            const Spacer(),
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: l10n.temporaryChatStart,
+              onPressed: widget.sidebar.onCreateTemporaryConversation,
+              visualDensity: VisualDensity.compact,
+              constraints: const BoxConstraints.tightFor(width: 40, height: 40),
+              padding: EdgeInsets.zero,
+              color: palette.secondaryIcon,
+              icon: const Icon(LucideIcons.timer, size: 18),
+            ),
+            const SizedBox(width: 4),
             IconButton(
               tooltip: l10n.searchMessagesTooltip,
               onPressed: widget.sidebar.onOpenHistorySearch,
@@ -928,17 +958,25 @@ class _HistorySearchDialog extends StatelessWidget {
     final palette = OpenChatPalette.of(context);
     final theme = Theme.of(context);
     final reducedMotion = MediaQuery.disableAnimationsOf(context);
-    final screenSize = MediaQuery.sizeOf(context);
-    final dialogWidth = (screenSize.width - OpenChatSpacing.md * 2)
+    final dialogStartInset = sidebar.showDivider
+        ? OpenChatSpacing.compactRailWidth
+        : 0.0;
+    final dialogWidth = (sidebar.width - OpenChatSpacing.md)
         .clamp(0.0, 780.0)
         .toDouble();
 
     return Dialog(
+      alignment: AlignmentDirectional.centerStart,
       backgroundColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       elevation: 0,
       shadowColor: Colors.transparent,
-      insetPadding: const EdgeInsets.all(OpenChatSpacing.md),
+      insetPadding: EdgeInsets.fromLTRB(
+        dialogStartInset + OpenChatSpacing.sm,
+        OpenChatSpacing.md,
+        OpenChatSpacing.md,
+        OpenChatSpacing.md,
+      ),
       child: OpenChatGlassSurface(
         borderRadius: BorderRadius.circular(OpenChatRadii.dialog),
         child: ConstrainedBox(
@@ -1171,11 +1209,17 @@ class _HistorySearchDialog extends StatelessWidget {
                     child: _HistorySearchResultsSection(
                       query: sidebar.searchController.text.trim(),
                       results: sidebar.historySearchResults,
+                      localResults: sidebar.localLibrarySearchResults,
+                      filter: sidebar.unifiedLibrarySearchFilter,
                       loading: sidebar.isHistorySearchLoading,
                       errorCode: sidebar.historySearchErrorCode,
                       onSearch: sidebar.onSearchSubmitted,
                       onSelectResult: (result) =>
                           Navigator.of(context).pop(result),
+                      onSelectLocalResult: (result) =>
+                          Navigator.of(context).pop(result),
+                      onFilterChanged:
+                          sidebar.onUnifiedLibrarySearchFilterChanged,
                     ),
                   ),
                 ),
@@ -1240,25 +1284,58 @@ class _StickySidebarFrameState extends State<_StickySidebarFrame> {
   }
 }
 
-class _HistorySearchResultsSection extends StatelessWidget {
+class _HistorySearchResultsSection extends StatefulWidget {
   const _HistorySearchResultsSection({
     required this.query,
     required this.results,
+    required this.localResults,
+    required this.filter,
     required this.loading,
     required this.errorCode,
     required this.onSearch,
     required this.onSelectResult,
+    required this.onSelectLocalResult,
+    required this.onFilterChanged,
   });
 
   final String query;
   final List<HistorySearchResult> results;
+  final List<LocalLibrarySearchResult> localResults;
+  final UnifiedLibrarySearchFilter filter;
   final bool loading;
   final String? errorCode;
   final ValueChanged<String>? onSearch;
   final ValueChanged<HistorySearchResult>? onSelectResult;
+  final ValueChanged<LocalLibrarySearchResult>? onSelectLocalResult;
+  final ValueChanged<UnifiedLibrarySearchFilter>? onFilterChanged;
+
+  @override
+  State<_HistorySearchResultsSection> createState() =>
+      _HistorySearchResultsSectionState();
+}
+
+class _HistorySearchResultsSectionState
+    extends State<_HistorySearchResultsSection> {
+  late UnifiedLibrarySearchFilter _filter = widget.filter;
+
+  @override
+  void didUpdateWidget(covariant _HistorySearchResultsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.filter != widget.filter) _filter = widget.filter;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final query = widget.query;
+    final results = widget.results;
+    final localResults = widget.localResults;
+    final filter = _filter;
+    final loading = widget.loading;
+    final errorCode = widget.errorCode;
+    final onSearch = widget.onSearch;
+    final onSelectResult = widget.onSelectResult;
+    final onSelectLocalResult = widget.onSelectLocalResult;
+    final onFilterChanged = widget.onFilterChanged;
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
     final theme = Theme.of(context);
@@ -1269,11 +1346,53 @@ class _HistorySearchResultsSection extends StatelessWidget {
       'failed' => l10n.searchMessagesFailed,
       _ => null,
     };
+    final visibleHistoryResults =
+        filter == UnifiedLibrarySearchFilter.all ||
+            filter == UnifiedLibrarySearchFilter.chats
+        ? results
+        : const <HistorySearchResult>[];
+    final visibleLocalResults = localResults
+        .where((result) {
+          return switch (filter) {
+            UnifiedLibrarySearchFilter.all => true,
+            UnifiedLibrarySearchFilter.chats => false,
+            UnifiedLibrarySearchFilter.projects =>
+              result.kind == LocalLibrarySearchResultKind.project,
+            UnifiedLibrarySearchFilter.savedResponses =>
+              result.kind == LocalLibrarySearchResultKind.savedResponse,
+          };
+        })
+        .toList(growable: false);
+    final searchFilters = <(UnifiedLibrarySearchFilter, String)>[
+      (UnifiedLibrarySearchFilter.all, l10n.searchFilterAll),
+      (UnifiedLibrarySearchFilter.chats, l10n.searchFilterChats),
+      (UnifiedLibrarySearchFilter.projects, l10n.searchFilterProjects),
+      (
+        UnifiedLibrarySearchFilter.savedResponses,
+        l10n.searchFilterSavedResponses,
+      ),
+    ];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            for (final (value, label) in searchFilters)
+              ChoiceChip(
+                label: Text(label),
+                selected: filter == value,
+                onSelected: (_) {
+                  setState(() => _filter = value);
+                  onFilterChanged?.call(value);
+                },
+              ),
+          ],
+        ),
+        const SizedBox(height: OpenChatSpacing.xs),
         if (loading)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
@@ -1293,7 +1412,9 @@ class _HistorySearchResultsSection extends StatelessWidget {
               ),
             ),
           )
-        else if (message != null)
+        else if (message != null &&
+            visibleHistoryResults.isEmpty &&
+            visibleLocalResults.isEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
             child: Row(
@@ -1309,7 +1430,7 @@ class _HistorySearchResultsSection extends StatelessWidget {
                 if (errorCode == 'failed' && onSearch != null)
                   IconButton(
                     tooltip: l10n.retry,
-                    onPressed: () => onSearch!(query),
+                    onPressed: () => onSearch(query),
                     visualDensity: VisualDensity.compact,
                     icon: const Icon(LucideIcons.refreshCw, size: 17),
                   ),
@@ -1326,7 +1447,7 @@ class _HistorySearchResultsSection extends StatelessWidget {
               ),
             ),
           )
-        else if (results.isEmpty)
+        else if (visibleHistoryResults.isEmpty && visibleLocalResults.isEmpty)
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
             child: Text(
@@ -1337,7 +1458,7 @@ class _HistorySearchResultsSection extends StatelessWidget {
             ),
           )
         else
-          for (final result in results)
+          for (final result in visibleHistoryResults)
             Material(
               key: ValueKey<String>(
                 '${result.conversationId}:${result.messageId ?? 'title'}',
@@ -1346,7 +1467,7 @@ class _HistorySearchResultsSection extends StatelessWidget {
               child: InkWell(
                 onTap: onSelectResult == null
                     ? null
-                    : () => onSelectResult!(result),
+                    : () => onSelectResult(result),
                 mouseCursor: SystemMouseCursors.click,
                 hoverColor: palette.hover,
                 focusColor: palette.hover,
@@ -1430,7 +1551,98 @@ class _HistorySearchResultsSection extends StatelessWidget {
                 ),
               ),
             ),
+        for (final result in visibleLocalResults)
+          _LocalLibrarySearchResultTile(
+            result: result,
+            onTap: result.conversationId == null || onSelectLocalResult == null
+                ? null
+                : () => onSelectLocalResult(result),
+          ),
       ],
+    );
+  }
+}
+
+class _LocalLibrarySearchResultTile extends StatelessWidget {
+  const _LocalLibrarySearchResultTile({required this.result, this.onTap});
+
+  final LocalLibrarySearchResult result;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.openchatL10n;
+    final palette = OpenChatPalette.of(context);
+    final theme = Theme.of(context);
+    final kindLabel = switch (result.kind) {
+      LocalLibrarySearchResultKind.project => l10n.projects,
+      LocalLibrarySearchResultKind.savedResponse => l10n.outputs,
+    };
+    final icon = switch (result.kind) {
+      LocalLibrarySearchResultKind.project => LucideIcons.folder,
+      LocalLibrarySearchResultKind.savedResponse => LucideIcons.bookmark,
+    };
+
+    return Material(
+      key: ValueKey<String>('local-library-${result.kind.name}-${result.id}'),
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        mouseCursor: onTap == null
+            ? SystemMouseCursors.basic
+            : SystemMouseCursors.click,
+        hoverColor: palette.hover,
+        focusColor: palette.hover,
+        borderRadius: BorderRadius.circular(OpenChatRadii.button),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 7),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsetsDirectional.only(end: 8, top: 2),
+                child: Icon(icon, size: 15, color: palette.secondaryText),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      result.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: palette.text,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    if (result.subtitle case final subtitle?) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: palette.secondaryText,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: OpenChatSpacing.xs),
+              Text(
+                kindLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: palette.secondaryText,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

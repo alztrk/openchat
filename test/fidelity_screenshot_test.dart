@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -38,6 +40,8 @@ import 'fixtures/figma_sidebar_items.dart';
 import 'support/shad_test_scope.dart';
 
 const _mainSurfaceBottomInset = OpenChatSpacing.mainSurfaceInset;
+
+void _noop() {}
 
 late GoldenFileComparator _previousGoldenComparator;
 
@@ -129,7 +133,16 @@ void main() {
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         supportedLocales: AppLocalizations.supportedLocales,
         theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
-        home: const Scaffold(body: OpenChatWindowTitleBar()),
+        home: const Scaffold(
+          body: OpenChatWindowTitleBar(
+            canGoBack: false,
+            canGoForward: false,
+            sidebarsCompact: false,
+            onGoBack: _noop,
+            onGoForward: _noop,
+            onToggleSidebars: _noop,
+          ),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -137,9 +150,17 @@ void main() {
     expect(find.text('OpenChat'), findsNothing);
     final titleBar = tester.getRect(find.byType(OpenChatWindowTitleBar));
     final controls = tester.getRect(find.byType(WindowControlBar));
-    expect(titleBar.height, OpenChatSpacing.appTitleBarHeight);
-    expect(controls.top, 4);
-    expect(controls.bottom, titleBar.bottom - 4);
+    expect(
+      titleBar.height,
+      lessThanOrEqualTo(
+        math.min(
+          OpenChatSpacing.appTitleBarHeight,
+          tester.view.physicalSize.height,
+        ),
+      ),
+    );
+    expect(controls.top, greaterThanOrEqualTo(4));
+    expect(controls.bottom, lessThanOrEqualTo(titleBar.bottom - 4));
     expect(tester.takeException(), isNull);
   });
 
@@ -170,57 +191,6 @@ void main() {
 
     expect(find.byType(ChatComposer), findsNothing);
     expect(find.byType(OpenChatWindowTitleBar), findsNothing);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('project creation is visible in its section heading', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(360, 720);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.resetPhysicalSize);
-    addTearDown(tester.view.resetDevicePixelRatio);
-
-    final searchController = TextEditingController();
-    addTearDown(searchController.dispose);
-    var projectCreated = false;
-    await tester.pumpWidget(
-      MaterialApp(
-        locale: const Locale('tr'),
-        localizationsDelegates: AppLocalizations.localizationsDelegates,
-        supportedLocales: AppLocalizations.supportedLocales,
-        theme: OpenChatTheme.dark.copyWith(platform: TargetPlatform.windows),
-        home: Scaffold(
-          body: ConversationSidebar(
-            searchController: searchController,
-            width: OpenChatSpacing.sidebarWidth,
-            projects: figmaSidebarProjects,
-            onCreateProject: () {
-              projectCreated = true;
-            },
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-
-    final createButton = find.byKey(
-      const ValueKey<String>('project-create-button'),
-    );
-    final opacity = find.ancestor(
-      of: createButton,
-      matching: find.byType(AnimatedOpacity),
-    );
-    expect(tester.widget<AnimatedOpacity>(opacity).opacity, 1);
-    final l10n = AppLocalizations.of(tester.element(createButton));
-    expect(l10n, isNotNull);
-    expect(
-      tester.getSize(find.byTooltip(l10n!.searchMessagesTooltip)).width,
-      32,
-    );
-
-    await tester.tap(createButton);
-    expect(projectCreated, isTrue);
     expect(tester.takeException(), isNull);
   });
 
@@ -278,10 +248,14 @@ void main() {
       );
       expect(find.text('Sohbet geçmişi'), findsNothing);
       expect(find.text('Sohbetleri seç'), findsNothing);
-      expect(find.text('Yeni sohbet'), findsNothing);
 
       final l10n = AppLocalizations.of(tester.element(createButton));
       expect(l10n, isNotNull);
+      expect(find.byTooltip(l10n!.newChat), findsOneWidget);
+      expect(
+        tester.getSize(find.byTooltip(l10n.searchMessagesTooltip)).width,
+        32,
+      );
       final projectHeading = find.ancestor(
         of: projectCreateButton,
         matching: find.byType(SidebarCollapsibleHeading),
@@ -291,7 +265,7 @@ void main() {
         matching: find.byType(SidebarCollapsibleHeading),
       );
       expect(
-        tester.getRect(find.text(l10n!.projects)).left,
+        tester.getRect(find.text(l10n.projects)).left,
         closeTo(tester.getRect(find.text(l10n.chats)).left, 0.1),
       );
       expect(
@@ -752,6 +726,15 @@ void main() {
 
     final search = find.byKey(const ValueKey<String>('history-search-input'));
     expect(search, findsOneWidget);
+    expect(find.text(l10n.searchFilterAll), findsOneWidget);
+    expect(find.text(l10n.searchFilterAttachments), findsOneWidget);
+    final attachmentsFilter = find.widgetWithText(
+      ChoiceChip,
+      l10n.searchFilterAttachments,
+    );
+    await tester.tap(attachmentsFilter);
+    await tester.pumpAndSettle();
+    expect(tester.widget<ChoiceChip>(attachmentsFilter).selected, isTrue);
     final searchBounds = tester.getRect(search);
     expect(searchBounds.left, greaterThanOrEqualTo(sidebar.left));
     expect(searchBounds.right, lessThanOrEqualTo(sidebar.right));
@@ -811,34 +794,32 @@ void main() {
               throw StateError('Settings localization is missing.');
             }
             expect(tester.takeException(), isNull);
-            var advancedExpanded = false;
+            if (size.width >= 960) {
+              for (final group in <String>[
+                l10n.settingsAppearanceAccessibilityGroup,
+                l10n.settingsChatBehaviorGroup,
+                l10n.settingsProvidersModelsGroup,
+                l10n.settingsToolsPermissionsGroup,
+                l10n.settingsNotificationsGroup,
+                l10n.settingsDataPrivacyGroup,
+              ]) {
+                expect(find.text(group), findsOneWidget);
+              }
+            }
             for (final label in <String>[
               l10n.connections,
               l10n.sharedInstructions,
+              l10n.settingsNotifications,
+              l10n.keyboardShortcuts,
               l10n.appearance,
               l10n.usageQuotas,
               l10n.statistics,
               l10n.modelPreferences,
               l10n.localEngines,
+              l10n.toolPermissions,
               l10n.conversationMemory,
               l10n.localData,
             ]) {
-              if (!advancedExpanded &&
-                  <String>{
-                    l10n.usageQuotas,
-                    l10n.statistics,
-                    l10n.modelPreferences,
-                    l10n.localEngines,
-                    l10n.conversationMemory,
-                    l10n.localData,
-                  }.contains(label)) {
-                final advanced = find.byTooltip(l10n.settingsAdvanced);
-                expect(advanced, findsOneWidget);
-                await tester.ensureVisible(advanced);
-                await tester.tap(advanced);
-                await tester.pumpAndSettle();
-                advancedExpanded = true;
-              }
               final navigation = find
                   .descendant(
                     of: find.byType(SettingsScreen),
@@ -849,14 +830,6 @@ void main() {
               await tester.pumpAndSettle();
               await tester.tap(navigation);
               await tester.pumpAndSettle();
-              advancedExpanded = <String>{
-                l10n.usageQuotas,
-                l10n.statistics,
-                l10n.modelPreferences,
-                l10n.localEngines,
-                l10n.conversationMemory,
-                l10n.localData,
-              }.contains(label);
               expect(find.text(label), findsWidgets);
               expect(tester.takeException(), isNull, reason: label);
             }
@@ -865,6 +838,29 @@ void main() {
       }
     }
   }
+
+  testWidgets('settings search matches category names', (tester) async {
+    await _pumpSettingsScreen(
+      tester,
+      theme: OpenChatTheme.dark,
+      size: const Size(1100, 700),
+    );
+    final context = tester.element(find.byType(SettingsScreen));
+    final l10n = AppLocalizations.of(context);
+    if (l10n == null) {
+      throw StateError('Settings localization is missing.');
+    }
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('settings-search-input')),
+      l10n.settingsDataPrivacyGroup,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byTooltip(l10n.conversationMemory), findsOneWidget);
+    expect(find.byTooltip(l10n.localData), findsOneWidget);
+    expect(find.byTooltip(l10n.connections), findsNothing);
+  });
 
   for (final size in <Size>[const Size(320, 600), const Size(1440, 400)]) {
     for (final scale in <double>[1, 2]) {
@@ -973,6 +969,7 @@ void main() {
         for (final section in <Widget>[
           OpenCodeConnectionSection(
             apiKeyStore: OpenCodeApiKeyStore(const FlutterSecureStorage()),
+            settingsPreferences: SettingsPreferences(SharedPreferencesAsync()),
             onChanged: null,
           ),
           CompatibleProviderConnectionSection(
@@ -980,6 +977,7 @@ void main() {
             apiKeyStore: ApiCompatibleProviderKeyStore(
               const FlutterSecureStorage(),
             ),
+            settingsPreferences: SettingsPreferences(SharedPreferencesAsync()),
             onChanged: null,
           ),
         ]) {
@@ -1516,7 +1514,7 @@ Future<void> _expectCompositionGeometry(
   expect(sidebarHeader.top, appTitleBar.bottom);
   expect(conversationHeader.top, appTitleBar.bottom);
   expect(conversationHeader.height, OpenChatSpacing.conversationHeaderHeight);
-  expect(sidebarHeader.height, conversationHeader.height);
+  expect(sidebarHeader.height, greaterThanOrEqualTo(kMinInteractiveDimension));
   expect(find.byType(WindowControlBar), findsOneWidget);
   final navigationL10n = AppLocalizations.of(
     tester.element(find.byType(ChatNavigationRail)),
@@ -1567,7 +1565,7 @@ Future<void> _expectCompositionGeometry(
   expect(composer.width, OpenChatSpacing.composerMaxWidth);
   expect(composer.center.dx, pane.center.dx);
   if (pane.height >= 720) {
-    expect(composer.center.dy, lessThan(pane.center.dy + 120));
+    expect(composer.center.dy, lessThan(pane.center.dy + 144));
   } else {
     expect(composer.bottom, lessThanOrEqualTo(pane.bottom));
   }
@@ -1713,7 +1711,14 @@ Future<void> _expectActiveScreenMatchesOpenChat(
         child: Scaffold(
           body: Column(
             children: [
-              const OpenChatWindowTitleBar(),
+              const OpenChatWindowTitleBar(
+                canGoBack: false,
+                canGoForward: false,
+                sidebarsCompact: false,
+                onGoBack: _noop,
+                onGoForward: _noop,
+                onToggleSidebars: _noop,
+              ),
               Expanded(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,

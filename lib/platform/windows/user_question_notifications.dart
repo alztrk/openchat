@@ -192,6 +192,26 @@ class UserQuestionNotifications {
     );
   }
 
+  Future<bool> showTestNotification({
+    required String title,
+    required String body,
+  }) async {
+    if (!Platform.isWindows ||
+        defaultTargetPlatform != TargetPlatform.windows ||
+        !_initialized) {
+      return false;
+    }
+    await _plugin.show(
+      id: 0x4f434854,
+      title: title,
+      body: body,
+      notificationDetails: const NotificationDetails(
+        windows: WindowsNotificationDetails(),
+      ),
+    );
+    return true;
+  }
+
   Future<void> showAssistantResponse({
     required String conversationId,
     required String assistantMessageId,
@@ -200,54 +220,94 @@ class UserQuestionNotifications {
     required String content,
     required String replyLabel,
     required String sendLabel,
+    required String genericBody,
+    bool showPreview = true,
+    bool allowQuickReply = true,
   }) async {
     if (!Platform.isWindows ||
         defaultTargetPlatform != TargetPlatform.windows ||
         !_initialized) {
       return;
     }
-    final iconAsset = providerIconAssetFor(providerId);
     final payload = jsonEncode(<String, Object?>{
       'type': 'assistant_response',
       'conversationId': conversationId,
     });
-    final replyPayload = jsonEncode(<String, Object?>{
-      'type': 'assistant_response_reply',
-      'conversationId': conversationId,
-      'assistantMessageId': assistantMessageId,
-    });
     final details = NotificationDetails(
-      windows: WindowsNotificationDetails(
-        inputs: <WindowsInput>[
-          WindowsTextInput(
-            id: assistantReplyInputId,
-            title: replyLabel,
-            placeHolderContent: replyLabel,
-          ),
-        ],
-        actions: <WindowsAction>[
-          WindowsAction(
-            content: sendLabel,
-            arguments: replyPayload,
-            inputId: assistantReplyInputId,
-          ),
-        ],
-        images: <WindowsImage>[
-          WindowsImage(
-            WindowsImage.getAssetUri(iconAsset),
-            altText: '$providerId provider icon',
-            placement: WindowsImagePlacement.appLogoOverride,
-            crop: WindowsImageCrop.circle,
-          ),
-        ],
+      windows: assistantResponseDetails(
+        conversationId: conversationId,
+        assistantMessageId: assistantMessageId,
+        providerId: providerId,
+        replyLabel: replyLabel,
+        sendLabel: sendLabel,
+        allowQuickReply: allowQuickReply,
       ),
     );
     await _plugin.show(
       id: 'assistant_response_$conversationId'.hashCode & 0x7fffffff,
       title: title,
-      body: assistantResponsePreview(content),
+      body: assistantResponseNotificationBody(
+        content: content,
+        genericBody: genericBody,
+        showPreview: showPreview,
+      ),
       notificationDetails: details,
       payload: payload,
+    );
+  }
+
+  @visibleForTesting
+  static String assistantResponseNotificationBody({
+    required String content,
+    required String genericBody,
+    required bool showPreview,
+  }) => showPreview ? assistantResponsePreview(content) : genericBody;
+
+  @visibleForTesting
+  static WindowsNotificationDetails assistantResponseDetails({
+    required String conversationId,
+    required String assistantMessageId,
+    required String providerId,
+    required String replyLabel,
+    required String sendLabel,
+    required bool allowQuickReply,
+  }) {
+    final List<WindowsInput> inputs;
+    final List<WindowsAction> actions;
+    if (allowQuickReply) {
+      inputs = <WindowsInput>[
+        WindowsTextInput(
+          id: assistantReplyInputId,
+          title: replyLabel,
+          placeHolderContent: replyLabel,
+        ),
+      ];
+      actions = <WindowsAction>[
+        WindowsAction(
+          content: sendLabel,
+          arguments: jsonEncode(<String, Object?>{
+            'type': 'assistant_response_reply',
+            'conversationId': conversationId,
+            'assistantMessageId': assistantMessageId,
+          }),
+          inputId: assistantReplyInputId,
+        ),
+      ];
+    } else {
+      inputs = const <WindowsInput>[];
+      actions = const <WindowsAction>[];
+    }
+    return WindowsNotificationDetails(
+      inputs: inputs,
+      actions: actions,
+      images: <WindowsImage>[
+        WindowsImage(
+          WindowsImage.getAssetUri(providerIconAssetFor(providerId)),
+          altText: '$providerId provider icon',
+          placement: WindowsImagePlacement.appLogoOverride,
+          crop: WindowsImageCrop.circle,
+        ),
+      ],
     );
   }
 
@@ -260,16 +320,24 @@ class UserQuestionNotifications {
 
   @visibleForTesting
   static String providerIconAssetFor(String providerId) => switch (providerId) {
-    'chatgpt' => 'assets/icons/notification_chatgpt.svg',
+    'chatgpt' || 'chatgpt_api' => 'assets/icons/notification_chatgpt.svg',
     'opencode' => 'assets/icons/notification_opencode.svg',
-    'gemini' => 'assets/icons/notification_sparkles.svg',
-    'groq' => 'assets/icons/notification_zap.svg',
-    'cerebras' => 'assets/icons/notification_microchip.svg',
-    'openrouter' => 'assets/icons/notification_openrouter.svg',
+    'gemini' => 'assets/icons/providers/gemini.svg',
+    'groq' => 'assets/icons/providers/groq.svg',
+    'cerebras' => 'assets/icons/providers/cerebras.svg',
+    'openrouter' => 'assets/icons/openrouter.svg',
     'mistral' => 'assets/icons/mistral.png',
+    'deepseek' => 'assets/icons/providers/deepseek.svg',
+    'xai' => 'assets/icons/providers/xai.svg',
+    'perplexity' => 'assets/icons/providers/perplexity.svg',
+    'together' => 'assets/icons/providers/together.svg',
+    'sambanova' => 'assets/icons/providers/sambanova.svg',
+    'anthropic' => 'assets/icons/providers/anthropic.svg',
+    'fireworks' => 'assets/icons/providers/fireworks.svg',
+    'deepinfra' => 'assets/icons/providers/deepinfra.svg',
+    'dashscope' => 'assets/icons/providers/dashscope.svg',
+    'cohere' => 'assets/icons/providers/cohere.svg',
     'llama_cpp' => 'assets/icons/notification_llama_cpp.svg',
-    'vllm' => 'assets/icons/notification_vllm.svg',
-    'exllama' => 'assets/icons/engines/exllama-v3.png',
-    _ => 'assets/icons/notification_chatgpt.svg',
+    _ => 'assets/icons/openchat-mark.svg',
   };
 }

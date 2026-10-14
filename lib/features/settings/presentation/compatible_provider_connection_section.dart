@@ -7,19 +7,28 @@ import 'package:openchat/app/openchat_theme.dart';
 import 'package:openchat/app/open_url_or_copy.dart';
 import 'package:openchat/features/chat/presentation/widgets/provider_icon.dart';
 import 'package:openchat/features/settings/data/api_compatible_provider_key_store.dart';
+import 'package:openchat/features/settings/data/settings_preferences.dart';
+import 'package:openchat/features/settings/domain/provider_verification_record.dart';
+import 'package:openchat/features/settings/domain/provider_request_outcome_record.dart';
+import 'package:openchat/features/settings/presentation/provider_connection_status.dart';
 import 'package:openchat/l10n/generated/app_localizations.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
+import 'package:openchat/platform/windows/openchat_service_client.dart';
 
 class CompatibleProviderConnectionSection extends StatefulWidget {
   const CompatibleProviderConnectionSection({
     required this.providerId,
     required this.apiKeyStore,
+    required this.settingsPreferences,
+    this.serviceClient,
     required this.onChanged,
     super.key,
   });
 
   final String providerId;
   final ApiCompatibleProviderKeyStore? apiKeyStore;
+  final SettingsPreferences settingsPreferences;
+  final OpenChatServiceClient? serviceClient;
   final Future<void> Function()? onChanged;
 
   @override
@@ -35,6 +44,12 @@ class _CompatibleProviderConnectionSectionState
   bool _saving = false;
   bool _showForm = false;
   String? _error;
+  ProviderVerificationState _verificationState =
+      ProviderVerificationState.notChecked;
+  DateTime? _verificationCheckedAt;
+  bool _verificationSaveFailed = false;
+  ProviderRequestOutcomeRecord? _lastRequestOutcome;
+  bool _lastRequestReadFailed = false;
 
   @override
   void initState() {
@@ -54,11 +69,41 @@ class _CompatibleProviderConnectionSectionState
       if (mounted) setState(() => _loading = false);
       return;
     }
+    ApiCompatibleProviderKeyStatus? status;
+    var requestOutcomeReadFailed = false;
     try {
-      final status = await store.readStatus(widget.providerId);
+      status = await store.readStatus(widget.providerId);
+      final verification = await widget.settingsPreferences
+          .readProviderVerificationRecord(widget.providerId);
+      ProviderRequestOutcomeRecord? requestOutcome;
+      try {
+        requestOutcome = await widget.settingsPreferences
+            .readProviderRequestOutcomeForRoute(
+              providerId: widget.providerId,
+              connectionId: widget.providerId,
+            );
+      } on Object catch (error, stackTrace) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'provider_setup',
+            context: ErrorDescription(
+              'while reading the last provider request',
+            ),
+          ),
+        );
+        requestOutcomeReadFailed = true;
+      }
       if (mounted) {
         setState(() {
           _status = status;
+          _verificationState = verification == null
+              ? ProviderVerificationState.notChecked
+              : _stateFor(verification.outcome);
+          _verificationCheckedAt = verification?.checkedAt;
+          _lastRequestOutcome = requestOutcome;
+          _lastRequestReadFailed = requestOutcomeReadFailed;
           _loading = false;
           _error = null;
         });
@@ -66,22 +111,135 @@ class _CompatibleProviderConnectionSectionState
     } on ApiCompatibleProviderKeyStorageException {
       if (mounted) {
         setState(() {
+          _status = status;
           _error = 'storage';
+          _loading = false;
+        });
+      }
+    } on FormatException catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription(
+            'while loading provider verification state',
+          ),
+        ),
+      );
+      if (mounted) {
+        setState(() {
+          _status = status;
+          _error = 'verification';
+          _loading = false;
+        });
+      }
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription('while loading provider connection state'),
+        ),
+      );
+      if (mounted) {
+        setState(() {
+          _status = status;
+          _error = 'verification';
           _loading = false;
         });
       }
     }
   }
 
+  ProviderVerificationState _stateFor(ProviderVerificationOutcome outcome) =>
+      switch (outcome) {
+        ProviderVerificationOutcome.verified =>
+          ProviderVerificationState.verified,
+        ProviderVerificationOutcome.emptyCatalog =>
+          ProviderVerificationState.emptyCatalog,
+        ProviderVerificationOutcome.staleCatalog =>
+          ProviderVerificationState.staleCatalog,
+        ProviderVerificationOutcome.authenticationFailed =>
+          ProviderVerificationState.authenticationFailed,
+        ProviderVerificationOutcome.rateLimited =>
+          ProviderVerificationState.rateLimited,
+        ProviderVerificationOutcome.networkFailed =>
+          ProviderVerificationState.networkFailed,
+        ProviderVerificationOutcome.failed => ProviderVerificationState.failed,
+      };
+
+  ProviderVerificationOutcome _outcomeFor(ProviderVerificationState state) =>
+      switch (state) {
+        ProviderVerificationState.verified =>
+          ProviderVerificationOutcome.verified,
+        ProviderVerificationState.emptyCatalog =>
+          ProviderVerificationOutcome.emptyCatalog,
+        ProviderVerificationState.staleCatalog =>
+          ProviderVerificationOutcome.staleCatalog,
+        ProviderVerificationState.authenticationFailed =>
+          ProviderVerificationOutcome.authenticationFailed,
+        ProviderVerificationState.rateLimited =>
+          ProviderVerificationOutcome.rateLimited,
+        ProviderVerificationState.networkFailed =>
+          ProviderVerificationOutcome.networkFailed,
+        ProviderVerificationState.failed => ProviderVerificationOutcome.failed,
+        ProviderVerificationState.notChecked ||
+        ProviderVerificationState.checking => throw StateError(
+          'Only completed provider checks can be saved.',
+        ),
+      };
+
+  Future<void> _recordVerification(ProviderVerificationState state) async {
+    final checkedAt = DateTime.now().toUtc();
+    var saveFailed = false;
+    try {
+      await widget.settingsPreferences.writeProviderVerificationRecord(
+        widget.providerId,
+        ProviderVerificationRecord(
+          outcome: _outcomeFor(state),
+          checkedAt: checkedAt,
+        ),
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription('while saving provider verification state'),
+        ),
+      );
+      saveFailed = true;
+    }
+    if (!mounted) return;
+    setState(() {
+      _verificationState = state;
+      _verificationCheckedAt = saveFailed ? null : checkedAt;
+      _verificationSaveFailed = saveFailed;
+    });
+  }
+
   Future<void> _save() async {
     final store = widget.apiKeyStore;
-    if (store == null || _saving) return;
+    if (store == null || _saving || _isVerifying) return;
     setState(() {
       _saving = true;
       _error = null;
+      _verificationState = ProviderVerificationState.notChecked;
+      _verificationCheckedAt = null;
+      _verificationSaveFailed = false;
     });
     try {
       await store.saveApiKey(widget.providerId, _controller.text);
+      await widget.settingsPreferences.clearProviderVerificationRecord(
+        widget.providerId,
+      );
+      await widget.settingsPreferences.clearProviderRequestOutcomeForRoute(
+        providerId: widget.providerId,
+        connectionId: widget.providerId,
+      );
       _controller.clear();
       await _load();
       await widget.onChanged?.call();
@@ -90,6 +248,16 @@ class _CompatibleProviderConnectionSectionState
       if (mounted) setState(() => _error = 'invalid');
     } on ApiCompatibleProviderKeyStorageException {
       if (mounted) setState(() => _error = 'storage');
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription('while resetting provider verification'),
+        ),
+      );
+      if (mounted) setState(() => _error = 'verification-save');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -97,19 +265,113 @@ class _CompatibleProviderConnectionSectionState
 
   Future<void> _remove() async {
     final store = widget.apiKeyStore;
-    if (store == null || _saving) return;
+    if (store == null || _saving || _isVerifying) return;
     setState(() {
       _saving = true;
       _error = null;
+      _verificationState = ProviderVerificationState.notChecked;
+      _verificationCheckedAt = null;
+      _verificationSaveFailed = false;
     });
     try {
       await store.deleteApiKey(widget.providerId);
+      await widget.settingsPreferences.clearProviderVerificationRecord(
+        widget.providerId,
+      );
+      await widget.settingsPreferences.clearProviderRequestOutcomeForRoute(
+        providerId: widget.providerId,
+        connectionId: widget.providerId,
+      );
       await _load();
       await widget.onChanged?.call();
     } on ApiCompatibleProviderKeyStorageException {
       if (mounted) setState(() => _error = 'storage');
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription('while resetting provider verification'),
+        ),
+      );
+      if (mounted) setState(() => _error = 'verification-save');
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _verifyConnection() async {
+    final store = widget.apiKeyStore;
+    final service = widget.serviceClient;
+    if (store == null || service == null || _saving || _isVerifying) return;
+    setState(() {
+      _verificationState = ProviderVerificationState.checking;
+    });
+    try {
+      final apiKey = await store.readApiKey(widget.providerId);
+      if (apiKey == null) {
+        if (mounted) {
+          setState(() {
+            _verificationState = ProviderVerificationState.notChecked;
+          });
+        }
+        return;
+      }
+      CustomCompatibleProvider? customProvider;
+      if (ApiCompatibleProviderKeyStore.isCustomProviderId(widget.providerId)) {
+        final customProviders = await store.readCustomProviders();
+        for (final provider in customProviders) {
+          if (provider.id == widget.providerId) {
+            customProvider = provider;
+            break;
+          }
+        }
+      }
+      final response = await service.call(
+        'compatible.models.list',
+        params: <String, Object?>{
+          'providerId': widget.providerId,
+          'apiKey': apiKey,
+          if (customProvider != null) ...<String, Object?>{
+            'baseUrl': customProvider.baseUrl,
+            'protocol': customProvider.protocol.name,
+          },
+        },
+      );
+      final models = response['models'];
+      if (models is! List<Object?>) {
+        throw const FormatException('The provider model catalog was invalid.');
+      }
+      if (response['freshness'] == 'stale') {
+        await _recordVerification(ProviderVerificationState.staleCatalog);
+        return;
+      }
+      if (response['freshness'] != 'current') {
+        throw const FormatException('The provider model catalog was invalid.');
+      }
+      if (!mounted) return;
+      await _recordVerification(
+        models.isEmpty
+            ? ProviderVerificationState.emptyCatalog
+            : ProviderVerificationState.verified,
+      );
+    } on OpenChatServiceException catch (error) {
+      await _recordVerification(providerVerificationFailureForCode(error.code));
+    } on ApiCompatibleProviderKeyStorageException {
+      await _recordVerification(ProviderVerificationState.failed);
+    } on FormatException {
+      await _recordVerification(ProviderVerificationState.failed);
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription('while verifying a provider connection'),
+        ),
+      );
+      await _recordVerification(ProviderVerificationState.failed);
     }
   }
 
@@ -121,12 +383,13 @@ class _CompatibleProviderConnectionSectionState
     final name = _name(l10n);
     final description = _description(l10n);
     final url = _url;
+    final isVerifying = _isVerifying;
     final actions = Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
         OutlinedButton.icon(
-          onPressed: _saving
+          onPressed: _saving || isVerifying
               ? null
               : () => setState(() => _showForm = !_showForm),
           icon: Icon(
@@ -137,13 +400,12 @@ class _CompatibleProviderConnectionSectionState
         ),
         if (configured)
           TextButton.icon(
-            onPressed: _saving ? null : _remove,
+            onPressed: _saving || isVerifying ? null : _remove,
             icon: const Icon(LucideIcons.trash2, size: 16),
             label: Text(l10n.deleteAll),
           ),
       ],
     );
-
     return Card(
       margin: EdgeInsets.zero,
       color: palette.surface,
@@ -237,6 +499,20 @@ class _CompatibleProviderConnectionSectionState
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ],
+            if (_error == 'verification' && !_showForm) ...[
+              const SizedBox(height: 10),
+              Text(
+                l10n.providerVerificationRecordUnreadable,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            if (_error == 'verification-save' && !_showForm) ...[
+              const SizedBox(height: 10),
+              Text(
+                l10n.providerVerificationResultNotSaved,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
             const SizedBox(height: 12),
             if (_loading)
               const LinearProgressIndicator()
@@ -272,6 +548,18 @@ class _CompatibleProviderConnectionSectionState
                   );
                 },
               ),
+            if (configured && !_loading) ...[
+              ProviderConnectionStatus(
+                state: _verificationState,
+                checkedAt: _verificationCheckedAt,
+                saveFailed: _verificationSaveFailed,
+                lastRequestOutcome: _lastRequestOutcome,
+                lastRequestReadFailed: _lastRequestReadFailed,
+                onVerify: isVerifying || _saving || widget.serviceClient == null
+                    ? null
+                    : _verifyConnection,
+              ),
+            ],
             if (_showForm) ...[
               const SizedBox(height: 12),
               Column(
@@ -325,8 +613,6 @@ class _CompatibleProviderConnectionSectionState
     'deepinfra' => l10n.deepInfraProvider,
     'dashscope' => l10n.dashScopeProvider,
     'cohere' => l10n.cohereProvider,
-    'ollama' => l10n.ollamaProvider,
-    'lmstudio' => l10n.lmStudioProvider,
     _ => widget.providerId,
   };
 
@@ -346,8 +632,6 @@ class _CompatibleProviderConnectionSectionState
     'deepinfra' => l10n.deepInfraApiDescription,
     'dashscope' => l10n.dashScopeApiDescription,
     'cohere' => l10n.cohereApiDescription,
-    'ollama' => l10n.ollamaApiDescription,
-    'lmstudio' => l10n.lmStudioApiDescription,
     _ => '',
   };
 
@@ -367,8 +651,9 @@ class _CompatibleProviderConnectionSectionState
     'deepinfra' => 'https://docs.deepinfra.com/',
     'dashscope' => 'https://www.alibabacloud.com/help/en/model-studio/',
     'cohere' => 'https://docs.cohere.com/',
-    'ollama' => 'https://docs.ollama.com/',
-    'lmstudio' => 'https://lmstudio.ai/docs/developer',
     _ => '',
   };
+
+  bool get _isVerifying =>
+      _verificationState == ProviderVerificationState.checking;
 }

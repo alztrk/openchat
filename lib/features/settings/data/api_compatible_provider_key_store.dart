@@ -89,8 +89,6 @@ class ApiCompatibleProviderKeyStore {
     'deepinfra',
     'dashscope',
     'cohere',
-    'ollama',
-    'lmstudio',
   };
   static bool isCustomProviderId(String providerId) =>
       _customProviderId.hasMatch(providerId);

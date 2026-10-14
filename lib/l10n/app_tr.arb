@@ -2,6 +2,23 @@
   "@@locale": "tr",
   "appTitle": "OpenChat",
   "newChat": "Yeni sohbet",
+  "temporaryChatStart": "Geçici sohbet",
+  "temporaryChatTitle": "Geçici sohbet",
+  "temporaryChatEnd": "Bitir",
+  "temporaryChatNotice": "Bu sohbeti kaydetmediğiniz sürece geçmişe eklenmez. Mesajlar ve eklediğiniz dosyalar verileri nasıl saklayacağını belirleyen {provider} sağlayıcısına gönderilir. Burada araçlar kullanılamaz.",
+  "temporaryChatDisclosureTitle": "Bu mesaj {provider} sağlayıcısına gönderilsin mi?",
+  "temporaryChatDisclosureBody": "Mesajınız, eklediğiniz dosyalar ve bu geçici sohbetin geçmişi {provider} sağlayıcısına gönderilecek. Verileri nasıl saklayacağını sağlayıcı belirler. Devam edilsin mi?",
+  "temporaryChatExitTitle": "Geçici sohbetten çıkılsın mı?",
+  "temporaryChatExitBody": "Gönderilmiş mesajları geçmişe kaydedin, atın veya burada devam edin. Gönderilmemiş ekler çıkarken silinir.",
+  "temporaryChatSave": "Geçmişe kaydet",
+  "temporaryChatDiscard": "Sohbeti at",
+  "temporaryChatCancel": "Sohbete devam et",
+  "temporaryChatSaveFailed": "Geçici sohbet kaydedilemedi. Sohbet hâlâ burada; yeniden deneyin veya atın.",
+  "temporaryChatConnectionRequired": "Geçici sohbet başlatmadan önce bir ChatGPT hesabı bağlayıp doğrulayın.",
+  "temporaryChatRemoveAttachmentsFirst": "Geçici sohbet başlatmadan önce bekleyen ekleri kaldırın.",
+  "temporaryChatStopBeforeLeaving": "Bu geçici sohbetten çıkmadan önce yanıtı durdurun.",
+  "temporaryChatMessageLimitReached": "Bu geçici sohbetin mesaj veya boyut sınırına ulaşıldı. Sohbeti kaydedin ya da yeni bir sohbet başlatın.",
+  "temporaryChatResponseFailed": "Yanıt alınamadı. Yeni bir mesaj gönderebilir veya yeniden deneyebilirsiniz.",
   "chats": "Sohbetler",
   "workspaces": "Çalışma alanları",
   "workspacesDescription": "Sohbetleri konularına göre gruplayın. Dosyalar ve araçlar kod projelerinde kalır.",
@@ -31,6 +48,20 @@
   "outputsEmptyDescription": "Bir yanıtı burada tutmak için altındaki Yanıtı kaydet seçeneğini kullanın.",
   "outputsLoadFailed": "Kaydedilmiş yanıtlar yüklenemedi.",
   "outputsLoading": "Kaydedilmiş yanıtlar yükleniyor…",
+  "attachments": "Ekler",
+  "attachmentChooseFile": "Dosya seç",
+  "attachmentChooseFromLibrary": "Kitaplıktan seç",
+  "attachmentLibraryTitle": "Sohbet dosyaları",
+  "attachmentLibraryDescription": "Sohbet dosyalarına göz atın ve kaynak sohbetlerine dönün.",
+  "attachmentLibraryEmpty": "Kullanılabilir kayıtlı sohbet dosyası yok.",
+  "attachmentLibraryUnavailable": "Bu dosyaya artık erişilemiyor.",
+  "attachmentLibraryAllFilter": "Tüm dosyalar",
+  "attachmentLibraryAvailableFilter": "Mevcut",
+  "attachmentLibraryMissingFilter": "Bulunamayan",
+  "attachmentLibraryOpenConversation": "Kaynak sohbeti aç",
+  "attachmentLibraryLoading": "Sohbet dosyaları yükleniyor",
+  "attachmentLibrarySearchHint": "Dosya veya sohbet adına göre filtrele",
+  "attachmentLibraryLoadFailed": "Daha fazla sohbet dosyası yüklenemedi. Yeniden deneyin.",
   "saveResponse": "Yanıtı kaydet",
   "removeSavedResponse": "Kaydedilmiş yanıtı kaldır",
   "outputSaveFailed": "Yanıt kaydedilemedi.",
@@ -38,9 +69,86 @@
   "outputOpenConversation": "Sohbeti aç",
   "outputConversationUnavailable": "Sohbet artık kullanılamıyor",
   "outputSavedAt": "Kaydedilme tarihi: {date}",
-  "@workspaceConversationCount": { "placeholders": { "count": { "type": "int" } } },
-  "@workspaceDeleteConfirmation": { "placeholders": { "name": { "type": "String" } } },
-  "@outputSavedAt": { "placeholders": { "date": { "type": "String" } } },
+  "outputWorkspaceOpen": "Yanıtı düzenle",
+  "outputWorkspaceTitle": "Yanıt çalışma alanı",
+  "outputWorkspaceDescription": "Bir çalışma kopyasını düzenleyin. Kaynak sohbet değişmeden kalır.",
+  "outputWorkspaceContentLabel": "Yanıt içeriği",
+  "outputWorkspaceMarkdownSource": "Markdown kaynağı",
+  "outputWorkspaceSource": "Kaynak",
+  "outputWorkspaceLanguage": "Dil",
+  "outputWorkspaceEdit": "Düzenle",
+  "outputWorkspacePreview": "Önizle",
+  "outputWorkspaceVersion": "Sürüm {version}",
+  "@outputWorkspaceVersion": {
+    "placeholders": {
+      "version": {
+        "type": "int"
+      }
+    }
+  },
+  "outputWorkspaceSaveVersion": "Yeni sürüm olarak kaydet",
+  "outputWorkspaceSaveFailed": "Yeni sürüm kaydedilemedi.",
+  "outputWorkspaceExport": "Markdown olarak dışa aktar",
+  "outputExportReviewTitle": "Dışa aktarmadan önce gözden geçirin",
+  "outputExportReviewScope": "Yalnızca seçili yanıtın {version}. sürümü dışa aktarılır. Kaynak sohbet ve diğer mesajlar dosyaya eklenmez.",
+  "@outputExportReviewScope": {
+    "placeholders": {
+      "version": {
+        "type": "int"
+      }
+    }
+  },
+  "outputExportReviewSensitiveNotice": "Markdown kopyası seçtiğiniz konuma yazılır. Yanıt hassas bilgiler içerebilir; sonradan silmek başka yerlere kopyalanmış dosyaları geri almaz.",
+  "outputWorkspaceExported": "Yanıt sürümü dışa aktarıldı.",
+  "outputWorkspaceExportFailed": "Yanıt sürümü dışa aktarılamadı.",
+  "outputWorkspaceVersionsFailed": "Sürüm geçmişi yüklenemedi.",
+  "outputWorkspaceEmpty": "Yanıt sürümü boş olamaz.",
+  "outputWorkspaceUnsavedTitle": "Kaydedilmemiş düzenlemeler silinsin mi?",
+  "outputWorkspaceUnsavedBody": "Bu düzenlemeler yeni bir sürüm olarak kaydedilmedi.",
+  "outputWorkspaceKeepEditing": "Düzenlemeye devam et",
+  "outputWorkspaceDiscard": "Düzenlemeleri sil",
+  "@workspaceConversationCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "@temporaryChatNotice": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "@temporaryChatDisclosureTitle": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "@temporaryChatDisclosureBody": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "@workspaceDeleteConfirmation": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@outputSavedAt": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "collapseSidebars": "Kenar çubuklarını daralt",
   "showSidebars": "Kenar çubuklarını göster",
   "previousPage": "Önceki sayfa",
@@ -53,9 +161,15 @@
   "sectionUnavailable": "Bu bölüm henüz kullanılamıyor.",
   "settings": "Ayarlar",
   "settingsDescription": "Bağlantılar, görünüm ve yerel veriler",
-  "settingsGeneral": "Genel",
-  "settingsAdvanced": "Gelişmiş",
-  "settingsDataRecovery": "Veri ve kurtarma",
+  "settingsAppearanceAccessibilityGroup": "Görünüm ve erişilebilirlik",
+  "settingsChatBehaviorGroup": "Sohbet davranışı",
+  "settingsProvidersModelsGroup": "Sağlayıcılar ve modeller",
+  "settingsToolsPermissionsGroup": "Araçlar ve izinler",
+  "settingsNotificationsGroup": "Bildirimler ve uyarılar",
+  "settingsDataPrivacyGroup": "Veri ve gizlilik",
+  "settingsSearchPlaceholder": "Ayarlarda ara",
+  "settingsSearchClear": "Aramayı temizle",
+  "settingsSearchEmpty": "Bu aramayla eşleşen ayar yok.",
   "settingsAccountConnectionsHeading": "Hesap bağlantıları",
   "settingsModelProvidersHeading": "Model sağlayıcıları",
   "customProvidersHeading": "Özel sağlayıcılar",
@@ -78,36 +192,167 @@
   "settingsStatisticsDescription": "Sohbet ve model kullanımınızın zaman içindeki değişimini inceleyin.",
   "settingsModelPreferencesDescription": "Gösterilecek modelleri ve seçim davranışını belirleyin.",
   "settingsLocalEnginesDescription": "Bu cihazda modelleri çalıştıran altyapıları yönetin.",
-  "settingsConversationMemoryDescription": "Sohbet arşivini ve bağlam aramasını yönetin.",
+  "settingsConversationMemoryDescription": "Kişisel belleği ve yerel sohbet arşivini yönetin.",
+  "personalMemoryDescription": "Seçtiğin bilgileri kaydet. Kişisel bellek açıkken bu bilgiler sonraki model isteklerine eklenir.",
+  "personalMemoryPrivacyNotice": "Kaydedilen kopyalar bu cihazda kalır. Özellik açıkken metinleri isteğinle birlikte sağlayıcıya gönderilir. Bilgileri buradan istediğin zaman inceleyebilir veya silebilirsin.",
+  "personalMemoryEnabled": "Kişisel belleği kullan",
+  "personalMemoryResponseLabel": "Bellek · {count}",
+  "@personalMemoryResponseLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "personalMemorySourcesTitle": "Bu istekte gönderilen kayıtlı bilgiler",
+  "personalMemorySourcesDescription": "Bu kayıtlı bilgiler isteğe eklendi. Model bunların tümünü kullanmış olmayabilir.",
+  "personalMemorySourceUnavailable": "Bu bilgi kayıtlı bellekten sonradan düzenlendi veya silindi.",
+  "personalMemoryEnabledDescription": "Kaydettiğin bilgileri yeni isteklere ekle. Bu seçenek varsayılan olarak kapalıdır.",
+  "personalMemoryExcludeHereTooltip": "Kişisel belleği bu konuşmada kullanma",
+  "personalMemoryUseHereTooltip": "Kişisel belleği bu konuşmada kullan",
+  "personalMemoryFactsTitle": "Kaydedilen bilgiler",
+  "personalMemoryEmpty": "Henüz bilgi kaydetmedin.",
+  "personalMemoryAdd": "Bilgi ekle",
+  "personalMemoryEdit": "Bilgiyi düzenle",
+  "personalMemoryDelete": "Bilgiyi sil",
+  "personalMemoryDeleteTitle": "Kaydedilen bilgi silinsin mi?",
+  "personalMemoryDeleteConfirmation": "Bu bilgi cihazdan ve sonraki model isteklerinden kaldırılır.",
+  "personalMemoryDeleteConfirm": "Sil",
+  "personalMemoryFactLabel": "Hatırlanacak bilgi",
+  "personalMemoryFactHint": "Örneğin OpenChat'in hatırlamasını istediğin bir tercih",
+  "personalMemoryLimitReached": "Kaydedilebilecek bilgi sınırına ulaştın.",
+  "personalMemoryLoadFailed": "Kaydedilen bilgiler yüklenemedi.",
+  "personalMemorySaveFailed": "Kaydedilen bilgi güncellenemedi.",
+  "personalMemoryClearAction": "Kaydedilen belleği temizle",
+  "personalMemoryClearTitle": "Kaydedilen belleğin tamamı temizlensin mi?",
+  "personalMemoryClearConfirmation": "Tüm kayıtlı bilgiler bu cihazdan silinir ve kişisel bellek kapatılır.",
+  "personalMemoryClearConfirm": "Belleği temizle",
+  "personalMemoryClearFailed": "Kaydedilen bellek temizlenemedi.",
   "settingsSharedInstructionsDescription": "Yeni sohbetlere eklenecek ortak yönlendirmeleri belirleyin.",
+  "settingsAssistantProfilesDescription": "Kendi yanıt yönergeleri olan, tekrar kullanabileceğin asistanlar oluştur.",
+  "settingsNotifications": "Bildirimler",
+  "settingsNotificationsDescription": "Arka planda tamamlanan yanıtlar ve bekleyen sorular için bildirim tercihlerini yönetin.",
+  "keyboardShortcuts": "Klavye kısayolları",
+  "keyboardShortcutsDescription": "Mesaj gönderme, yeni satır ekleme ve yanıtı durdurma tuşlarını değiştirin.",
+  "keyboardShortcutRecord": "Bir tuş kombinasyonuna basın",
+  "keyboardShortcutConflict": "Bu tuş kombinasyonu başka bir işlem için kullanılıyor.",
+  "keyboardShortcutLoadFailed": "Klavye kısayolları yüklenemedi.",
+  "keyboardShortcutSaveFailed": "Klavye kısayolları kaydedilemedi.",
+  "keyboardShortcutsReset": "Varsayılanlara dön",
+  "keyboardSendMessage": "Mesajı gönder",
+  "keyboardSendMessageDescription": "Mesaj alanı odaktayken mesajı gönderir.",
+  "keyboardNewLine": "Yeni satır ekle",
+  "keyboardNewLineDescription": "Mesajı göndermeden satır sonu ekler.",
+  "keyboardStopResponse": "Yanıtı durdur",
+  "keyboardStopResponseDescription": "Mesaj alanı odaktayken yanıtı durdurur.",
+  "notificationResponses": "Yanıt bildirimleri",
+  "notificationResponsesDescription": "Sohbet arka plandayken yanıt tamamlandığında bildirim göster.",
+  "notificationQuestions": "Bekleyen sorular",
+  "notificationQuestionsDescription": "Yapay zekâ senden yanıt beklediğinde bildirim göster.",
+  "notificationResponsePreview": "Yanıt metnini göster",
+  "notificationResponsePreviewDescription": "Yanıt metnini bildirimde göster. Kapalıysa yalnızca yanıtın hazır olduğu bildirilir.",
+  "notificationQuickReply": "Bildirimden hızlı yanıtla",
+  "notificationQuickReplyDescription": "Yanıt bildirimine metin alanı ve gönderme eylemi ekle.",
+  "notificationSettingsSaveFailed": "Bildirim ayarı kaydedilemedi.",
+  "notificationSettingsUnavailable": "Bildirim tercihleri okunamadı.",
+  "notificationDeliveryChecking": "Windows bildirim durumu denetleniyor.",
+  "notificationDeliveryEnabled": "Windows bildirimleri kullanılabilir.",
+  "notificationDeliveryDisabledForApp": "Windows'ta OpenChat bildirimleri kapalı.",
+  "notificationDeliveryDisabledForUser": "Windows ayarlarında bildirimler kapalı.",
+  "notificationDeliveryDisabledByPolicy": "Bildirimler kuruluş ilkeniz tarafından engelleniyor.",
+  "notificationDeliveryDisabledByManifest": "OpenChat, Windows bildirimi gönderecek şekilde kayıtlı değil.",
+  "notificationDeliveryUnavailable": "Windows bildirim durumu denetlenemedi.",
+  "notificationDeliveryNotSupported": "Bu platformda Windows bildirim durumu kullanılamıyor.",
+  "sendTestNotification": "Test bildirimi gönder",
+  "notificationTestTitle": "OpenChat bildirim testi",
+  "notificationTestBody": "Bu bildirimi görüyorsanız Windows bildirimleri iletiliyor.",
+  "notificationTestRequested": "Test bildirimi istendi.",
+  "notificationTestFailed": "Test bildirimi gönderilemedi.",
+  "openNotificationSettings": "Windows bildirim ayarlarını aç",
   "settingsAppearanceDescription": "Dil, tema, metin boyutu ve sohbet genişliğini ayarlayın.",
   "settingsLocalDataDescription": "Sohbet geçmişinin nerede tutulduğunu ve yerel arşivleri yönetin.",
   "connections": "Bağlantılar",
+  "providerCatalogVerification": "Sağlayıcıyı doğrula",
+  "providerConnectionLastChecked": "Son kontrol: {dateTime}",
+  "providerLastRequestOutcome": "Son istek: {outcome}",
+  "providerLastRequestAt": "İstek zamanı: {dateTime}",
+  "providerLastRequestReadFailed": "Son istek sonucu okunamadı.",
+  "providerLastRequestSaveFailed": "İstek tamamlandı ancak sonucu kaydedilemedi.",
+  "providerRequestCompleted": "Tamamlandı",
+  "providerRequestWaitingForInput": "Kullanıcı yanıtı bekleniyor",
+  "providerRequestStopped": "Durduruldu",
+  "providerRequestAuthenticationFailed": "Kimlik doğrulama başarısız",
+  "providerRequestRateLimited": "İstek sınırına ulaşıldı",
+  "providerRequestNetworkFailed": "Ağ hatası",
+  "providerRequestFailed": "Sağlayıcı yanıtı tamamlayamadı. Kayıtlı mesajların kullanılabilir durumda.",
+  "providerVerificationResultNotSaved": "Sonuç bu cihaza kaydedilemedi.",
+  "providerVerificationRecordUnreadable": "Kaydedilmiş kontrol sonucu okunamadı. Bağlantıyı yeniden doğrulayın.",
+  "setupStepCompleted": "Tamamlandı",
+  "setupStepCurrent": "Geçerli adım",
   "models": "Modeller",
-  "modelLibrary": "Model bul",
-  "modelPreferences": "Model tercihleri",
+  "modelLibrary": "Kütüphane",
+  "modelPreferences": "Modeller",
   "modelsDescription": "Yeni sohbetlerde kullanılacak varsayılan modeli seçin ve kullanmadığınız modelleri gizleyin.",
+  "defaultModelPreferenceInvalid": "Kaydedilmiş varsayılan model ayarı okunamıyor. Model tercihlerinden veya proje seçeneklerinden temizleyin.",
+  "clearDefaultModelPreference": "Varsayılan model ayarını temizle",
+  "defaultModelPreferenceClearFailed": "Kaydedilmiş varsayılan model ayarı temizlenemedi.",
+  "hiddenModelPreferencesInvalid": "Kaydedilmiş gizli model tercihleri okunamıyor. Tüm modelleri yeniden göstermek için bu tercihleri temizleyin.",
+  "clearHiddenModelPreferences": "Gizli modelleri sıfırla",
+  "hiddenModelPreferencesClearFailed": "Kaydedilmiş gizli model tercihleri temizlenemedi.",
   "modelContextAutomatic": "Otomatik",
   "modelContextCustom": "Sınır: {count}",
-  "@modelContextCustom": {"placeholders": {"count": {"type": "String"}}},
+  "@modelContextCustom": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
   "modelContextTitle": "Bağlam bütçesi · {model}",
-  "@modelContextTitle": {"placeholders": {"model": {"type": "String"}}},
+  "@modelContextTitle": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
   "modelContextMaximum": "Modelin en yüksek sınırı: {limit}",
-  "@modelContextMaximum": {"placeholders": {"limit": {"type": "String"}}},
+  "@modelContextMaximum": {
+    "placeholders": {
+      "limit": {
+        "type": "String"
+      }
+    }
+  },
   "modelContextCustomLabel": "Token cinsinden bağlam sınırınız",
   "modelContextExplanation": "OpenChat, göndermeden önce eski sohbet geçmişini bu sınıra göre sıkıştırır. Bu ayar sağlayıcının gerçek model kapasitesini değiştirmez ve kota kullanımının düşeceğini garanti etmez.",
   "modelContextInvalid": "2.048 ile 2.000.000 arasında bir token değeri girin.",
   "modelContextAboveMaximum": "Sınır, modelin en yüksek değerini aşamaz.",
   "localEngines": "Yerel motorlar",
-  "localEnginesDescription": "Doğrulanmış yerel motorları kurun, kendi model dosyalarınızı kaydedin ve motorun çalışma durumunu kontrol edin. Modelleri motor klasörüne taşıyabilir, kopyalayabilir veya mevcut konumunda bırakabilirsiniz.",
+  "localEnginesDescription": "Yerel model motorlarını kurun ve yönetin.",
   "localEnginesUnavailable": "Yerel motor servisi henüz kullanılamıyor.",
   "localEnginesLoadFailed": "Yerel motor bilgileri yüklenemedi.",
   "localEnginesEmpty": "Kullanılabilir yerel motor sürümü yok.",
   "localEnginesReload": "Yenile",
   "localEngineRelease": "Sürüm {tag}",
-  "@localEngineRelease": { "placeholders": { "tag": { "type": "String" } } },
+  "@localEngineRelease": {
+    "placeholders": {
+      "tag": {
+        "type": "String"
+      }
+    }
+  },
   "localEngineNewerReleaseIncompatible": "Upstream'de {latest} yayımlandı; bu kurulumla uyumlu en yeni sürüm {compatible}.",
-  "@localEngineNewerReleaseIncompatible": { "placeholders": { "latest": { "type": "String" }, "compatible": { "type": "String" } } },
+  "@localEngineNewerReleaseIncompatible": {
+    "placeholders": {
+      "latest": {
+        "type": "String"
+      },
+      "compatible": {
+        "type": "String"
+      }
+    }
+  },
   "localEngineReleaseCheckUnavailable": "Yeni sürümler denetlenemedi. Bağlantınızı kontrol edip Yenile'yi seçin; doğrulanmış sürüm olmadan kurulum yapılamaz.",
   "localEngineVariants": "Paketler",
   "localEngineStable": "Kararlı",
@@ -120,15 +365,18 @@
   "localEngineNotInstalled": "Kurulu değil",
   "localEngineBlocked": "Engellendi",
   "localEngineDeprecated": "Kullanımdan kaldırıldı",
-  "localEngineWindowsDeprecatedReason": "Windows'ta vLLM ve ExLlama'nın yeni kurulumları devre dışı. Mevcut motor dosyaları ve model kayıtları korunur.",
   "localEngineUnsupportedPlatform": "Desteklenmeyen platform",
   "localEngineHardwareUnavailable": "Donanım kullanılamıyor",
   "localEngineDriverUnsupported": "NVIDIA sürücüsünü güncelleyin",
   "localEngineDriverVersionUnavailable": "NVIDIA sürücü sürümü doğrulanamadı",
-  "localEngineVllmBlockedReason": "vLLM için 580 veya üzeri NVIDIA sürücüsü ve mevcut bir Linux ortamı gerekir. Windows'ta GPU erişimi olan, önceden kurulmuş bir WSL2 dağıtımı kullanılır.",
-  "localEngineExllamaBlockedReason": "ExLlamaV3 çalışma zamanı henüz kurulum için hazır değil. Kurulum seçeneği sunulmadan önce TabbyAPI, PyTorch, Triton, Flash Linear Attention ve Python bağımlılıklarının tamamı sabitlenip doğrulanmalı.",
   "localEngineRuntimeRequirements": "Gereksinimler: {requirements}",
-  "@localEngineRuntimeRequirements": { "placeholders": { "requirements": { "type": "String" } } },
+  "@localEngineRuntimeRequirements": {
+    "placeholders": {
+      "requirements": {
+        "type": "String"
+      }
+    }
+  },
   "localEngineInstall": "Kur",
   "localEngineUpdate": "Güncelle",
   "localEngineInstalling": "Kurulum hazırlanıyor...",
@@ -150,16 +398,43 @@
   "localEngineExternalServerConnecting": "Seçilen yerel sunucu denetleniyor...",
   "localEngineExternalServerFoundTitle": "Çalışan llama-server bulundu",
   "localEngineExternalServerFoundDescription": "Bir llama.cpp sunucusu {port} portunu dinliyor. OpenChat bağlanıp modellerini listeleyecek. OpenChat'teki bağlantıyı kesmek sunucuyu durdurmaz.",
-  "@localEngineExternalServerFoundDescription": { "placeholders": { "port": { "type": "int" } } },
+  "@localEngineExternalServerFoundDescription": {
+    "placeholders": {
+      "port": {
+        "type": "int"
+      }
+    }
+  },
   "localEngineExternalServerNotNow": "Şimdi değil",
   "localEngineExternalServerConnect": "Bağlan",
   "localEngineExternalServerConnected": "{port} portuna bağlandı. {count, plural, =1{1 model kullanılabilir} other{{count} model kullanılabilir}}.",
-  "@localEngineExternalServerConnected": { "placeholders": { "port": { "type": "int" }, "count": { "type": "int" } } },
+  "@localEngineExternalServerConnected": {
+    "placeholders": {
+      "port": {
+        "type": "int"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "localEngineManagedModelSection": "OpenChat'in yönettiği modeller",
   "localEngineManagedServerModelSection": "OpenChat sunucusu · 127.0.0.1:{port}",
-  "@localEngineManagedServerModelSection": { "placeholders": { "port": { "type": "int" } } },
+  "@localEngineManagedServerModelSection": {
+    "placeholders": {
+      "port": {
+        "type": "int"
+      }
+    }
+  },
   "localEngineExternalModelSection": "Kullanıcı sunucusu · 127.0.0.1:{port}",
-  "@localEngineExternalModelSection": { "placeholders": { "port": { "type": "int" } } },
+  "@localEngineExternalModelSection": {
+    "placeholders": {
+      "port": {
+        "type": "int"
+      }
+    }
+  },
   "localEngineExternalServerDisconnect": "Bağlantıyı kes",
   "localEngineExternalServerNotFound": "Çalışan bir llama-server bulunamadı.",
   "localEngineExternalServerScanFailed": "Çalışan llama-server süreçleri denetlenemedi.",
@@ -184,7 +459,13 @@
   "localModelAddFolder": "Model klasörü ekle",
   "localModelStorageChoiceTitle": "Modelin konumunu seçin",
   "localModelStorageChoiceTarget": "Seçilen model klasörü: {folder}",
-  "@localModelStorageChoiceTarget": { "placeholders": { "folder": { "type": "String" } } },
+  "@localModelStorageChoiceTarget": {
+    "placeholders": {
+      "folder": {
+        "type": "String"
+      }
+    }
+  },
   "localModelDirectoryTitle": "Model klasörü",
   "localModelDirectoryDescription": "Bu motorun modellerinin kaydedileceği klasörü seçin. Bu ayar mevcut model kayıtlarını taşımaz.",
   "localModelChooseDirectory": "Klasör seç",
@@ -193,14 +474,35 @@
   "localModelScanningDirectory": "Klasör taranıyor...",
   "localModelDiscoveryTitle": "Kayıtsız modeller bulundu",
   "localModelDiscoveryPrompt": "{count, plural, =1{OpenChat bu klasörde kayıtlı olmayan 1 desteklenen model buldu. Kaydedilsin mi?} other{OpenChat bu klasörde kayıtlı olmayan {count} desteklenen model buldu. Kaydedilsin mi?}}",
-  "@localModelDiscoveryPrompt": { "placeholders": { "count": { "type": "int" } } },
+  "@localModelDiscoveryPrompt": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "localModelDiscoveryTruncated": "Tarama güvenli sınırına ulaştı. Daha fazla model bulmak için daha küçük bir klasör seçin.",
   "localModelDiscoveryEmpty": "Bu klasörde yeni ve desteklenen bir model bulunamadı.",
   "localModelDiscoveryRegisterAll": "Bulunan modelleri kaydet",
   "localModelDiscoveryRegistered": "{count, plural, =1{1 model kaydedildi.} other{{count} model kaydedildi.}}",
-  "@localModelDiscoveryRegistered": { "placeholders": { "count": { "type": "int" } } },
+  "@localModelDiscoveryRegistered": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "localModelDiscoveryPartial": "{total} modelden {registered} tanesi kaydedildi. Bazı modeller kaydedilemedi.",
-  "@localModelDiscoveryPartial": { "placeholders": { "registered": { "type": "int" }, "total": { "type": "int" } } },
+  "@localModelDiscoveryPartial": {
+    "placeholders": {
+      "registered": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "localModelDirectoryUnavailable": "Bu model klasörüne erişilemiyor. Var olan ve OpenChat'in erişebildiği bir klasör seçin.",
   "localModelDiscoveryFailed": "Model klasörü taranamadı. Erişim izinlerini kontrol edip yeniden deneyin.",
   "localModelMoveToFolder": "Modeli bu klasöre taşı",
@@ -230,7 +532,6 @@
   "localEngineStageDownloading": "İndiriliyor",
   "localEngineStageVerifying": "Doğrulanıyor",
   "localEngineStageExtracting": "Çıkartılıyor",
-  "localEngineStageRuntimeSetup": "Python çalışma zamanı hazırlanıyor",
   "localEngineStagePublishing": "Kurulum tamamlanıyor",
   "localEngineStageReady": "Hazır",
   "defaultModel": "Varsayılan",
@@ -269,6 +570,83 @@
   "connectedProvidersModels": "Bağlı sağlayıcı modelleri",
   "noConnectedProviders": "Henüz bağlı bir sağlayıcı yok. Bağlantılar sekmesinden hesap bağlayabilir veya API anahtarı ekleyebilirsiniz.",
   "sharedInstructions": "Ortak talimatlar",
+  "assistantProfiles": "Asistan profilleri",
+  "assistantProfilesDescription": "Bir profil seçerek yönergelerini ve yanıt tarzını yeni isteklere uygula. Profiller bu cihazda saklanır.",
+  "assistantProfilesEmpty": "Henüz asistan profili yok.",
+  "assistantProfileCreate": "Profil oluştur",
+  "assistantProfileDeactivate": "Profil kullanma",
+  "assistantProfileEdit": "Profili düzenle",
+  "assistantProfileRemoveTitle": "Asistan profili kaldırılsın mı?",
+  "assistantProfileRemove": "Kaldır",
+  "assistantProfileRemoveConfirmation": "“{profileName}” kaldırılsın mı? Yeni isteklerde artık kullanılmayacak.",
+  "@assistantProfileRemoveConfirmation": {
+    "placeholders": {
+      "profileName": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantProfileSaveFailed": "Asistan profili kaydedilemedi.",
+  "assistantProfilesLoadFailed": "Asistan profilleri yüklenemedi.",
+  "assistantProfileLoadFailed": "Etkin asistan profili yüklenemedi.",
+  "assistantProfilesLimitReached": "En fazla 20 asistan profili kaydedebilirsin.",
+  "assistantProfileName": "Ad",
+  "assistantProfileNameRequired": "Bu profil için bir ad gir.",
+  "assistantProfileNameTooLong": "Profil adı en fazla 64 karakter olabilir.",
+  "assistantProfileNameExists": "Bu adda bir profil zaten var.",
+  "assistantProfileInstructions": "Talimatlar",
+  "assistantProfileInstructionsHelp": "Bu profil etkinken yönergeleri normal sohbet isteklerine gönderilir. Geçici sohbetlerde asistan profilleri kullanılmaz.",
+  "assistantProfilePreferredModel": "Tercih edilen model",
+  "assistantProfilePreferredModelUnavailable": "Önce sohbette kullanılabilir bir model seç.",
+  "assistantProfilePreferredModelHelp": "Yeni sohbetlerde kullanılır. Projeye özel model tercihi önceliklidir.",
+  "assistantProfileRestrictTools": "Bu profilin araçlarını sınırla",
+  "assistantProfileRestrictToolsHelp": "Profile yalnızca seçilen araçlar sunulur. Uygulama ve proje izinleri bu araçları ayrıca kısıtlayabilir.",
+  "assistantProfileProjectTools": "Etkin projede kullanılabilenler",
+  "assistantProfileProjectTasks": "Adlandırılmış proje görevini çalıştır",
+  "assistantProfileMcpUnavailable": "Etkin MCP sunucularından bazılarına erişilemiyor; araçları yüklenemedi.",
+  "assistantProfileLoadMcpTools": "MCP araçlarını yükle",
+  "assistantProfileLoadingMcpTools": "MCP sunucularına bağlanılıyor…",
+  "assistantProfileAllowedToolCount": "Araç sınırı: {count}",
+  "@assistantProfileAllowedToolCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "assistantProfileToolAccessUsesAppPermissions": "Uygulama ve proje izinleri",
+  "assistantProfileToolAccessInheritsAppPermissions": "Bu profilde araç sınırı yok. Kullanılabilecek araçları uygulama ve proje izinleri belirler.",
+  "assistantProfileToolAccessDisabled": "Araçlar kapalı",
+  "assistantProfileToolAccessDisabledHelp": "Bu profil tüm araçları devre dışı bırakır.",
+  "assistantToolGroupWebResearch": "Web'de ara ve sayfa oku",
+  "assistantToolGroupWorkspaceRead": "Çalışma alanı dosyalarını oku ve ara",
+  "assistantToolGroupWorkspaceWrite": "Çalışma alanında dosya oluştur ve düzenle",
+  "assistantToolGroupTerminal": "Terminal komutları çalıştır",
+  "assistantToolGroupGitRead": "Git durumunu ve geçmişini incele",
+  "assistantToolGroupImageGeneration": "Görsel oluştur",
+  "assistantToolGroupAskUser": "Kullanıcıya soru sor",
+  "assistantToolGroupDelegateTask": "Sınırlı bir görevi devret",
+  "assistantToolGroupGoalControls": "Kalıcı hedefleri yönet",
+  "assistantResponseStyle": "Yanıt tarzı",
+  "assistantResponseStyleConcise": "Kısa",
+  "assistantResponseStyleBalanced": "Dengeli",
+  "assistantResponseStyleDetailed": "Ayrıntılı",
+  "assistantProfileStyle": "Tarz: {style}",
+  "@assistantProfileStyle": {
+    "placeholders": {
+      "style": {
+        "type": "String"
+      }
+    }
+  },
+  "assistantProfileActive": "Asistan profili: {profileName}",
+  "@assistantProfileActive": {
+    "placeholders": {
+      "profileName": {
+        "type": "String"
+      }
+    }
+  },
   "sharedInstructionsDescription": "Bu talimatlar bağlı olan tüm sağlayıcılara her sohbette gönderilir. Dosya araçlarının erişimi Araç erişimi ayarına uyar.",
   "restoreDefaults": "Varsayılanları geri yükle",
   "sharedInstructionsRestored": "Varsayılan talimatlar geri yüklendi.",
@@ -295,8 +673,6 @@
   "deepInfraProvider": "DeepInfra",
   "dashScopeProvider": "DashScope (Qwen)",
   "cohereProvider": "Cohere",
-  "ollamaProvider": "Ollama",
-  "lmStudioProvider": "LM Studio",
   "geminiApiDescription": "Destekleyen modellerle metin, görsel, ses ve video girdilerini işle.",
   "groqApiDescription": "Açık modelleri Groq altyapısında düşük gecikmeyle çalıştır.",
   "cerebrasApiDescription": "Büyük dil modellerini Cerebras Inference altyapısında çalıştır.",
@@ -312,16 +688,29 @@
   "deepInfraApiDescription": "DeepInfra'nın barındırdığı açık modelleri sohbet API'siyle kullan.",
   "dashScopeApiDescription": "Qwen ve diğer desteklenen modelleri Alibaba Cloud Model Studio üzerinden kullan.",
   "cohereApiDescription": "Cohere modellerini sohbet ve araç çağrısı API'siyle kullan.",
-  "ollamaApiDescription": "Ollama'da çalışan yerel modelleri OpenAI uyumlu API ile kullan.",
-  "lmStudioApiDescription": "LM Studio'da yüklenen yerel modellere OpenAI uyumlu API ile bağlan.",
   "geminiUnpaidDataNotice": "Gemini API'nin ücretsiz katmanında gönderdiğin içerikler Google ürünlerini geliştirmek için kullanılabilir. Hassas içerik göndermeden önce Google'ın veri kullanım koşullarını incele.",
   "providerApiKey": "API anahtarı",
   "providerKeySaved": "API anahtarı bu cihazda güvenli şekilde kayıtlı.",
   "providerKeySavedSuffix": "Sonu ••••{suffix} olan API anahtarı bu cihazda güvenli şekilde kayıtlı.",
-  "@providerKeySavedSuffix": { "placeholders": { "suffix": {} } },
+  "@providerKeySavedSuffix": {
+    "placeholders": {
+      "suffix": {}
+    }
+  },
   "providerNoKey": "API anahtarı bağlı değil.",
   "providerKeyInvalid": "Bu sağlayıcı için geçerli bir API anahtarı gir. Boşluk kullanma; anahtar en fazla 4096 karakter olabilir.",
   "providerKeyStorageFailed": "API anahtarı güvenli şekilde okunamadı veya kaydedilemedi.",
+  "verifyProviderConnection": "Bağlantıyı doğrula",
+  "providerConnectionNotVerified": "Bağlantı henüz doğrulanmadı.",
+  "verifyingProviderConnection": "Sağlayıcı bağlantısı denetleniyor…",
+  "providerConnectionVerified": "Bağlantı doğrulandı; model kataloğuna erişilebiliyor.",
+  "providerVerificationStaleCatalog": "Yalnızca önbellekteki modeller alındı; sağlayıcı bağlantısı doğrulanamadı. Yeniden deneyin.",
+  "providerModelCatalogEmpty": "Sağlayıcı isteği kabul etti ancak model döndürmedi.",
+  "providerVerificationAuthenticationFailed": "Sağlayıcı bu anahtarı kabul etmedi. Anahtarı kontrol edip yeniden deneyin.",
+  "providerVerificationRateLimited": "Sağlayıcının istek sınırı doğrulamayı engelledi. Daha sonra yeniden deneyin.",
+  "providerVerificationNetworkFailed": "Sağlayıcıya ulaşılamadı. Ağ bağlantınızı kontrol edip yeniden deneyin.",
+  "providerConnectionVerificationFailed": "Bağlantı doğrulanamadı. Yeniden deneyin veya sağlayıcı ayarlarını kontrol edin.",
+  "providerQuotaUnavailable": "OpenChat şu anda bu sağlayıcının kota bilgisini göstermiyor.",
   "favoriteModels": "Favoriler",
   "favoriteModelsEmpty": "Henüz favori model yok.",
   "modelSearchHint": "Model ara...",
@@ -338,7 +727,11 @@
   "openCodeConsole": "OpenCode Console",
   "openCodeConsoleDescription": "Kodlama ajanları için test edilmiş modelleri OpenCode Zen üzerinden kullan.",
   "openCodeKeySaved": "Sonu ••••{suffix} olan Console API anahtarı bu cihazda güvenli şekilde kayıtlı.",
-  "@openCodeKeySaved": { "placeholders": { "suffix": {} } },
+  "@openCodeKeySaved": {
+    "placeholders": {
+      "suffix": {}
+    }
+  },
   "openCodeNoKey": "Console API anahtarı yok. Ücretsiz modeller kullanılabilir.",
   "openCodeApiKey": "OpenCode Console API anahtarı",
   "openCodeKeyInvalid": "Boşluk veya satır sonu içermeyen, boş olmayan bir API anahtarı girin (en fazla 4096 karakter).",
@@ -350,7 +743,13 @@
   "openCodeFreeModels": "Ücretsiz modeller",
   "openCodeApiModels": "API modelleri",
   "modelContextWindow": "Bağlam penceresi · {value} token",
-  "@modelContextWindow": { "placeholders": { "value": { "type": "String" } } },
+  "@modelContextWindow": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
   "modelDetailsProvider": "Sağlayıcı",
   "modelDetailsContext": "Bağlam penceresi",
   "modelDetailsMaximumOutput": "En fazla çıktı",
@@ -371,14 +770,41 @@
   "modelDetailsPricingStale": "Önbellekteki fiyatlar gösteriliyor; models.dev şu anda kullanılamıyor.",
   "modelDetailsPricingUnavailable": "Bu model için eşleşen bir fiyat bulunamadı.",
   "modelDetailsPerMillion": "1 milyon token başına {value}",
-  "@modelDetailsPerMillion": { "placeholders": { "value": { "type": "String" } } },
+  "@modelDetailsPerMillion": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
   "modelDetailsTier": "Bağlam katmanı · {context}",
-  "@modelDetailsTier": { "placeholders": { "context": { "type": "String" } } },
+  "@modelDetailsTier": {
+    "placeholders": {
+      "context": {
+        "type": "String"
+      }
+    }
+  },
   "modelDetailsInputOutputPrices": "Girdi {input} · çıktı {output}",
-  "@modelDetailsInputOutputPrices": { "placeholders": { "input": { "type": "String" }, "output": { "type": "String" } } },
+  "@modelDetailsInputOutputPrices": {
+    "placeholders": {
+      "input": {
+        "type": "String"
+      },
+      "output": {
+        "type": "String"
+      }
+    }
+  },
   "modelDetailsPricingSource": "models.dev USD liste fiyatıdır, sağlayıcı faturası değildir.",
   "openCodeModelContextWindow": "OpenCode kataloğu (Models.dev) · bağlam: {value} token",
-  "@openCodeModelContextWindow": { "placeholders": { "value": { "type": "String" } } },
+  "@openCodeModelContextWindow": {
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
   "add": "Ekle",
   "edit": "Düzenle",
   "exportConversation": "Sohbeti dışa aktar",
@@ -394,7 +820,13 @@
   "conversationRestoreFailed": "Sohbet arşivden çıkarılamadı. Tekrar dene.",
   "confirmDeleteConversationTitle": "Sohbet silinsin mi?",
   "confirmDeleteConversation": "“{title}” sohbeti ve içindeki tüm mesajlar bu cihazdan silinecek. Bu işlem geri alınamaz.",
-  "@confirmDeleteConversation": { "placeholders": { "title": { "type": "String" } } },
+  "@confirmDeleteConversation": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "stopResponseBeforeDelete": "Silmeden önce devam eden yanıtı durdur.",
   "conversationDeleted": "Sohbet silindi.",
   "conversationDeletedFileChangesCleanupFailed": "Sohbet silindi ancak dosya değişikliği yedekleri temizlenemedi.",
@@ -456,15 +888,18 @@
   "responseVersionCount": "Yanıt {current} / {total}",
   "@responseVersionCount": {
     "placeholders": {
-      "current": { "type": "int" },
-      "total": { "type": "int" }
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
     }
   },
   "previousResponseVersion": "Önceki yanıt",
   "nextResponseVersion": "Sonraki yanıt",
   "providerRateLimited": "Sağlayıcı bir kullanım sınırı bildirdi. Daha sonra tekrar dene.",
   "providerAuthenticationRequired": "Sağlayıcı isteği reddetti. Bağlantıyı ve model erişimini kontrol et.",
-  "providerRequestFailed": "Sağlayıcı yanıtı tamamlayamadı. Kayıtlı mesajların kullanılabilir durumda.",
   "providerToolRequestRejected": "Sağlayıcı, araç içeren isteği reddetti. Modelin araç desteğini kontrol et veya araç kullanabildiği belirtilen bir model seç.",
   "providerNetworkUnavailable": "Sağlayıcıya ulaşılamadı. Bağlantını kontrol edip yeniden dene.",
   "contextWindowExceeded": "Sohbet bu modelin bağlam sınırı için fazla büyük. Son mesajı kısalt veya daha geniş bağlamlı bir model seç. Sohbet geçmişin kayıtlı.",
@@ -481,7 +916,9 @@
   "savedApiKeyWithSuffix": "Sonu ••••{suffix} olan anahtar",
   "@savedApiKeyWithSuffix": {
     "placeholders": {
-      "suffix": { "type": "String" }
+      "suffix": {
+        "type": "String"
+      }
     }
   },
   "showApiKey": "API anahtarını göster",
@@ -500,14 +937,26 @@
   "removeChatGptConnection": "ChatGPT bağlantısını kaldır",
   "removeConnectionAction": "Kaldır",
   "confirmRemoveConnection": "{name} ve kayıtlı kimlik bilgileri kaldırılsın mı? Sohbetlerin ve mesajların bu cihazda kalacak.",
-  "@confirmRemoveConnection": { "placeholders": { "name": { "type": "String" } } },
+  "@confirmRemoveConnection": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "connectionRemoveSucceeded": "Bağlantı kaldırıldı. Sohbetlerin ve mesajların kullanılabilir durumda.",
   "connectionRemoveFailed": "Bağlantı kaldırılamadı. Tekrar dene.",
   "workspaceSelectionFailed": "ChatGPT çalışma alanı seçilemedi.",
   "chatGptAccount": "ChatGPT hesabı",
   "planUnavailable": "Plan bilgisi yok",
   "accountPlan": "Plan: {plan}",
-  "@accountPlan": { "placeholders": { "plan": { "type": "String" } } },
+  "@accountPlan": {
+    "placeholders": {
+      "plan": {
+        "type": "String"
+      }
+    }
+  },
   "connectionNeedsSignIn": "Bu hesabı kullanmak için yeniden oturum aç.",
   "connectionSelected": "Seçili",
   "useConnection": "Hesabı kullan",
@@ -517,31 +966,79 @@
   "workspaceUnavailable": "ChatGPT hesap çalışma alanı bilgisi yok.",
   "accountEmailUnavailable": "E-posta bilgisi alınamadı",
   "accountUsage": "Kullanım · {plan}",
-  "@accountUsage": { "placeholders": { "plan": { "type": "String" } } },
+  "@accountUsage": {
+    "placeholders": {
+      "plan": {
+        "type": "String"
+      }
+    }
+  },
   "refreshUsage": "Kullanımı yenile",
   "ordinaryUsageAvailable": "Normal kullanım kullanılabilir.",
   "ordinaryUsageUnavailable": "Normal kullanım şu anda kullanılamıyor.",
   "ordinaryUsageUnknown": "Kullanılabilirlik belirlenemedi.",
   "usageUpdatedAt": "Güncelleme: {time}",
-  "@usageUpdatedAt": { "placeholders": { "time": { "type": "String" } } },
+  "@usageUpdatedAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "usageLoadFailed": "Kullanım bilgisi yüklenemedi.",
   "usageFiveHour": "5 Saatlik",
   "usageWeekly": "Haftalık",
   "usageMonthly": "Aylık",
   "workspaceNumbered": "ChatGPT hesap çalışma alanı {number}",
-  "@workspaceNumbered": { "placeholders": { "number": { "type": "int" } } },
+  "@workspaceNumbered": {
+    "placeholders": {
+      "number": {
+        "type": "int"
+      }
+    }
+  },
   "quotaResetsAt": "Sıfırlanma: {time}",
-  "@quotaResetsAt": { "placeholders": { "time": { "type": "String" } } },
+  "@quotaResetsAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "creditExpiresAt": "Son kullanma: {time}",
-  "@creditExpiresAt": { "placeholders": { "time": { "type": "String" } } },
+  "@creditExpiresAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "creditGrantedAt": "Tanımlanma: {time}",
-  "@creditGrantedAt": { "placeholders": { "time": { "type": "String" } } },
+  "@creditGrantedAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "noResetCredits": "Kullanılabilir sıfırlama hakkı yok.",
   "usageUsedPercent": "%{percent} kullanıldı",
-  "@usageUsedPercent": { "placeholders": { "percent": { "type": "String" } } },
+  "@usageUsedPercent": {
+    "placeholders": {
+      "percent": {
+        "type": "String"
+      }
+    }
+  },
   "resetCreditCountUnavailable": "Sıfırlama hakkı sayısı alınamadı.",
   "resetCreditsAvailable": "Kullanılabilir sıfırlama hakkı: {count}",
-  "@resetCreditsAvailable": { "placeholders": { "count": { "type": "int" } } },
+  "@resetCreditsAvailable": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "resetCredit": "Sıfırlama hakkı",
   "statusUnavailable": "Durum bilgisi yok",
   "resetCreditDetailsUnavailable": "Sıfırlama hakkı ayrıntıları döndürülmedi.",
@@ -573,7 +1070,13 @@
   "titleSelectModelHint": "Bağlı bir sağlayıcı veya yerel model seç",
   "titleLightweightUnavailable": "Parametre sayısı model adında açıkça belirtilen kullanılabilir bir model bulunamadı. Modeli kendin seçebilirsin.",
   "titleLightweightModelSelected": "OpenChat, parametre sayısı bilinen en küçük model olarak {model} modelini seçti.",
-  "@titleLightweightModelSelected": { "placeholders": { "model": { "type": "String" } } },
+  "@titleLightweightModelSelected": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
   "titleUseConversationAccount": "Sohbet hesabını kullan",
   "titleAccountUnavailable": "Seçili başlık hesabı kullanılamıyor",
   "titleWorkspaceHint": "Başlıklar için çalışma alanı seç",
@@ -607,6 +1110,20 @@
   "systemTheme": "Sistem",
   "lightTheme": "Açık",
   "darkTheme": "Koyu",
+  "attachmentIndexTitle": "Metin eklerinde ara",
+  "attachmentIndexDescription": "Desteklenen metin dosyaları en fazla 5.000 dosya veya 100 MB olacak şekilde yerel arama dizinine kopyalanır. Kaynak dosyalar değişmez; görseller dizine eklenmez.",
+  "attachmentIndexSupportedTypes": "Dizine eklenen türler: .txt, .md, .csv, .json, .jsonl, .xml, .html, .css, .js, .jsx, .ts, .tsx, .dart, .rs, .py, .go, .java, .kt, .swift, .c, .h, .cpp, .hpp, .cs, .sh, .ps1, .yaml, .yml, .toml, .ini, .sql, .log",
+  "attachmentIndexCount": "Dizinde {count} dosya var",
+  "@attachmentIndexCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "attachmentIndexRebuild": "Dizini yeniden oluştur",
+  "attachmentIndexClear": "Dizini temizle",
+  "attachmentIndexFailed": "Ek metin dizini güncellenemedi.",
   "localData": "Yerel veriler",
   "conversationArchiveTitle": "Sohbet arşivleri",
   "conversationArchiveDescription": "Bu cihazdaki seçili sohbetleri şifreli arşiv olarak dışa aktarın veya geri yükleyin.",
@@ -618,7 +1135,13 @@
   "conversationArchiveSelectTitle": "Dışa aktarılacak sohbetleri seç",
   "conversationArchiveSearch": "Sohbetlerde ara",
   "conversationArchiveSelectedCount": "{count, plural, =0{Sohbet seçilmedi} one{# sohbet seçildi} other{# sohbet seçildi}}",
-  "@conversationArchiveSelectedCount": {"placeholders": {"count": {"type": "int"}}},
+  "@conversationArchiveSelectedCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "conversationArchiveSelectAll": "Görünenlerin tümünü seç",
   "conversationArchiveDeselectAll": "Görünenlerin seçimini kaldır",
   "conversationArchiveNoMatches": "Eşleşen sohbet yok.",
@@ -632,9 +1155,21 @@
   "conversationArchiveChooseFolder": "Şifreli arşivin kaydedileceği klasörü seçin",
   "conversationArchiveChooseFile": "Bir OpenChat sohbet arşivi seçin",
   "conversationArchiveExportSuccess": "{count, plural, one{# sohbet için şifreli arşiv oluşturuldu.} other{# sohbet için şifreli arşiv oluşturuldu.}}",
-  "@conversationArchiveExportSuccess": {"placeholders": {"count": {"type": "int"}}},
+  "@conversationArchiveExportSuccess": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "conversationArchiveImportSuccess": "{count, plural, =0{Sohbet içe aktarılmadı.} one{# sohbet içe aktarıldı.} other{# sohbet içe aktarıldı.}}",
-  "@conversationArchiveImportSuccess": {"placeholders": {"count": {"type": "int"}}},
+  "@conversationArchiveImportSuccess": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "conversationArchivePickerFailed": "Dosya veya klasör seçici açılamadı.",
   "conversationArchiveInvalidFile": "Seçilen arşiv dosyası için geçerli bir yol alınamadı.",
   "conversationArchiveInvalidResponse": "Arşiv servisi geçersiz veri döndürdü.",
@@ -649,13 +1184,37 @@
   "profileArchiveChooseFolder": "Şifreli yedeğin kaydedileceği klasörü seçin",
   "profileArchiveChooseFile": "Bir OpenChat uygulama verisi yedeği seçin",
   "profileArchiveExportSuccess": "Şifreli yedek oluşturuldu: {conversationCount} sohbet, {messageCount} mesaj, {attachmentCount} ek.",
-  "@profileArchiveExportSuccess": {"placeholders": {"conversationCount": {"type": "String"}, "messageCount": {"type": "String"}, "attachmentCount": {"type": "String"}}},
+  "@profileArchiveExportSuccess": {
+    "placeholders": {
+      "conversationCount": {
+        "type": "String"
+      },
+      "messageCount": {
+        "type": "String"
+      },
+      "attachmentCount": {
+        "type": "String"
+      }
+    }
+  },
   "profileArchiveRestoreConfirmTitle": "Uygulama verileri değiştirilsin mi?",
   "profileArchiveRestoreConfirmBody": "Seçilen yedek, OpenChat bir sonraki açıldığında sohbet veritabanını ve bu sohbetlerde kullanılan ekleri değiştirir. Mevcut veritabanı ve ekler kurtarma klasöründe saklanır. Sağlayıcı kimlik bilgileri, genel tercihler, model ve motor dosyaları yedekte bulunmaz.",
   "profileArchiveRestoreConfirmButton": "Geri yükle ve OpenChat'i kapat",
   "profileArchiveRestartTitle": "Yedeği uygulamak için OpenChat'i kapatın",
   "profileArchiveRestoreReady": "Yedek {conversationCount} sohbet, {messageCount} mesaj ve {attachmentCount} ek içeriyor. OpenChat'i şimdi kapatın. Geri yüklenen veriler açılışta doğrulanacak; mevcut profiliniz kurtarma için saklanacak.",
-  "@profileArchiveRestoreReady": {"placeholders": {"conversationCount": {"type": "int"}, "messageCount": {"type": "int"}, "attachmentCount": {"type": "int"}}},
+  "@profileArchiveRestoreReady": {
+    "placeholders": {
+      "conversationCount": {
+        "type": "int"
+      },
+      "messageCount": {
+        "type": "int"
+      },
+      "attachmentCount": {
+        "type": "int"
+      }
+    }
+  },
   "profileArchiveCloseApp": "OpenChat'i kapat",
   "profileArchiveCloseFailed": "Yedek uygulanamadı. OpenChat'i kapatmak için pencereyi kapatın.",
   "profileArchiveProcessing": "Profil yedeği şifreleniyor veya doğrulanıyor. Büyük yedekler birkaç dakika sürebilir.",
@@ -718,8 +1277,14 @@
   "clearHistorySucceeded": "Sohbet geçmişi silindi.",
   "clearHistoryFailed": "Sohbet geçmişi silinemedi. Lütfen tekrar deneyin.",
   "themeSaveFailed": "Tema tercihi kaydedilemedi. Lütfen tekrar deneyin.",
-  "searchChats": "Sohbetlerde ara",
-  "searchChatsHint": "Sohbet ve mesajlarda ara",
+  "searchChats": "OpenChat'te ara",
+  "searchChatsHint": "Sohbet, proje, çalışma alanı, kayıtlı yanıt ve dosya adlarında ara",
+  "searchFilterAll": "Tümü",
+  "searchFilterChats": "Sohbetler",
+  "searchFilterProjects": "Projeler",
+  "searchFilterWorkspaces": "Çalışma alanları",
+  "searchFilterSavedResponses": "Kaydedilen yanıtlar",
+  "searchFilterAttachments": "Ekler",
   "searchMessagesTooltip": "Mesajları ara",
   "historySearchDateFilter": "Tarihe göre filtrele",
   "historySearchDateFilterApplied": "Tarih filtresi etkin",
@@ -752,9 +1317,21 @@
   "conversationBookmarkFailed": "Sohbet yer imi güncellenemedi.",
   "conversationBookmarked": "Yer imlerinde",
   "selectConversation": "{title} sohbetini seç",
-  "@selectConversation": {"placeholders": {"title": {"type": "String"}}},
+  "@selectConversation": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
   "conversationsSelected": "{count, plural, =0{Sohbet seçilmedi} one{# sohbet seçildi} other{# sohbet seçildi}}",
-  "@conversationsSelected": {"placeholders": {"count": {"type": "int"}}},
+  "@conversationsSelected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "historySearchAllTags": "Tüm etiketler",
   "historySearchAllStatuses": "Tüm sohbetler",
   "historySearchActiveConversations": "Etkin sohbetler",
@@ -766,7 +1343,7 @@
   "historySearchClearDateFilter": "Tarih filtresini temizle",
   "searchMessagesHeader": "Mesaj eşleşmeleri",
   "searchMessagesLoading": "Mesajlar ve sohbetler aranıyor…",
-  "searchMessagesNoResults": "Eşleşen mesaj veya sohbet yok.",
+  "searchMessagesNoResults": "Eşleşen öğe bulunamadı.",
   "searchMessagesTooShort": "Arama için en az iki karakter girin.",
   "searchMessagesTooLong": "Arama metni en fazla 512 karakter olabilir.",
   "searchMessagesFailed": "Arama yapılamadı. Yeniden deneyin.",
@@ -795,6 +1372,23 @@
   "projectOptions": "Proje seçenekleri",
   "projectToolRulesTitle": "Proje araç izinleri",
   "projectToolRulesDescription": "Her araç için bir kural seçin. Kural belirlenmeyen araçlar genel izin ayarını kullanır. İzin verme, dosya kapsamı ve işlem yalıtımı sınırlarına uymaya devam eder.",
+  "projectToolRulesSummaryLoading": "Bu projenin araç izin kuralları yükleniyor.",
+  "projectToolRulesSummaryUnavailable": "Bu projenin araç izin özeti yüklenemedi.",
+  "projectToolRulesSummaryInherit": "Bu projede özel kural yok. Tüm araçlar genel izin ayarını kullanıyor.",
+  "projectToolRulesSummary": "Proje kuralları: {allowed} izinli, {approval} onay gerektiriyor, {denied} engelli. Kuralı olmayan araçlar genel ayarı kullanıyor.",
+  "@projectToolRulesSummary": {
+    "placeholders": {
+      "allowed": {
+        "type": "int"
+      },
+      "approval": {
+        "type": "int"
+      },
+      "denied": {
+        "type": "int"
+      }
+    }
+  },
   "projectToolRuleInherit": "Genel ayarı kullan",
   "projectToolRuleAsk": "Onay iste",
   "projectToolRuleAllow": "İzin ver",
@@ -808,7 +1402,13 @@
   "projectDefaultModelSelectFirst": "Proje varsayılanını ayarlamadan önce bir model seçin.",
   "projectDefaultModelSaveFailed": "Proje model varsayılanı kaydedilemedi.",
   "projectDefaultModelSaved": "Projenin varsayılan modeli {model} olarak ayarlandı.",
-  "@projectDefaultModelSaved": {"placeholders": {"model": {"type": "String"}}},
+  "@projectDefaultModelSaved": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
   "projectDefaultModelCleared": "Proje model varsayılanı temizlendi.",
   "projectOptionsToolPermissions": "Araç izinleri",
   "projectOptionsMcpServers": "MCP sunucuları",
@@ -831,7 +1431,13 @@
   "projectIndexActionFailed": "Proje dizini işlemi başarısız oldu.",
   "projectIndexStale": "Proje dizini tamamlanamadı. Proje seçeneklerinden eşitleyin veya dizini kapatın.",
   "projectIndexStatus": "Durum: {status}. Dosyalar: {files}. Dizinlenen bayt: {bytes}.",
-  "@projectIndexStatus": { "placeholders": { "status": {}, "files": {}, "bytes": {} } },
+  "@projectIndexStatus": {
+    "placeholders": {
+      "status": {},
+      "files": {},
+      "bytes": {}
+    }
+  },
   "projectSkillsTitle": "Proje Skills'leri",
   "projectSkillsDescription": "Proje Skills'lerini .openchat/skills/<kimlik>/SKILL.md konumundan seçin. Seçilen içerik yeni yanıtlara eklenir. Seçim bu proje için yerel olarak saklanır.",
   "projectSkillsEmpty": "Skill bulunamadı. .openchat/skills/<kimlik>/ altında bir SKILL.md dosyası ekleyin.",
@@ -839,7 +1445,16 @@
   "projectSkillsSaveFailed": "Proje Skill seçimi kaydedilemedi.",
   "projectSkillsClearSelection": "Seçimi temizle",
   "projectSkillsStale": "Seçili Skill artık bulunamıyor. Kaydedilmiş seçimi temizlemek için işaretini kaldırın.",
-  "@projectInstructionsSize": { "placeholders": { "bytes": { "type": "int" }, "maxBytes": { "type": "int" } } },
+  "@projectInstructionsSize": {
+    "placeholders": {
+      "bytes": {
+        "type": "int"
+      },
+      "maxBytes": {
+        "type": "int"
+      }
+    }
+  },
   "projectMcpTitle": "Proje MCP sunucuları",
   "projectMcpDescription": "Bu proje için yerel stdio MCP sunucularını yapılandırın. Etkin sunucular yalnızca araç destekli bir sohbet araçlarını istediğinde başlatılır.",
   "projectMcpPermissionsLocal": "İzin seçimleri bu proje için yerel olarak saklanır ve depoya yazılmaz.",
@@ -857,7 +1472,13 @@
   "projectMcpCheck": "Bağlantıyı denetle",
   "projectMcpChecking": "Bağlantı denetleniyor…",
   "projectMcpConnected": "Bağlandı; {count} araç bulundu",
-  "@projectMcpConnected": { "placeholders": { "count": { "type": "int" } } },
+  "@projectMcpConnected": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "projectMcpCheckFailed": "Sunucu başlatılamadı veya araç listesini vermedi.",
   "projectMcpLoadFailed": "Proje MCP kataloğu yüklenemedi. `.openchat/mcp.json` dosyasındaki geçersiz veya güvenli olmayan kayıtları kontrol edin.",
   "projectMcpSaveFailed": "MCP kataloğu kaydedilemedi. Sunucu kimliklerini ve programların mutlak yollarını kontrol edin.",
@@ -896,18 +1517,42 @@
   "projectWorktreeOperationFailed": "Git işlemi başarısız oldu. Depo durumunu kontrol edip yeniden deneyin.",
   "projectWorktreeNotRepository": "Bu proje klasörü bir Git deposunun içinde değil.",
   "projectWorktreeBranch": "Dal: {branch}",
-  "@projectWorktreeBranch": { "placeholders": { "branch": { "type": "String" } } },
+  "@projectWorktreeBranch": {
+    "placeholders": {
+      "branch": {
+        "type": "String"
+      }
+    }
+  },
   "projectWorktreePath": "Klasör: {path}",
-  "@projectWorktreePath": { "placeholders": { "path": { "type": "String" } } },
+  "@projectWorktreePath": {
+    "placeholders": {
+      "path": {
+        "type": "String"
+      }
+    }
+  },
   "projectWorktreeStatusClean": "Kaydedilmemiş değişiklik yok",
   "projectWorktreeStatusChanges": "Değişen dosya: {count}",
-  "@projectWorktreeStatusChanges": { "placeholders": { "count": { "type": "int" } } },
+  "@projectWorktreeStatusChanges": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "projectWorktreeReview": "Değişiklikleri incele",
   "projectWorktreeUse": "Proje olarak kullan",
   "projectWorktreeRemove": "Worktree'yi kaldır",
   "projectWorktreeRemoveTitle": "Worktree kaldırılsın mı?",
   "projectWorktreeRemoveDescription": "{branch} dalındaki kaydedilmemiş ve izlenmeyen dosyalar silinir. Dal ve commit'leri korunur.",
-  "@projectWorktreeRemoveDescription": { "placeholders": { "branch": { "type": "String" } } },
+  "@projectWorktreeRemoveDescription": {
+    "placeholders": {
+      "branch": {
+        "type": "String"
+      }
+    }
+  },
   "projectWorktreeReviewTitle": "Worktree değişiklikleri",
   "projectWorktreeNoChanges": "Kaydedilmemiş değişiklik yok. Commit edilmiş değişiklikler bu dalda kalır.",
   "projectWorktreeStagedDiff": "Hazırlanmış değişiklikler",
@@ -921,21 +1566,45 @@
   "projectWorktreeTaskConfirmationTitle": "Bu kontrol çalıştırılsın mı?",
   "projectWorktreeTaskCommand": "Komut",
   "projectWorktreeTaskTimeout": "Süre sınırı: {seconds} saniye",
-  "@projectWorktreeTaskTimeout": { "placeholders": { "seconds": { "type": "int" } } },
+  "@projectWorktreeTaskTimeout": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
   "projectWorktreeTaskRun": "Kontrolü çalıştır",
   "projectWorktreeTaskRunning": "Kontrol çalışıyor: {task}",
-  "@projectWorktreeTaskRunning": { "placeholders": { "task": { "type": "String" } } },
+  "@projectWorktreeTaskRunning": {
+    "placeholders": {
+      "task": {
+        "type": "String"
+      }
+    }
+  },
   "projectWorktreeTaskStopping": "Kontrol durduruluyor…",
   "projectWorktreeTaskStop": "Kontrolü durdur",
   "projectWorktreeTaskCancelled": "Kontrol iptal edildi.",
   "projectWorktreeTaskTimedOut": "Kontrol süre sınırına ulaştı.",
   "projectWorktreeTaskExitCode": "Kontrol {code} çıkış koduyla tamamlandı.",
-  "@projectWorktreeTaskExitCode": { "placeholders": { "code": { "type": "int" } } },
+  "@projectWorktreeTaskExitCode": {
+    "placeholders": {
+      "code": {
+        "type": "int"
+      }
+    }
+  },
   "projectWorktreeTaskExitCodeUnavailable": "Kontrol bir çıkış kodu bildirmeden tamamlandı.",
   "projectWorktreeTaskOutputTruncated": "Çıktı ilk 128 KiB ile sınırlandırıldı.",
   "projectWorktreeTaskRunFailed": "Kontrol worktree yalıtım alanında çalıştırılamadı.",
   "projectWorktreeTaskResultTitle": "Kontrol sonucu: {task}",
-  "@projectWorktreeTaskResultTitle": { "placeholders": { "task": { "type": "String" } } },
+  "@projectWorktreeTaskResultTitle": {
+    "placeholders": {
+      "task": {
+        "type": "String"
+      }
+    }
+  },
   "projectWorktreeTaskOutput": "Çıktı",
   "projectWorktreeTaskNoOutput": "Kontrol çıktı üretmedi.",
   "projectWorktreeTaskDenied": "Proje izinleri adlandırılmış kontrolleri çalıştırmayı engelliyor.",
@@ -955,11 +1624,23 @@
   "agentRunStatusCancelled": "İptal edildi",
   "agentRunSubagent": "Alt görev",
   "agentRunSubagentTask": "Alt görev: {objective}",
-  "@agentRunSubagentTask": {"placeholders": {"objective": {"type": "String"}}},
+  "@agentRunSubagentTask": {
+    "placeholders": {
+      "objective": {
+        "type": "String"
+      }
+    }
+  },
   "agentRunLiveStarting": "Devredilen analiz başlatılıyor…",
   "agentRunLiveThinking": "Devredilen görev analiz ediliyor…",
   "agentRunLiveUsingTool": "{tool} kullanılıyor",
-  "@agentRunLiveUsingTool": {"placeholders": {"tool": {"type": "String"}}},
+  "@agentRunLiveUsingTool": {
+    "placeholders": {
+      "tool": {
+        "type": "String"
+      }
+    }
+  },
   "agentRunEndedInAnotherChat": "Başka bir sohbetteki çalışma sona erdi.",
   "newProjectConversation": "Projede yeni sohbet başlat",
   "newConversation": "Yeni bir sohbet başlat",
@@ -969,7 +1650,9 @@
   "conversationMemoryCurrentConversation": "Seçili sohbet: {title}",
   "@conversationMemoryCurrentConversation": {
     "placeholders": {
-      "title": { "type": "String" }
+      "title": {
+        "type": "String"
+      }
     }
   },
   "conversationMemoryNoConversation": "Belleği incelemek için önce bir sohbet aç.",
@@ -977,120 +1660,186 @@
   "contextUsageUsed": "Kullanım: yaklaşık {count} token",
   "@contextUsageUsed": {
     "placeholders": {
-      "count": { "type": "String" }
+      "count": {
+        "type": "String"
+      }
     }
   },
   "contextUsageSummary": "Yaklaşık {used} / {limit} token ({percent})",
   "@contextUsageSummary": {
     "placeholders": {
-      "used": { "type": "String" },
-      "limit": { "type": "String" },
-      "percent": { "type": "String" }
+      "used": {
+        "type": "String"
+      },
+      "limit": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageModelLimit": "{count} token",
   "@contextUsageModelLimit": {
     "placeholders": {
-      "count": { "type": "String" }
+      "count": {
+        "type": "String"
+      }
     }
   },
   "contextUsageNoModelLimit": "Model sınırı bilinmiyor.",
   "contextUsageProviderMeasurement": "Son sağlayıcı ölçümü: {count} token",
   "@contextUsageProviderMeasurement": {
     "placeholders": {
-      "count": { "type": "String" }
+      "count": {
+        "type": "String"
+      }
     }
   },
   "contextUsageInstructionsEstimate": "Talimatlar: {count} token · {percent}",
   "@contextUsageInstructionsEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageToolDefinitionsEstimate": "Araç tanımları: {count} token · {percent}",
   "@contextUsageToolDefinitionsEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageMessagesEstimate": "Mesajlar: {count} token · {percent}",
   "@contextUsageMessagesEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageAttachmentsEstimate": "Ek dosyalar: {count} token · {percent}",
   "@contextUsageAttachmentsEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageAttachmentEstimate": "{name}: {count} token · {percent}",
   "@contextUsageAttachmentEstimate": {
     "placeholders": {
-      "name": { "type": "String" },
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageDraftAttachment": "Taslak · {name}",
   "@contextUsageDraftAttachment": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "contextUsageUserMessagesEstimate": "Kullanıcı: {count} token · {percent}",
   "@contextUsageUserMessagesEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageAssistantMessagesEstimate": "Yapay zekâ: {count} token · {percent}",
   "@contextUsageAssistantMessagesEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageToolsEstimate": "Araç kullanımı: {count} token · {percent}",
   "@contextUsageToolsEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageToolUsageEstimate": "{name}: {count} token · {percent}",
   "@contextUsageToolUsageEstimate": {
     "placeholders": {
-      "name": { "type": "String" },
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageMemoryEstimate": "Sıkıştırılmış bellek: {count} token · {percent}",
   "@contextUsageMemoryEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageDraftEstimate": "Taslak: {count} token · {percent}",
   "@contextUsageDraftEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageFreeSpaceEstimate": "Boş alan: {count} token · {percent}",
   "@contextUsageFreeSpaceEstimate": {
     "placeholders": {
-      "count": { "type": "String" },
-      "percent": { "type": "String" }
+      "count": {
+        "type": "String"
+      },
+      "percent": {
+        "type": "String"
+      }
     }
   },
   "contextUsageOverLimit": "Model sınırı aşılıyor.",
@@ -1106,9 +1855,15 @@
   "conversationMemorySemanticDownloadProgress": "%{percent} indirildi · {downloaded} / {total} MB",
   "@conversationMemorySemanticDownloadProgress": {
     "placeholders": {
-      "percent": { "type": "String" },
-      "downloaded": { "type": "String" },
-      "total": { "type": "String" }
+      "percent": {
+        "type": "String"
+      },
+      "downloaded": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
     }
   },
   "conversationMemorySemanticIndexing": "Yerel arşiv indeksi hazırlanıyor…",
@@ -1124,19 +1879,43 @@
   "conversationMemoryLastPromptTokens": "Son istek · {provider} · {model} · {count} girdi tokeni",
   "@conversationMemoryLastPromptTokens": {
     "placeholders": {
-      "provider": { "type": "String" },
-      "model": { "type": "String" },
-      "count": { "type": "String" }
+      "provider": {
+        "type": "String"
+      },
+      "model": {
+        "type": "String"
+      },
+      "count": {
+        "type": "String"
+      }
     }
   },
   "conversationMemorySearchTitle": "Arşivde ara",
   "conversationMemorySearching": "Sohbet arşivi aranıyor…",
   "conversationWorkspaceContext": "Çalışma alanı: {workspace}",
-  "@conversationWorkspaceContext": { "placeholders": { "workspace": { "type": "String" } } },
+  "@conversationWorkspaceContext": {
+    "placeholders": {
+      "workspace": {
+        "type": "String"
+      }
+    }
+  },
   "outputSourceProvider": "Sağlayıcı: {provider}",
-  "@outputSourceProvider": { "placeholders": { "provider": { "type": "String" } } },
+  "@outputSourceProvider": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
   "outputSourceModel": "Model: {model}",
-  "@outputSourceModel": { "placeholders": { "model": { "type": "String" } } },
+  "@outputSourceModel": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      }
+    }
+  },
   "conversationMemorySearchHint": "Eski bir konu veya ifade yaz...",
   "conversationMemorySearchAction": "Ara",
   "conversationMemorySearchQueryTooShort": "Arama için en az iki karakter yaz.",
@@ -1208,7 +1987,9 @@
   "restoreWindow": "Pencereyi geri yükle",
   "modelSelection": "Model seç",
   "noModelConnected": "Henüz bağlı bir model yok",
-  "noModelConnectedBody": "Sohbet başlatmak için bir sağlayıcı bağlayıp model seç.",
+  "noModelConnectedBody": "Bağlantılar bölümünden ChatGPT hesabınla oturum aç, desteklenen bir sağlayıcı için API anahtarı ekle ya da kullanılabilir bir yerel model seç. Bağlantıyı doğruladıktan sonra aşağıdan model seç.",
+  "providerNeedsVerificationTitle": "Sağlayıcı bağlantısını kontrol et",
+  "providerNeedsVerificationBody": "Kaydedilmiş oturum veya API anahtarı, sağlayıcıya erişilebildiğini doğrulamaz. Bağlantılar bölümünden bağlantıyı doğrula ve model listesini yenile.",
   "close": "Kapat",
   "reasoning": "Akıl yürütme",
   "reasoningMedium": "Orta",
@@ -1265,31 +2046,49 @@
   "unavailableValue": "—",
   "responseTokenRate": "{rate} t/s",
   "@responseTokenRate": {
-    "placeholders": { "rate": { "type": "String" } }
+    "placeholders": {
+      "rate": {
+        "type": "String"
+      }
+    }
   },
   "responseTokenCount": "{count} token",
   "@responseTokenCount": {
-    "placeholders": { "count": { "type": "String" } }
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
   },
   "responseCompleted": "Yanıt tamamlandı",
   "responseCompletedWithDuration": "Yanıt tamamlandı · {duration}",
   "@responseCompletedWithDuration": {
     "placeholders": {
-      "duration": { "type": "String" }
+      "duration": {
+        "type": "String"
+      }
     }
   },
   "reasoningSummary": "Akıl yürütme özeti",
   "reasoningSummaryWithDuration": "Akıl yürütme özeti · {duration}",
   "@reasoningSummaryWithDuration": {
     "placeholders": {
-      "duration": { "type": "String" }
+      "duration": {
+        "type": "String"
+      }
     }
   },
   "reasoningSummaryTooltip": "Modelin sağladığı özet. Süre, özetin akışta görünmesi için geçen zamandır; gizli düşünce verisi değildir.",
   "toolRunning": "Çalışıyor",
   "unknownTool": "Diğer araç",
   "terminalSession": "Terminal · {terminal}",
-  "@terminalSession": { "placeholders": { "terminal": { "type": "String" } } },
+  "@terminalSession": {
+    "placeholders": {
+      "terminal": {
+        "type": "String"
+      }
+    }
+  },
   "toolWaitingForUser": "Yanıtın bekleniyor",
   "toolCompleted": "Tamamlandı",
   "toolFailed": "Hata",
@@ -1304,7 +2103,13 @@
   "toolExecuteCommand": "Komut çalıştır",
   "toolRunProjectTask": "Proje görevini çalıştır",
   "toolConfiguredProjectTool": "Proje aracı: {name}",
-  "@toolConfiguredProjectTool": {"placeholders": {"name": {"type": "String"}}},
+  "@toolConfiguredProjectTool": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "toolDelegateTask": "Analizi alt göreve devret",
   "toolPermissionTask": "Görev",
   "toolPermissionTimeout": "Zaman aşımı (saniye)",
@@ -1328,16 +2133,40 @@
   "toolLocalPageSource": "OpenChat sayfa okuması",
   "toolProviderSource": "Sağlayıcı kaynağı",
   "toolSourceRetrievedAt": "Alınma zamanı: {time}",
-  "@toolSourceRetrievedAt": { "placeholders": { "time": { "type": "String" } } },
+  "@toolSourceRetrievedAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "toolSourceDetails": "Kaynak ayrıntıları",
   "toolCitationSource": "Kaynak {sourceId}",
-  "@toolCitationSource": { "placeholders": { "sourceId": { "type": "String" } } },
+  "@toolCitationSource": {
+    "placeholders": {
+      "sourceId": {
+        "type": "String"
+      }
+    }
+  },
   "toolWebSearchNoResults": "Web sonucu bulunamadı.",
   "toolWebSearchResultCount": "{count, plural, =0{0 sonuç} one{1 sonuç} other{{count} sonuç}}",
-  "@toolWebSearchResultCount": { "placeholders": { "count": { "type": "int" } } },
+  "@toolWebSearchResultCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "toolUrl": "URL",
   "toolReadUrlLength": "{count} karakter",
-  "@toolReadUrlLength": { "placeholders": { "count": { "type": "int" } } },
+  "@toolReadUrlLength": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "toolOpenUrl": "Tarayıcıda aç",
   "toolCopyUrl": "URL'yi kopyala",
   "toolCopyContent": "İçeriği kopyala",
@@ -1349,18 +2178,42 @@
   "toolSearchNoMatches": "Eşleşme bulunamadı.",
   "toolSearchMoreResults": "Daha fazla eşleşme var.",
   "toolSearchMatchCount": "{count, plural, =0{0 eşleşme} one{1 eşleşme} other{{count} eşleşme}}",
-  "@toolSearchMatchCount": { "placeholders": { "count": { "type": "int" } } },
+  "@toolSearchMatchCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "toolReadNoLines": "Bu aralıkta satır yok.",
   "toolReadMoreLines": "Daha fazla satır var.",
   "toolReadLineCount": "{count, plural, =0{0 satır} one{1 satır} other{{count} satır}}",
-  "@toolReadLineCount": { "placeholders": { "count": { "type": "int" } } },
+  "@toolReadLineCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "toolFileTypeFile": "Dosya",
   "toolFileTypeDirectory": "Klasör",
   "toolWriteSuccess": "{size} yazıldı",
-  "@toolWriteSuccess": { "placeholders": { "size": { "type": "String" } } },
+  "@toolWriteSuccess": {
+    "placeholders": {
+      "size": {
+        "type": "String"
+      }
+    }
+  },
   "toolFilePreview": "Yazılan içerik önizlemesi",
   "toolEditSuccess": "{count, plural, one{# değişiklik uygulandı} other{# değişiklik uygulandı}}",
-  "@toolEditSuccess": { "placeholders": { "count": { "type": "int" } } },
+  "@toolEditSuccess": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "toolEditBefore": "Önce",
   "toolEditAfter": "Sonra",
   "toolPermissionCommand": "Komut",
@@ -1374,7 +2227,9 @@
   "toolTerminalExitCode": "Çıkış kodu: {code}",
   "@toolTerminalExitCode": {
     "placeholders": {
-      "code": { "type": "int" }
+      "code": {
+        "type": "int"
+      }
     }
   },
   "toolTerminalCopied": "Panoya kopyalandı",
@@ -1382,7 +2237,9 @@
   "toolFileCount": "{count, plural, =0{0 öğe} one{1 öğe} other{{count} öğe}}",
   "@toolFileCount": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "toolEmptyListing": "Bu klasörde gösterilecek öğe yok.",
@@ -1397,7 +2254,9 @@
   "secondsShort": "{count} sn",
   "@secondsShort": {
     "placeholders": {
-      "count": { "type": "int" }
+      "count": {
+        "type": "int"
+      }
     }
   },
   "usageQuotas": "Kullanım Kotaları",
@@ -1413,7 +2272,13 @@
   "statisticsProvider": "Sağlayıcı",
   "statisticsRunId": "Çalışma kimliği",
   "statisticsRunIdValue": "Çalışma kimliği: {runId}",
-  "@statisticsRunIdValue": { "placeholders": { "runId": { "type": "String" } } },
+  "@statisticsRunIdValue": {
+    "placeholders": {
+      "runId": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsModel": "Model",
   "statisticsOperation": "İşlem türü",
   "statisticsReasoningEffort": "Reasoning düzeyi",
@@ -1439,17 +2304,50 @@
   "statisticsOutputCoverage": "Çıkış tokenı bildirilen istekler",
   "statisticsReasoningCoverage": "Reasoning tokenı bildirilen istekler",
   "statisticsCoverageText": "{total} isteğin {reported} tanesinde sağlayıcı token verisi döndürdü.",
-  "@statisticsCoverageText": { "placeholders": { "total": { "type": "int" }, "reported": { "type": "int" } } },
+  "@statisticsCoverageText": {
+    "placeholders": {
+      "total": {
+        "type": "int"
+      },
+      "reported": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsProviderReportedCost": "Sağlayıcının bildirdiği tutar",
   "statisticsCostCoverage": "Maliyet bilgisi {reported} istekte mevcut.",
-  "@statisticsCostCoverage": { "placeholders": { "reported": { "type": "int" } } },
+  "@statisticsCostCoverage": {
+    "placeholders": {
+      "reported": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsModelsDevCatalogCost": "models.dev liste fiyatına göre hesaplanan tutar",
   "statisticsModelsDevCatalogCostCoverage": "{priced} istek için liste fiyatı karşılığı hesaplandı.",
-  "@statisticsModelsDevCatalogCostCoverage": { "placeholders": { "priced": { "type": "int" } } },
+  "@statisticsModelsDevCatalogCostCoverage": {
+    "placeholders": {
+      "priced": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsModelsDevPricingCurrent": "models.dev fiyat kataloğu {date} tarihinde alındı.",
-  "@statisticsModelsDevPricingCurrent": { "placeholders": { "date": { "type": "String" } } },
+  "@statisticsModelsDevPricingCurrent": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsModelsDevPricingStale": "models.dev erişilemiyor; {date} tarihli önbellekteki fiyatlar kullanılıyor.",
-  "@statisticsModelsDevPricingStale": { "placeholders": { "date": { "type": "String" } } },
+  "@statisticsModelsDevPricingStale": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsModelsDevPricingUnavailable": "models.dev fiyat kataloğuna erişilemiyor. Sağlayıcı ve model birebir eşleşmeyen kullanımlar için maliyet hesaplanmıyor.",
   "statisticsUsageTrend": "Zamana göre kullanım",
   "statisticsDaily": "Günlük",
@@ -1470,28 +2368,94 @@
   "statisticsRequestPayload": "Gönderilen istek verisi",
   "statisticsRequestContextUnavailable": "Gönderilen istek özeti kullanılamıyor.",
   "statisticsRequestSourceMessages": "Dahil edilen ileti kimlikleri: {ids}",
-  "@statisticsRequestSourceMessages": { "placeholders": { "ids": { "type": "String" } } },
+  "@statisticsRequestSourceMessages": {
+    "placeholders": {
+      "ids": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestArchivedMessages": "Getirilen ileti kimlikleri: {ids}",
-  "@statisticsRequestArchivedMessages": { "placeholders": { "ids": { "type": "String" } } },
+  "@statisticsRequestArchivedMessages": {
+    "placeholders": {
+      "ids": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestSummaryBoundary": "Özetin kapsadığı son ileti: {id}",
-  "@statisticsRequestSummaryBoundary": { "placeholders": { "id": { "type": "String" } } },
+  "@statisticsRequestSummaryBoundary": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestSourceAttachments": "Gönderilen ekler: {files}",
-  "@statisticsRequestSourceAttachments": { "placeholders": { "files": { "type": "String" } } },
+  "@statisticsRequestSourceAttachments": {
+    "placeholders": {
+      "files": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestSourcesTruncated": "Bu kayıtta bazı kaynak ayrıntıları gösterilmiyor.",
   "statisticsRequestMessageCount": "Gönderilen mesaj: {count}",
-  "@statisticsRequestMessageCount": { "placeholders": { "count": { "type": "int" } } },
+  "@statisticsRequestMessageCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsRequestImageCount": "Gönderilen görsel: {count}",
-  "@statisticsRequestImageCount": { "placeholders": { "count": { "type": "int" } } },
+  "@statisticsRequestImageCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsRequestToolResultCount": "Gönderilen araç sonucu: {count}",
-  "@statisticsRequestToolResultCount": { "placeholders": { "count": { "type": "int" } } },
+  "@statisticsRequestToolResultCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsRequestInstructionBytes": "Talimat boyutu: {count} bayt",
-  "@statisticsRequestInstructionBytes": { "placeholders": { "count": { "type": "int" } } },
+  "@statisticsRequestInstructionBytes": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsRequestRoles": "Mesaj rolleri: {roles}",
-  "@statisticsRequestRoles": { "placeholders": { "roles": { "type": "String" } } },
+  "@statisticsRequestRoles": {
+    "placeholders": {
+      "roles": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestTools": "Araç şemaları: {names}",
-  "@statisticsRequestTools": { "placeholders": { "names": { "type": "String" } } },
+  "@statisticsRequestTools": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsRequestCacheControls": "Cache kontrolleri: {names}",
-  "@statisticsRequestCacheControls": { "placeholders": { "names": { "type": "String" } } },
+  "@statisticsRequestCacheControls": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
   "statisticsNone": "Yok",
   "statisticsRequestTime": "İstek zamanı",
   "statisticsConversationTitle": "Sohbet başlığı",
@@ -1499,7 +2463,19 @@
   "statisticsUsageSource": "Kullanım verisi kaynağı",
   "statisticsNoRequestData": "Bu filtrelerle eşleşen istek yok.",
   "statisticsShowingRows": "{start} - {end} / {total}",
-  "@statisticsShowingRows": { "placeholders": { "start": { "type": "int" }, "end": { "type": "int" }, "total": { "type": "int" } } },
+  "@statisticsShowingRows": {
+    "placeholders": {
+      "start": {
+        "type": "int"
+      },
+      "end": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "statisticsExportCsv": "CSV dışa aktar",
   "statisticsExporting": "Dışa aktarılıyor",
   "statisticsExported": "İstatistikler CSV dosyasına aktarıldı.",
@@ -1540,7 +2516,9 @@
   "workspaceQuotaLabel": "ChatGPT çalışma alanı: {name}",
   "@workspaceQuotaLabel": {
     "placeholders": {
-      "name": { "type": "String" }
+      "name": {
+        "type": "String"
+      }
     }
   },
   "modelsPageDescription": "Bu cihazda çalıştırabileceğiniz modelleri bulun. İndirilenler Yerel modeller bölümünde görünür.",
@@ -1552,12 +2530,12 @@
   "modelPageLabel": "Sayfa {page}",
   "@modelPageLabel": {
     "placeholders": {
-      "page": { "type": "int" }
+      "page": {
+        "type": "int"
+      }
     }
   },
   "modelFormatGguf": "GGUF · llama.cpp",
-  "modelFormatTransformers": "Transformers · vLLM",
-  "modelFormatExllama": "ExLlama · EXL3",
   "huggingFaceModelSearchHint": "Modellerde ara",
   "otherProvider": "Diğer sağlayıcı",
   "modelSearchRefresh": "Model sonuçlarını yenile",
@@ -1592,9 +2570,15 @@
   "modelDownloadRunning": "Dosya {fileIndex}/{fileCount}: {fileName}",
   "@modelDownloadRunning": {
     "placeholders": {
-      "fileName": { "type": "String" },
-      "fileIndex": { "type": "int" },
-      "fileCount": { "type": "int" }
+      "fileName": {
+        "type": "String"
+      },
+      "fileIndex": {
+        "type": "int"
+      },
+      "fileCount": {
+        "type": "int"
+      }
     }
   },
   "modelDownloadComplete": "Model indirildi ve Yerel Modeller’e eklendi.",
@@ -1624,15 +2608,29 @@
   "userQuestionResumeFailed": "Yanıtın kaydedildi ancak asistan devam edemedi. Tekrar dene.",
   "userQuestionNotificationTitle": "OpenChat seni bekliyor",
   "userQuestionNotificationBody": "Yapay zekâ yanıtını bekliyor.",
+  "notificationResponseReady": "Yanıt hazır.",
   "assistantResponseNotificationReplyEmpty": "Göndermeden önce bir yanıt yaz.",
   "assistantResponseNotificationReplyTooLong": "Bu yanıt bildirimden gönderilemeyecek kadar uzun. Göndermek için sohbet alanını kullan.",
   "assistantResponseNotificationReplyUnavailable": "Bu bildirim artık güncel değil veya sohbet kullanılamıyor. Sohbeti açıp yeni bir mesaj gönder.",
   "assistantResponseNotificationReplyNotSent": "Hızlı yanıt şu anda gönderilemedi. Sohbeti kontrol edip tekrar dene.",
   "fileChangesSummary": "{count} dosya değiştirildi",
-  "@fileChangesSummary": { "placeholders": { "count": { "type": "int" } } },
+  "@fileChangesSummary": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "fileChangesLineCounts": "+{added} / -{removed}",
   "@fileChangesLineCounts": {
-    "placeholders": { "added": { "type": "int" }, "removed": { "type": "int" } }
+    "placeholders": {
+      "added": {
+        "type": "int"
+      },
+      "removed": {
+        "type": "int"
+      }
+    }
   },
   "fileChangesSomeCountsUnavailable": "Satır sayısı hesaplanamadı",
   "fileChangesView": "Değişiklikleri görüntüle",
@@ -1652,7 +2650,13 @@
   "fileChangesReverted": "Geri alındı",
   "fileChangesRevert": "Geri al",
   "fileChangesMoreFiles": "{count} dosya daha",
-  "@fileChangesMoreFiles": { "placeholders": { "count": { "type": "int" } } },
+  "@fileChangesMoreFiles": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "fileChangesUnavailableTitle": "Dosya değişiklikleri kullanılamıyor",
   "slashCommandPlanLabel": "Plan",
   "slashCommandGoalLabel": "Hedef",
@@ -1706,7 +2710,99 @@
   "goalResumeAction": "Hedefi sürdür",
   "goalStopAction": "Hedefi durdur",
   "goalElapsedTime": "Geçen süre: {time}",
-  "@goalElapsedTime": { "placeholders": { "time": { "type": "String" } } },
+  "@goalElapsedTime": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
   "goalTasksCount": "Görevler: {completed}/{total}",
-  "@goalTasksCount": { "placeholders": { "completed": { "type": "int" }, "total": { "type": "int" } } }
+  "@goalTasksCount": {
+    "placeholders": {
+      "completed": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "supportDiagnosticsTitle": "Destek tanılama bilgileri",
+  "supportDiagnosticsDescription": "Destek dosyasına kaydedilecek uygulama ve depolama durumu bilgilerini incele.",
+  "reviewSupportDiagnostics": "Dışa aktarmayı incele",
+  "supportDiagnosticsPreviewTitle": "Destek bilgilerini incele",
+  "supportDiagnosticsPreviewDescription": "Dosya aşağıdaki bilgileri içerir. Sohbet içerikleri, kimlik bilgileri ve dosya yolları eklenmez.",
+  "supportDiagnosticsExportAction": "JSON'u kaydet",
+  "supportDiagnosticsSaved": "Destek tanılama dosyası kaydedildi.",
+  "supportDiagnosticsLoadFailed": "Tanılama bilgileri alınamadı. Yerel hizmeti kontrol edip yeniden dene.",
+  "supportDiagnosticsInvalidResponse": "Yerel hizmet beklenmeyen tanılama bilgileri döndürdü.",
+  "supportDiagnosticsExportFailed": "Destek tanılama dosyası kaydedilemedi.",
+  "supportDiagnosticsPrivacyNote": "Yalnızca önizlemede gösterilen alanlar kaydedilir. Dosya OpenChat'e gönderilmez.",
+  "supportDiagnosticsPreparing": "Hazırlanıyor…",
+  "settingsConnectors": "Bağlantılar",
+  "settingsConnectorsDescription": "Yerel bağlantı şablonlarını yönetip projelere ekleyin.",
+  "connectorCatalogIntro": "Yeniden kullanabileceğiniz MCP bağlantı bilgilerini uygulamada saklayın. Bir projeye eklenen sunucu devre dışı başlar; kimlik bilgileri ve izinler o projede kalır.",
+  "connectorCatalogEmpty": "Henüz bağlantı şablonu eklenmedi.",
+  "connectorCatalogAdd": "Şablon ekle",
+  "connectorCatalogEdit": "Şablonu düzenle",
+  "connectorCatalogDelete": "Şablonu sil",
+  "connectorCatalogDeleteConfirm": "Şablon uygulamadan silinir. Projelere daha önce eklenmiş bağlantılar kalır.",
+  "connectorCatalogInstall": "Etkin projeye ekle",
+  "connectorCatalogNoProject": "Bir bağlantı eklemek için önce proje açın.",
+  "connectorCatalogSecurityNotice": "Şablonlar gizli değerler olmadan yerel olarak saklanır. Yükleme, proje sunucusunu devre dışı ekler ve araç iznini onaya ayarlar. OpenChat sunucu yazılımını indirmez veya doğrulamaz.",
+  "connectorCatalogName": "Şablon adı",
+  "connectorCatalogId": "Sunucu kimliği",
+  "connectorCatalogPublisher": "Yayıncı beyanı",
+  "connectorCatalogSourceUrl": "Kaynak URL'si",
+  "connectorCatalogDataDisclosure": "Bağlantının alabileceği veriler",
+  "connectorCatalogTransport": "Bağlantı türü",
+  "connectorCatalogProgram": "Programın mutlak yolu",
+  "connectorCatalogArguments": "Her satıra bir bağımsız değişken",
+  "connectorCatalogEnvironmentVariables": "Her satıra bir kimlik bilgisi değişken adı",
+  "connectorCatalogEndpoint": "HTTPS uç noktası",
+  "connectorCatalogAuthVariable": "Kimlik bilgisi değişken adı",
+  "connectorCatalogSave": "Şablonu kaydet",
+  "connectorCatalogInstallPrompt": "Yayıncıyı, hedefi ve veri açıklamasını inceleyin. Sunucu devre dışı eklenecek ve araçları onay isteyecek. Araç çağrıları bağımsız değişkenlerini bağlantıya, sonuçlarını da seçili model sağlayıcısına gönderebilir.",
+  "connectorCatalogInvalid": "Zorunlu alanları, HTTPS adreslerini, sunucu kimliğini ve bağlantı bilgilerini kontrol edin.",
+  "connectorCatalogDuplicate": "Bu kimlik veya ad başka bir şablon ya da proje sunucusunda kullanılıyor.",
+  "connectorCatalogLoadFailed": "Yerel bağlantı kataloğu okunamadı.",
+  "connectorCatalogSaveFailed": "Bağlantı şablonu kaydedilemedi.",
+  "connectorCatalogInstallFailed": "Bağlantı projeye eklenemedi. Yerel hizmeti ve proje ayarlarını kontrol edin.",
+  "connectorCatalogInstalled": "Devre dışı bağlantı projeye eklendi. Gerekirse kimlik bilgilerini proje MCP ayarlarından ekleyin.",
+  "connectorCatalogSearch": "Şablonlarda ara",
+  "connectorCatalogNoResults": "Bu aramayla eşleşen şablon yok.",
+  "connectorCatalogVersion": "Beyan edilen sürüm",
+  "connectorCatalogRequestedAccess": "İstenen erişim",
+  "connectorCatalogAuthentication": "Kimlik doğrulama",
+  "connectorCatalogNoBearerCredential": "Bearer kimlik bilgisi beyan edilmemiş. Sunucu yine de kendi erişim politikasını uygulayabilir.",
+  "connectorCatalogProjectBearerCredential": "Yapılandırılırsa bearer kimlik bilgisi bu proje ve sunucuya özel saklanır; bağlantı kurulunca bu HTTPS uç noktasına gönderilir.",
+  "connectorCatalogNoCredentialVariables": "Bu yerel işlem ortam değişkeni istemiyor.",
+  "connectorCatalogProjectEnvironmentCredentials": "Yapılandırıldığında beyan edilen ortam değerleri bu proje ve sunucuya özel saklanır ve yalnızca yerel işleme aktarılır.",
+  "connectorCatalogRemovalImpact": "Bu şablonu kaldırmak proje sunucularını veya kayıtlı kimlik bilgilerini silmez. Bunları proje MCP ayarlarından ayrıca kaldırın.",
+  "libraryTabModels": "Modeller",
+  "libraryTabMcp": "MCP Araçları",
+  "libraryTabPrompts": "Promptlar (Yakında)",
+  "libraryTabPersonalities": "Karakterler (Yakında)",
+  "mcpCatalogDescription": "Gelişmiş Model Context Protocol araçlarını keşfedin, kurun ve sohbet asistanınızın yeteneklerini artırın.",
+  "mcpSearchHint": "MCP araçlarında ara...",
+  "mcpInstalled": "Kurulu",
+  "mcpNotInstalled": "Kurulu Değil",
+  "mcpActive": "Aktif (Talimatlara Eklendi)",
+  "mcpInactive": "Pasif",
+  "mcpInstall": "Yükle",
+  "mcpConfigureEnv": "Ortam Değişkenleri (Env)",
+  "mcpEnvDialogTitle": "MCP Ortam Değişkenleri",
+  "mcpEnvDialogDescription": "Bu değerler işletim sistemi düzeyinde güvenli depolama (Windows Credential Manager) ile şifrelenerek saklanır.",
+  "mcpEnvSaveSuccess": "Ortam değişkenleri güvenli bir şekilde kaydedildi.",
+  "mcpEnabledSuccess": "MCP aracı aktif edildi ve sistem talimatlarına eklendi.",
+  "mcpDisabledSuccess": "MCP aracı pasife alındı ve sistem talimatlarından kaldırıldı.",
+  "mcpNoToolsFound": "Bu MCP için henüz araç bulunamadı.",
+  "mcpUninstall": "Kaldır",
+  "mcpUninstallConfirm": "Bu MCP aracını kaldırmak istediğinize emin misiniz?",
+  "mcpDiscoverTools": "Tanımları Otomatik Çek",
+  "mcpDiscovering": "Tanımlar çekiliyor...",
+  "mcpDiscoverSuccess": "Araç tanımları başarıyla çekildi.",
+  "mcpDiscoverFailed": "Araç tanımları çekilemedi. Komut ve ortam değişkenlerini kontrol edin.",
+  "mcpNoToolsDiscovered": "Henüz araç tanımları çekilmedi."
 }

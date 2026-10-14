@@ -27,9 +27,10 @@ Windows development requires Flutter, Rust with Cargo, and the Visual Studio C++
 - Workflow actions are pinned to commit SHAs; Dependabot checks GitHub Actions, Cargo, and Pub updates weekly.
 - `flutter pub get --enforce-lockfile`
 - `flutter gen-l10n`
-- `dart format --output=none --set-exit-if-changed lib test`
+- `dart format --output=none --set-exit-if-changed lib test benchmarks`
 - `flutter analyze`
 - `flutter test`
+- Optional database benchmark, excluded from default test discovery: `flutter test --no-pub --dart-define=OPENCHAT_RUN_PERF_BENCHMARK=true benchmarks/chat_repository_performance_test.dart`
 - `cargo fmt --manifest-path native/openchat-service/Cargo.toml -- --check`
 - `cargo fmt --manifest-path native/openchat-launcher/Cargo.toml -- --check`
 - `cargo check --all-targets --locked --manifest-path native/openchat-service/Cargo.toml`

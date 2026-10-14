@@ -4,19 +4,26 @@ import 'package:drift/drift.dart';
 
 import 'package:openchat/features/chat/data/chat_attachment_store.dart';
 import 'package:openchat/features/chat/domain/chat_attachment.dart';
+import 'package:openchat/features/chat/domain/chat_library_attachment.dart';
 import 'package:openchat/features/chat/domain/chat_conversation.dart';
 import 'package:openchat/features/chat/domain/chat_message.dart' as domain;
 import 'package:openchat/features/chat/domain/model_favorite.dart';
 import 'package:openchat/features/chat/domain/chat_project.dart';
 import 'package:openchat/features/chat/domain/chat_saved_output.dart';
 import 'package:openchat/features/chat/domain/chat_workspace.dart';
+import 'package:openchat/features/chat/domain/local_library_search_result.dart';
+import 'package:openchat/features/chat/domain/temporary_conversation_id.dart';
 
 import 'package:openchat/features/chat/data/openchat_database.dart';
 import 'package:openchat/features/settings/data/api_compatible_provider_key_store.dart';
 
-const _localEngineProviderIds = <String>{'llama_cpp', 'vllm', 'exllama'};
+const _localEngineProviderIds = <String>{'llama_cpp'};
 
 typedef SavedOutputMessageKey = ({String conversationId, String messageId});
+
+const maxSavedOutputVersionCharacters = 1000000;
+const _attachmentLibraryMessagePageSize = 100;
+const _maximumIndexedAttachmentBytes = 100 * 1024 * 1024;
 
 bool _isLocalEngineProvider(String? providerId) =>
     providerId != null && _localEngineProviderIds.contains(providerId);
@@ -25,6 +32,41 @@ bool _isApiKeyRouteProvider(String? providerId) =>
     providerId == 'chatgpt_api' ||
     (providerId != null &&
         ApiCompatibleProviderKeyStore.isApiKeyProviderId(providerId));
+
+T _readStoredEnum<T extends Enum>(
+  List<T> values,
+  String encoded, {
+  required String fieldDescription,
+}) {
+  for (final value in values) {
+    if (value.name == encoded) return value;
+  }
+  throw FormatException('Saved $fieldDescription value is invalid.');
+}
+
+List<String> _validatedPersonalMemoryFactIds(List<String> ids) {
+  if (ids.length > 100 ||
+      ids.any((id) => !RegExp(r'^[a-f0-9]{32}$').hasMatch(id)) ||
+      ids.toSet().length != ids.length) {
+    throw ArgumentError.value(
+      ids,
+      'ids',
+      'Personal memory fact IDs are invalid.',
+    );
+  }
+  return List<String>.unmodifiable(ids);
+}
+
+List<String> _personalMemoryFactIdsFromJson(Object? value) {
+  if (value is! List<Object?> ||
+      value.length > 100 ||
+      value.any((item) => item is! String)) {
+    throw const FormatException(
+      'Saved personal memory references are invalid.',
+    );
+  }
+  return _validatedPersonalMemoryFactIds(value.cast<String>());
+}
 
 class ChatRepository {
   const ChatRepository(this._database, {this.attachmentStore});
@@ -132,8 +174,136 @@ class ChatRepository {
               content: row.content,
               providerId: row.providerId,
               modelId: row.modelId,
+              selectedVersion: row.selectedVersion,
               savedAt: DateTime.fromMillisecondsSinceEpoch(
                 row.savedAt,
+                isUtc: true,
+              ),
+            ),
+          )
+          .toList(growable: false),
+    );
+  }
+
+  Future<List<LocalLibrarySearchResult>> searchLocalLibrary(
+    String query, {
+    int limit = 30,
+  }) async {
+    final normalizedQuery = query.trim();
+    if (normalizedQuery.runes.length < 2 ||
+        normalizedQuery.runes.length > 512 ||
+        limit < 1 ||
+        limit > 100) {
+      throw ArgumentError.value(query, 'query', 'Invalid library search.');
+    }
+
+    final escapedQuery = normalizedQuery
+        .replaceAll(r'\', r'\\')
+        .replaceAll('%', r'\%')
+        .replaceAll('_', r'\_');
+    final pattern = '%$escapedQuery%';
+    final results = <LocalLibrarySearchResult>[];
+    final projects =
+        await (_database.select(_database.projects)
+              ..where((project) => project.name.like(pattern, escapeChar: r'\'))
+              ..orderBy([(project) => OrderingTerm.desc(project.updatedAt)])
+              ..limit(limit))
+            .get();
+    final latestConversationByProject = <String, String>{};
+    if (projects.isNotEmpty) {
+      final matchingConversations =
+          await (_database.select(_database.conversations)
+                ..where(
+                  (conversation) => conversation.projectId.isIn(
+                    projects.map((project) => project.id),
+                  ),
+                )
+                ..orderBy([
+                  (conversation) => OrderingTerm.desc(conversation.updatedAt),
+                ])
+                ..limit(limit * 10))
+              .get();
+      for (final conversation in matchingConversations) {
+        final projectId = conversation.projectId;
+        if (projectId != null) {
+          latestConversationByProject.putIfAbsent(
+            projectId,
+            () => conversation.id,
+          );
+        }
+      }
+    }
+    results.addAll(
+      projects.map(
+        (project) => LocalLibrarySearchResult(
+          kind: LocalLibrarySearchResultKind.project,
+          id: project.id,
+          title: project.name,
+          updatedAt: DateTime.fromMillisecondsSinceEpoch(
+            project.updatedAt,
+            isUtc: true,
+          ),
+          conversationId: latestConversationByProject[project.id],
+        ),
+      ),
+    );
+    final savedOutputs =
+        await (_database.select(_database.savedOutputs)
+              ..where(
+                (output) =>
+                    output.conversationTitle.like(pattern, escapeChar: r'\') |
+                    output.content.like(pattern, escapeChar: r'\'),
+              )
+              ..orderBy([(output) => OrderingTerm.desc(output.savedAt)])
+              ..limit(limit))
+            .get();
+    results.addAll(
+      savedOutputs.map(
+        (output) => LocalLibrarySearchResult(
+          kind: LocalLibrarySearchResultKind.savedResponse,
+          id: '${output.conversationId}:${output.messageId}',
+          title: output.conversationTitle,
+          subtitle: output.content,
+          updatedAt: DateTime.fromMillisecondsSinceEpoch(
+            output.savedAt,
+            isUtc: true,
+          ),
+          conversationId: output.conversationId,
+          messageId: output.messageId,
+        ),
+      ),
+    );
+
+    results.sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
+    return List<LocalLibrarySearchResult>.unmodifiable(results.take(limit));
+  }
+
+  Stream<List<ChatSavedOutputVersion>> watchSavedOutputVersions({
+    required String conversationId,
+    required String messageId,
+  }) {
+    final normalizedConversationId = _requireValue(
+      conversationId,
+      'conversationId',
+    );
+    final normalizedMessageId = _requireValue(messageId, 'messageId');
+    final query = _database.select(_database.savedOutputVersions)
+      ..where(
+        (version) =>
+            version.conversationId.equals(normalizedConversationId) &
+            version.messageId.equals(normalizedMessageId),
+      )
+      ..orderBy([(version) => OrderingTerm.asc(version.versionNumber)]);
+    return query.watch().map(
+      (rows) => rows
+          .map(
+            (row) => ChatSavedOutputVersion(
+              conversationId: row.conversationId,
+              messageId: row.messageId,
+              versionNumber: row.versionNumber,
+              content: row.content,
+              createdAt: DateTime.fromMillisecondsSinceEpoch(
+                row.createdAt,
                 isUtc: true,
               ),
             ),
@@ -196,9 +366,19 @@ class ChatRepository {
         throw const InvalidOutputSaveException();
       }
 
+      final existingOutput =
+          await (_database.select(_database.savedOutputs)..where(
+                (row) =>
+                    row.conversationId.equals(normalizedConversationId) &
+                    row.messageId.equals(normalizedMessageId),
+              ))
+              .getSingleOrNull();
+      if (existingOutput != null) return;
+
+      final savedAt = DateTime.now().toUtc().millisecondsSinceEpoch;
       await _database
           .into(_database.savedOutputs)
-          .insertOnConflictUpdate(
+          .insert(
             SavedOutputsCompanion.insert(
               conversationId: normalizedConversationId,
               messageId: normalizedMessageId,
@@ -206,9 +386,144 @@ class ChatRepository {
               content: message.content,
               providerId: Value(message.providerId),
               modelId: Value(message.modelId),
-              savedAt: DateTime.now().toUtc().millisecondsSinceEpoch,
+              savedAt: savedAt,
             ),
           );
+      await _database
+          .into(_database.savedOutputVersions)
+          .insert(
+            SavedOutputVersionsCompanion.insert(
+              conversationId: normalizedConversationId,
+              messageId: normalizedMessageId,
+              versionNumber: 1,
+              content: message.content,
+              createdAt: savedAt,
+            ),
+          );
+    });
+  }
+
+  Future<int> createSavedOutputVersion({
+    required String conversationId,
+    required String messageId,
+    required String content,
+  }) async {
+    final normalizedConversationId = _requireValue(
+      conversationId,
+      'conversationId',
+    );
+    final normalizedMessageId = _requireValue(messageId, 'messageId');
+    if (content.trim().isEmpty ||
+        content.length > maxSavedOutputVersionCharacters) {
+      throw const InvalidSavedOutputVersionException();
+    }
+    final normalizedContent = content;
+
+    return _database.transaction(() async {
+      final savedOutput =
+          await (_database.select(_database.savedOutputs)..where(
+                (row) =>
+                    row.conversationId.equals(normalizedConversationId) &
+                    row.messageId.equals(normalizedMessageId),
+              ))
+              .getSingleOrNull();
+      if (savedOutput == null) {
+        throw SavedOutputNotFoundException(
+          normalizedConversationId,
+          normalizedMessageId,
+        );
+      }
+
+      final latestVersion =
+          await (_database.select(_database.savedOutputVersions)
+                ..where(
+                  (row) =>
+                      row.conversationId.equals(normalizedConversationId) &
+                      row.messageId.equals(normalizedMessageId),
+                )
+                ..orderBy([(row) => OrderingTerm.desc(row.versionNumber)])
+                ..limit(1))
+              .getSingleOrNull();
+      final versionNumber = (latestVersion?.versionNumber ?? 0) + 1;
+      final savedAt = DateTime.now().toUtc().millisecondsSinceEpoch;
+      await _database
+          .into(_database.savedOutputVersions)
+          .insert(
+            SavedOutputVersionsCompanion.insert(
+              conversationId: normalizedConversationId,
+              messageId: normalizedMessageId,
+              versionNumber: versionNumber,
+              content: normalizedContent,
+              createdAt: savedAt,
+            ),
+          );
+      final updatedRows =
+          await (_database.update(_database.savedOutputs)..where(
+                (row) =>
+                    row.conversationId.equals(normalizedConversationId) &
+                    row.messageId.equals(normalizedMessageId),
+              ))
+              .write(
+                SavedOutputsCompanion(
+                  content: Value(normalizedContent),
+                  selectedVersion: Value(versionNumber),
+                  savedAt: Value(savedAt),
+                ),
+              );
+      if (updatedRows != 1) {
+        throw SavedOutputNotFoundException(
+          normalizedConversationId,
+          normalizedMessageId,
+        );
+      }
+      return versionNumber;
+    });
+  }
+
+  Future<void> selectSavedOutputVersion({
+    required String conversationId,
+    required String messageId,
+    required int versionNumber,
+  }) async {
+    final normalizedConversationId = _requireValue(
+      conversationId,
+      'conversationId',
+    );
+    final normalizedMessageId = _requireValue(messageId, 'messageId');
+    if (versionNumber < 1) {
+      throw const InvalidSavedOutputVersionException();
+    }
+    await _database.transaction(() async {
+      final version =
+          await (_database.select(_database.savedOutputVersions)..where(
+                (row) =>
+                    row.conversationId.equals(normalizedConversationId) &
+                    row.messageId.equals(normalizedMessageId) &
+                    row.versionNumber.equals(versionNumber),
+              ))
+              .getSingleOrNull();
+      if (version == null) {
+        throw const InvalidSavedOutputVersionException();
+      }
+      final updatedRows =
+          await (_database.update(_database.savedOutputs)..where(
+                (row) =>
+                    row.conversationId.equals(normalizedConversationId) &
+                    row.messageId.equals(normalizedMessageId),
+              ))
+              .write(
+                SavedOutputsCompanion(
+                  content: Value(version.content),
+                  selectedVersion: Value(versionNumber),
+                  savedAt: Value(DateTime.now().toUtc().millisecondsSinceEpoch),
+                ),
+              );
+      if (updatedRows != 1) {
+        throw SavedOutputNotFoundException(
+          normalizedConversationId,
+          normalizedMessageId,
+        );
+      }
     });
   }
 
@@ -221,12 +536,20 @@ class ChatRepository {
       'conversationId',
     );
     final normalizedMessageId = _requireValue(messageId, 'messageId');
-    await (_database.delete(_database.savedOutputs)..where(
-          (row) =>
-              row.conversationId.equals(normalizedConversationId) &
-              row.messageId.equals(normalizedMessageId),
-        ))
-        .go();
+    await _database.transaction(() async {
+      await (_database.delete(_database.savedOutputVersions)..where(
+            (row) =>
+                row.conversationId.equals(normalizedConversationId) &
+                row.messageId.equals(normalizedMessageId),
+          ))
+          .go();
+      await (_database.delete(_database.savedOutputs)..where(
+            (row) =>
+                row.conversationId.equals(normalizedConversationId) &
+                row.messageId.equals(normalizedMessageId),
+          ))
+          .go();
+    });
   }
 
   Future<void> createWorkspace({
@@ -532,6 +855,17 @@ class ChatRepository {
     return row == null ? null : _conversationFromRow(row);
   }
 
+  Future<bool> hasCompletedAssistantResponse() async {
+    final query = _database.selectOnly(_database.messages)
+      ..addColumns([_database.messages.id])
+      ..where(
+        _database.messages.role.equals('assistant') &
+            _database.messages.status.equals('completed'),
+      )
+      ..limit(1);
+    return await query.getSingleOrNull() != null;
+  }
+
   Future<ChatConversation> createBranchFromUserMessage({
     required String sourceConversationId,
     required String throughUserMessageId,
@@ -624,6 +958,7 @@ class ChatRepository {
             providerId: sourceMessage.providerId,
             modelId: sourceMessage.modelId,
             citationSources: sourceMessage.citationSources,
+            personalMemoryFactIds: sourceMessage.personalMemoryFactIds,
             reasoningSummaries: sourceMessage.reasoningSummaries,
             toolActivities: sourceMessage.toolActivities,
             status: sourceMessage.status,
@@ -661,6 +996,285 @@ class ChatRepository {
     return query.watch().asyncMap(_messagesFromRows);
   }
 
+  Future<List<ChatLibraryAttachment>> loadAttachmentLibrary({
+    int limit = 100,
+  }) async {
+    if (limit < 1 || limit > 200) {
+      throw ArgumentError.value(limit, 'limit', 'Invalid attachment limit.');
+    }
+    final page = await loadAttachmentLibraryPage(attachmentLimit: limit);
+    return page.attachments;
+  }
+
+  Future<ChatLibraryAttachmentPage> loadAttachmentLibraryPage({
+    int messageOffset = 0,
+    int attachmentLimit = 100,
+  }) async {
+    if (messageOffset < 0 ||
+        messageOffset > 100000 ||
+        attachmentLimit < 1 ||
+        attachmentLimit > 1000) {
+      throw ArgumentError('Invalid attachment library page.');
+    }
+    final attachmentStore = this.attachmentStore;
+    if (attachmentStore == null) {
+      return const ChatLibraryAttachmentPage(
+        attachments: <ChatLibraryAttachment>[],
+        nextMessageOffset: null,
+      );
+    }
+
+    final messageRows =
+        await (_database.select(_database.messages)
+              ..where(
+                (message) => message.content.like(
+                  '${ChatMessageContentCodec.metadataPrefix}%',
+                ),
+              )
+              ..orderBy([
+                (message) => OrderingTerm.desc(message.createdAt),
+                (message) => OrderingTerm.desc(message.id),
+              ])
+              ..limit(_attachmentLibraryMessagePageSize, offset: messageOffset))
+            .get();
+    final conversationIds = messageRows
+        .map((message) => message.conversationId)
+        .toSet();
+    if (conversationIds.isEmpty) {
+      return const ChatLibraryAttachmentPage(
+        attachments: <ChatLibraryAttachment>[],
+        nextMessageOffset: null,
+      );
+    }
+
+    final conversationRows = await (_database.select(
+      _database.conversations,
+    )..where((conversation) => conversation.id.isIn(conversationIds))).get();
+    final conversationTitles = <String, String>{
+      for (final conversation in conversationRows)
+        conversation.id: conversation.title,
+    };
+    final results = <ChatLibraryAttachment>[];
+    for (
+      var messageIndex = 0;
+      messageIndex < messageRows.length;
+      messageIndex++
+    ) {
+      final message = messageRows[messageIndex];
+      final conversationTitle = conversationTitles[message.conversationId];
+      if (conversationTitle == null) continue;
+      final metadata = ChatMessageContentCodec.decode(message.content);
+      if (metadata.attachments.isEmpty) continue;
+      final availableAttachments = await attachmentStore.readMessageAttachments(
+        conversationId: message.conversationId,
+        messageId: message.id,
+        expectedAttachments: metadata.attachments,
+      );
+      final createdAt = DateTime.fromMillisecondsSinceEpoch(
+        message.createdAt ?? 0,
+        isUtc: true,
+      );
+      for (final attachment in availableAttachments) {
+        results.add(
+          ChatLibraryAttachment(
+            conversationId: message.conversationId,
+            conversationTitle: conversationTitle,
+            messageId: message.id,
+            attachment: ChatAttachment(
+              id: attachment.id,
+              name: attachment.name,
+              mimeType: attachment.mimeType,
+              sizeBytes: attachment.sizeBytes,
+              kind: attachment.kind,
+              isAvailable: attachment.isAvailable,
+            ),
+            createdAt: createdAt,
+          ),
+        );
+      }
+      if (results.length >= attachmentLimit) {
+        final hasBufferedMessages = messageIndex + 1 < messageRows.length;
+        final hasNextPage =
+            hasBufferedMessages ||
+            messageRows.length == _attachmentLibraryMessagePageSize;
+        return ChatLibraryAttachmentPage(
+          attachments: List<ChatLibraryAttachment>.unmodifiable(results),
+          nextMessageOffset: hasNextPage
+              ? messageOffset + messageIndex + 1
+              : null,
+        );
+      }
+    }
+    return ChatLibraryAttachmentPage(
+      attachments: List<ChatLibraryAttachment>.unmodifiable(results),
+      nextMessageOffset: messageRows.length == _attachmentLibraryMessagePageSize
+          ? messageOffset + messageRows.length
+          : null,
+    );
+  }
+
+  Future<int> rebuildAttachmentTextIndex({
+    int maximumAttachments = 5000,
+  }) async {
+    if (maximumAttachments < 1 || maximumAttachments > 5000) {
+      throw ArgumentError.value(
+        maximumAttachments,
+        'maximumAttachments',
+        'Invalid attachment index limit.',
+      );
+    }
+    final store = attachmentStore;
+    if (store == null) return 0;
+    await _database.customStatement(
+      'DROP TABLE IF EXISTS attachment_text_index_staging',
+    );
+    await _database.customStatement('''
+      CREATE TABLE attachment_text_index_staging (
+        conversation_id TEXT NOT NULL,
+        message_id TEXT NOT NULL,
+        attachment_id TEXT NOT NULL,
+        attachment_name TEXT NOT NULL,
+        content TEXT NOT NULL,
+        indexed_at INTEGER NOT NULL,
+        PRIMARY KEY (conversation_id, message_id, attachment_id)
+      )
+    ''');
+    var indexedCount = 0;
+    var indexedBytes = 0;
+    var messageOffset = 0;
+    try {
+      while (indexedCount < maximumAttachments) {
+        final page = await loadAttachmentLibraryPage(
+          messageOffset: messageOffset,
+          attachmentLimit: 1000,
+        );
+        for (final item in page.attachments) {
+          if (indexedCount >= maximumAttachments) break;
+          final attachment = item.attachment;
+          if (!attachment.isAvailable ||
+              attachment.kind != ChatAttachmentKind.text ||
+              !_isIndexableTextAttachment(attachment.name)) {
+            continue;
+          }
+          final bytes = await store.readReusableAttachmentBytes(
+            conversationId: item.conversationId,
+            messageId: item.messageId,
+            attachment: attachment,
+          );
+          if (indexedBytes + bytes.length > _maximumIndexedAttachmentBytes) {
+            continue;
+          }
+          final content = const Utf8Decoder(allowMalformed: false)
+              .convert(bytes);
+          await _database.customStatement(
+            'INSERT OR REPLACE INTO attachment_text_index_staging '
+            '(conversation_id, message_id, attachment_id, attachment_name, content, indexed_at) '
+            'VALUES (?, ?, ?, ?, ?, ?)',
+            [
+              item.conversationId,
+              item.messageId,
+              attachment.id,
+              attachment.name,
+              content,
+              item.createdAt.millisecondsSinceEpoch,
+            ],
+          );
+          indexedCount++;
+          indexedBytes += bytes.length;
+        }
+        final nextOffset = page.nextMessageOffset;
+        if (nextOffset == null || nextOffset <= messageOffset) break;
+        messageOffset = nextOffset;
+      }
+      await _database.transaction(() async {
+        await _database.customStatement('DELETE FROM attachment_text_index');
+        await _database.customStatement(
+          'INSERT INTO attachment_text_index SELECT * FROM attachment_text_index_staging',
+        );
+        await _database.customStatement(
+          'DROP TABLE attachment_text_index_staging',
+        );
+      });
+      return indexedCount;
+    } on Object {
+      await _database.customStatement(
+        'DROP TABLE IF EXISTS attachment_text_index_staging',
+      );
+      rethrow;
+    }
+  }
+
+  Future<int> attachmentTextIndexCount() async {
+    final row = await _database
+        .customSelect(
+          'SELECT COUNT(*) AS item_count FROM attachment_text_index',
+        )
+        .getSingle();
+    return row.read<int>('item_count');
+  }
+
+  Future<void> clearAttachmentTextIndex() =>
+      _database.customStatement('DELETE FROM attachment_text_index');
+
+  bool _isIndexableTextAttachment(String name) {
+    final separator = name.lastIndexOf('.');
+    if (separator < 0 || separator == name.length - 1) return false;
+    return ChatAttachmentTypes.textExtensions.contains(
+      name.substring(separator + 1).toLowerCase(),
+    );
+  }
+
+  Future<ChatAttachment> loadAttachmentFromLibrary(
+    ChatLibraryAttachment libraryAttachment,
+  ) async {
+    final attachmentStore = this.attachmentStore;
+    if (attachmentStore == null) {
+      throw const ChatAttachmentStorageException(
+        'The local attachment library is unavailable.',
+      );
+    }
+    final row =
+        await (_database.select(_database.messages)..where(
+              (message) =>
+                  message.conversationId.equals(
+                    libraryAttachment.conversationId,
+                  ) &
+                  message.id.equals(libraryAttachment.messageId),
+            ))
+            .getSingleOrNull();
+    if (row == null) {
+      throw const ChatAttachmentStorageException(
+        'The saved attachment is no longer available.',
+      );
+    }
+    final metadata = ChatMessageContentCodec.decode(row.content);
+    ChatAttachment? expectedAttachment;
+    for (final attachment in metadata.attachments) {
+      if (attachment.id == libraryAttachment.attachment.id) {
+        expectedAttachment = attachment;
+        break;
+      }
+    }
+    if (expectedAttachment == null) {
+      throw const ChatAttachmentStorageException(
+        'The saved attachment is no longer available.',
+      );
+    }
+    final bytes = await attachmentStore.readReusableAttachmentBytes(
+      conversationId: libraryAttachment.conversationId,
+      messageId: libraryAttachment.messageId,
+      attachment: expectedAttachment,
+    );
+    return ChatAttachment(
+      id: expectedAttachment.id,
+      name: expectedAttachment.name,
+      mimeType: expectedAttachment.mimeType,
+      sizeBytes: expectedAttachment.sizeBytes,
+      kind: expectedAttachment.kind,
+      bytes: bytes,
+    );
+  }
+
   Future<List<domain.ChatMessage>> getMessages(String conversationId) async {
     final query = _database.select(_database.messages)
       ..where((message) => message.conversationId.equals(conversationId))
@@ -684,6 +1298,7 @@ class ChatRepository {
     String? modelId,
     String? projectId,
   }) async {
+    requireDurableConversationId(id);
     final normalizedId = id.trim();
     final normalizedTitle = title.trim();
     if (normalizedId.isEmpty) {
@@ -716,7 +1331,9 @@ class ChatRepository {
                 hasOAuthRoute ||
                 modelId == null ||
                 (selectedProvider != null &&
-                    ApiCompatibleProviderKeyStore.isApiKeyProviderId(selectedProvider) &&
+                    ApiCompatibleProviderKeyStore.isApiKeyProviderId(
+                      selectedProvider,
+                    ) &&
                     apiKeyConnectionId != selectedProvider))) ||
         (!isOpenCode &&
             !isLocalEngine &&
@@ -758,6 +1375,113 @@ class ChatRepository {
             updatedAt: timestamp,
           ),
         );
+  }
+
+  Future<void> saveTemporaryConversation({
+    required String id,
+    required String title,
+    required DateTime createdAt,
+    required List<domain.ChatMessage> messages,
+    required String providerId,
+    required String modelId,
+    String? connectionId,
+    String? workspaceId,
+    String? apiKeyConnectionId,
+  }) async {
+    requireDurableConversationId(id);
+    if (messages.isEmpty || messages.length > 100) {
+      throw ArgumentError.value(
+        messages.length,
+        'messages',
+        'A temporary transcript must contain between 1 and 100 messages.',
+      );
+    }
+    final messageIds = <String>{};
+    domain.ChatMessageRole? previousRole;
+    for (final message in messages) {
+      if (message.id.trim().isEmpty || !messageIds.add(message.id)) {
+        throw ArgumentError.value(
+          message.id,
+          'message.id',
+          'Temporary transcript message IDs must be non-empty and unique.',
+        );
+      }
+      if (message.toolActivities.isNotEmpty ||
+          message.role == domain.ChatMessageRole.user &&
+              message.status != domain.ChatMessageStatus.completed ||
+          previousRole == message.role) {
+        throw ArgumentError.value(
+          message,
+          'messages',
+          'The temporary transcript contains unsupported content or ordering.',
+        );
+      }
+      if (message.attachments.isNotEmpty) {
+        if (attachmentStore == null) {
+          throw const ChatAttachmentStorageException(
+            'Attachments cannot be saved in this storage location.',
+          );
+        }
+        final hasInvalidTemporaryAttachment = message.attachments.any((
+          attachment,
+        ) {
+          final bytes = attachment.bytes;
+          return bytes == null || bytes.length != attachment.sizeBytes;
+        });
+        if (hasInvalidTemporaryAttachment) {
+          throw const ChatAttachmentStorageException(
+            'A temporary attachment is no longer available in memory.',
+          );
+        }
+      }
+      previousRole = message.role;
+    }
+    if (messages.first.role != domain.ChatMessageRole.user) {
+      throw ArgumentError.value(
+        messages,
+        'messages',
+        'A temporary transcript must start with a user message.',
+      );
+    }
+
+    var conversationCreated = false;
+    try {
+      await _database.transaction(() async {
+        await createConversation(
+          id: id,
+          title: title,
+          createdAt: createdAt,
+          providerId: providerId,
+          modelId: modelId,
+          connectionId: connectionId,
+          workspaceId: workspaceId,
+          apiKeyConnectionId: apiKeyConnectionId,
+        );
+        conversationCreated = true;
+        for (final message in messages) {
+          await saveMessage(
+            conversationId: id,
+            message: message,
+            updateConversationTimestamp: false,
+          );
+        }
+      });
+    } on Object catch (error, stackTrace) {
+      if (conversationCreated) {
+        try {
+          await attachmentStore?.deleteConversationAttachments(id);
+        } on Object catch (cleanupError, cleanupStackTrace) {
+          Error.throwWithStackTrace(
+            ChatAttachmentStorageException(
+              'The temporary conversation could not be saved and its attachments could not be cleaned up.',
+              cleanupError,
+            ),
+            cleanupStackTrace,
+          );
+        }
+      }
+      Error.throwWithStackTrace(error, stackTrace);
+    }
   }
 
   Future<void> bindConversationProvider({
@@ -832,7 +1556,9 @@ class ChatRepository {
         (hasApiKeyRoute &&
             (apiKeyConnectionId == null ||
                 hasOAuthRoute ||
-                (ApiCompatibleProviderKeyStore.isApiKeyProviderId(normalizedProviderId) &&
+                (ApiCompatibleProviderKeyStore.isApiKeyProviderId(
+                      normalizedProviderId,
+                    ) &&
                     apiKeyConnectionId != normalizedProviderId))) ||
         (!isOpenCode &&
             !isLocalEngine &&
@@ -914,7 +1640,9 @@ class ChatRepository {
         throw StateError('The conversation has no API key route.');
       }
       if (conversation.providerId != null &&
-          ApiCompatibleProviderKeyStore.isApiKeyProviderId(conversation.providerId!) &&
+          ApiCompatibleProviderKeyStore.isApiKeyProviderId(
+            conversation.providerId!,
+          ) &&
           conversation.apiKeyConnectionId != conversation.providerId) {
         throw StateError('The conversation provider route is invalid.');
       }
@@ -952,6 +1680,7 @@ class ChatRepository {
     bool updateConversationTimestamp = true,
     bool attachmentsAlreadyCopied = false,
   }) async {
+    requireDurableConversationId(conversationId);
     if (message.id.trim().isEmpty) {
       throw ArgumentError.value(
         message.id,
@@ -1037,6 +1766,13 @@ class ChatRepository {
                     message.citationSources
                         .map((source) => source.toJson())
                         .toList(growable: false),
+                  ),
+                ),
+                personalMemoryFactIds: Value(
+                  jsonEncode(
+                    _validatedPersonalMemoryFactIds(
+                      message.personalMemoryFactIds,
+                    ),
                   ),
                 ),
                 reasoningSummaries: Value(
@@ -1268,7 +2004,11 @@ class ChatRepository {
     return ChatConversation(
       id: row.id,
       title: row.title,
-      titleSource: ChatConversationTitleSource.values.byName(row.titleSource),
+      titleSource: _readStoredEnum(
+        ChatConversationTitleSource.values,
+        row.titleSource,
+        fieldDescription: 'conversation title source',
+      ),
       connectionId: row.connectionId,
       workspaceId: row.workspaceId,
       productWorkspaceId: row.productWorkspaceId,
@@ -1419,6 +2159,7 @@ class ChatRepository {
       providerId: message.providerId,
       modelId: message.modelId,
       citationSources: message.citationSources,
+      personalMemoryFactIds: message.personalMemoryFactIds,
       reasoningSummaries: message.reasoningSummaries,
       toolActivities: message.toolActivities,
       status: message.status,
@@ -1430,7 +2171,11 @@ class ChatRepository {
     final decodedContent = ChatMessageContentCodec.decode(row.content);
     return domain.ChatMessage(
       id: row.id,
-      role: domain.ChatMessageRole.values.byName(row.role),
+      role: _readStoredEnum(
+        domain.ChatMessageRole.values,
+        row.role,
+        fieldDescription: 'message role',
+      ),
       content: decodedContent.content,
       attachments: decodedContent.attachments,
       createdAt: row.createdAt == null
@@ -1446,13 +2191,20 @@ class ChatRepository {
       citationSources: domain.ChatCitationSource.listFromJson(
         jsonDecode(row.citationSources),
       ),
+      personalMemoryFactIds: _personalMemoryFactIdsFromJson(
+        jsonDecode(row.personalMemoryFactIds),
+      ),
       reasoningSummaries: domain.ChatReasoningSummary.listFromJson(
         jsonDecode(row.reasoningSummaries),
       ),
       toolActivities: domain.ChatToolActivity.listFromJson(
         jsonDecode(row.toolActivities),
       ),
-      status: domain.ChatMessageStatus.values.byName(row.status),
+      status: _readStoredEnum(
+        domain.ChatMessageStatus.values,
+        row.status,
+        fieldDescription: 'message status',
+      ),
       failureCode: row.failureCode,
     );
   }
@@ -1521,4 +2273,21 @@ class InvalidOutputSaveException implements Exception {
 
   @override
   String toString() => 'Only completed assistant responses can be saved.';
+}
+
+class SavedOutputNotFoundException implements Exception {
+  const SavedOutputNotFoundException(this.conversationId, this.messageId);
+
+  final String conversationId;
+  final String messageId;
+
+  @override
+  String toString() => 'The saved response was not found.';
+}
+
+class InvalidSavedOutputVersionException implements Exception {
+  const InvalidSavedOutputVersionException();
+
+  @override
+  String toString() => 'The saved response version is invalid.';
 }

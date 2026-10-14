@@ -282,6 +282,7 @@ class ChatMessage {
     this.providerId,
     this.modelId,
     this.citationSources = const <ChatCitationSource>[],
+    this.personalMemoryFactIds = const <String>[],
     this.reasoningSummaries = const <ChatReasoningSummary>[],
     this.toolActivities = const <ChatToolActivity>[],
     this.status = ChatMessageStatus.completed,
@@ -299,6 +300,7 @@ class ChatMessage {
   final String? providerId;
   final String? modelId;
   final List<ChatCitationSource> citationSources;
+  final List<String> personalMemoryFactIds;
   final List<ChatReasoningSummary> reasoningSummaries;
   final List<ChatToolActivity> toolActivities;
   final ChatMessageStatus status;

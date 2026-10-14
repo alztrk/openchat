@@ -5,6 +5,7 @@
 
 #include "flutter_window.h"
 #include "utils.h"
+#include "windows_toast_registration.h"
 
 namespace {
 
@@ -84,6 +85,12 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   // Initialize COM, so that it is available for use in the library and/or
   // plugins.
   ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  const HRESULT toast_registration_result = EnsureOpenChatToastRegistration();
+  if (FAILED(toast_registration_result)) {
+    OutputDebugStringW(
+        L"OpenChat could not register its Windows toast application identity. "
+        L"Notification status will retry registration.\n");
+  }
 
   flutter::DartProject project(L"data");
 

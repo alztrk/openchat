@@ -8,16 +8,25 @@ import 'package:openchat/app/open_url_or_copy.dart';
 import 'package:openchat/l10n/openchat_localizations.dart';
 import 'package:openchat/features/chat/presentation/widgets/provider_icon.dart';
 import 'package:openchat/features/settings/data/open_code_api_key_store.dart';
+import 'package:openchat/features/settings/data/settings_preferences.dart';
+import 'package:openchat/features/settings/domain/provider_verification_record.dart';
+import 'package:openchat/features/settings/domain/provider_request_outcome_record.dart';
+import 'package:openchat/features/settings/presentation/provider_connection_status.dart';
+import 'package:openchat/platform/windows/openchat_service_client.dart';
 
 class OpenCodeConnectionSection extends StatefulWidget {
   const OpenCodeConnectionSection({
     super.key,
     required this.apiKeyStore,
+    required this.settingsPreferences,
     required this.onChanged,
+    this.serviceClient,
   });
 
   final OpenCodeApiKeyStore? apiKeyStore;
+  final SettingsPreferences settingsPreferences;
   final Future<void> Function()? onChanged;
+  final OpenChatServiceClient? serviceClient;
 
   @override
   State<OpenCodeConnectionSection> createState() =>
@@ -31,6 +40,12 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
   bool _saving = false;
   bool _showForm = false;
   String? _error;
+  ProviderVerificationState _verificationState =
+      ProviderVerificationState.notChecked;
+  DateTime? _verificationCheckedAt;
+  bool _verificationSaveFailed = false;
+  ProviderRequestOutcomeRecord? _lastRequestOutcome;
+  bool _lastRequestReadFailed = false;
 
   @override
   void initState() {
@@ -50,33 +65,176 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
       if (mounted) setState(() => _loading = false);
       return;
     }
+    String? suffix;
+    var requestOutcomeReadFailed = false;
     try {
-      final suffix = await store.readKeySuffix();
+      suffix = await store.readKeySuffix();
+      final verification = await widget.settingsPreferences
+          .readProviderVerificationRecord('opencode');
+      ProviderRequestOutcomeRecord? requestOutcome;
+      try {
+        requestOutcome = await widget.settingsPreferences
+            .readProviderRequestOutcomeForRoute(
+              providerId: 'opencode',
+              connectionId: 'opencode',
+            );
+      } on Object catch (error, stackTrace) {
+        FlutterError.reportError(
+          FlutterErrorDetails(
+            exception: error,
+            stack: stackTrace,
+            library: 'provider_setup',
+            context: ErrorDescription(
+              'while reading the last OpenCode request',
+            ),
+          ),
+        );
+        requestOutcomeReadFailed = true;
+      }
       if (mounted) {
         setState(() {
           _keySuffix = suffix;
+          _verificationState = verification == null
+              ? ProviderVerificationState.notChecked
+              : _stateFor(verification.outcome);
+          _verificationCheckedAt = verification?.checkedAt;
+          _lastRequestOutcome = requestOutcome;
+          _lastRequestReadFailed = requestOutcomeReadFailed;
           _loading = false;
         });
       }
     } on OpenCodeApiKeyStorageException {
       if (mounted) {
         setState(() {
+          _keySuffix = suffix;
           _error = 'storage';
+          _loading = false;
+        });
+      }
+    } on FormatException catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription(
+            'while loading OpenCode verification state',
+          ),
+        ),
+      );
+      if (mounted) {
+        setState(() {
+          _keySuffix = suffix;
+          _error = 'verification';
+          _loading = false;
+        });
+      }
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription('while loading OpenCode connection state'),
+        ),
+      );
+      if (mounted) {
+        setState(() {
+          _keySuffix = suffix;
+          _error = 'verification';
           _loading = false;
         });
       }
     }
   }
 
+  ProviderVerificationState _stateFor(ProviderVerificationOutcome outcome) =>
+      switch (outcome) {
+        ProviderVerificationOutcome.verified =>
+          ProviderVerificationState.verified,
+        ProviderVerificationOutcome.emptyCatalog =>
+          ProviderVerificationState.emptyCatalog,
+        ProviderVerificationOutcome.staleCatalog =>
+          ProviderVerificationState.staleCatalog,
+        ProviderVerificationOutcome.authenticationFailed =>
+          ProviderVerificationState.authenticationFailed,
+        ProviderVerificationOutcome.rateLimited =>
+          ProviderVerificationState.rateLimited,
+        ProviderVerificationOutcome.networkFailed =>
+          ProviderVerificationState.networkFailed,
+        ProviderVerificationOutcome.failed => ProviderVerificationState.failed,
+      };
+
+  ProviderVerificationOutcome _outcomeFor(ProviderVerificationState state) =>
+      switch (state) {
+        ProviderVerificationState.verified =>
+          ProviderVerificationOutcome.verified,
+        ProviderVerificationState.emptyCatalog =>
+          ProviderVerificationOutcome.emptyCatalog,
+        ProviderVerificationState.staleCatalog =>
+          ProviderVerificationOutcome.staleCatalog,
+        ProviderVerificationState.authenticationFailed =>
+          ProviderVerificationOutcome.authenticationFailed,
+        ProviderVerificationState.rateLimited =>
+          ProviderVerificationOutcome.rateLimited,
+        ProviderVerificationState.networkFailed =>
+          ProviderVerificationOutcome.networkFailed,
+        ProviderVerificationState.failed => ProviderVerificationOutcome.failed,
+        ProviderVerificationState.notChecked ||
+        ProviderVerificationState.checking => throw StateError(
+          'Only completed provider checks can be saved.',
+        ),
+      };
+
+  Future<void> _recordVerification(ProviderVerificationState state) async {
+    final checkedAt = DateTime.now().toUtc();
+    var saveFailed = false;
+    try {
+      await widget.settingsPreferences.writeProviderVerificationRecord(
+        'opencode',
+        ProviderVerificationRecord(
+          outcome: _outcomeFor(state),
+          checkedAt: checkedAt,
+        ),
+      );
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription('while saving OpenCode verification state'),
+        ),
+      );
+      saveFailed = true;
+    }
+    if (!mounted) return;
+    setState(() {
+      _verificationState = state;
+      _verificationCheckedAt = saveFailed ? null : checkedAt;
+      _verificationSaveFailed = saveFailed;
+    });
+  }
+
   Future<void> _save() async {
     final store = widget.apiKeyStore;
-    if (store == null || _saving) return;
+    if (store == null || _saving || _isVerifying) return;
     setState(() {
       _saving = true;
       _error = null;
+      _verificationState = ProviderVerificationState.notChecked;
+      _verificationCheckedAt = null;
+      _verificationSaveFailed = false;
     });
     try {
       await store.saveApiKey(_controller.text);
+      await widget.settingsPreferences.clearProviderVerificationRecord(
+        'opencode',
+      );
+      await widget.settingsPreferences.clearProviderRequestOutcomeForRoute(
+        providerId: 'opencode',
+        connectionId: 'opencode',
+      );
       _controller.clear();
       await _load();
       await widget.onChanged?.call();
@@ -85,6 +243,16 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
       if (mounted) setState(() => _error = 'invalid');
     } on OpenCodeApiKeyStorageException {
       if (mounted) setState(() => _error = 'storage');
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription('while resetting OpenCode verification'),
+        ),
+      );
+      if (mounted) setState(() => _error = 'verification-save');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -92,19 +260,96 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
 
   Future<void> _remove() async {
     final store = widget.apiKeyStore;
-    if (store == null || _saving) return;
+    if (store == null || _saving || _isVerifying) return;
     setState(() {
       _saving = true;
       _error = null;
+      _verificationState = ProviderVerificationState.notChecked;
+      _verificationCheckedAt = null;
+      _verificationSaveFailed = false;
     });
     try {
       await store.deleteApiKey();
+      await widget.settingsPreferences.clearProviderVerificationRecord(
+        'opencode',
+      );
+      await widget.settingsPreferences.clearProviderRequestOutcomeForRoute(
+        providerId: 'opencode',
+        connectionId: 'opencode',
+      );
       await _load();
       await widget.onChanged?.call();
     } on OpenCodeApiKeyStorageException {
       if (mounted) setState(() => _error = 'storage');
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription('while resetting OpenCode verification'),
+        ),
+      );
+      if (mounted) setState(() => _error = 'verification-save');
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  bool get _isVerifying =>
+      _verificationState == ProviderVerificationState.checking;
+
+  Future<void> _verifyConnection() async {
+    final store = widget.apiKeyStore;
+    final service = widget.serviceClient;
+    if (store == null || service == null || _saving || _isVerifying) return;
+    setState(() => _verificationState = ProviderVerificationState.checking);
+    try {
+      final apiKey = await store.readApiKey();
+      if (apiKey == null) {
+        if (mounted) {
+          setState(
+            () => _verificationState = ProviderVerificationState.notChecked,
+          );
+        }
+        return;
+      }
+      final response = await service.call(
+        'opencode.models.list',
+        params: <String, Object?>{'apiKey': apiKey, 'forceRefresh': true},
+      );
+      final models = response['models'];
+      if (models is! List<Object?>) {
+        throw const FormatException('The provider model catalog was invalid.');
+      }
+      if (response['freshness'] == 'stale') {
+        await _recordVerification(ProviderVerificationState.staleCatalog);
+        return;
+      }
+      if (response['freshness'] != 'current') {
+        throw const FormatException('The provider model catalog was invalid.');
+      }
+      await _recordVerification(
+        models.isEmpty
+            ? ProviderVerificationState.emptyCatalog
+            : ProviderVerificationState.verified,
+      );
+    } on OpenChatServiceException catch (error) {
+      await _recordVerification(providerVerificationFailureForCode(error.code));
+    } on OpenCodeApiKeyStorageException {
+      await _recordVerification(ProviderVerificationState.failed);
+    } on FormatException {
+      await _recordVerification(ProviderVerificationState.failed);
+    } on Object catch (error, stackTrace) {
+      FlutterError.reportError(
+        FlutterErrorDetails(
+          exception: error,
+          stack: stackTrace,
+          library: 'provider_setup',
+          context: ErrorDescription('while verifying the OpenCode connection'),
+        ),
+      );
+      await _recordVerification(ProviderVerificationState.failed);
     }
   }
 
@@ -113,12 +358,13 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
     final l10n = context.openchatL10n;
     final palette = OpenChatPalette.of(context);
     final hasKey = _keySuffix != null;
+    final isVerifying = _isVerifying;
     final actions = Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
         OutlinedButton.icon(
-          onPressed: _saving
+          onPressed: _saving || isVerifying
               ? null
               : () => setState(() => _showForm = !_showForm),
           icon: Icon(hasKey ? LucideIcons.pencil : LucideIcons.plus, size: 16),
@@ -126,7 +372,7 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
         ),
         if (hasKey)
           TextButton.icon(
-            onPressed: _saving ? null : _remove,
+            onPressed: _saving || isVerifying ? null : _remove,
             icon: const Icon(LucideIcons.trash2, size: 16),
             label: Text(l10n.deleteAll),
           ),
@@ -200,6 +446,20 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
                 style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ],
+            if (_error == 'verification' && !_showForm) ...[
+              const SizedBox(height: 10),
+              Text(
+                l10n.providerVerificationRecordUnreadable,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            if (_error == 'verification-save' && !_showForm) ...[
+              const SizedBox(height: 10),
+              Text(
+                l10n.providerVerificationResultNotSaved,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
             const SizedBox(height: 12),
             if (_loading) const LinearProgressIndicator(),
             if (!_loading)
@@ -230,6 +490,17 @@ class _OpenCodeConnectionSectionState extends State<OpenCodeConnectionSection> {
                     ],
                   );
                 },
+              ),
+            if (hasKey && !_loading)
+              ProviderConnectionStatus(
+                state: _verificationState,
+                checkedAt: _verificationCheckedAt,
+                saveFailed: _verificationSaveFailed,
+                lastRequestOutcome: _lastRequestOutcome,
+                lastRequestReadFailed: _lastRequestReadFailed,
+                onVerify: isVerifying || _saving || widget.serviceClient == null
+                    ? null
+                    : _verifyConnection,
               ),
             if (_showForm)
               Column(

@@ -202,6 +202,7 @@ void main() {
       ),
     );
 
+    await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Open search filters'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('All tags'));

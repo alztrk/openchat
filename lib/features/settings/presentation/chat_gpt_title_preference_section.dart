@@ -374,20 +374,34 @@ class _LoadError extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.openchatL10n;
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            l10n.titlePreferenceLoadFailed,
-            style: TextStyle(color: palette.secondaryText, fontSize: 13),
-          ),
-        ),
-        TextButton.icon(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final textScale = MediaQuery.textScalerOf(context).scale(1);
+        final compact = constraints.maxWidth / textScale < 560;
+        final message = Text(
+          l10n.titlePreferenceLoadFailed,
+          style: TextStyle(color: palette.secondaryText, fontSize: 13),
+        );
+        final retry = TextButton.icon(
           onPressed: onRetry,
           icon: const Icon(LucideIcons.refreshCw, size: 16),
           label: Text(l10n.retry),
-        ),
-      ],
+        );
+
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [message, const SizedBox(height: 8), retry],
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(child: message),
+            retry,
+          ],
+        );
+      },
     );
   }
 }
@@ -411,11 +425,7 @@ String _providerLabel(AppLocalizations l10n, String providerId) =>
       'deepinfra' => l10n.deepInfraProvider,
       'dashscope' => l10n.dashScopeProvider,
       'cohere' => l10n.cohereProvider,
-      'ollama' => l10n.ollamaProvider,
-      'lmstudio' => l10n.lmStudioProvider,
       'llama_cpp' => 'llama.cpp',
-      'vllm' => 'vLLM',
-      'exllama' => 'ExLlamaV3',
       final customId when customId.startsWith('custom_') =>
         l10n.customProvidersHeading,
       _ => providerId,

@@ -5,9 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:openchat/platform/windows/openchat_service_client.dart';
 
 enum HuggingFaceModelFormat {
-  gguf('gguf', 'llama_cpp'),
-  transformers('transformers', 'vllm'),
-  exllama('exllama', 'exllama');
+  gguf('gguf', 'llama_cpp');
 
   const HuggingFaceModelFormat(this.wireValue, this.engineId);
 

@@ -30,6 +30,7 @@ pub(super) struct ResponseEventContext<'a> {
     pub(super) created_at: i64,
     pub(super) request_id: &'a Value,
     pub(super) events: &'a EventSink,
+    pub(super) persist_message: bool,
 }
 
 fn reasoning_summary_group_mut<'a>(
@@ -143,24 +144,25 @@ impl ChatGptService {
             created_at,
             request_id,
             events,
+            persist_message,
         } = context;
         if event_data == "[DONE]" {
             finish_reasoning_summary_groups(reasoning_summaries);
             return Ok(true);
         }
-        let event: Value = serde_json::from_str(event_data).map_err(|_| {
-            ServiceError::new(
-                "invalid_provider_response",
-                "ChatGPT returned a malformed stream event. The partial answer was saved.",
-                false,
-            )
-        })?;
+        let partial_response = if persist_message {
+            "The partial answer was saved."
+        } else {
+            "The partial answer remains in this temporary chat."
+        };
+        let malformed_event =
+            format!("ChatGPT returned a malformed stream event. {partial_response}");
+        let unsupported_event =
+            format!("ChatGPT returned an unsupported stream event. {partial_response}");
+        let event: Value = serde_json::from_str(event_data)
+            .map_err(|_| ServiceError::new("invalid_provider_response", malformed_event, false))?;
         let kind = event.get("type").and_then(Value::as_str).ok_or_else(|| {
-            ServiceError::new(
-                "invalid_provider_response",
-                "ChatGPT returned an unsupported stream event. The partial answer was saved.",
-                false,
-            )
+            ServiceError::new("invalid_provider_response", unsupported_event, false)
         })?;
         match kind {
             "response.output_item.done" => {
@@ -174,24 +176,26 @@ impl ChatGptService {
                 let delta = event.get("delta").and_then(Value::as_str).ok_or_else(|| {
                     ServiceError::new(
                         "invalid_provider_response",
-                        "ChatGPT returned an invalid text update. The partial answer was saved.",
+                        format!("ChatGPT returned an invalid text update. {partial_response}"),
                         false,
                     )
                 })?;
                 content.push_str(delta);
-                chatgpt_store::save_assistant_message(
-                    &self.storage,
-                    AssistantMessageWrite {
-                        conversation_id,
-                        message_id,
-                        content,
-                        status: "streaming",
-                        created_at_unix_ms: created_at,
-                        output_tokens: None,
-                        elapsed: None,
-                    },
-                )
-                .map_err(database_error)?;
+                if persist_message {
+                    chatgpt_store::save_assistant_message(
+                        &self.storage,
+                        AssistantMessageWrite {
+                            conversation_id,
+                            message_id,
+                            content,
+                            status: "streaming",
+                            created_at_unix_ms: created_at,
+                            output_tokens: None,
+                            elapsed: None,
+                        },
+                    )
+                    .map_err(database_error)?;
+                }
                 events
                     .send(
                         &ChatStreamEvent::TextUpdated(ChatStreamSnapshot::new(
@@ -316,12 +320,114 @@ impl ChatGptService {
                 }
                 return Err(ServiceError::new(
                     "provider_request_failed",
-                    "ChatGPT could not complete the response. The partial answer was saved.",
+                    format!("ChatGPT could not complete the response. {partial_response}"),
                     false,
                 ));
             }
             _ => {}
         }
         Ok(false)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, path::PathBuf, sync::Arc};
+
+    use serde_json::json;
+    use uuid::Uuid;
+
+    use crate::{
+        chatgpt::ChatGptService, protocol::EventSink, storage::AppStorage,
+        usage_statistics::UsageData,
+    };
+
+    use super::ResponseEventContext;
+
+    #[tokio::test]
+    async fn temporary_response_text_is_not_saved_to_durable_messages() {
+        let directory = TestDirectory::new();
+        let storage = Arc::new(
+            AppStorage::open_at(directory.0.clone()).expect("open temporary test storage"),
+        );
+        storage
+            .connect()
+            .expect("open database connection")
+            .execute_batch(
+                "CREATE TABLE messages (
+                    rowid INTEGER PRIMARY KEY,
+                    id TEXT NOT NULL,
+                    conversation_id TEXT NOT NULL,
+                    role TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    created_at INTEGER,
+                    output_tokens INTEGER,
+                    tool_activities TEXT NOT NULL DEFAULT '[]',
+                    UNIQUE (conversation_id, id)
+                );",
+            )
+            .expect("create message table");
+        let service =
+            ChatGptService::new(Arc::clone(&storage)).expect("initialize ChatGPT service");
+        let mut content = String::new();
+        let mut output_tokens = None;
+        let mut input_tokens = None;
+        let mut usage = UsageData::default();
+        let mut reasoning_summaries = Vec::new();
+        let mut response_output_items = Vec::new();
+        let events = EventSink::new();
+
+        service
+            .process_response_event(
+                &json!({
+                    "type": "response.output_text.delta",
+                    "delta": "private temporary text"
+                })
+                .to_string(),
+                ResponseEventContext {
+                    content: &mut content,
+                    output_tokens: &mut output_tokens,
+                    input_tokens: &mut input_tokens,
+                    usage: &mut usage,
+                    reasoning_summaries: &mut reasoning_summaries,
+                    response_output_items: &mut response_output_items,
+                    conversation_id: "tmp_0123456789abcdef0123456789abcdef",
+                    message_id: "0123456789abcdef0123456789abcdef",
+                    created_at: 1,
+                    request_id: &json!(1),
+                    events: &events,
+                    persist_message: false,
+                },
+            )
+            .await
+            .expect("temporary response event should be accepted");
+
+        assert_eq!(content, "private temporary text");
+        let durable_messages: i64 = storage
+            .connect()
+            .expect("open database connection")
+            .query_row("SELECT COUNT(*) FROM messages", [], |row| row.get(0))
+            .expect("count durable messages");
+        assert_eq!(durable_messages, 0);
+    }
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "openchat-temporary-response-test-{}",
+                Uuid::new_v4()
+            ));
+            fs::create_dir(&path).expect("create isolated test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).expect("remove isolated test directory");
+        }
     }
 }
