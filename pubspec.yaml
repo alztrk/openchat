@@ -16,7 +16,7 @@ dependencies:
   flutter_localizations:
     sdk: flutter
   flutter_secure_storage: 11.2.0
-  flutter_svg: ^2.2.3
+  flutter_svg: ^2.3.0
   flutter_widget_from_html_core: 0.17.4
   html: 0.15.7
   intl: any
