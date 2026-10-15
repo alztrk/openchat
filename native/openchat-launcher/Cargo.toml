@@ -9,7 +9,7 @@ description = "Single-file Windows launcher for OpenChat"
 [dependencies]
 sha2 = "0.10"
 uuid = { version = "1", features = ["v4"] }
-zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [build-dependencies]
 sha2 = "0.10"
