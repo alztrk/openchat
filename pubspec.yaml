@@ -7,7 +7,7 @@ environment:
   sdk: ^3.13.1
 
 dependencies:
-  drift: 2.35.0
+  drift: 2.35.2
   drift_flutter: 0.3.1
   file_picker: 13.1.0
   flutter:
