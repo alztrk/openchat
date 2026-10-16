@@ -1890,3 +1890,95 @@ section:has([aria-expanded='true']:focus-visible) > .openchat-disclosure-enter,
     animation-iteration-count: 1 !important;
   }
 }
+
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
+}
+
+.app-shell-footer {
+  padding-block: 2px;
+  line-height: 1;
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    grid-template-columns: 52px minmax(0, 1fr);
+  }
+
+  .app-shell-sidebar {
+    width: 52px;
+    padding-inline: 4px;
+  }
+
+  .conversation-sidebar {
+    width: min(300px, calc(100vw - 52px));
+  }
+
+  .conversation-tabs-list {
+    min-width: 0;
+  }
+
+  .conversation-tab-trigger {
+    max-width: clamp(104px, 42vw, 148px);
+    padding-inline: 8px;
+  }
+
+  .composer-context-row {
+    width: 100%;
+    padding-inline: 8px;
+  }
+
+  .openchat-dialog {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+  .composer-context-row {
+    flex-wrap: wrap;
+    align-items: center;
+    row-gap: 4px;
+  }
+
+  .composer-context-row > :first-child {
+    flex: 1 1 8rem;
+  }
+
+  .context-usage-indicator {
+    margin-left: auto;
+  }
+
+  .context-usage-trigger {
+    gap: 4px;
+    padding-left: 6px;
+  }
+
+  .context-usage-count {
+    font-size: 11px;
+  }
+
+  .composer-surface {
+    padding: 8px;
+  }
+
+  .composer-surface > div.mt-2 {
+    gap: 4px;
+  }
+
+  .composer-surface > div.mt-2 > div {
+    column-gap: 4px;
+  }
+
+  .openchat-dialog {
+    max-height: calc(100dvh - 16px);
+    border-radius: 12px;
+    padding: 16px;
+  }
+}
+
+@container (max-width: 959px) {
+  .model-catalog-detail-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
