@@ -1,0 +1,13 @@
+.settings-main-surface {
+  background: rgb(var(--surface));
+}
+
+.settings-page-header-content {
+  max-width: 720px;
+}
+
+.settings-page-description {
+  font-size: calc(15px * var(--app-text-scale, 1));
+  line-height: 20px;
+  font-weight: 500;
+}

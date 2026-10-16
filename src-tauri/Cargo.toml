@@ -1,0 +1,52 @@
+[package]
+name = "openchat-desktop"
+version = "0.1.8"
+description = "OpenChat desktop application"
+authors = ["OpenChat"]
+edition = "2021"
+publish = false
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+base64 = "0.22"
+zeroize = "=1.8.1"
+tauri = { version = "2", features = [] }
+tauri-plugin-window-state = "2.5"
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+rusqlite = { version = "0.40.2", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+url = "=2.5.8"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Security_Cryptography",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+    "Win32_System_Registry",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+win32_notif = "=0.15.3"
+windows = { version = "=0.62.2", features = [
+    "Win32_Security",
+    "Win32_Storage_EnhancedStorage",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    "Win32_System_Registry",
+    "Win32_UI_Shell_Common",
+    "Win32_UI_Shell_PropertiesSystem",
+    "UI_Notifications",
+    "Data_Xml_Dom",
+    "Win32_Foundation",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+windows-core = "=0.62.2"

@@ -1,10 +1,10 @@
 # OpenChat roadmap
 
-This roadmap reflects the repository's current implementation and has no calendar estimates. The Windows desktop experience remains the first release target. Confirmed baseline and implemented milestones are listed separately. The numbered priorities are ordered from highest to lowest by product value, safety, and dependencies; a priority does not block unrelated work unless its dependency is stated.
+This roadmap reflects the current product implementation and has no calendar estimates. Some validation notes below record evidence collected for the retired Flutter client; they are historical and do not validate the current React/Tauri UI. The Windows desktop experience remains the first release target. Confirmed baseline and implemented milestones are listed separately. The numbered priorities are ordered from highest to lowest by product value, safety, and dependencies; a priority does not block unrelated work unless its dependency is stated.
 
 ## Current implementation
 
-- Flutter desktop UI with a local Rust child service and SQLite conversation storage under `%LOCALAPPDATA%\OpenChat`.
+- React desktop UI hosted by Tauri, with a local Rust service and SQLite conversation storage under `%LOCALAPPDATA%\OpenChat`.
 - ChatGPT OAuth connections, account/workspace selection, model catalog, account and quota information, streamed Responses, cancellation, and background conversation titles.
 - OpenCode Console through its OpenAI Chat Completions endpoint. Other OpenCode protocol families are not supported.
 - API-key providers: Gemini, Groq, Cerebras, OpenRouter, Mistral, DeepSeek, xAI, Perplexity, Together AI, SambaNova, Fireworks AI, DeepInfra, DashScope (Qwen), and Cohere, plus custom OpenAI- and Anthropic-compatible endpoints. Dedicated Ollama and LM Studio provider connections are planned. Mistral exposes context, vision, and documented reasoning capabilities; OpenRouter models are filtered to current zero-price text-chat entries that advertise tool support.
@@ -16,7 +16,7 @@ This roadmap reflects the repository's current implementation and has no calenda
 - ChatGPT OAuth quota snapshots are stored per connection and workspace. Provider-reported input usage informs compaction where available, but there is no normalized per-request usage, cost, or prompt-cache ledger across providers; the context meter can use estimates.
 - Conversation history, project grouping, model favorites, rename/delete/pin actions, retry, and Markdown export. Tool activity is included in Markdown exports.
 - Per-conversation memory inspection, bounded hybrid FTS5 and optional local semantic archive search with dated source excerpts, best-effort credential redaction in derived tool indexes, and a confirmed reset for compacted context that preserves full history.
-- A Windows portable executable build script and local data directories for the database, logs, and cache.
+- A Windows Tauri NSIS installer and local data directories for the database, logs, and cache.
 
 These bullets describe code present in the repository. They do not mean that every provider endpoint or account flow has been verified against a live service.
 
@@ -41,7 +41,7 @@ These bullets describe code present in the repository. They do not mean that eve
 - Keep cancellation, partial responses, tool errors, quota limits, and stale model catalogs consistent across providers.
 - Recheck ChatGPT's private endpoints when they change; they are compatibility-sensitive and are not a stable public API contract.
 
-**Exit criteria:** all current shared-route adapters use the same explicit capability and safe-error contract; provider bodies and credentials do not leak into Flutter or logs. Met by source behavior and offline contract tests. Live provider-account checks remain a release gate below.
+**Exit criteria:** all current shared-route adapters use the same explicit capability and safe-error contract; provider bodies and credentials do not leak into the React UI or logs. Met by source behavior and offline contract tests. Live provider-account checks remain a release gate below.
 
 ### Validate API-key providers
 
@@ -96,12 +96,12 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### Automate integration and release validation
 
-**Status: implemented in source and covered by local validation.** Offline checks cover the Flutter/Rust boundary, provider fixtures, migrations, local lifecycle behavior, and the portable launcher. GitHub Actions is configured; a remote run still requires a push or manual workflow dispatch.
+**Status: implemented in source and covered by local validation.** Offline checks cover the React/Tauri/Rust boundary, provider fixtures, migrations, and local lifecycle behavior. Windows CI builds the Tauri installer; a remote run requires a push or manual workflow dispatch.
 
 - Move the live web-search smoke test and fixed-duration file benchmark out of the default test suite. Keep manual network checks opt-in and run performance benchmarks separately from correctness tests.
 - Add local HTTP fixtures for Chat Completions, Responses, SSE, tool-call round trips, malformed events, cancellation, timeouts, and 401/429/5xx responses.
-- Add Flutter-to-Rust process-level RPC tests, local-engine startup/shutdown checks, schema migration coverage, model-download resume/integrity cases, and portable launcher extraction smoke tests.
-- Add CI for Flutter analysis and tests, Rust formatting/checks/tests, Windows release builds, required artifact contents, and release smoke validation.
+- Add Tauri-to-Rust process-level RPC tests, local-engine startup/shutdown checks, schema migration coverage, and model-download resume/integrity cases.
+- Extend CI with rendered desktop smoke validation and checks for required installer contents.
 - Keep live-account provider validation separate from deterministic pull-request checks.
 - Reconcile provider and tool scope across README, roadmap, contribution guidance, and historical integration plans so documentation does not contradict the implementation.
 
@@ -143,6 +143,7 @@ These bullets describe code present in the repository. They do not mean that eve
 - Add an incremental project index that respects `.gitignore`, reports stale or unavailable state, and can be disabled or cleared per project. Implemented with bounded scans, a local FTS5 cache, explicit project controls, and matching excerpts in requests.
 - Keep LSP symbol navigation and diagnostics as a separate code-intelligence capability that can use the project index where useful.
 - Make profile precedence visible when global and project settings both apply. The model picker labels the project default when it overrides the global route.
+- Add a dedicated Projects tab for browsing and creating projects and starting project chats, rather than putting project creation in the composer project selector.
 
 **Exit criteria:** a project can restore its own model and tool defaults when reopened; ignored files stay out of project indexing; stale or disabled indexes are shown explicitly.
 
@@ -198,7 +199,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 7. Broaden API-key provider access
 
-**Status: implemented in source and covered by deterministic tests.** Custom OpenAI- and Anthropic-compatible endpoints and presets for DeepSeek, xAI, Perplexity, Together AI, SambaNova, Fireworks AI, DeepInfra, DashScope (Qwen), and Cohere are implemented in the local Rust service and Flutter UI. Dedicated Ollama and LM Studio provider connections are planned. Live account validation remains open.
+**Status: implemented in source and covered by deterministic tests.** Custom OpenAI- and Anthropic-compatible endpoints and presets for DeepSeek, xAI, Perplexity, Together AI, SambaNova, Fireworks AI, DeepInfra, DashScope (Qwen), and Cohere are implemented in the local Rust service and React UI. Dedicated Ollama and LM Studio provider connections are planned. Live account validation remains open.
 
 - Add a user-configured OpenAI-compatible endpoint with a base URL, API key, catalog refresh, and manual model entry when a catalog is unavailable. Implemented with support for both OpenAI and Anthropic protocol targets.
 - Treat context limits, streaming, reasoning, vision, tool calling, and prices as model capabilities. Implemented with per-provider capability mappings and default limits.
@@ -301,7 +302,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 **Status: later.** Android and iOS require a service lifecycle and secure-storage design that fits mobile process and permission limits. Start this work after desktop provider behavior is stable.
 
-- Decide how Flutter invokes the Rust provider layer on mobile and how long-running requests survive app lifecycle changes.
+- Decide whether a mobile client is in scope and how it would invoke the Rust provider layer while handling app lifecycle changes.
 - Define local data and credential handling for Android and iOS without assuming the desktop child-process model.
 - Keep the UI responsive to mobile layouts, keyboards, connectivity changes, and interrupted background work.
 

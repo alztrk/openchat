@@ -1,48 +1,48 @@
 # Contributing to OpenChat
 
-Thanks for your interest in contributing. The first release focuses on Windows AI chat, model selection, conversation history, and local workspace tools, including file changes with review and revert support. See the [README](README.md) for the current project direction and [ChatGPT implementation plan](docs/chatgpt-integration-plan.md) for the agreed integration behavior and delivery order.
+OpenChat's Windows desktop application uses a React frontend hosted by Tauri. A
+local Rust service handles provider requests, model catalogs, and tool
+execution. See the [README](README.md) for the current architecture and
+supported workflows.
 
 ## Before starting work
 
-- Check the open issues before beginning a substantial feature or technical change.
-- For work that does not already have an issue, open one first to describe the problem and proposed change.
+- Check open issues before beginning a substantial feature or technical change.
 - Keep contributions focused on the agreed issue and current project scope.
+- Preserve local user data and avoid including credentials or private data.
 
 ## Pull requests
 
-- Explain the problem the change solves and its user-visible effect.
+- Explain the problem and its user-visible effect.
 - Link the related issue when one exists.
-- Describe the checks you ran. If you could not run a check, say so clearly.
-- Include screenshots for user interface changes when they help reviewers understand the result.
-- Update project documentation when a change affects user-facing behavior or setup instructions.
-- Do not include API keys, tokens, credentials, private data, or other secrets.
+- Describe the checks you ran. If a check could not run, say why.
+- Include screenshots for interface changes when they help reviewers.
+- Update the smallest relevant documentation when behavior or setup changes.
 
-## Build requirements
+## Windows development requirements
 
-Windows development requires Flutter, Rust with Cargo, and the Visual Studio C++ build tools used by Flutter's Windows runner. The Windows build compiles the Rust local service and packages it beside the application executable.
+- Node.js 22 and npm for the React frontend.
+- Rust and Cargo for the Tauri host and local service.
+- Visual Studio C++ build tools and WebView2 for Tauri's Windows target.
 
-## Checks
+Install frontend dependencies from the repository root with
+`npm ci --prefix frontend`. Start the desktop development app with
+`npm run tauri:dev --prefix frontend`. Build the frontend with
+`npm run build --prefix frontend`.
 
-- GitHub Actions runs the checks below on Windows without provider credentials or live provider requests.
-- Workflow actions are pinned to commit SHAs; Dependabot checks GitHub Actions, Cargo, and Pub updates weekly.
-- `flutter pub get --enforce-lockfile`
-- `flutter gen-l10n`
-- `dart format --output=none --set-exit-if-changed lib test benchmarks`
-- `flutter analyze`
-- `flutter test`
-- Optional database benchmark, excluded from default test discovery: `flutter test --no-pub --dart-define=OPENCHAT_RUN_PERF_BENCHMARK=true benchmarks/chat_repository_performance_test.dart`
-- `cargo fmt --manifest-path native/openchat-service/Cargo.toml -- --check`
-- `cargo fmt --manifest-path native/openchat-launcher/Cargo.toml -- --check`
-- `cargo check --all-targets --locked --manifest-path native/openchat-service/Cargo.toml`
-- `cargo test --locked --manifest-path native/openchat-service/Cargo.toml`
-- `tools/build_windows_portable.ps1`
-- `cargo test --locked --manifest-path native/openchat-launcher/Cargo.toml --target-dir build/launcher-test-target`
-- `git diff --check`
+## Validation and packaging
 
-The Windows workflow uploads the portable executable as a short-lived build artifact. It does not publish a GitHub release. Live provider-account checks require configured provider credentials and are run separately from credential-free CI.
+The Windows CI workflow formats and checks both Rust crates, runs the local
+service tests, builds the React frontend, compiles the Tauri application, and
+uploads the NSIS installer as a short-lived artifact. It does not publish a
+GitHub release or perform live provider-account checks.
 
-Visual regression checks live in `test/fidelity_screenshot_test.dart`. They render the existing Flutter components in both themes with isolated test data, check narrow windows and enlarged text, and exercise the history drawer and virtual-keyboard layout. The files in `test/goldens` are local rendering baselines, not evidence of a live provider connection.
+Use the repository's pinned lockfiles when building. The service sidecar must
+be built for the Tauri target and placed in `src-tauri/binaries` using the
+target-triple filename configured by Tauri before packaging. The CI workflow
+shows the supported Windows build sequence.
 
-For an intentional visual change, run `flutter test --no-pub --update-goldens test/fidelity_screenshot_test.dart`, inspect the changed images, then run `flutter test --no-pub` without updating baselines. Check the composer with all applicable selectors visible: fitting the default empty state alone does not prove the controls fit a narrow window.
-
-Open menus and provider forms at 200% text scale, visit every settings section, and check both narrow and short windows. Scope repeated navigation labels to their page so a test cannot accidentally open the global model catalog instead of model settings. Keep empty and unavailable states reachable without a connected service. Verify focus, Escape dismissal, disabled actions, and touch targets before accepting new visual baselines.
+Current automated coverage includes local Rust service tests and frontend
+type-check/bundle validation. There is no Flutter test or golden-image suite;
+review React changes in the running Tauri app and report any Windows checks
+that were not available.

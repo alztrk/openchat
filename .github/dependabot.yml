@@ -7,19 +7,19 @@ updates:
     open-pull-requests-limit: 5
 
   - package-ecosystem: cargo
-    directory: /native/openchat-service
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: /frontend
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
 
   - package-ecosystem: cargo
-    directory: /native/openchat-launcher
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-
-  - package-ecosystem: pub
-    directory: /
+    directory: /native/openchat-service
     schedule:
       interval: weekly
     open-pull-requests-limit: 5

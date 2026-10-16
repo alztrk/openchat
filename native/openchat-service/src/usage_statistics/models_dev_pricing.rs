@@ -221,6 +221,34 @@ pub(super) async fn model_details(
     }))
 }
 
+pub(super) async fn model_details_batch(
+    storage: &AppStorage,
+    requested_models: &[(String, String)],
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<Value, ServiceError> {
+    let catalog = load(storage, cancellation).await?;
+    let cached = load_cached_catalog(storage)?;
+    let cached_catalog = cached.and_then(|(_, json)| serde_json::from_str::<Value>(&json).ok());
+    let models = requested_models
+        .iter()
+        .map(|(provider_id, model_id)| {
+            serde_json::json!({
+                "providerId": provider_id,
+                "modelId": model_id,
+                "model": cached_catalog
+                    .as_ref()
+                    .and_then(|catalog| model_from_catalog(catalog, provider_id, model_id)),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    Ok(serde_json::json!({
+        "state": catalog.state,
+        "fetchedAtUnixMs": catalog.fetched_at_unix_ms,
+        "models": models,
+    }))
+}
+
 fn model_from_catalog(catalog: &Value, provider_id: &str, model_id: &str) -> Option<Value> {
     let catalog_provider_id = match provider_id {
         "chatgpt" | "chatgpt_api" => "openai",

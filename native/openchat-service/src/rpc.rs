@@ -511,6 +511,23 @@ pub(crate) async fn dispatch(
             usage_statistics::get_model_details(storage, provider_id, model_id, &mut cancellation)
                 .await
         }
+        "models.pricing.get_many" => {
+            let requested_models = request
+                .params
+                .get("models")
+                .and_then(Value::as_array)
+                .filter(|models| !models.is_empty() && models.len() <= 1000)
+                .ok_or_else(invalid_request_params)?;
+            let models = requested_models
+                .iter()
+                .map(|model| {
+                    let provider_id = bounded_route_id(model, "providerId")?;
+                    let model_id = bounded_route_id(model, "modelId")?;
+                    Ok((provider_id.to_owned(), model_id.to_owned()))
+                })
+                .collect::<Result<Vec<_>, ServiceError>>()?;
+            usage_statistics::get_model_details_batch(storage, &models, &mut cancellation).await
+        }
         "chatgpt.reset_credits.consume" => {
             let connection_id = required_string(&request.params, "connectionId")?;
             let workspace_id = required_string(&request.params, "workspaceId")?;
@@ -642,8 +659,19 @@ pub(crate) async fn dispatch(
                     | "cerebras"
                     | "openrouter"
                     | "mistral"
+                    | "deepseek"
+                    | "xai"
+                    | "perplexity"
+                    | "together"
+                    | "sambanova"
+                    | "anthropic"
+                    | "fireworks"
+                    | "deepinfra"
+                    | "dashscope"
+                    | "cohere"
                     | "llama_cpp"
-            ) {
+            ) && !is_custom_provider_id(provider_id)
+            {
                 return Err(invalid_context_usage_params());
             }
             let model_id = optional_string(&request.params, "modelId")?;
@@ -662,8 +690,9 @@ pub(crate) async fn dispatch(
             instructions::validate_custom_instructions(custom_instructions)
                 .map_err(|_| invalid_context_usage_params())?;
             let conversation_id = optional_string(&request.params, "conversationId")?;
-            let project_root = match conversation_id {
-                Some(conversation_id) => {
+            let project_id = optional_string(&request.params, "projectId")?;
+            let project_root = match (conversation_id, project_id) {
+                (Some(conversation_id), _) => {
                     let connection = storage.connect().map_err(|_| {
                         ServiceError::new(
                             "storage_unavailable",
@@ -691,8 +720,34 @@ pub(crate) async fn dispatch(
                         .flatten()
                         .filter(|path| !path.trim().is_empty())
                 }
-                None => None,
+                (None, Some(project_id)) => {
+                    let connection = storage.connect().map_err(|_| {
+                        ServiceError::new(
+                            "storage_unavailable",
+                            "Chat context usage could not be measured.",
+                            true,
+                        )
+                    })?;
+                    connection
+                        .query_row(
+                            "SELECT folder_path FROM projects WHERE id = ?1",
+                            [project_id],
+                            |row| row.get::<_, Option<String>>(0),
+                        )
+                        .optional()
+                        .map_err(|_| {
+                            ServiceError::new(
+                                "storage_unavailable",
+                                "Chat context usage could not be measured.",
+                                true,
+                            )
+                        })?
+                        .flatten()
+                        .filter(|path| !path.trim().is_empty())
+                }
+                (None, None) => None,
             };
+            let project_context_unavailable = project_id.is_some() && project_root.is_none();
             let project_instructions = if permission_mode == ToolPermissionMode::Plan {
                 None
             } else {
@@ -765,6 +820,7 @@ pub(crate) async fn dispatch(
             Ok(json!({
                 "instructionsTokens": crate::context_compaction::text_token_estimate(&instructions),
                 "toolDefinitions": tool_definitions,
+                "projectContextUnavailable": project_context_unavailable,
             }))
         }
         "chat.memory.search" => {
@@ -2191,6 +2247,16 @@ fn bounded_route_id<'a>(params: &'a Value, name: &str) -> Result<&'a str, Servic
         return Err(invalid_request_params());
     }
     Ok(value)
+}
+
+fn is_custom_provider_id(provider_id: &str) -> bool {
+    let Some(suffix) = provider_id.strip_prefix("custom_") else {
+        return false;
+    };
+    (12..=57).contains(&suffix.len())
+        && suffix
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
 }
 
 fn take_optional_api_key(params: &mut Value) -> Result<Option<Zeroizing<String>>, ServiceError> {

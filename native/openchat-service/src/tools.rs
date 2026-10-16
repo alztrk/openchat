@@ -1411,7 +1411,6 @@ pub(crate) fn path_entry_is_hidden(name: &str, path: &Path) -> Result<bool, ()> 
 pub(crate) fn is_default_ignored_directory(name: &str) -> bool {
     [
         ".git",
-        ".dart_tool",
         ".gradle",
         ".next",
         ".nuxt",

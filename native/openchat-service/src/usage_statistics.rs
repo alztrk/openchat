@@ -573,6 +573,14 @@ pub(crate) async fn get_model_details(
     models_dev_pricing::model_details(storage, provider_id, model_id, cancellation).await
 }
 
+pub(crate) async fn get_model_details_batch(
+    storage: &AppStorage,
+    models: &[(String, String)],
+    cancellation: &mut watch::Receiver<bool>,
+) -> Result<Value, ServiceError> {
+    models_dev_pricing::model_details_batch(storage, models, cancellation).await
+}
+
 fn statistics_storage_error() -> ServiceError {
     ServiceError::new(
         "usage_statistics_unavailable",
