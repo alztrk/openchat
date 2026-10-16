@@ -10,7 +10,7 @@ publish = false
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-base64 = "0.22"
+base64 = "0.23"
 zeroize = "=1.8.1"
 tauri = { version = "2", features = [] }
 tauri-plugin-window-state = "2.5"
