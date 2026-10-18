@@ -91,8 +91,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             chat_storage::get_cache_entry,
             chat_storage::set_cache_entry,
             chat_storage::migrate_localstorage_to_db,
+            chat_storage::optimize_database,
         ])
         .setup(|app| {
+            chat_storage::prepare_chat_database().map_err(|error| {
+                std::io::Error::other(format!("Database initialization failed: {error:?}"))
+            })?;
             notifications::initialize(app.handle()).map_err(std::io::Error::other)?;
             if let Some(main_window) = app.get_webview_window("main") {
                 window_state::restore_window_state(&main_window.as_ref().window());
@@ -112,6 +116,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build(tauri::generate_context!())?;
     app.run(|handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
+            let _ = chat_storage::optimize_database();
             if let Err(error) = handle.state::<local_service::LocalServiceState>().stop() {
                 eprintln!("OpenChat local service shutdown failed: {error}");
             }

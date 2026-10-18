@@ -325,6 +325,7 @@ fn open_database_connection(path: &Path) -> Result<rusqlite::Connection, SecretS
     connection
         .execute_batch(
             "PRAGMA journal_mode = WAL;
+             PRAGMA synchronous = NORMAL;
              CREATE TABLE IF NOT EXISTS secure_vault (
                  key TEXT PRIMARY KEY NOT NULL,
                  ciphertext BLOB NOT NULL,

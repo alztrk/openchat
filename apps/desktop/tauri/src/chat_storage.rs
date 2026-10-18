@@ -27,7 +27,7 @@ use crate::{
     save_dialog::{select_save_file, SaveFileDialogError},
 };
 
-const CHAT_SCHEMA_VERSION: i64 = 19;
+const CHAT_SCHEMA_VERSION: i64 = 20;
 const MINIMUM_SQLITE_VERSION_NUMBER: i32 = 3_051_003;
 const MAX_MESSAGE_CHARS: usize = 1_000_000;
 const MESSAGE_CONTENT_PREFIX: &str = "\u{1e}openchat-attachments-v1:";
@@ -674,9 +674,36 @@ pub fn prepare_chat_database() -> Result<PreparedDatabase, ChatStorageError> {
     }
 
     connection
-        .execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")
+        .execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA foreign_keys = ON;
+             PRAGMA synchronous = NORMAL;
+             PRAGMA cache_size = -64000;
+             PRAGMA temp_store = MEMORY;
+             PRAGMA mmap_size = 67108864;",
+        )
         .map_err(|_| ChatStorageError::unavailable())?;
+    let auto_vacuum: i64 = connection
+        .query_row("PRAGMA auto_vacuum", [], |row| row.get(0))
+        .unwrap_or(0);
+    if auto_vacuum == 0 {
+        let _ = connection.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;");
+    }
     migrate_chat_schema(&mut connection).map_err(|_| ChatStorageError::unavailable())?;
+
+    // Maintenance: prune expired ephemeral cache entries and check freelist
+    if let Ok(now) = unix_time_milliseconds() {
+        let _ = connection.execute(
+            "DELETE FROM ephemeral_cache WHERE expires_at <= ?1",
+            params![now],
+        );
+    }
+    let freelist_count: i64 = connection
+        .query_row("PRAGMA freelist_count", [], |row| row.get(0))
+        .unwrap_or(0);
+    if freelist_count > 100 {
+        let _ = connection.execute("PRAGMA incremental_vacuum(50)", []);
+    }
 
     let integrity: String = connection
         .query_row("PRAGMA quick_check(1)", [], |row| row.get(0))
@@ -2596,7 +2623,25 @@ fn open_supported_connection(path: &Path) -> Result<Connection, ChatStorageError
         return Err(ChatStorageError::unavailable());
     }
     connection
-        .execute_batch("PRAGMA foreign_keys = ON;")
+        .execute_batch(
+            "PRAGMA foreign_keys = ON;
+             PRAGMA synchronous = NORMAL;
+             PRAGMA cache_size = -64000;
+             PRAGMA temp_store = MEMORY;
+             PRAGMA mmap_size = 67108864;",
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    connection
+        .create_scalar_function(
+            "openchat_redact_credentials",
+            1,
+            rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC
+                | rusqlite::functions::FunctionFlags::SQLITE_INNOCUOUS,
+            |ctx| {
+                let value = ctx.get::<Option<String>>(0)?;
+                Ok(value)
+            },
+        )
         .map_err(|_| ChatStorageError::unavailable())?;
     Ok(connection)
 }
@@ -2616,6 +2661,20 @@ mod database_connection_tests {
             .expect("read trusted schema setting");
 
         assert!(!trusted_schema_enabled);
+    }
+
+    #[test]
+    fn supported_connections_register_redact_function_and_pragmas() {
+        let connection = open_supported_connection(Path::new(":memory:"))
+            .expect("open configured in-memory database");
+        let result: String = connection
+            .query_row(
+                "SELECT openchat_redact_credentials('test-key-123')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("execute openchat_redact_credentials scalar function");
+        assert_eq!(result, "test-key-123");
     }
 }
 
@@ -2900,6 +2959,16 @@ fn migrate_chat_schema(connection: &mut Connection) -> rusqlite::Result<()> {
                 ON ephemeral_cache(expires_at);",
         )?;
         transaction.pragma_update(None, "user_version", 19)?;
+        version = 19;
+    }
+    if version < 20 {
+        transaction.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_conversations_sort_list
+                ON conversations(is_bookmarked DESC, is_pinned DESC, updated_at DESC, id ASC);
+             CREATE INDEX IF NOT EXISTS idx_messages_conversation_sort
+                ON messages(conversation_id, created_at ASC, id ASC);",
+        )?;
+        transaction.pragma_update(None, "user_version", 20)?;
     }
     transaction.commit()
 }
@@ -3212,6 +3281,10 @@ pub fn set_cache_entry(
     let now = unix_time_milliseconds()?;
     let expires_at = now.saturating_add(ttl_seconds.saturating_mul(1000));
     let connection = open_database()?;
+    let _ = connection.execute(
+        "DELETE FROM ephemeral_cache WHERE expires_at <= ?1",
+        params![now],
+    );
     connection
         .execute(
             "INSERT INTO ephemeral_cache (key, value_json, expires_at) VALUES (?1, ?2, ?3)
@@ -3282,6 +3355,19 @@ pub fn migrate_localstorage_to_db(
         .commit()
         .map_err(|_| ChatStorageError::unavailable())?;
     Ok(true)
+}
+
+#[tauri::command]
+/// Runs SQLite's optimizer pragma to update query planner statistics before idle or shutdown.
+///
+/// # Errors
+/// Returns a storage error if PRAGMA optimize fails.
+pub fn optimize_database() -> Result<(), ChatStorageError> {
+    let connection = open_database()?;
+    connection
+        .execute("PRAGMA optimize", [])
+        .map_err(|_| ChatStorageError::unavailable())?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -4105,6 +4191,20 @@ mod settings_and_unified_storage_tests {
         assert!(tables.contains(&"personal_memory_facts".to_string()));
         assert!(tables.contains(&"secure_vault".to_string()));
         assert!(tables.contains(&"ephemeral_cache".to_string()));
+    }
+
+    #[test]
+    fn schema_migration_20_creates_covering_and_sort_indexes() {
+        let conn = in_memory_db();
+        let indexes: Vec<String> = conn
+            .prepare("SELECT name FROM sqlite_schema WHERE type='index'")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(Result::ok)
+            .collect();
+        assert!(indexes.contains(&"idx_conversations_sort_list".to_string()));
+        assert!(indexes.contains(&"idx_messages_conversation_sort".to_string()));
     }
 
     #[test]
