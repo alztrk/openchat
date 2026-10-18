@@ -1,0 +1,277 @@
+//! Tests for RPC frame bounds, approval tracking, and permission policies.
+
+use std::sync::{Arc, Mutex};
+
+use serde_json::json;
+
+use super::process::*;
+use super::rpc_frame::*;
+use super::types::*;
+
+    #[test]
+    fn full_access_mode_changes_require_native_confirmation() {
+        for frame in [
+            "{\"id\":1,\"method\":\"tools.permissions.mode.set\",\"params\":{\"mode\":\"full_access\"}}\n",
+            "{\"id\":1,\"method\":\"tools.permissions.mode.get\",\"params\":{\"initialMode\":\"full_access\"}}\n",
+        ] {
+            assert_eq!(
+                renderer_rpc_disposition(frame, 256),
+                Some(RendererRpcDisposition::Confirm(
+                    PermissionDetails::EnableFullAccess
+                ))
+            );
+        }
+    }
+
+    #[test]
+    fn project_allow_rules_require_native_confirmation_for_save_and_import() {
+        for frame in [
+            "{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{\"projectId\":\"project-1\",\"rules\":{\"read_file\":\"allow\"}}}\n",
+            "{\"id\":1,\"method\":\"project.tool_permissions.get\",\"params\":{\"projectId\":\"project-1\",\"initialRules\":{\"read_file\":\"allow\"}}}\n",
+        ] {
+            assert_eq!(
+                renderer_rpc_disposition(frame, 256),
+                Some(RendererRpcDisposition::Confirm(
+                    PermissionDetails::AllowProjectRules {
+                        project_id: "project-1".to_owned(),
+                        allow_rule_count: 1,
+                        rule_names: vec!["read_file".to_owned()],
+                        additional_rule_count: 0,
+                    }
+                ))
+            );
+        }
+    }
+
+    #[test]
+    fn project_confirmation_lists_eight_rules_and_counts_the_rest() {
+        let frame = "{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{\"projectId\":\"project-1\",\"rules\":{\"edit_file\":\"allow\",\"execute_command\":\"allow\",\"get_file_info\":\"allow\",\"git_diff\":\"allow\",\"git_history\":\"allow\",\"git_status\":\"allow\",\"list_files\":\"allow\",\"read_file\":\"allow\",\"search_files\":\"allow\"}}}\n";
+
+        assert_eq!(
+            renderer_rpc_disposition(frame, 1_024),
+            Some(RendererRpcDisposition::Confirm(
+                PermissionDetails::AllowProjectRules {
+                    project_id: "project-1".to_owned(),
+                    allow_rule_count: 9,
+                    rule_names: vec![
+                        "edit_file",
+                        "execute_command",
+                        "get_file_info",
+                        "git_diff",
+                        "git_history",
+                        "git_status",
+                        "list_files",
+                        "read_file",
+                    ]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
+                    additional_rule_count: 1,
+                }
+            ))
+        );
+    }
+
+    #[test]
+    fn restricted_permission_modes_and_unrelated_calls_do_not_need_confirmation() {
+        for frame in [
+            "{\"id\":1,\"method\":\"tools.permissions.mode.set\",\"params\":{\"mode\":\"require_approval\"}}\n",
+            "{\"id\":1,\"method\":\"tools.permissions.mode.set\",\"params\":{\"mode\":\"approve_safe_operations\"}}\n",
+            "{\"id\":1,\"method\":\"tools.permissions.mode.get\",\"params\":{}}\n",
+            "{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{\"projectId\":\"project-1\",\"rules\":{\"read_file\":\"ask\",\"write_file\":\"deny\"}}}\n",
+            "{\"id\":1,\"method\":\"project.tool_permissions.get\",\"params\":{\"projectId\":\"project-1\",\"initialRules\":{\"read_file\":\"deny\"}}}\n",
+            "{\"id\":1,\"method\":\"project.tool_permissions.get\",\"params\":{\"projectId\":\"project-1\"}}\n",
+            "{\"id\":1,\"method\":\"chat.send\",\"params\":{}}\n",
+        ] {
+            assert_eq!(
+                renderer_rpc_disposition(frame, 256),
+                Some(RendererRpcDisposition::Forward)
+            );
+        }
+    }
+
+    #[test]
+    fn ambiguous_permission_mode_frames_are_rejected() {
+        let duplicate_mode = "{\"id\":1,\"method\":\"tools.permissions.mode.set\",\"params\":{\"mode\":\"require_approval\",\"mode\":\"full_access\"}}\n";
+        let malformed_mode =
+            "{\"id\":1,\"method\":\"tools.permissions.mode.set\",\"params\":{\"mode\":true}}\n";
+
+        assert_eq!(renderer_rpc_disposition(duplicate_mode, 256), None);
+        assert_eq!(renderer_rpc_disposition(malformed_mode, 256), None);
+    }
+
+    #[test]
+    fn malformed_or_out_of_scope_project_permission_frames_are_rejected() {
+        let malformed_rule = "{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{\"projectId\":\"project-1\",\"rules\":{\"read_file\":true}}}\n";
+        let invalid_project = "{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{\"projectId\":\"../project\",\"rules\":{\"read_file\":\"allow\"}}}\n";
+
+        assert_eq!(renderer_rpc_disposition(malformed_rule, 512), None);
+        assert_eq!(renderer_rpc_disposition(invalid_project, 512), None);
+    }
+
+    #[test]
+    fn duplicate_project_rule_keys_match_service_last_value_parsing() {
+        let last_value_allows = "{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{\"projectId\":\"project-1\",\"rules\":{\"read_file\":\"ask\",\"read_file\":\"allow\"}}}\n";
+        let last_value_denies = "{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{\"projectId\":\"project-1\",\"rules\":{\"read_file\":\"allow\",\"read_file\":\"deny\"}}}\n";
+
+        assert!(matches!(
+            renderer_rpc_disposition(last_value_allows, 512),
+            Some(RendererRpcDisposition::Confirm(_))
+        ));
+        assert_eq!(
+            renderer_rpc_disposition(last_value_denies, 512),
+            Some(RendererRpcDisposition::Forward)
+        );
+    }
+
+    #[test]
+    fn oversized_project_permission_frames_are_rejected_before_rule_parsing() {
+        let padding = "x".repeat(super::MAX_PROJECT_PERMISSION_RPC_FRAME_BYTES);
+        let frame = format!(
+            "{{\"id\":1,\"method\":\"project.tool_permissions.set\",\"params\":{{\"projectId\":\"project-1\",\"rules\":{{}},\"extra\":\"{padding}\"}}}}\n"
+        );
+
+        assert_eq!(
+            renderer_rpc_disposition(&frame, super::MAX_RPC_FRAME_BYTES),
+            None
+        );
+    }
+
+    #[test]
+    fn permission_policy_confirmation_guard_allows_only_one_live_dialog() {
+        let active = std::sync::atomic::AtomicBool::new(false);
+        let first =
+            PermissionPolicyConfirmationGuard::acquire(&active).expect("acquire first guard");
+        assert!(PermissionPolicyConfirmationGuard::acquire(&active).is_err());
+
+        drop(first);
+        assert!(PermissionPolicyConfirmationGuard::acquire(&active).is_ok());
+    }
+
+    #[test]
+    fn rpc_frame_requires_one_newline_terminated_line_within_the_limit() {
+        assert_eq!(
+            renderer_rpc_disposition("{\"id\":1,\"method\":\"chat.send\"}\n", 40),
+            Some(RendererRpcDisposition::Forward)
+        );
+        assert_eq!(renderer_rpc_disposition("{\"id\":1}", 9), None);
+        assert_eq!(renderer_rpc_disposition("{\"id\":1}\n\n", 10), None);
+        assert_eq!(renderer_rpc_disposition("{\"id\":1}\r\n", 10), None);
+        assert_eq!(renderer_rpc_disposition("{\"id\":1}\n", 8), None);
+    }
+
+    #[test]
+    fn renderer_cannot_submit_permission_decisions() {
+        for approved in [true, false] {
+            let frame = format!(
+                "{{\"id\":1,\"method\":\"chat.tool.permission.respond\",\"params\":{{\"approved\":{approved}}}}}\n"
+            );
+            assert_eq!(renderer_rpc_disposition(&frame, 256), None);
+        }
+        let escaped_method = "{\"id\":1,\"method\":\"chat.tool.permission.\\u0072espond\"}\n";
+        assert_eq!(renderer_rpc_disposition(escaped_method, 256), None);
+    }
+
+    #[test]
+    fn response_id_is_read_without_parsing_the_result_body() {
+        assert_eq!(parse_response_id("{\"id\":42,\"result\":{}}\n"), Some(42));
+        assert_eq!(parse_response_id("{\"result\":{},\"id\":42}\n"), None);
+        assert_eq!(parse_response_id("not a response"), None);
+    }
+
+    #[test]
+    fn permission_requests_are_tied_to_live_generation_and_operation() {
+        let permissions = Arc::new(Mutex::new(PendingPermissionState::default()));
+        let event = json!({
+            "id": 7,
+            "event": "chat.tool.permission.requested",
+            "data": {
+                "approvalRequestId": "0123456789abcdef0123456789abcdef",
+                "toolName": "execute_command",
+                "targetPath": "D:/projects/OpenChat",
+                "arguments": {"command": "cargo fmt"}
+            }
+        })
+        .to_string();
+        observe_service_output(&permissions, 3, &event);
+
+        let request =
+            begin_permission_response(&permissions, 3, "0123456789abcdef0123456789abcdef")
+                .expect("captured active request can be answered");
+        assert!(matches!(
+            request.details,
+            PermissionDetails::Reviewable { .. }
+        ));
+        assert!(
+            begin_permission_response(&permissions, 3, "0123456789abcdef0123456789abcdef",)
+                .is_err()
+        );
+
+        let result = json!({"id": 7, "result": {"status": "cancelled"}}).to_string();
+        observe_service_output(&permissions, 3, &result);
+        assert!(
+            begin_permission_response(&permissions, 3, "0123456789abcdef0123456789abcdef",)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn approval_ids_cannot_cross_service_generations() {
+        let permissions = Arc::new(Mutex::new(PendingPermissionState::default()));
+        let event = json!({
+            "id": 7,
+            "event": "chat.tool.permission.requested",
+            "data": {
+                "approvalRequestId": "0123456789abcdef0123456789abcdef",
+                "toolName": "execute_command",
+                "targetPath": "D:/projects/OpenChat",
+                "arguments": {"command": "cargo fmt"}
+            }
+        })
+        .to_string();
+        observe_service_output(&permissions, 3, &event);
+
+        assert!(
+            begin_permission_response(&permissions, 4, "0123456789abcdef0123456789abcdef",)
+                .is_err()
+        );
+        assert!(
+            begin_permission_response(&permissions, 3, "0123456789abcdef0123456789abcdef",)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn stopped_service_generation_cannot_leave_approvable_requests() {
+        let permissions = Arc::new(Mutex::new(PendingPermissionState::default()));
+        let event = json!({
+            "id": 7,
+            "event": "chat.tool.permission.requested",
+            "data": {
+                "approvalRequestId": "0123456789abcdef0123456789abcdef",
+                "toolName": "execute_command",
+                "targetPath": "D:/projects/OpenChat",
+                "arguments": {"command": "cargo fmt"}
+            }
+        })
+        .to_string();
+        observe_service_output(&permissions, 3, &event);
+        clear_generation_permissions(&permissions, 3);
+
+        assert!(
+            begin_permission_response(&permissions, 3, "0123456789abcdef0123456789abcdef",)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn oversized_permission_details_cannot_be_approved() {
+        let data = json!({
+            "approvalRequestId": "0123456789abcdef0123456789abcdef",
+            "toolName": "execute_command",
+            "targetPath": "D:/projects/OpenChat",
+            "arguments": {"command": "x".repeat(9 * 1024)}
+        });
+        let (_, details) = parse_pending_permission(&data).expect("valid approval ID");
+        assert!(matches!(details, PermissionDetails::TooLargeToReview));
+    }
