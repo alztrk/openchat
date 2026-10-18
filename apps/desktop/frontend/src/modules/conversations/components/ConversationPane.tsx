@@ -108,10 +108,14 @@ export function ConversationPane({
     serviceStatus !== 'error';
   const centerEmptyConversation =
     isEmptyConversation && !isLargeText && paneSize.width >= 640 && paneSize.height >= 640;
-  const latestAssistant = messages
-    .slice()
-    .reverse()
-    .find((message) => message.role === 'assistant');
+  const latestAssistant = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i]?.role === 'assistant') {
+        return messages[i];
+      }
+    }
+    return undefined;
+  }, [messages]);
   const latestToolActivitiesJson = latestAssistant?.toolActivities ?? '';
   const latestAssistantActivities = useMemo(
     () => parseToolActivities(latestToolActivitiesJson),
@@ -145,8 +149,14 @@ export function ConversationPane({
     observer.observe(pane);
     return () => observer.disconnect();
   }, []);
-  const visibleModels = models.filter((model) => !hiddenModelKeys.includes(modelRouteKey(model)));
-  const selectedModel = visibleModels.find((model) => model.key === selectedModelKey);
+  const visibleModels = useMemo(() => {
+    const hiddenSet = new Set(hiddenModelKeys);
+    return models.filter((model) => !hiddenSet.has(modelRouteKey(model)));
+  }, [models, hiddenModelKeys]);
+  const selectedModel = useMemo(
+    () => visibleModels.find((model) => model.key === selectedModelKey) ?? null,
+    [visibleModels, selectedModelKey],
+  );
   const assistantModelFallback =
     selectedModel?.displayName ?? activeConversation?.modelId ?? temporaryChat?.route?.displayName ?? null;
   const assistantProviderFallback =
@@ -161,9 +171,15 @@ export function ConversationPane({
     temporaryProviderModel?.sourceLabel ??
     temporaryProviderModel?.providerId ??
     '';
-  const savedMessageIds = new Set(
-    savedOutputMessageKeys.filter((key) => key.conversationId === activeConversationId).map((key) => key.messageId),
-  );
+  const savedMessageIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const key of savedOutputMessageKeys) {
+      if (key.conversationId === activeConversationId) {
+        set.add(key.messageId);
+      }
+    }
+    return set;
+  }, [savedOutputMessageKeys, activeConversationId]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Switching conversations resets transient editor and file-change panel state.
   useEffect(() => {
