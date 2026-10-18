@@ -264,16 +264,22 @@ fn directory_listing_response(
     offset: usize,
     limit: usize,
 ) -> Value {
+    let relative_prefix = if relative_directory.as_os_str().is_empty() {
+        None
+    } else {
+        Some(relative_directory.to_string_lossy().replace('\\', "/"))
+    };
+
     let page = listing
         .entries
         .iter()
         .skip(offset)
         .take(limit)
         .map(|(name, is_dir)| {
-            let path = relative_directory
-                .join(name)
-                .to_string_lossy()
-                .replace('\\', "/");
+            let path = match &relative_prefix {
+                Some(prefix) => format!("{prefix}/{name}"),
+                None => name.clone(),
+            };
             json!({"path": path, "type": if *is_dir { "directory" } else { "file" }})
         })
         .collect::<Vec<_>>();
@@ -310,7 +316,7 @@ pub fn read_file(
     let mut reader = BufReader::new(file).take(MAX_DIRECT_READ_BYTES + 1);
     let mut line = String::new();
     let mut number = 0usize;
-    let mut output = Vec::new();
+    let mut output = Vec::with_capacity(line_count.min(128));
     let mut output_bytes = 0usize;
     let mut truncated = false;
 
