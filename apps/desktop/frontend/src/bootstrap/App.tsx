@@ -15,22 +15,24 @@ import {
   setNotificationWindowFocus,
 } from '@/modules/notifications/data/notificationRuntime';
 import type { ThemePreference } from '@/modules/settings/components/GeneralSettingsSection';
-import { SettingsPage } from '@/modules/settings/components/SettingsPage';
 import {
   type AppearancePreferences,
   getAppearanceCssValues,
   readAppearancePreferences,
 } from '@/modules/settings/data/appearancePreferences';
 import { localServiceClient } from '@/platform/local-service';
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 import { getCurrentWindow, getVersion, invoke, isTauri, listen } from '@/platform/tauri';
 import { BrandMark } from '@/shell/BrandMark';
 import { ConversationActionsHeader } from '@/shell/ConversationActionsHeader';
 import { type AppSurface, NavigationRail } from '@/shell/NavigationRail';
 import { TitleBar } from '@/shell/TitleBar';
-import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 
 const LibraryPage = lazy(() =>
   import('@/modules/model-library/components/LibraryPage').then((module) => ({ default: module.LibraryPage })),
+);
+const SettingsPage = lazy(() =>
+  import('@/modules/settings/components/SettingsPage').then((module) => ({ default: module.SettingsPage })),
 );
 
 interface SurfaceHistory {
@@ -590,13 +592,21 @@ export function App() {
             </div>
           ) : (
             <div className="min-w-0 flex-1 overflow-hidden">
-              <SettingsPage
-                appearance={appearance}
-                onOpenConversation={openStatisticsConversation}
-                onAppearanceChange={(updated) => setAppearance((current) => ({ ...current, ...updated }))}
-                onThemeChange={changeThemePreference}
-                theme={theme}
-              />
+              <Suspense
+                fallback={
+                  <p aria-live="polite" className="px-6 py-8 text-sm text-secondary-text">
+                    {t('settingsSectionLoading')}
+                  </p>
+                }
+              >
+                <SettingsPage
+                  appearance={appearance}
+                  onOpenConversation={openStatisticsConversation}
+                  onAppearanceChange={(updated) => setAppearance((current) => ({ ...current, ...updated }))}
+                  onThemeChange={changeThemePreference}
+                  theme={theme}
+                />
+              </Suspense>
             </div>
           )}
         </main>
