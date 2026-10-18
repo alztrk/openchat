@@ -212,7 +212,11 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   Object before its primary thread resumes, limiting the process tree to 32
   active processes, 1 GiB per process, and 2 GiB total job memory. The protocol
   timeout is 12 seconds, and only one probe can run at a time. Sandbox setup
-  fails closed: the probe does not retry in the Tauri host context. ACL updates
+  fails closed: the probe does not retry in the Tauri host context. In interactive
+  desktop sessions, child processes loading console and USER32 subsystems (such as
+  PowerShell) also receive minimum read/execute DACL access on the WindowStation
+  (`WinSta0`) and Desktop objects, managed under `APP_CONTAINER_ACL_LOCK` and revoked on
+  cleanup. ACL updates
   are serialized within the process by a mutex and across processes sharing the
   same profile path by a stable lock file at
   `%LOCALAPPDATA%\OpenChat\appcontainer-acl.lock`. The lock file remains in place

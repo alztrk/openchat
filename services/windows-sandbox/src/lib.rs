@@ -665,6 +665,10 @@ impl AppContainerSandbox {
             temp_directory,
             granted_paths: Vec::new(),
         };
+        if let Err(error) = grant_user_objects_access(sid) {
+            sandbox.cleanup();
+            return Err(error);
+        }
         if let Err(error) = sandbox.grant_working_directory(acl_working_directory) {
             sandbox.cleanup();
             return Err(error);
@@ -971,6 +975,7 @@ impl AppContainerSandbox {
 
     /// Revokes this profile's ACE from every path recorded during sandbox setup.
     fn cleanup(&mut self) {
+        revoke_user_objects_access(self.sid as windows_sys::Win32::Security::PSID);
         for path in self.granted_paths.drain(..).rev() {
             if set_app_container_access(
                 &path,
@@ -984,6 +989,150 @@ impl AppContainerSandbox {
             }
         }
     }
+}
+
+/// Grants minimal window station and desktop access to the AppContainer SID.
+fn grant_user_objects_access(sid: windows_sys::Win32::Security::PSID) -> io::Result<()> {
+    // SAFETY: GetProcessWindowStation returns the current process window station handle.
+    let winsta =
+        unsafe { windows_sys::Win32::System::StationsAndDesktops::GetProcessWindowStation() };
+    if !winsta.is_null() {
+        let winsta_mask = windows_sys::Win32::Storage::FileSystem::STANDARD_RIGHTS_READ
+            | 0x0001 /* WINSTA_ENUMDESKTOPS */
+            | 0x0002 /* WINSTA_READATTRIBUTES */
+            | 0x0004 /* WINSTA_ACCESSCLIPBOARD */
+            | 0x0020 /* WINSTA_ACCESSGLOBALATOMS */
+            | 0x0100 /* WINSTA_ENUMERATE */;
+        update_user_object_acl(winsta as _, sid, true, winsta_mask)?;
+    }
+    // SAFETY: GetCurrentThreadId retrieves the active thread ID for the desktop query.
+    let thread_id = unsafe { windows_sys::Win32::System::Threading::GetCurrentThreadId() };
+    // SAFETY: GetThreadDesktop returns the desktop assigned to the calling thread.
+    let desk =
+        unsafe { windows_sys::Win32::System::StationsAndDesktops::GetThreadDesktop(thread_id) };
+    if !desk.is_null() {
+        let desk_mask = windows_sys::Win32::Storage::FileSystem::STANDARD_RIGHTS_READ
+            | windows_sys::Win32::Storage::FileSystem::STANDARD_RIGHTS_WRITE
+            | 0x0001 /* DESKTOP_READOBJECTS */
+            | 0x0002 /* DESKTOP_CREATEWINDOW */
+            | 0x0004 /* DESKTOP_CREATEMENU */
+            | 0x0020 /* DESKTOP_HOOKCONTROL */
+            | 0x0040 /* DESKTOP_ENUMERATE */
+            | 0x0080 /* DESKTOP_WRITEOBJECTS */;
+        update_user_object_acl(desk as _, sid, true, desk_mask)?;
+    }
+    Ok(())
+}
+
+/// Revokes window station and desktop access from the AppContainer SID.
+fn revoke_user_objects_access(sid: windows_sys::Win32::Security::PSID) {
+    // SAFETY: Querying the current window station and desktop to revoke the AppContainer SID ACE.
+    let winsta =
+        unsafe { windows_sys::Win32::System::StationsAndDesktops::GetProcessWindowStation() };
+    if !winsta.is_null() {
+        let _ = update_user_object_acl(winsta as _, sid, false, 0);
+    }
+    // SAFETY: GetCurrentThreadId retrieves the active thread ID for the desktop query.
+    let thread_id = unsafe { windows_sys::Win32::System::Threading::GetCurrentThreadId() };
+    // SAFETY: GetThreadDesktop returns the desktop assigned to the calling thread.
+    let desk =
+        unsafe { windows_sys::Win32::System::StationsAndDesktops::GetThreadDesktop(thread_id) };
+    if !desk.is_null() {
+        let _ = update_user_object_acl(desk as _, sid, false, 0);
+    }
+}
+
+/// Updates the discretionary ACL on a window station or desktop object for the given SID.
+fn update_user_object_acl(
+    handle: windows_sys::Win32::Foundation::HANDLE,
+    sid: windows_sys::Win32::Security::PSID,
+    allow: bool,
+    access_mask: u32,
+) -> io::Result<()> {
+    if handle.is_null() {
+        return Ok(());
+    }
+    let _guard = APP_CONTAINER_ACL_LOCK
+        .lock()
+        .map_err(|_| io::Error::other("The AppContainer ACL lock is unavailable."))?;
+    let mut p_dacl: *mut windows_sys::Win32::Security::ACL = null_mut();
+    let mut p_sd: windows_sys::Win32::Security::PSECURITY_DESCRIPTOR = null_mut();
+    // SAFETY: GetSecurityInfo queries the security descriptor of the specified window object.
+    let status = unsafe {
+        windows_sys::Win32::Security::Authorization::GetSecurityInfo(
+            handle,
+            windows_sys::Win32::Security::Authorization::SE_WINDOW_OBJECT,
+            windows_sys::Win32::Security::DACL_SECURITY_INFORMATION,
+            null_mut(),
+            null_mut(),
+            &mut p_dacl,
+            null_mut(),
+            &mut p_sd,
+        )
+    };
+    if status != windows_sys::Win32::Foundation::ERROR_SUCCESS {
+        return Err(io::Error::from_raw_os_error(status as i32));
+    }
+    struct LocalFreeGuard(windows_sys::Win32::Security::PSECURITY_DESCRIPTOR);
+    impl Drop for LocalFreeGuard {
+        fn drop(&mut self) {
+            if !self.0.is_null() {
+                // SAFETY: Pointer was allocated by a Windows security API.
+                unsafe { windows_sys::Win32::Foundation::LocalFree(self.0.cast()) };
+            }
+        }
+    }
+    let _sd_guard = LocalFreeGuard(p_sd);
+
+    let mode = if allow {
+        windows_sys::Win32::Security::Authorization::GRANT_ACCESS
+    } else {
+        windows_sys::Win32::Security::Authorization::REVOKE_ACCESS
+    };
+
+    let explicit_access = windows_sys::Win32::Security::Authorization::EXPLICIT_ACCESS_W {
+        grfAccessPermissions: if allow { access_mask } else { 0 },
+        grfAccessMode: mode,
+        grfInheritance: windows_sys::Win32::Security::NO_INHERITANCE,
+        Trustee: windows_sys::Win32::Security::Authorization::TRUSTEE_W {
+            pMultipleTrustee: null_mut(),
+            MultipleTrusteeOperation: 0,
+            TrusteeForm: windows_sys::Win32::Security::Authorization::TRUSTEE_IS_SID,
+            TrusteeType: windows_sys::Win32::Security::Authorization::TRUSTEE_IS_USER,
+            ptstrName: sid as *mut u16,
+        },
+    };
+    let mut new_dacl: *mut windows_sys::Win32::Security::ACL = null_mut();
+    // SAFETY: SetEntriesInAclW modifies the DACL by adding or revoking the trustee entry.
+    let status = unsafe {
+        windows_sys::Win32::Security::Authorization::SetEntriesInAclW(
+            1,
+            &explicit_access,
+            p_dacl,
+            &mut new_dacl,
+        )
+    };
+    if status != windows_sys::Win32::Foundation::ERROR_SUCCESS {
+        return Err(io::Error::from_raw_os_error(status as i32));
+    }
+    let _dacl_guard = LocalFreeGuard(new_dacl as _);
+
+    // SAFETY: SetSecurityInfo applies the modified DACL to the window object handle.
+    let status = unsafe {
+        windows_sys::Win32::Security::Authorization::SetSecurityInfo(
+            handle,
+            windows_sys::Win32::Security::Authorization::SE_WINDOW_OBJECT,
+            windows_sys::Win32::Security::DACL_SECURITY_INFORMATION,
+            null_mut(),
+            null_mut(),
+            new_dacl,
+            null_mut(),
+        )
+    };
+    if status != windows_sys::Win32::Foundation::ERROR_SUCCESS {
+        return Err(io::Error::from_raw_os_error(status as i32));
+    }
+    Ok(())
 }
 
 /// Adds a discovered path only while the AppContainer tree remains within its entry limit.
