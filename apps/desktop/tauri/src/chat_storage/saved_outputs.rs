@@ -9,7 +9,7 @@ use super::{
     unix_time_milliseconds, ChatStorageError, SavedOutputMessageKey, SavedOutputSearchInput,
     SavedOutputSearchResult, SavedOutputSearchSortOrder, MAXIMUM_CONVERSATION_TAG_CHARS,
     MAXIMUM_CONVERSATION_TITLE_CHARS, MAXIMUM_HISTORY_SEARCH_EXCERPT_BYTES,
-    MAXIMUM_HISTORY_SEARCH_QUERY_BYTES, MAXIMUM_HISTORY_SEARCH_QUERY_CHARS,
+    MAXIMUM_HISTORY_SEARCH_QUERY_CHARS,
     MAXIMUM_HISTORY_SEARCH_RESULTS, MAXIMUM_HISTORY_SEARCH_TIMESTAMP,
     MAXIMUM_SAFE_IDENTIFIER_BYTES, MESSAGE_CONTENT_PREFIX,
 };
@@ -330,10 +330,11 @@ mod saved_output_search_benchmarks {
 
     use super::{
         search_saved_outputs_from_connection, SavedOutputSearchInput, SavedOutputSearchSortOrder,
-        MAXIMUM_HISTORY_SEARCH_EXCERPT_BYTES, MAXIMUM_HISTORY_SEARCH_QUERY_BYTES,
+        MAXIMUM_HISTORY_SEARCH_EXCERPT_BYTES,
     };
     use crate::chat_storage::{
         migrate_chat_schema, stored_conversation_from_row, StoredMessage,
+        MAXIMUM_HISTORY_SEARCH_QUERY_BYTES,
     };
 
     const CONVERSATION_COUNT: usize = 250;

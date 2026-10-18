@@ -734,6 +734,7 @@ fn ensure_regular_file(path: &Path) -> Result<(), McpStorageError> {
 }
 
 /// Writes bounded config bytes to a unique staging file before replacing the destination.
+#[allow(dead_code)]
 fn write_atomic_bytes(path: &Path, bytes: &[u8]) -> Result<(), McpStorageError> {
     let parent = path.parent().ok_or_else(McpStorageError::unavailable)?;
     fs::create_dir_all(parent).map_err(|_| McpStorageError::unavailable())?;

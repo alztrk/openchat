@@ -6,13 +6,11 @@
 
 use std::{
     env,
-    fs::{self, OpenOptions},
-    io::Write,
+    fs,
     path::{Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::json;
 
@@ -1172,10 +1170,7 @@ pub(crate) fn unix_time_milliseconds() -> Result<i64, ChatStorageError> {
 /// Returns a storage error if PRAGMA optimize fails.
 pub fn optimize_database() -> Result<(), ChatStorageError> {
     let connection = open_database()?;
-    connection
-        .execute("PRAGMA optimize", [])
-        .map_err(|_| ChatStorageError::unavailable())?;
-    Ok(())
+    run_optimize(&connection)
 }
 
 #[cfg(test)]
