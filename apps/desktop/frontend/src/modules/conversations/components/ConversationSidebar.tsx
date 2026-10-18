@@ -1,5 +1,5 @@
 import { Archive, Folder, MessagesSquare, Pin, RefreshCw, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Dialog, Select } from '@/design-system';
@@ -64,16 +64,30 @@ export function ConversationSidebar({
     if (sidebarPreferences.error) globalThis.reportError(sidebarPreferences.error);
   }, [sidebarPreferences.error]);
 
-  const activeConversations = conversations.filter((conversation) => !conversation.isArchived);
-  const archivedConversations = conversations.filter((conversation) => conversation.isArchived);
-  const pinnedConversations = activeConversations.filter((conversation) => conversation.isPinned);
-  const unassignedConversations = activeConversations.filter(
-    (conversation) => conversation.projectId === null && !conversation.isPinned,
+  const activeConversations = useMemo(
+    () => conversations.filter((conversation) => !conversation.isArchived),
+    [conversations],
+  );
+  const archivedConversations = useMemo(
+    () => conversations.filter((conversation) => conversation.isArchived),
+    [conversations],
+  );
+  const pinnedConversations = useMemo(
+    () => activeConversations.filter((conversation) => conversation.isPinned),
+    [activeConversations],
+  );
+  const unassignedConversations = useMemo(
+    () => activeConversations.filter((conversation) => conversation.projectId === null && !conversation.isPinned),
+    [activeConversations],
   );
   const visibleProjects = projects;
-  const visibleProjectConversations = activeConversations.filter((conversation) => {
-    return conversation.projectId !== null && !conversation.isPinned;
-  });
+  const visibleProjectConversations = useMemo(
+    () =>
+      activeConversations.filter((conversation) => {
+        return conversation.projectId !== null && !conversation.isPinned;
+      }),
+    [activeConversations],
+  );
   const visiblePinned = pinnedConversations;
   const visibleChats = unassignedConversations;
   const visibleArchived = archivedConversations;

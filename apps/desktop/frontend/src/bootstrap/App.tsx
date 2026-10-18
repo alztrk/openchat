@@ -557,6 +557,7 @@ export function App() {
               value={activeChatTab}
             >
               <ConversationActionsHeader
+                activeConversationId={activeConversationId}
                 conversations={conversations}
                 onNewChat={startWorkspaceChat}
                 onOpenSearch={openHistorySearch}

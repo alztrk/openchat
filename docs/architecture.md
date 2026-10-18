@@ -823,8 +823,10 @@ IPC and memory cost, an `O(C log C)` tab sort per header render, and up to
 per-conversation 10,000-message query bound does not limit the number of
 conversations. These are source-derived complexity bounds, not measured user
 impact. Changing this path requires preserving archived chats, project grouping,
-selection, search, and the current newest-first tab order. No pagination or
-virtualization change was made without a representative rendered benchmark.
+selection, search, and the current newest-first tab order. The tab header and sidebar
+sections now memoize active, pinned, unassigned, and project groupings with `useMemo`,
+and the tab header bounds rendered DOM triggers to the active conversation plus the top
+20 most recent chats while keeping full history accessible in the sidebar and search.
 
 Local-engine downloads are catalog-size and SHA-256 checked before extraction;
 the archive reader also caps entries at 100,000, each file at 4 GiB, and total
