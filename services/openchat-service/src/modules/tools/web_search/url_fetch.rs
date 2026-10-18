@@ -1,0 +1,453 @@
+//! Fetches public web pages while constraining network destinations and response size.
+//!
+//! Each redirect is revalidated, DNS results are checked and pinned to the request client,
+//! proxy use is disabled, and connection, request, DNS, redirect, and body limits are enforced.
+
+use std::{
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    time::Duration,
+};
+
+use futures_util::StreamExt;
+use reqwest::{Client, StatusCode, header::LOCATION};
+use tokio::{net::lookup_host, time::timeout};
+use url::{Host, Url};
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(8);
+const DNS_TIMEOUT: Duration = Duration::from_secs(3);
+const MAX_REDIRECTS: usize = 5;
+
+/// Bounded page bytes and response metadata after the URL passes destination checks.
+pub(super) struct FetchedPage {
+    pub(super) url: Url,
+    pub(super) content_type: String,
+    pub(super) bytes: Vec<u8>,
+    pub(super) truncated: bool,
+}
+
+/// Fetches a public HTTP(S) page and follows only individually validated redirects.
+///
+/// DNS results are pinned to the client so the connected address matches the checked public
+/// address set. The body is capped at `maximum_bytes`; network and redirect counts are bounded.
+pub(super) async fn fetch_public_page(
+    original_url: Url,
+    maximum_bytes: usize,
+) -> Result<FetchedPage, String> {
+    let mut url = validate_http_url(original_url)?;
+
+    for redirect_number in 0..=MAX_REDIRECTS {
+        let client = pinned_public_http_client(&url, Some(REQUEST_TIMEOUT)).await?;
+        let response = client
+            .get(url.clone())
+            .send()
+            .await
+            .map_err(|_| "The requested web page could not be reached.".to_owned())?;
+
+        if is_redirect(response.status()) {
+            if redirect_number == MAX_REDIRECTS {
+                return Err("The requested web page redirected too many times.".to_owned());
+            }
+            let location = response
+                .headers()
+                .get(LOCATION)
+                .and_then(|value| value.to_str().ok())
+                .ok_or_else(|| "The web page returned an invalid redirect.".to_owned())?;
+            url = redirect_url(&url, location)?;
+            continue;
+        }
+
+        if !response.status().is_success() {
+            return Err(format!("Web server returned HTTP {}", response.status()));
+        }
+
+        let content_type = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        let body = read_bounded_body(response, maximum_bytes).await?;
+        return Ok(FetchedPage {
+            url,
+            content_type,
+            bytes: body.bytes,
+            truncated: body.truncated,
+        });
+    }
+
+    Err("The requested web page could not be reached.".to_owned())
+}
+
+/// Accepts only HTTP(S) URLs without user information or restricted host names/addresses.
+pub(crate) fn validate_http_url(url: Url) -> Result<Url, String> {
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("Only http and https protocols are supported.".to_owned());
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err("URLs containing login credentials are not supported.".to_owned());
+    }
+    let host = url
+        .host()
+        .ok_or_else(|| "The URL must include a host name.".to_owned())?;
+    let normalized_domain = match host {
+        Host::Ipv4(address) if !is_public_ipv4(address) => {
+            return Err("The URL host resolves to a restricted network address.".to_owned());
+        }
+        Host::Ipv6(address) if !is_public_ipv6(address) => {
+            return Err("The URL host resolves to a restricted network address.".to_owned());
+        }
+        Host::Domain(domain) => {
+            let normalized = domain.trim_end_matches('.');
+            let lower = normalized.to_ascii_lowercase();
+            if normalized.is_empty()
+                || lower == "localhost"
+                || lower.ends_with(".localhost")
+                || lower.ends_with(".local")
+            {
+                return Err("The URL resolves to a restricted network name.".to_owned());
+            }
+            (normalized != domain).then(|| normalized.to_owned())
+        }
+        _ => None,
+    };
+    if let Some(normalized) = normalized_domain {
+        let mut normalized_url = url;
+        normalized_url
+            .set_host(Some(&normalized))
+            .map_err(|_| "The URL contains an invalid host name.".to_owned())?;
+        return Ok(normalized_url);
+    }
+    Ok(url)
+}
+
+/// Resolves a redirect relative to the current URL, then applies the same destination checks.
+fn redirect_url(current_url: &Url, location: &str) -> Result<Url, String> {
+    let target = current_url
+        .join(location)
+        .map_err(|_| "The web page returned an invalid redirect.".to_owned())?;
+    validate_http_url(target)
+}
+
+/// Builds a no-proxy client pinned to resolved public addresses for one request URL.
+pub(crate) async fn pinned_public_http_client(
+    url: &Url,
+    request_timeout: Option<Duration>,
+) -> Result<Client, String> {
+    let host = url
+        .host()
+        .ok_or_else(|| "The URL must include a host name.".to_owned())?;
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| "The URL contains an unsupported port.".to_owned())?;
+    let addresses = match host {
+        Host::Ipv4(address) => vec![SocketAddr::new(IpAddr::V4(address), 0)],
+        Host::Ipv6(address) => vec![SocketAddr::new(IpAddr::V6(address), 0)],
+        Host::Domain(domain) => {
+            let resolved = timeout(DNS_TIMEOUT, lookup_host((domain, port)))
+                .await
+                .map_err(|_| "The URL host name could not be resolved in time.".to_owned())?
+                .map_err(|_| "The URL host name could not be resolved.".to_owned())?;
+            let addresses = resolved
+                .map(|address| SocketAddr::new(address.ip(), 0))
+                .collect::<Vec<_>>();
+            if addresses.is_empty() {
+                return Err("The URL host name has no network addresses.".to_owned());
+            }
+            addresses
+        }
+    };
+
+    if addresses
+        .iter()
+        .any(|address| !is_public_address(address.ip()))
+    {
+        return Err("The URL host resolves to a restricted network address.".to_owned());
+    }
+
+    let mut builder = Client::builder()
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .connect_timeout(CONNECT_TIMEOUT);
+    if let Some(request_timeout) = request_timeout {
+        builder = builder.timeout(request_timeout);
+    }
+    if let Host::Domain(domain) = host {
+        builder = builder.resolve_to_addrs(domain, &addresses);
+    }
+    builder
+        .build()
+        .map_err(|_| "The web request could not be prepared.".to_owned())
+}
+
+/// Identifies the redirect response codes supported by the bounded fetch loop.
+fn is_redirect(status: StatusCode) -> bool {
+    matches!(
+        status,
+        StatusCode::MOVED_PERMANENTLY
+            | StatusCode::FOUND
+            | StatusCode::SEE_OTHER
+            | StatusCode::TEMPORARY_REDIRECT
+            | StatusCode::PERMANENT_REDIRECT
+    )
+}
+
+struct BoundedBody {
+    bytes: Vec<u8>,
+    truncated: bool,
+}
+
+/// Reads at most the configured response size and records whether excess data was present.
+async fn read_bounded_body(
+    response: reqwest::Response,
+    maximum_bytes: usize,
+) -> Result<BoundedBody, String> {
+    let advertised_length_exceeds_limit = response
+        .content_length()
+        .is_some_and(|length| length > maximum_bytes as u64);
+    let mut bytes = Vec::with_capacity(maximum_bytes.min(64 * 1024));
+    let mut body = response.bytes_stream();
+    let mut truncated = advertised_length_exceeds_limit;
+
+    while let Some(chunk) = body.next().await {
+        let chunk = chunk.map_err(|_| "The web page response could not be read.".to_owned())?;
+        let remaining = maximum_bytes.saturating_sub(bytes.len());
+        let copied = chunk.len().min(remaining);
+        bytes.extend_from_slice(&chunk[..copied]);
+        if copied < chunk.len() {
+            truncated = true;
+            break;
+        }
+        if bytes.len() == maximum_bytes && advertised_length_exceeds_limit {
+            truncated = true;
+            break;
+        }
+    }
+
+    Ok(BoundedBody { bytes, truncated })
+}
+
+fn is_public_address(address: IpAddr) -> bool {
+    match address {
+        IpAddr::V4(address) => is_public_ipv4(address),
+        IpAddr::V6(address) => is_public_ipv6(address),
+    }
+}
+
+fn is_public_ipv4(address: Ipv4Addr) -> bool {
+    if address.is_unspecified()
+        || address.is_loopback()
+        || address.is_private()
+        || address.is_link_local()
+        || address.is_multicast()
+        || address.is_broadcast()
+    {
+        return false;
+    }
+
+    let value = u32::from(address);
+    [
+        (u32::from(Ipv4Addr::new(0, 0, 0, 0)), 8),
+        (u32::from(Ipv4Addr::new(100, 64, 0, 0)), 10),
+        (u32::from(Ipv4Addr::new(192, 0, 0, 0)), 24),
+        (u32::from(Ipv4Addr::new(192, 0, 2, 0)), 24),
+        (u32::from(Ipv4Addr::new(192, 88, 99, 0)), 24),
+        (u32::from(Ipv4Addr::new(198, 18, 0, 0)), 15),
+        (u32::from(Ipv4Addr::new(198, 51, 100, 0)), 24),
+        (u32::from(Ipv4Addr::new(203, 0, 113, 0)), 24),
+        (u32::from(Ipv4Addr::new(240, 0, 0, 0)), 4),
+    ]
+    .iter()
+    .all(|(network, prefix)| !matches_ipv4_prefix(value, *network, *prefix))
+}
+
+fn is_public_ipv6(address: Ipv6Addr) -> bool {
+    if address.is_unspecified()
+        || address.is_loopback()
+        || address.is_multicast()
+        || address.is_unique_local()
+        || address.is_unicast_link_local()
+        || !matches_ipv6_prefix(address, Ipv6Addr::new(0x2000, 0, 0, 0, 0, 0, 0, 0), 3)
+    {
+        return false;
+    }
+
+    ![
+        (Ipv6Addr::new(0x2001, 0, 0, 0, 0, 0, 0, 0), 23),
+        (Ipv6Addr::new(0x2001, 2, 0, 0, 0, 0, 0, 0), 48),
+        (Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0), 32),
+        (Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 0), 16),
+        (Ipv6Addr::new(0x3fff, 0, 0, 0, 0, 0, 0, 0), 20),
+    ]
+    .iter()
+    .any(|(network, prefix)| matches_ipv6_prefix(address, *network, *prefix))
+}
+
+fn matches_ipv4_prefix(address: u32, network: u32, prefix: u8) -> bool {
+    address >> (32 - prefix) == network >> (32 - prefix)
+}
+
+fn matches_ipv6_prefix(address: Ipv6Addr, network: Ipv6Addr, prefix: u8) -> bool {
+    let mask = u128::MAX << (128 - prefix);
+    u128::from(address) & mask == u128::from(network) & mask
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
+
+    use std::net::{IpAddr, Ipv4Addr};
+
+    use super::{is_public_address, read_bounded_body, redirect_url, validate_http_url};
+    use url::Url;
+
+    async fn response_for_body(body: Vec<u8>, content_length: Option<usize>) -> reqwest::Response {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind local response test server");
+        let address = listener
+            .local_addr()
+            .expect("read local response test address");
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener
+                .accept()
+                .await
+                .expect("accept local response test request");
+            let mut request = [0; 1024];
+            let request_bytes = stream
+                .read(&mut request)
+                .await
+                .expect("read local response test request");
+            assert_ne!(request_bytes, 0, "local response test request is empty");
+            let content_length = content_length
+                .map(|length| format!("Content-Length: {length}\r\n"))
+                .unwrap_or_default();
+            let headers = format!("HTTP/1.1 200 OK\r\n{content_length}Connection: close\r\n\r\n");
+            stream
+                .write_all(headers.as_bytes())
+                .await
+                .expect("write local response headers");
+            stream
+                .write_all(&body)
+                .await
+                .expect("write local response body");
+        });
+        let response = reqwest::Client::new()
+            .get(format!("http://{address}/"))
+            .send()
+            .await
+            .expect("receive local response");
+        server.await.expect("finish local response server");
+        response
+    }
+
+    #[test]
+    fn accepts_global_addresses_and_rejects_reserved_ranges() {
+        for address in [
+            IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+            IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)),
+            IpAddr::V6("2606:4700:4700::1111".parse().expect("valid global IPv6")),
+        ] {
+            assert!(
+                is_public_address(address),
+                "expected global address {address}"
+            );
+        }
+
+        for address in [
+            IpAddr::V4(Ipv4Addr::new(0, 1, 2, 3)),
+            IpAddr::V4(Ipv4Addr::new(10, 1, 2, 3)),
+            IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1)),
+            IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+            IpAddr::V4(Ipv4Addr::new(169, 254, 1, 1)),
+            IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1)),
+            IpAddr::V4(Ipv4Addr::new(198, 18, 0, 1)),
+            IpAddr::V4(Ipv4Addr::new(240, 0, 0, 1)),
+            IpAddr::V6("::1".parse().expect("valid loopback IPv6")),
+            IpAddr::V6("fc00::1".parse().expect("valid unique-local IPv6")),
+            IpAddr::V6("fe80::1".parse().expect("valid link-local IPv6")),
+            IpAddr::V6(
+                "::ffff:127.0.0.1"
+                    .parse()
+                    .expect("valid IPv4-mapped loopback IPv6"),
+            ),
+            IpAddr::V6(
+                "::ffff:169.254.169.254"
+                    .parse()
+                    .expect("valid IPv4-mapped link-local IPv6"),
+            ),
+            IpAddr::V6("2001:20::1".parse().expect("valid ORCHIDv2 IPv6")),
+            IpAddr::V6("2001:db8::1".parse().expect("valid documentation IPv6")),
+            IpAddr::V6("2002:0808:0808::1".parse().expect("valid 6to4 IPv6")),
+        ] {
+            assert!(
+                !is_public_address(address),
+                "expected restricted address {address}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_credentials_and_non_http_schemes() {
+        for value in [
+            "file:///etc/passwd",
+            "http://user:secret@example.com/",
+            "http://127.0.0.1/",
+            "http://127.1/",
+            "http://2130706433/",
+            "http://0x7f000001/",
+            "http://localhost/",
+            "http://localhost./",
+            "http://service.local./",
+        ] {
+            let rejected = match Url::parse(value) {
+                Ok(url) => validate_http_url(url).is_err(),
+                Err(_) => true,
+            };
+            assert!(rejected, "URL should be rejected: {value}");
+        }
+    }
+
+    #[test]
+    fn normalizes_a_trailing_dot_on_a_public_domain() {
+        let url = Url::parse("https://example.com./articles").expect("valid test URL");
+
+        let normalized = validate_http_url(url).expect("public domain is allowed");
+
+        assert_eq!(normalized.host_str(), Some("example.com"));
+    }
+
+    #[test]
+    fn redirects_are_resolved_and_restricted_targets_are_rejected() {
+        let current = Url::parse("https://example.com/articles/page").expect("valid base URL");
+        let relative = redirect_url(&current, "../next").expect("valid relative redirect");
+        assert_eq!(relative.as_str(), "https://example.com/next");
+
+        assert!(redirect_url(&current, "http://127.0.0.1/admin").is_err());
+        assert!(redirect_url(&current, "file:///etc/passwd").is_err());
+    }
+
+    #[tokio::test]
+    async fn bounded_body_marks_only_excess_bytes_as_truncated() {
+        for content_length in [None, Some(4)] {
+            let response = response_for_body(b"1234".to_vec(), content_length).await;
+            let body = read_bounded_body(response, 4)
+                .await
+                .expect("read a body exactly at the configured limit");
+
+            assert_eq!(body.bytes, b"1234");
+            assert!(!body.truncated);
+        }
+
+        let response = response_for_body(b"12345".to_vec(), None).await;
+        let body = read_bounded_body(response, 4)
+            .await
+            .expect("read a body exceeding the configured limit");
+
+        assert_eq!(body.bytes, b"1234");
+        assert!(body.truncated);
+    }
+}

@@ -659,7 +659,7 @@ remains out of scope under the current product decision.
 - No cross-platform OS process sandbox yet. Windows terminal sessions run in a temporary AppContainer with the selected working tree granted to the sandbox; non-Windows terminal processes still run under the OpenChat process account.
 - No automatic use of ChatGPT reset credits.
 - No additional OpenCode wire protocols until the shared provider contract is complete.
-- Use only provider-documented authentication flows permitted for external clients; never reuse consumer OAuth credentials or quotas.
+- GitHub Copilot is an explicit experimental exception requested by Alican: use the Copilot CLI public OAuth client ID with Device Flow, keep OAuth tokens in Windows Credential Manager, and call Copilot's private user/model/inference endpoints directly. Do not ask for a PAT or import gh credentials. The account settings show only plan, access SKU, and recognized quota fields returned by the private user endpoint; no allowance or remaining balance is inferred. GitHub does not document third-party reuse of the CLI OAuth client or a stable external contract for these endpoints, so this display remains best-effort and may change.
 
 ## Research references
 

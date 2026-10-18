@@ -4,22 +4,46 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
 
   - package-ecosystem: cargo
-    directory: /src-tauri
+    directory: /apps/desktop/tauri
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
 
   - package-ecosystem: npm
-    directory: /frontend
+    directory: /apps/desktop/frontend
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
 
   - package-ecosystem: cargo
-    directory: /native/openchat-service
+    directory: /services/openchat-service
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: cargo
+    directory: /services/provider-secret-store
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: cargo
+    directory: /services/windows-sandbox
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5

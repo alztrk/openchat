@@ -25,12 +25,14 @@ migrate_working_dir/
 
 # Build output
 /build/
-/native/openchat-service/target/
-/frontend/node_modules/
-/frontend/dist/
-/src-tauri/target/
-/src-tauri/gen/schemas/
-/src-tauri/binaries/openchat_service-*.exe
+/services/openchat-service/target/
+/services/windows-sandbox/target/
+/services/provider-secret-store/target/
+/apps/desktop/frontend/node_modules/
+/apps/desktop/frontend/dist/
+/apps/desktop/tauri/target/
+/apps/desktop/tauri/gen/schemas/
+/apps/desktop/tauri/binaries/openchat_service-*.exe
 /coverage/
 /test/failures/
 

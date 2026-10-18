@@ -1,0 +1,14 @@
+language js(typescript, jsx)
+
+or {
+  `<$tag />` as $element,
+  `<$tag $_ />` as $element,
+  `<$tag>$_</$tag>` as $element,
+  `<$tag $_>$_</$tag>` as $element,
+} where {
+  $tag <: r"^select$",
+  register_diagnostic(
+    span = $element,
+    message = "Native <select> is not allowed. Use Select from '@/design-system'.",
+  )
+}

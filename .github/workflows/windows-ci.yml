@@ -31,7 +31,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: apps/desktop/frontend/package-lock.json
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
@@ -40,42 +40,102 @@ jobs:
           components: rustfmt
           targets: x86_64-pc-windows-msvc
 
+      - name: Install RustSec dependency auditor
+        run: cargo install --debug --locked --version 0.22.2 cargo-audit
+
+      - name: Audit Rust dependency lockfiles
+        run: |
+          cargo audit --file services/openchat-service/Cargo.lock
+          cargo audit --no-fetch --file services/windows-sandbox/Cargo.lock
+          cargo audit --no-fetch --file services/provider-secret-store/Cargo.lock
+          cargo audit --no-fetch --file apps/desktop/tauri/Cargo.lock
+
       - name: Install frontend dependencies
         run: npm ci
-        working-directory: frontend
+        working-directory: apps/desktop/frontend
+
+      - name: Audit frontend dependencies
+        run: npm audit
+        working-directory: apps/desktop/frontend
+
+      - name: Format and lint the frontend
+        run: npx biome check
+        working-directory: apps/desktop/frontend
+
+      - name: Test frontend rendering limits
+        run: node --experimental-strip-types --test tests/virtualMessageLayout.test.mjs
+        working-directory: apps/desktop/frontend
 
       - name: Check frontend types and build assets
         run: npm run build
-        working-directory: frontend
+        working-directory: apps/desktop/frontend
 
       - name: Check Rust formatting
         run: |
-          cargo fmt --manifest-path native/openchat-service/Cargo.toml -- --check
-          cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+          cargo fmt --manifest-path services/openchat-service/Cargo.toml -- --check
+          cargo fmt --manifest-path services/windows-sandbox/Cargo.toml -- --check
+          cargo fmt --manifest-path services/provider-secret-store/Cargo.toml -- --check
+          cargo fmt --manifest-path apps/desktop/tauri/Cargo.toml -- --check
+
+      - name: Check Rust API documentation
+        run: |
+          cargo rustdoc --locked --manifest-path services/openchat-service/Cargo.toml --lib -- -D missing-docs -D rustdoc::broken_intra_doc_links
+          cargo rustdoc --locked --manifest-path services/windows-sandbox/Cargo.toml --lib -- -D missing-docs -D rustdoc::broken_intra_doc_links
+          cargo rustdoc --locked --manifest-path services/provider-secret-store/Cargo.toml --lib -- -D missing-docs -D rustdoc::broken_intra_doc_links
+          cargo rustdoc --locked --manifest-path apps/desktop/tauri/Cargo.toml --bin openchat-desktop -- -D missing-docs -D rustdoc::broken_intra_doc_links
+
+      - name: Reject unused Rust dependencies
+        run: |
+          cargo rustc --lib --locked --manifest-path services/openchat-service/Cargo.toml -- -D unused_crate_dependencies
+          cargo rustc --lib --locked --manifest-path services/windows-sandbox/Cargo.toml -- -D unused_crate_dependencies
+          cargo rustc --lib --locked --manifest-path services/provider-secret-store/Cargo.toml -- -D unused_crate_dependencies
+          cargo rustc --bin openchat-desktop --locked --manifest-path apps/desktop/tauri/Cargo.toml -- -D unused_crate_dependencies
+
+      - name: Reject production panic paths
+        run: cargo clippy --lib --bins --locked --manifest-path services/openchat-service/Cargo.toml -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic
 
       - name: Check and test native service
         run: |
-          cargo check --all-targets --locked --manifest-path native/openchat-service/Cargo.toml
-          cargo test --locked --manifest-path native/openchat-service/Cargo.toml -- --test-threads=1
+          cargo check --all-targets --locked --manifest-path services/openchat-service/Cargo.toml
+          cargo test --locked --manifest-path services/openchat-service/Cargo.toml -- --test-threads=1
+
+      - name: Check and test shared Windows sandbox
+        run: |
+          cargo clippy --all-targets --locked --manifest-path services/windows-sandbox/Cargo.toml -- -D warnings
+          cargo test --locked --manifest-path services/windows-sandbox/Cargo.toml -- --test-threads=1
+
+      - name: Check and test provider secret store
+        run: |
+          cargo clippy --all-targets --locked --manifest-path services/provider-secret-store/Cargo.toml -- -D warnings
+          cargo test --locked --manifest-path services/provider-secret-store/Cargo.toml -- --test-threads=1
 
       - name: Build the Tauri host
-        run: cargo check --locked --manifest-path src-tauri/Cargo.toml
+        run: cargo check --locked --manifest-path apps/desktop/tauri/Cargo.toml
+
+      - name: Test the Tauri host
+        run: cargo test --locked --manifest-path apps/desktop/tauri/Cargo.toml -- --test-threads=1
+
+      - name: Lint the Tauri host
+        run: cargo clippy --all-targets --locked --manifest-path apps/desktop/tauri/Cargo.toml -- -D warnings
+
+      - name: Reject production panic paths in Tauri host
+        run: cargo clippy --bins --locked --manifest-path apps/desktop/tauri/Cargo.toml -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic
 
       - name: Build the local service sidecar
         run: |
-          cargo build --release --locked --manifest-path native/openchat-service/Cargo.toml
-          New-Item -ItemType Directory -Force src-tauri/binaries | Out-Null
-          Copy-Item -LiteralPath native/openchat-service/target/release/openchat_service.exe -Destination src-tauri/binaries/openchat_service-x86_64-pc-windows-msvc.exe -Force
+          cargo build --release --locked --manifest-path services/openchat-service/Cargo.toml
+          New-Item -ItemType Directory -Force apps/desktop/tauri/binaries | Out-Null
+          Copy-Item -LiteralPath services/openchat-service/target/release/openchat_service.exe -Destination apps/desktop/tauri/binaries/openchat_service-x86_64-pc-windows-msvc.exe -Force
         shell: pwsh
 
       - name: Build the Windows installer
         run: npm run tauri:build
-        working-directory: frontend
+        working-directory: apps/desktop/frontend
 
       - name: Upload Windows installer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: OpenChat-Windows-installer
-          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          path: apps/desktop/tauri/target/release/bundle/nsis/*-setup.exe
           if-no-files-found: error
           retention-days: 14

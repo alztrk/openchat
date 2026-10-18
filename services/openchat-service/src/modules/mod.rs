@@ -1,0 +1,67 @@
+//! Domain modules for conversations, providers, projects, tools, and settings.
+//!
+//! Transport handlers call these modules to keep RPC parsing separate from
+//! provider, storage, filesystem, and process operations.
+
+#[path = "conversations/attachments.rs"]
+pub(crate) mod attachments;
+#[path = "conversations/chat_operation.rs"]
+pub(crate) mod chat_operation;
+#[path = "providers/chatgpt/mod.rs"]
+pub(crate) mod chatgpt;
+#[path = "conversations/chatgpt_store/mod.rs"]
+pub(crate) mod chatgpt_store;
+#[path = "conversations/context_compaction.rs"]
+pub(crate) mod context_compaction;
+#[path = "conversations/conversation_archive.rs"]
+pub(crate) mod conversation_archive;
+#[path = "providers/copilot_oauth.rs"]
+pub(crate) mod copilot_oauth;
+#[path = "conversations/file_changes.rs"]
+pub(crate) mod file_changes;
+#[path = "projects/git_inspection.rs"]
+pub(crate) mod git_inspection;
+#[path = "projects/git_worktrees.rs"]
+pub(crate) mod git_worktrees;
+#[path = "conversations/goals.rs"]
+pub(crate) mod goals;
+#[path = "conversations/history.rs"]
+pub(crate) mod history;
+pub(crate) mod http_headers;
+#[path = "providers/hugging_face.rs"]
+pub(crate) mod hugging_face;
+#[path = "settings/instructions.rs"]
+pub(crate) mod instructions;
+#[path = "local_engines/mod.rs"]
+pub(crate) mod local_engines;
+#[path = "providers/oauth/mod.rs"]
+pub(crate) mod oauth;
+#[path = "providers/openai_api.rs"]
+pub(crate) mod openai_api;
+#[path = "providers/openai_compatible/mod.rs"]
+pub(crate) mod openai_compatible;
+pub(crate) mod pending_archive_export;
+#[path = "tools/permissions.rs"]
+pub(crate) mod permissions;
+#[path = "profiles/profile_archive.rs"]
+pub(crate) mod profile_archive;
+#[path = "projects/project_index.rs"]
+pub(crate) mod project_index;
+#[path = "projects/project_instructions.rs"]
+pub(crate) mod project_instructions;
+#[path = "projects/project_skills.rs"]
+pub(crate) mod project_skills;
+#[path = "providers/credentials.rs"]
+pub(crate) mod provider_credentials;
+#[path = "providers/provider_schema/mod.rs"]
+pub(crate) mod provider_schema;
+#[path = "providers/response_budget.rs"]
+pub(crate) mod response_budget;
+#[path = "conversations/temporary_conversation.rs"]
+pub(crate) mod temporary_conversation;
+#[path = "tools/mod.rs"]
+pub(crate) mod tools;
+#[path = "usage_statistics/mod.rs"]
+pub(crate) mod usage_statistics;
+#[path = "conversations/user_question_broker.rs"]
+pub(crate) mod user_question_broker;

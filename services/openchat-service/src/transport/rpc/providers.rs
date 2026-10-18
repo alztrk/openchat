@@ -1,0 +1,242 @@
+//! RPC routing for provider accounts, authentication, and model catalogs.
+
+use std::sync::Arc;
+
+use serde_json::Value;
+use tokio::sync::watch;
+
+use crate::{
+    chatgpt::ChatGptService, openai_api, openai_compatible, protocol::ServiceError,
+    provider_credentials::ProviderCredentials, service::OperationGate, storage::AppStorage,
+};
+
+use super::{bounded_route_id, optional_string, required_string, take_optional_api_key};
+
+/// Dispatches provider authentication, account, and model-catalog requests.
+pub(super) async fn dispatch(
+    method: &str,
+    params: &mut Value,
+    storage: &AppStorage,
+    service: &Arc<ChatGptService>,
+    cancellation: &mut watch::Receiver<bool>,
+    cancellation_gate: &OperationGate,
+) -> Result<Value, ServiceError> {
+    match method {
+        "chatgpt.oauth.start" => service.oauth_sign_in(cancellation, cancellation_gate).await,
+        "copilot.oauth.start" => service.copilot_oauth_start().await,
+        "copilot.oauth.poll" => {
+            service
+                .copilot_oauth_poll(required_string(params, "flowId")?, cancellation)
+                .await
+        }
+        "copilot.oauth.cancel" => {
+            service
+                .copilot_oauth_cancel(required_string(params, "flowId")?)
+                .await
+        }
+        "copilot.oauth.status" => service.copilot_oauth_status(),
+        "copilot.oauth.disconnect" => service.copilot_oauth_disconnect().await,
+        "copilot.usage.get" => service.copilot_usage(cancellation).await,
+        "chatgpt.connections.list" => service.list_connections(),
+        "chatgpt.connections.delete" => {
+            service
+                .delete_connection(required_string(params, "connectionId")?)
+                .await
+        }
+        "chatgpt.titles.get" => service.title_preference(),
+        "chatgpt.titles.select" => {
+            let connection_id = optional_string(params, "connectionId")?;
+            let workspace_id = optional_string(params, "workspaceId")?;
+            service.select_title_target(connection_id, workspace_id)
+        }
+        "chatgpt.connections.select" => {
+            service.select_connection(required_string(params, "connectionId")?)
+        }
+        "chatgpt.workspaces.select" => {
+            let connection_id = required_string(params, "connectionId")?;
+            let workspace_id = required_string(params, "workspaceId")?;
+            service.select_workspace(connection_id, workspace_id)
+        }
+        "chatgpt.models.list" => {
+            let connection_id = required_string(params, "connectionId")?;
+            let workspace_id = required_string(params, "workspaceId")?;
+            let force_refresh = params
+                .get("forceRefresh")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            service
+                .models(connection_id, workspace_id, force_refresh, cancellation)
+                .await
+        }
+        "chatgpt.api.models.list" => {
+            let _untrusted_api_key = take_optional_api_key(params, "apiKey")?;
+            let connection_id = bounded_route_id(params, "connectionId")?;
+            let credentials = ProviderCredentials::load()?;
+            let api_key = credentials.required_api_key("chatgpt_api", Some(connection_id))?;
+            let force_refresh = params
+                .get("forceRefresh")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            openai_api::models(storage, api_key.as_str(), force_refresh, cancellation).await
+        }
+        "chatgpt.usage.get" => {
+            let connection_id = required_string(params, "connectionId")?;
+            let workspace_id = required_string(params, "workspaceId")?;
+            service
+                .usage(connection_id, workspace_id, cancellation)
+                .await
+        }
+        "chatgpt.reset_credits.consume" => {
+            let connection_id = required_string(params, "connectionId")?;
+            let workspace_id = required_string(params, "workspaceId")?;
+            let credit_id = required_string(params, "creditId")?;
+            service
+                .consume_reset_credit(connection_id, workspace_id, credit_id, cancellation)
+                .await
+        }
+        "opencode.models.list" => {
+            let _untrusted_api_key = take_optional_api_key(params, "apiKey")?;
+            let credentials = ProviderCredentials::load()?;
+            let api_key = credentials.api_key("opencode", None)?;
+            let force_refresh = params
+                .get("forceRefresh")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            openai_compatible::models(
+                storage,
+                api_key.as_ref().map(|secret| secret.as_str()),
+                force_refresh,
+                cancellation,
+            )
+            .await
+        }
+        "compatible.models.list" => {
+            let _untrusted_api_key = take_optional_api_key(params, "apiKey")?;
+            let provider_id = required_string(params, "providerId")?;
+            let force_refresh = params
+                .get("forceRefresh")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if provider_id.starts_with("custom_") {
+                let credentials = ProviderCredentials::load()?;
+                let config = credentials.custom_provider_config(provider_id)?;
+                let api_key = credentials.api_key(provider_id, Some(provider_id))?;
+                openai_compatible::models_for_custom_provider(
+                    storage,
+                    &config,
+                    api_key.as_deref().map(|secret| secret.as_str()),
+                    force_refresh,
+                    cancellation,
+                )
+                .await
+            } else {
+                let copilot_token = if provider_id == "copilot" {
+                    Some(service.copilot_access_token().await?)
+                } else {
+                    None
+                };
+                let api_key = match copilot_token {
+                    Some(token) => token,
+                    None => {
+                        let credentials = ProviderCredentials::load()?;
+                        credentials.required_api_key(provider_id, Some(provider_id))?
+                    }
+                };
+                openai_compatible::models_for_provider(
+                    storage,
+                    provider_id,
+                    api_key.as_str(),
+                    force_refresh,
+                    cancellation,
+                )
+                .await
+            }
+        }
+        _ => Err(ServiceError::new(
+            "method_not_found",
+            "The requested local service method is not available.",
+            false,
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{fs, path::PathBuf, sync::Arc};
+
+    use serde_json::json;
+    use tokio::sync::watch;
+    use uuid::Uuid;
+
+    use crate::{chatgpt::ChatGptService, service::OperationGate, storage::AppStorage};
+
+    use super::dispatch;
+
+    #[tokio::test]
+    async fn provider_dispatch_preserves_error_contract_and_removes_renderer_keys() {
+        let directory = TestDirectory::new();
+        let storage =
+            Arc::new(AppStorage::open_at(directory.0.join("data")).expect("open test storage"));
+        let service = Arc::new(
+            ChatGptService::new(Arc::clone(&storage)).expect("initialize provider service"),
+        );
+        let (_sender, mut cancellation) = watch::channel(false);
+
+        let mut params = json!({"apiKey": "renderer-only-untrusted"});
+        let error = dispatch(
+            "chatgpt.api.models.list",
+            &mut params,
+            &storage,
+            &service,
+            &mut cancellation,
+            &OperationGate::default(),
+        )
+        .await
+        .expect_err("a missing saved connection id is rejected");
+        assert_eq!(error.code, "invalid_request_params");
+        assert!(params.get("apiKey").is_none());
+
+        let mut params = json!({});
+        let error = dispatch(
+            "copilot.oauth.poll",
+            &mut params,
+            &storage,
+            &service,
+            &mut cancellation,
+            &OperationGate::default(),
+        )
+        .await
+        .expect_err("missing flow ids are rejected");
+        assert_eq!(error.code, "invalid_request_params");
+
+        let mut params = json!({});
+        let error = dispatch(
+            "chatgpt.unknown.method",
+            &mut params,
+            &storage,
+            &service,
+            &mut cancellation,
+            &OperationGate::default(),
+        )
+        .await
+        .expect_err("unknown provider methods are rejected");
+        assert_eq!(error.code, "method_not_found");
+    }
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path =
+                std::env::temp_dir().join(format!("openchat-provider-rpc-test-{}", Uuid::new_v4()));
+            fs::create_dir(&path).expect("create isolated test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.0).expect("remove isolated test directory");
+        }
+    }
+}

@@ -1,0 +1,97 @@
+//! Tauri host entry point and registration of frontend-accessible native commands.
+#![deny(missing_docs)]
+#![deny(clippy::undocumented_unsafe_blocks)]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+use tauri::Manager;
+
+mod archive_export;
+mod chat_storage;
+mod file_ops;
+mod local_data;
+mod local_service;
+mod mcp_probe;
+mod mcp_storage;
+mod notifications;
+mod project_folder;
+mod provider_storage;
+mod request_bounds;
+mod save_dialog;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .manage(local_service::LocalServiceState::default())
+        .invoke_handler(tauri::generate_handler![
+            archive_export::save_pending_archive_export,
+            chat_storage::prepare_chat_database,
+            chat_storage::has_completed_assistant_response,
+            chat_storage::list_conversations,
+            chat_storage::list_projects,
+            chat_storage::create_project,
+            project_folder::select_project_folder,
+            project_folder::discard_project_folder_selection,
+            chat_storage::clear_conversation_history,
+            chat_storage::list_model_favorites,
+            chat_storage::set_model_favorite,
+            chat_storage::list_saved_output_message_keys,
+            chat_storage::search_saved_outputs,
+            chat_storage::set_saved_output,
+            local_data::export_support_diagnostics,
+            notifications::read_windows_notification_status,
+            notifications::open_windows_notification_settings,
+            notifications::send_test_notification,
+            notifications::send_assistant_response_notification,
+            notifications::send_user_question_notification,
+            notifications::take_pending_notification_activations,
+            notifications::set_notification_frontend_unready,
+            chat_storage::get_conversation,
+            chat_storage::get_messages,
+            chat_storage::read_message_attachment,
+            chat_storage::create_conversation,
+            chat_storage::rename_conversation,
+            chat_storage::set_conversation_route,
+            chat_storage::set_conversation_pinned,
+            chat_storage::set_conversation_bookmarked,
+            chat_storage::set_conversation_tags,
+            chat_storage::move_conversations,
+            chat_storage::set_conversations_archived,
+            chat_storage::delete_conversation,
+            chat_storage::save_conversation_markdown,
+            chat_storage::save_message,
+            mcp_storage::load_global_mcp_servers,
+            mcp_storage::save_global_mcp_server,
+            mcp_storage::set_global_mcp_enabled,
+            mcp_storage::remove_global_mcp_server,
+            mcp_storage::get_global_mcp_secret_status,
+            mcp_storage::save_global_mcp_secrets,
+            mcp_probe::probe_global_mcp_server,
+            local_service::start_local_service,
+            local_service::write_local_service,
+            local_service::respond_local_service_permission,
+            provider_storage::load_provider_credential_status,
+            provider_storage::save_chatgpt_api_key,
+            provider_storage::save_compatible_provider_api_key,
+            provider_storage::save_opencode_api_key,
+            provider_storage::delete_chatgpt_api_key,
+            provider_storage::delete_compatible_provider_api_key,
+            provider_storage::delete_opencode_api_key,
+            provider_storage::save_custom_provider,
+            provider_storage::delete_custom_provider,
+        ])
+        .setup(|app| {
+            notifications::initialize(app.handle()).map_err(std::io::Error::other)?;
+            Ok(())
+        })
+        .build(tauri::generate_context!())?;
+    app.run(|handle, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            if let Err(error) = handle.state::<local_service::LocalServiceState>().stop() {
+                eprintln!("OpenChat local service shutdown failed: {error}");
+            }
+        }
+    });
+    Ok(())
+}
