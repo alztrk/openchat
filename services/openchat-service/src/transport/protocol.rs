@@ -52,10 +52,10 @@ impl EventSink {
         if let Some(test_events) = &self.test_events {
             return test_events.send(response.clone()).map_err(io::Error::other);
         }
-        let encoded = serde_json::to_vec(response).map_err(io::Error::other)?;
+        let mut encoded = serde_json::to_vec(response).map_err(io::Error::other)?;
+        encoded.push(b'\n');
         let mut output = self.output.lock().await;
         output.write_all(&encoded).await?;
-        output.write_all(b"\n").await?;
         output.flush().await
     }
 }
