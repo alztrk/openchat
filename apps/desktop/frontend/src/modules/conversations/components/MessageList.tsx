@@ -222,9 +222,11 @@ interface ResponseGroup {
 
 function groupResponses(messages: ChatMessage[]): ResponseGroup[] {
   const groups: ResponseGroup[] = [];
-  for (const message of messages) {
-    const previous = groups.at(-1);
-    if (message.role === 'assistant' && previous?.messages.at(-1)?.role === 'assistant') {
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i];
+    if (!message) continue;
+    const previous = groups[groups.length - 1];
+    if (message.role === 'assistant' && previous?.messages[previous.messages.length - 1]?.role === 'assistant') {
       previous.messages.push(message);
       continue;
     }
@@ -275,6 +277,7 @@ function AssistantLoadingSkeleton({
 
 function startsNewDay(previous: number | null, current: number | null): boolean {
   if (previous === null || current === null) return previous !== current;
+  if (previous === current) return false;
   const previousDate = new Date(previous);
   const currentDate = new Date(current);
   return (
