@@ -7,7 +7,7 @@ pub(crate) fn is_valid_rpc_frame(frame: &str, maximum_bytes: usize) -> bool {
         return false;
     }
     let body = &frame.as_bytes()[..frame.len() - 1];
-    !body.is_empty() && !body.contains(&b'\n') && !body.contains(&b'\r')
+    !body.is_empty() && !body.iter().any(|&b| b == b'\n' || b == b'\r')
 }
 
 /// Blocks renderer-forged decisions and marks full-access mode changes for OS confirmation.
