@@ -323,9 +323,13 @@ impl CredentialStore {
         let _guard = OPERATION_LOCK
             .lock()
             .map_err(|_| CredentialStoreError::LockUnavailable)?;
-        mcp_entry(reference)?
-            .set_secret(secret.as_bytes())
-            .map_err(write_error)
+        let vault_key = vault_key_for_mcp(reference);
+        openchat_provider_secret_store::set_vault_secret(&vault_key, &secret)
+            .map_err(|_| CredentialStoreError::StorageWriteFailed)?;
+        if let Ok(entry) = mcp_entry(reference) {
+            let _ = delete_if_present(&entry);
+        }
+        Ok(())
     }
 
     /// Loads an MCP secret into zeroizing memory.
@@ -341,7 +345,12 @@ impl CredentialStore {
         let _guard = OPERATION_LOCK
             .lock()
             .map_err(|_| CredentialStoreError::LockUnavailable)?;
-        let secret = mcp_entry(reference)?
+        let vault_key = vault_key_for_mcp(reference);
+        if let Ok(Some(secret)) = openchat_provider_secret_store::get_vault_secret(&vault_key) {
+            return Ok(secret);
+        }
+        let entry = mcp_entry(reference)?;
+        let secret = entry
             .get_secret()
             .map_err(|error| match error {
                 KeyringError::NoEntry => CredentialStoreError::TokenPairMissing,
@@ -350,7 +359,10 @@ impl CredentialStore {
         let secret = Zeroizing::new(secret);
         let secret = std::str::from_utf8(secret.as_slice())
             .map_err(|_| CredentialStoreError::InvalidStoredToken)?;
-        Ok(Zeroizing::new(secret.to_owned()))
+        let result = Zeroizing::new(secret.to_owned());
+        let _ = openchat_provider_secret_store::set_vault_secret(&vault_key, &result);
+        let _ = delete_if_present(&entry);
+        Ok(result)
     }
 
     /// Checks whether an MCP secret exists without returning its value.
@@ -365,6 +377,10 @@ impl CredentialStore {
         let _guard = OPERATION_LOCK
             .lock()
             .map_err(|_| CredentialStoreError::LockUnavailable)?;
+        let vault_key = vault_key_for_mcp(reference);
+        if let Ok(true) = openchat_provider_secret_store::has_vault_secret(&vault_key) {
+            return Ok(true);
+        }
         credential_exists(&mcp_entry(reference)?)
     }
 
@@ -380,6 +396,8 @@ impl CredentialStore {
         let _guard = OPERATION_LOCK
             .lock()
             .map_err(|_| CredentialStoreError::LockUnavailable)?;
+        let vault_key = vault_key_for_mcp(reference);
+        let _ = openchat_provider_secret_store::delete_vault_secret(&vault_key);
         delete_if_present(&mcp_entry(reference)?)
     }
 
@@ -398,39 +416,45 @@ impl CredentialStore {
         let _guard = OPERATION_LOCK
             .lock()
             .map_err(|_| CredentialStoreError::LockUnavailable)?;
+        let access_key = vault_key_for_oauth(reference, "access-v2");
+        let refresh_key = vault_key_for_oauth(reference, "refresh-v2");
+        let expiry_key = vault_key_for_oauth(reference, "access-exp-v1");
+
         let access_entry = entry(reference, "access-v2")?;
         let refresh_entry = entry(reference, "refresh-v2")?;
         let expiry_entry = entry(reference, "access-exp-v1")?;
 
-        if credential_exists(&access_entry)?
+        let in_vault = openchat_provider_secret_store::has_vault_secret(&access_key).unwrap_or(false)
+            || openchat_provider_secret_store::has_vault_secret(&refresh_key).unwrap_or(false)
+            || openchat_provider_secret_store::has_vault_secret(&expiry_key).unwrap_or(false);
+
+        if in_vault
+            || credential_exists(&access_entry)?
             || credential_exists(&refresh_entry)?
             || credential_exists(&expiry_entry)?
         {
             return Err(CredentialStoreError::ReferenceAlreadyUsed);
         }
 
-        access_entry
-            .set_secret(tokens.access_token().as_bytes())
-            .map_err(write_error)?;
+        openchat_provider_secret_store::set_vault_secret(&access_key, tokens.access_token())
+            .map_err(|_| CredentialStoreError::StorageWriteFailed)?;
 
-        if let Err(error) = refresh_entry.set_secret(tokens.refresh_token().as_bytes()) {
-            return match delete_if_present(&access_entry) {
-                Ok(()) => Err(write_error(error)),
-                Err(_) => Err(CredentialStoreError::IncompleteWrite),
-            };
+        if let Err(_) = openchat_provider_secret_store::set_vault_secret(&refresh_key, tokens.refresh_token()) {
+            let _ = openchat_provider_secret_store::delete_vault_secret(&access_key);
+            return Err(CredentialStoreError::IncompleteWrite);
         }
 
-        if let Some(expires_at) = tokens.expires_at_unix_seconds()
-            && let Err(error) = expiry_entry.set_secret(expires_at.to_string().as_bytes())
-        {
-            let refresh_delete_failed = delete_if_present(&refresh_entry).is_err();
-            let access_delete_failed = delete_if_present(&access_entry).is_err();
-            return if refresh_delete_failed || access_delete_failed {
-                Err(CredentialStoreError::IncompleteWrite)
-            } else {
-                Err(write_error(error))
-            };
+        if let Some(expires_at) = tokens.expires_at_unix_seconds() {
+            if let Err(_) = openchat_provider_secret_store::set_vault_secret(&expiry_key, &expires_at.to_string()) {
+                let _ = openchat_provider_secret_store::delete_vault_secret(&refresh_key);
+                let _ = openchat_provider_secret_store::delete_vault_secret(&access_key);
+                return Err(CredentialStoreError::IncompleteWrite);
+            }
         }
+
+        let _ = delete_if_present(&access_entry);
+        let _ = delete_if_present(&refresh_entry);
+        let _ = delete_if_present(&expiry_entry);
 
         Ok(())
     }
@@ -449,10 +473,43 @@ impl CredentialStore {
         let _guard = OPERATION_LOCK
             .lock()
             .map_err(|_| CredentialStoreError::LockUnavailable)?;
-        let access = read_raw_optional(&entry(reference, "access-v2")?)?;
-        let refresh = read_raw_optional(&entry(reference, "refresh-v2")?)?;
-        let expiry = read_expiration_optional(&entry(reference, "access-exp-v1")?)?;
-        token_pair(access, refresh, expiry)?.ok_or(CredentialStoreError::TokenPairMissing)
+        let access_key = vault_key_for_oauth(reference, "access-v2");
+        let refresh_key = vault_key_for_oauth(reference, "refresh-v2");
+        let expiry_key = vault_key_for_oauth(reference, "access-exp-v1");
+
+        let vault_access = openchat_provider_secret_store::get_vault_secret(&access_key)
+            .map_err(|_| CredentialStoreError::StorageReadFailed)?;
+        let vault_refresh = openchat_provider_secret_store::get_vault_secret(&refresh_key)
+            .map_err(|_| CredentialStoreError::StorageReadFailed)?;
+        let vault_expiry_str = openchat_provider_secret_store::get_vault_secret(&expiry_key)
+            .map_err(|_| CredentialStoreError::StorageReadFailed)?;
+        let vault_expiry = vault_expiry_str.as_deref().and_then(|s| s.parse::<u64>().ok());
+
+        if let Some(pair) = token_pair(vault_access, vault_refresh, vault_expiry)? {
+            return Ok(pair);
+        }
+
+        let access_entry = entry(reference, "access-v2")?;
+        let refresh_entry = entry(reference, "refresh-v2")?;
+        let expiry_entry = entry(reference, "access-exp-v1")?;
+
+        let access = read_raw_optional(&access_entry)?;
+        let refresh = read_raw_optional(&refresh_entry)?;
+        let expiry = read_expiration_optional(&expiry_entry)?;
+
+        if let Some(pair) = token_pair(access, refresh, expiry)? {
+            let _ = openchat_provider_secret_store::set_vault_secret(&access_key, pair.access_token());
+            let _ = openchat_provider_secret_store::set_vault_secret(&refresh_key, pair.refresh_token());
+            if let Some(expires_at) = pair.expires_at_unix_seconds() {
+                let _ = openchat_provider_secret_store::set_vault_secret(&expiry_key, &expires_at.to_string());
+            }
+            let _ = delete_if_present(&access_entry);
+            let _ = delete_if_present(&refresh_entry);
+            let _ = delete_if_present(&expiry_entry);
+            return Ok(pair);
+        }
+
+        Err(CredentialStoreError::TokenPairMissing)
     }
 
     /// Deletes all OAuth token and expiry entries for a reference.
@@ -468,6 +525,14 @@ impl CredentialStore {
         let _guard = OPERATION_LOCK
             .lock()
             .map_err(|_| CredentialStoreError::LockUnavailable)?;
+        let access_key = vault_key_for_oauth(reference, "access-v2");
+        let refresh_key = vault_key_for_oauth(reference, "refresh-v2");
+        let expiry_key = vault_key_for_oauth(reference, "access-exp-v1");
+
+        let _ = openchat_provider_secret_store::delete_vault_secret(&access_key);
+        let _ = openchat_provider_secret_store::delete_vault_secret(&refresh_key);
+        let _ = openchat_provider_secret_store::delete_vault_secret(&expiry_key);
+
         let entries = [
             entry(reference, "access-v2")?,
             entry(reference, "refresh-v2")?,
@@ -485,6 +550,18 @@ impl CredentialStore {
         }
         Ok(())
     }
+}
+
+fn vault_key_for_mcp(reference: &McpCredentialReference) -> String {
+    format!("keyring:{}:{}", MCP_CREDENTIAL_SERVICE, reference.username())
+}
+
+fn vault_key_for_oauth(reference: &OAuthCredentialReference, token_kind: &str) -> String {
+    format!(
+        "keyring:{}:{}",
+        reference.service.keyring_name(),
+        reference.username(token_kind)
+    )
 }
 
 fn mcp_entry(reference: &McpCredentialReference) -> Result<Entry, CredentialStoreError> {
@@ -630,13 +707,6 @@ fn delete_if_present(entry: &Entry) -> Result<(), CredentialStoreError> {
     }
 }
 
-fn write_error(error: KeyringError) -> CredentialStoreError {
-    match error {
-        KeyringError::TooLong(_, _) => CredentialStoreError::TokenTooLarge,
-        _ => CredentialStoreError::StorageWriteFailed,
-    }
-}
-
 fn validate_token(token: &str) -> Result<(), CredentialStoreError> {
     if token.is_empty() {
         return Err(CredentialStoreError::EmptyToken);
@@ -657,7 +727,7 @@ fn is_valid_reference_part(value: &str) -> bool {
 
 #[cfg(test)]
 mod mcp_credential_tests {
-    use super::{CredentialStore, McpCredentialReference, is_valid_environment_name};
+    use super::{CredentialStore, McpCredentialReference, OAuthCredentialReference, OAuthTokenPair, is_valid_environment_name};
 
     #[test]
     fn mcp_credentials_are_scoped_to_project_server_and_environment_name() {
@@ -718,5 +788,28 @@ mod mcp_credential_tests {
             .delete_mcp_secret(&reference)
             .expect("remove credential");
         assert!(!store.has_mcp_secret(&reference).expect("query credential"));
+    }
+
+    #[test]
+    fn oauth_token_pair_round_trips_and_removes_in_vault() {
+        let conn_id = format!("conn_{}", uuid::Uuid::new_v4().simple());
+        let gen_id = format!("gen_{}", uuid::Uuid::new_v4().simple());
+        let reference = OAuthCredentialReference::new(conn_id, gen_id).expect("valid reference");
+        let store = CredentialStore;
+        let tokens = OAuthTokenPair::with_expiration(
+            zeroize::Zeroizing::new("access_token_val".to_string()),
+            zeroize::Zeroizing::new("refresh_token_val".to_string()),
+            1_800_000_000,
+        )
+        .expect("token pair");
+
+        store.store_new_token_pair(&reference, &tokens).expect("store new token pair");
+        let loaded = store.load_token_pair(&reference).expect("load token pair");
+        assert_eq!(loaded.access_token(), "access_token_val");
+        assert_eq!(loaded.refresh_token(), "refresh_token_val");
+        assert_eq!(loaded.expires_at_unix_seconds(), Some(1_800_000_000));
+
+        store.delete_token_pair(&reference).expect("delete token pair");
+        assert!(store.load_token_pair(&reference).is_err());
     }
 }

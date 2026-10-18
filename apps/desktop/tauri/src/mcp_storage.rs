@@ -274,39 +274,45 @@ pub fn load_global_mcp_servers() -> Result<GlobalMcpLoadResult, McpStorageError>
     let root = mcp_directory()?;
     fs::create_dir_all(&root).map_err(|_| McpStorageError::unavailable())?;
     let canonical_root = fs::canonicalize(&root).map_err(|_| McpStorageError::unavailable())?;
-    let entries = fs::read_dir(&canonical_root).map_err(|_| McpStorageError::unavailable())?;
+
+    // Migrate any legacy *.json files in mcp_directory
+    if let Ok(entries) = fs::read_dir(&canonical_root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) == Some("json") {
+                if let Ok(bytes) = read_bounded_config_file(&path) {
+                    if let Ok(server) = serde_json::from_slice::<GlobalMcpServer>(&bytes) {
+                        if validate_server(&server).is_ok() && server.installed {
+                            let key = format!("mcp_server.{}", server.id);
+                            let _ = crate::chat_storage::set_app_setting_raw(&key, &String::from_utf8_lossy(&bytes));
+                        }
+                    }
+                }
+                let _ = fs::remove_file(&path);
+            }
+        }
+    }
+
     let mut servers = Vec::new();
     let mut invalid_config_count = 0;
 
-    for entry in entries {
-        let entry = entry.map_err(|_| McpStorageError::unavailable())?;
-        let path = entry.path();
-        if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
-            continue;
+    let settings = crate::chat_storage::get_all_app_settings().map_err(|_| McpStorageError::unavailable())?;
+    for (key, json_val) in settings {
+        if let Some(server_id) = key.strip_prefix("mcp_server.") {
+            let parsed = serde_json::from_str::<GlobalMcpServer>(&json_val);
+            let Some(mut server) = parsed.ok() else {
+                invalid_config_count += 1;
+                continue;
+            };
+            if validate_server(&server).is_err() || !server.installed || server.id != server_id {
+                invalid_config_count += 1;
+                continue;
+            }
+            server.install_dir = install_directory(&canonical_root, &server.id)
+                .to_string_lossy()
+                .into_owned();
+            servers.push(server);
         }
-        let parsed = read_bounded_config_file(&path)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<GlobalMcpServer>(&bytes).ok());
-        let Some(mut server) = parsed else {
-            invalid_config_count += 1;
-            continue;
-        };
-        if validate_server(&server).is_err() || !server.installed {
-            invalid_config_count += 1;
-            continue;
-        }
-        let Some(file_id) = path.file_stem().and_then(|value| value.to_str()) else {
-            invalid_config_count += 1;
-            continue;
-        };
-        if file_id != server.id {
-            invalid_config_count += 1;
-            continue;
-        }
-        server.install_dir = install_directory(&canonical_root, &server.id)
-            .to_string_lossy()
-            .into_owned();
-        servers.push(server);
     }
 
     servers.sort_by(|left, right| left.id.cmp(&right.id));
@@ -393,9 +399,11 @@ pub fn remove_global_mcp_server(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
         Err(_) => return Err(McpStorageError::unavailable()),
     }
+    let key = format!("mcp_server.{}", server.id);
+    let _ = crate::chat_storage::delete_app_setting_raw(&key);
     let config_path = config_path(&canonical_root, &server.id);
-    ensure_regular_file(&config_path)?;
-    fs::remove_file(config_path).map_err(|_| McpStorageError::unavailable())
+    let _ = fs::remove_file(config_path);
+    Ok(())
 }
 
 #[tauri::command]
@@ -634,21 +642,41 @@ fn config_path(root: &Path, server_id: &str) -> PathBuf {
     root.join(format!("{server_id}.json"))
 }
 
-/// Reads a bounded regular config file and verifies it matches the requested installed server.
+/// Reads a validated MCP server config from SQLite app_settings, falling back to legacy config file if present.
 fn read_server_config(root: &Path, server_id: &str) -> Result<GlobalMcpServer, McpStorageError> {
     validate_server_id(server_id)?;
-    let path = config_path(root, server_id);
-    let bytes = read_bounded_config_file(&path)?;
-    let mut server = serde_json::from_slice::<GlobalMcpServer>(&bytes)
-        .map_err(|_| McpStorageError::invalid())?;
-    validate_server(&server)?;
-    if server.id != server_id || !server.installed {
-        return Err(McpStorageError::invalid());
+    let key = format!("mcp_server.{server_id}");
+    if let Ok(Some(json_str)) = crate::chat_storage::get_app_setting_raw(&key) {
+        let mut server = serde_json::from_str::<GlobalMcpServer>(&json_str)
+            .map_err(|_| McpStorageError::invalid())?;
+        validate_server(&server)?;
+        if server.id != server_id || !server.installed {
+            return Err(McpStorageError::invalid());
+        }
+        server.install_dir = install_directory(root, server_id)
+            .to_string_lossy()
+            .into_owned();
+        return Ok(server);
     }
-    server.install_dir = install_directory(root, server_id)
-        .to_string_lossy()
-        .into_owned();
-    Ok(server)
+
+    let path = config_path(root, server_id);
+    if path.is_file() {
+        let bytes = read_bounded_config_file(&path)?;
+        let mut server = serde_json::from_slice::<GlobalMcpServer>(&bytes)
+            .map_err(|_| McpStorageError::invalid())?;
+        validate_server(&server)?;
+        if server.id != server_id || !server.installed {
+            return Err(McpStorageError::invalid());
+        }
+        server.install_dir = install_directory(root, server_id)
+            .to_string_lossy()
+            .into_owned();
+        let _ = write_server_config(root, &server);
+        let _ = fs::remove_file(&path);
+        return Ok(server);
+    }
+
+    Err(McpStorageError::invalid())
 }
 
 /// Opens one regular config file and reads no more than the configured limit plus one byte.
@@ -682,11 +710,15 @@ pub(crate) fn write_server_config(
     server: &GlobalMcpServer,
 ) -> Result<(), McpStorageError> {
     validate_server(server)?;
-    let bytes = serde_json::to_vec_pretty(server).map_err(|_| McpStorageError::unavailable())?;
-    if bytes.len() as u64 > MAXIMUM_CONFIG_BYTES {
+    let json_str = serde_json::to_string_pretty(server).map_err(|_| McpStorageError::unavailable())?;
+    if json_str.len() as u64 > MAXIMUM_CONFIG_BYTES {
         return Err(McpStorageError::invalid());
     }
-    write_atomic_bytes(&config_path(root, &server.id), &bytes)
+    let key = format!("mcp_server.{}", server.id);
+    crate::chat_storage::set_app_setting_raw(&key, &json_str).map_err(|_| McpStorageError::unavailable())?;
+    let legacy_path = config_path(root, &server.id);
+    let _ = fs::remove_file(legacy_path);
+    Ok(())
 }
 
 /// Rejects missing files, symlinks, and non-regular entries before config access.

@@ -3052,6 +3052,39 @@ pub fn delete_app_setting(
     Ok(())
 }
 
+pub(crate) fn get_app_setting_raw(key: &str) -> Result<Option<String>, ChatStorageError> {
+    let connection = open_database()?;
+    connection
+        .query_row(
+            "SELECT value_json FROM app_settings WHERE key = ?1",
+            [key],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|_| ChatStorageError::unavailable())
+}
+
+pub(crate) fn set_app_setting_raw(key: &str, value_json: &str) -> Result<(), ChatStorageError> {
+    let now = unix_time_milliseconds()?;
+    let connection = open_database()?;
+    connection
+        .execute(
+            "INSERT INTO app_settings (key, value_json, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at",
+            params![key, value_json, now],
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    Ok(())
+}
+
+pub(crate) fn delete_app_setting_raw(key: &str) -> Result<(), ChatStorageError> {
+    let connection = open_database()?;
+    connection
+        .execute("DELETE FROM app_settings WHERE key = ?1", [key])
+        .map_err(|_| ChatStorageError::unavailable())?;
+    Ok(())
+}
+
 #[tauri::command]
 /// Lists all personal memory facts from the database.
 ///

@@ -14,7 +14,6 @@ base64 = "0.22"
 zeroize = "=1.8.1"
 openchat_provider_secret_store = { path = "../../../services/provider-secret-store" }
 tauri = { version = "2", features = [] }
-tauri-plugin-window-state = "2.5"
 tauri-plugin-dialog = "2"
 tauri-plugin-shell = "2"
 rusqlite = { version = "0.40.2", features = ["bundled"] }

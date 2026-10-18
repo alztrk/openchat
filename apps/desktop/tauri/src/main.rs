@@ -17,12 +17,12 @@ mod project_folder;
 mod provider_storage;
 mod request_bounds;
 mod save_dialog;
+mod window_state;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(local_service::LocalServiceState::default())
         .invoke_handler(tauri::generate_handler![
             archive_export::save_pending_archive_export,
@@ -94,7 +94,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ])
         .setup(|app| {
             notifications::initialize(app.handle()).map_err(std::io::Error::other)?;
+            if let Some(main_window) = app.get_webview_window("main") {
+                window_state::restore_window_state(&main_window.as_ref().window());
+            }
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if matches!(
+                event,
+                tauri::WindowEvent::Resized(_)
+                    | tauri::WindowEvent::Moved(_)
+                    | tauri::WindowEvent::CloseRequested { .. }
+            ) {
+                window_state::save_window_state(window);
+            }
         })
         .build(tauri::generate_context!())?;
     app.run(|handle, event| {

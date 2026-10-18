@@ -393,6 +393,9 @@ fn read_secret_map_from_db(path: &Path) -> Result<SecretMap, SecretStoreError> {
     let mut map = SecretMap::default();
     for item in rows {
         let (key, ciphertext) = item.map_err(|_| SecretStoreError::Unavailable)?;
+        if key.starts_with("keyring:") {
+            continue;
+        }
         let plaintext = unprotect_dpapi(&ciphertext)?;
         if let Ok(value_str) = String::from_utf8(plaintext.to_vec()) {
             map.insert(key, value_str);
@@ -430,7 +433,7 @@ fn write_secret_map_to_db(
     };
 
     for key in existing_keys {
-        if !values.contains_key(&key) {
+        if !key.starts_with("keyring:") && !values.contains_key(&key) {
             transaction
                 .execute("DELETE FROM secure_vault WHERE key = ?1", rusqlite::params![key])
                 .map_err(|_| SecretStoreError::Unavailable)?;
@@ -456,6 +459,130 @@ fn write_secret_map_to_db(
         }
     }
     Ok(())
+}
+
+/// Loads a single secret by key from the secure vault, decrypting it using DPAPI.
+pub fn get_vault_secret(key: &str) -> Result<Option<Zeroizing<String>>, SecretStoreError> {
+    #[cfg(windows)]
+    {
+        get_vault_secret_for_path(&database_path()?, key)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = key;
+        Err(SecretStoreError::Unavailable)
+    }
+}
+
+/// Stores a single secret by key in the secure vault, encrypting it using DPAPI.
+pub fn set_vault_secret(key: &str, value: &str) -> Result<(), SecretStoreError> {
+    #[cfg(windows)]
+    {
+        set_vault_secret_for_path(&database_path()?, key, value)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (key, value);
+        Err(SecretStoreError::Unavailable)
+    }
+}
+
+/// Removes a single secret by key from the secure vault.
+pub fn delete_vault_secret(key: &str) -> Result<(), SecretStoreError> {
+    #[cfg(windows)]
+    {
+        delete_vault_secret_for_path(&database_path()?, key)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = key;
+        Err(SecretStoreError::Unavailable)
+    }
+}
+
+/// Checks whether a secret exists in the secure vault by key.
+pub fn has_vault_secret(key: &str) -> Result<bool, SecretStoreError> {
+    #[cfg(windows)]
+    {
+        has_vault_secret_for_path(&database_path()?, key)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = key;
+        Err(SecretStoreError::Unavailable)
+    }
+}
+
+#[cfg(windows)]
+pub(crate) fn get_vault_secret_for_path(
+    path: &Path,
+    key: &str,
+) -> Result<Option<Zeroizing<String>>, SecretStoreError> {
+    let connection = open_database_connection(path)?;
+    let mut statement = connection
+        .prepare("SELECT ciphertext FROM secure_vault WHERE key = ?1")
+        .map_err(|_| SecretStoreError::Unavailable)?;
+    let mut rows = statement
+        .query([key])
+        .map_err(|_| SecretStoreError::Unavailable)?;
+    if let Some(row) = rows.next().map_err(|_| SecretStoreError::Unavailable)? {
+        let ciphertext: Vec<u8> = row.get(0).map_err(|_| SecretStoreError::Unavailable)?;
+        let plaintext = unprotect_dpapi(&ciphertext)?;
+        let string_val = String::from_utf8(plaintext.to_vec()).map_err(|_| SecretStoreError::Unavailable)?;
+        Ok(Some(Zeroizing::new(string_val)))
+    } else {
+        Ok(None)
+    }
+}
+
+#[cfg(windows)]
+pub(crate) fn set_vault_secret_for_path(
+    path: &Path,
+    key: &str,
+    value: &str,
+) -> Result<(), SecretStoreError> {
+    let connection = open_database_connection(path)?;
+    let encrypted = protect_dpapi(value.as_bytes())?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| SecretStoreError::Unavailable)?
+        .as_millis();
+    let now = i64::try_from(timestamp).map_err(|_| SecretStoreError::Unavailable)?;
+    connection
+        .execute(
+            "INSERT INTO secure_vault (key, ciphertext, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET ciphertext = excluded.ciphertext, updated_at = excluded.updated_at",
+            rusqlite::params![key, encrypted, now],
+        )
+        .map_err(|_| SecretStoreError::Unavailable)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn delete_vault_secret_for_path(
+    path: &Path,
+    key: &str,
+) -> Result<(), SecretStoreError> {
+    let connection = open_database_connection(path)?;
+    connection
+        .execute("DELETE FROM secure_vault WHERE key = ?1", rusqlite::params![key])
+        .map_err(|_| SecretStoreError::Unavailable)?;
+    Ok(())
+}
+
+#[cfg(windows)]
+pub(crate) fn has_vault_secret_for_path(
+    path: &Path,
+    key: &str,
+) -> Result<bool, SecretStoreError> {
+    let connection = open_database_connection(path)?;
+    let mut statement = connection
+        .prepare("SELECT 1 FROM secure_vault WHERE key = ?1 LIMIT 1")
+        .map_err(|_| SecretStoreError::Unavailable)?;
+    let exists = statement
+        .exists([key])
+        .map_err(|_| SecretStoreError::Unavailable)?;
+    Ok(exists)
 }
 
 /// Resolves the legacy per-user DPAPI secret-map file path.
@@ -764,8 +891,9 @@ mod tests {
     use super::{copy_and_zeroize_dpapi_buffer, SecretMap, SecretStoreError};
     #[cfg(windows)]
     use super::{
+        delete_vault_secret_for_path, get_vault_secret_for_path, has_vault_secret_for_path,
         read_bounded_file, read_secret_map, secret_map_lock_path, secret_map_path_from_app_data,
-        write_secret_map, SecretMapUpdateLock,
+        set_vault_secret_for_path, write_secret_map, SecretMapUpdateLock,
     };
 
     #[test]
@@ -1026,6 +1154,36 @@ mod tests {
             .expect("read raw ciphertext");
         assert_ne!(raw_blob, b"super_secret_value");
         assert!(!String::from_utf8_lossy(&raw_blob).contains("super_secret_value"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn vault_secret_crud_and_keyring_preservation() {
+        let directory = TestDirectory::new();
+        let db_path = directory.0.join("vault_crud.sqlite3");
+
+        // 1. Set secret directly
+        set_vault_secret_for_path(&db_path, "keyring:test_oauth", "token_12345").expect("set vault secret");
+        assert!(has_vault_secret_for_path(&db_path, "keyring:test_oauth").expect("has secret"));
+
+        // 2. Read back
+        let loaded = get_vault_secret_for_path(&db_path, "keyring:test_oauth").expect("get secret");
+        assert_eq!(loaded.as_deref().map(|s| s.as_str()), Some("token_12345"));
+
+        // 3. Ensure write_secret_map does NOT delete keyring keys
+        let lock = SecretMapUpdateLock::acquire_for_path(&db_path).expect("acquire lock");
+        let mut map = SecretMap::default();
+        map.insert("provider_key".to_string(), "api_val".to_string());
+        write_secret_map(&db_path, &map, &lock).expect("write secret map");
+
+        // keyring key must still be intact
+        let loaded_after = get_vault_secret_for_path(&db_path, "keyring:test_oauth").expect("get secret after");
+        assert_eq!(loaded_after.as_deref().map(|s| s.as_str()), Some("token_12345"));
+
+        // 4. Delete secret
+        delete_vault_secret_for_path(&db_path, "keyring:test_oauth").expect("delete secret");
+        assert!(!has_vault_secret_for_path(&db_path, "keyring:test_oauth").expect("has secret after delete"));
+        assert_eq!(get_vault_secret_for_path(&db_path, "keyring:test_oauth").expect("get deleted"), None);
     }
 
     #[cfg(windows)]
