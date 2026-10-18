@@ -5,15 +5,10 @@ import {
   type ChatMessage,
   type ChatModelFavorite,
   type ChatProject,
-  clearConversationHistory as clearConversationHistoryStorage,
-  createConversationBranchFromUserMessage,
-  getConversation,
-  getMessages,
   hasCompletedAssistantResponse as hasCompletedAssistantResponseStorage,
   listConversations,
   listModelFavorites,
   listProjects,
-  renameConversation as renameConversationStorage,
   type SavedOutputMessageKey,
   setConversationRoute,
   setModelFavorite,
@@ -23,8 +18,7 @@ import type { ChatModel, ChatModelProvider } from '@/modules/providers/data/chat
 export type { ChatModel } from '@/modules/providers/data/chatModels';
 
 import type { PendingChatAttachment } from '@/modules/conversations/data/chatAttachments';
-import { type ChatGoal, isTerminalChatGoalStatus, parseChatGoal } from '@/modules/conversations/data/chatGoals';
-import { readProjectDefaultModelPreference } from '@/modules/projects/data/projectPreferences';
+import type { ChatGoal } from '@/modules/conversations/data/chatGoals';
 import {
   clearHiddenModelKeys,
   clearModelContextLimits,
@@ -32,7 +26,6 @@ import {
   defaultPreferenceForModel,
   formatModelRouteKey,
   modelRouteKey,
-  readLastSelectedModelPreference,
   readModelPreferences,
   writeDefaultModelPreference,
   writeHiddenModelKeys,
@@ -40,13 +33,16 @@ import {
   writeModelContextLimit,
 } from '@/modules/providers/data/modelPreferences';
 import { LocalServiceError, localServiceClient, type ServiceOperation } from '@/platform/local-service';
+import { createBranchesActions } from './chatStoreBranches';
+import { createConversationsActions } from './chatStoreConversations';
+import { createGoalsActions } from './chatStoreGoals';
 import { createRefreshModelsAction } from './chatStoreModels';
 import { createRefreshSavedOutputMessageKeys, createToggleSavedOutputAction } from './chatStoreSavedOutputs';
 import { createSendMessageAction } from './chatStoreSend';
 import type { TemporaryChatSession } from './chatStoreTemporary';
-import { createTemporaryChatActions, createTemporarySendMessageAction } from './chatStoreTemporary';
+import { createTemporaryChatActions } from './chatStoreTemporary';
 import { createRespondToToolPermissionAction } from './chatStoreToolPermissions';
-import { favoriteSourceConnection, isSameRoute, upsertMessage } from './chatStoreUtils';
+import { favoriteSourceConnection } from './chatStoreUtils';
 
 type ServiceStatus = 'idle' | 'loading' | 'ready' | 'error';
 type FavoriteStatus = 'idle' | 'loading' | 'ready' | 'error';
@@ -201,10 +197,6 @@ export interface ChatState {
   dismissError(): void;
 }
 
-let messageLoadGeneration = 0;
-let goalChangeGeneration = 0;
-let goalRefreshGeneration = 0;
-
 export const useChatStore = create<ChatState>((set, get) => ({
   serviceStatus: 'idle',
   storageInitializationErrorCode: null,
@@ -292,126 +284,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  async refreshConversations() {
-    const conversations = await listConversations();
-    const currentConversationId = get().activeConversationId;
-    if (
-      currentConversationId !== null &&
-      !conversations.some((conversation) => conversation.id === currentConversationId)
-    ) {
-      messageLoadGeneration += 1;
-      goalChangeGeneration += 1;
-      goalRefreshGeneration += 1;
-      set({
-        conversations,
-        activeConversationId: null,
-        selectedReasoningEffort: null,
-        activeGoal: null,
-        goalStatus: 'ready',
-        isChangingGoal: false,
-        messages: [],
-        searchTargetMessageId: null,
-        searchHighlightMessageId: null,
-        isLoadingMessages: false,
-      });
-      await get().refreshSavedOutputMessageKeys();
-      return;
-    }
-    set({ conversations });
-    await get().refreshSavedOutputMessageKeys();
-  },
-
-  async renameConversation(conversationId, title) {
-    await renameConversationStorage(conversationId, title);
-    set((state) => ({
-      conversations: state.conversations.map((conversation) =>
-        conversation.id === conversationId ? { ...conversation, title } : conversation,
-      ),
-    }));
-  },
-
+  ...createConversationsActions(set, get),
   refreshSavedOutputMessageKeys: createRefreshSavedOutputMessageKeys(set),
-
-  async refreshProjects() {
-    set({ projectsStatus: 'loading' });
-    try {
-      const projects = await listProjects();
-      set({ projects, projectsStatus: 'ready' });
-    } catch (error) {
-      set({ projectsStatus: 'error' });
-      throw error;
-    }
-  },
-
-  async clearConversationHistory() {
-    if (get().isSending) {
-      throw new LocalServiceError(
-        'conversation_archive_busy',
-        'Stop the active response before clearing chat history.',
-      );
-    }
-    if (get().isUpdatingConversationModel) {
-      throw new LocalServiceError(
-        'conversation_archive_busy',
-        'Wait for the current model change before clearing chat history.',
-      );
-    }
-    await localServiceClient.call('chat.file_changes.delete_all');
-    await clearConversationHistoryStorage();
-    messageLoadGeneration += 1;
-    goalChangeGeneration += 1;
-    goalRefreshGeneration += 1;
-    set({
-      conversations: [],
-      activeConversationId: null,
-      isUpdatingConversationModel: false,
-      selectedReasoningEffort: null,
-      activeGoal: null,
-      goalStatus: 'ready',
-      isChangingGoal: false,
-      pendingProjectId: null,
-      messages: [],
-      personalMemoryExcludedForNewConversation: false,
-      searchTargetMessageId: null,
-      searchHighlightMessageId: null,
-      isLoadingMessages: false,
-      errorCode: null,
-    });
-  },
-
   refreshModels: createRefreshModelsAction(set, get, localServiceClient),
-
-  setPendingQuestionSendBlock(conversationId, blocked) {
-    const current = get().pendingQuestionSendBlock;
-    if (conversationId === null && current === null) return;
-    if (current?.conversationId === conversationId && current.blocked === blocked) return;
-    set({
-      pendingQuestionSendBlock: conversationId === null ? null : { conversationId, blocked },
-    });
-  },
-
-  beginConversationCompaction(conversationId) {
-    const current = get();
-    const pendingQuestionBlocksSend =
-      current.pendingQuestionSendBlock?.conversationId === conversationId && current.pendingQuestionSendBlock.blocked;
-    if (
-      current.activeConversationId !== conversationId ||
-      current.isSending ||
-      current.isUpdatingConversationModel ||
-      current.isCreatingMessageBranch ||
-      current.compactingConversationId !== null ||
-      pendingQuestionBlocksSend
-    )
-      return false;
-    set({ compactingConversationId: conversationId });
-    return true;
-  },
-
-  finishConversationCompaction(conversationId) {
-    if (get().compactingConversationId === conversationId) {
-      set({ compactingConversationId: null });
-    }
-  },
 
   selectModel(key) {
     const current = get();
@@ -703,338 +578,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   toggleSavedOutput: createToggleSavedOutputAction(set, get),
   respondToToolPermission: createRespondToToolPermissionAction(set, get, localServiceClient),
-
-  async selectConversation(id, targetMessageId = null) {
-    if (get().temporaryChat) {
-      set({ errorCode: get().isSending ? 'temporaryChatStopBeforeLeaving' : 'temporaryChatExitRequired' });
-      return;
-    }
-    const generation = ++messageLoadGeneration;
-    goalChangeGeneration += 1;
-    goalRefreshGeneration += 1;
-    set({
-      activeConversationId: id,
-      selectedReasoningEffort: null,
-      activeGoal: null,
-      goalStatus: 'loading',
-      isChangingGoal: false,
-      pendingProjectId: null,
-      messages: [],
-      isLoadingMessages: true,
-      errorCode: null,
-      searchTargetMessageId: targetMessageId,
-      searchHighlightMessageId: null,
-      selectedModelKey: null,
-    });
-
-    let conversation = get().conversations.find((item) => item.id === id);
-    if (!conversation) {
-      try {
-        const restoredConversation = await getConversation(id);
-        if (generation !== messageLoadGeneration) return;
-        if (!restoredConversation) {
-          set({
-            isLoadingMessages: false,
-            goalStatus: 'ready',
-            searchTargetMessageId: null,
-            errorCode: targetMessageId ? 'searchMessageUnavailable' : 'messageHistoryLoadFailed',
-          });
-          return;
-        }
-        conversation = restoredConversation;
-        set((current) => ({
-          conversations: [restoredConversation, ...current.conversations.filter((item) => item.id !== id)],
-        }));
-      } catch {
-        if (generation !== messageLoadGeneration) return;
-        set({
-          isLoadingMessages: false,
-          goalStatus: 'ready',
-          searchTargetMessageId: null,
-          errorCode: targetMessageId ? 'searchMessageUnavailable' : 'messageHistoryLoadFailed',
-        });
-        return;
-      }
-    }
-
-    const selectedConversation = conversation;
-    if (!selectedConversation) return;
-    set({
-      selectedModelKey: get().models.find((model) => isSameRoute(model, selectedConversation))?.key ?? null,
-    });
-    try {
-      const messages = await getMessages(id);
-      if (generation !== messageLoadGeneration) return;
-      const targetWasFound = targetMessageId === null || messages.some((message) => message.id === targetMessageId);
-      set({
-        messages,
-        isLoadingMessages: false,
-        searchTargetMessageId: targetWasFound ? targetMessageId : null,
-        errorCode: targetWasFound ? null : 'searchMessageUnavailable',
-      });
-      void get().refreshActiveGoal(id);
-    } catch {
-      if (generation !== messageLoadGeneration) return;
-      set({
-        isLoadingMessages: false,
-        goalStatus: 'ready',
-        searchTargetMessageId: null,
-        errorCode: targetMessageId ? 'searchMessageUnavailable' : 'messageHistoryLoadFailed',
-      });
-    }
-  },
-
-  async refreshActiveGoal(conversationId) {
-    if (get().activeConversationId !== conversationId) return;
-    const generation = ++goalRefreshGeneration;
-    set({ goalStatus: 'loading' });
-    try {
-      const response = await localServiceClient.call('chat.goal.active', { conversationId });
-      if (!('goal' in response)) throw new Error('The active goal response is invalid.');
-      const goal = parseChatGoal(response.goal);
-      if (goal && goal.conversationId !== conversationId) throw new Error('The active goal belongs to another chat.');
-      if (get().activeConversationId !== conversationId || generation !== goalRefreshGeneration) return;
-      set({
-        activeGoal: goal && !isTerminalChatGoalStatus(goal.status) ? goal : null,
-        goalStatus: 'ready',
-      });
-    } catch {
-      if (get().activeConversationId === conversationId && generation === goalRefreshGeneration) {
-        set({ activeGoal: null, goalStatus: 'error' });
-      }
-    }
-  },
-
-  async pauseActiveGoal() {
-    const current = get();
-    const goal = current.activeGoal;
-    if (goal?.status !== 'running' || current.isChangingGoal) return;
-    const generation = ++goalChangeGeneration;
-    set({ isChangingGoal: true, goalStatus: 'ready' });
-    try {
-      await localServiceClient.call('chat.goal.pause', {
-        conversationId: goal.conversationId,
-        runId: goal.runId,
-      });
-      if (
-        generation !== goalChangeGeneration ||
-        get().activeConversationId !== goal.conversationId ||
-        get().activeGoal?.runId !== goal.runId
-      )
-        return;
-      if (current.activeConversationId === goal.conversationId) await current.activeOperation?.cancel();
-      await get().refreshActiveGoal(goal.conversationId);
-    } catch {
-      if (generation === goalChangeGeneration && get().activeConversationId === goal.conversationId) {
-        set({ goalStatus: 'error' });
-      }
-    } finally {
-      if (generation === goalChangeGeneration) set({ isChangingGoal: false });
-    }
-  },
-
-  async stopActiveGoal() {
-    const current = get();
-    const goal = current.activeGoal;
-    if (!goal || current.isChangingGoal) return;
-    const generation = ++goalChangeGeneration;
-    set({ isChangingGoal: true, goalStatus: 'ready' });
-    try {
-      await localServiceClient.call('chat.goal.stop', {
-        conversationId: goal.conversationId,
-        runId: goal.runId,
-      });
-      if (
-        generation !== goalChangeGeneration ||
-        get().activeConversationId !== goal.conversationId ||
-        get().activeGoal?.runId !== goal.runId
-      )
-        return;
-      if (current.activeConversationId === goal.conversationId) await current.activeOperation?.cancel();
-      await get().refreshActiveGoal(goal.conversationId);
-    } catch {
-      if (generation === goalChangeGeneration && get().activeConversationId === goal.conversationId) {
-        set({ goalStatus: 'error' });
-      }
-    } finally {
-      if (generation === goalChangeGeneration) set({ isChangingGoal: false });
-    }
-  },
-
-  updateMessage(message) {
-    if (get().activeConversationId !== message.conversationId) return;
-    set((current) => ({ messages: upsertMessage(current.messages, message) }));
-  },
-
-  clearSearchTarget(found) {
-    const targetMessageId = get().searchTargetMessageId;
-    if (!targetMessageId) return;
-    set({
-      searchTargetMessageId: null,
-      searchHighlightMessageId: found ? targetMessageId : null,
-      errorCode: found ? null : 'searchMessageUnavailable',
-    });
-  },
-
-  setPendingProjectId(projectId) {
-    const current = get();
-    if (current.activeConversationId !== null || current.isSending) return;
-    if (projectId !== null && !current.projects.some((project) => project.id === projectId)) return;
-    set({ pendingProjectId: projectId });
-  },
-
-  startNewChat(projectId = null) {
-    messageLoadGeneration++;
-    goalChangeGeneration += 1;
-    goalRefreshGeneration += 1;
-    const current = get();
-    if (current.temporaryChat) {
-      set({ errorCode: current.isSending ? 'temporaryChatStopBeforeLeaving' : 'temporaryChatExitRequired' });
-      return;
-    }
-    let projectPreference: DefaultModelPreference | null = null;
-    let projectPreferenceInvalid = false;
-    if (projectId !== null) {
-      try {
-        projectPreference = readProjectDefaultModelPreference(projectId);
-      } catch {
-        projectPreferenceInvalid = true;
-      }
-    }
-    let lastSelectedPreference: DefaultModelPreference | null = null;
-    try {
-      lastSelectedPreference = readLastSelectedModelPreference();
-    } catch (cause) {
-      globalThis.reportError(new Error('The last selected model preference could not be read.', { cause }));
-    }
-    const defaultPreference = projectPreferenceInvalid
-      ? null
-      : (projectPreference ?? lastSelectedPreference ?? current.defaultModel);
-    const defaultModel = defaultPreference
-      ? current.models.find(
-          (model) =>
-            modelRouteKey(model) === formatModelRouteKey(defaultPreference) &&
-            !current.hiddenModelKeys.includes(modelRouteKey(model)),
-        )
-      : undefined;
-    set({
-      activeConversationId: null,
-      temporaryChat: null,
-      selectedReasoningEffort: null,
-      activeGoal: null,
-      goalStatus: 'ready',
-      isChangingGoal: false,
-      pendingProjectId: projectId,
-      messages: [],
-      personalMemoryExcludedForNewConversation: false,
-      searchTargetMessageId: null,
-      searchHighlightMessageId: null,
-      isLoadingMessages: false,
-      selectedModelKey: defaultModel?.key ?? null,
-      errorCode: projectPreferenceInvalid ? 'projectDefaultModelLoadFailed' : null,
-    });
-  },
-
   ...createTemporaryChatActions(set, get),
-
-  sendMessage: (...args) =>
-    get().temporaryChat
-      ? createTemporarySendMessageAction(set, get, localServiceClient)(...args)
-      : createSendMessageAction(set, get, localServiceClient)(...args),
-
-  async retryMessage(messageId) {
-    const current = get();
-    const messageIndex = current.messages.findIndex((message) => message.id === messageId);
-    const message = messageIndex >= 0 ? current.messages[messageIndex] : null;
-    const previousMessage = messageIndex > 0 ? current.messages[messageIndex - 1] : null;
-    const isLatest = messageIndex === current.messages.length - 1;
-    let responseVersionCount = 0;
-    if (message?.role === 'assistant') {
-      for (let index = messageIndex; index >= 0 && current.messages[index]?.role === 'assistant'; index -= 1) {
-        responseVersionCount += 1;
-      }
-    }
-    if (
-      !current.activeConversationId ||
-      !message ||
-      message.role !== 'assistant' ||
-      message.status === 'streaming' ||
-      !isLatest ||
-      previousMessage?.role !== 'user' ||
-      responseVersionCount > 1
-    ) {
-      set({ errorCode: 'responseRetryUnavailable' });
-      return false;
-    }
-    return get().sendMessage('', [], undefined, undefined, {
-      excludedAssistantMessageId: messageId,
-      userMessageAlreadySaved: true,
-    });
-  },
-
-  async branchFromUserMessage(messageId, editedContent, branchTitle) {
-    const current = get();
-    const sourceConversationId = current.activeConversationId;
-    const sourceMessage = current.messages.find((message) => message.id === messageId);
-    if (
-      !sourceConversationId ||
-      !sourceMessage ||
-      sourceMessage.role !== 'user' ||
-      current.isSending ||
-      current.isCreatingMessageBranch ||
-      current.compactingConversationId === sourceConversationId ||
-      (editedContent.trim().length === 0 && sourceMessage.attachments.length === 0)
-    ) {
-      set({ errorCode: 'conversationBranchCreateFailed' });
-      return false;
-    }
-    set({ errorCode: null, isCreatingMessageBranch: true });
-    try {
-      const branch = await createConversationBranchFromUserMessage(
-        sourceConversationId,
-        messageId,
-        crypto.randomUUID().replaceAll('-', ''),
-        branchTitle,
-        editedContent,
-      );
-      const branchModel = current.models.find((model) => isSameRoute(model, branch.conversation));
-      set((state) => ({
-        conversations: [
-          branch.conversation,
-          ...state.conversations.filter((conversation) => conversation.id !== branch.conversation.id),
-        ],
-        activeConversationId: branch.conversation.id,
-        pendingProjectId: null,
-        messages: branch.messages,
-        selectedModelKey: branchModel?.key ?? state.selectedModelKey,
-        selectedReasoningEffort: null,
-        activeGoal: null,
-        goalStatus: 'ready',
-        searchTargetMessageId: null,
-        searchHighlightMessageId: null,
-        isLoadingMessages: false,
-        isCreatingMessageBranch: false,
-      }));
-      return await get().sendMessage(editedContent, [], undefined, undefined, {
-        userMessageAlreadySaved: true,
-      });
-    } catch {
-      set({ errorCode: 'conversationBranchCreateFailed', isCreatingMessageBranch: false });
-      return false;
-    } finally {
-      set({ isCreatingMessageBranch: false });
-    }
-  },
-
-  async stopResponse() {
-    const operation = get().activeOperation;
-    if (!operation) return;
-    await operation.cancel();
-  },
-
-  dismissError() {
-    set({ errorCode: null });
-  },
+  ...createGoalsActions(set, get),
+  sendMessage: createSendMessageAction(set, get, localServiceClient),
+  ...createBranchesActions(set, get),
 }));
 
 function mapModelPreferences(preferences: ReturnType<typeof readModelPreferences>) {
