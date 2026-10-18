@@ -1,3 +1,5 @@
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+
 export type ConversationWidthPreference = 'narrow' | 'normal' | 'wide';
 export type ConversationTextSizePreference = 'small' | 'normal' | 'large';
 export type AppFontPreference = 'sourceSans3' | 'manrope' | 'segoeUi' | 'georgia';
@@ -22,9 +24,9 @@ const defaultAppearancePreferences: AppearancePreferences = {
 
 export function readAppearancePreferences(): AppearancePreferences {
   try {
-    const width = localStorage.getItem('appearance.conversation_width');
-    const textSize = localStorage.getItem('appearance.conversation_text_size');
-    const font = localStorage.getItem('appearance.conversation_font');
+    const width = unifiedStorage.getItem('appearance.conversation_width');
+    const textSize = unifiedStorage.getItem('appearance.conversation_text_size');
+    const font = unifiedStorage.getItem('appearance.conversation_font');
     return {
       conversationWidth: width === 'narrow' || width === 'wide' ? width : 'normal',
       conversationTextSize: textSize === 'small' || textSize === 'large' ? textSize : 'normal',
@@ -36,15 +38,15 @@ export function readAppearancePreferences(): AppearancePreferences {
 }
 
 export function writeConversationWidthPreference(value: ConversationWidthPreference): void {
-  localStorage.setItem('appearance.conversation_width', value);
+  unifiedStorage.setItem('appearance.conversation_width', value);
 }
 
 export function writeConversationTextSizePreference(value: ConversationTextSizePreference): void {
-  localStorage.setItem('appearance.conversation_text_size', value);
+  unifiedStorage.setItem('appearance.conversation_text_size', value);
 }
 
 export function writeAppFontPreference(value: AppFontPreference): void {
-  localStorage.setItem('appearance.conversation_font', value);
+  unifiedStorage.setItem('appearance.conversation_font', value);
 }
 
 export function getAppearanceCssValues(preferences: AppearancePreferences): AppearanceCssValues {

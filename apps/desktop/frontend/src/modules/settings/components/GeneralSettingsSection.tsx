@@ -16,6 +16,7 @@ import {
   writeConversationTextSizePreference,
   writeConversationWidthPreference,
 } from '@/modules/settings/data/appearancePreferences';
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 
 export type ThemePreference = 'system' | 'light' | 'dark';
 
@@ -67,7 +68,7 @@ export function GeneralSettingsSection({
   const changeTheme = (value: string) => {
     if (value !== 'system' && value !== 'light' && value !== 'dark') return;
     try {
-      localStorage.setItem('openchat.theme', value);
+      unifiedStorage.setItem('openchat.theme', value);
       onThemeChange(value);
       setSaveError(null);
     } catch {

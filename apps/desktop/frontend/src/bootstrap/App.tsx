@@ -27,6 +27,7 @@ import { BrandMark } from '@/shell/BrandMark';
 import { ConversationActionsHeader } from '@/shell/ConversationActionsHeader';
 import { type AppSurface, NavigationRail } from '@/shell/NavigationRail';
 import { TitleBar } from '@/shell/TitleBar';
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 
 const LibraryPage = lazy(() =>
   import('@/modules/model-library/components/LibraryPage').then((module) => ({ default: module.LibraryPage })),
@@ -70,7 +71,7 @@ interface NotificationActivation {
 
 function readThemePreference(): ThemePreference {
   try {
-    const preference = localStorage.getItem('openchat.theme');
+    const preference = unifiedStorage.getItem('openchat.theme');
     if (preference === 'system' || preference === 'light' || preference === 'dark') {
       return preference;
     }
@@ -515,7 +516,7 @@ export function App() {
   const toggleTheme = () => {
     const nextTheme: ThemePreference = isDark ? 'light' : 'dark';
     try {
-      localStorage.setItem('openchat.theme', nextTheme);
+      unifiedStorage.setItem('openchat.theme', nextTheme);
     } catch {
       // The selected theme still applies for this session when storage is unavailable.
     }

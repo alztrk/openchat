@@ -3,6 +3,7 @@ import ICU from 'i18next-icu';
 import { initReactI18next } from 'react-i18next';
 
 import type en from './locales/en.json';
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 
 export const supportedLocales = ['de', 'en', 'es', 'fr', 'tr'] as const;
 export type SupportedLocale = (typeof supportedLocales)[number];
@@ -19,7 +20,7 @@ const localeLoaders: Record<SupportedLocale, () => Promise<LocaleDictionary>> = 
 
 export function getLocalePreference(): LocalePreference {
   try {
-    const preferred = localStorage.getItem('openchat.language');
+    const preferred = unifiedStorage.getItem('openchat.language');
     const savedLocale = supportedLocales.find((locale) => locale === preferred);
     if (savedLocale) return savedLocale;
   } catch {
@@ -69,11 +70,11 @@ export async function changeSupportedLocale(locale: SupportedLocale): Promise<vo
 export async function changeLocalePreference(preference: LocalePreference): Promise<void> {
   await i18nReady;
   if (preference === 'system') {
-    localStorage.removeItem('openchat.language');
+    unifiedStorage.removeItem('openchat.language');
     await changeSupportedLocale(getSystemLocale());
     return;
   }
-  localStorage.setItem('openchat.language', preference);
+  unifiedStorage.setItem('openchat.language', preference);
   await changeSupportedLocale(preference);
 }
 

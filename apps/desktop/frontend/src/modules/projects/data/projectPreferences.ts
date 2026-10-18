@@ -1,4 +1,5 @@
 import { type DefaultModelPreference, parseDefaultModelPreference } from '@/modules/providers/data/modelPreferences';
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 
 export type ProjectToolPermissionRule = 'ask' | 'allow' | 'deny';
 export type ToolPermissionMode = 'require_approval' | 'approve_safe_operations' | 'full_access';
@@ -26,7 +27,7 @@ const projectToolRuleNames = new Set([
 ]);
 
 export function readProjectDefaultModelPreference(projectId: string): DefaultModelPreference | null {
-  const raw = localStorage.getItem(`${projectDefaultModelPrefix}${validateProjectId(projectId)}`);
+  const raw = unifiedStorage.getItem(`${projectDefaultModelPrefix}${validateProjectId(projectId)}`);
   if (raw === null) return null;
   return parseDefaultModelPreference(JSON.parse(raw));
 }
@@ -34,14 +35,14 @@ export function readProjectDefaultModelPreference(projectId: string): DefaultMod
 export function writeProjectDefaultModelPreference(projectId: string, preference: DefaultModelPreference | null): void {
   const key = `${projectDefaultModelPrefix}${validateProjectId(projectId)}`;
   if (preference === null) {
-    localStorage.removeItem(key);
+    unifiedStorage.removeItem(key);
     return;
   }
-  localStorage.setItem(key, JSON.stringify(parseDefaultModelPreference(preference)));
+  unifiedStorage.setItem(key, JSON.stringify(parseDefaultModelPreference(preference)));
 }
 
 export function readProjectSkillIds(projectId: string): string[] {
-  const raw = localStorage.getItem(`${projectSkillPrefix}${validateProjectId(projectId)}`);
+  const raw = unifiedStorage.getItem(`${projectSkillPrefix}${validateProjectId(projectId)}`);
   if (raw === null) return [];
   const value: unknown = JSON.parse(raw);
   if (
@@ -62,16 +63,16 @@ export function writeProjectSkillIds(projectId: string, skillIds: readonly strin
   }
   const key = `${projectSkillPrefix}${validateProjectId(projectId)}`;
   if (normalized.length === 0) {
-    localStorage.removeItem(key);
+    unifiedStorage.removeItem(key);
     return;
   }
-  localStorage.setItem(key, JSON.stringify(normalized));
+  unifiedStorage.setItem(key, JSON.stringify(normalized));
 }
 
 export function readSavedProjectToolPermissionRules(
   projectId: string,
 ): Record<string, ProjectToolPermissionRule> | null {
-  const raw = localStorage.getItem(`${projectToolRulesPrefix}${validateProjectId(projectId)}`);
+  const raw = unifiedStorage.getItem(`${projectToolRulesPrefix}${validateProjectId(projectId)}`);
   if (raw === null) return null;
   return parseProjectToolPermissionRules(JSON.parse(raw));
 }
@@ -91,18 +92,18 @@ export function parseProjectToolPermissionRules(value: unknown): Record<string, 
 }
 
 export function readSavedToolPermissionMode(): ToolPermissionMode | null {
-  const value = localStorage.getItem(toolPermissionModeKey);
+  const value = unifiedStorage.getItem(toolPermissionModeKey);
   if (value === null) return null;
   if (isToolPermissionMode(value)) return value;
   throw new Error('The saved tool permission mode is invalid.');
 }
 
 export function clearSavedProjectToolPermissionRules(projectId: string): void {
-  localStorage.removeItem(`${projectToolRulesPrefix}${validateProjectId(projectId)}`);
+  unifiedStorage.removeItem(`${projectToolRulesPrefix}${validateProjectId(projectId)}`);
 }
 
 export function clearSavedToolPermissionMode(): void {
-  localStorage.removeItem(toolPermissionModeKey);
+  unifiedStorage.removeItem(toolPermissionModeKey);
 }
 
 function validateProjectId(projectId: string): string {

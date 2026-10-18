@@ -4,6 +4,7 @@ import {
   defaultPreferenceForModel,
   parseDefaultModelPreference,
 } from './modelPreferences';
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 
 export type TitleGenerationMode = 'conversation' | 'selectedModel' | 'lightweight';
 
@@ -15,7 +16,7 @@ export interface TitleGenerationPreference {
 const preferenceKey = 'chat.title_generation';
 
 export function readTitleGenerationPreference(): TitleGenerationPreference {
-  const encoded = localStorage.getItem(preferenceKey);
+  const encoded = unifiedStorage.getItem(preferenceKey);
   if (!encoded) return { mode: 'conversation', model: null };
   const value: unknown = JSON.parse(encoded);
   return parsePreference(value);
@@ -27,7 +28,7 @@ export function writeTitleGenerationPreference(preference: TitleGenerationPrefer
   }
   const value: Record<string, unknown> = { mode: preference.mode };
   if (preference.model !== null) value.model = preference.model;
-  localStorage.setItem(preferenceKey, JSON.stringify(value));
+  unifiedStorage.setItem(preferenceKey, JSON.stringify(value));
 }
 
 export function titlePreferenceForModel(model: ChatModel): DefaultModelPreference {

@@ -1,3 +1,5 @@
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+
 export const maxPersonalMemoryFacts = 100;
 export const maxPersonalMemoryFactCharacters = 500;
 
@@ -16,7 +18,7 @@ export interface PersonalMemoryPreferences {
 }
 
 export function readPersonalMemoryPreferences(): PersonalMemoryPreferences {
-  const enabledValue = window.localStorage.getItem(enabledKey);
+  const enabledValue = unifiedStorage.getItem(enabledKey);
   if (enabledValue !== null && enabledValue !== 'true' && enabledValue !== 'false') {
     throw new Error('Saved personal memory preferences are invalid.');
   }
@@ -27,11 +29,11 @@ export function readPersonalMemoryPreferences(): PersonalMemoryPreferences {
 }
 
 export function writePersonalMemoryEnabled(enabled: boolean): void {
-  window.localStorage.setItem(enabledKey, String(enabled));
+  unifiedStorage.setItem(enabledKey, String(enabled));
 }
 
 export function readPersonalMemoryFacts(): PersonalMemoryFact[] {
-  const raw = window.localStorage.getItem(factsKey);
+  const raw = unifiedStorage.getItem(factsKey);
   if (raw === null) return [];
 
   let decoded: unknown;
@@ -56,16 +58,16 @@ export function writePersonalMemoryFacts(facts: readonly PersonalMemoryFact[]): 
     throw new Error('Personal memories exceed the supported count or contain duplicate IDs.');
   }
   const validated = facts.map(parseFact);
-  window.localStorage.setItem(factsKey, JSON.stringify(validated));
+  unifiedStorage.setItem(factsKey, JSON.stringify(validated));
 }
 
 export function clearPersonalMemory(): void {
-  window.localStorage.removeItem(enabledKey);
-  window.localStorage.removeItem(factsKey);
+  unifiedStorage.removeItem(enabledKey);
+  unifiedStorage.removeItem(factsKey);
 }
 
 export function readPersonalMemoryExcludedConversationIds(): Set<string> {
-  const raw = window.localStorage.getItem(excludedConversationsKey);
+  const raw = unifiedStorage.getItem(excludedConversationsKey);
   if (raw === null) return new Set();
 
   let decoded: unknown;
@@ -95,10 +97,10 @@ export function writePersonalMemoryExcludedConversationIds(ids: ReadonlySet<stri
     throw new Error('Personal memory conversation preferences are invalid.');
   }
   if (ids.size === 0) {
-    window.localStorage.removeItem(excludedConversationsKey);
+    unifiedStorage.removeItem(excludedConversationsKey);
     return;
   }
-  window.localStorage.setItem(excludedConversationsKey, JSON.stringify([...ids]));
+  unifiedStorage.setItem(excludedConversationsKey, JSON.stringify([...ids]));
 }
 
 export function setPersonalMemoryExcludedForConversation(conversationId: string, excluded: boolean): void {

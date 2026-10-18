@@ -27,7 +27,7 @@ use crate::{
     save_dialog::{select_save_file, SaveFileDialogError},
 };
 
-const CHAT_SCHEMA_VERSION: i64 = 18;
+const CHAT_SCHEMA_VERSION: i64 = 19;
 const MINIMUM_SQLITE_VERSION_NUMBER: i32 = 3_051_003;
 const MAX_MESSAGE_CHARS: usize = 1_000_000;
 const MESSAGE_CONTENT_PREFIX: &str = "\u{1e}openchat-attachments-v1:";
@@ -65,6 +65,39 @@ const MAXIMUM_HISTORY_SEARCH_QUERY_CHARS: usize = 512;
 const MAXIMUM_HISTORY_SEARCH_RESULTS: usize = 30;
 const MAXIMUM_HISTORY_SEARCH_EXCERPT_BYTES: usize = 4096;
 const MAXIMUM_HISTORY_SEARCH_TIMESTAMP: i64 = 8_640_000_000_000_000;
+const MAXIMUM_SETTING_KEY_BYTES: usize = 128;
+const MAXIMUM_SETTING_VALUE_BYTES: usize = 2 * 1024 * 1024;
+const MAXIMUM_FACT_ID_BYTES: usize = 128;
+const MAXIMUM_FACT_TEXT_BYTES: usize = 64 * 1024;
+const MAXIMUM_FACT_CATEGORY_BYTES: usize = 128;
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+/// Persisted personal memory fact representation.
+pub struct PersonalMemoryFact {
+    /// Unique fact identifier.
+    pub id: String,
+    /// Extracted fact content.
+    pub fact_text: String,
+    /// Optional categorization.
+    pub category: Option<String>,
+    /// Source conversation where the fact was derived.
+    pub source_conversation_id: Option<String>,
+    /// Creation timestamp in milliseconds since Unix epoch.
+    pub created_at: i64,
+    /// Last update timestamp in milliseconds since Unix epoch.
+    pub updated_at: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+/// Payload for migrating localStorage data to the unified database.
+pub struct LocalStorageMigrationPayload {
+    /// Settings key-value pairs (value is JSON string).
+    pub settings: std::collections::HashMap<String, String>,
+    /// Personal memory facts.
+    pub facts: Vec<PersonalMemoryFact>,
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -2833,6 +2866,40 @@ fn migrate_chat_schema(connection: &mut Connection) -> rusqlite::Result<()> {
             "TEXT NOT NULL DEFAULT '[]'",
         )?;
         transaction.pragma_update(None, "user_version", 18)?;
+        version = 18;
+    }
+    if version < 19 {
+        transaction.execute_batch(
+            "CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY NOT NULL,
+                value_json TEXT NOT NULL,
+                updated_at INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS personal_memory_facts (
+                id TEXT PRIMARY KEY NOT NULL,
+                fact_text TEXT NOT NULL,
+                category TEXT,
+                source_conversation_id TEXT,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_personal_memory_facts_category
+                ON personal_memory_facts(category);
+             CREATE TABLE IF NOT EXISTS secure_vault (
+                key TEXT PRIMARY KEY NOT NULL,
+                ciphertext BLOB NOT NULL,
+                description TEXT,
+                updated_at INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS ephemeral_cache (
+                key TEXT PRIMARY KEY NOT NULL,
+                value_json TEXT NOT NULL,
+                expires_at INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_ephemeral_cache_expires
+                ON ephemeral_cache(expires_at);",
+        )?;
+        transaction.pragma_update(None, "user_version", 19)?;
     }
     transaction.commit()
 }
@@ -2865,6 +2932,323 @@ fn create_model_favorites(connection: &Connection) -> rusqlite::Result<()> {
             PRIMARY KEY (provider_id, model_id)
          );",
     )
+}
+
+#[tauri::command]
+/// Retrieves an application setting value from the unified database.
+///
+/// # Errors
+/// Returns a storage error if the setting cannot be read.
+pub fn get_app_setting(
+    key: BoundedText<MAXIMUM_SETTING_KEY_BYTES>,
+) -> Result<Option<String>, ChatStorageError> {
+    let key = key.into_inner();
+    let connection = open_database()?;
+    connection
+        .query_row(
+            "SELECT value_json FROM app_settings WHERE key = ?1",
+            [key],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|_| ChatStorageError::unavailable())
+}
+
+#[tauri::command]
+/// Retrieves all application settings from the unified database.
+///
+/// # Errors
+/// Returns a storage error if settings cannot be read.
+pub fn get_all_app_settings() -> Result<std::collections::HashMap<String, String>, ChatStorageError> {
+    let connection = open_database()?;
+    let mut statement = connection
+        .prepare("SELECT key, value_json FROM app_settings")
+        .map_err(|_| ChatStorageError::unavailable())?;
+    let rows = statement
+        .query_map([], |row| {
+            let key: String = row.get(0)?;
+            let value: String = row.get(1)?;
+            Ok((key, value))
+        })
+        .map_err(|_| ChatStorageError::unavailable())?;
+    let mut map = std::collections::HashMap::new();
+    for row in rows {
+        let (key, value) = row.map_err(|_| ChatStorageError::unavailable())?;
+        map.insert(key, value);
+    }
+    Ok(map)
+}
+
+#[tauri::command]
+/// Sets an application setting value in the unified database.
+///
+/// # Errors
+/// Returns a storage error if the setting cannot be persisted.
+pub fn set_app_setting(
+    key: BoundedText<MAXIMUM_SETTING_KEY_BYTES>,
+    value_json: BoundedText<MAXIMUM_SETTING_VALUE_BYTES>,
+) -> Result<(), ChatStorageError> {
+    let key = key.into_inner();
+    let value_json = value_json.into_inner();
+    let now = unix_time_milliseconds()?;
+    let connection = open_database()?;
+    connection
+        .execute(
+            "INSERT INTO app_settings (key, value_json, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at",
+            params![key, value_json, now],
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    Ok(())
+}
+
+#[tauri::command]
+/// Sets a batch of application settings in a single transaction.
+///
+/// # Errors
+/// Returns a storage error if the batch update fails.
+pub fn set_app_settings_batch(
+    entries: std::collections::HashMap<String, String>,
+) -> Result<(), ChatStorageError> {
+    if entries.len() > 1000 {
+        return Err(ChatStorageError::invalid_input());
+    }
+    let now = unix_time_milliseconds()?;
+    let mut connection = open_database()?;
+    let transaction = connection
+        .transaction()
+        .map_err(|_| ChatStorageError::unavailable())?;
+    for (key, value) in entries {
+        if key.len() > MAXIMUM_SETTING_KEY_BYTES || value.len() > MAXIMUM_SETTING_VALUE_BYTES {
+            return Err(ChatStorageError::invalid_input());
+        }
+        transaction
+            .execute(
+                "INSERT INTO app_settings (key, value_json, updated_at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at",
+                params![key, value, now],
+            )
+            .map_err(|_| ChatStorageError::unavailable())?;
+    }
+    transaction
+        .commit()
+        .map_err(|_| ChatStorageError::unavailable())?;
+    Ok(())
+}
+
+#[tauri::command]
+/// Deletes an application setting by key.
+///
+/// # Errors
+/// Returns a storage error if the deletion fails.
+pub fn delete_app_setting(
+    key: BoundedText<MAXIMUM_SETTING_KEY_BYTES>,
+) -> Result<(), ChatStorageError> {
+    let key = key.into_inner();
+    let connection = open_database()?;
+    connection
+        .execute("DELETE FROM app_settings WHERE key = ?1", [key])
+        .map_err(|_| ChatStorageError::unavailable())?;
+    Ok(())
+}
+
+#[tauri::command]
+/// Lists all personal memory facts from the database.
+///
+/// # Errors
+/// Returns a storage error if facts cannot be loaded.
+pub fn list_personal_memory_facts() -> Result<Vec<PersonalMemoryFact>, ChatStorageError> {
+    let connection = open_database()?;
+    let mut statement = connection
+        .prepare(
+            "SELECT id, fact_text, category, source_conversation_id, created_at, updated_at
+             FROM personal_memory_facts ORDER BY updated_at DESC",
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(PersonalMemoryFact {
+                id: row.get(0)?,
+                fact_text: row.get(1)?,
+                category: row.get(2)?,
+                source_conversation_id: row.get(3)?,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        })
+        .map_err(|_| ChatStorageError::unavailable())?;
+    let mut facts = Vec::new();
+    for row in rows {
+        facts.push(row.map_err(|_| ChatStorageError::unavailable())?);
+    }
+    Ok(facts)
+}
+
+#[tauri::command]
+/// Saves or updates a personal memory fact.
+///
+/// # Errors
+/// Returns a storage error if the fact cannot be saved.
+pub fn save_personal_memory_fact(
+    fact: PersonalMemoryFact,
+) -> Result<(), ChatStorageError> {
+    if fact.id.trim().is_empty()
+        || fact.id.len() > MAXIMUM_FACT_ID_BYTES
+        || fact.fact_text.len() > MAXIMUM_FACT_TEXT_BYTES
+        || fact.category.as_ref().is_some_and(|c| c.len() > MAXIMUM_FACT_CATEGORY_BYTES)
+    {
+        return Err(ChatStorageError::invalid_input());
+    }
+    let now = unix_time_milliseconds()?;
+    let connection = open_database()?;
+    connection
+        .execute(
+            "INSERT INTO personal_memory_facts
+             (id, fact_text, category, source_conversation_id, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(id) DO UPDATE SET
+                fact_text = excluded.fact_text,
+                category = excluded.category,
+                source_conversation_id = excluded.source_conversation_id,
+                updated_at = excluded.updated_at",
+            params![
+                fact.id,
+                fact.fact_text,
+                fact.category,
+                fact.source_conversation_id,
+                if fact.created_at > 0 { fact.created_at } else { now },
+                now
+            ],
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    Ok(())
+}
+
+#[tauri::command]
+/// Deletes a personal memory fact by ID.
+///
+/// # Errors
+/// Returns a storage error if the deletion fails.
+pub fn delete_personal_memory_fact(
+    id: BoundedText<MAXIMUM_FACT_ID_BYTES>,
+) -> Result<(), ChatStorageError> {
+    let id = id.into_inner();
+    let connection = open_database()?;
+    connection
+        .execute("DELETE FROM personal_memory_facts WHERE id = ?1", [id])
+        .map_err(|_| ChatStorageError::unavailable())?;
+    Ok(())
+}
+
+#[tauri::command]
+/// Retrieves an unexpired ephemeral cache entry by key.
+///
+/// # Errors
+/// Returns a storage error if the cache cannot be read.
+pub fn get_cache_entry(
+    key: BoundedText<MAXIMUM_SETTING_KEY_BYTES>,
+) -> Result<Option<String>, ChatStorageError> {
+    let key = key.into_inner();
+    let now = unix_time_milliseconds()?;
+    let connection = open_database()?;
+    connection
+        .query_row(
+            "SELECT value_json FROM ephemeral_cache WHERE key = ?1 AND expires_at > ?2",
+            params![key, now],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|_| ChatStorageError::unavailable())
+}
+
+#[tauri::command]
+/// Sets an ephemeral cache entry with a time-to-live in seconds.
+///
+/// # Errors
+/// Returns a storage error if the entry cannot be saved.
+pub fn set_cache_entry(
+    key: BoundedText<MAXIMUM_SETTING_KEY_BYTES>,
+    value_json: BoundedText<MAXIMUM_SETTING_VALUE_BYTES>,
+    ttl_seconds: i64,
+) -> Result<(), ChatStorageError> {
+    let key = key.into_inner();
+    let value_json = value_json.into_inner();
+    if ttl_seconds <= 0 || ttl_seconds > 31_536_000 {
+        return Err(ChatStorageError::invalid_input());
+    }
+    let now = unix_time_milliseconds()?;
+    let expires_at = now.saturating_add(ttl_seconds.saturating_mul(1000));
+    let connection = open_database()?;
+    connection
+        .execute(
+            "INSERT INTO ephemeral_cache (key, value_json, expires_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, expires_at = excluded.expires_at",
+            params![key, value_json, expires_at],
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    Ok(())
+}
+
+#[tauri::command]
+/// Migrates frontend localStorage settings and personal memory facts into SQLite.
+///
+/// # Errors
+/// Returns a storage error if migration fails.
+pub fn migrate_localstorage_to_db(
+    payload: LocalStorageMigrationPayload,
+) -> Result<bool, ChatStorageError> {
+    let now = unix_time_milliseconds()?;
+    let mut connection = open_database()?;
+    let transaction = connection
+        .transaction()
+        .map_err(|_| ChatStorageError::unavailable())?;
+
+    for (key, value) in payload.settings {
+        if key.len() > MAXIMUM_SETTING_KEY_BYTES || value.len() > MAXIMUM_SETTING_VALUE_BYTES {
+            continue;
+        }
+        transaction
+            .execute(
+                "INSERT INTO app_settings (key, value_json, updated_at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at",
+                params![key, value, now],
+            )
+            .map_err(|_| ChatStorageError::unavailable())?;
+    }
+
+    for fact in payload.facts {
+        if fact.id.trim().is_empty()
+            || fact.id.len() > MAXIMUM_FACT_ID_BYTES
+            || fact.fact_text.len() > MAXIMUM_FACT_TEXT_BYTES
+        {
+            continue;
+        }
+        transaction
+            .execute(
+                "INSERT INTO personal_memory_facts
+                 (id, fact_text, category, source_conversation_id, created_at, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(id) DO UPDATE SET
+                    fact_text = excluded.fact_text,
+                    category = excluded.category,
+                    source_conversation_id = excluded.source_conversation_id,
+                    updated_at = excluded.updated_at",
+                params![
+                    fact.id,
+                    fact.fact_text,
+                    fact.category,
+                    fact.source_conversation_id,
+                    if fact.created_at > 0 { fact.created_at } else { now },
+                    now
+                ],
+            )
+            .map_err(|_| ChatStorageError::unavailable())?;
+    }
+
+    transaction
+        .commit()
+        .map_err(|_| ChatStorageError::unavailable())?;
+    Ok(true)
 }
 
 #[cfg(test)]
@@ -3661,5 +4045,103 @@ mod saved_output_search_benchmarks {
             optimized_median.elapsed.as_secs_f64() * 1_000.0,
             optimized_median.serialized_bytes,
         );
+    }
+}
+
+#[cfg(test)]
+mod settings_and_unified_storage_tests {
+    use super::*;
+
+    fn in_memory_db() -> Connection {
+        let mut connection = Connection::open_in_memory().expect("open in-memory db");
+        migrate_chat_schema(&mut connection).expect("migrate schema");
+        connection
+    }
+
+    #[test]
+    fn schema_migration_19_creates_all_unified_tables() {
+        let conn = in_memory_db();
+        let tables: Vec<String> = conn
+            .prepare("SELECT name FROM sqlite_schema WHERE type='table'")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(Result::ok)
+            .collect();
+        assert!(tables.contains(&"app_settings".to_string()));
+        assert!(tables.contains(&"personal_memory_facts".to_string()));
+        assert!(tables.contains(&"secure_vault".to_string()));
+        assert!(tables.contains(&"ephemeral_cache".to_string()));
+    }
+
+    #[test]
+    fn app_settings_crud_works_inside_transaction() {
+        let conn = in_memory_db();
+        conn.execute(
+            "INSERT INTO app_settings (key, value_json, updated_at) VALUES (?1, ?2, ?3)",
+            params!["openchat.theme", "\"dark\"", 1000],
+        ).unwrap();
+
+        let val: String = conn.query_row(
+            "SELECT value_json FROM app_settings WHERE key = ?1",
+            ["openchat.theme"],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(val, "\"dark\"");
+
+        // Update
+        conn.execute(
+            "INSERT INTO app_settings (key, value_json, updated_at) VALUES (?1, ?2, ?3)
+             ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at",
+            params!["openchat.theme", "\"light\"", 2000],
+        ).unwrap();
+        let val2: String = conn.query_row(
+            "SELECT value_json FROM app_settings WHERE key = ?1",
+            ["openchat.theme"],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(val2, "\"light\"");
+    }
+
+    #[test]
+    fn personal_memory_facts_round_trip() {
+        let conn = in_memory_db();
+        conn.execute(
+            "INSERT INTO personal_memory_facts (id, fact_text, category, source_conversation_id, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params!["fact-1", "User prefers concise answers", "preferences", "conv-1", 1000, 1000],
+        ).unwrap();
+
+        let fact: String = conn.query_row(
+            "SELECT fact_text FROM personal_memory_facts WHERE id = ?1",
+            ["fact-1"],
+            |row| row.get(0),
+        ).unwrap();
+        assert_eq!(fact, "User prefers concise answers");
+    }
+
+    #[test]
+    fn ephemeral_cache_ttl_filtering() {
+        let conn = in_memory_db();
+        conn.execute(
+            "INSERT INTO ephemeral_cache (key, value_json, expires_at) VALUES (?1, ?2, ?3)",
+            params!["cache-key", "{\"pricing\":1}", 5000],
+        ).unwrap();
+
+        // Valid when query time < expires_at
+        let active: Option<String> = conn.query_row(
+            "SELECT value_json FROM ephemeral_cache WHERE key = ?1 AND expires_at > ?2",
+            params!["cache-key", 4000],
+            |row| row.get(0),
+        ).optional().unwrap();
+        assert_eq!(active, Some("{\"pricing\":1}".to_string()));
+
+        // Expired when query time >= expires_at
+        let expired: Option<String> = conn.query_row(
+            "SELECT value_json FROM ephemeral_cache WHERE key = ?1 AND expires_at > ?2",
+            params!["cache-key", 6000],
+            |row| row.get(0),
+        ).optional().unwrap();
+        assert_eq!(expired, None);
     }
 }

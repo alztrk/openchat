@@ -1,4 +1,5 @@
 import { containsAsciiControlCharacters } from '@/shared/utils/textValidation';
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 
 import type { ChatModel } from './chatModels';
 
@@ -52,21 +53,21 @@ export function readModelPreferences(): ModelPreferencesSnapshot {
   let contextLimitsInvalid = false;
 
   try {
-    const raw = localStorage.getItem(defaultModelKey);
+    const raw = unifiedStorage.getItem(defaultModelKey);
     defaultModel = raw === null ? null : parseDefaultModelPreference(JSON.parse(raw));
   } catch {
     defaultModelInvalid = true;
   }
 
   try {
-    const raw = localStorage.getItem(hiddenModelKeysKey);
+    const raw = unifiedStorage.getItem(hiddenModelKeysKey);
     hiddenModelKeys = raw === null ? [] : parseHiddenModelKeys(JSON.parse(raw));
   } catch {
     hiddenModelKeysInvalid = true;
   }
 
   try {
-    const raw = localStorage.getItem(modelContextLimitsKey);
+    const raw = unifiedStorage.getItem(modelContextLimitsKey);
     contextLimits = raw === null ? {} : parseContextLimits(JSON.parse(raw));
   } catch {
     contextLimitsInvalid = true;
@@ -84,19 +85,19 @@ export function readModelPreferences(): ModelPreferencesSnapshot {
 
 export function writeDefaultModelPreference(preference: DefaultModelPreference | null): void {
   if (preference === null) {
-    localStorage.removeItem(defaultModelKey);
+    unifiedStorage.removeItem(defaultModelKey);
     return;
   }
-  localStorage.setItem(defaultModelKey, JSON.stringify(parseDefaultModelPreference(preference)));
+  unifiedStorage.setItem(defaultModelKey, JSON.stringify(parseDefaultModelPreference(preference)));
 }
 
 export function readLastSelectedModelPreference(): DefaultModelPreference | null {
-  const raw = localStorage.getItem(lastSelectedModelKey);
+  const raw = unifiedStorage.getItem(lastSelectedModelKey);
   return raw === null ? null : parseDefaultModelPreference(JSON.parse(raw));
 }
 
 export function writeLastSelectedModelPreference(preference: DefaultModelPreference): void {
-  localStorage.setItem(lastSelectedModelKey, JSON.stringify(parseDefaultModelPreference(preference)));
+  unifiedStorage.setItem(lastSelectedModelKey, JSON.stringify(parseDefaultModelPreference(preference)));
 }
 
 export function writeHiddenModelKeys(keys: readonly string[]): void {
@@ -108,14 +109,14 @@ export function writeHiddenModelKeys(keys: readonly string[]): void {
     throw new Error('The hidden model preferences are invalid.');
   }
   if (normalized.length === 0) {
-    localStorage.removeItem(hiddenModelKeysKey);
+    unifiedStorage.removeItem(hiddenModelKeysKey);
     return;
   }
-  localStorage.setItem(hiddenModelKeysKey, JSON.stringify(normalized));
+  unifiedStorage.setItem(hiddenModelKeysKey, JSON.stringify(normalized));
 }
 
 export function clearHiddenModelKeys(): void {
-  localStorage.removeItem(hiddenModelKeysKey);
+  unifiedStorage.removeItem(hiddenModelKeysKey);
 }
 
 export function writeModelContextLimit(routeKey: string, limit: number | null): void {
@@ -125,15 +126,15 @@ export function writeModelContextLimit(routeKey: string, limit: number | null): 
   if (limit !== null && (!Number.isSafeInteger(limit) || limit < 2048 || limit > 2_000_000)) {
     throw new Error('The model context limit is invalid.');
   }
-  const limits = parseContextLimits(JSON.parse(localStorage.getItem(modelContextLimitsKey) ?? '{}'));
+  const limits = parseContextLimits(JSON.parse(unifiedStorage.getItem(modelContextLimitsKey) ?? '{}'));
   if (limit === null) delete limits[routeKey];
   else limits[routeKey] = limit;
-  if (Object.keys(limits).length === 0) localStorage.removeItem(modelContextLimitsKey);
-  else localStorage.setItem(modelContextLimitsKey, JSON.stringify(limits));
+  if (Object.keys(limits).length === 0) unifiedStorage.removeItem(modelContextLimitsKey);
+  else unifiedStorage.setItem(modelContextLimitsKey, JSON.stringify(limits));
 }
 
 export function clearModelContextLimits(): void {
-  localStorage.removeItem(modelContextLimitsKey);
+  unifiedStorage.removeItem(modelContextLimitsKey);
 }
 
 export function modelRouteKey(model: ChatModel): string {

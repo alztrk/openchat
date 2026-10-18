@@ -1,5 +1,6 @@
 import type { JsonObject, LocalServiceClient } from '@/platform/local-service';
 import { isObject } from '@/shared/utils/json';
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 
 export type ModelPricingState = 'current' | 'stale' | 'unavailable';
 
@@ -93,7 +94,7 @@ export function modelPricingKey(providerId: string, modelId: string): string {
 }
 
 export function readModelPricingCache(): Map<string, CachedModelPricing> {
-  const encoded = localStorage.getItem(modelPricingCacheStorageKey);
+  const encoded = unifiedStorage.getItem(modelPricingCacheStorageKey);
   if (encoded === null) return new Map();
   let parsed: unknown;
   try {
@@ -117,7 +118,7 @@ export function readModelPricingCache(): Map<string, CachedModelPricing> {
 }
 
 export function writeModelPricingCache(cache: ReadonlyMap<string, CachedModelPricing>): void {
-  localStorage.setItem(modelPricingCacheStorageKey, JSON.stringify(Object.fromEntries(cache)));
+  unifiedStorage.setItem(modelPricingCacheStorageKey, JSON.stringify(Object.fromEntries(cache)));
 }
 
 export function isModelPricingCacheFresh(entry: CachedModelPricing, now = Date.now()): boolean {

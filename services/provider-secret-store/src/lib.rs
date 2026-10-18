@@ -84,7 +84,7 @@ impl SecretMapUpdateLock {
     pub fn acquire() -> Result<Self, SecretStoreError> {
         #[cfg(windows)]
         {
-            Self::acquire_for_path(&secure_storage_path()?)
+            Self::acquire_for_path(&database_path()?)
         }
         #[cfg(not(windows))]
         {
@@ -143,19 +143,34 @@ impl SecretMapUpdateLock {
 pub struct SecretMap(HashMap<String, String>);
 
 impl SecretMap {
-    /// Loads the current user's protected secret map.
+    /// Loads the current user's protected secret map from the unified database.
     ///
-    /// A missing file is represented by an empty map. Other read, decryption, and
-    /// deserialization failures are returned without exposing their details.
+    /// An absent or empty database table produces an empty map. Legacy files are automatically
+    /// migrated into the database vault upon first read and removed.
     pub fn read() -> Result<Self, SecretStoreError> {
-        read_secret_map(&secure_storage_path()?)
+        #[cfg(windows)]
+        {
+            read_secret_map(&database_path()?)
+        }
+        #[cfg(not(windows))]
+        {
+            Err(SecretStoreError::Unavailable)
+        }
     }
 
-    /// Writes the current user's secret map using the existing DPAPI file format.
+    /// Writes the current user's secret map into the unified database `secure_vault` table.
     ///
     /// Keep `update_lock` alive from the read through this write to prevent lost concurrent updates.
     pub fn write(&self, update_lock: &SecretMapUpdateLock) -> Result<(), SecretStoreError> {
-        write_secret_map(&secure_storage_path()?, self, update_lock)
+        #[cfg(windows)]
+        {
+            write_secret_map(&database_path()?, self, update_lock)
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = update_lock;
+            Err(SecretStoreError::Unavailable)
+        }
     }
 
     /// Returns the stored value for a key without copying it.
@@ -283,7 +298,167 @@ impl Drop for SecretMap {
     }
 }
 
-/// Resolves the current user's DPAPI secret-map path.
+/// Resolves the current user's local SQLite database path.
+///
+/// # Errors
+/// Returns `SecretStoreError::Unavailable` if `LOCALAPPDATA` is missing or not absolute.
+fn database_path() -> Result<PathBuf, SecretStoreError> {
+    let local_app_data = env::var_os("LOCALAPPDATA").ok_or(SecretStoreError::Unavailable)?;
+    let path = PathBuf::from(local_app_data)
+        .join("OpenChat")
+        .join("db")
+        .join("openchat.sqlite3");
+    if !path.is_absolute() {
+        return Err(SecretStoreError::Unavailable);
+    }
+    Ok(path)
+}
+
+#[cfg(windows)]
+fn open_database_connection(path: &Path) -> Result<rusqlite::Connection, SecretStoreError> {
+    let parent = path.parent().ok_or(SecretStoreError::Unavailable)?;
+    fs::create_dir_all(parent).map_err(|_| SecretStoreError::Unavailable)?;
+    let connection = rusqlite::Connection::open(path).map_err(|_| SecretStoreError::Unavailable)?;
+    connection
+        .busy_timeout(Duration::from_secs(5))
+        .map_err(|_| SecretStoreError::Unavailable)?;
+    connection
+        .execute_batch(
+            "PRAGMA journal_mode = WAL;
+             CREATE TABLE IF NOT EXISTS secure_vault (
+                 key TEXT PRIMARY KEY NOT NULL,
+                 ciphertext BLOB NOT NULL,
+                 description TEXT,
+                 updated_at INTEGER NOT NULL
+             );",
+        )
+        .map_err(|_| SecretStoreError::Unavailable)?;
+    Ok(connection)
+}
+
+#[cfg(windows)]
+fn migrate_legacy_file_if_present(connection: &mut rusqlite::Connection) -> Result<(), SecretStoreError> {
+    let legacy_path = match secure_storage_path() {
+        Ok(path) => path,
+        Err(_) => return Ok(()),
+    };
+    if !legacy_path.is_file() {
+        return Ok(());
+    }
+    let legacy_map = match read_secret_map(&legacy_path) {
+        Ok(map) => map,
+        Err(_) => return Ok(()),
+    };
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| SecretStoreError::Unavailable)?
+        .as_millis();
+    let now = i64::try_from(timestamp).map_err(|_| SecretStoreError::Unavailable)?;
+
+    let transaction = connection.transaction().map_err(|_| SecretStoreError::Unavailable)?;
+    for (key, value) in legacy_map.iter() {
+        let encrypted = protect_dpapi(value.as_bytes())?;
+        transaction
+            .execute(
+                "INSERT INTO secure_vault (key, ciphertext, updated_at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(key) DO UPDATE SET ciphertext = excluded.ciphertext, updated_at = excluded.updated_at",
+                rusqlite::params![key, encrypted, now],
+            )
+            .map_err(|_| SecretStoreError::Unavailable)?;
+    }
+    transaction.commit().map_err(|_| SecretStoreError::Unavailable)?;
+
+    let _ = fs::remove_file(&legacy_path);
+    if let Ok(lock_path) = secret_map_lock_path(&legacy_path) {
+        let _ = fs::remove_file(&lock_path);
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn read_secret_map_from_db(path: &Path) -> Result<SecretMap, SecretStoreError> {
+    let mut connection = open_database_connection(path)?;
+    migrate_legacy_file_if_present(&mut connection)?;
+    let mut statement = connection
+        .prepare("SELECT key, ciphertext FROM secure_vault")
+        .map_err(|_| SecretStoreError::Unavailable)?;
+    let rows = statement
+        .query_map([], |row| {
+            let key: String = row.get(0)?;
+            let ciphertext: Vec<u8> = row.get(1)?;
+            Ok((key, ciphertext))
+        })
+        .map_err(|_| SecretStoreError::Unavailable)?;
+
+    let mut map = SecretMap::default();
+    for item in rows {
+        let (key, ciphertext) = item.map_err(|_| SecretStoreError::Unavailable)?;
+        let plaintext = unprotect_dpapi(&ciphertext)?;
+        if let Ok(value_str) = String::from_utf8(plaintext.to_vec()) {
+            map.insert(key, value_str);
+        }
+    }
+    Ok(map)
+}
+
+#[cfg(windows)]
+fn write_secret_map_to_db(
+    path: &Path,
+    values: &SecretMap,
+    _update_lock: &SecretMapUpdateLock,
+) -> Result<(), SecretStoreError> {
+    let mut connection = open_database_connection(path)?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| SecretStoreError::Unavailable)?
+        .as_millis();
+    let now = i64::try_from(timestamp).map_err(|_| SecretStoreError::Unavailable)?;
+
+    let transaction = connection.transaction().map_err(|_| SecretStoreError::Unavailable)?;
+    let existing_keys: Vec<String> = {
+        let mut statement = transaction
+            .prepare("SELECT key FROM secure_vault")
+            .map_err(|_| SecretStoreError::Unavailable)?;
+        let rows = statement
+            .query_map([], |row| row.get(0))
+            .map_err(|_| SecretStoreError::Unavailable)?;
+        let mut keys = Vec::new();
+        for row in rows {
+            keys.push(row.map_err(|_| SecretStoreError::Unavailable)?);
+        }
+        keys
+    };
+
+    for key in existing_keys {
+        if !values.contains_key(&key) {
+            transaction
+                .execute("DELETE FROM secure_vault WHERE key = ?1", rusqlite::params![key])
+                .map_err(|_| SecretStoreError::Unavailable)?;
+        }
+    }
+
+    for (key, value) in values.iter() {
+        let encrypted = protect_dpapi(value.as_bytes())?;
+        transaction
+            .execute(
+                "INSERT INTO secure_vault (key, ciphertext, updated_at) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(key) DO UPDATE SET ciphertext = excluded.ciphertext, updated_at = excluded.updated_at",
+                rusqlite::params![key, encrypted, now],
+            )
+            .map_err(|_| SecretStoreError::Unavailable)?;
+    }
+    transaction.commit().map_err(|_| SecretStoreError::Unavailable)?;
+
+    if let Ok(legacy_path) = secure_storage_path() {
+        let _ = fs::remove_file(&legacy_path);
+        if let Ok(lock_path) = secret_map_lock_path(&legacy_path) {
+            let _ = fs::remove_file(&lock_path);
+        }
+    }
+    Ok(())
+}
+
+/// Resolves the legacy per-user DPAPI secret-map file path.
 ///
 /// # Errors
 /// Returns `SecretStoreError::Unavailable` if `APPDATA` is missing or not absolute.
@@ -320,6 +495,9 @@ fn secret_map_lock_path(path: &Path) -> Result<PathBuf, SecretStoreError> {
 fn read_secret_map(path: &Path) -> Result<SecretMap, SecretStoreError> {
     #[cfg(windows)]
     {
+        if path.extension().is_some_and(|ext| ext == "sqlite3" || ext == "db") {
+            return read_secret_map_from_db(path);
+        }
         let encrypted = match read_bounded_file(path, MAXIMUM_SECRET_MAP_BYTES) {
             Ok(Some(bytes)) => bytes,
             Ok(None) => return Ok(SecretMap::default()),
@@ -356,10 +534,13 @@ fn read_bounded_file(path: &Path, maximum_bytes: u64) -> std::io::Result<Option<
 fn write_secret_map(
     path: &Path,
     values: &SecretMap,
-    _update_lock: &SecretMapUpdateLock,
+    update_lock: &SecretMapUpdateLock,
 ) -> Result<(), SecretStoreError> {
     #[cfg(windows)]
     {
+        if path.extension().is_some_and(|ext| ext == "sqlite3" || ext == "db") {
+            return write_secret_map_to_db(path, values, update_lock);
+        }
         let plaintext =
             Zeroizing::new(serde_json::to_vec(values).map_err(|_| SecretStoreError::Unavailable)?);
         if plaintext.len() as u64 > MAXIMUM_SECRET_MAP_BYTES {
@@ -373,7 +554,7 @@ fn write_secret_map(
     }
     #[cfg(not(windows))]
     {
-        let _ = (path, values);
+        let _ = (path, values, update_lock);
         Err(SecretStoreError::Unavailable)
     }
 }
@@ -534,6 +715,24 @@ fn protect_dpapi(plaintext: &[u8]) -> Result<Vec<u8>, SecretStoreError> {
         bytes
     };
     Ok(ciphertext)
+}
+
+#[cfg(windows)]
+/// Encrypts plaintext bytes using Windows DPAPI.
+///
+/// # Errors
+/// Returns `SecretStoreError::Unavailable` if DPAPI encryption fails.
+pub fn protect_secret(plaintext: &[u8]) -> Result<Vec<u8>, SecretStoreError> {
+    protect_dpapi(plaintext)
+}
+
+#[cfg(windows)]
+/// Decrypts ciphertext bytes using Windows DPAPI and returns zeroizing memory.
+///
+/// # Errors
+/// Returns `SecretStoreError::Unavailable` if DPAPI decryption fails.
+pub fn unprotect_secret(ciphertext: &[u8]) -> Result<Zeroizing<Vec<u8>>, SecretStoreError> {
+    unprotect_dpapi(ciphertext)
 }
 
 fn is_chatgpt_connection_id(value: &str) -> bool {
@@ -800,6 +999,33 @@ mod tests {
 
         assert_eq!(plaintext.as_slice(), b"secret payload");
         assert!(buffer.iter().all(|byte| *byte == 0));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn sqlite_vault_round_trips_and_encrypts_data() {
+        let directory = TestDirectory::new();
+        let db_path = directory.0.join("vault.sqlite3");
+        let lock = SecretMapUpdateLock::acquire_for_path(&db_path).expect("acquire lock");
+        let mut map = SecretMap::default();
+        map.insert("test_key".to_string(), "super_secret_value".to_string());
+        write_secret_map(&db_path, &map, &lock).expect("write to sqlite vault");
+
+        // Verify read_secret_map decrypts it correctly
+        let read = read_secret_map(&db_path).expect("read from sqlite vault");
+        assert_eq!(read.get("test_key"), Some("super_secret_value"));
+
+        // Direct inspect raw DB to ensure value is NOT plaintext in the database
+        let conn = rusqlite::Connection::open(&db_path).expect("open raw db");
+        let raw_blob: Vec<u8> = conn
+            .query_row(
+                "SELECT ciphertext FROM secure_vault WHERE key = 'test_key'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read raw ciphertext");
+        assert_ne!(raw_blob, b"super_secret_value");
+        assert!(!String::from_utf8_lossy(&raw_blob).contains("super_secret_value"));
     }
 
     #[cfg(windows)]

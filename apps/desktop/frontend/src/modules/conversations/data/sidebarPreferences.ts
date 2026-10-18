@@ -1,3 +1,5 @@
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+
 export type SidebarSectionId = 'projects' | 'pinned' | 'chats' | 'archived';
 
 const collapsedSectionsKey = 'chat.collapsed_sidebar_sections';
@@ -10,7 +12,7 @@ export interface SidebarPreferencesReadResult {
 
 export function readCollapsedSidebarSections(): SidebarPreferencesReadResult {
   try {
-    const encoded = window.localStorage.getItem(collapsedSectionsKey);
+    const encoded = unifiedStorage.getItem(collapsedSectionsKey);
     if (encoded === null) return { collapsedSections: new Set(), error: null };
     const values: unknown = JSON.parse(encoded);
     if (!Array.isArray(values)) {
@@ -30,7 +32,7 @@ export function readCollapsedSidebarSections(): SidebarPreferencesReadResult {
 }
 
 export function writeCollapsedSidebarSections(sections: ReadonlySet<SidebarSectionId>): void {
-  window.localStorage.setItem(collapsedSectionsKey, JSON.stringify([...sections]));
+  unifiedStorage.setItem(collapsedSectionsKey, JSON.stringify([...sections]));
 }
 
 function isSidebarSectionId(value: unknown): value is SidebarSectionId {

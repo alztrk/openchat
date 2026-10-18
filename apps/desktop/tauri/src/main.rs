@@ -80,6 +80,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             provider_storage::delete_opencode_api_key,
             provider_storage::save_custom_provider,
             provider_storage::delete_custom_provider,
+            chat_storage::get_app_setting,
+            chat_storage::get_all_app_settings,
+            chat_storage::set_app_setting,
+            chat_storage::set_app_settings_batch,
+            chat_storage::delete_app_setting,
+            chat_storage::list_personal_memory_facts,
+            chat_storage::save_personal_memory_fact,
+            chat_storage::delete_personal_memory_fact,
+            chat_storage::get_cache_entry,
+            chat_storage::set_cache_entry,
+            chat_storage::migrate_localstorage_to_db,
         ])
         .setup(|app| {
             notifications::initialize(app.handle()).map_err(std::io::Error::other)?;

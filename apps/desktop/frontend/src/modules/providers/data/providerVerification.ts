@@ -1,4 +1,5 @@
 import { containsAsciiControlCharacters } from '@/shared/utils/textValidation';
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 
 export type ProviderVerificationOutcome =
   | 'verified'
@@ -33,7 +34,7 @@ export function readProviderVerificationRecord(route: ProviderVerificationRoute)
   const key = storageKey(route);
   let raw: string | null;
   try {
-    raw = window.localStorage.getItem(key);
+    raw = unifiedStorage.getItem(key);
   } catch {
     throw new ProviderVerificationStorageError('readFailed');
   }
@@ -59,7 +60,7 @@ export function writeProviderVerificationRecord(
     throw new ProviderVerificationStorageError('writeFailed');
   }
   try {
-    window.localStorage.setItem(key, JSON.stringify(record));
+    unifiedStorage.setItem(key, JSON.stringify(record));
   } catch {
     throw new ProviderVerificationStorageError('writeFailed');
   }
@@ -68,7 +69,7 @@ export function writeProviderVerificationRecord(
 export function clearProviderVerificationRecord(route: ProviderVerificationRoute): void {
   const key = storageKey(route);
   try {
-    window.localStorage.removeItem(key);
+    unifiedStorage.removeItem(key);
   } catch {
     throw new ProviderVerificationStorageError('writeFailed');
   }

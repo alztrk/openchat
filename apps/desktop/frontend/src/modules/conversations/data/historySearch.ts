@@ -1,4 +1,5 @@
 import { type JsonObject, LocalServiceError, localServiceClient } from '@/platform/local-service';
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 import { type ChatProject, listProjects, searchSavedOutputs } from './chatStorage';
 
 const savedSearchesKey = 'openchat.savedHistorySearches';
@@ -208,7 +209,7 @@ async function searchLocalLibrary(
 
 export function loadSavedHistorySearches(): SavedHistorySearch[] {
   try {
-    const raw = localStorage.getItem(savedSearchesKey);
+    const raw = unifiedStorage.getItem(savedSearchesKey);
     if (raw === null) return [];
     const value: unknown = JSON.parse(raw);
     if (!Array.isArray(value) || value.length > maximumSavedSearches) {
@@ -240,7 +241,7 @@ export function deleteHistorySearch(name: string): SavedHistorySearch[] {
 
 function writeSavedHistorySearches(searches: SavedHistorySearch[]): SavedHistorySearch[] {
   try {
-    localStorage.setItem(savedSearchesKey, JSON.stringify(searches));
+    unifiedStorage.setItem(savedSearchesKey, JSON.stringify(searches));
     return searches;
   } catch {
     throw new SavedHistorySearchError('saveFailed');

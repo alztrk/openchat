@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { containsAsciiControlCharacters } from '@/shared/utils/textValidation';
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 
 const preferencePrefix = 'openchat.localModelDirectory.';
 const llamaCppEngineId = 'llama_cpp';
@@ -40,8 +41,8 @@ export const useModelDirectoryStore = create<ModelDirectoryState>((set, get) => 
     const value = directory.trim();
     if (value.length > 4096 || containsAsciiControlCharacters(value)) return false;
     try {
-      if (value.length === 0) localStorage.removeItem(preferenceKey(engineId));
-      else localStorage.setItem(preferenceKey(engineId), value);
+      if (value.length === 0) unifiedStorage.removeItem(preferenceKey(engineId));
+      else unifiedStorage.setItem(preferenceKey(engineId), value);
       set((current) => ({
         directories: { ...current.directories, [engineId]: value.length > 0 ? value : null },
         directoryAvailability: { ...current.directoryAvailability, [engineId]: true },
@@ -59,7 +60,7 @@ export const useModelDirectoryStore = create<ModelDirectoryState>((set, get) => 
   resetDirectoryFor: (engineId) => {
     if (!isValidEngineId(engineId)) return false;
     try {
-      localStorage.removeItem(preferenceKey(engineId));
+      unifiedStorage.removeItem(preferenceKey(engineId));
       set((current) => ({
         directories: { ...current.directories, [engineId]: null },
         directoryAvailability: { ...current.directoryAvailability, [engineId]: true },
@@ -84,7 +85,7 @@ function preferenceKey(engineId: string): string {
 
 function readDirectory(engineId: string): StoredDirectory {
   try {
-    const value = localStorage.getItem(preferenceKey(engineId))?.trim();
+    const value = unifiedStorage.getItem(preferenceKey(engineId))?.trim();
     return { directory: value ? value : null, available: true };
   } catch {
     return { directory: null, available: false };

@@ -1,9 +1,11 @@
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+
 const fastModePreferenceKey = 'chatgpt.fast_mode';
 
 export function readChatGptFastMode(): boolean {
   let value: string | null;
   try {
-    value = window.localStorage.getItem(fastModePreferenceKey);
+    value = unifiedStorage.getItem(fastModePreferenceKey);
   } catch {
     throw new Error('Fast mode preference could not be read.');
   }
@@ -16,7 +18,7 @@ export function readChatGptFastMode(): boolean {
 
 export function writeChatGptFastMode(enabled: boolean): void {
   try {
-    window.localStorage.setItem(fastModePreferenceKey, String(enabled));
+    unifiedStorage.setItem(fastModePreferenceKey, String(enabled));
   } catch {
     throw new Error('Fast mode preference could not be saved.');
   }

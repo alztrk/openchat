@@ -2,6 +2,7 @@ import { AlertTriangle, Copy, LoaderCircle, Minus, Square, X } from 'lucide-reac
 import { type MouseEvent, useEffect, useLayoutEffect, useState } from 'react';
 import { Button, Tooltip } from '@/design-system';
 import { getCurrentWindow, isTauri } from '@/platform/tauri';
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 import { BrandMark } from './BrandMark';
 
 const supportedLocales = ['de', 'en', 'es', 'fr', 'tr'] as const;
@@ -96,7 +97,7 @@ function findLocale(value: string | null): StartupLocale | null {
 function getStartupLocale(): StartupLocale {
   let savedLanguage: string | null = null;
   try {
-    savedLanguage = localStorage.getItem('openchat.language');
+    savedLanguage = unifiedStorage.getItem('openchat.language');
   } catch (cause) {
     globalThis.reportError(new Error('The saved OpenChat language could not be read.', { cause }));
   }
@@ -108,7 +109,7 @@ function getStartupLocale(): StartupLocale {
 
 function getStartupTheme(): 'dark' | 'light' | 'system' {
   try {
-    const preference = localStorage.getItem('openchat.theme');
+    const preference = unifiedStorage.getItem('openchat.theme');
     if (preference === 'dark' || preference === 'light' || preference === 'system') return preference;
   } catch (cause) {
     globalThis.reportError(new Error('The saved OpenChat theme could not be read.', { cause }));

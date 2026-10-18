@@ -1,3 +1,5 @@
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+
 const storageKey = 'connectors.local_catalog';
 const maxCatalogBytes = 64 * 1024;
 
@@ -30,7 +32,7 @@ export class ConnectorCatalogError extends Error {
 
 export function readConnectorCatalog(): ConnectorCatalogEntry[] {
   try {
-    const encoded = window.localStorage.getItem(storageKey);
+    const encoded = unifiedStorage.getItem(storageKey);
     if (encoded === null) return [];
     if (new TextEncoder().encode(encoded).byteLength > maxCatalogBytes) {
       throw new ConnectorCatalogError('invalid');
@@ -55,9 +57,9 @@ export function writeConnectorCatalog(entries: ConnectorCatalogEntry[]): void {
   try {
     validateConnectorCatalog(entries);
     if (entries.length === 0) {
-      window.localStorage.removeItem(storageKey);
+      unifiedStorage.removeItem(storageKey);
     } else {
-      window.localStorage.setItem(storageKey, JSON.stringify(entries));
+      unifiedStorage.setItem(storageKey, JSON.stringify(entries));
     }
   } catch (error) {
     if (error instanceof ConnectorCatalogError) throw error;

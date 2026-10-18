@@ -1,3 +1,5 @@
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+
 const sharedInstructionsStorageKey = 'chat.shared_instructions';
 export const maximumSharedInstructionsCharacters = 4096;
 export const maximumCustomInstructionsBytes = 16 * 1024;
@@ -10,7 +12,7 @@ export class SharedInstructionsStorageError extends Error {
 }
 
 export function readSharedInstructions(): string | null {
-  return localStorage.getItem(sharedInstructionsStorageKey);
+  return unifiedStorage.getItem(sharedInstructionsStorageKey);
 }
 
 export function writeSharedInstructions(value: string): void {
@@ -22,14 +24,14 @@ export function writeSharedInstructions(value: string): void {
   }
 
   if (value.trim().length === 0) {
-    localStorage.removeItem(sharedInstructionsStorageKey);
+    unifiedStorage.removeItem(sharedInstructionsStorageKey);
     return;
   }
-  localStorage.setItem(sharedInstructionsStorageKey, value);
+  unifiedStorage.setItem(sharedInstructionsStorageKey, value);
 }
 
 export function clearSharedInstructions(): void {
-  localStorage.removeItem(sharedInstructionsStorageKey);
+  unifiedStorage.removeItem(sharedInstructionsStorageKey);
 }
 
 export function countSharedInstructionsCharacters(value: string): number {

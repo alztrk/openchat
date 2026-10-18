@@ -1,4 +1,5 @@
 import { invoke } from '@/platform/tauri';
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 
 export interface NotificationPreferences {
   responses: boolean;
@@ -60,7 +61,7 @@ export function readNotificationPreferences(): NotificationPreferences {
 
 export function writeNotificationPreference(key: keyof NotificationPreferences, value: boolean): void {
   try {
-    window.localStorage.setItem(preferenceKeys[key], String(value));
+    unifiedStorage.setItem(preferenceKeys[key], String(value));
   } catch {
     throw new Error('Notification preferences could not be saved.');
   }
@@ -106,7 +107,7 @@ function isWindowsNotificationStatus(value: unknown): value is WindowsNotificati
 function readPreference(key: keyof NotificationPreferences): boolean {
   let value: string | null;
   try {
-    value = window.localStorage.getItem(preferenceKeys[key]);
+    value = unifiedStorage.getItem(preferenceKeys[key]);
   } catch {
     throw new Error('Notification preferences could not be read.');
   }

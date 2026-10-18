@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 
 const storageKey = 'openchat.keyboardShortcuts';
 
@@ -47,7 +48,7 @@ export const useKeyboardShortcutsStore = create<KeyboardShortcutsState>((set, ge
     if (get().loadState === 'loading' || get().loadState === 'ready') return;
     set({ loadState: 'loading', errorCode: null });
     try {
-      const encoded = localStorage.getItem(storageKey);
+      const encoded = unifiedStorage.getItem(storageKey);
       const bindings = encoded === null ? defaultKeyboardShortcuts : parseBindings(JSON.parse(encoded));
       set({ bindings, loadState: 'ready' });
     } catch {
@@ -73,7 +74,7 @@ export const useKeyboardShortcutsStore = create<KeyboardShortcutsState>((set, ge
     }
     const nextBindings = { ...current, [action]: binding };
     try {
-      localStorage.setItem(storageKey, JSON.stringify(nextBindings));
+      unifiedStorage.setItem(storageKey, JSON.stringify(nextBindings));
       set({ bindings: nextBindings, errorCode: null });
     } catch {
       set({ errorCode: 'keyboardShortcutSaveFailed' });
@@ -83,7 +84,7 @@ export const useKeyboardShortcutsStore = create<KeyboardShortcutsState>((set, ge
   reset() {
     if (get().loadState === 'loading') return;
     try {
-      localStorage.setItem(storageKey, JSON.stringify(defaultKeyboardShortcuts));
+      unifiedStorage.setItem(storageKey, JSON.stringify(defaultKeyboardShortcuts));
       set({ bindings: defaultKeyboardShortcuts, loadState: 'ready', errorCode: null });
     } catch {
       set({ errorCode: 'keyboardShortcutSaveFailed' });
