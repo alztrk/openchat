@@ -96,7 +96,8 @@ export function useVirtualMessageList(messages: ChatMessage[], conversationId: s
       for (const entry of entries) {
         const id = rowIds.current.get(entry.target);
         if (!id) continue;
-        const height = Math.ceil(entry.target.getBoundingClientRect().height);
+        const blockSize = entry.borderBoxSize?.[0]?.blockSize;
+        const height = Math.ceil(typeof blockSize === 'number' ? blockSize : entry.contentRect.height);
         if (height < 1) continue;
         const previous = rowHeights.current.get(id);
         if (previous === undefined || Math.abs(previous - height) > 1) {
