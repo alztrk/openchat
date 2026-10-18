@@ -123,7 +123,15 @@ impl AppStorage {
             migration_backup_created = true;
         }
 
-        connection.execute_batch("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")?;
+        connection.execute_batch(
+            "PRAGMA journal_mode = WAL;
+             PRAGMA foreign_keys = ON;
+             PRAGMA synchronous = NORMAL;
+             PRAGMA temp_store = MEMORY;
+             PRAGMA cache_size = -64000;
+             PRAGMA mmap_size = 268435456;
+             PRAGMA wal_autocheckpoint = 1000;",
+        )?;
         let schema_version = initialize_schema(&connection, INITIAL_SCHEMA_VERSION)?;
         drop(connection);
 
@@ -471,7 +479,14 @@ impl AppStorage {
         connection.busy_timeout(Duration::from_secs(5))?;
         tool_index_redaction::register_sqlite_function(&connection)?;
         disable_trusted_schema(&connection)?;
-        connection.execute_batch("PRAGMA foreign_keys = ON;")?;
+        connection.execute_batch(
+            "PRAGMA foreign_keys = ON;
+             PRAGMA synchronous = NORMAL;
+             PRAGMA temp_store = MEMORY;
+             PRAGMA cache_size = -64000;
+             PRAGMA mmap_size = 268435456;
+             PRAGMA wal_autocheckpoint = 1000;",
+        )?;
         Ok(connection)
     }
 
