@@ -726,7 +726,7 @@ remains out of scope under the current product decision.
 
 ### 32. Migrate full conversation listing to sidebar navigation
 
-**Status: planned, P1.** Replace the crowded top header conversation bar with an expandable, vertically scrolling sidebar library.
+**Status: implemented in source.** Full conversation history, project groupings, pinned chats, and recency categories are organized in the collapsible left sidebar with real-time search filtering, quick actions, drag-and-drop, and context menus. The top header displays only the active conversation title, active model and status indicator, and clean window and tab actions.
 
 - Move the entire conversation list, history, and project groupings into a collapsible left sidebar, freeing vertical space in the main workspace.
 - Group conversations vertically by project, recency, tags, and pinned status with fast search and action menus per item.
@@ -896,6 +896,83 @@ remains out of scope under the current product decision.
 - Update desktop application icons (`icon.ico`, NSIS installer banners, Tauri bundles) and document assets across `apps/desktop/assets/brand`.
 
 **Exit criteria:** the new logo clearly communicates OpenChat's open and communicative identity; renders crisply across small desktop icon scales; and integrates consistently across UI assets and installer packages.
+
+### 50. Elevate frontend design system to industry standard
+
+**Status: planned, P2.** Refactor the UI design system into modular tokens, headless accessible primitives, and consistent elevation hierarchy matching Raycast, Linear, and Cursor standards.
+
+- Modularize the 2,200-line monolithic `index.css` into dedicated stylesheets (`tokens.css`, `typography.css`, `animations.css`, `components.css`).
+- Adopt headless accessibility primitives (e.g. Radix UI or Ariakit) for complex controls (`Select`, `Dialog`, `Tooltip`, `Popover`, `ContextMenu`) to ensure rigorous keyboard navigation, ARIA tagging, and roving tab indices.
+- Introduce missing high-frequency primitives into `src/design-system`: `Badge/Pill`, `Kbd` (standardized keyboard shortcut badge), `Skeleton` (layout-shift free loading shimmers), and `DropdownMenu`.
+- Enforce strict surface elevation tokens (`Canvas`, `Surface`, `Raised`, `Overlay`) paired with 1px border contrast hierarchy for professional dark/light modes.
+
+**Exit criteria:** design tokens are neatly split and maintained; all interactive primitives achieve strict keyboard and screen reader accessibility; loading states eliminate layout shifts; and the UI visual rhythm is consistent across all panels.
+
+### 51. Add shadow git checkpoints and instant timeline rollback
+
+**Status: planned, P1.** Eliminate fear of catastrophic AI code corruption by maintaining an automatic, isolated shadow Git history for every agent turn.
+
+- Maintain an internal shadow Git repository (completely decoupled from the user's primary `.git` working tree) that captures full snapshots before and after every file modification or terminal execution.
+- Provide an interactive timeline in the conversation and side panel where users can review exact snapshot diffs and roll back to any past state with a single click.
+- Ensure rollback operations restore files cleanly without truncating active conversation context, allowing the user to redirect the agent from any prior checkpoint.
+
+**Exit criteria:** shadow checkpoints capture file states without polluting the user's git history; rollbacks restore workspace state instantaneously; and checkpoint diffs remain accessible across turns.
+
+### 52. Implement prompt prefix freezing and deterministic cache optimization
+
+**Status: planned, P1.** Maximize provider prompt caching hit rates (Anthropic, OpenAI, DeepSeek) to reduce latency and cut API costs by up to 80%.
+
+- Restructure the prompt assembly pipeline so static system instructions, immutable tools, and project rules are permanently frozen at the prefix of requests.
+- Prevent cache-busting mutations by appending volatile runtime variables, timestamps, and dynamic observations strictly at the suffix of the message stream.
+- Provide observable prompt-cache metrics (cache read/write tokens, hit ratio percentage, estimated cost savings) directly in the run inspector and usage ledger.
+
+**Exit criteria:** cache prefixes remain deterministic across turns within the same conversation; provider-reported cache-hit ratios consistently exceed 75% on sustained multi-turn sessions; and prompt structure prevents unnecessary invalidation.
+
+### 53. Add trigger-scoped repository microagents
+
+**Status: planned, P2.** Allow repositories to declare lightweight, modular instruction blocks that dynamically activate based on file globs, commands, or task keywords.
+
+- Support `.openchat/microagents/*.md` files containing explicit YAML triggers (e.g., file extensions, target directories, slash commands, or task domain tags).
+- Dynamically inject microagent rules into the agent context only when touched files or requested commands match triggers, keeping base system prompts minimal and focused.
+- Provide project-level validation and an interactive catalog in the Library tab for discovering, authoring, and toggling active microagents.
+
+**Exit criteria:** microagents activate strictly on matching triggers; irrelevant instructions do not consume prompt tokens; and authoring microagents requires zero configuration outside standard Markdown.
+
+### 54. Implement concurrent read-only tool execution engine
+
+**Status: planned, P1.** Eliminate multi-tool latency bottlenecks by executing independent, non-mutating tool calls in parallel using Tokio asynchronous batches.
+
+- Categorize tool operations strictly into concurrent read-only tools (`read_file`, `list_files`, `search_files`, `get_file_info`, `git_status`, `git_diff`, `web_search`, `read_url_content`) versus serialized mutating tools (`write_file`, `edit_file`, `execute_command`, `send_terminal_input`, `ask_user`).
+- Batch adjacent read-only tool requests from a single model response and execute them concurrently via `futures::future::join_all` / `tokio::task::JoinSet`, preserving deterministic ordering when returning `tool_result` bundles.
+- Ensure mutating operations remain strictly serialized and wait for in-flight read batches to finish, completely preventing race conditions and file write corruption.
+- Maintain seamless cancellation propagation so terminating a run halts all in-flight concurrent read operations simultaneously.
+
+**Exit criteria:** multi-file reads and searches execute concurrently with measurable turn-latency reductions; mutating operations execute strictly sequentially; and no race conditions occur on shared workspaces.
+
+### 55. Add unified keyboard-first command palette (Ctrl+K)
+
+**Status: planned, P1.** Provide instant, keyboard-driven navigation, action execution, and configuration control across the entire desktop workspace.
+
+- Implement an accessible modal command palette accessible anywhere via `Ctrl/Cmd+K` inspired by Raycast and Linear.
+- Support instant fuzzy search over open conversations, project directories, model switching, settings toggles, custom agent invocation, and recent files.
+- Enable direct execution of quick commands (e.g. `New Chat`, `Switch to Claude 3.7`, `Open Settings`, `Purge Project Memory`, `Export Markdown`) with clear keyboard shortcuts and category groupings.
+- Deconstruct the monolithic `App.tsx` state to ensure the palette operates with zero perceptible input latency and full focus trapping.
+
+**Exit criteria:** `Ctrl+K` triggers instantly with zero layout lag; keyboard arrow navigation and selection are completely accessible; and all core app workflows can be navigated without touching the mouse.
+
+### 56. Add multi-root workspace support
+
+**Status: planned, P2.** Allow users and agents to operate across multiple related project folders simultaneously within a single session.
+
+- Extend project configuration to accept multiple workspace root directories (e.g., frontend + backend in monorepos or adjacent microservice repositories).
+- Update file tools (`read_file`, `search_files`, `write_file`) and terminal path boundaries to validate relative and canonical paths against all active roots in the workspace.
+- Provide clear multi-folder indicators in the sidebar and file pickers, enabling users to add or detach folders dynamically without resetting conversation history.
+
+**Exit criteria:** agents navigate and edit files across distinct roots seamlessly; path boundary validation prevents access outside the declared roots; and multi-root configurations persist cleanly in SQLite project storage.
+
+
+
+
 
 
 

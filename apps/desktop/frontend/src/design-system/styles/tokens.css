@@ -1,0 +1,141 @@
+@font-face {
+  font-family: 'Source Sans 3';
+  src: url('@assets/fonts/SourceSans3VF-Upright.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Source Code Pro';
+  src: url('@assets/fonts/SourceCodeVF-Upright.ttf') format('truetype');
+  font-style: normal;
+  font-weight: 400 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Manrope';
+  src: url('@assets/fonts/Manrope[wght].ttf') format('truetype');
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+}
+
+:root {
+  --motion-duration-fast: 120ms;
+  --motion-duration-ui: 180ms;
+  --motion-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --motion-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --conversation-reading-width: 920px;
+  --app-text-scale: 1;
+  --app-font-family: 'Source Sans 3', sans-serif;
+  font-family: var(--app-font-family);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color-scheme: light;
+  --background: 244 245 246;
+  --navigation: 235 237 240;
+  --surface: 250 251 252;
+  --raised-surface: 255 255 255;
+  --composer: 241 243 245;
+  --selected: 227 231 235;
+  --hover: 237 240 242;
+  --border: 204 209 215;
+  --control-border: 123 131 140;
+  --border-alpha: 0.102;
+  --text: 35 39 44;
+  --secondary-text: 86 96 106;
+  --secondary-icon: 104 114 125;
+  --accent: 142 86 59;
+  --accent-hover: 120 69 47;
+  --accent-active: 96 59 43;
+  --accent-foreground: 255 255 255;
+  --destructive: 165 48 48;
+  --warning: 122 82 0;
+  --success: 23 107 69;
+  --info: 11 93 129;
+  --focus-ring: 0 90 116;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: 21 23 26;
+  --navigation: 26 29 33;
+  --surface: 32 35 40;
+  --raised-surface: 40 44 49;
+  --composer: 36 40 45;
+  --selected: 52 57 64;
+  --hover: 43 48 54;
+  --border: 61 67 75;
+  --control-border: 80 87 97;
+  --border-alpha: 0.102;
+  --text: 240 242 243;
+  --secondary-text: 182 188 196;
+  --secondary-icon: 170 177 186;
+  --accent: 208 139 104;
+  --accent-hover: 227 154 117;
+  --accent-active: 240 173 137;
+  --accent-foreground: 32 23 19;
+  --destructive: 240 140 132;
+  --warning: 244 201 93;
+  --success: 112 211 154;
+  --info: 128 200 232;
+  --focus-ring: 141 220 255;
+}
+
+@media (prefers-contrast: more), (forced-colors: active) {
+  :root {
+    color-scheme: light;
+    --background: 255 255 255;
+    --navigation: 255 255 255;
+    --surface: 255 255 255;
+    --raised-surface: 255 255 255;
+    --composer: 244 244 244;
+    --selected: 217 217 217;
+    --hover: 232 232 232;
+    --border: 89 89 89;
+    --control-border: 64 64 64;
+    --border-alpha: 1;
+    --text: 0 0 0;
+    --secondary-text: 64 64 64;
+    --secondary-icon: 64 64 64;
+    --accent: 0 51 184;
+    --accent-hover: 0 37 138;
+    --accent-active: 0 27 102;
+    --accent-foreground: 255 255 255;
+    --destructive: 155 0 0;
+    --warning: 117 67 0;
+    --success: 0 90 43;
+    --info: 0 82 122;
+    --focus-ring: 0 51 184;
+  }
+
+  .dark {
+    color-scheme: dark;
+    --background: 0 0 0;
+    --navigation: 0 0 0;
+    --surface: 0 0 0;
+    --raised-surface: 17 17 17;
+    --composer: 17 17 17;
+    --selected: 51 51 51;
+    --hover: 37 37 37;
+    --border: 184 184 184;
+    --control-border: 217 217 217;
+    --border-alpha: 1;
+    --text: 255 255 255;
+    --secondary-text: 230 230 230;
+    --secondary-icon: 230 230 230;
+    --accent: 145 190 255;
+    --accent-hover: 176 208 255;
+    --accent-active: 208 226 255;
+    --accent-foreground: 0 0 0;
+    --destructive: 255 153 153;
+    --warning: 255 208 128;
+    --success: 138 230 178;
+    --info: 145 217 255;
+    --focus-ring: 255 255 0;
+  }
+}

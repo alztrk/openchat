@@ -2,9 +2,9 @@ import { Github } from 'lucide-react';
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { Tabs, TabsContent } from '@/design-system/tabs';
 import { ConversationPane } from '@/modules/conversations/components/ConversationPane';
 import { ConversationSearchDialog } from '@/modules/conversations/components/ConversationSearchDialog';
+import { ConversationSidebar } from '@/modules/conversations/components/ConversationSidebar';
 import { TemporaryChatExitDialog } from '@/modules/conversations/components/TemporaryChatExitDialog';
 import { parseAgentQuestionGroup } from '@/modules/conversations/data/agentQuestions';
 import { getMessages } from '@/modules/conversations/data/chatStorage';
@@ -102,6 +102,7 @@ export function App() {
   const [historySearchOpen, setHistorySearchOpen] = useState(false);
   const [historySearchInitialQuery, setHistorySearchInitialQuery] = useState('');
   const [systemIsDark, setSystemIsDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const surfaceHeadingRef = useRef<HTMLElement>(null);
   const lastInteractionMethod = useRef<'keyboard' | 'pointer'>('pointer');
   const initializeChat = useChatStore((state) => state.initialize);
@@ -113,7 +114,6 @@ export function App() {
   const startNewChat = useChatStore((state) => state.startNewChat);
   const startTemporaryChat = useChatStore((state) => state.startTemporaryChat);
   const temporaryChat = useChatStore((state) => state.temporaryChat);
-  const activeChatTab = temporaryChat !== null ? 'temporary' : (activeConversationId ?? 'new');
   const temporaryChatMessageCount = useChatStore((state) => state.messages.length);
   const temporaryChatErrorCode = useChatStore((state) => state.errorCode);
   const isDark = theme === 'dark' || (theme === 'system' && systemIsDark);
@@ -137,6 +137,19 @@ export function App() {
   useLayoutEffect(() => {
     document.documentElement.classList.toggle('dark', isDark);
   }, [isDark]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'b') {
+        const target = event.target;
+        if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+        event.preventDefault();
+        setIsSidebarOpen((open) => !open);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   useLayoutEffect(() => {
     const root = document.documentElement;
@@ -320,17 +333,6 @@ export function App() {
     });
   };
 
-  const selectChatTab = (value: string) => {
-    if (value === 'temporary') return;
-    requestTemporaryChatExit(() => {
-      navigateSurface('chats');
-      if (value === 'new') {
-        startNewChat();
-        return;
-      }
-      void selectConversation(value);
-    });
-  };
 
   const moveInHistory = (offset: number) => {
     requestTemporaryChatExit(() => {
@@ -585,30 +587,39 @@ export function App() {
           tabIndex={-1}
         >
           {activeSurface === 'chats' ? (
-            <Tabs
-              className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
-              onValueChange={selectChatTab}
-              value={activeChatTab}
-            >
-              <ConversationActionsHeader
-                activeConversationId={activeConversationId}
-                conversations={conversations}
-                onNewChat={startWorkspaceChat}
-                onOpenSearch={openHistorySearch}
-                onStartTemporaryChat={startWorkspaceTemporaryChat}
-              />
-              <TabsContent className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden" value={activeChatTab}>
-                <ConversationPane
-                  isLargeText={appearance.conversationTextSize === 'large'}
-                  notificationFeedbackKey={notificationFeedback}
-                  onDismissNotificationFeedback={() => setNotificationFeedback(null)}
-                  onOpenSettings={() => navigate('settings')}
-                  onQuestionFocusHandled={clearQuestionFocusTarget}
+            <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
+              {isSidebarOpen ? (
+                <ConversationSidebar
+                  onCloseMobile={() => setIsSidebarOpen(false)}
+                  onNewChat={startWorkspaceChat}
+                  onOpenSearch={openHistorySearch}
                   onRequestTemporaryExit={requestTemporaryChatExit}
-                  questionFocusTarget={questionFocusTarget}
+                  onStartTemporaryChat={startWorkspaceTemporaryChat}
                 />
-              </TabsContent>
-            </Tabs>
+              ) : null}
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+                <ConversationActionsHeader
+                  activeConversationId={activeConversationId}
+                  conversations={conversations}
+                  isSidebarOpen={isSidebarOpen}
+                  onNewChat={startWorkspaceChat}
+                  onOpenSearch={openHistorySearch}
+                  onStartTemporaryChat={startWorkspaceTemporaryChat}
+                  onToggleSidebar={() => setIsSidebarOpen((open) => !open)}
+                />
+                <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
+                  <ConversationPane
+                    isLargeText={appearance.conversationTextSize === 'large'}
+                    notificationFeedbackKey={notificationFeedback}
+                    onDismissNotificationFeedback={() => setNotificationFeedback(null)}
+                    onOpenSettings={() => navigate('settings')}
+                    onQuestionFocusHandled={clearQuestionFocusTarget}
+                    onRequestTemporaryExit={requestTemporaryChatExit}
+                    questionFocusTarget={questionFocusTarget}
+                  />
+                </div>
+              </div>
+            </div>
           ) : activeSurface === 'models' ? (
             <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface">
               <Suspense

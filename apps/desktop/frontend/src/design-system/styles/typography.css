@@ -1,0 +1,169 @@
+@layer base {
+  *,
+  ::before,
+  ::after,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: #e5e7eb;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: #9ca3af;
+  }
+
+  button:not(:disabled),
+  [role='button']:not(:disabled) {
+    cursor: pointer;
+  }
+
+  dialog {
+    margin: auto;
+  }
+}
+
+.conversation-message-content {
+  font-size: calc(16px * var(--app-text-scale, 1));
+  line-height: calc(26px * var(--app-text-scale, 1));
+}
+
+.model-readme-markdown {
+  min-width: 0;
+}
+
+.model-readme-markdown .conversation-message-content {
+  line-height: 1.7;
+}
+
+.model-readme-markdown .conversation-message-content h1,
+.model-readme-markdown .conversation-message-content h2,
+.model-readme-markdown .conversation-message-content h3,
+.model-readme-markdown .conversation-message-content h4,
+.model-readme-markdown .conversation-message-content h5,
+.model-readme-markdown .conversation-message-content h6 {
+  margin: 1.5em 0 0.7em;
+  font-weight: 700;
+  line-height: 1.3;
+  scroll-margin-top: 1rem;
+}
+
+.model-readme-markdown .conversation-message-content > :first-child,
+.model-readme-markdown .conversation-message-content > :first-child > :first-child {
+  margin-top: 0;
+}
+
+.model-readme-markdown .conversation-message-content h1 {
+  border-bottom: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
+  padding-bottom: 0.3em;
+  font-size: calc(1.875rem * var(--app-text-scale, 1));
+}
+
+.model-readme-markdown .conversation-message-content h2 {
+  border-bottom: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
+  padding-bottom: 0.3em;
+  font-size: calc(1.5rem * var(--app-text-scale, 1));
+}
+
+.model-readme-markdown .conversation-message-content h3 {
+  font-size: calc(1.25rem * var(--app-text-scale, 1));
+}
+
+.model-readme-markdown .conversation-message-content h4 {
+  font-size: calc(1.125rem * var(--app-text-scale, 1));
+}
+
+.model-readme-markdown .conversation-message-content h5 {
+  font-size: calc(1rem * var(--app-text-scale, 1));
+}
+
+.model-readme-markdown .conversation-message-content h6 {
+  color: rgb(var(--secondary-text));
+  font-size: calc(0.9rem * var(--app-text-scale, 1));
+}
+
+.model-readme-markdown .conversation-message-content p {
+  margin: 0.8em 0;
+}
+
+.model-readme-markdown .conversation-message-content a {
+  overflow-wrap: anywhere;
+}
+
+.model-readme-markdown .conversation-message-content code {
+  border-radius: 4px;
+  background: rgb(var(--composer));
+  padding: 0.12em 0.35em;
+  font-size: 0.9em;
+}
+
+.model-readme-markdown .conversation-message-content pre {
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.model-readme-markdown .conversation-message-content pre code {
+  display: block;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+  white-space: inherit;
+}
+
+.model-readme-markdown .conversation-message-content table {
+  min-width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.model-readme-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.model-readme-markdown .conversation-message-content th,
+.model-readme-markdown .conversation-message-content td {
+  border: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
+  padding: 0.5em 0.75em;
+  vertical-align: top;
+}
+
+.model-readme-markdown .conversation-message-content th {
+  background: rgb(var(--composer));
+  font-weight: 600;
+}
+
+.model-readme-markdown .conversation-message-content img {
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+
+.model-readme-markdown .conversation-message-content .model-readme-markdown-image {
+  display: block;
+  margin: 1rem auto;
+  border-radius: 8px;
+}
+
+.model-readme-markdown .conversation-message-content figcaption {
+  color: rgb(var(--secondary-text));
+  font-size: 0.9em;
+  text-align: center;
+}
+
+.model-readme-markdown .conversation-message-content kbd {
+  border: 1px solid rgb(var(--control-border) / var(--border-alpha, 0.1));
+  border-radius: 4px;
+  background: rgb(var(--composer));
+  padding: 0.1em 0.35em;
+  font-family: 'Source Code Pro', monospace;
+  font-size: 0.85em;
+}
+
+.model-readme-markdown .conversation-message-content hr {
+  margin: 1.5rem 0;
+  border-color: rgb(var(--border) / var(--border-alpha, 0.1));
+}

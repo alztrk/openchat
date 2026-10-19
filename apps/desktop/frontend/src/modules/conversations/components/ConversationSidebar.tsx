@@ -1,9 +1,10 @@
-import { Archive, Folder, MessagesSquare, Pin, RefreshCw, X } from 'lucide-react';
+import { Archive, CheckSquare, Clock3, Folder, MessagesSquare, Pin, Plus, RefreshCw, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Dialog, Select } from '@/design-system';
-import type { ChatConversation } from '@/modules/conversations/data/chatStorage';
+import { Tooltip } from '@/design-system/Tooltip';
+import type { ChatConversation, ChatProject } from '@/modules/conversations/data/chatStorage';
 import {
   readCollapsedSidebarSections,
   type SidebarSectionId,
@@ -17,26 +18,84 @@ import { ConversationSidebarEditDialog } from './ConversationSidebarEditDialog';
 import { ConversationSidebarRow } from './ConversationSidebarRow';
 import { ConversationSidebarSection } from './ConversationSidebarSection';
 
+export type RecencyBucketKey = 'today' | 'yesterday' | 'previous7Days' | 'previous30Days' | 'older';
+
+export interface RecencyBucket {
+  id: RecencyBucketKey;
+  labelKey: RecencyBucketKey;
+  conversations: ChatConversation[];
+}
+
+export function groupConversationsByRecency(
+  conversations: readonly ChatConversation[],
+  now = Date.now(),
+): RecencyBucket[] {
+  const nowDate = new Date(now);
+  const todayStart = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate()).getTime();
+  const yesterdayStart = todayStart - 86_400_000;
+  const sevenDaysAgoStart = todayStart - 6 * 86_400_000;
+  const thirtyDaysAgoStart = todayStart - 29 * 86_400_000;
+
+  const today: ChatConversation[] = [];
+  const yesterday: ChatConversation[] = [];
+  const previous7Days: ChatConversation[] = [];
+  const previous30Days: ChatConversation[] = [];
+  const older: ChatConversation[] = [];
+
+  const sorted = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt);
+
+  for (const item of sorted) {
+    if (item.updatedAt >= todayStart) {
+      today.push(item);
+    } else if (item.updatedAt >= yesterdayStart) {
+      yesterday.push(item);
+    } else if (item.updatedAt >= sevenDaysAgoStart) {
+      previous7Days.push(item);
+    } else if (item.updatedAt >= thirtyDaysAgoStart) {
+      previous30Days.push(item);
+    } else {
+      older.push(item);
+    }
+  }
+
+  const buckets: RecencyBucket[] = [];
+  if (today.length > 0) buckets.push({ id: 'today', labelKey: 'today', conversations: today });
+  if (yesterday.length > 0) buckets.push({ id: 'yesterday', labelKey: 'yesterday', conversations: yesterday });
+  if (previous7Days.length > 0) {
+    buckets.push({ id: 'previous7Days', labelKey: 'previous7Days', conversations: previous7Days });
+  }
+  if (previous30Days.length > 0) {
+    buckets.push({ id: 'previous30Days', labelKey: 'previous30Days', conversations: previous30Days });
+  }
+  if (older.length > 0) buckets.push({ id: 'older', labelKey: 'older', conversations: older });
+
+  return buckets;
+}
+
 export interface ConversationSidebarProps {
   isDrawer?: boolean;
   isModal?: boolean;
-  sectionFilter: 'chats' | 'projects';
+  sectionFilter?: 'all' | 'chats' | 'projects';
   onCloseMobile?(): void;
   onRequestTemporaryExit(action: () => void | Promise<void>): void;
+  onNewChat?(): void;
+  onStartTemporaryChat?(): void;
+  onOpenSearch?(): void;
 }
 
 export function ConversationSidebar({
   isDrawer = false,
   isModal = false,
-  sectionFilter,
+  sectionFilter = 'all',
   onCloseMobile,
   onRequestTemporaryExit,
+  onNewChat,
+  onStartTemporaryChat,
+  onOpenSearch,
 }: ConversationSidebarProps) {
   const { t } = useTranslation();
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
-  const [projectOptionsTarget, setProjectOptionsTarget] = useState<
-    import('@/modules/conversations/data/chatStorage').ChatProject | null
-  >(null);
+  const [projectOptionsTarget, setProjectOptionsTarget] = useState<ChatProject | null>(null);
   const [editTarget, setEditTarget] = useState<{ conversation: ChatConversation; mode: 'rename' | 'tags' } | null>(
     null,
   );
@@ -44,6 +103,7 @@ export function ConversationSidebar({
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [moveTarget, setMoveTarget] = useState('__chats__');
+  const [searchQuery, setSearchQuery] = useState('');
   const [sidebarPreferences] = useState(readCollapsedSidebarSections);
   const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<SidebarSectionId>>(
     () => sidebarPreferences.collapsedSections,
@@ -58,6 +118,7 @@ export function ConversationSidebar({
   const activeConversationId = useChatStore((state) => state.activeConversationId);
   const selectConversation = useChatStore((state) => state.selectConversation);
   const startNewChat = useChatStore((state) => state.startNewChat);
+  const startTemporaryChat = useChatStore((state) => state.startTemporaryChat);
   const refreshProjects = useChatStore((state) => state.refreshProjects);
 
   useEffect(() => {
@@ -88,9 +149,50 @@ export function ConversationSidebar({
       }),
     [activeConversations],
   );
-  const visiblePinned = pinnedConversations;
-  const visibleChats = unassignedConversations;
-  const visibleArchived = archivedConversations;
+
+  const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
+  const isSearching = normalizedQuery.length > 0;
+
+  const matchesSearch = (item: ChatConversation) =>
+    item.title.toLocaleLowerCase().includes(normalizedQuery) ||
+    item.tags.some((tag) => tag.toLocaleLowerCase().includes(normalizedQuery));
+
+  const visiblePinned = useMemo(
+    () => (isSearching ? pinnedConversations.filter(matchesSearch) : pinnedConversations),
+    [isSearching, pinnedConversations, normalizedQuery],
+  );
+
+  const visibleChats = useMemo(
+    () => (isSearching ? unassignedConversations.filter(matchesSearch) : unassignedConversations),
+    [isSearching, unassignedConversations, normalizedQuery],
+  );
+
+  const visibleArchived = useMemo(
+    () => (isSearching ? archivedConversations.filter(matchesSearch) : archivedConversations),
+    [isSearching, archivedConversations, normalizedQuery],
+  );
+
+  const filteredProjectConversations = useMemo(
+    () => (isSearching ? visibleProjectConversations.filter(matchesSearch) : visibleProjectConversations),
+    [isSearching, visibleProjectConversations, normalizedQuery],
+  );
+
+  const filteredProjects = useMemo(() => {
+    if (!isSearching) return visibleProjects;
+    return visibleProjects.filter(
+      (project) =>
+        project.name.toLocaleLowerCase().includes(normalizedQuery) ||
+        filteredProjectConversations.some((conversation) => conversation.projectId === project.id),
+    );
+  }, [isSearching, visibleProjects, normalizedQuery, filteredProjectConversations]);
+
+  const recencyBuckets = useMemo(() => groupConversationsByRecency(visibleChats), [visibleChats]);
+
+  const totalSearchResultsCount =
+    visiblePinned.length +
+    visibleChats.length +
+    visibleArchived.length +
+    filteredProjectConversations.length;
 
   const toggleSelection = (conversationId: string) => {
     setSelectedIds((current) => {
@@ -105,6 +207,7 @@ export function ConversationSidebar({
     setSelectionMode(false);
     setSelectedIds(new Set());
   };
+
   const {
     archiveConversation,
     archiveSelected,
@@ -151,6 +254,28 @@ export function ConversationSidebar({
       await selectConversation(conversationId, targetMessageId);
       onCloseMobile?.();
     });
+  };
+
+  const handleNewChat = () => {
+    if (onNewChat) {
+      onNewChat();
+    } else {
+      onRequestTemporaryExit(() => {
+        startNewChat();
+        onCloseMobile?.();
+      });
+    }
+  };
+
+  const handleStartTemporaryChat = () => {
+    if (onStartTemporaryChat) {
+      onStartTemporaryChat();
+    } else {
+      onRequestTemporaryExit(() => {
+        startTemporaryChat();
+        onCloseMobile?.();
+      });
+    }
   };
 
   const renderRows = (
@@ -261,6 +386,13 @@ export function ConversationSidebar({
     return () => drawer.removeEventListener('keydown', keepFocusInside);
   }, [isModal]);
 
+  const showPinned =
+    (sectionFilter === 'all' || sectionFilter === 'chats') && sectionIsVisible(visiblePinned, false);
+  const showProjects = sectionFilter === 'all' || sectionFilter === 'projects';
+  const showChats = (sectionFilter === 'all' || sectionFilter === 'chats') && sectionIsVisible(visibleChats, true);
+  const showArchived =
+    (sectionFilter === 'all' || sectionFilter === 'chats') && sectionIsVisible(visibleArchived, false);
+
   return (
     <>
       {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: aria-modal is present only when this section becomes the modal drawer dialog. */}
@@ -268,28 +400,97 @@ export function ConversationSidebar({
         aria-label={t(sectionFilter === 'projects' ? 'projects' : 'chats')}
         aria-modal={isModal ? true : undefined}
         className={`conversation-sidebar app-content-divider flex h-full shrink-0 flex-col border-y-0 border-r bg-navigation ${isDrawer ? 'absolute inset-y-0 left-0 z-30 shadow-xl' : 'relative'}`}
-        ref={drawerRef}
         id="chat-workspace-panel"
+        ref={drawerRef}
         role={isDrawer ? 'dialog' : 'complementary'}
         tabIndex={isDrawer ? -1 : undefined}
       >
         <div
-          className={`sticky top-0 z-10 flex min-h-12 items-center justify-between gap-3 bg-navigation px-4 ${isListScrolled ? 'app-content-divider border-b' : ''}`}
+          className={`sticky top-0 z-10 flex min-h-12 items-center justify-between gap-2 bg-navigation px-3 ${isListScrolled ? 'app-content-divider border-b' : ''}`}
         >
-          <h2 className="truncate text-sm font-semibold text-text">
-            {t(sectionFilter === 'projects' ? 'projects' : 'chats')}
-          </h2>
-          <div className="flex items-center gap-1">
-            <Button
-              aria-label={t('close')}
-              className="size-9 shrink-0"
-              data-sidebar-close="true"
-              onClick={onCloseMobile}
-              size="icon"
-              variant="ghost"
-            >
-              <X aria-hidden="true" size={17} />
-            </Button>
+          <div className="flex min-w-0 items-center gap-2">
+            <MessagesSquare aria-hidden="true" className="shrink-0 text-secondary-icon" size={17} />
+            <h2 className="truncate text-sm font-semibold text-text">
+              {t(sectionFilter === 'projects' ? 'projects' : 'chats')}
+            </h2>
+          </div>
+          <div className="flex items-center gap-0.5">
+            <Tooltip label={t('newChat')}>
+              <Button
+                aria-label={t('newChat')}
+                className="size-8 shrink-0 text-secondary-icon hover:text-text"
+                onClick={handleNewChat}
+                size="icon"
+                variant="ghost"
+              >
+                <Plus aria-hidden="true" size={16} />
+              </Button>
+            </Tooltip>
+            <Tooltip label={t('temporaryChatStart')}>
+              <Button
+                aria-label={t('temporaryChatStart')}
+                className="size-8 shrink-0 text-secondary-icon hover:text-text"
+                onClick={handleStartTemporaryChat}
+                size="icon"
+                variant="ghost"
+              >
+                <Clock3 aria-hidden="true" size={16} />
+              </Button>
+            </Tooltip>
+            <Tooltip label={t('moveSelectedChats')}>
+              <Button
+                aria-label={t('moveSelectedChats')}
+                aria-pressed={selectionMode}
+                className={`size-8 shrink-0 ${selectionMode ? 'bg-selected text-accent' : 'text-secondary-icon hover:text-text'}`}
+                onClick={() => setSelectionMode((prev) => !prev)}
+                size="icon"
+                variant="ghost"
+              >
+                <CheckSquare aria-hidden="true" size={16} />
+              </Button>
+            </Tooltip>
+            {onCloseMobile ? (
+              <Tooltip label={t('close')}>
+                <Button
+                  aria-label={t('close')}
+                  className="size-8 shrink-0 text-secondary-icon hover:text-text"
+                  data-sidebar-close="true"
+                  onClick={onCloseMobile}
+                  size="icon"
+                  variant="ghost"
+                >
+                  <X aria-hidden="true" size={16} />
+                </Button>
+              </Tooltip>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="px-3 pt-1 pb-2">
+          <div className="relative flex items-center">
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute left-2.5 text-secondary-icon"
+              size={14}
+            />
+            <input
+              aria-label={t('searchChats')}
+              className="h-8 w-full rounded-button border border-border bg-background pl-8 pr-7 text-xs text-text placeholder:text-secondary-text focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder={t('searchChats')}
+              type="text"
+              value={searchQuery}
+            />
+            {searchQuery ? (
+              <button
+                aria-label={t('settingsSearchClear')}
+                className="absolute right-2 text-secondary-icon hover:text-text focus:outline-none"
+                onClick={() => setSearchQuery('')}
+                type="button"
+              >
+                <X aria-hidden="true" size={13} />
+              </button>
+            ) : null}
           </div>
         </div>
 
@@ -364,7 +565,19 @@ export function ConversationSidebar({
                   </div>
                 ) : null}
 
-                {sectionFilter === 'chats' && sectionIsVisible(visiblePinned, false) ? (
+                {isSearching && totalSearchResultsCount === 0 ? (
+                  <div className="grid gap-2 px-3 py-6 text-center">
+                    <p className="text-xs text-secondary-text">{t('searchMessagesNoResults')}</p>
+                    {onOpenSearch ? (
+                      <Button className="mx-auto" onClick={onOpenSearch} size="small" variant="ghost">
+                        <Search aria-hidden="true" size={14} />
+                        <span>{t('searchChats')}</span>
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {showPinned ? (
                   <ConversationSidebarSection
                     collapsed={collapsedSections.has('pinned')}
                     dropIndicator={Pin}
@@ -381,15 +594,15 @@ export function ConversationSidebar({
                     })}
                   </ConversationSidebarSection>
                 ) : null}
-                {sectionFilter === 'projects' ? (
+
+                {showProjects ? (
                   <ProjectSidebarSection
                     activeConversationId={activeConversationId}
                     collapsed={collapsedSections.has('projects')}
-                    conversations={visibleProjectConversations}
+                    conversations={filteredProjectConversations}
                     isBusy={isBusy}
                     onArchive={(conversation) => void archiveConversation(conversation)}
                     onCreateProject={() => setCreateProjectOpen(true)}
-                    onOpenOptions={setProjectOptionsTarget}
                     onCreateProjectChat={(projectId) =>
                       onRequestTemporaryExit(() => {
                         startNewChat(projectId);
@@ -402,6 +615,7 @@ export function ConversationSidebar({
                     onExport={(conversation) => void exportConversation(conversation)}
                     onMoveToChats={(conversation) => void moveConversation(conversation, null)}
                     onMoveToProject={(conversation, projectId) => void moveConversation(conversation, projectId)}
+                    onOpenOptions={setProjectOptionsTarget}
                     onRename={(conversation) => setEditTarget({ conversation, mode: 'rename' })}
                     onRetry={() => void refreshProjects().catch(() => showFeedback('projectLoadFailed'))}
                     onSelectConversation={(id) => requestSelectConversation(id)}
@@ -409,31 +623,49 @@ export function ConversationSidebar({
                     onToggleCollapsed={() => toggleSection('projects')}
                     onTogglePinned={(conversation) => void togglePinned(conversation)}
                     onToggleSelection={toggleSelection}
-                    projects={visibleProjects}
-                    status={projectsStatus}
+                    projects={filteredProjects}
                     selectedConversationIds={selectedIds}
                     selectionMode={selectionMode}
+                    status={projectsStatus}
                   />
                 ) : null}
-                {sectionFilter === 'chats' && sectionIsVisible(visibleChats, true) ? (
+
+                {showChats ? (
                   <ConversationSidebarSection
                     collapsed={collapsedSections.has('chats')}
                     dropIndicator={MessagesSquare}
-                    emptyMessage={t('noChatsTitle')}
+                    emptyMessage={visibleChats.length === 0 ? t('noChatsTitle') : undefined}
                     icon={MessagesSquare}
                     onDropConversation={dropConversationToChats}
                     onToggle={() => toggleSection('chats')}
                     title={t('chats')}
                   >
-                    {renderRows(visibleChats, {
-                      archived: false,
-                      currentProjectId: null,
-                      allowSelection: true,
-                      allowMove: true,
-                    })}
+                    {recencyBuckets.length > 0
+                      ? recencyBuckets.map((bucket) => (
+                          <li className="grid gap-0.5" key={bucket.id}>
+                            <div className="px-2 pt-2 pb-0.5 text-[11px] font-semibold tracking-wider text-secondary-text uppercase">
+                              {t(bucket.labelKey)}
+                            </div>
+                            <ul className="grid gap-0.5">
+                              {renderRows(bucket.conversations, {
+                                archived: false,
+                                currentProjectId: null,
+                                allowSelection: true,
+                                allowMove: true,
+                              })}
+                            </ul>
+                          </li>
+                        ))
+                      : renderRows(visibleChats, {
+                          archived: false,
+                          currentProjectId: null,
+                          allowSelection: true,
+                          allowMove: true,
+                        })}
                   </ConversationSidebarSection>
                 ) : null}
-                {sectionFilter === 'chats' && sectionIsVisible(visibleArchived, false) ? (
+
+                {showArchived ? (
                   <ConversationSidebarSection
                     collapsed={collapsedSections.has('archived')}
                     icon={Archive}
@@ -455,6 +687,9 @@ export function ConversationSidebar({
 
         <CreateProjectDialog onCreate={createProject} onOpenChange={setCreateProjectOpen} open={createProjectOpen} />
         <ProjectOptionsDialog
+          onOpenChange={(open) => {
+            if (!open) setProjectOptionsTarget(null);
+          }}
           onUseWorktree={async (path, branch) => {
             onRequestTemporaryExit(async () => {
               if (!projectOptionsTarget) throw new Error('The selected project is unavailable.');
@@ -480,9 +715,6 @@ export function ConversationSidebar({
               if (!created) throw new Error('The worktree project could not be loaded.');
               startNewChat(created.id);
             });
-          }}
-          onOpenChange={(open) => {
-            if (!open) setProjectOptionsTarget(null);
           }}
           open={projectOptionsTarget !== null}
           project={projectOptionsTarget}

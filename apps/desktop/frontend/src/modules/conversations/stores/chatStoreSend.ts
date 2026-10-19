@@ -8,6 +8,7 @@ import {
   saveMessage,
 } from '@/modules/conversations/data/chatStorage';
 import { notifyAssistantResponse, notifyPendingQuestion } from '@/modules/notifications/data/notificationRuntime';
+import { getAudioContext, playAssistantResponseAudio } from '@/shared/utils/audioFeedback';
 import {
   loadProjectToolPermissionRules,
   loadToolPermissionMode,
@@ -73,6 +74,7 @@ export function createSendMessageAction(
       conversationOperationBlocksSend
     )
       return false;
+    getAudioContext();
     const goalObjective = options?.mode === 'goal' && !resumeRunId ? content : null;
     if (options?.mode === 'goal' && !resumeRunId && !content) {
       set({ errorCode: 'goalObjectiveRequired' });
@@ -390,6 +392,7 @@ export function createSendMessageAction(
       const conversations = await listConversations();
       set({ conversations });
       if (finalStatus === 'completed' && streamedMessage) {
+        void playAssistantResponseAudio('completed');
         const conversation = conversations.find((item) => item.id === targetConversationId);
         if (conversation) {
           const completedMessage = assistantMessage.current;
@@ -403,6 +406,9 @@ export function createSendMessageAction(
       return true;
     } catch (error) {
       requestOutcome ??= providerRequestOutcomeForError(error);
+      if (requestOutcome !== 'stopped') {
+        void playAssistantResponseAudio('failed');
+      }
       const code =
         !userMessageSaved && attachments.length > 0
           ? 'attachmentSaveFailed'

@@ -1,4 +1,4 @@
-import { Clock3, FileDiff, MessageCircle, MessageSquarePlus } from 'lucide-react';
+import { Clock3, FileDiff } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -11,7 +11,6 @@ import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
 import { ChatComposer } from './ChatComposer';
 import { ChatFileChangesPanel } from './ChatFileChangesPanel';
 import { ConversationEmptyState } from './ConversationEmptyState';
-import { ConversationTitleEditor } from './ConversationTitleEditor';
 import { EditMessageBranchDialog } from './EditMessageBranchDialog';
 import { GoalStatusBar } from './GoalStatusBar';
 import { MessageList } from './MessageList';
@@ -79,7 +78,6 @@ export function ConversationPane({
   const hasConfiguredProvider = useChatStore((state) => state.hasConfiguredProvider);
   const hasCompletedAssistantResponse = useChatStore((state) => state.hasCompletedAssistantResponse);
   const refreshModels = useChatStore((state) => state.refreshModels);
-  const renameConversation = useChatStore((state) => state.renameConversation);
   const selectConversation = useChatStore((state) => state.selectConversation);
   const activeGoal = useChatStore((state) => state.activeGoal);
   const goalStatus = useChatStore((state) => state.goalStatus);
@@ -264,31 +262,6 @@ export function ConversationPane({
       ref={paneRef}
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        <header className="app-content-divider flex min-h-10 shrink-0 items-center gap-3 border-b px-4 sm:px-6">
-          <div className="flex min-w-0 flex-1 items-center gap-2.5">
-            {temporaryChat || activeConversation ? (
-              <MessageCircle aria-hidden="true" className="shrink-0 text-secondary-icon" size={18} />
-            ) : null}
-            {temporaryChat ? (
-              <h2 className="min-w-0 flex-1 truncate text-settings-description font-medium leading-5 text-text">
-                {t('temporaryChatTitle')}
-              </h2>
-            ) : activeConversation ? (
-              <h2 className="min-w-0 flex-1 [&_button]:min-h-8 [&_button]:px-1 [&_input]:!text-settings-description [&_input]:!font-medium [&_span]:!text-settings-description [&_span]:!font-medium [&_span]:!leading-5">
-                <ConversationTitleEditor
-                  key={activeConversation.id}
-                  onSave={(title) => renameConversation(activeConversation.id, title)}
-                  title={activeConversation.title}
-                />
-              </h2>
-            ) : (
-              <h2 className="flex min-w-0 flex-1 select-none items-center gap-2 truncate text-settings-description font-medium leading-5 text-text">
-                <MessageSquarePlus aria-hidden="true" className="shrink-0 text-secondary-icon" size={17} />
-                <span className="truncate">{t('newChat')}</span>
-              </h2>
-            )}
-          </div>
-        </header>
         <div
           className="chat-content-workspace flex min-h-0 min-w-0 flex-1 flex-col"
           data-centered-empty={centerEmptyConversation ? 'true' : undefined}

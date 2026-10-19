@@ -11,6 +11,7 @@ import {
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import { loadRouteParameters } from '@/modules/providers/data/modelRouteParameters';
 import { type LocalServiceClient, LocalServiceError } from '@/platform/local-service';
+import { getAudioContext, playAssistantResponseAudio } from '@/shared/utils/audioFeedback';
 import type { ChatState } from './chatStore';
 import { applyStreamEvent, numberOrNull, titleFromMessage, upsertMessage } from './chatStoreUtils';
 import { createStreamMessagePublisher } from './streamMessagePublisher';
@@ -128,6 +129,7 @@ export function createTemporarySendMessageAction(
       return false;
     }
     if (!content && attachments.length === 0) return false;
+    getAudioContext();
 
     const selectedModel = state.models.find((model) => model.key === state.selectedModelKey);
     if (!selectedModel) {
@@ -299,10 +301,19 @@ export function createTemporarySendMessageAction(
       if (get().temporaryChat?.id === session.id) {
         set((current) => ({ messages: upsertMessage(current.messages, completedMessage) }));
       }
+      if (completedMessage.status === 'completed') {
+        void playAssistantResponseAudio('completed');
+      } else {
+        void playAssistantResponseAudio('failed');
+      }
       return completedMessage.status === 'completed';
     } catch (error) {
       streamUi.discard();
       const failureCode = error instanceof LocalServiceError ? error.code : 'service_error';
+      const isCancelled = failureCode === 'operation_cancelled' || failureCode === 'request_cancelled';
+      if (!isCancelled) {
+        void playAssistantResponseAudio('failed');
+      }
       const failureMessage: ChatMessage = assistantMessage
         ? {
             ...assistantMessage,

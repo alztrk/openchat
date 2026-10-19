@@ -1,0 +1,184 @@
+@keyframes app-main-surface-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes openchat-content-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes openchat-theme-transition-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes openchat-theme-transition-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes openchat-skeleton-shimmer {
+  0% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0.45;
+  }
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--motion-duration-ui);
+  animation-timing-function: var(--motion-ease-in-out);
+}
+
+::view-transition-old(root) {
+  animation-name: openchat-theme-transition-out;
+}
+
+::view-transition-new(root) {
+  animation-name: openchat-theme-transition-in;
+}
+
+.openchat-popover-enter,
+.openchat-disclosure-enter {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-out),
+    transform var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.openchat-popover-enter[data-state='closed'] {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px) scale(0.985);
+}
+
+html[data-motion-input='keyboard'] .openchat-popover-enter[data-state='closed'] {
+  transition: none;
+}
+
+.openchat-popover-enter:has(:focus-visible),
+:has(> [aria-expanded='true']:focus-visible) > .openchat-popover-enter {
+  animation: none;
+  transition: none;
+}
+
+.openchat-disclosure-chevron {
+  transition: transform var(--motion-duration-fast) var(--motion-ease-in-out);
+}
+
+.openchat-disclosure-chevron[data-collapsed='true'] {
+  transform: rotate(-90deg);
+}
+
+.openchat-switch {
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.openchat-switch-thumb {
+  transition: transform var(--motion-duration-ui) var(--motion-ease-out);
+}
+
+.openchat-switch:focus-visible,
+.openchat-switch:focus-visible .openchat-switch-thumb,
+label:has(> input:focus-visible) .openchat-segment-label,
+:has(> button[aria-expanded='true']:focus-visible) .openchat-select-chevron,
+section:has([aria-expanded='true']:focus-visible) .openchat-disclosure-chevron {
+  transition: none;
+}
+
+.openchat-select-chevron {
+  transition: transform var(--motion-duration-fast) var(--motion-ease-in-out);
+}
+
+.openchat-segment-label {
+  transition: color var(--motion-duration-fast) var(--motion-ease-out),
+    background-color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.openchat-disclosure-enter:has(:focus-visible),
+section:has([aria-expanded='true']:focus-visible) > .openchat-disclosure-enter,
+.openchat-native-disclosure:has(> summary:focus-visible)[open] > :not(summary) {
+  animation: none;
+  transition: none;
+}
+
+.openchat-native-disclosure[open] > :not(summary) {
+  animation: openchat-content-in var(--motion-duration-fast) var(--motion-ease-out) both;
+}
+
+@starting-style {
+  .openchat-popover-enter,
+  .openchat-disclosure-enter {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+
+  .statistics-filter-menu[open] > .statistics-filter-popover {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+
+  .context-usage-indicator[open] > .context-usage-popover {
+    opacity: 0;
+    transform: translateY(4px) scale(0.985);
+  }
+}
+
+.openchat-skeleton {
+  animation: openchat-skeleton-shimmer 1.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+
+  .app-main-surface {
+    animation: none;
+  }
+
+  .library-page-nav-item,
+  .mcp-server-card {
+    transition: none;
+  }
+
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+
+  .startup-error-card {
+    animation: none;
+  }
+
+  .openchat-skeleton {
+    animation: none;
+  }
+}

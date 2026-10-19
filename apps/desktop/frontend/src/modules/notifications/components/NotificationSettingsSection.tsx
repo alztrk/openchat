@@ -1,4 +1,4 @@
-import { BellOff, BellRing, LoaderCircle, RefreshCw, Send } from 'lucide-react';
+import { BellOff, BellRing, LoaderCircle, Play, RefreshCw, Send } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -13,6 +13,7 @@ import {
   type WindowsNotificationStatus,
   writeNotificationPreference,
 } from '@/modules/notifications/data/notificationPreferences';
+import { playTestChime } from '@/shared/utils/audioFeedback';
 
 type LoadState = 'loading' | 'loaded' | 'failed';
 type TranslationKey = keyof typeof en;
@@ -25,6 +26,10 @@ export function NotificationSettingsSection() {
     questions: true,
     responsePreview: true,
     quickReply: true,
+    soundEnabled: true,
+    soundMuted: false,
+    soundVolume: 0.7,
+    failureSoundEnabled: true,
   });
   const [isSaving, setIsSaving] = useState(false);
   const [saveFailed, setSaveFailed] = useState(false);
@@ -35,6 +40,7 @@ export function NotificationSettingsSection() {
   const [settingsOpenFailed, setSettingsOpenFailed] = useState(false);
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [testResult, setTestResult] = useState<'requested' | 'failed' | null>(null);
+  const [isTestingChime, setIsTestingChime] = useState(false);
   const statusGeneration = useRef(0);
 
   const loadPreferences = useCallback(() => {
@@ -85,7 +91,7 @@ export function NotificationSettingsSection() {
     };
   }, [loadDeliveryStatus]);
 
-  const save = (key: keyof NotificationPreferences, value: boolean) => {
+  const save = <K extends keyof NotificationPreferences>(key: K, value: NotificationPreferences[K]) => {
     if (isSaving || loadState !== 'loaded') return;
     const updated = { ...preferences, [key]: value };
     setIsSaving(true);
@@ -124,6 +130,16 @@ export function NotificationSettingsSection() {
       setTestResult('failed');
     } finally {
       setIsSendingTest(false);
+    }
+  };
+
+  const testChime = async () => {
+    if (isTestingChime) return;
+    setIsTestingChime(true);
+    try {
+      await playTestChime(preferences.soundVolume);
+    } finally {
+      setIsTestingChime(false);
     }
   };
 
@@ -235,6 +251,43 @@ export function NotificationSettingsSection() {
             checked={preferences.quickReply}
             onCheckedChange={(value) => save('quickReply', value)}
           />
+
+          <PreferenceRow
+            description={t('notificationSoundEnabledDescription')}
+            disabled={isSaving}
+            label={t('notificationSoundEnabled')}
+            checked={preferences.soundEnabled}
+            onCheckedChange={(value) => save('soundEnabled', value)}
+          />
+          <PreferenceRow
+            description={t('notificationFailureSoundEnabledDescription')}
+            disabled={isSaving}
+            label={t('notificationFailureSoundEnabled')}
+            checked={preferences.failureSoundEnabled}
+            onCheckedChange={(value) => save('failureSoundEnabled', value)}
+          />
+          <PreferenceRow
+            description={t('notificationSoundMutedDescription')}
+            disabled={isSaving}
+            label={t('notificationSoundMuted')}
+            checked={preferences.soundMuted}
+            onCheckedChange={(value) => save('soundMuted', value)}
+          />
+          <VolumeRow
+            description={t('notificationSoundVolumeDescription')}
+            disabled={
+              isSaving ||
+              preferences.soundMuted ||
+              (!preferences.soundEnabled && !preferences.failureSoundEnabled)
+            }
+            isTesting={isTestingChime}
+            label={t('notificationSoundVolume')}
+            onTest={() => void testChime()}
+            onValueChange={(value) => save('soundVolume', value)}
+            testLabel={t('notificationTestChime')}
+            value={preferences.soundVolume}
+          />
+
           {saveFailed ? (
             <p className="text-sm text-destructive" role="alert">
               {t('notificationSettingsSaveFailed')}
@@ -266,6 +319,67 @@ function PreferenceRow({
         <span className="text-sm text-secondary-text">{description}</span>
       </div>
       <Switch aria-label={label} checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
+    </div>
+  );
+}
+
+function VolumeRow({
+  disabled,
+  label,
+  description,
+  value,
+  onValueChange,
+  onTest,
+  isTesting,
+  testLabel,
+}: {
+  disabled: boolean;
+  label: string;
+  description: string;
+  value: number;
+  onValueChange(value: number): void;
+  onTest(): void;
+  isTesting: boolean;
+  testLabel: string;
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border py-3 last:border-b-0">
+      <div className="grid min-w-0 gap-1">
+        <span className="font-medium">{label}</span>
+        <span className="text-sm text-secondary-text">{description}</span>
+      </div>
+      <div className="flex items-center gap-3">
+        <input
+          aria-label={label}
+          aria-valuemax={100}
+          aria-valuemin={0}
+          aria-valuenow={Math.round(value * 100)}
+          className="h-1.5 w-28 cursor-pointer accent-accent disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={disabled}
+          max="1"
+          min="0"
+          step="0.05"
+          type="range"
+          value={value}
+          onChange={(event) => {
+            const next = Number.parseFloat(event.target.value);
+            if (Number.isFinite(next)) {
+              onValueChange(Math.max(0, Math.min(1, next)));
+            }
+          }}
+        />
+        <span className="min-w-10 text-right text-xs tabular-nums text-secondary-text">
+          {Math.round(value * 100)}%
+        </span>
+        <Button disabled={disabled || isTesting} onClick={onTest} size="small" variant="ghost">
+          {isTesting ? (
+            <LoaderCircle aria-hidden="true" className="animate-spin" size={14} />
+          ) : (
+            <Play aria-hidden="true" size={14} />
+          )}
+          {testLabel}
+        </Button>
+      </div>
     </div>
   );
 }

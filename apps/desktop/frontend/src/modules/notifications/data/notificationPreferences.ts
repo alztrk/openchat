@@ -6,6 +6,10 @@ export interface NotificationPreferences {
   questions: boolean;
   responsePreview: boolean;
   quickReply: boolean;
+  soundEnabled: boolean;
+  soundMuted: boolean;
+  soundVolume: number;
+  failureSoundEnabled: boolean;
 }
 
 export type WindowsNotificationStatus =
@@ -41,6 +45,10 @@ const preferenceKeys: Record<keyof NotificationPreferences, string> = {
   questions: 'notifications.questions',
   responsePreview: 'notifications.response_preview',
   quickReply: 'notifications.quick_reply',
+  soundEnabled: 'notifications.sound_enabled',
+  soundMuted: 'notifications.sound_muted',
+  soundVolume: 'notifications.sound_volume',
+  failureSoundEnabled: 'notifications.failure_sound_enabled',
 };
 
 const defaultPreferences: NotificationPreferences = {
@@ -48,18 +56,29 @@ const defaultPreferences: NotificationPreferences = {
   questions: true,
   responsePreview: true,
   quickReply: true,
+  soundEnabled: true,
+  soundMuted: false,
+  soundVolume: 0.7,
+  failureSoundEnabled: true,
 };
 
 export function readNotificationPreferences(): NotificationPreferences {
   return {
-    responses: readPreference('responses'),
-    questions: readPreference('questions'),
-    responsePreview: readPreference('responsePreview'),
-    quickReply: readPreference('quickReply'),
+    responses: readBooleanPreference('responses'),
+    questions: readBooleanPreference('questions'),
+    responsePreview: readBooleanPreference('responsePreview'),
+    quickReply: readBooleanPreference('quickReply'),
+    soundEnabled: readBooleanPreference('soundEnabled'),
+    soundMuted: readBooleanPreference('soundMuted'),
+    soundVolume: readNumberPreference('soundVolume'),
+    failureSoundEnabled: readBooleanPreference('failureSoundEnabled'),
   };
 }
 
-export function writeNotificationPreference(key: keyof NotificationPreferences, value: boolean): void {
+export function writeNotificationPreference<K extends keyof NotificationPreferences>(
+  key: K,
+  value: NotificationPreferences[K],
+): void {
   try {
     unifiedStorage.setItem(preferenceKeys[key], String(value));
   } catch {
@@ -104,7 +123,16 @@ function isWindowsNotificationStatus(value: unknown): value is WindowsNotificati
   );
 }
 
-function readPreference(key: keyof NotificationPreferences): boolean {
+type BooleanPreferenceKey =
+  | 'responses'
+  | 'questions'
+  | 'responsePreview'
+  | 'quickReply'
+  | 'soundEnabled'
+  | 'soundMuted'
+  | 'failureSoundEnabled';
+
+function readBooleanPreference(key: BooleanPreferenceKey): boolean {
   let value: string | null;
   try {
     value = unifiedStorage.getItem(preferenceKeys[key]);
@@ -116,4 +144,19 @@ function readPreference(key: keyof NotificationPreferences): boolean {
     throw new Error('Notification preferences are invalid.');
   }
   return value === 'true';
+}
+
+function readNumberPreference(key: 'soundVolume'): number {
+  let value: string | null;
+  try {
+    value = unifiedStorage.getItem(preferenceKeys[key]);
+  } catch {
+    throw new Error('Notification preferences could not be read.');
+  }
+  if (value === null) return defaultPreferences[key];
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    throw new Error('Notification preferences are invalid.');
+  }
+  return parsed;
 }
