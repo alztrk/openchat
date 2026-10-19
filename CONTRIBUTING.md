@@ -57,20 +57,19 @@ intentional and the source explains why.
 ## Validation and packaging
 
 The Windows CI workflow lints the frontend's required design rules, formats
-and checks the Rust service, shared Windows sandbox, shared provider secret
-store, and Tauri host, runs their Rust tests, audits all four Rust lockfiles
-with RustSec, audits shipped npm dependencies, builds the React frontend,
+and checks the unified Rust service and Tauri host, runs their Rust tests, audits
+both Rust lockfiles with RustSec, audits shipped npm dependencies, builds the React frontend,
 compiles the Tauri application, and uploads the NSIS installer as a short-lived artifact.
 It does not publish a GitHub release or perform live provider-account checks.
-All four Rust packages deny undocumented unsafe blocks. Add a focused `// SAFETY:`
+Both Rust packages deny undocumented unsafe blocks. Add a focused `// SAFETY:`
 comment immediately before each unsafe block and state the pointer, handle, or
 ownership invariant that makes the operation valid. The CI Clippy checks enforce
 this requirement.
 
-Run the shared Windows sandbox tests with:
+Run the service and sandbox tests with:
 
 ```powershell
-cargo test --locked --manifest-path services/windows-sandbox/Cargo.toml -- --test-threads=1
+cargo test --locked --manifest-path services/openchat-service/Cargo.toml -- --test-threads=1
 ```
 
 Use the repository's pinned lockfiles when building. The service sidecar must

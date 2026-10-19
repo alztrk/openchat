@@ -12,7 +12,8 @@ This roadmap reflects the current product implementation and has no calendar est
 - Shared provider request, tool, and stream event types across ChatGPT, OpenCode, Anthropic, and all compatible cloud and local providers, plus local shared instructions.
 - Embedded release catalogs and a verified, cancellable installer for llama.cpp on Windows x64. Settings supports one llama.cpp model folder and bounded discovery of unregistered GGUF files, with explicit confirmation before registration. The managed llama.cpp path starts selected GGUF models on demand, waits for health readiness, streams chat through the shared route, and stops individual processes on cancellation or service shutdown. Manual Windows CPU and NVIDIA CUDA checks used real GGUF files; CUDA verification reported the RTX 3060, generated a text answer, and handled an attached PNG with its matching vision projector. These were manual runtime checks, not automated release tests. CUDA offload is recommended only when the detected driver meets the pinned catalog floor. llama.cpp is the only OpenChat-managed local inference engine. Runtime diagnostics record bounded, safe lifecycle fields. GGUF-declared and runtime-active context windows, projector pairing, and reported image and tool-template capabilities are implemented.
 - Local workspace tools for file listing, search, reading, metadata, writing, and editing, plus web search, URL reading, and terminal command/session tools. Tool calls, arguments, progress, and results are stored with assistant messages and shown in the conversation UI.
-- Global `Ask for approval`, `Approve safe operations`, and `Full access` settings govern built-in tool approvals. Filesystem calls use canonical path checks. On Windows, each terminal session runs in a temporary AppContainer with access granted to its working tree; non-Windows terminal execution still uses the OpenChat process account without an OS sandbox.
+- Global `Ask for approval`, `Approve safe operations`, and `Full access` settings govern built-in tool approvals. Filesystem calls use canonical path checks. Sensitive configuration files (`.git/hooks`, IDE configs) strictly require explicit user approval (`Ask`). On Windows, terminal sessions run in a temporary AppContainer by default, with optional WSL2 container execution (`bwrap --unshare-all`) for full kernel-level workspace isolation; non-Windows terminal execution uses process isolation.
+- Real-time secret and credential redaction (DLP shield) scrubbed across terminal command output, MCP tool executions, and file reads to prevent live credentials from leaking into agent contexts or session streams.
 - ChatGPT OAuth quota snapshots are stored per connection and workspace. Provider-reported input usage informs compaction where available, but there is no normalized per-request usage, cost, or prompt-cache ledger across providers; the context meter can use estimates.
 - Conversation history, project grouping, model favorites, rename/delete/pin actions, retry, and Markdown export. Tool activity is included in Markdown exports.
 - Per-conversation memory inspection, bounded hybrid FTS5 and optional local semantic archive search with dated source excerpts, best-effort credential redaction in derived tool indexes, and a confirmed reset for compacted context that preserves full history.
@@ -653,10 +654,255 @@ are implemented, but independent publisher verification and executable package
 distribution remain open. Hosted sharing
 remains out of scope under the current product decision.
 
+### 25. Add persistent project agent memory and semantic context engine
+
+**Status: planned, P1.** Maintain cross-session agent understanding, learned project conventions, and architecture decisions bounded per project.
+
+- Add a dedicated `project_memory` storage layer scoped to each local project, keeping facts, architectural rules, and operational constraints persistent across conversation sessions.
+- Automatically construct and inject project-relevant memory into new agent runs while strictly enforcing project isolation so memories never leak across distinct workspaces.
+- Support hybrid lexical (FTS5) and semantic vector retrieval over project history and codebase context for fast, targeted recall.
+- Allow users to inspect, curate, export, and selectively purge learned project memory items directly from project settings.
+
+**Exit criteria:** agent runs preserve verified project conventions across session boundaries; memories are strictly isolated to their originating project; users can inspect and delete stored items; and memory injection does not degrade token budgets on small-context models.
+
+### 26. Add task-isolated subagents
+
+**Status: planned, P1.** Enable main agent runs to delegate bounded, heavy, or long-running tasks into isolated child processes without context pollution.
+
+- Support delegating exploratory code searches, large test suites, or modular implementations to dedicated background subagents (`fork_task`).
+- Hand off results through structured summaries, diffs, and artifact envelopes rather than forwarding complete conversation histories, keeping the parent context clean.
+- Permit parallel child task execution for independent operations with strict per-task concurrency limits, cancellation propagation, and timeouts.
+
+**Exit criteria:** child runs operate within isolated execution scopes; parent context windows remain uncluttered by child turn history; cancellation cascades properly; and completed results report clean diffs and outcomes.
+
+### 27. Add deterministic lifecycle hooks and self-healing lint feedback
+
+**Status: planned, P1.** Provide deterministic runtime interceptors before and after tool execution to enforce safety and automate verification.
+
+- Add `PreToolUse` hooks to evaluate arguments against local deterministic policy before execution, instantly blocking disallowed shell commands or paths without LLM reasoning tokens.
+- Add `PostToolUse` hooks that run configured linters, formatters, and type checkers (`cargo fmt`, `eslint`, `prettier`) immediately following file modifications.
+- Feed actionable linter and test errors directly back into the agent's steering queue as immediate self-healing input when a modification breaks build contracts.
+
+**Exit criteria:** hooks execute deterministically without consuming LLM inference; post-edit formatters maintain project style; and syntax/type regressions trigger instant self-correction turns.
+
+### 28. Add Tree-sitter codebase mapping and glob-scoped rules
+
+**Status: planned, P2.** Improve repository awareness and rule precision through structural parsing and path matching.
+
+- Generate compact, token-efficient repository maps using Tree-sitter to index class hierarchies, function signatures, and interface definitions across the project.
+- Expose the structural repo map to model planning so the agent understands cross-module architecture without reading entire files.
+- Support glob-scoped rules (`.openchat/rules/**/*.mdc` or scoped instructions) that activate only when touching matching file paths, avoiding global prompt overhead.
+
+**Exit criteria:** repository maps accurately reflect code structure within a bounded token budget; path-specific rules activate only for relevant target files; and rule parsing remains fast and local.
+
+### 29. Broaden cross-platform kernel-level sandboxing and network policy
+
+**Status: planned, P1.** Bring Linux and macOS process isolation up to Windows AppContainer and WSL2 container standards.
+
+- Implement Linux kernel isolation using Landlock LSM and Seccomp-BPF for unprivileged filesystem path confinement and syscall filtering.
+- Implement macOS process sandboxing using Apple Seatbelt (`sandbox-exec` profiles) to enforce restricted directory and device access.
+- Add egress network policy with domain allowlisting so sandboxed terminal processes can access legitimate package registries (`crates.io`, `npmjs.org`) while blocking arbitrary external outbound connections.
+
+**Exit criteria:** terminal tools run under native kernel isolation across Windows, Linux, and macOS; outbound network access is strictly bounded by policy; and unauthorized path access is blocked at the OS kernel boundary.
+
+### 30. Add visual multi-file diff inspection with manual per-file approval in side panel
+
+**Status: planned, P1.** Enhance developer control during code modifications by introducing an explicit right-side review panel where every file change requires granular user approval.
+
+- Provide a dedicated right-side changes panel in the UI displaying all staged and generated file modifications resulting from an agent turn.
+- Require manual, per-file user confirmation (`Approve` / `Reject`) before any AI-generated change is permanently committed to disk or downstream build steps.
+- Enable selective hunk staging within the side panel, allowing users to inspect unified/split diffs and approve specific change blocks while discarding others.
+
+**Exit criteria:** no multi-file AI modification is applied without explicit per-file user consent; the right-side review panel accurately renders file-level diffs; and rejected files or hunks leave target workspaces completely unmodified.
+
+### 31. Add multi-chat tabs and split-view workspace
+
+**Status: planned, P1.** Enable multitasking across independent conversations and side-by-side terminal or diff monitoring.
+
+- Support multiple concurrent conversation tabs so users can switch between ongoing tasks without interrupting active generation or subagent runs.
+- Add an adjustable split-view layout allowing the main chat thread to sit alongside live diff panels, terminal outputs, or secondary conversations.
+
+**Exit criteria:** conversation state persists cleanly across active tabs; split views resize smoothly without breaking composer layout; and background tabs receive unobtrusive completion indicators.
+
+### 32. Migrate full conversation listing to sidebar navigation
+
+**Status: planned, P1.** Replace the crowded top header conversation bar with an expandable, vertically scrolling sidebar library.
+
+- Move the entire conversation list, history, and project groupings into a collapsible left sidebar, freeing vertical space in the main workspace.
+- Group conversations vertically by project, recency, tags, and pinned status with fast search and action menus per item.
+- Restrict the top header strictly to open, active working tabs (as defined in item 31), closing the tab without removing the conversation from the sidebar history.
+
+**Exit criteria:** all historical chats and project hierarchies are easily navigable in the left sidebar; the top header displays only actively open tabs; and closing an active tab does not delete or alter conversation persistence.
+
+### 33. Add AI-assisted visual design canvas and component generator
+
+**Status: planned, P2.** Introduce a Figma-like interactive design surface where AI models can visually generate, inspect, and export modern UI components.
+
+- Provide an interactive, infinite visual canvas for prototyping screens, component layouts, and design-system tokens directly within OpenChat.
+- Support bidirectional generation: convert natural language prompts into live vector UI frames, and export visually selected canvas elements directly into clean React, HTML/Tailwind, or SVG code.
+- Implement token-aware visual theming: define and manipulate color palettes, typography scales, spacing tokens, and responsive breakpoints visually, keeping generated code strictly bound to design-system standards.
+- Enable direct canvas commenting and visual revision loops, allowing users to point-and-click to request layout or styling changes from the agent.
+
+**Exit criteria:** users can generate and manipulate UI layouts on an interactive canvas; exported component code matches design-system tokens without arbitrary values; and changes can be inspected visually before merging into project files.
+
+### 34. Add embedded browser tab in side panel for agent navigation and visual verification
+
+**Status: planned, P1.** Integrate an embedded web browser directly into the right-side inspection panel alongside file changes.
+
+- Provide a dedicated Browser tab in the right-side workspace panel, allowing live website navigation, local dev server rendering, and real-time frontend verification.
+- Expose model-callable browser tools enabling the agent to navigate to URLs, scroll, click interactive elements, and capture high-resolution screenshots.
+- Support automated visual feedback loops: the agent can inspect rendered web pages, detect layout flaws or console errors, and perform self-corrections autonomously.
+- Enforce strict network and iframe policies so embedded browsing honors the application's outbound security boundaries.
+
+**Exit criteria:** the embedded browser renders smoothly within the right-side panel; the agent can autonomously browse, interact with DOM elements, and capture screenshots; and network boundaries prevent prohibited egress.
+
+### 35. Add native computer use automation for desktop apps, mouse, and keyboard
+
+**Status: planned, P2.** Equip the agent with system-level computer use capabilities to perceive screens and interact with native desktop applications.
+
+- Implement the perception-action loop (`screenshot` -> `reasoning` -> `mouse_move` / `click` / `type` / `keypress` / `scroll`) modeled after Claude and Codex computer use specifications.
+- Provide OS-level mouse and keyboard input simulation (via native Win32 SendInput APIs on Windows and virtual input servers on other platforms).
+- Implement an explicit emergency abort shortcut (e.g. `Esc` or moving mouse to screen corner) that instantly disengages agent input control.
+- Enforce granular user permission gates before initiating computer use sessions, keeping sensitive applications (passwords, banking, system settings) bounded.
+
+**Exit criteria:** the agent accurately translates visual desktop state into targeted mouse and keyboard actions; input coordinates scale reliably across multi-monitor display resolutions; and emergency abort immediately revokes control.
+
+### 36. Add smart ghost-text suggestions with one-key auto-completion
+
+**Status: planned, P1.** Accelerate conversational flow by predicting contextual follow-ups directly in the composer.
+
+- Display context-aware placeholder suggestions ("ghost text") in the message input field based on the assistant's latest response (e.g. "Run tests", "Apply changes", "Explain details").
+- Enable instant insertion and submission when the user presses `Tab` or `Shift+Enter`, clearing the ghost text immediately when the user starts typing custom text.
+
+**Exit criteria:** ghost-text suggestions match response context; pressing Tab reliably populates and dispatches the prompt; and manual typing dismisses the suggestion without glitching.
+
+### 37. Add drag-and-drop file and image context ingestion
+
+**Status: planned, P1.** Enable seamless file sharing from the desktop into the conversation thread.
+
+- Allow users to drag and drop arbitrary files, folders, error logs, or screenshots directly into the active chat window or input composer.
+- Automatically route images to multimodal models, and extract or reference code and text files as structured context attachments.
+
+**Exit criteria:** dragged files are validated by size and type, uploaded or referenced smoothly, and visible in composer attachments before dispatch.
+
+### 38. Add interactive message editing and branching (Edit & Fork Turn)
+
+**Status: planned, P1.** Permit editing past user messages without destroying earlier conversational history.
+
+- Provide an inline `Edit` action on prior user messages that forks the conversation into a new version branch.
+- Allow switching between sibling branches (`v1 / v2`) with left/right arrows, preserving the complete transcript tree.
+
+**Exit criteria:** editing an earlier turn forks cleanly without data loss; branch navigation preserves all subsequent assistant outputs; and branching state persists in SQLite.
+
+### 39. Add quick clipboard copy and multi-format conversation export
+
+**Status: planned, P1.** Make assistant answers easily portable into other applications.
+
+- Add dedicated copy actions on code blocks and assistant messages for `Clean Markdown`, `Code Only`, or `Plain Text`.
+- Support one-click conversation export to formatted Markdown, clean HTML, and standalone PDF documents.
+
+**Exit criteria:** clipboard actions copy the exact intended format; exports produce valid, clean documents with code highlighting; and exported files exclude internal system markers.
+
+### 40. Add in-chat message search and filter (Ctrl+F)
+
+**Status: planned, P1.** Make long conversational threads easily searchable within the active viewport.
+
+- Implement an inline search bar (`Ctrl+F`) within the chat view to highlight and jump between matching keywords across messages.
+- Support quick filters to cycle specifically through code blocks, terminal outputs, error messages, or user prompts.
+
+**Exit criteria:** in-chat search responds instantly; matches highlight accurately; and jumping between results scrolls smoothly to the target message.
+
+### 41. Add live streaming interruption and mid-generation steering (Live Steer & Interrupt)
+
+**Status: planned, P1.** Enable users to course-correct the assistant immediately without waiting for a flawed generation to finish.
+
+- Keep the message input composer unlocked and active while the assistant is streaming an answer.
+- Allow the user to submit an immediate correction (e.g. "Wait, use PostgreSQL instead"), automatically halting the current generation turn and feeding the correction into a seamless follow-up turn.
+
+**Exit criteria:** sending a mid-stream message halts previous generation cleanly; token stream resources are released; and the assistant immediately incorporates the correction into its response.
+
+### 42. Add automated conversational titling (Smart Renaming)
+
+**Status: planned, P1.** Replace generic default conversation labels with concise, context-specific titles automatically.
+
+- Automatically evaluate the first 2-3 message exchanges in the background to generate an accurate, localized title summarizing the core topic.
+- Update the conversation title in the SQLite database and sidebar without blocking the active chat thread.
+
+**Exit criteria:** new chats update from default labels to descriptive titles within the first few turns; background titling never delays response streaming; and manually renamed titles are never overwritten.
+
+### 43. Add image generation and visual editing studio
+
+**Status: planned, P2.** Enable users to generate, modify, and export visual assets directly within chat and side panels.
+
+- Support text-to-image prompts using multimodal cloud providers and local diffusion runtimes.
+- Provide inline preview, download, and variations (aspect ratio, style refinement, and visual editing) with images stored locally as attachments.
+
+**Exit criteria:** generated images render inline with clear download options; prompt history is preserved; and assets are saved in the local profile attachments folder.
+
+### 44. Add conversation folders and priority pinning
+
+**Status: planned, P1.** Enable custom hierarchical organization of conversation histories in the sidebar.
+
+- Allow users to create custom folders (e.g. Work, Personal, Research) and drag-and-drop or move conversations into folders.
+- Support pinning high-priority conversations to the top of the sidebar above folder hierarchies.
+
+**Exit criteria:** folders and pin states persist cleanly in SQLite; moving chats between folders is transactional; and the sidebar hierarchy scales smoothly.
+
+### 45. Add configurable composer send key bindings
+
+**Status: planned, P1.** Allow users to customize keyboard submission preferences in Settings > Chat behavior.
+
+- Provide an explicit toggle between `Enter to Send / Shift+Enter for newline` and `Ctrl/Cmd+Enter to Send / Enter for newline`.
+- Persist the preference locally across sessions and update composer tooltip hints accordingly.
+
+**Exit criteria:** the selected key combination reliably dispatches messages without accidental line breaks; the alternative shortcut inserts newlines; and the preference persists across launches.
+
+### 46. Add completion chimes and audio feedback settings
+
+**Status: planned, P2.** Provide non-intrusive sound notifications when long-running responses or tasks complete.
+
+- Offer an optional, subtle completion chime when an assistant response finishes, particularly when the application is unfocused or running in the background.
+- Include a distinct warning tone for unexpected generation errors or task blockers.
+- Provide a master mute switch and volume control under Settings > Notifications.
+
+**Exit criteria:** chimes play smoothly upon completed streaming without audio clipping; audio respect system mute and app-level preferences; and background sound plays only when enabled.
+
+### 47. Add custom agents and prompt template library
+
+**Status: planned, P1.** Enable users to build, save, and share personalized AI agents and reusable prompt templates within an integrated Library tab.
+
+- Provide a dedicated Library view where users can create custom AI agents configured with custom system instructions, default provider/model routes, temperature, and specific tool permissions.
+- Support a reusable prompt template catalog with dynamic parameter placeholders (e.g. `{{code}}`, `{{topic}}`, `{{language}}`) that expand directly into the composer.
+- Allow users to invoke custom agents directly from the sidebar or via composer shortcuts (e.g. `@AgentName`), maintaining agent configuration local in SQLite with export/import capability.
+
+**Exit criteria:** custom agents retain their tailored instructions and model bindings across sessions; prompt templates expand correctly into the composer; and the agent catalog operates entirely locally without external dependencies.
+
+### 48. Add hashline edits and drift-resilient file modification engine
+
+**Status: planned, P1.** Eliminate code patch fragility caused by conventional string-matching and whitespace drift.
+
+- Upgrade the core `edit_file` tool to support hashline targeting (compact hash tags per line or fuzzy line anchors) similar to Aider and Oh My Pi, preventing failed edits when models produce minor indentation or whitespace variations.
+- Introduce line-drift tolerance and multi-stage fallback matching: exact match first, normalized whitespace match second, and hashline anchor resolution third before returning an edit failure.
+- Provide structured conflict feedback to the agent when target lines cannot be resolved, identifying the exact mismatch and surrounding file context to allow instant retry.
+
+**Exit criteria:** file edits succeed reliably across minor model formatting drift; hashline resolution avoids corrupting surrounding lines; and failed replacements return precise line diagnostics without modifying the target file.
+
+### 49. Redesign brand identity and logo for OpenChat
+
+**Status: planned, P2.** Replace the legacy organic/botanical logo with a modern, iconic brand identity reflecting an open, autonomous AI workspace.
+
+- Redesign the application mark and typography to convey open dialogue, autonomous action, and local workstation power rather than rustic or environmental motifs.
+- Ensure the new mark scales cleanly down to taskbar and favicon sizes (16x16, 32x32, 48x48) with high contrast and instant recognition, while providing dark and light theme variants.
+- Update desktop application icons (`icon.ico`, NSIS installer banners, Tauri bundles) and document assets across `apps/desktop/assets/brand`.
+
+**Exit criteria:** the new logo clearly communicates OpenChat's open and communicative identity; renders crisply across small desktop icon scales; and integrates consistently across UI assets and installer packages.
+
+
+
 ## Explicit boundaries
 
 - No centralized account, message, or credential service; OpenChat remains local-first and self-hostable in its app model.
-- No cross-platform OS process sandbox yet. Windows terminal sessions run in a temporary AppContainer with the selected working tree granted to the sandbox; non-Windows terminal processes still run under the OpenChat process account.
+- Windows terminal execution defaults to AppContainer process sandboxing with opt-in WSL2 container (`bwrap`) isolation; non-Windows terminal execution uses process isolation.
 - No automatic use of ChatGPT reset credits.
 - No additional OpenCode wire protocols until the shared provider contract is complete.
 - GitHub Copilot is an explicit experimental exception requested by Alican: use the Copilot CLI public OAuth client ID with Device Flow, keep OAuth tokens in Windows Credential Manager, and call Copilot's private user/model/inference endpoints directly. Do not ask for a PAT or import gh credentials. The account settings show only plan, access SKU, and recognized quota fields returned by the private user endpoint; no allowance or remaining balance is inferred. GitHub does not document third-party reuse of the CLI OAuth client or a stable external contract for these endpoints, so this display remains best-effort and may change.

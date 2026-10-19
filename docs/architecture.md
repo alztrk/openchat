@@ -31,14 +31,15 @@ apps/
         localization/
     tauri/                # Tauri host, capabilities, icons, and bundle config
 services/
-  provider-secret-store/  # Shared per-user DPAPI credential store
-  openchat-service/
+  openchat-service/       # Unified core service sidecar
     src/
       bootstrap/
       transport/
       rpc/
       modules/
       adapters/
+      secrets/            # Protected credential and DPAPI secret store
+      sandbox/            # Cross-platform sandbox (Windows AppContainer, Linux/macOS roadmap)
 third_party_licenses/
 ```
 
@@ -905,3 +906,10 @@ runtime, extraction throughput, CPU use, or memory use.
   documented credential and native file-path boundary hardening.
 - The documented commands run from the stated directories, and any unavailable
   platform check is reported with the exact command and reason.
+
+## Roadmap
+
+- **Persistent Project Agent Memory & Semantic Context Engine:**
+  - Dedicated `project_memory` storage to preserve architectural decisions, user conventions, and learned operational constraints across conversation sessions.
+  - Automatic prompt context injection on new runs without leaking memory across distinct projects.
+  - Hybrid lexical (FTS5) and semantic retrieval for large-scale codebases.

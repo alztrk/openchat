@@ -4,147 +4,86 @@
   <img src="apps/desktop/assets/brand/variants/openchat-horizontal.svg" alt="OpenChat" width="560" />
 </p>
 
-OpenChat is a cross-platform AI chat app. It aims to give people one focused place to talk with hosted AI services and, over time, models running on their own devices. People will be able to choose an available model, have a conversation, and return to their chat history from the same app.
+OpenChat is a local-first, privacy-focused desktop application designed for developers and technical workflows. It brings cloud AI providers, local inference runtimes, and isolated workspace tools together into a single, high-performance interface.
 
-## Why OpenChat
+---
 
-AI models are accessed through different services, accounts, and local runtimes. OpenChat aims to bring those options into one chat experience, with a clear choice of model and support for the connection methods available for each integration.
+## Capabilities
 
-## Product goals
+### Unified Provider Support
+Connect to multiple model ecosystems through standard, secure protocols:
+- **Cloud Providers:** Direct integration with ChatGPT (OAuth), Anthropic Claude, Google Gemini, Mistral, DeepSeek, Groq, Cerebras, OpenRouter, Perplexity, xAI, Together AI, SambaNova, Fireworks AI, and Cohere, alongside custom OpenAI- and Anthropic-compatible endpoints.
+- **Local Inference:** Built-in runtime management for `llama.cpp` supporting CPU and NVIDIA CUDA GPU acceleration, enabling offline GGUF model execution without external services.
+- **Credential Storage:** Keys and tokens are kept in the operating system credential store (Windows Credential Manager / DPAPI). Credentials are never exposed to UI renderers or written to diagnostic logs.
 
-- **One place for AI conversations:** Build a clear chat experience that can grow to support multiple hosted and local models.
-- **Choice of model:** Let people select from the models available through their configured connections.
-- **Conversation history:** Make previous chats available to return to.
-- **Flexible connections:** Integrate both OAuth and API key connection methods, where supported by an integration.
-- **Responsive performance:** Keep the app responsive as conversations and supported platforms grow.
-- **Multiple platforms:** Start on Windows, with a path toward Linux, macOS, Android, and iOS.
+### Workspace Tools and Sandboxing
+Run development tasks safely through configurable permission boundaries:
+- **Filesystem Operations:** Read, search, write, and patch files with side-by-side diff review and revert capability.
+- **Process Isolation:**
+  - **Windows AppContainer (Default):** Zero-configuration token isolation enforcing strict filesystem and network boundaries.
+  - **WSL2 Container Sandbox (Opt-in):** Kernel-level isolation using `bubblewrap` (`bwrap --unshare-all`) inside WSL2.
+- **Trust Handoff Protection:** Sensitive repository paths, including `.git/hooks` and IDE configurations, require explicit confirmation (`Ask`) before modifications.
+- **Live Data Loss Prevention (DLP):** Real-time secret and token masking (`[REDACTED]`) sanitizes terminal outputs, tool calls, and file reads to prevent credentials from entering model context.
+- **Model Context Protocol (MCP):** Connect to local stdio and remote Streamable HTTP MCP servers with granular tool-level permissions.
 
-## First release
+### Context Management and Retrieval
+- **Hybrid Search Engine:** Combines full-text keyword indexing (SQLite FTS5) with local multilingual embeddings (ONNX) for semantic codebase recall.
+- **Context Compaction:** Bounded summarization and checkpointing prevent context window overflow while preserving message history.
+- **Projects and Skills:** Organize workspaces with project-specific instructions, declared tasks, and reusable skills (`SKILL.md`).
 
-The first release is planned as a Windows chat app. ChatGPT and OpenCode are the starting integrations, with additional API-key providers available as their account connections are configured. The initial scope is:
+### Execution Modes
+- **Plan Mode (`/plan`):** Instructs models to formulate detailed technical proposals before tools can be invoked.
+- **Goal Mode (`/goal`):** Autonomous multi-turn workflow execution with real-time checklists, progress tracking, and interrupt recovery.
 
-- Start and continue AI conversations.
-- Choose an available model from a configured provider.
-- Browse and reopen conversation history.
-- Connect through the available OAuth or API key method.
+---
 
-This release focuses on conversations and includes local workspace and terminal tools. Their execution and permission boundaries are described under Current status.
+## Getting Started
 
-Projects can declare named terminal tasks in `.openchat/tasks.json`. OpenChat validates the local task catalog and runs each task through the configured terminal permission mode, output limits, cancellation, and Windows process sandbox where available.
+### Requirements
+- Windows 10 or 11 (64-bit)
+- Node.js (v18+) and npm
+- Rust stable toolchain
 
-Projects can also provide reusable Skills in `.openchat/skills/<id>/SKILL.md`. Select and inspect them in project options; selected Skill content is sent with new responses and the selection is saved locally for that project.
-Projects can optionally index bounded, redacted text excerpts in a local FTS5 cache. The index follows `.gitignore`, can be enabled, synchronized, or cleared from project options, and matching excerpts are attached to new requests.
+### Building from Source
 
-## Roadmap
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-org/OpenChat.git
+   cd OpenChat
+   ```
 
-See [ROADMAP.md](ROADMAP.md) for the current implementation status, ordered next steps, and longer-term provider and platform plans. It distinguishes shipped code from work that still needs validation or implementation.
+2. Compile the backend service:
+   ```powershell
+   cargo build --manifest-path services/openchat-service/Cargo.toml --release
+   New-Item -ItemType Directory -Force apps/desktop/tauri/binaries
+   Copy-Item -LiteralPath services/openchat-service/target/release/openchat_service.exe -Destination apps/desktop/tauri/binaries/openchat_service-x86_64-pc-windows-msvc.exe -Force
+   ```
 
-See [the architecture integration plan](docs/architecture.md) for the approved source layout and migration boundaries.
+3. Install frontend dependencies and start development mode:
+   ```bash
+   cd apps/desktop/frontend
+   npm install
+   npm run tauri:dev
+   ```
 
-## Development
+### Packaging
 
-The desktop application uses React and TypeScript in `apps/desktop/frontend/`, hosted by the Tauri Rust application in `apps/desktop/tauri/`. Development uses Vite at `http://127.0.0.1:5173` inside the Tauri webview; production loads bundled `apps/desktop/frontend/dist` assets. The Vite server is bound to loopback. The local Rust service still uses loopback listeners for OAuth callbacks and the optional local-model runtime when those features are active.
-
-The Tauri sidecar executable is ignored by Git. Build it from the existing Rust source and copy it to the filename expected by Tauri before starting or packaging the Windows shell:
-
-```powershell
-cargo build --manifest-path services/openchat-service/Cargo.toml --release
-New-Item -ItemType Directory -Force apps/desktop/tauri/binaries
-Copy-Item -LiteralPath services/openchat-service/target/release/openchat_service.exe -Destination apps/desktop/tauri/binaries/openchat_service-x86_64-pc-windows-msvc.exe -Force
+To build the standalone installer:
+```bash
+cd apps/desktop/frontend
+npm run tauri:build
 ```
 
-From `apps/desktop/frontend/`, `npm run tauri:dev` starts the Vite development server and Tauri; `npm run tauri:build` builds the Windows NSIS installer from `apps/desktop/frontend/dist`.
+---
 
-## First-release boundaries
+## Architecture Principles
 
-- Chat is the product focus.
-- Local file tools use canonical path checks. Projects can override the global tool permission mode per built-in tool with `Ask`, `Allow`, or `Deny`; unset tools inherit the global mode. `Allow` still follows the selected file scope and process sandbox, while `Deny` blocks the call. On Windows, each terminal session runs in a temporary AppContainer with access to its working tree; non-Windows terminals use the OpenChat process account without an OS sandbox. `Ask for approval` requires approval before each supported file, web, and terminal call. `Approve safe operations` automatically runs read-only list, search, read, and file-information calls within the project and OpenChat data folders, and asks before file changes, web access, and terminal calls. `Full access` skips approvals and allows file tools to access any folder.
-- `/plan` activates a temporary plan-only composer mode. The active Plan or Goal mode appears as one button with a trailing `×`; activating either mode replaces the other. The service sends no tool schemas, rejects every model tool call, and skips project instructions, Skills, index excerpts, project tasks, and MCP discovery for that request. The assistant uses the conversation to propose a plan and waits for the user's approval. A legacy saved `plan` tool-access preference is treated as `Ask for approval`.
-- Composer slash commands include `/new` to start a chat (`/new <message>` sends its first message), `/search` to open history search (`/search <query>` pre-fills it), `/summarize` to request a concise visible summary, `/rename <title>` to rename the current chat, `/model <name-or-id>` to select an available model from active providers and running local engines, `/reasoning <level>` to set a level supported by the selected model, and `/compact` to locally summarize older context for future requests. Compacting preserves the complete message history and archive search; automatic provider-aware compaction remains separate.
-- Windows is the only first-release platform target.
+- **Local-First Design:** Chat transcripts and vector stores reside in local SQLite databases under `%LOCALAPPDATA%\OpenChat`. No telemetry or personal information is transmitted to third parties.
+- **Explicit Authorizations:** Three security tiers (`Ask for approval`, `Approve safe operations`, `Full access`) govern filesystem, network, and execution privileges.
+- **Technical Documentation:** Detailed architecture contracts and design notes are available in [docs/architecture.md](docs/architecture.md) and [ROADMAP.md](ROADMAP.md).
 
-## Current status
-
-Settings > Advanced > Model preferences supports a per-route context budget. The composer compares current context use, using provider-reported prompt tokens when available and an estimate otherwise, with the active budget. A custom budget affects OpenChat's compaction and request checks; it does not change a hosted model's or local engine's actual capacity. If model limit metadata is unavailable, a custom budget still gives OpenChat a local cap, but cannot confirm the provider's true maximum.
-
-Before opening the service or applying schema changes, Windows startup runs SQLite's read-only quick integrity check. A damaged database is left untouched and is not retried as a transient failure. Schema migrations require a verified SQLite online backup in `%LOCALAPPDATA%\OpenChat\db\backups\`; the backup includes committed WAL data. Conversation-memory search indexes are derived from saved messages and tool activity; startup repairs missing index tables or triggers, and migrations rebuild missing indexes without changing source conversations.
-
-The Windows chat database is shared in WAL mode by the Tauri host and local Rust service. Both binaries use bundled SQLite 3.53.2 and reject versions older than 3.51.3 before opening the database; earlier versions contain an upstream WAL-reset race that can corrupt a database when separate connections write or checkpoint concurrently. Windows CI builds both binaries from their lockfiles. See SQLite's [WAL-reset bug notes](https://sqlite.org/wal.html#the_wal_reset_bug) and [3.51.3 release notes](https://sqlite.org/releaselog/3_51_3.html).
-
-The 2026-10-03 integrity incident was consistent with the documented WAL-reset race: the damaged database failed integrity checks without its WAL and SHM sidecars, while the 2026-10-01 pre-migration backup passed. The preserved database snapshots rule out a stale-sidecar-only failure, but no event-time trace recorded the exact write/checkpoint interleaving, so the historical trigger cannot be proven conclusively. Both current Rust processes use SQLite 3.53.2 and enforce the 3.51.3 minimum.
-
-Chat schema migrations use `PRAGMA user_version`; the local service tracks its backend schema separately. Before either process changes chat storage, the service creates and verifies an online backup under `%LOCALAPPDATA%\OpenChat\db\backups`. Startup integrity failures stop initialization without overwriting the database.
-
-The Windows desktop UI is React in the Tauri webview. The Tauri host manages native window, notification, credential, and SQLite operations; the local Rust service owns provider authentication and requests, model catalogs, tool execution, and service-side storage. The two Rust processes share `%LOCALAPPDATA%\OpenChat\db\openchat.sqlite3`; attachments, model/runtime files, logs, and caches remain under `%LOCALAPPDATA%\OpenChat\`. OAuth tokens are stored in Windows Credential Manager. Provider API keys and global MCP secrets retain the existing per-user DPAPI-protected file at `%APPDATA%\OpenChat contributors\OpenChat\flutter_secure_storage.dat` (the filename is retained for existing saved secrets). Tauri saves API keys entered in provider settings to that file. The local service resolves stored keys from saved route identifiers, so provider requests, catalog loading, and title generation do not send saved keys back to the webview. Filesystem, web search, URL reading, and terminal tools are included with model requests; the model chooses whether to call them. Settings offers `Ask for approval`, `Approve safe operations`, and `Full access`; `Ask for approval` is the default and requires approval before each supported file, web, and terminal call. It confines file tools to the attached project folder or `%LOCALAPPDATA%\OpenChat`. `Approve safe operations` automatically runs list, search, read, and file-information calls within the same roots; writes, edits, web access, and terminal calls require approval. `Full access` skips approvals and allows file tools to access any folder. The execute_command and send_terminal_input tools are also model-callable. Terminal calls in both approval modes require per-call approval and run in a temporary Windows AppContainer with access to the project root, or the OpenChat data root when no project is attached. The model catalog compatibility version is `0.157.0`, tracked independently of OpenChat's product version and aligned with the Codex `client_version` query parameter. The integration follows the public Codex OAuth client configuration and private ChatGPT endpoints; provider compatibility can change and requires a real account sign-in to confirm.
-
-The interface uses a neutral palette in light and dark themes, with semantic colors for focus, status, and primary actions. Shared dropdown/select controls support enlarged text and keyboard dismissal. English, Turkish, German, Spanish, and French are supported. AI question prompts are stored as resumable run state, surfaced in the active conversation, and paired with Windows notifications. When a completed assistant response arrives while OpenChat is in the background, Windows shows a notification with the conversation title, a short response excerpt, the provider icon, and a quick reply field. Settings > Notifications can disable response or question alerts, hide response text, or remove quick reply. Sending from a notification uses that conversation's saved provider and model route. ChatGPT OAuth and ChatGPT API-key conversations can request image generation through the `generate_image` tool; image input support remains a separate model capability. Generated files are stored as local chat attachments. See [AI image generation](docs/ai-image-generation.md) for authentication boundaries and limitations, and [workspace tools](docs/tools.md) for question persistence and recovery behavior.
-
-Existing conversations and projects remain in `%LOCALAPPDATA%\OpenChat\db\openchat.sqlite3`. UI preferences are stored in the Tauri webview's local storage. MCP configuration and encrypted secret files remain in their existing locations.
-
-When running the native service directly, `--data-root <absolute-path>` selects a separate database, log, and cache root for that process. The normal desktop app does not pass this option and continues to use `%LOCALAPPDATA%\OpenChat`. Windows Credential Manager credentials are shared across data roots.
-
-Before each ChatGPT request, OpenChat checks the access token's JWT expiration and refreshes it when it is within five minutes. An unexpected `401` still triggers a refresh and one retry.
-
-OpenCode Console is available as a chat provider. OpenChat caches the model catalogs for six hours; an explicit refresh bypasses the cache, and an expired catalog remains available as stale data after a network or temporary server failure. Authentication and request errors are shown instead of being hidden by stale data. ChatGPT catalogs are scoped to an account and workspace. The OpenCode integration supports Zen's OpenAI-compatible Chat Completions endpoint and its Responses endpoint for models marked as compatible in the model catalog. Paid models require an OpenCode Console service API key, stored in the per-user Windows DPAPI-protected secret map, and are billed per request by OpenCode. Anthropic Messages, Gemini, and System One protocol families are not supported by this OpenCode integration. See [OpenCode's inference documentation](https://opencode.ai/v2/docs/console/inference/) and [model list and pricing](https://opencode.ai/v2/docs/console/models/) for current endpoint and billing details.
-
-Cloud providers and local model runtimes are available through native and OpenAI-compatible endpoints:
-- Hosted API-key providers: Gemini, Groq, Cerebras, OpenRouter, Mistral, DeepSeek, xAI, Perplexity, Together AI, SambaNova, Fireworks AI, DeepInfra, DashScope (Qwen), and Cohere. API keys are stored in the per-user Windows DPAPI-protected secret map and resolved by the local service for provider requests. Catalogs are cached for six hours per provider and key.
-- GitHub Copilot (experimental): connect through GitHub OAuth Device Flow using the public client ID embedded in Copilot CLI. OAuth access and rotated refresh tokens stay in Windows Credential Manager; OpenChat refreshes them before expiry and uses the GitHub user token with Copilot's private user, model, and inference endpoints. Model metadata selects a streaming HTTP Chat Completions, Responses, or Messages route; WebSocket-only models are unavailable. Account settings show the plan, access SKU, and recognized quota fields only when the private user response provides them; OpenChat does not infer a quota from plan allowances or usage history. GitHub does not document reuse of the Copilot CLI OAuth client by third-party apps, and the private API can change without notice.
-- Anthropic Claude: Integrated through the Messages API (`/v1/messages`) with custom header authentication, context windows up to 200K, vision, tools, and supported reasoning controls.
-- Dedicated local-server connections for Ollama and LM Studio are planned.
-- Custom providers: Users can configure custom OpenAI- or Anthropic-compatible endpoints with custom base URLs.
-Gemini, Groq, Cerebras, Mistral, and other cloud providers show models returned by their authenticated catalogs; OpenRouter shows text-chat models reporting zero input and output prices and tool support. Gemini's unpaid API tier connection card warns of content use policies before key configuration. Real account and local instance checks remain open for live verification.
-
-OpenChat currently supports the managed llama.cpp runtime. Engine binaries are stored under `%LOCALAPPDATA%\OpenChat\runtimes`; GGUF models are stored under `%LOCALAPPDATA%\OpenChat\models\llama`. Users can select a model folder, scan for unregistered GGUF files, and confirm registration. The runtime starts the selected model on demand, streams chat through the shared conversation route, and stops individual processes on cancellation or service shutdown. CPU and NVIDIA CUDA packages are offered according to the detected driver. The runtime binds only to `127.0.0.1`, reads active context and capabilities from llama-server, and pairs vision models with an unambiguous adjacent `mmproj` file. Manual CPU and CUDA checks used real GGUF files; these were not automated release tests. See [llama.cpp releases](https://github.com/ggml-org/llama.cpp/releases).
-
-OpenCode's model endpoint supplies the available model IDs. Exact-ID matches in [Models.dev's OpenCode catalog](https://models.dev/) supply display names, descriptions, and context-window values. This metadata shares the six-hour catalog cache; if its source is unavailable, cached values are marked stale when available, while models remain selectable without metadata when no cached details exist.
-
-OpenCode reasoning controls follow the model catalog's supported effort values. OpenAI-compatible reasoning selections are sent as `reasoning_effort`; models without request-time controls use their provider default.
-
-Project options can save the current provider/model route and reasoning effort as that project's default for new conversations. The model picker labels an active project default, existing conversations keep their saved route, and the local preference stores connection identifiers rather than credentials.
-
-On Windows, Settings > Local engines offers two independent llama.cpp paths. A user can select an existing `llama-server.exe`, which OpenChat uses to launch registered GGUF models without downloading a managed runtime. Separately, OpenChat can detect a running `llama-server.exe` with a loopback listener and asks before connecting. Setup checks `/health`, reads `/v1/models`, and uses `/props` when available; chat requests go to `/v1/chat/completions`. Multiple detected user-started llama-server processes can be connected at once. Each server and its models appear in a separate chat model-picker section, and chat requests are routed to the server that supplied the selected model. Connected external models are not registered as downloaded models. Disconnecting clears only that server connection; OpenChat never stops a user-started server. Connections are held by the running service and must be accepted again after it restarts. Servers that require authentication are not connected because OpenChat does not read credentials from other processes.
-
-New conversations use one provider and model picker. ChatGPT, OpenCode, Anthropic, Gemini, Groq, Cerebras, OpenRouter, Mistral, DeepSeek, xAI, Perplexity, Together AI, SambaNova, Fireworks AI, DeepInfra, DashScope, Cohere, custom endpoints, and saved favorites appear in its provider panel. API-key providers stay disabled until a key is connected. A favorite can be selected from another provider to switch the new conversation to that provider.
-
-Shared instructions are saved locally in Settings and sent with each chat request. The Rust service converts requests and events to OpenChat's shared chat, tool, and stream-event types, then each adapter maps those types to the provider's native request and response format. ChatGPT receives instructions through the Responses `instructions` field; Anthropic receives them through the Messages `system` parameter; OpenCode and OpenAI-compatible APIs receive them as a Chat Completions `system` message. Provider-native payloads stay inside the service and do not cross the React/Tauri RPC boundary. Local file, web search, URL reading, and terminal tool definitions are sent with chat requests and run in the local Rust service. `Ask for approval` pauses each supported file, web, and terminal call until the user allows or denies it; file tools stay restricted to the project folder or `%LOCALAPPDATA%\OpenChat`. `Approve safe operations` runs list, search, read, and file-information calls without approval inside those same roots and pauses writes, edits, web access, and terminal calls. `Full access` skips approvals and lets file tools use any folder. The execute_command and send_terminal_input tools are also model-callable. On Windows, terminal sessions run in a temporary AppContainer with access to the selected working tree and a dedicated temporary directory; other platforms currently run terminal processes with the OpenChat process account. Full access changes approval behavior and does not widen the Windows sandbox. Tool activity, approval state, arguments, and results are saved with local conversation history. File changes are summarized after completed assistant responses and can be reviewed and conditionally reverted from the conversation panel. Their metadata is stored in SQLite, while deduplicated original bytes live outside the database under `%LOCALAPPDATA%\OpenChat\attachments\snapshots`; existing legacy manifests are imported on first access. Tool calls are limited to six rounds, sixteen calls, and 16 KiB of arguments per call. Provider tool support still needs live verification for each selected model.
-
-Conversation history remains intact in the local database, including completed tool calls and their results. New tool activities record their round and assistant-text position so ChatGPT and OpenAI-compatible providers receive the historical exchange in order; older activity records remain readable but lack that ordering metadata. Tool arguments and results are also included in compaction summaries and a separate per-conversation SQLite FTS5 index. The dedicated `targetPath` display field is omitted from provider history and the archive index; paths included in tool arguments or results remain part of the stored activity. Provider metadata keeps the model's context window visible in the selector. When metadata also reports a distinct input-token limit, OpenChat uses that limit for compaction and final request checks; otherwise it uses the context window. Compaction begins as usage approaches 80% of the active request limit. ChatGPT OAuth requests a Codex Responses compaction checkpoint. Before sending that checkpoint request, OpenChat caps its estimated token use at 75% of the known context window and shortens older tool-output strings in the request copy as needed. The complete tool results remain in the local archive and stay available to keyword retrieval. If instructions, messages, checkpoint data, and tool definitions still exceed that conservative limit after tool-output shortening, or if ChatGPT completes a compaction request without a reusable checkpoint, OpenChat falls back to a bounded local extractive summary. All original messages and tool results remain searchable in the local archive. Cancellation, authentication, rate-limit, and network errors do not use this fallback. OpenCode paid/API-key routes, Anthropic, Gemini, Groq, Cerebras, OpenRouter, and other API-key provider routes summarize older messages using the selected model and provider route; long histories are sent to the summarizer in bounded UTF-8 batches. These extra summary requests use the provider's normal quota and billing. OpenCode free routes use the same bounded local extractive summary because the live free-tier endpoint rejected standalone compaction requests outside OpenCode; this local step makes no extra provider request, while ordinary free-tier requests that the provider rejects are reported as a provider restriction. Recent messages stay verbatim. Before each request with known context metadata, OpenChat estimates text and tool-schema size, attached images at 2,048 tokens each, and 1,024 tokens of fixed overhead and requires it to fit within 80% of the active request limit. If it does not fit after compaction, the provider request is rejected and the full local chat remains available. Because ChatGPT's Responses checkpoint is opaque, its size is estimated as 4,096 tokens; provider-side tokenization and the checkpoint's true size can differ from these local estimates. The next request combines compacted context with newer messages and, when useful, keyword-matched excerpts from older messages in the same conversation. FTS5 retrieves exact terms from archived messages and completed tool activities. Optional local semantic search adds meaning-based matches for archived messages and completed tool activities using a pinned multilingual E5 ONNX model that the user explicitly prepares in Settings > Conversation memory; its downloaded model files are SHA-256 verified, and embeddings stay on the device in a conversation-namespaced HNSW cache. Hybrid excerpts scale with the active request limit up to 4,096 words and are marked as untrusted historical data. Once compaction is active, the service reads only the boundary's immediate neighbors and newer message tail instead of loading the whole transcript on each request. This hybrid archive improves access to specific older details, but does not guarantee that every archived detail will be retrieved. OpenAI-compatible Chat Completions calls request usage where needed. Responses streams read it from completed events, while Cerebras and OpenRouter provide it in the final streamed message. The compaction trigger uses provider-reported input-token usage when available; otherwise, it estimates from UTF-8 byte length. The final request-budget check uses a separate conservative text estimate, counting ordinary ASCII prose at roughly one token per three characters and dense, whitespace-free, or punctuation-heavy strings by UTF-8 byte length. Both estimates can differ from a provider tokenizer. The ChatGPT API-key route reads model IDs from OpenAI's `/v1/models` endpoint, which does not provide per-model context limits, so that route skips automatic compaction and final request-budget checks unless the user sets a per-model context budget. Models with no known context window or a window below 2,048 tokens do not receive automatic compaction or final request-budget checks unless a valid custom budget is set. If compaction or archive lookup fails, OpenChat keeps the saved conversation and reports the failure instead of sending a shortened or incomplete history.
-
-Settings > Statistics keeps provider-reported costs separate from equivalents calculated with exact provider/model prices in [Models.dev's catalog](https://models.dev/api.json). Catalog prices are USD per million tokens and refresh on a six-hour cache; when the network is unavailable, cached prices are marked stale. Unmatched models, missing usage, Fast requests, unsupported service tiers, and ChatGPT OAuth subscription requests have no catalog cost. These amounts apply current list prices to historical token usage and are not provider invoices.
-
-Settings > Local data can export selected conversations to an encrypted .openchatbackup file, or create an encrypted database-and-attachment profile backup as .openchatprofilebackup. Profile restore is validated before confirmation, applied on the next launch, and retains the replaced profile for recovery. Archives can contain sensitive text and local paths; API keys, OAuth tokens, global preferences outside SQLite, and model/runtime files are excluded. See [conversation archives](docs/conversation-archives.md) and [profile archives](docs/profile-archives.md) for scope, limits, and recovery behavior.
-
-Appearance settings let people choose the conversation column width and app-wide text size, and set the typeface used throughout OpenChat. Code blocks keep a monospace typeface. These choices are saved locally.
-
-In a conversation's Settings > Conversation memory panel, Archive indexing can be disabled for that conversation or for individual tools. Excluding a conversation removes its derived keyword and semantic indexes while keeping the original messages and tool activity in local history. Excluding one tool rebuilds that conversation's tool index without that tool's arguments or results. Re-enabling either setting queues eligible history for indexing again. These controls affect retrieval for future requests; they do not redact the conversation history sent as recent context.
-
-The tool-memory index applies best-effort redaction to common credential field names and visible token formats before building keyword and semantic indexes. It also rebuilds existing derived indexes when that rule is introduced. Redaction does not change saved messages, tool activity, recent context sent to a provider, or archive exports, and it cannot detect every custom, encoded, or transformed secret. Treat local conversation history and exported archives as sensitive data.
-
-Sidebar history search covers indexed messages and completed tool activity across opted-in conversations. It can narrow results by an inclusive local-date range, assistant-message provider/model, project, archive status, or conversation tag; provider and model values come from the route stored with each assistant answer. Search results remain bounded and open the matching message directly.
-
-Conversations can be labeled with up to 12 local tags of 32 characters each. Tags appear in the sidebar and are removed with their conversation.
-
-Users can save up to 20 named history searches, including their query, route/project/archive filters, and date range. Saved searches stay in local application preferences and can be reapplied or removed from the sidebar search view.
-
-Conversations can be bookmarked from the sidebar menu. Bookmarks persist with the local conversation database and appear in the sidebar with an accessible status label. Selection mode can move multiple active conversations into a project or back to the general chat list, or archive them in one transaction. The encrypted conversation archive can export multiple selected conversations and their attachments.
-
-Provider citations are saved as source records for ChatGPT Responses, Mistral reference chunks when one prior tool result gives an unambiguous index map, and OpenRouter/Groq citation annotations. When a provider supplies citation text offsets, inline source links are placed after the cited text; missing or out-of-range offsets place the link at the end of the response. Provider sources do not have a local retrieval timestamp unless the provider supplies one.
-
-Assistant citations link to source cards when the message has a valid stored source. Mistral reference chunks can point to local sources from one unambiguous prior tool result; Mistral's hosted Web Search tool uses its Agents API and does not return search references through Chat Completions.
-
-People can delete individual conversations after confirmation, export a conversation with its exposed reasoning summaries and tool activity as Markdown, and retry the latest assistant response. A retry keeps the previous response until the replacement completes successfully and uses the conversation's saved provider and model route.
-
-The Settings > Conversation memory page inspects the selected conversation's readable compacted summary, last request input-token count when available, and a bounded search over completed messages and tool results. Resetting compacted context removes only its saved summary and usage snapshot; the full message history and searchable archive remain intact. Keyword search is always available. When the user prepares the local semantic model, search also finds paraphrased details. Current builds fetch only the pinned public model files from Hugging Face; conversation data stays local. Model downloads show byte progress, can be cancelled, and resume from valid partial files when the host supports HTTP range requests; otherwise, the download restarts safely.
-
-The Windows portable release is distributed as one `OpenChat.exe`. On first launch it unpacks the bundled release payload to a content-addressed directory under `%LOCALAPPDATA%\OpenChat\cache` and starts the app from there. The database and logs remain in their separate persistent directories. Build this release with `tools/build_windows_portable.ps1`.
-
-On Windows, OpenChat maintains a per-user `OpenChat` Start menu shortcut with the app's notification identity. It updates the shortcut target when the portable release moves to a new content-addressed directory. Windows desktop notifications use this shortcut identity; notification settings report the operating system's status and can open Windows notification settings.
-
-## Goal mode
-
-Choose `/goal` from the composer suggestions to activate Goal mode, then send an objective, or type `/goal <objective>` to start a persistent goal in the current chat. Sending a message in Goal mode starts a goal; selecting Plan mode replaces Goal mode. For substantial multi-turn work, a tool-capable model can also start one with `start_goal` and stop it with `stop_goal`; `goal_update` records progress, a checklist of up to 20 tasks, completion, or a blocker. `/goal` saves its objective as a user message and in the run checkpoint; `start_goal` saves its objective in the run checkpoint. A status bar above the composer shows progress and elapsed time, with controls to pause, resume, or stop the goal. Expand the task count to view the checklist. Only one active goal can run in a chat; resume or stop it before starting another. The service continues across model turns until the provider reports completion, a blocker, or a need for user input. Quota and retryable provider errors pause the goal so it can be resumed. Goals are saved with the existing agent-run checkpoint and appear as interrupted after an application restart. `/goal` requires a model route that supports tool calls.
+---
 
 ## License
 
-OpenChat is distributed under the MIT License. See [LICENSE](LICENSE) for details.
+OpenChat is open-source software licensed under the [MIT License](LICENSE).
