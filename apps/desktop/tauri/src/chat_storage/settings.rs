@@ -2,12 +2,12 @@
 
 use rusqlite::{params, OptionalExtension};
 
-use crate::request_bounds::BoundedText;
 use super::{
     open_database, unix_time_milliseconds, ChatStorageError, LocalStorageMigrationPayload,
     PersonalMemoryFact, MAXIMUM_FACT_CATEGORY_BYTES, MAXIMUM_FACT_ID_BYTES,
     MAXIMUM_FACT_TEXT_BYTES, MAXIMUM_SETTING_KEY_BYTES, MAXIMUM_SETTING_VALUE_BYTES,
 };
+use crate::request_bounds::BoundedText;
 
 #[tauri::command]
 /// Retrieves an application setting value from the unified database.
@@ -34,7 +34,8 @@ pub fn get_app_setting(
 ///
 /// # Errors
 /// Returns a storage error if settings cannot be read.
-pub fn get_all_app_settings() -> Result<std::collections::HashMap<String, String>, ChatStorageError> {
+pub fn get_all_app_settings() -> Result<std::collections::HashMap<String, String>, ChatStorageError>
+{
     let connection = open_database()?;
     let mut statement = connection
         .prepare("SELECT key, value_json FROM app_settings")
@@ -206,13 +207,14 @@ pub fn list_personal_memory_facts() -> Result<Vec<PersonalMemoryFact>, ChatStora
 ///
 /// # Errors
 /// Returns a storage error if the fact cannot be saved.
-pub fn save_personal_memory_fact(
-    fact: PersonalMemoryFact,
-) -> Result<(), ChatStorageError> {
+pub fn save_personal_memory_fact(fact: PersonalMemoryFact) -> Result<(), ChatStorageError> {
     if fact.id.trim().is_empty()
         || fact.id.len() > MAXIMUM_FACT_ID_BYTES
         || fact.fact_text.len() > MAXIMUM_FACT_TEXT_BYTES
-        || fact.category.as_ref().is_some_and(|c| c.len() > MAXIMUM_FACT_CATEGORY_BYTES)
+        || fact
+            .category
+            .as_ref()
+            .is_some_and(|c| c.len() > MAXIMUM_FACT_CATEGORY_BYTES)
     {
         return Err(ChatStorageError::invalid_input());
     }
@@ -233,7 +235,11 @@ pub fn save_personal_memory_fact(
                 fact.fact_text,
                 fact.category,
                 fact.source_conversation_id,
-                if fact.created_at > 0 { fact.created_at } else { now },
+                if fact.created_at > 0 {
+                    fact.created_at
+                } else {
+                    now
+                },
                 now
             ],
         )
@@ -359,7 +365,11 @@ pub fn migrate_localstorage_to_db(
                     fact.fact_text,
                     fact.category,
                     fact.source_conversation_id,
-                    if fact.created_at > 0 { fact.created_at } else { now },
+                    if fact.created_at > 0 {
+                        fact.created_at
+                    } else {
+                        now
+                    },
                     now
                 ],
             )

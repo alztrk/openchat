@@ -9,7 +9,11 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use super::dialogs::permission_dialog_copy;
 use super::types::*;
 
-pub(crate) fn observe_service_output(state: &Arc<Mutex<PendingPermissionState>>, generation: u64, line: &str) {
+pub(crate) fn observe_service_output(
+    state: &Arc<Mutex<PendingPermissionState>>,
+    generation: u64,
+    line: &str,
+) {
     if line.contains("\"event\":\"chat.tool.permission.requested\"") {
         let Ok(response) = serde_json::from_str::<Value>(line) else {
             return;
@@ -289,9 +293,11 @@ pub(crate) async fn confirm_permission_with_os(
     Ok(allowed_if_confirmed && confirmed)
 }
 
-/// Returns fixed operating-system dialog wording for a supported application locale.
-
-pub(crate) fn clear_generation_permissions(state: &Arc<Mutex<PendingPermissionState>>, generation: u64) {
+/// Clears any pending permissions associated with the ended service generation.
+pub(crate) fn clear_generation_permissions(
+    state: &Arc<Mutex<PendingPermissionState>>,
+    generation: u64,
+) {
     if let Ok(mut state) = state.lock() {
         state
             .requests

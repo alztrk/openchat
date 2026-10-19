@@ -11,7 +11,10 @@ pub(crate) fn is_valid_rpc_frame(frame: &str, maximum_bytes: usize) -> bool {
 }
 
 /// Blocks renderer-forged decisions and marks full-access mode changes for OS confirmation.
-pub(crate) fn renderer_rpc_disposition(frame: &str, maximum_bytes: usize) -> Option<RendererRpcDisposition> {
+pub(crate) fn renderer_rpc_disposition(
+    frame: &str,
+    maximum_bytes: usize,
+) -> Option<RendererRpcDisposition> {
     if !is_valid_rpc_frame(frame, maximum_bytes) {
         return None;
     }

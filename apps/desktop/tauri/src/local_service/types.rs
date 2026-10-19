@@ -158,8 +158,7 @@ pub(crate) enum LocalServiceEvent {
     Stopped { generation: u64 },
 }
 
-/// Starts the packaged service once and returns its generation identifier.
-
+/// Manages the runtime process and generation state of the local service.
 impl LocalServiceState {
     /// Stops the owned process during application shutdown.
     pub(crate) fn stop(&self) -> Result<(), String> {

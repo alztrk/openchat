@@ -5,8 +5,7 @@
 //! minimum SQLite version required by the current schema.
 
 use std::{
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -34,7 +33,6 @@ pub use migrations::*;
 pub use saved_outputs::*;
 pub use settings::*;
 pub use types::*;
-
 
 #[tauri::command]
 /// Checks the local database, applies supported schema migrations, and returns its location.
@@ -321,7 +319,9 @@ pub fn get_conversation(
         .map_err(|_| ChatStorageError::unavailable())
 }
 
-pub(crate) fn stored_conversation_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredConversation> {
+pub(crate) fn stored_conversation_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<StoredConversation> {
     let tags_json = row.get::<_, String>(9)?;
     let tags = serde_json::from_str::<Vec<String>>(&tags_json).map_err(|error| {
         rusqlite::Error::FromSqlConversionFailure(9, rusqlite::types::Type::Text, Box::new(error))
@@ -444,8 +444,6 @@ pub fn set_conversation_bookmarked(
         is_bookmarked,
     )
 }
-
-
 
 fn set_conversation_flag(
     conversation_id: &str,
@@ -671,7 +669,6 @@ pub fn delete_conversation(
     delete_conversation_attachments(&conversation_id)
 }
 
-
 #[tauri::command]
 /// Loads messages for one conversation in transcript order.
 ///
@@ -720,8 +717,6 @@ pub fn get_messages(
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(|_| ChatStorageError::unavailable())
 }
-
-
 
 #[tauri::command]
 /// Creates a new conversation after validating its ID, route, and optional project.
@@ -1033,8 +1028,6 @@ fn validate_message_input(
     Ok(())
 }
 
-
-
 pub(crate) fn is_safe_identifier(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= MAXIMUM_SAFE_IDENTIFIER_BYTES
@@ -1160,8 +1153,6 @@ pub(crate) fn unix_time_milliseconds() -> Result<i64, ChatStorageError> {
         .map_err(|_| ChatStorageError::unavailable())?;
     i64::try_from(elapsed.as_millis()).map_err(|_| ChatStorageError::unavailable())
 }
-
-
 
 #[tauri::command]
 /// Runs SQLite's optimizer pragma to update query planner statistics before idle or shutdown.
@@ -1328,7 +1319,6 @@ mod request_bound_tests {
     }
 }
 
-
 #[cfg(test)]
 mod settings_and_unified_storage_tests {
     use super::*;
@@ -1375,13 +1365,16 @@ mod settings_and_unified_storage_tests {
         conn.execute(
             "INSERT INTO app_settings (key, value_json, updated_at) VALUES (?1, ?2, ?3)",
             params!["openchat.theme", "\"dark\"", 1000],
-        ).unwrap();
+        )
+        .unwrap();
 
-        let val: String = conn.query_row(
-            "SELECT value_json FROM app_settings WHERE key = ?1",
-            ["openchat.theme"],
-            |row| row.get(0),
-        ).unwrap();
+        let val: String = conn
+            .query_row(
+                "SELECT value_json FROM app_settings WHERE key = ?1",
+                ["openchat.theme"],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(val, "\"dark\"");
 
         // Update
@@ -1390,11 +1383,13 @@ mod settings_and_unified_storage_tests {
              ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at",
             params!["openchat.theme", "\"light\"", 2000],
         ).unwrap();
-        let val2: String = conn.query_row(
-            "SELECT value_json FROM app_settings WHERE key = ?1",
-            ["openchat.theme"],
-            |row| row.get(0),
-        ).unwrap();
+        let val2: String = conn
+            .query_row(
+                "SELECT value_json FROM app_settings WHERE key = ?1",
+                ["openchat.theme"],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(val2, "\"light\"");
     }
 
@@ -1407,11 +1402,13 @@ mod settings_and_unified_storage_tests {
             params!["fact-1", "User prefers concise answers", "preferences", "conv-1", 1000, 1000],
         ).unwrap();
 
-        let fact: String = conn.query_row(
-            "SELECT fact_text FROM personal_memory_facts WHERE id = ?1",
-            ["fact-1"],
-            |row| row.get(0),
-        ).unwrap();
+        let fact: String = conn
+            .query_row(
+                "SELECT fact_text FROM personal_memory_facts WHERE id = ?1",
+                ["fact-1"],
+                |row| row.get(0),
+            )
+            .unwrap();
         assert_eq!(fact, "User prefers concise answers");
     }
 
@@ -1421,22 +1418,29 @@ mod settings_and_unified_storage_tests {
         conn.execute(
             "INSERT INTO ephemeral_cache (key, value_json, expires_at) VALUES (?1, ?2, ?3)",
             params!["cache-key", "{\"pricing\":1}", 5000],
-        ).unwrap();
+        )
+        .unwrap();
 
         // Valid when query time < expires_at
-        let active: Option<String> = conn.query_row(
-            "SELECT value_json FROM ephemeral_cache WHERE key = ?1 AND expires_at > ?2",
-            params!["cache-key", 4000],
-            |row| row.get(0),
-        ).optional().unwrap();
+        let active: Option<String> = conn
+            .query_row(
+                "SELECT value_json FROM ephemeral_cache WHERE key = ?1 AND expires_at > ?2",
+                params!["cache-key", 4000],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
         assert_eq!(active, Some("{\"pricing\":1}".to_string()));
 
         // Expired when query time >= expires_at
-        let expired: Option<String> = conn.query_row(
-            "SELECT value_json FROM ephemeral_cache WHERE key = ?1 AND expires_at > ?2",
-            params!["cache-key", 6000],
-            |row| row.get(0),
-        ).optional().unwrap();
+        let expired: Option<String> = conn
+            .query_row(
+                "SELECT value_json FROM ephemeral_cache WHERE key = ?1 AND expires_at > ?2",
+                params!["cache-key", 6000],
+                |row| row.get(0),
+            )
+            .optional()
+            .unwrap();
         assert_eq!(expired, None);
     }
 }

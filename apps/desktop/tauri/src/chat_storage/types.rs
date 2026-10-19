@@ -391,7 +391,9 @@ where
 }
 
 /// Deserializes an optional conversation or project identifier within its 128-byte limit.
-pub(crate) fn deserialize_optional_safe_identifier<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+pub(crate) fn deserialize_optional_safe_identifier<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -407,7 +409,9 @@ where
 }
 
 /// Deserializes an optional route model ID within its existing 256-byte validation limit.
-pub(crate) fn deserialize_optional_model_id<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+pub(crate) fn deserialize_optional_model_id<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -415,7 +419,9 @@ where
 }
 
 /// Deserializes saved-output search text within its existing 512-character limit.
-pub(crate) fn deserialize_saved_output_search_query<'de, D>(deserializer: D) -> Result<String, D::Error>
+pub(crate) fn deserialize_saved_output_search_query<'de, D>(
+    deserializer: D,
+) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
 {
@@ -433,7 +439,9 @@ where
 }
 
 /// Deserializes a new conversation title within the existing 500-character limit.
-pub(crate) fn deserialize_new_conversation_title<'de, D>(deserializer: D) -> Result<String, D::Error>
+pub(crate) fn deserialize_new_conversation_title<'de, D>(
+    deserializer: D,
+) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
 {

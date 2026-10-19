@@ -40,8 +40,8 @@ use windows::Win32::UI::Notifications::{
 };
 use windows::Win32::UI::Shell::PropertiesSystem::IPropertyStore;
 use windows::Win32::UI::Shell::{
-    FOLDERID_Programs, IShellLinkW, SHGetKnownFolderPath,
-    SetCurrentProcessExplicitAppUserModelID, KF_FLAG_CREATE,
+    FOLDERID_Programs, IShellLinkW, SHGetKnownFolderPath, SetCurrentProcessExplicitAppUserModelID,
+    KF_FLAG_CREATE,
 };
 use windows::UI::Notifications::NotificationSetting;
 
@@ -184,12 +184,8 @@ pub(crate) fn send_assistant_response(
                         .and_then(|args| args.user_input.get(REPLY_INPUT_ID))
                         .map(String::as_str),
                 );
-                parse_activation_arguments(
-                    arguments,
-                    reply_text.as_deref(),
-                    reply_input_too_long,
-                )
-                .map_err(|error| WindowsError::new(HRESULT(0x8007_0057u32 as i32), error))?
+                parse_activation_arguments(arguments, reply_text.as_deref(), reply_input_too_long)
+                    .map_err(|error| WindowsError::new(HRESULT(0x8007_0057u32 as i32), error))?
             }
             None => NotificationActivation::OpenConversation {
                 conversation_id: conversation_id.clone(),
@@ -263,9 +259,7 @@ pub(crate) fn send_user_question(
             conversation_id: conversation_id.clone(),
             group_id: group_id.clone(),
         })
-        .map_err(|error| {
-            WindowsError::new(windows::core::HRESULT(0x8000_4005u32 as i32), error)
-        })
+        .map_err(|error| WindowsError::new(windows::core::HRESULT(0x8000_4005u32 as i32), error))
     });
 
     let notifier = notifier()?;
@@ -312,9 +306,8 @@ fn notifier() -> Result<&'static ToastsNotifier, String> {
 
 fn register_app_identity() -> Result<(), String> {
     // SAFETY: The macro supplies a static NUL-terminated application identifier.
-    unsafe { SetCurrentProcessExplicitAppUserModelID(w!("OpenChat.Desktop")) }.map_err(
-        |_| "Windows could not register the OpenChat notification identity.".to_owned(),
-    )?;
+    unsafe { SetCurrentProcessExplicitAppUserModelID(w!("OpenChat.Desktop")) }
+        .map_err(|_| "Windows could not register the OpenChat notification identity.".to_owned())?;
     ensure_toast_shortcut()?;
     register_custom_activator()?;
     start_activation_class_server()
@@ -333,8 +326,7 @@ fn register_custom_activator() -> Result<(), String> {
     let mut local_server = OsString::from("\"");
     local_server.push(executable.as_os_str());
     local_server.push("\" -Embedding");
-    let subkey =
-        format!("Software\\Classes\\CLSID\\{{{ACTIVATOR_CLASS_ID_TEXT}}}\\LocalServer32");
+    let subkey = format!("Software\\Classes\\CLSID\\{{{ACTIVATOR_CLASS_ID_TEXT}}}\\LocalServer32");
     set_registry_string(&subkey, "", &local_server)?;
     Ok(())
 }
@@ -372,9 +364,7 @@ fn set_registry_string(
         )
     };
     if create_result != ERROR_SUCCESS {
-        return Err(
-            "Windows could not register the OpenChat notification activator.".to_owned(),
-        );
+        return Err("Windows could not register the OpenChat notification activator.".to_owned());
     }
     // SAFETY: `value` is a live u16 vector; its byte length is the initialized element count times two.
     let bytes = unsafe {
@@ -401,9 +391,7 @@ fn set_registry_string(
     // SAFETY: `key` is the valid handle returned by the successful create call above.
     let close_result = unsafe { RegCloseKey(key) };
     if write_result != ERROR_SUCCESS || close_result != ERROR_SUCCESS {
-        return Err(
-            "Windows could not register the OpenChat notification activator.".to_owned(),
-        );
+        return Err("Windows could not register the OpenChat notification activator.".to_owned());
     }
     Ok(())
 }
@@ -556,10 +544,9 @@ fn start_activation_class_server() -> Result<(), String> {
             let apartment = match unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.ok() {
                 Ok(()) => ComApartmentGuard,
                 Err(_) => {
-                    let _ =
-                        started
-                            .send(Err("Windows could not initialize notification activation."
-                                .to_owned()));
+                    let _ = started.send(Err(
+                        "Windows could not initialize notification activation.".to_owned(),
+                    ));
                     return;
                 }
             };
@@ -646,9 +633,7 @@ fn create_toast_shortcut() -> Result<(), String> {
             .and_then(|()| shell_link.SetDescription(w!("OpenChat")))
             .and_then(|()| shell_link.SetIconLocation(executable_path, 0))
     }
-    .map_err(|_| {
-        "Windows could not configure the OpenChat notification shortcut.".to_owned()
-    })?;
+    .map_err(|_| "Windows could not configure the OpenChat notification shortcut.".to_owned())?;
 
     let property_store: IPropertyStore = shell_link.cast().map_err(|_| {
         "Windows could not configure the OpenChat notification identity.".to_owned()
@@ -695,9 +680,8 @@ fn create_toast_shortcut() -> Result<(), String> {
         .map_err(|_| "Windows could not save the OpenChat notification shortcut.".to_owned())?;
     // SAFETY: COM is initialized on this thread; the API returns an owned CoTaskMem path on success.
     let programs_path =
-        unsafe { SHGetKnownFolderPath(&FOLDERID_Programs, KF_FLAG_CREATE, None) }.map_err(
-            |_| "Windows could not locate the Start Menu programs folder.".to_owned(),
-        )?;
+        unsafe { SHGetKnownFolderPath(&FOLDERID_Programs, KF_FLAG_CREATE, None) }
+            .map_err(|_| "Windows could not locate the Start Menu programs folder.".to_owned())?;
     // SAFETY: The API returned a readable NUL-terminated UTF-16 path owned by `programs_path`.
     let path = unsafe {
         let mut length = 0;

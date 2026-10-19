@@ -15,7 +15,9 @@ pub(crate) const MAXIMUM_NOTIFICATION_CONTENT_CHARS: usize = 200_000;
 pub(crate) const MAXIMUM_NOTIFICATION_CONTENT_BYTES: usize = MAXIMUM_NOTIFICATION_CONTENT_CHARS * 4;
 
 /// Deserializes notification identifiers within their existing 128-byte validation limit.
-pub(crate) fn deserialize_notification_identifier<'de, D>(deserializer: D) -> Result<String, D::Error>
+pub(crate) fn deserialize_notification_identifier<'de, D>(
+    deserializer: D,
+) -> Result<String, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -39,7 +41,9 @@ where
 }
 
 /// Deserializes notification action labels within the UTF-8 maximum of their 80-character limit.
-pub(crate) fn deserialize_notification_action_label<'de, D>(deserializer: D) -> Result<String, D::Error>
+pub(crate) fn deserialize_notification_action_label<'de, D>(
+    deserializer: D,
+) -> Result<String, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -47,7 +51,9 @@ where
 }
 
 /// Deserializes notification reply labels within the UTF-8 maximum of their 120-character limit.
-pub(crate) fn deserialize_notification_reply_label<'de, D>(deserializer: D) -> Result<String, D::Error>
+pub(crate) fn deserialize_notification_reply_label<'de, D>(
+    deserializer: D,
+) -> Result<String, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -218,7 +224,11 @@ pub fn send_user_question_notification(
     }
 }
 
-pub(crate) fn validate_text(value: &str, maximum_characters: usize, message: &str) -> Result<(), String> {
+pub(crate) fn validate_text(
+    value: &str,
+    maximum_characters: usize,
+    message: &str,
+) -> Result<(), String> {
     if value.trim().is_empty()
         || value.chars().count() > maximum_characters
         || value.chars().any(char::is_control)

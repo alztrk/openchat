@@ -12,6 +12,7 @@ use crate::request_bounds::BoundedText;
 pub const APP_SETTING_CHANGED_EVENT: &str = "openchat://app-setting-changed";
 
 /// Event channel name used for broadcasting conversation collection updates.
+#[allow(dead_code)]
 pub const CONVERSATION_CHANGED_EVENT: &str = "openchat://conversation-changed";
 
 /// Payload broadcast when an application setting is modified.
@@ -24,6 +25,7 @@ pub struct AppSettingChangedPayload {
 }
 
 /// Payload broadcast when a conversation record is modified or deleted.
+#[allow(dead_code)]
 #[derive(Clone, Debug, Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct ConversationChangedPayload {
     /// The ID of the affected conversation.
@@ -65,6 +67,7 @@ pub fn broadcast_app_setting_change<R: Runtime>(
 ///
 /// # Errors
 /// Returns an error string if event propagation fails.
+#[allow(dead_code)]
 pub fn broadcast_conversation_change<R: Runtime>(
     app: &AppHandle<R>,
     conversation_id: &str,

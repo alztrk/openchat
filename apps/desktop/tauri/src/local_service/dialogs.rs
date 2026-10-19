@@ -1,6 +1,5 @@
 //! Localized confirmation copy and dialog helpers for permission changes.
 
-
 pub(crate) fn permission_dialog_copy(locale: &str) -> PermissionDialogCopy {
     match locale.split(['-', '_']).next() {
         Some("tr") => PermissionDialogCopy {

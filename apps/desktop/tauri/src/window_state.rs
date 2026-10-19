@@ -100,8 +100,12 @@ fn migrate_legacy_window_state_file() {
     let app_data = std::env::var_os("APPDATA");
     let Some(app_data) = app_data else { return };
     let legacy_paths = [
-        PathBuf::from(&app_data).join("com.openchat.desktop").join(".window-state.json"),
-        PathBuf::from(&app_data).join("OpenChat").join(".window-state.json"),
+        PathBuf::from(&app_data)
+            .join("com.openchat.desktop")
+            .join(".window-state.json"),
+        PathBuf::from(&app_data)
+            .join("OpenChat")
+            .join(".window-state.json"),
     ];
 
     for path in legacy_paths {
@@ -109,14 +113,42 @@ fn migrate_legacy_window_state_file() {
             if let Ok(bytes) = fs::read(&path) {
                 if let Ok(val) = serde_json::from_slice::<serde_json::Value>(&bytes) {
                     let target = val.get("main").unwrap_or(&val);
-                    let width = target.get("width").and_then(|v| v.as_u64()).map(|v| v as u32).unwrap_or(1200);
-                    let height = target.get("height").and_then(|v| v.as_u64()).map(|v| v as u32).unwrap_or(800);
-                    let x = target.get("x").and_then(|v| v.as_i64()).map(|v| v as i32).unwrap_or(100);
-                    let y = target.get("y").and_then(|v| v.as_i64()).map(|v| v as i32).unwrap_or(100);
-                    let maximized = target.get("maximized").and_then(|v| v.as_bool()).unwrap_or(false);
-                    let record = WindowStateRecord { width, height, x, y, maximized };
+                    let width = target
+                        .get("width")
+                        .and_then(|v| v.as_u64())
+                        .map(|v| v as u32)
+                        .unwrap_or(1200);
+                    let height = target
+                        .get("height")
+                        .and_then(|v| v.as_u64())
+                        .map(|v| v as u32)
+                        .unwrap_or(800);
+                    let x = target
+                        .get("x")
+                        .and_then(|v| v.as_i64())
+                        .map(|v| v as i32)
+                        .unwrap_or(100);
+                    let y = target
+                        .get("y")
+                        .and_then(|v| v.as_i64())
+                        .map(|v| v as i32)
+                        .unwrap_or(100);
+                    let maximized = target
+                        .get("maximized")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    let record = WindowStateRecord {
+                        width,
+                        height,
+                        x,
+                        y,
+                        maximized,
+                    };
                     if let Ok(json_str) = serde_json::to_string(&record) {
-                        let _ = crate::chat_storage::set_app_setting_raw(WINDOW_STATE_SETTING_KEY, &json_str);
+                        let _ = crate::chat_storage::set_app_setting_raw(
+                            WINDOW_STATE_SETTING_KEY,
+                            &json_str,
+                        );
                     }
                 }
             }

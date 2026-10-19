@@ -352,7 +352,9 @@ pub(crate) fn cleanup_attachment_directory(path: &std::path::Path) -> Result<(),
     }
 }
 
-pub(crate) fn delete_conversation_attachments(conversation_id: &str) -> Result<(), ChatStorageError> {
+pub(crate) fn delete_conversation_attachments(
+    conversation_id: &str,
+) -> Result<(), ChatStorageError> {
     let storage_root = storage_root()?;
     let Some(attachments_root) = checked_attachment_root(&storage_root, false)? else {
         return Ok(());
@@ -438,12 +440,10 @@ mod attachment_path_tests {
             &attachments_root.join("conversation-symlink"),
         );
 
-        assert!(checked_attachment_subdirectory(
-            &attachments_root,
-            "conversation-symlink",
-            false
-        )
-        .is_err());
+        assert!(
+            checked_attachment_subdirectory(&attachments_root, "conversation-symlink", false)
+                .is_err()
+        );
         assert_eq!(
             fs::read(legitimate_directory.join("keep.txt")).expect("read legitimate sentinel"),
             b"preserve"

@@ -1,7 +1,10 @@
 //! Unit tests for notification activation arguments and payload parsing.
 
 use super::{
-    activation::{activation_arguments, notification_reply_input, parse_activation_arguments, NotificationActivation, MAXIMUM_REPLY_CHARACTERS},
+    activation::{
+        activation_arguments, notification_reply_input, parse_activation_arguments,
+        NotificationActivation, MAXIMUM_REPLY_CHARACTERS,
+    },
     commands::{AssistantResponseNotification, MAXIMUM_NOTIFICATION_CONTENT_BYTES},
 };
 

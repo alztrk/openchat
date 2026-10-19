@@ -10,7 +10,10 @@ use super::ChatStorageError;
 ///
 /// # Errors
 /// Returns a storage error if the delete statement fails.
-pub fn purge_expired_cache(connection: &Connection, now_ms: i64) -> Result<usize, ChatStorageError> {
+pub fn purge_expired_cache(
+    connection: &Connection,
+    now_ms: i64,
+) -> Result<usize, ChatStorageError> {
     connection
         .execute(
             "DELETE FROM ephemeral_cache WHERE expires_at <= ?1",
@@ -23,7 +26,9 @@ pub fn purge_expired_cache(connection: &Connection, now_ms: i64) -> Result<usize
 ///
 /// # Errors
 /// Returns a storage error if reading freelist count or executing incremental vacuum fails.
-pub fn perform_incremental_vacuum_if_needed(connection: &Connection) -> Result<(), ChatStorageError> {
+pub fn perform_incremental_vacuum_if_needed(
+    connection: &Connection,
+) -> Result<(), ChatStorageError> {
     let freelist_count: i64 = connection
         .query_row("PRAGMA freelist_count", [], |row| row.get(0))
         .unwrap_or(0);

@@ -13,7 +13,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-pub(crate) use openchat_provider_secret_store::{SecretMap, SecretMapUpdateLock};
+pub(crate) use openchat_service::secrets::{SecretMap, SecretMapUpdateLock};
 use serde::{Deserialize, Deserializer, Serialize};
 use zeroize::Zeroizing;
 
@@ -284,7 +284,10 @@ pub fn load_global_mcp_servers() -> Result<GlobalMcpLoadResult, McpStorageError>
                     if let Ok(server) = serde_json::from_slice::<GlobalMcpServer>(&bytes) {
                         if validate_server(&server).is_ok() && server.installed {
                             let key = format!("mcp_server.{}", server.id);
-                            let _ = crate::chat_storage::set_app_setting_raw(&key, &String::from_utf8_lossy(&bytes));
+                            let _ = crate::chat_storage::set_app_setting_raw(
+                                &key,
+                                &String::from_utf8_lossy(&bytes),
+                            );
                         }
                     }
                 }
@@ -296,7 +299,8 @@ pub fn load_global_mcp_servers() -> Result<GlobalMcpLoadResult, McpStorageError>
     let mut servers = Vec::new();
     let mut invalid_config_count = 0;
 
-    let settings = crate::chat_storage::get_all_app_settings().map_err(|_| McpStorageError::unavailable())?;
+    let settings =
+        crate::chat_storage::get_all_app_settings().map_err(|_| McpStorageError::unavailable())?;
     for (key, json_val) in settings {
         if let Some(server_id) = key.strip_prefix("mcp_server.") {
             let parsed = serde_json::from_str::<GlobalMcpServer>(&json_val);
@@ -710,12 +714,14 @@ pub(crate) fn write_server_config(
     server: &GlobalMcpServer,
 ) -> Result<(), McpStorageError> {
     validate_server(server)?;
-    let json_str = serde_json::to_string_pretty(server).map_err(|_| McpStorageError::unavailable())?;
+    let json_str =
+        serde_json::to_string_pretty(server).map_err(|_| McpStorageError::unavailable())?;
     if json_str.len() as u64 > MAXIMUM_CONFIG_BYTES {
         return Err(McpStorageError::invalid());
     }
     let key = format!("mcp_server.{}", server.id);
-    crate::chat_storage::set_app_setting_raw(&key, &json_str).map_err(|_| McpStorageError::unavailable())?;
+    crate::chat_storage::set_app_setting_raw(&key, &json_str)
+        .map_err(|_| McpStorageError::unavailable())?;
     let legacy_path = config_path(root, &server.id);
     let _ = fs::remove_file(legacy_path);
     Ok(())
