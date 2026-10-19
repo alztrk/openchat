@@ -13,6 +13,16 @@ pub(super) fn schema_table_exists(connection: &Connection, name: &str) -> rusqli
     )
 }
 
+pub(super) fn schema_index_exists(connection: &Connection, name: &str) -> rusqlite::Result<bool> {
+    connection.query_row(
+        "SELECT EXISTS (
+            SELECT 1 FROM sqlite_schema WHERE type = 'index' AND name = ?1
+        )",
+        [name],
+        |row| row.get(0),
+    )
+}
+
 pub(super) fn schema_trigger_exists(connection: &Connection, name: &str) -> rusqlite::Result<bool> {
     connection.query_row(
         "SELECT EXISTS (
@@ -33,6 +43,7 @@ pub(super) fn repair_missing_memory_indexes_and_triggers(
     let missing_message_index = !schema_table_exists(connection, "conversation_memory_fts")?;
     let missing_tool_index =
         backend_version >= 14 && !schema_table_exists(connection, "conversation_memory_tools_fts")?;
+    let missing_sort_index = !schema_index_exists(connection, "idx_messages_conversation_sort")?;
     let missing_memory_triggers = if backend_version >= SCHEMA_VERSION {
         let mut missing = false;
         for name in [
@@ -52,7 +63,7 @@ pub(super) fn repair_missing_memory_indexes_and_triggers(
     } else {
         false
     };
-    if !missing_message_index && !missing_tool_index && !missing_memory_triggers {
+    if !missing_message_index && !missing_tool_index && !missing_memory_triggers && !missing_sort_index {
         return Ok(false);
     }
 
@@ -71,6 +82,12 @@ pub(super) fn repair_missing_memory_indexes_and_triggers(
     };
 
     let transaction = connection.unchecked_transaction()?;
+    if missing_sort_index {
+        transaction.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_messages_conversation_sort
+                ON messages(conversation_id, created_at ASC, id ASC);",
+        )?;
+    }
     if missing_tool_index {
         transaction.execute_batch(
             "CREATE VIRTUAL TABLE conversation_memory_tools_fts USING fts5(
