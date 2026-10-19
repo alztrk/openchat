@@ -5,7 +5,7 @@
 
 use std::str::FromStr;
 
-use openchat_provider_secret_store::{SecretMap, SecretStoreError};
+use crate::secrets::{SecretMap, SecretStoreError};
 use serde_json::Value;
 use zeroize::Zeroizing;
 
@@ -126,7 +126,7 @@ fn is_custom_provider_id(provider_id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::ProviderCredentials;
-    use openchat_provider_secret_store::SecretMap;
+    use crate::secrets::SecretMap;
 
     #[test]
     fn provider_keys_are_bound_to_the_saved_route_identifier() {

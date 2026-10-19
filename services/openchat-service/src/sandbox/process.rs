@@ -1,7 +1,7 @@
 //! Sandboxed process lifecycle, pipe I/O, and shell invocation helpers.
 
 use std::{
-    ffi::{c_void, OsStr},
+    ffi::{OsStr, c_void},
     fs, io,
     mem::size_of,
     os::windows::{
@@ -39,8 +39,8 @@ use super::{
     appcontainer::{AppContainerSandbox, DerivedCapabilitySids},
     job_objects::{create_kill_on_close_job, job_active_process_count},
     types::{
-        last_os_error, owned_handle, quote_windows_argument, validate_win32_string, wide,
-        wide_command_line, SandboxOptions,
+        SandboxOptions, last_os_error, owned_handle, quote_windows_argument, validate_win32_string,
+        wide, wide_command_line,
     },
 };
 
@@ -441,7 +441,9 @@ impl Drop for AttributeList {
 }
 
 /// Creates an owned anonymous pipe pair with the supplied inheritance attributes.
-pub(crate) fn create_pipe(attributes: &SECURITY_ATTRIBUTES) -> io::Result<(OwnedHandle, OwnedHandle)> {
+pub(crate) fn create_pipe(
+    attributes: &SECURITY_ATTRIBUTES,
+) -> io::Result<(OwnedHandle, OwnedHandle)> {
     let mut read = null_mut();
     let mut write = null_mut();
     // SAFETY: The security attributes are live and both output handle pointers are writable.
@@ -454,7 +456,10 @@ pub(crate) fn create_pipe(attributes: &SECURITY_ATTRIBUTES) -> io::Result<(Owned
 }
 
 /// Selects PowerShell and constructs arguments for a sandboxed shell command.
-pub(crate) fn shell_invocation(command: &str, working_directory: &Path) -> (PathBuf, Vec<std::ffi::OsString>) {
+pub(crate) fn shell_invocation(
+    command: &str,
+    working_directory: &Path,
+) -> (PathBuf, Vec<std::ffi::OsString>) {
     let pwsh = Path::new(r"C:\Program Files\PowerShell\7\pwsh.exe");
     if pwsh.exists() {
         return (

@@ -27,8 +27,6 @@ migrate_working_dir/
 # Build output
 /build/
 /services/openchat-service/target/
-/services/windows-sandbox/target/
-/services/provider-secret-store/target/
 /apps/desktop/frontend/node_modules/
 /apps/desktop/frontend/dist/
 /apps/desktop/tauri/target/

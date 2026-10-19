@@ -35,4 +35,10 @@ mod storage;
 /// Windows Credential Manager access for OAuth tokens and scoped MCP secrets.
 pub mod credentials;
 
+/// Protected provider secrets storage.
+pub mod secrets;
+
+/// Cross-platform process isolation and sandboxing.
+pub mod sandbox;
+
 pub use service::{RunError, run};

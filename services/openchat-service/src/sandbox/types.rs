@@ -197,4 +197,3 @@ pub(crate) fn shell_path(path: &Path) -> PathBuf {
     }
     path.to_path_buf()
 }
-

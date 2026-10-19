@@ -14,11 +14,12 @@ use std::{
 use windows_sys::Win32::{
     Foundation::LocalFree,
     Security::{
-        DeriveCapabilitySidsFromName, FreeSid, PSID,
         Authorization::ConvertSidToStringSidW,
+        DeriveCapabilitySidsFromName, FreeSid,
         Isolation::{
             CreateAppContainerProfile, DeleteAppContainerProfile, GetAppContainerFolderPath,
         },
+        PSID,
     },
     Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT,
     System::Com::CoTaskMemFree,
@@ -238,6 +239,40 @@ impl AppContainerSandbox {
             );
         }
         fs::create_dir_all(&self.temp_directory)?;
+        let isolated_profile = self.temp_directory.parent().unwrap_or(&self.temp_directory);
+        let isolated_appdata = isolated_profile.join("AppData").join("Roaming");
+        let isolated_localappdata = isolated_profile.join("AppData").join("Local");
+        let _ = fs::create_dir_all(&isolated_appdata);
+        let _ = fs::create_dir_all(&isolated_localappdata);
+
+        variables.insert(
+            "USERPROFILE".to_owned(),
+            Zeroizing::new(
+                isolated_profile
+                    .as_os_str()
+                    .encode_wide()
+                    .collect::<Vec<_>>(),
+            ),
+        );
+        variables.insert(
+            "APPDATA".to_owned(),
+            Zeroizing::new(
+                isolated_appdata
+                    .as_os_str()
+                    .encode_wide()
+                    .collect::<Vec<_>>(),
+            ),
+        );
+        variables.insert(
+            "LOCALAPPDATA".to_owned(),
+            Zeroizing::new(
+                isolated_localappdata
+                    .as_os_str()
+                    .encode_wide()
+                    .collect::<Vec<_>>(),
+            ),
+        );
+
         variables.insert(
             "TEMP".to_owned(),
             Zeroizing::new(
@@ -342,11 +377,7 @@ impl AppContainerSandbox {
             if path.parent().is_none() {
                 break;
             }
-            set_app_container_traverse_access(
-                path,
-                self.sid as PSID,
-                true,
-            )?;
+            set_app_container_traverse_access(path, self.sid as PSID, true)?;
             self.granted_paths.push(path.to_path_buf());
             ancestor = path.parent();
         }
@@ -369,12 +400,7 @@ impl AppContainerSandbox {
                 continue;
             }
             let is_directory = metadata.is_dir();
-            set_app_container_read_access(
-                &path,
-                self.sid as PSID,
-                true,
-                is_directory,
-            )?;
+            set_app_container_read_access(&path, self.sid as PSID, true, is_directory)?;
             self.granted_paths.push(path.clone());
             if is_directory {
                 for entry in fs::read_dir(path)? {
@@ -409,11 +435,7 @@ impl AppContainerSandbox {
             if path.parent().is_none() {
                 break;
             }
-            set_app_container_traverse_access(
-                path,
-                self.sid as PSID,
-                true,
-            )?;
+            set_app_container_traverse_access(path, self.sid as PSID, true)?;
             self.granted_paths.push(path.to_path_buf());
             ancestor = path.parent();
         }
@@ -436,12 +458,7 @@ impl AppContainerSandbox {
                 continue;
             }
             let is_directory = metadata.is_dir();
-            set_app_container_access(
-                &path,
-                self.sid as PSID,
-                true,
-                is_directory,
-            )?;
+            set_app_container_access(&path, self.sid as PSID, true, is_directory)?;
             self.granted_paths.push(path.clone());
             if is_directory {
                 for entry in fs::read_dir(path)? {
@@ -467,14 +484,7 @@ impl AppContainerSandbox {
     fn cleanup(&mut self) {
         revoke_user_objects_access(self.sid as PSID);
         for path in self.granted_paths.drain(..).rev() {
-            if set_app_container_access(
-                &path,
-                self.sid as PSID,
-                false,
-                false,
-            )
-            .is_err()
-            {
+            if set_app_container_access(&path, self.sid as PSID, false, false).is_err() {
                 eprintln!("app_container_acl_cleanup_failed");
             }
         }

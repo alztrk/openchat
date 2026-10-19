@@ -2337,17 +2337,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
 
 [[package]]
-name = "openchat_provider_secret_store"
-version = "0.1.0"
-dependencies = [
- "rusqlite",
- "serde",
- "serde_json",
- "windows-sys 0.61.2",
- "zeroize",
-]
-
-[[package]]
 name = "openchat_service"
 version = "0.1.0"
 dependencies = [
@@ -2362,8 +2351,6 @@ dependencies = [
  "http",
  "ignore",
  "keyring",
- "openchat_provider_secret_store",
- "openchat_windows_sandbox",
  "ort",
  "process-wrap",
  "reqwest",
@@ -2385,16 +2372,6 @@ dependencies = [
  "windows-sys 0.61.2",
  "zeroize",
  "zip",
-]
-
-[[package]]
-name = "openchat_windows_sandbox"
-version = "0.1.0"
-dependencies = [
- "tokio",
- "uuid",
- "windows-sys 0.61.2",
- "zeroize",
 ]
 
 [[package]]

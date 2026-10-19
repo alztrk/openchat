@@ -13,8 +13,9 @@ use tokio::io::AsyncReadExt;
 use windows_sys::Win32::{
     Foundation::HANDLE,
     Security::{
-        ACL, CONTAINER_INHERIT_ACE, DACL_SECURITY_INFORMATION, OBJECT_INHERIT_ACE,
+        ACL,
         Authorization::{ConvertStringSidToSidW, GetSecurityInfo, SE_FILE_OBJECT},
+        CONTAINER_INHERIT_ACE, DACL_SECURITY_INFORMATION, OBJECT_INHERIT_ACE,
     },
     Storage::FileSystem::{
         FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
@@ -24,14 +25,14 @@ use windows_sys::Win32::{
 };
 use zeroize::Zeroizing;
 
-use crate::{
+use super::{
     job_objects::{create_kill_on_close_job, job_active_process_count},
-    process::{shell_invocation, SandboxedProcess, WAIT_INTERVAL},
+    process::{SandboxedProcess, WAIT_INTERVAL, shell_invocation},
     security_acl::{
-        app_container_acl_lock_path, require_non_null_acl, schedule_acl_path,
-        update_app_container_acl, AppContainerAclLock, MAX_ACL_ENTRIES,
+        AppContainerAclLock, MAX_ACL_ENTRIES, app_container_acl_lock_path, require_non_null_acl,
+        schedule_acl_path, update_app_container_acl,
     },
-    types::{owned_handle, wide_null, SandboxJobLimits, SandboxOptions},
+    types::{SandboxJobLimits, SandboxOptions, owned_handle, wide_null},
 };
 
 /// Ensures a successful ACL update cannot be applied as a null, unrestricted DACL.
@@ -444,8 +445,8 @@ async fn command_cannot_connect_to_local_network_listener() {
     let command = format!(
         "$client = [System.Net.Sockets.TcpClient]::new(); try {{ $pending = $client.BeginConnect('127.0.0.1', {port}, $null, $null); if (-not $pending.AsyncWaitHandle.WaitOne(1000)) {{ exit 19 }}; $client.EndConnect($pending); exit 0 }} catch {{ exit 19 }} finally {{ $client.Dispose() }}"
     );
-    let process = SandboxedProcess::spawn(&command, workspace.path())
-        .expect("start command in AppContainer");
+    let process =
+        SandboxedProcess::spawn(&command, workspace.path()).expect("start command in AppContainer");
     let (exit_code, _, _) = capture(process).await;
 
     assert_eq!(exit_code, 19);
@@ -492,8 +493,7 @@ fn acl_updates_share_a_file_lock_between_threads() {
         .path()
         .join("OpenChat")
         .join("appcontainer-acl.lock");
-    let lock =
-        AppContainerAclLock::acquire_for_path(&lock_path).expect("acquire ACL file lock");
+    let lock = AppContainerAclLock::acquire_for_path(&lock_path).expect("acquire ACL file lock");
     let worker_lock_path = lock_path.clone();
     let (sender, receiver) = mpsc::channel();
     let worker = thread::spawn(move || {

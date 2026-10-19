@@ -46,8 +46,6 @@ jobs:
       - name: Audit Rust dependency lockfiles
         run: |
           cargo audit --file services/openchat-service/Cargo.lock
-          cargo audit --no-fetch --file services/windows-sandbox/Cargo.lock
-          cargo audit --no-fetch --file services/provider-secret-store/Cargo.lock
           cargo audit --no-fetch --file apps/desktop/tauri/Cargo.lock
 
       - name: Install frontend dependencies
@@ -73,22 +71,16 @@ jobs:
       - name: Check Rust formatting
         run: |
           cargo fmt --manifest-path services/openchat-service/Cargo.toml -- --check
-          cargo fmt --manifest-path services/windows-sandbox/Cargo.toml -- --check
-          cargo fmt --manifest-path services/provider-secret-store/Cargo.toml -- --check
           cargo fmt --manifest-path apps/desktop/tauri/Cargo.toml -- --check
 
       - name: Check Rust API documentation
         run: |
           cargo rustdoc --locked --manifest-path services/openchat-service/Cargo.toml --lib -- -D missing-docs -D rustdoc::broken_intra_doc_links
-          cargo rustdoc --locked --manifest-path services/windows-sandbox/Cargo.toml --lib -- -D missing-docs -D rustdoc::broken_intra_doc_links
-          cargo rustdoc --locked --manifest-path services/provider-secret-store/Cargo.toml --lib -- -D missing-docs -D rustdoc::broken_intra_doc_links
           cargo rustdoc --locked --manifest-path apps/desktop/tauri/Cargo.toml --bin openchat-desktop -- -D missing-docs -D rustdoc::broken_intra_doc_links
 
       - name: Reject unused Rust dependencies
         run: |
           cargo rustc --lib --locked --manifest-path services/openchat-service/Cargo.toml -- -D unused_crate_dependencies
-          cargo rustc --lib --locked --manifest-path services/windows-sandbox/Cargo.toml -- -D unused_crate_dependencies
-          cargo rustc --lib --locked --manifest-path services/provider-secret-store/Cargo.toml -- -D unused_crate_dependencies
           cargo rustc --bin openchat-desktop --locked --manifest-path apps/desktop/tauri/Cargo.toml -- -D unused_crate_dependencies
 
       - name: Reject production panic paths
@@ -98,16 +90,6 @@ jobs:
         run: |
           cargo check --all-targets --locked --manifest-path services/openchat-service/Cargo.toml
           cargo test --locked --manifest-path services/openchat-service/Cargo.toml -- --test-threads=1
-
-      - name: Check and test shared Windows sandbox
-        run: |
-          cargo clippy --all-targets --locked --manifest-path services/windows-sandbox/Cargo.toml -- -D warnings
-          cargo test --locked --manifest-path services/windows-sandbox/Cargo.toml -- --test-threads=1
-
-      - name: Check and test provider secret store
-        run: |
-          cargo clippy --all-targets --locked --manifest-path services/provider-secret-store/Cargo.toml -- -D warnings
-          cargo test --locked --manifest-path services/provider-secret-store/Cargo.toml -- --test-threads=1
 
       - name: Build the Tauri host
         run: cargo check --locked --manifest-path apps/desktop/tauri/Cargo.toml

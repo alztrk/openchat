@@ -10,21 +10,22 @@ use std::{
 use windows_sys::Win32::{
     Foundation::HANDLE,
     System::JobObjects::{
-        CreateJobObjectW, JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
-        QueryInformationJobObject, SetInformationJobObject,
+        CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS, JOB_OBJECT_LIMIT_JOB_MEMORY,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
         JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_BASIC_LIMIT_INFORMATION,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
-        JOB_OBJECT_LIMIT_JOB_MEMORY, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        JOB_OBJECT_LIMIT_PROCESS_MEMORY,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectBasicAccountingInformation,
+        JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
     },
 };
 
-use super::types::{last_os_error, owned_handle, SandboxJobLimits};
+use super::types::{SandboxJobLimits, last_os_error, owned_handle};
 
 /// Creates a job object that terminates its assigned process tree when its last handle closes.
 ///
 /// Optional positive process and memory limits are applied before the job is returned.
-pub(crate) fn create_kill_on_close_job(limits: Option<SandboxJobLimits>) -> io::Result<OwnedHandle> {
+pub(crate) fn create_kill_on_close_job(
+    limits: Option<SandboxJobLimits>,
+) -> io::Result<OwnedHandle> {
     // SAFETY: Null attributes and name request a new unnamed job object; Windows returns the handle.
     let handle = unsafe { CreateJobObjectW(null(), null()) };
     let job = owned_handle(handle)?;
