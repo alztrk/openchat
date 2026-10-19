@@ -8,6 +8,7 @@ mod preferences;
 mod search;
 mod semantic;
 pub mod turkish_search;
+pub mod vector_math;
 
 use crate::storage::AppStorage;
 

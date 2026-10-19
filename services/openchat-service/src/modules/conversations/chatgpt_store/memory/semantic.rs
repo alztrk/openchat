@@ -34,7 +34,7 @@ use usearch::{
     ffi::{MetricKind, ScalarKind},
 };
 
-use super::{ArchivedMemoryExcerpt, index, search};
+use super::{ArchivedMemoryExcerpt, index, search, vector_math};
 
 const MODEL_ID: &str = "multilingual-e5-small-761b726d";
 const MODEL_REPOSITORY: &str = "Xenova/multilingual-e5-small";
@@ -988,30 +988,8 @@ fn chunk_text(
 }
 
 fn quantize_embedding(embedding: Vec<f32>) -> Result<Vec<i8>, SemanticMemoryError> {
-    if embedding.len() != VECTOR_DIMENSIONS {
-        return Err(SemanticMemoryError::Model(format!(
-            "expected {VECTOR_DIMENSIONS} dimensions, received {}",
-            embedding.len()
-        )));
-    }
-    if embedding.iter().any(|value| !value.is_finite()) {
-        return Err(SemanticMemoryError::Model(
-            "embedding contains a non-finite value".to_owned(),
-        ));
-    }
-    let max_abs = embedding
-        .iter()
-        .map(|value| value.abs())
-        .fold(0.0_f32, f32::max);
-    if !max_abs.is_finite() || max_abs == 0.0 {
-        return Err(SemanticMemoryError::Model(
-            "embedding is not a finite non-zero vector".to_owned(),
-        ));
-    }
-    Ok(embedding
-        .iter()
-        .map(|value| (value / max_abs * i8::MAX as f32).round() as i8)
-        .collect())
+    vector_math::quantize_embedding_unrolled(&embedding, VECTOR_DIMENSIONS)
+        .map_err(SemanticMemoryError::Model)
 }
 
 fn ensure_namespace(
