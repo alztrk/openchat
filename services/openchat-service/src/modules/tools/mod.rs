@@ -8,10 +8,6 @@ use std::{
     fs,
     io::{self, BufRead, BufReader, BufWriter, Read, Seek, SeekFrom, Write},
     path::{Component, Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
 };
 
 use cap_std::{
@@ -170,13 +166,11 @@ fn read_directory_listing(
     let mut total_entries = 0usize;
     let mut scanned = 0usize;
     let mut incomplete = false;
-    let hidden_filter_failed = Arc::new(AtomicBool::new(false));
-    let hidden_filter_failed_for_walker = Arc::clone(&hidden_filter_failed);
     let mut walker = WalkBuilder::new(directory);
     walker
         .max_depth(Some(1))
         .follow_links(false)
-        .hidden(false)
+        .hidden(!explicit_filter_scope)
         .parents(true)
         .ignore(false)
         .git_ignore(true)
@@ -197,13 +191,7 @@ fn read_directory_listing(
             if explicit_filter_scope {
                 return true;
             }
-            match walker_entry_is_hidden(name, entry) {
-                Ok(is_hidden) => !is_hidden,
-                Err(()) => {
-                    hidden_filter_failed_for_walker.store(true, Ordering::Relaxed);
-                    false
-                }
-            }
+            !name.starts_with('.')
         });
 
     for result in walker.build() {
@@ -247,7 +235,6 @@ fn read_directory_listing(
             retained.push((name.to_owned(), is_directory));
         }
     }
-    incomplete |= hidden_filter_failed.load(Ordering::Relaxed);
     let was_scan_limited = scanned > MAX_LIST_SCAN || incomplete;
     let mut entries = retained.into_vec();
     entries.sort_unstable_by(|left, right| left.0.cmp(&right.0));
@@ -1566,6 +1553,7 @@ fn is_hidden(name: &str, metadata: &fs::Metadata) -> bool {
 }
 
 /// Checks a walker's cached metadata to avoid a second Windows file-system query.
+#[allow(dead_code)]
 pub(crate) fn walker_entry_is_hidden(name: &str, entry: &ignore::DirEntry) -> Result<bool, ()> {
     if name.starts_with('.') {
         return Ok(true);
