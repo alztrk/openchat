@@ -406,10 +406,34 @@ impl ToolExecutor {
         })
     }
 
-    fn permission_rule(&self, call: &ToolCall, operation: &ToolOperation) -> ToolPermissionRule {
+    fn permission_rule(
+        &self,
+        call: &ToolCall,
+        operation: &ToolOperation,
+        target_path: Option<&Path>,
+    ) -> ToolPermissionRule {
         if self.permission_mode == ToolPermissionMode::Plan {
             return ToolPermissionRule::Deny;
         }
+
+        // Trust Handoff defense: Writing or editing executable hooks or IDE tasks
+        // always requires explicit user confirmation regardless of auto-approval mode.
+        if let Some(path) = target_path
+            && matches!(
+                operation,
+                ToolOperation::Write { .. } | ToolOperation::Edit { .. }
+            )
+        {
+            let path_str = path.to_string_lossy().to_lowercase();
+            if path_str.contains(".git\\hooks")
+                || path_str.contains(".git/hooks")
+                || path_str.contains(".vscode")
+                || path_str.contains(".idea")
+            {
+                return ToolPermissionRule::Ask;
+            }
+        }
+
         let task_rule = (call.name == "run_project_task")
             .then(|| {
                 call.arguments
@@ -655,7 +679,7 @@ impl ToolExecutor {
         }
         let call = &activity_call;
 
-        let rule = self.permission_rule(call, &prepared.operation);
+        let rule = self.permission_rule(call, &prepared.operation, Some(&prepared.target_path));
         if rule == ToolPermissionRule::Deny {
             let output = tool_error(
                 "permission_denied",
@@ -1035,6 +1059,7 @@ impl ToolExecutor {
             qualify_citation_source_ids(&mut output, &call.id);
         }
         qualify_output_paths(&mut output, &prepared);
+        redact_tool_output(&mut output);
         let (file_changes, file_changes_error) = finish_file_change_capture(
             storage,
             &snapshot.conversation_id,
@@ -1246,7 +1271,7 @@ impl ToolExecutor {
                 }
             }
         };
-        let output = match result {
+        let mut output = match result {
             Ok(result) if result.get("isError").and_then(Value::as_bool) == Some(true) => {
                 json!({
                     "error": {
@@ -1260,6 +1285,7 @@ impl ToolExecutor {
             Ok(result) => json!({"untrusted": true, "result": result}),
             Err(_) => tool_error("mcp_tool_failed", "The MCP tool call failed or timed out."),
         };
+        redact_tool_output(&mut output);
         self.emit_activity(
             storage,
             ToolActivity::finished(call, Some(target), output.clone()),
@@ -1757,6 +1783,7 @@ mod policy_tests {
                     arguments: json!({}),
                 },
                 &operation,
+                None,
             ),
             ToolPermissionRule::Allow
         );
@@ -1768,6 +1795,7 @@ mod policy_tests {
                     arguments: json!({}),
                 },
                 &operation,
+                None,
             ),
             ToolPermissionRule::Deny
         );
@@ -1779,6 +1807,7 @@ mod policy_tests {
                     arguments: json!({}),
                 },
                 &operation,
+                None,
             ),
             ToolPermissionRule::Ask
         );
@@ -1808,6 +1837,7 @@ mod policy_tests {
                 &ToolOperation::Write {
                     content: "change".to_owned(),
                 },
+                None,
             ),
             ToolPermissionRule::Deny
         );
@@ -1824,6 +1854,7 @@ mod policy_tests {
                     start_line: 1,
                     line_count: 10,
                 },
+                None,
             ),
             ToolPermissionRule::Deny
         );
@@ -1841,6 +1872,7 @@ mod policy_tests {
                     start_line: 1,
                     line_count: 10,
                 },
+                None,
             ),
             ToolPermissionRule::Deny
         );
@@ -1856,7 +1888,7 @@ mod policy_tests {
         };
         assert!(!web_operation.is_safe_for_auto_approval());
         assert_eq!(
-            default_read_executor.permission_rule(&web_call, &web_operation),
+            default_read_executor.permission_rule(&web_call, &web_operation, None),
             ToolPermissionRule::Deny
         );
     }
@@ -1889,7 +1921,7 @@ mod policy_tests {
             arguments: json!({"task": "verify"}),
         };
         assert_eq!(
-            executor.permission_rule(&call, &operation),
+            executor.permission_rule(&call, &operation, None),
             ToolPermissionRule::Deny
         );
         let other_call = ToolCall {
@@ -1898,7 +1930,7 @@ mod policy_tests {
             arguments: json!({"task": "lint"}),
         };
         assert_eq!(
-            executor.permission_rule(&other_call, &operation),
+            executor.permission_rule(&other_call, &operation, None),
             ToolPermissionRule::Allow
         );
         assert_eq!(
@@ -2049,6 +2081,76 @@ mod policy_tests {
             ToolPermissionRule::Deny
         );
     }
+
+    #[test]
+    fn trust_handoff_defense_requires_approval_even_in_full_access_mode() {
+        use std::path::Path;
+        let executor = ToolExecutor::new(None, Path::new("test"), ToolPermissionMode::FullAccess);
+        let write_hook_call = ToolCall {
+            id: "call_hook".to_owned(),
+            name: "write_file".to_owned(),
+            arguments: json!({"path": ".git/hooks/pre-commit", "content": "echo pwn"}),
+        };
+        let write_op = ToolOperation::Write {
+            content: "echo pwn".to_owned(),
+        };
+
+        // In FullAccess, writing to .git/hooks must still result in Ask
+        assert_eq!(
+            executor.permission_rule(
+                &write_hook_call,
+                &write_op,
+                Some(Path::new(".git/hooks/pre-commit"))
+            ),
+            ToolPermissionRule::Ask
+        );
+
+        // Normal files in FullAccess must be allowed
+        let normal_call = ToolCall {
+            id: "call_normal".to_owned(),
+            name: "write_file".to_owned(),
+            arguments: json!({"path": "src/main.rs", "content": "fn main() {}"}),
+        };
+        let normal_op = ToolOperation::Write {
+            content: "fn main() {}".to_owned(),
+        };
+        assert_eq!(
+            executor.permission_rule(&normal_call, &normal_op, Some(Path::new("src/main.rs"))),
+            ToolPermissionRule::Allow
+        );
+    }
+
+    #[test]
+    fn redact_tool_output_masks_live_credentials_in_json() {
+        let mut output = json!({
+            "stdout": "Loaded configuration:\nOPENAI_API_KEY=sk-proj-abcdefghijklmnopqrstuvwxyz1234567890\nDone.",
+            "nested": {
+                "token": "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
+                "normal": "hello world"
+            },
+            "list": [
+                "api_key: secret-value-1234",
+                "normal item"
+            ]
+        });
+
+        super::redact_tool_output(&mut output);
+
+        let stdout = output["stdout"].as_str().unwrap();
+        assert!(!stdout.contains("sk-proj-abcdefghijklmnopqrstuvwxyz1234567890"));
+        assert!(stdout.contains("[REDACTED]"));
+
+        let nested_token = output["nested"]["token"].as_str().unwrap();
+        assert!(!nested_token.contains("ghp_abcdefghijklmnopqrstuvwxyz0123456789"));
+        assert_eq!(nested_token, "[REDACTED]");
+
+        let list_item = output["list"][0].as_str().unwrap();
+        assert!(!list_item.contains("secret-value-1234"));
+        assert!(list_item.contains("[REDACTED]"));
+
+        assert_eq!(output["nested"]["normal"], "hello world");
+        assert_eq!(output["list"][1], "normal item");
+    }
 }
 
 fn question_arguments_error() -> ServiceError {
@@ -2147,4 +2249,24 @@ fn protocol_error() -> ServiceError {
         "The local service could not send the tool activity update.",
         true,
     )
+}
+
+/// Recursively scans JSON values in tool outputs and redacts known credential patterns and keys.
+pub(crate) fn redact_tool_output(value: &mut Value) {
+    match value {
+        Value::String(text) => {
+            *text = crate::storage::tool_index_redaction::redact_tool_index_text(text);
+        }
+        Value::Array(items) => {
+            for item in items {
+                redact_tool_output(item);
+            }
+        }
+        Value::Object(map) => {
+            for val in map.values_mut() {
+                redact_tool_output(val);
+            }
+        }
+        _ => {}
+    }
 }

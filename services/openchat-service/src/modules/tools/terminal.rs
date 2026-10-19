@@ -16,13 +16,15 @@ use process_wrap::tokio::ProcessGroup;
 use process_wrap::tokio::{ChildWrapper, CommandWrap, KillOnDrop};
 use serde_json::{Value, json};
 #[cfg(not(windows))]
-use tokio::process::{ChildStdin, Command};
+use tokio::process::Command;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     sync::{Mutex, OwnedSemaphorePermit, Semaphore},
     time::{sleep, sleep_until},
 };
 use uuid::Uuid;
+
+use crate::sandbox::SandboxBackend;
 
 #[cfg(windows)]
 #[path = "terminal_windows.rs"]
@@ -66,7 +68,7 @@ pub struct TerminalSession {
     pub timeout: Duration,
     idle_timeout: Option<Duration>,
     #[cfg(windows)]
-    child: Arc<Mutex<SandboxedProcess>>,
+    child: Arc<Mutex<TerminalChild>>,
     #[cfg(not(windows))]
     child: Arc<Mutex<Box<dyn ChildWrapper>>>,
     stdin: Arc<Mutex<Option<TerminalStdin>>>,
@@ -82,28 +84,41 @@ fn build_shell_command(command_str: &str) -> Command {
     cmd
 }
 
+#[cfg(windows)]
+enum TerminalChild {
+    Sandboxed(SandboxedProcess),
+    Process(tokio::process::Child),
+}
+
+#[cfg(windows)]
+type TerminalOutputReader = Box<dyn tokio::io::AsyncRead + Send + Unpin>;
+
 enum TerminalStdin {
     #[cfg(windows)]
     Sandboxed(tokio::fs::File),
-    #[cfg(not(windows))]
-    Child(ChildStdin),
+    Child(tokio::process::ChildStdin),
 }
 
 impl TerminalSession {
     async fn process_status(&self) -> Result<Option<ExitStatus>, String> {
-        let child = self.child.lock().await;
+        let mut child = self.child.lock().await;
         #[cfg(windows)]
         {
-            child.try_wait().map_err(|error| {
-                format!("Could not check the sandboxed command process status: {error}")
-            })
+            match &mut *child {
+                TerminalChild::Sandboxed(sandboxed) => sandboxed.try_wait().map_err(|error| {
+                    format!("Could not check the sandboxed command process status: {error}")
+                }),
+                TerminalChild::Process(proc) => proc.try_wait().map_err(|error| {
+                    format!("Could not check the command process status: {error}")
+                }),
+            }
         }
         #[cfg(not(windows))]
-        let mut child = child;
-        #[cfg(not(windows))]
-        child
-            .try_wait()
-            .map_err(|error| format!("Could not check the command process status: {error}"))
+        {
+            child
+                .try_wait()
+                .map_err(|error| format!("Could not check the command process status: {error}"))
+        }
     }
 
     /// Reports whether the process remains active.
@@ -117,42 +132,63 @@ impl TerminalSession {
         let stdin = stdin_guard
             .as_mut()
             .ok_or_else(|| "Terminal stdin is closed or unavailable.".to_owned())?;
-        #[cfg(windows)]
-        let TerminalStdin::Sandboxed(stdin) = stdin;
-        #[cfg(not(windows))]
-        let TerminalStdin::Child(stdin) = stdin;
-        stdin
-            .write_all(input.as_bytes())
-            .await
-            .map_err(|e| format!("Failed to write to terminal stdin: {e}"))?;
-        stdin
-            .flush()
-            .await
-            .map_err(|e| format!("Failed to flush terminal stdin: {e}"))?;
+        match stdin {
+            #[cfg(windows)]
+            TerminalStdin::Sandboxed(f) => {
+                f.write_all(input.as_bytes())
+                    .await
+                    .map_err(|e| format!("Failed to write to terminal stdin: {e}"))?;
+                f.flush()
+                    .await
+                    .map_err(|e| format!("Failed to flush terminal stdin: {e}"))?;
+            }
+            TerminalStdin::Child(c) => {
+                c.write_all(input.as_bytes())
+                    .await
+                    .map_err(|e| format!("Failed to write to terminal stdin: {e}"))?;
+                c.flush()
+                    .await
+                    .map_err(|e| format!("Failed to flush terminal stdin: {e}"))?;
+            }
+        }
         *self.last_activity.lock().await = Instant::now();
         Ok(())
     }
 
     /// Stops the process and waits for its process tree to exit where supported.
     pub async fn kill(&self) -> Result<(), String> {
-        let child = self.child.lock().await;
+        let mut child = self.child.lock().await;
         #[cfg(windows)]
         {
-            child.start_kill().map_err(|error| {
-                format!("Could not stop the sandboxed command process: {error}")
-            })?;
-            child.wait_for_job_exit().map_err(|error| {
-                format!("Could not stop the sandboxed command process tree: {error}")
-            })?;
-            return child
-                .wait()
-                .await
-                .map(|_| ())
-                .map_err(|error| format!("Could not stop the sandboxed command process: {error}"));
+            match &mut *child {
+                TerminalChild::Sandboxed(sandboxed) => {
+                    sandboxed.start_kill().map_err(|error| {
+                        format!("Could not stop the sandboxed command process: {error}")
+                    })?;
+                    sandboxed.wait_for_job_exit().map_err(|error| {
+                        format!("Could not stop the sandboxed command process tree: {error}")
+                    })?;
+                    return sandboxed.wait().await.map(|_| ()).map_err(|error| {
+                        format!("Could not stop the sandboxed command process: {error}")
+                    });
+                }
+                TerminalChild::Process(proc) => {
+                    if let Err(error) = proc.start_kill() {
+                        if matches!(proc.try_wait(), Ok(Some(_))) {
+                            return Ok(());
+                        }
+                        return Err(format!("Could not stop the command process: {error}"));
+                    }
+                    return proc
+                        .wait()
+                        .await
+                        .map(|_| ())
+                        .map_err(|error| format!("Could not stop the command process: {error}"));
+                }
+            }
         }
         #[cfg(not(windows))]
         {
-            let mut child = child;
             if let Err(error) = child.start_kill() {
                 if matches!(child.try_wait(), Ok(Some(_))) {
                     return Ok(());
@@ -220,6 +256,7 @@ impl TerminalSession {
 pub struct TerminalSessionManager {
     sessions: Arc<Mutex<HashMap<String, Arc<TerminalSession>>>>,
     session_slots: Arc<Semaphore>,
+    backend: Arc<Mutex<SandboxBackend>>,
 }
 
 static MANAGER: OnceLock<TerminalSessionManager> = OnceLock::new();
@@ -238,9 +275,23 @@ impl TerminalSessionManager {
         let manager = Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             session_slots: Arc::new(Semaphore::new(session_limit)),
+            backend: Arc::new(Mutex::new(SandboxBackend::Native)),
         };
         manager.start_reaper();
         manager
+    }
+
+    /// Sets the active sandbox backend for terminal sessions.
+    #[allow(dead_code)]
+    pub async fn set_backend(&self, backend: SandboxBackend) {
+        let mut b = self.backend.lock().await;
+        *b = backend;
+    }
+
+    /// Returns the active sandbox backend for terminal sessions.
+    #[allow(dead_code)]
+    pub async fn backend(&self) -> SandboxBackend {
+        *self.backend.lock().await
     }
 
     #[cfg(test)]
@@ -335,15 +386,50 @@ impl TerminalSessionManager {
         let timeout = Duration::from_secs(timeout_secs);
 
         #[cfg(windows)]
-        let (child, stdin, stdout, stderr) = {
-            let options = command_sandbox_options()?;
-            let mut child = SandboxedProcess::spawn_with_options(command_str, workdir, options).map_err(|_| {
-                "The command could not start inside the Windows AppContainer sandbox. Check the project folder and Windows security settings.".to_owned()
-            })?;
-            let stdin = child.take_stdin().map(TerminalStdin::Sandboxed);
-            let stdout = child.take_stdout();
-            let stderr = child.take_stderr();
-            (child, stdin, stdout, stderr)
+        let (child, stdin, stdout, stderr): (
+            TerminalChild,
+            Option<TerminalStdin>,
+            Option<TerminalOutputReader>,
+            Option<TerminalOutputReader>,
+        ) = {
+            let active_backend = *self.backend.lock().await;
+            if active_backend == SandboxBackend::Wsl2 {
+                if !crate::sandbox::SandboxPolicy::is_wsl2_available() {
+                    return Err("WSL2 is not available or not installed on this host.".to_owned());
+                }
+                let win_path = workdir.to_string_lossy().replace('\\', "/");
+                let mut cmd = tokio::process::Command::new("wsl.exe");
+                // Escape single quotes safely for POSIX shell
+                let escaped_command = command_str.replace('\'', "'\\''");
+                let script = format!(
+                    r#"WORKDIR="$(wslpath -u '{win_path}')" && bwrap --ro-bind /usr /usr --ro-bind /lib /lib --ro-bind-try /lib64 /lib64 --ro-bind /bin /bin --ro-bind /sbin /sbin --proc /proc --dev /dev --bind "$WORKDIR" "$WORKDIR" --chdir "$WORKDIR" --unshare-all -- sh -c '{}'"#,
+                    escaped_command
+                );
+                cmd.args(["-e", "sh", "-c", &script])
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped());
+                let mut proc = cmd.spawn().map_err(|err| {
+                    format!("Failed to spawn sandboxed command via WSL2 container: {err}")
+                })?;
+                let stdin = proc.stdin.take().map(TerminalStdin::Child);
+                let stdout: Option<Box<dyn tokio::io::AsyncRead + Send + Unpin>> =
+                    proc.stdout.take().map(|s| Box::new(s) as _);
+                let stderr: Option<Box<dyn tokio::io::AsyncRead + Send + Unpin>> =
+                    proc.stderr.take().map(|s| Box::new(s) as _);
+                (TerminalChild::Process(proc), stdin, stdout, stderr)
+            } else {
+                let options = command_sandbox_options()?;
+                let mut child = SandboxedProcess::spawn_with_options(command_str, workdir, options).map_err(|_| {
+                    "The command could not start inside the Windows AppContainer sandbox. Check the project folder and Windows security settings.".to_owned()
+                })?;
+                let stdin = child.take_stdin().map(TerminalStdin::Sandboxed);
+                let stdout: Option<Box<dyn tokio::io::AsyncRead + Send + Unpin>> =
+                    child.take_stdout().map(|s| Box::new(s) as _);
+                let stderr: Option<Box<dyn tokio::io::AsyncRead + Send + Unpin>> =
+                    child.take_stderr().map(|s| Box::new(s) as _);
+                (TerminalChild::Sandboxed(child), stdin, stdout, stderr)
+            }
         };
 
         #[cfg(not(windows))]
@@ -934,5 +1020,21 @@ mod tests {
         drop(next);
 
         std::fs::remove_dir_all(&workdir).expect("remove the isolated terminal test folder");
+    }
+
+    #[tokio::test]
+    async fn manager_supports_configuring_sandbox_backend() {
+        let manager = TerminalSessionManager::isolated();
+        assert_eq!(
+            manager.backend().await,
+            crate::sandbox::SandboxBackend::Native
+        );
+        manager
+            .set_backend(crate::sandbox::SandboxBackend::Wsl2)
+            .await;
+        assert_eq!(
+            manager.backend().await,
+            crate::sandbox::SandboxBackend::Wsl2
+        );
     }
 }

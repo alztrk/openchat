@@ -15,9 +15,7 @@ use serde_json::{Value, json};
 
 use crate::protocol::ServiceError;
 
-use super::{
-    invalid, is_default_ignored_directory, resolve_directory, unavailable,
-};
+use super::{invalid, is_default_ignored_directory, resolve_directory, unavailable};
 
 const MAX_SEARCH_RESULTS: usize = 40;
 const MAX_SEARCH_FILES: usize = 100_000;
@@ -72,14 +70,11 @@ impl SearchPattern {
     fn matches_bytes(&self, line_bytes: &[u8]) -> bool {
         match self.ascii_shifts.as_ref() {
             Some(shifts) => {
-                contains_ascii_case_insensitive(
-                    line_bytes,
-                    self.ascii_needle.as_bytes(),
-                    shifts,
-                ) || (!line_bytes.is_ascii()
-                    && String::from_utf8_lossy(line_bytes)
-                        .to_lowercase()
-                        .contains(&self.ascii_needle))
+                contains_ascii_case_insensitive(line_bytes, self.ascii_needle.as_bytes(), shifts)
+                    || (!line_bytes.is_ascii()
+                        && String::from_utf8_lossy(line_bytes)
+                            .to_lowercase()
+                            .contains(&self.ascii_needle))
             }
             None => String::from_utf8_lossy(line_bytes)
                 .to_lowercase()
@@ -607,10 +602,7 @@ fn scan_search_file(
     let bytes_read = total_bytes;
     let truncated = byte_limited;
 
-    let valid_slice = if byte_limited
-        && total_bytes >= bytes_limit
-        && !buffer.ends_with(b"\n")
-    {
+    let valid_slice = if byte_limited && total_bytes >= bytes_limit && !buffer.ends_with(b"\n") {
         if let Some(last_newline) = buffer.iter().rposition(|&b| b == b'\n') {
             &buffer[..=last_newline]
         } else {
@@ -621,11 +613,10 @@ fn scan_search_file(
     };
 
     let mut match_count = 0usize;
-    let mut line_number = 0usize;
     let mut matches = Vec::new();
 
-    for line_bytes in valid_slice.split(|&b| b == b'\n') {
-        line_number += 1;
+    for (line_index, line_bytes) in valid_slice.split(|&b| b == b'\n').enumerate() {
+        let line_number = line_index + 1;
         let trimmed_line = if line_bytes.ends_with(b"\r") {
             &line_bytes[..line_bytes.len() - 1]
         } else {
