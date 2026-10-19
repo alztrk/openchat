@@ -166,7 +166,7 @@ fn read_directory_listing(
     explicit_filter_scope: bool,
     retain_count: usize,
 ) -> Result<DirectoryListing, ServiceError> {
-    let mut retained = BinaryHeap::new();
+    let mut retained = BinaryHeap::with_capacity(retain_count);
     let mut total_entries = 0usize;
     let mut scanned = 0usize;
     let mut incomplete = false;
