@@ -1,4 +1,6 @@
-import { Fragment, type ReactNode, useState } from 'react';
+import { Check, Copy } from 'lucide-react';
+import { Fragment, type ReactNode, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { isWithinRichMarkdownBudget } from '@/modules/conversations/data/messageMarkdownBudget';
 import { withStableKeys } from '@/shared/utils/reactKeys';
 import { CitationSourceDialog } from './CitationSourceDialog';
@@ -23,6 +25,49 @@ interface MarkdownRenderOptions {
 
 const MAX_MARKDOWN_LIST_DEPTH = 64;
 
+interface CodeBlockProps {
+  code: string;
+  language?: string;
+}
+
+function CodeBlock({ code, language }: CodeBlockProps) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // clipboard access might be blocked in some browser/webview contexts
+    }
+  };
+
+  const copyLabel = copied ? t('toolTerminalCopied', 'Copied') : t('toolCopyContent', 'Copy');
+
+  return (
+    <div className="relative my-3 overflow-hidden rounded-control border border-border/40 bg-composer">
+      <div className="flex items-center justify-between border-b border-border/40 px-3 py-1.5 text-xs text-secondary-text select-none">
+        <span className="font-code font-medium">{language || 'text'}</span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          className="flex items-center gap-1.5 rounded px-2 py-0.5 text-xs text-secondary-text transition-colors hover:bg-surface hover:text-text focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent"
+          title={copyLabel}
+          aria-label={copyLabel}
+        >
+          {copied ? <Check className="size-3.5 text-green-500" /> : <Copy className="size-3.5" />}
+          <span>{copyLabel}</span>
+        </button>
+      </div>
+      <pre className="max-w-full overflow-x-auto p-3 text-sm">
+        <code className="font-code whitespace-pre-wrap break-words">{code}</code>
+      </pre>
+    </div>
+  );
+}
+
 /** Renders conversation Markdown while keeping provider-controlled links constrained to safe targets. */
 export function MessageMarkdown({
   allowExternalLinks = true,
@@ -32,14 +77,17 @@ export function MessageMarkdown({
   imageResolver = undefined,
   linkResolver = undefined,
 }: MessageMarkdownProps) {
-  const sourceById = new Map(citationSources.map((source) => [source.id, source]));
+  const sourceById = useMemo(() => new Map(citationSources.map((source) => [source.id, source])), [citationSources]);
   const [selectedSource, setSelectedSource] = useState<CitationSource | null>(null);
-  const options: MarkdownRenderOptions = {
-    allowExternalLinks,
-    generateHeadingIds,
-    imageResolver: imageResolver ?? null,
-    linkResolver: linkResolver ?? null,
-  };
+  const options: MarkdownRenderOptions = useMemo(
+    () => ({
+      allowExternalLinks,
+      generateHeadingIds,
+      imageResolver: imageResolver ?? null,
+      linkResolver: linkResolver ?? null,
+    }),
+    [allowExternalLinks, generateHeadingIds, imageResolver, linkResolver],
+  );
   return (
     <>
       <div className="conversation-message-content min-w-0 break-words text-text">
@@ -51,9 +99,7 @@ export function MessageMarkdown({
             sourceById={sourceById}
           />
         ) : (
-          <pre className="my-3 max-w-full overflow-x-auto whitespace-pre-wrap break-words rounded-control bg-composer px-3 py-3 text-sm font-code">
-            {content}
-          </pre>
+          <CodeBlock code={content} language="" />
         )}
         {citationSources.length > 0 ? <CitationSources onSelect={setSelectedSource} sources={citationSources} /> : null}
       </div>
@@ -113,15 +159,7 @@ function MarkdownBlocks({ content, onCitationSelect, options, sourceById }: Mark
         index += 1;
       }
       if (index < lines.length) index += 1;
-      blocks.push(
-        <pre
-          className="my-3 max-w-full overflow-x-auto rounded-control bg-composer px-3 py-3 text-sm"
-          key={`code-${blockIndex}`}
-        >
-          {language ? <span className="mb-2 block text-xs text-secondary-text">{language}</span> : null}
-          <code className="font-code whitespace-pre-wrap break-words">{codeLines.join('\n')}</code>
-        </pre>,
-      );
+      blocks.push(<CodeBlock code={codeLines.join('\n')} key={`code-${blockIndex}`} language={language} />);
       blockIndex += 1;
       continue;
     }
