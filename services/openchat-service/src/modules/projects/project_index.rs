@@ -464,7 +464,8 @@ pub(crate) fn search_current(
     }
     let mut terms = Vec::new();
     let mut seen = std::collections::HashSet::new();
-    for raw_term in query.split(|character: char| !character.is_alphanumeric() && character != '_') {
+    for raw_term in query.split(|character: char| !character.is_alphanumeric() && character != '_')
+    {
         if raw_term.chars().count() < 3 {
             continue;
         }
@@ -602,19 +603,12 @@ fn load_file_metadata(
             let content_len = usize::try_from(row.get::<_, i64>(3)?).unwrap_or(0);
             Ok((
                 row.get::<_, String>(0)?,
-                (
-                    row.get::<_, i64>(1)?,
-                    row.get::<_, i64>(2)?,
-                    content_len,
-                ),
+                (row.get::<_, i64>(1)?, row.get::<_, i64>(2)?, content_len),
             ))
         })
         .map_err(|_| unavailable_error())?;
-    rows.map(|row| {
-        row.map(|(path, (modified_ns, size, content_len))| (path, (modified_ns, size, content_len)))
-            .map_err(|_| unavailable_error())
-    })
-    .collect()
+    rows.map(|row| row.map_err(|_| unavailable_error()))
+        .collect()
 }
 
 fn unix_time_ms() -> Option<i64> {

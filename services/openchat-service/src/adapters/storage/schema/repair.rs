@@ -1,7 +1,7 @@
 //! Repairs missing derived memory indexes, FTS tables, and SQLite triggers.
 
-use rusqlite::Connection;
 use super::SCHEMA_VERSION;
+use rusqlite::Connection;
 
 pub(super) fn schema_table_exists(connection: &Connection, name: &str) -> rusqlite::Result<bool> {
     connection.query_row(
@@ -63,7 +63,11 @@ pub(super) fn repair_missing_memory_indexes_and_triggers(
     } else {
         false
     };
-    if !missing_message_index && !missing_tool_index && !missing_memory_triggers && !missing_sort_index {
+    if !missing_message_index
+        && !missing_tool_index
+        && !missing_memory_triggers
+        && !missing_sort_index
+    {
         return Ok(false);
     }
 

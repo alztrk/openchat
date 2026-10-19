@@ -1,11 +1,13 @@
-//! Backend SQLite migrations from version 16 to 31.
+//! Agent execution, checkpoints, and extended storage migrations.
 
-use rusqlite::Connection;
 use super::repair::schema_table_exists;
-use super::triggers::{MEMORY_INDEX_TRIGGERS, REDACT_AND_REBUILD_TOOL_INDEX, REDACTED_TOOL_INDEX_TRIGGERS};
+use super::triggers::{
+    MEMORY_INDEX_TRIGGERS, REDACT_AND_REBUILD_TOOL_INDEX, REDACTED_TOOL_INDEX_TRIGGERS,
+};
 use super::unix_time_millis;
+use rusqlite::Connection;
 
-pub(super) fn apply_v16_to_v31(
+pub(super) fn apply_agent_migrations(
     connection: &Connection,
     mut current_version: i64,
     target_version: i64,

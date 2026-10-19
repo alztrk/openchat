@@ -1,9 +1,9 @@
-//! Backend SQLite migrations from version 1 to 15.
+//! Core table and legacy conversation storage migrations.
 
-use rusqlite::Connection;
 use super::unix_time_millis;
+use rusqlite::Connection;
 
-pub(super) fn apply_v1_to_v15(
+pub(super) fn apply_legacy_migrations(
     connection: &Connection,
     mut current_version: i64,
     target_version: i64,

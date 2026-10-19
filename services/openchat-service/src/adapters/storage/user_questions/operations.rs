@@ -3,10 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{
-    Connection, OptionalExtension, Transaction, TransactionBehavior,
-    params,
-};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -1102,7 +1099,10 @@ fn insert_question_group(
     Ok(())
 }
 
-pub(crate) fn load_run(connection: &Connection, run_id: &str) -> Result<AgentRun, UserQuestionError> {
+pub(crate) fn load_run(
+    connection: &Connection,
+    run_id: &str,
+) -> Result<AgentRun, UserQuestionError> {
     let row = connection
         .query_row(
             "SELECT id, conversation_id, status, checkpoint_json, checkpoint_revision

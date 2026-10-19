@@ -494,8 +494,7 @@ fn archived_memory_search_scales_to_large_conversations() {
 
 #[test]
 fn turkish_fts_search_matches_bidirectional_and_folded_variants() {
-    let connection =
-        rusqlite::Connection::open_in_memory().expect("open in-memory test database");
+    let connection = rusqlite::Connection::open_in_memory().expect("open in-memory test database");
     connection
         .execute_batch(
             "CREATE TABLE messages (
@@ -590,4 +589,3 @@ fn turkish_fts_search_matches_bidirectional_and_folded_variants() {
     assert_eq!(results_folded.len(), 1);
     assert_eq!(results_folded[0].message_id, "msg-tr-1");
 }
-

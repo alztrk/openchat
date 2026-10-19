@@ -3,15 +3,15 @@
 //! Schema updates keep persisted conversations and derived indexes aligned; migrations run
 //! through the storage layer's integrity and backup guards.
 
-use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::Connection;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(super) const SCHEMA_VERSION: i64 = 31;
 pub(super) const INITIAL_SCHEMA_VERSION: i64 = 2;
 
+pub(super) mod agent_migrations;
+pub(super) mod legacy_migrations;
 pub(super) mod repair;
-pub(super) mod steps_v1_to_v15;
-pub(super) mod steps_v16_to_v31;
 pub(super) mod triggers;
 
 #[cfg(test)]
@@ -33,7 +33,8 @@ pub(super) fn initialize_schema(
     if !(1..=SCHEMA_VERSION).contains(&target_version) {
         return Err(rusqlite::Error::InvalidQuery);
     }
-    let migrations_table_exists = repair::schema_table_exists(connection, "openchat_backend_migrations")?;
+    let migrations_table_exists =
+        repair::schema_table_exists(connection, "openchat_backend_migrations")?;
     let mut current_version = if migrations_table_exists {
         connection.query_row(
             "SELECT COALESCE(MAX(version), 0) FROM openchat_backend_migrations",
@@ -71,11 +72,13 @@ pub(super) fn initialize_schema(
         );",
     )?;
 
-    current_version = steps_v1_to_v15::apply_v1_to_v15(connection, current_version, target_version)?;
+    current_version =
+        legacy_migrations::apply_legacy_migrations(connection, current_version, target_version)?;
     if current_version >= target_version {
         return Ok(current_version);
     }
 
-    current_version = steps_v16_to_v31::apply_v16_to_v31(connection, current_version, target_version)?;
+    current_version =
+        agent_migrations::apply_agent_migrations(connection, current_version, target_version)?;
     Ok(current_version)
 }
