@@ -6,10 +6,7 @@
 use std::{
     io::Read,
     path::{Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-    },
+    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use cap_std::{ambient_authority, fs::Dir, fs::OpenOptions};
@@ -19,7 +16,7 @@ use serde_json::{Value, json};
 use crate::protocol::ServiceError;
 
 use super::{
-    invalid, is_default_ignored_directory, resolve_directory, unavailable, walker_entry_is_hidden,
+    invalid, is_default_ignored_directory, resolve_directory, unavailable,
 };
 
 const MAX_SEARCH_RESULTS: usize = 40;
@@ -243,13 +240,11 @@ pub(super) fn search_files_direct(
     let mut candidates = Vec::new();
     let mut deferred_walk_errors = Vec::new();
     let mut file_buffer = Vec::with_capacity(64 * 1024);
-    let hidden_filter_failed = Arc::new(AtomicBool::new(false));
-    let hidden_filter_failed_for_walker = Arc::clone(&hidden_filter_failed);
 
     let mut walker = WalkBuilder::new(directory);
     walker
         .follow_links(false)
-        .hidden(false)
+        .hidden(!include_hidden)
         .parents(true)
         .ignore(false)
         .git_ignore(true)
@@ -271,13 +266,7 @@ pub(super) fn search_files_direct(
             if include_hidden {
                 return true;
             }
-            match walker_entry_is_hidden(name, entry) {
-                Ok(is_hidden) => !is_hidden,
-                Err(()) => {
-                    hidden_filter_failed_for_walker.store(true, Ordering::Relaxed);
-                    false
-                }
-            }
+            !name.starts_with('.')
         });
 
     'walk: for result in walker.build() {
@@ -447,15 +436,6 @@ pub(super) fn search_files_direct(
                 break 'walk;
             }
         }
-    }
-
-    if hidden_filter_failed.load(Ordering::Relaxed) {
-        mark_walk_problem(
-            file_order,
-            progress.serial_file_limit,
-            &mut progress.truncated,
-            &mut deferred_walk_errors,
-        );
     }
 
     if !progress.has_more_matches && !candidates.is_empty() {
