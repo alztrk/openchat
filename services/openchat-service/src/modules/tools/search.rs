@@ -96,7 +96,7 @@ impl SearchPattern {
 struct SearchCandidate {
     /// Path relative to the directory capability opened for the active workspace.
     path: PathBuf,
-    bytes_to_read: u64,
+    bytes_to_read: Option<u64>,
     byte_limited: bool,
 }
 
@@ -222,7 +222,6 @@ pub(super) fn search_files_direct(
     let mut file_count = 0usize;
     let mut directory_count = 1usize;
     let mut bytes_read = 0u64;
-    let mut queued_bytes = 0u64;
     let mut file_order = 0usize;
     let serial_file_limit = limit.saturating_add(1).min(MAX_DIRECT_SEARCH_WORKERS * 8);
     let mut progress = SearchProgress {
@@ -331,15 +330,6 @@ pub(super) fn search_files_direct(
         if !file_type.is_file() {
             continue;
         }
-        let Ok(metadata) = entry.metadata() else {
-            mark_walk_problem(
-                file_order,
-                progress.serial_file_limit,
-                &mut progress.truncated,
-                &mut deferred_walk_errors,
-            );
-            continue;
-        };
         file_count += 1;
         if file_count > MAX_SEARCH_FILES {
             mark_walk_problem(
@@ -352,9 +342,6 @@ pub(super) fn search_files_direct(
         }
 
         file_order += 1;
-        let remaining_bytes = MAX_SEARCH_BYTES.saturating_sub(bytes_read + queued_bytes);
-        let bytes_to_read = metadata.len().min(remaining_bytes);
-        let byte_limited = metadata.len() > remaining_bytes;
         let relative_path = match path.strip_prefix(root) {
             Ok(path) => path.to_path_buf(),
             Err(_) => {
@@ -369,8 +356,8 @@ pub(super) fn search_files_direct(
         };
         let candidate = SearchCandidate {
             path: relative_path,
-            bytes_to_read,
-            byte_limited,
+            bytes_to_read: None,
+            byte_limited: false,
         };
 
         if progress.serial_file_count < progress.serial_file_limit {
@@ -403,12 +390,11 @@ pub(super) fn search_files_direct(
                 progress.truncated = true;
                 break 'walk;
             }
-            if byte_limited {
+            if file_result.truncated {
                 progress.truncated = true;
                 break 'walk;
             }
         } else {
-            queued_bytes = queued_bytes.saturating_add(bytes_to_read);
             candidates.push(candidate);
             let batch_file_limit = if progress.next_candidate_index == 0 {
                 DIRECT_SEARCH_INITIAL_BATCH_FILES
@@ -426,14 +412,13 @@ pub(super) fn search_files_direct(
                     &mut progress,
                 )?;
                 bytes_read = bytes_read.saturating_add(reserved_bytes);
-                queued_bytes = queued_bytes.saturating_sub(reserved_bytes);
                 candidates.clear();
-                if progress.has_more_matches {
+                if progress.has_more_matches || bytes_read >= MAX_SEARCH_BYTES {
+                    if bytes_read >= MAX_SEARCH_BYTES {
+                        progress.truncated = true;
+                    }
                     break 'walk;
                 }
-            }
-            if byte_limited {
-                break 'walk;
             }
         }
     }
@@ -489,7 +474,7 @@ fn process_search_candidate_batch(
         .next_candidate_index
         .saturating_add(candidates.len());
     let reserved_bytes = candidates.iter().fold(0u64, |total, candidate| {
-        total.saturating_add(candidate.bytes_to_read)
+        total.saturating_add(candidate.bytes_to_read.unwrap_or(0))
     });
     let mut file_buffer = Vec::with_capacity(64 * 1024);
 
@@ -605,7 +590,11 @@ fn scan_search_file(
             truncated: true,
         };
     };
-    let mut take_reader = (&mut file).take(candidate.bytes_to_read);
+    let (bytes_limit, byte_limited) = match candidate.bytes_to_read {
+        Some(limit) => (limit, candidate.byte_limited),
+        None => (MAX_SEARCH_BYTES, false),
+    };
+    let mut take_reader = (&mut file).take(bytes_limit);
     if take_reader.read_to_end(buffer).is_err() {
         return SearchFileResult {
             match_count: 0,
@@ -616,10 +605,10 @@ fn scan_search_file(
     }
     let total_bytes = buffer.len() as u64;
     let bytes_read = total_bytes;
-    let truncated = candidate.byte_limited;
+    let truncated = byte_limited;
 
-    let valid_slice = if candidate.byte_limited
-        && total_bytes >= candidate.bytes_to_read
+    let valid_slice = if byte_limited
+        && total_bytes >= bytes_limit
         && !buffer.ends_with(b"\n")
     {
         if let Some(last_newline) = buffer.iter().rposition(|&b| b == b'\n') {
@@ -818,7 +807,7 @@ mod tests {
         symlink_file(&outside, &candidate_path).expect("replace candidate with outside symlink");
         let candidate = SearchCandidate {
             path: PathBuf::from("candidate.txt"),
-            bytes_to_read: 64,
+            bytes_to_read: Some(64),
             byte_limited: false,
         };
         let mut directory_cache = SearchDirectoryCache::new(&root_directory);
