@@ -3640,7 +3640,7 @@ dependencies = [
 name = "openchat-desktop"
 version = "0.1.8"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "openchat_service",
  "rusqlite",
  "serde",
