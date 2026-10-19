@@ -4,7 +4,7 @@
 //! applied during traversal so searches stay scoped to the active workspace.
 
 use std::{
-    io::{BufRead, BufReader, Read},
+    io::Read,
     path::{Path, PathBuf},
     sync::{
         Arc,
@@ -71,17 +71,28 @@ impl SearchPattern {
         }
     }
 
-    fn matches(&self, line: &str) -> bool {
+    #[inline]
+    fn matches_bytes(&self, line_bytes: &[u8]) -> bool {
         match self.ascii_shifts.as_ref() {
             Some(shifts) => {
                 contains_ascii_case_insensitive(
-                    line.as_bytes(),
+                    line_bytes,
                     self.ascii_needle.as_bytes(),
                     shifts,
-                ) || (!line.is_ascii() && line.to_lowercase().contains(&self.ascii_needle))
+                ) || (!line_bytes.is_ascii()
+                    && String::from_utf8_lossy(line_bytes)
+                        .to_lowercase()
+                        .contains(&self.ascii_needle))
             }
-            None => line.to_lowercase().contains(&self.lowercase_query),
+            None => String::from_utf8_lossy(line_bytes)
+                .to_lowercase()
+                .contains(&self.lowercase_query),
         }
+    }
+
+    #[allow(dead_code)]
+    fn matches(&self, line: &str) -> bool {
+        self.matches_bytes(line.as_bytes())
     }
 }
 
@@ -231,7 +242,7 @@ pub(super) fn search_files_direct(
     };
     let mut candidates = Vec::new();
     let mut deferred_walk_errors = Vec::new();
-    let mut line = String::new();
+    let mut file_buffer = Vec::with_capacity(64 * 1024);
     let hidden_filter_failed = Arc::new(AtomicBool::new(false));
     let hidden_filter_failed_for_walker = Arc::clone(&hidden_filter_failed);
 
@@ -385,7 +396,7 @@ pub(super) fn search_files_direct(
                 progress.offset.saturating_sub(progress.match_index),
                 window_limit,
                 true,
-                &mut line,
+                &mut file_buffer,
             );
             bytes_read = bytes_read.saturating_add(file_result.bytes_read);
             progress.truncated |= file_result.truncated;
@@ -500,7 +511,7 @@ fn process_search_candidate_batch(
     let reserved_bytes = candidates.iter().fold(0u64, |total, candidate| {
         total.saturating_add(candidate.bytes_to_read)
     });
-    let mut line = String::new();
+    let mut file_buffer = Vec::with_capacity(64 * 1024);
 
     for (candidate_index, file_result) in batch_results {
         let sequence = candidate_sequence_start.saturating_add(candidate_index);
@@ -543,7 +554,7 @@ fn process_search_candidate_batch(
                     local_offset,
                     remaining_matches,
                     true,
-                    &mut line,
+                    &mut file_buffer,
                 );
                 append_search_lines(
                     root,
@@ -603,9 +614,10 @@ fn scan_search_file(
     skip_matches: usize,
     max_matches: usize,
     stop_when_full: bool,
-    line: &mut String,
+    buffer: &mut Vec<u8>,
 ) -> SearchFileResult {
-    let Ok(file) = directory_cache.open_file(&candidate.path) else {
+    buffer.clear();
+    let Ok(mut file) = directory_cache.open_file(&candidate.path) else {
         return SearchFileResult {
             match_count: 0,
             bytes_read: 0,
@@ -613,37 +625,45 @@ fn scan_search_file(
             truncated: true,
         };
     };
-    let mut reader = BufReader::new(file.take(candidate.bytes_to_read));
+    let mut take_reader = (&mut file).take(candidate.bytes_to_read);
+    if take_reader.read_to_end(buffer).is_err() {
+        return SearchFileResult {
+            match_count: 0,
+            bytes_read: 0,
+            matches: Vec::new(),
+            truncated: true,
+        };
+    }
+    let total_bytes = buffer.len() as u64;
+    let bytes_read = total_bytes;
+    let truncated = candidate.byte_limited;
+
+    let valid_slice = if candidate.byte_limited
+        && total_bytes >= candidate.bytes_to_read
+        && !buffer.ends_with(b"\n")
+    {
+        if let Some(last_newline) = buffer.iter().rposition(|&b| b == b'\n') {
+            &buffer[..=last_newline]
+        } else {
+            &buffer[..0]
+        }
+    } else {
+        &buffer[..]
+    };
+
     let mut match_count = 0usize;
-    let mut bytes_read = 0u64;
     let mut line_number = 0usize;
     let mut matches = Vec::new();
-    let mut truncated = candidate.byte_limited;
 
-    loop {
-        line.clear();
-        let read = match reader.read_line(line) {
-            Ok(read) => read,
-            Err(_) => {
-                truncated = true;
-                break;
-            }
-        };
-        if read == 0 {
-            break;
-        }
-        let line_bytes = read as u64;
-        let next_bytes_read = bytes_read.saturating_add(line_bytes);
-        if candidate.byte_limited
-            && next_bytes_read >= candidate.bytes_to_read
-            && !line.ends_with('\n')
-        {
-            bytes_read = next_bytes_read;
-            break;
-        }
-        bytes_read = next_bytes_read;
+    for line_bytes in valid_slice.split(|&b| b == b'\n') {
         line_number += 1;
-        if !pattern.matches(line) {
+        let trimmed_line = if line_bytes.ends_with(b"\r") {
+            &line_bytes[..line_bytes.len() - 1]
+        } else {
+            line_bytes
+        };
+
+        if !pattern.matches_bytes(trimmed_line) {
             continue;
         }
 
@@ -656,9 +676,10 @@ fn scan_search_file(
             if matches.is_empty() {
                 matches.reserve_exact(max_matches.min(MAX_SEARCH_RESULTS + 1));
             }
+            let line_text = String::from_utf8_lossy(trimmed_line);
             matches.push(SearchLineMatch {
                 number: line_number,
-                text: compact_line(line, 160),
+                text: compact_line(&line_text, 160),
             });
         }
         if stop_when_full && matches.len() >= max_matches {
@@ -694,7 +715,7 @@ fn scan_search_candidates(
         for _ in 0..worker_count {
             workers.push(scope.spawn(|| {
                 let mut results = Vec::new();
-                let mut line = String::new();
+                let mut file_buffer = Vec::with_capacity(64 * 1024);
                 let mut directory_cache = SearchDirectoryCache::new(root_directory);
                 loop {
                     let candidate_index = next_candidate.fetch_add(1, Ordering::Relaxed);
@@ -708,7 +729,7 @@ fn scan_search_candidates(
                         0,
                         retained_matches,
                         false,
-                        &mut line,
+                        &mut file_buffer,
                     );
                     results.push((candidate_index, result));
                 }
@@ -829,7 +850,7 @@ mod tests {
             0,
             4,
             false,
-            &mut String::new(),
+            &mut Vec::new(),
         );
 
         assert_eq!(result.match_count, 0);
