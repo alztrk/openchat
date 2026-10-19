@@ -238,17 +238,6 @@ pub(crate) fn sync(
                 continue;
             }
         };
-        match fs::canonicalize(entry.path()) {
-            Ok(path) if path.starts_with(&root) => {}
-            Ok(_) => {
-                failed = true;
-                continue;
-            }
-            Err(_) => {
-                failed = true;
-                continue;
-            }
-        }
         if metadata.len() > MAX_FILE_BYTES as u64 {
             continue;
         }
@@ -277,11 +266,11 @@ pub(crate) fn sync(
                 *old_modified == modified_ns && *old_size == size
             });
         if unchanged {
-            let Some((_, _, content)) = existing.get(&relative_path) else {
+            let Some((_, _, content_len)) = existing.get(&relative_path) else {
                 failed = true;
                 continue;
             };
-            indexed_bytes = indexed_bytes.saturating_add(content.len());
+            indexed_bytes = indexed_bytes.saturating_add(*content_len);
             if indexed_bytes > MAX_INDEX_BYTES {
                 truncated = true;
                 break;
@@ -293,6 +282,17 @@ pub(crate) fn sync(
                 content: None,
             });
             continue;
+        }
+        match fs::canonicalize(entry.path()) {
+            Ok(path) if path.starts_with(&root) => {}
+            Ok(_) => {
+                failed = true;
+                continue;
+            }
+            Err(_) => {
+                failed = true;
+                continue;
+            }
         }
         let Some(read_limit) = bounded_index_read_limit(scanned_bytes, metadata.len()) else {
             truncated = true;
@@ -386,13 +386,6 @@ pub(crate) fn sync(
                         size = excluded.size,
                         content = excluded.content",
                     params![project_id, file.path, file.modified_ns, file.size, content],
-                )
-                .map_err(|_| unavailable_error())?;
-        } else {
-            transaction
-                .execute(
-                    "UPDATE project_index_files SET modified_ns = ?3, size = ?4 WHERE project_id = ?1 AND path = ?2",
-                    params![project_id, file.path, file.modified_ns, file.size],
                 )
                 .map_err(|_| unavailable_error())?;
         }
@@ -598,24 +591,27 @@ fn read_snapshot(
 fn load_file_metadata(
     connection: &Connection,
     project_id: &str,
-) -> Result<HashMap<String, (i64, i64, String)>, ServiceError> {
+) -> Result<HashMap<String, (i64, i64, usize)>, ServiceError> {
     let mut statement = connection
         .prepare(
-            "SELECT path, modified_ns, size, content FROM project_index_files WHERE project_id = ?1",
+            "SELECT path, modified_ns, size, length(content) FROM project_index_files WHERE project_id = ?1",
         )
         .map_err(|_| unavailable_error())?;
     let rows = statement
         .query_map([project_id], |row| {
+            let content_len = usize::try_from(row.get::<_, i64>(3)?).unwrap_or(0);
             Ok((
                 row.get::<_, String>(0)?,
-                row.get::<_, i64>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, String>(3)?,
+                (
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, i64>(2)?,
+                    content_len,
+                ),
             ))
         })
         .map_err(|_| unavailable_error())?;
     rows.map(|row| {
-        row.map(|(path, modified_ns, size, content)| (path, (modified_ns, size, content)))
+        row.map(|(path, (modified_ns, size, content_len))| (path, (modified_ns, size, content_len)))
             .map_err(|_| unavailable_error())
     })
     .collect()
