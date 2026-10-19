@@ -7,7 +7,9 @@ use std::collections::{HashMap, HashSet};
 
 use rusqlite::{Connection, params};
 
-use super::{ArchivedMemoryExcerpt, HistorySearchFilters, HistorySearchResult, index};
+use super::{
+    ArchivedMemoryExcerpt, HistorySearchFilters, HistorySearchResult, index, turkish_search,
+};
 
 const MAX_SEARCH_TERMS: usize = 12;
 const MAX_SEARCH_TERM_CHARS: usize = 128;
@@ -451,30 +453,33 @@ pub(super) fn search_expression(conversation_id: &str, query: &str) -> Option<St
 pub(super) fn content_search_expression(query: &str) -> Option<String> {
     let mut terms = Vec::<String>::with_capacity(MAX_SEARCH_TERMS);
     let mut seen = HashSet::with_capacity(MAX_SEARCH_TERMS);
-    for term in query.split(|character: char| !character.is_alphanumeric()) {
-        let term_length = term.chars().count();
+    for raw_term in query.split(|character: char| !character.is_alphanumeric()) {
+        let term_length = raw_term.chars().count();
         if !(2..=MAX_SEARCH_TERM_CHARS).contains(&term_length) {
             continue;
         }
-        let normalized = term.to_lowercase();
-        if seen.contains(&normalized) {
-            continue;
-        }
-        if terms.len() == MAX_SEARCH_TERMS {
-            let shortest_index = terms
-                .iter()
-                .enumerate()
-                .min_by_key(|(_, value)| value.chars().count())
-                .map(|(index, _)| index)?;
-            let shortest_length = terms[shortest_index].chars().count();
-            if term_length <= shortest_length {
+        let variants = turkish_search::expand_turkish_search_terms(raw_term);
+        for term in variants {
+            let normalized = term.to_lowercase();
+            if seen.contains(&normalized) {
                 continue;
             }
-            seen.remove(&terms[shortest_index].to_lowercase());
-            terms.swap_remove(shortest_index);
+            if terms.len() == MAX_SEARCH_TERMS {
+                let shortest_index = terms
+                    .iter()
+                    .enumerate()
+                    .min_by_key(|(_, value)| value.chars().count())
+                    .map(|(index, _)| index)?;
+                let shortest_length = terms[shortest_index].chars().count();
+                if term_length <= shortest_length {
+                    continue;
+                }
+                seen.remove(&terms[shortest_index].to_lowercase());
+                terms.swap_remove(shortest_index);
+            }
+            seen.insert(normalized);
+            terms.push(term);
         }
-        seen.insert(normalized);
-        terms.push(term.to_owned());
     }
     terms.sort_by_key(|term| std::cmp::Reverse(term.chars().count()));
     if terms.is_empty() {

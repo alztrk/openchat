@@ -469,12 +469,25 @@ pub(crate) fn search_current(
     if !state.enabled || state.status != "current" || query.trim().is_empty() {
         return Ok(None);
     }
-    let terms = query
-        .split(|character: char| !character.is_alphanumeric() && character != '_')
-        .filter(|term| term.chars().count() >= 3)
-        .take(12)
-        .map(|term| format!("\"{term}\""))
-        .collect::<Vec<_>>();
+    let mut terms = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for raw_term in query.split(|character: char| !character.is_alphanumeric() && character != '_') {
+        if raw_term.chars().count() < 3 {
+            continue;
+        }
+        let variants = crate::chatgpt_store::turkish_search::expand_turkish_search_terms(raw_term);
+        for term in variants {
+            if seen.insert(term.clone()) {
+                terms.push(format!("\"{term}\""));
+                if terms.len() >= 12 {
+                    break;
+                }
+            }
+        }
+        if terms.len() >= 12 {
+            break;
+        }
+    }
     if terms.is_empty() {
         return Ok(None);
     }

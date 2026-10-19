@@ -7,6 +7,7 @@ mod index;
 mod preferences;
 mod search;
 mod semantic;
+pub mod turkish_search;
 
 use crate::storage::AppStorage;
 

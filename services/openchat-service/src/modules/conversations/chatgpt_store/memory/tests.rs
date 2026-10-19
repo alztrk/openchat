@@ -491,3 +491,103 @@ fn archived_memory_search_scales_to_large_conversations() {
         MESSAGE_COUNT / 100
     );
 }
+
+#[test]
+fn turkish_fts_search_matches_bidirectional_and_folded_variants() {
+    let connection =
+        rusqlite::Connection::open_in_memory().expect("open in-memory test database");
+    connection
+        .execute_batch(
+            "CREATE TABLE messages (
+                rowid INTEGER PRIMARY KEY,
+                id TEXT NOT NULL,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at INTEGER,
+                tool_activities TEXT NOT NULL DEFAULT '[]'
+            );
+            CREATE TABLE conversation_memory_archive_settings (
+                conversation_id TEXT PRIMARY KEY NOT NULL,
+                included INTEGER NOT NULL
+            );
+            CREATE TABLE conversation_memory_excluded_tools (
+                conversation_id TEXT NOT NULL,
+                tool_name TEXT NOT NULL,
+                PRIMARY KEY (conversation_id, tool_name)
+            );
+            CREATE TABLE conversation_memory_index_state (
+                conversation_id TEXT PRIMARY KEY NOT NULL,
+                backfilled_at_unix_ms INTEGER NOT NULL
+            );
+            CREATE VIRTUAL TABLE conversation_memory_fts USING fts5(
+                conversation_id UNINDEXED,
+                message_id UNINDEXED,
+                role UNINDEXED,
+                scope_token,
+                content,
+                tokenize = 'unicode61 remove_diacritics 2'
+            );
+            CREATE TABLE conversation_memory_tool_index_state (
+                conversation_id TEXT PRIMARY KEY NOT NULL,
+                backfilled_at_unix_ms INTEGER NOT NULL
+            );
+            CREATE VIRTUAL TABLE conversation_memory_tools_fts USING fts5(
+                conversation_id UNINDEXED,
+                message_id UNINDEXED,
+                role UNINDEXED,
+                scope_token,
+                content,
+                tokenize = 'unicode61 remove_diacritics 2'
+            );
+            INSERT INTO messages
+                (id, conversation_id, role, content, status, created_at)
+            VALUES
+                ('msg-tr-1', 'conv-tr', 'user', 'İstanbul şehrinde ışık ve kütüphane projesi', 'completed', 10);",
+        )
+        .expect("create turkish fts schema and fixture");
+
+    // Search with ASCII "isik" should match "ışıklandırma"
+    let search_ascii = search_expression("conv-tr", "isik").expect("search expression for isik");
+    let results_ascii = search_archived_memories_from_connection(
+        &connection,
+        "conv-tr",
+        None,
+        &search_ascii,
+        10,
+        48,
+    )
+    .expect("search isik");
+    assert_eq!(results_ascii.len(), 1);
+    assert_eq!(results_ascii[0].message_id, "msg-tr-1");
+
+    // Search with Turkish uppercase "IŞIK" should match
+    let search_upper = search_expression("conv-tr", "IŞIK").expect("search expression for ISIK");
+    let results_upper = search_archived_memories_from_connection(
+        &connection,
+        "conv-tr",
+        None,
+        &search_upper,
+        10,
+        48,
+    )
+    .expect("search ISIK");
+    assert_eq!(results_upper.len(), 1);
+    assert_eq!(results_upper[0].message_id, "msg-tr-1");
+
+    // Search with ASCII "kutuphane" should match "kütüphane"
+    let search_folded = search_expression("conv-tr", "kutuphane").expect("search kutuphane");
+    let results_folded = search_archived_memories_from_connection(
+        &connection,
+        "conv-tr",
+        None,
+        &search_folded,
+        10,
+        48,
+    )
+    .expect("search kutuphane");
+    assert_eq!(results_folded.len(), 1);
+    assert_eq!(results_folded[0].message_id, "msg-tr-1");
+}
+
