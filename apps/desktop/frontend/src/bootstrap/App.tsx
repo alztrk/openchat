@@ -187,6 +187,37 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (!isTauri()) return;
+    let disposed = false;
+    let unlistenSetting: (() => void) | undefined;
+    let unlistenConversation: (() => void) | undefined;
+
+    void listen<{ key: string; value_json: string }>('openchat://app-setting-changed', (event) => {
+      if (disposed) return;
+      if (event.payload.key.startsWith('appearance.')) {
+        setAppearance(readAppearancePreferences());
+      }
+    }).then((unlisten) => {
+      if (disposed) unlisten();
+      else unlistenSetting = unlisten;
+    });
+
+    void listen<{ conversation_id: string; action: string }>('openchat://conversation-changed', () => {
+      if (disposed) return;
+      void useChatStore.getState().initialize();
+    }).then((unlisten) => {
+      if (disposed) unlisten();
+      else unlistenConversation = unlisten;
+    });
+
+    return () => {
+      disposed = true;
+      unlistenSetting?.();
+      unlistenConversation?.();
+    };
+  }, []);
+
+  useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const updateSystemTheme = (event: MediaQueryListEvent) => {
       if (theme === 'system') {

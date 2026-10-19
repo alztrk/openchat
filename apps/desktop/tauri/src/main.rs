@@ -17,6 +17,7 @@ mod project_folder;
 mod provider_storage;
 mod request_bounds;
 mod save_dialog;
+mod window_broadcast;
 mod window_state;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -92,6 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             chat_storage::set_cache_entry,
             chat_storage::migrate_localstorage_to_db,
             chat_storage::optimize_database,
+            window_broadcast::broadcast_window_sync_event,
         ])
         .setup(|app| {
             chat_storage::prepare_chat_database().map_err(|error| {

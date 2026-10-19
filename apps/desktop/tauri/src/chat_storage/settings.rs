@@ -60,6 +60,7 @@ pub fn get_all_app_settings() -> Result<std::collections::HashMap<String, String
 /// # Errors
 /// Returns a storage error if the setting cannot be persisted.
 pub fn set_app_setting(
+    app: tauri::AppHandle,
     key: BoundedText<MAXIMUM_SETTING_KEY_BYTES>,
     value_json: BoundedText<MAXIMUM_SETTING_VALUE_BYTES>,
 ) -> Result<(), ChatStorageError> {
@@ -74,6 +75,7 @@ pub fn set_app_setting(
             params![key, value_json, now],
         )
         .map_err(|_| ChatStorageError::unavailable())?;
+    let _ = crate::window_broadcast::broadcast_app_setting_change(&app, &key, &value_json);
     Ok(())
 }
 
@@ -83,6 +85,7 @@ pub fn set_app_setting(
 /// # Errors
 /// Returns a storage error if the batch update fails.
 pub fn set_app_settings_batch(
+    app: tauri::AppHandle,
     entries: std::collections::HashMap<String, String>,
 ) -> Result<(), ChatStorageError> {
     if entries.len() > 1000 {
@@ -93,7 +96,7 @@ pub fn set_app_settings_batch(
     let transaction = connection
         .transaction()
         .map_err(|_| ChatStorageError::unavailable())?;
-    for (key, value) in entries {
+    for (key, value) in &entries {
         if key.len() > MAXIMUM_SETTING_KEY_BYTES || value.len() > MAXIMUM_SETTING_VALUE_BYTES {
             return Err(ChatStorageError::invalid_input());
         }
@@ -108,6 +111,10 @@ pub fn set_app_settings_batch(
     transaction
         .commit()
         .map_err(|_| ChatStorageError::unavailable())?;
+
+    for (key, value) in entries {
+        let _ = crate::window_broadcast::broadcast_app_setting_change(&app, &key, &value);
+    }
     Ok(())
 }
 
@@ -117,13 +124,15 @@ pub fn set_app_settings_batch(
 /// # Errors
 /// Returns a storage error if the deletion fails.
 pub fn delete_app_setting(
+    app: tauri::AppHandle,
     key: BoundedText<MAXIMUM_SETTING_KEY_BYTES>,
 ) -> Result<(), ChatStorageError> {
     let key = key.into_inner();
     let connection = open_database()?;
     connection
-        .execute("DELETE FROM app_settings WHERE key = ?1", [key])
+        .execute("DELETE FROM app_settings WHERE key = ?1", [key.as_str()])
         .map_err(|_| ChatStorageError::unavailable())?;
+    let _ = crate::window_broadcast::broadcast_app_setting_change(&app, &key, "null");
     Ok(())
 }
 
