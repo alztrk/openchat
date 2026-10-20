@@ -14,6 +14,7 @@ import { Tooltip } from '@/design-system/Tooltip';
 import { ConversationTitleEditor } from '@/modules/conversations/components/ConversationTitleEditor';
 import type { ChatConversation } from '@/modules/conversations/data/chatStorage';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
+import { ConversationExportMenu } from './ConversationExportMenu';
 
 export interface ConversationActionsHeaderProps {
   activeConversationId?: string | null;
@@ -120,6 +121,12 @@ export function ConversationActionsHeader({
       ) : null}
 
       <div className="flex shrink-0 items-center gap-0.5">
+        {activeConversation && !temporaryChat ? (
+          <ConversationExportMenu
+            conversation={activeConversation}
+            disabled={isSending}
+          />
+        ) : null}
         <Button className="h-9 min-h-9 px-2.5" onClick={onNewChat} size="small" variant="ghost">
           <Plus aria-hidden="true" size={16} />
           <span className="hidden sm:inline">{t('newChat')}</span>

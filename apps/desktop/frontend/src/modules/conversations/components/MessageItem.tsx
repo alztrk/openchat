@@ -22,6 +22,7 @@ import { parsePersonalMemoryFactIds, readPersonalMemoryFacts } from '@/modules/s
 import { MessageAttachments } from './MessageAttachments';
 import { CitationSources } from './message/CitationSources';
 import { FileChangesSummaryCard } from './message/FileChangesSummaryCard';
+import { MessageCopyMenu } from './message/MessageCopyMenu';
 import { MessageMarkdown } from './message/MessageMarkdown';
 import { parseCitationSources, parseReasoningSummaries, parseToolActivities } from './message/messageData';
 import { ReasoningSummary } from './message/ReasoningSummary';
@@ -220,15 +221,19 @@ export function MessageItem({
             </Button>
           ) : null}
           {message.content ? (
-            <Button
-              aria-label={t(copyResult === 'copied' ? 'messageCopied' : 'copyMessage')}
-              className="size-8 opacity-70 group-hover:opacity-100"
-              onClick={() => void copyMessage()}
-              size="icon"
-              variant="ghost"
-            >
-              {copyResult === 'copied' ? <Check aria-hidden="true" size={16} /> : <Copy aria-hidden="true" size={16} />}
-            </Button>
+            !isUser ? (
+              <MessageCopyMenu content={message.content} />
+            ) : (
+              <Button
+                aria-label={t(copyResult === 'copied' ? 'messageCopied' : 'copyMessage')}
+                className="size-8 opacity-70 group-hover:opacity-100"
+                onClick={() => void copyMessage()}
+                size="icon"
+                variant="ghost"
+              >
+                {copyResult === 'copied' ? <Check aria-hidden="true" size={16} /> : <Copy aria-hidden="true" size={16} />}
+              </Button>
+            )
           ) : null}
           {isUser && onEditMessage ? (
             <Button

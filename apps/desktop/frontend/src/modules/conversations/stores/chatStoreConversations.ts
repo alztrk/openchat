@@ -56,9 +56,23 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
       await renameConversationStorage(conversationId, title);
       set((state) => ({
         conversations: state.conversations.map((conversation) =>
-          conversation.id === conversationId ? { ...conversation, title } : conversation,
+          conversation.id === conversationId ? { ...conversation, title, titleSource: 'manual' } : conversation,
         ),
       }));
+    },
+
+    applyTitleUpdate(conversationId: string, title: string): void {
+      set((state) => {
+        const conversation = state.conversations.find((c) => c.id === conversationId);
+        if (!conversation || conversation.titleSource === 'manual') {
+          return state;
+        }
+        return {
+          conversations: state.conversations.map((c) =>
+            c.id === conversationId ? { ...c, title, titleSource: 'automatic' } : c,
+          ),
+        };
+      });
     },
 
     async refreshProjects(): Promise<void> {

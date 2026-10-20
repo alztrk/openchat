@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/design-system';
 import { ConversationSidebarRow } from '@/modules/conversations/components/ConversationSidebarRow';
 import { ConversationSidebarSection } from '@/modules/conversations/components/ConversationSidebarSection';
-import type { ChatConversation, ChatProject } from '@/modules/conversations/data/chatStorage';
+import type { ChatConversation, ChatProject, ExportFormat } from '@/modules/conversations/data/chatStorage';
 
 interface ProjectSidebarSectionProps {
   projects: readonly ChatProject[];
@@ -27,7 +27,7 @@ interface ProjectSidebarSectionProps {
   onToggleBookmark(conversation: ChatConversation): void;
   onEditTags(conversation: ChatConversation): void;
   onRename(conversation: ChatConversation): void;
-  onExport(conversation: ChatConversation): void;
+  onExport(conversation: ChatConversation, format?: ExportFormat): void;
   onArchive(conversation: ChatConversation): void;
   onDelete(conversation: ChatConversation): void;
   onMoveToProject(conversation: ChatConversation, projectId: string): void;
@@ -172,7 +172,7 @@ export function ProjectSidebarSection({
                           onArchive={() => onArchive(conversation)}
                           onDelete={() => onDelete(conversation)}
                           onEditTags={() => onEditTags(conversation)}
-                          onExport={() => onExport(conversation)}
+                          onExport={(format) => onExport(conversation, format)}
                           onMoveToChats={() => onMoveToChats(conversation)}
                           onMoveToProject={(projectId) => onMoveToProject(conversation, projectId)}
                           onRename={() => onRename(conversation)}

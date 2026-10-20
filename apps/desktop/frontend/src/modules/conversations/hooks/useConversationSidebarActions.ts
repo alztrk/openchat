@@ -5,19 +5,17 @@ import {
   createProject as createProjectStorage,
   deleteConversation as deleteConversationStorage,
   getConversation,
-  getMessages,
   moveConversations,
   renameConversation as renameConversationStorage,
-  saveConversationMarkdown,
   setConversationBookmarked,
   setConversationPinned,
   setConversationsArchived,
   setConversationTags,
 } from '@/modules/conversations/data/chatStorage';
 import {
-  buildConversationMarkdown,
-  conversationMarkdownFileName,
-} from '@/modules/conversations/data/conversationMarkdownExport';
+  type ExportFormat,
+  exportConversationToFile,
+} from '@/modules/conversations/data/conversationExport';
 import { conversationMarkdownLabels } from '@/modules/conversations/data/conversationMarkdownLabels';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { localServiceClient } from '@/platform/local-service';
@@ -98,18 +96,19 @@ export function useConversationSidebarActions({ selectedIds, closeSelection }: U
     await runMutation(() => moveConversations([conversation.id], projectId), 'projectMoveFailed');
   };
 
-  const exportConversation = async (conversation: ChatConversation) => {
+  const exportConversation = async (conversation: ChatConversation, format: ExportFormat = 'md') => {
     if (!beginAction()) return;
     try {
-      const messages = await getMessages(conversation.id);
-      const markdown = buildConversationMarkdown(conversation, messages, conversationMarkdownLabels(conversation, t));
-      const saved = await saveConversationMarkdown(
-        conversationMarkdownFileName(conversation.title),
-        t('exportConversation'),
-        markdown,
-      );
+      const labels = conversationMarkdownLabels(conversation, t);
+      const saved = await exportConversationToFile(conversation, format, labels, t('exportConversation'));
       if (!saved) return;
-      showFeedback('conversationExported', true);
+      const feedbackKey: TranslationKey =
+        format === 'md'
+          ? 'conversationExportedMarkdown'
+          : format === 'html'
+            ? 'conversationExportedHtml'
+            : 'conversationExportedJson';
+      showFeedback(feedbackKey, true);
     } catch {
       showFeedback('conversationExportFailed');
     } finally {

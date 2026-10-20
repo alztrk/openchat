@@ -27,10 +27,12 @@ pub use connections::{
     set_title_preference, title_preference, update_profile, update_workspace_plan,
     workspace_external_id,
 };
+#[allow(unused_imports)]
 pub use conversations::{
     apply_generated_title, conversation_messages, conversation_messages_from_boundary,
     conversation_route, conversation_title_is_automatic, create_title_job, finish_title_job,
-    is_retryable_latest_assistant_message, save_assistant_message, save_assistant_tool_checkpoint,
+    is_custom_title, is_default_title, is_retryable_latest_assistant_message, save_assistant_message,
+    save_assistant_tool_checkpoint, should_generate_automatic_title,
 };
 pub use memory::{
     ArchiveIndexSettings, ArchiveIndexTool, ArchivedMemoryExcerpt, HistorySearchFilterOptions,
@@ -117,6 +119,7 @@ pub struct ConversationRoute {
     pub connection_id: String,
     pub workspace_id: String,
     pub model_id: String,
+    #[allow(dead_code)]
     pub title_is_automatic: bool,
 }
 

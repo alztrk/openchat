@@ -807,7 +807,7 @@ pub async fn send_message(
         .map_err(|_| storage_error())?;
     }
     if status == "completed"
-        && chatgpt_store::conversation_title_is_automatic(storage, conversation_id).unwrap_or(false)
+        && chatgpt_store::should_generate_automatic_title(storage, conversation_id).unwrap_or(false)
         && !matches!(
             &title_generation,
             crate::chat_operation::TitleGenerationRequest::Disabled

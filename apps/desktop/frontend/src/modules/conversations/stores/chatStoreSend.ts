@@ -316,6 +316,12 @@ export function createSendMessageAction(
               window.dispatchEvent(new CustomEvent('openchat-notification-error'));
             });
           }
+          if (event.name === 'chat.title_updated') {
+            const data = event.data;
+            if (typeof data.conversationId === 'string' && typeof data.title === 'string') {
+              get().applyTitleUpdate(data.conversationId, data.title);
+            }
+          }
           const message = applyStreamEvent(event, assistantMessage.current, {
             conversationId: targetConversationId,
             providerId: selectedModel.providerId,

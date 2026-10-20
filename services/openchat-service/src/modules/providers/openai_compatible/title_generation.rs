@@ -234,6 +234,9 @@ async fn generate_title(
     excluded_assistant_message_id: Option<&str>,
     events: EventSink,
 ) {
+    if chatgpt_store::is_custom_title(storage, conversation_id).unwrap_or(true) {
+        return;
+    }
     let Ok(messages) = chatgpt_store::conversation_messages(storage, conversation_id) else {
         return;
     };

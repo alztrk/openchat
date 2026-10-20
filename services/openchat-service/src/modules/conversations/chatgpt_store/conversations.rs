@@ -49,6 +49,7 @@ pub fn conversation_route(
     }
 }
 
+#[allow(dead_code)]
 pub fn conversation_title_is_automatic(
     storage: &AppStorage,
     conversation_id: &str,
@@ -58,6 +59,138 @@ pub fn conversation_title_is_automatic(
         [conversation_id],
         |row| row.get(0),
     )
+}
+
+pub fn is_custom_title(
+    storage: &AppStorage,
+    conversation_id: &str,
+) -> rusqlite::Result<bool> {
+    storage.connect()?.query_row(
+        "SELECT title_source != 'automatic' FROM conversations WHERE id = ?1",
+        params![conversation_id],
+        |row| row.get(0),
+    )
+}
+
+pub fn is_default_title(title: &str) -> bool {
+    let trimmed = title.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    let lower = trimmed.to_lowercase();
+    match lower.as_str() {
+        "new conversation"
+        | "start a new conversation"
+        | "new chat"
+        | "untitled"
+        | "untitled conversation"
+        | "chat"
+        | "yeni sohbet"
+        | "yeni bir sohbet"
+        | "yeni bir sohbet baslat"
+        | "yeni bir sohbet başlat"
+        | "yeni konuşma"
+        | "yeni konusma"
+        | "başlıksız"
+        | "başlıksız sohbet"
+        | "basliksiz"
+        | "basliksiz sohbet"
+        | "neue unterhaltung"
+        | "neue unterhaltung starten"
+        | "neuer chat"
+        | "ohne titel"
+        | "nueva conversación"
+        | "nueva conversacion"
+        | "iniciar una conversación nueva"
+        | "iniciar una conversacion nueva"
+        | "nuevo chat"
+        | "sin título"
+        | "sin titulo"
+        | "nouvelle conversation"
+        | "démarrer une nouvelle conversation"
+        | "demarrer une nouvelle conversation"
+        | "nouveau chat"
+        | "sans titre" => true,
+        _ => is_date_title(trimmed),
+    }
+}
+
+fn is_date_title(text: &str) -> bool {
+    let s = text.trim();
+    if (8..=32).contains(&s.len()) {
+        let has_separator = s.contains('-') || s.contains('/') || s.contains('.');
+        let is_numeric_date = s
+            .chars()
+            .all(|c| c.is_ascii_digit() || matches!(c, '-' | '/' | '.' | ':' | ' ' | 'T'));
+        if has_separator && is_numeric_date {
+            let digit_count = s.chars().filter(|c| c.is_ascii_digit()).count();
+            if digit_count >= 6 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+pub fn should_generate_automatic_title(
+    storage: &AppStorage,
+    conversation_id: &str,
+) -> rusqlite::Result<bool> {
+    let database = storage.connect()?;
+    let row = database
+        .query_row(
+            "SELECT title, title_source FROM conversations WHERE id = ?1",
+            params![conversation_id],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+        )
+        .optional()?;
+    let Some((title, title_source)) = row else {
+        return Ok(false);
+    };
+
+    if title_source != "automatic" {
+        return Ok(false);
+    }
+
+    let completed_assistant_turns: i64 = database.query_row(
+        "SELECT COUNT(*) FROM messages WHERE conversation_id = ?1 AND role = 'assistant' AND status = 'completed'",
+        params![conversation_id],
+        |row| row.get(0),
+    )?;
+
+    if !(1..=2).contains(&completed_assistant_turns) {
+        return Ok(false);
+    }
+
+    if is_default_title(&title) {
+        return Ok(true);
+    }
+
+    let first_user_message: Option<String> = database
+        .query_row(
+            "SELECT content FROM messages WHERE conversation_id = ?1 AND role = 'user' ORDER BY created_at ASC, id ASC LIMIT 1",
+            params![conversation_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    if let Some(content) = first_user_message {
+        let first_line = content.lines().next().unwrap_or("").trim();
+        let prompt_snippet = if first_line.is_empty() {
+            content.trim()
+        } else {
+            first_line
+        };
+        let prompt_snippet = prompt_snippet.chars().take(500).collect::<String>();
+        if title.trim() == prompt_snippet.trim() {
+            return Ok(true);
+        }
+    }
+
+    if completed_assistant_turns == 1 {
+        return Ok(true);
+    }
+
+    Ok(false)
 }
 
 pub fn conversation_messages(
@@ -310,4 +443,163 @@ pub fn finish_title_job(
         params![job_id, status, reason_code, unix_time_millis()?],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new(name: &str) -> Self {
+            let id = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "openchat-conv-test-{name}-{}-{id}",
+                std::process::id()
+            ));
+            fs::create_dir_all(&path).expect("create test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn test_is_default_title() {
+        assert!(is_default_title(""));
+        assert!(is_default_title("   "));
+        assert!(is_default_title("New Conversation"));
+        assert!(is_default_title("new conversation"));
+        assert!(is_default_title("Start a new conversation"));
+        assert!(is_default_title("New Chat"));
+        assert!(is_default_title("Yeni sohbet"));
+        assert!(is_default_title("yeni sohbet"));
+        assert!(is_default_title("Yeni bir sohbet"));
+        assert!(is_default_title("Neue Unterhaltung"));
+        assert!(is_default_title("Nueva conversación"));
+        assert!(is_default_title("Nouvelle conversation"));
+        assert!(is_default_title("Untitled"));
+        assert!(is_default_title("Başlıksız"));
+        assert!(is_default_title("2026-10-20"));
+        assert!(is_default_title("2026-10-20 14:30:00"));
+        assert!(is_default_title("20.10.2026"));
+        assert!(is_default_title("10/20/2026"));
+
+        assert!(!is_default_title("Rust Cargo Setup Guide"));
+        assert!(!is_default_title("Fixing SQLite connection pool"));
+        assert!(!is_default_title("Alican's notes"));
+    }
+
+    #[test]
+    fn test_automatic_titling_lifecycle() {
+        let directory = TestDirectory::new("titling-lifecycle");
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open storage");
+        let conn = storage.connect().expect("connect");
+
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS conversations (
+                id TEXT PRIMARY KEY NOT NULL,
+                title TEXT NOT NULL,
+                title_source TEXT NOT NULL DEFAULT 'automatic',
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS messages (
+                id TEXT NOT NULL,
+                conversation_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                status TEXT NOT NULL,
+                created_at INTEGER,
+                output_tokens INTEGER,
+                tool_activities TEXT NOT NULL DEFAULT '[]',
+                PRIMARY KEY (conversation_id, id)
+            );",
+        )
+        .expect("create test schema");
+
+        let conv_id = "test-conv-1";
+        conn.execute(
+            "INSERT INTO conversations (id, title, title_source, created_at, updated_at)
+             VALUES (?1, 'New Conversation', 'automatic', 1000, 1000)",
+            params![conv_id],
+        )
+        .expect("insert conv");
+
+        assert!(!is_custom_title(&storage, conv_id).expect("is_custom"));
+        // 0 completed assistant turns: should not generate
+        assert!(!should_generate_automatic_title(&storage, conv_id).expect("should gen"));
+
+        // Add 1 completed assistant turn
+        conn.execute(
+            "INSERT INTO messages (id, conversation_id, role, content, status, created_at)
+             VALUES ('msg-u1', ?1, 'user', 'How do I configure cargo?', 'completed', 1010)",
+            params![conv_id],
+        )
+        .expect("insert user msg");
+        conn.execute(
+            "INSERT INTO messages (id, conversation_id, role, content, status, created_at)
+             VALUES ('msg-a1', ?1, 'assistant', 'Here is how to configure cargo...', 'completed', 1020)",
+            params![conv_id],
+        )
+        .expect("insert assistant msg");
+
+        // 1 completed assistant turn with default title: should generate
+        assert!(should_generate_automatic_title(&storage, conv_id).expect("should gen"));
+
+        // Apply generated title
+        let applied = apply_generated_title(&storage, conv_id, "Cargo Configuration").expect("apply");
+        assert!(applied);
+
+        let current_title: String = conn
+            .query_row("SELECT title FROM conversations WHERE id = ?1", params![conv_id], |row| row.get(0))
+            .expect("query title");
+        assert_eq!(current_title, "Cargo Configuration");
+
+        // Now add second turn
+        conn.execute(
+            "INSERT INTO messages (id, conversation_id, role, content, status, created_at)
+             VALUES ('msg-u2', ?1, 'user', 'What about dependencies?', 'completed', 1030)",
+            params![conv_id],
+        )
+        .expect("insert user msg 2");
+        conn.execute(
+            "INSERT INTO messages (id, conversation_id, role, content, status, created_at)
+             VALUES ('msg-a2', ?1, 'assistant', 'Dependencies are added under [dependencies]...', 'completed', 1040)",
+            params![conv_id],
+        )
+        .expect("insert assistant msg 2");
+
+        // Title is already "Cargo Configuration" (not default, not user prompt), turn count is 2: should NOT re-generate
+        assert!(!should_generate_automatic_title(&storage, conv_id).expect("should not gen"));
+
+        // If user manually edited the title, title_source becomes 'manual'
+        conn.execute(
+            "UPDATE conversations SET title = 'My Custom Title', title_source = 'manual' WHERE id = ?1",
+            params![conv_id],
+        )
+        .expect("update manual");
+
+        assert!(is_custom_title(&storage, conv_id).expect("is_custom"));
+        assert!(!should_generate_automatic_title(&storage, conv_id).expect("should not gen"));
+
+        // Automated titling must NEVER overwrite manual/custom title
+        let overwritten = apply_generated_title(&storage, conv_id, "Another Auto Title").expect("apply");
+        assert!(!overwritten);
+
+        let final_title: String = conn
+            .query_row("SELECT title FROM conversations WHERE id = ?1", params![conv_id], |row| row.get(0))
+            .expect("query title");
+        assert_eq!(final_title, "My Custom Title");
+    }
 }

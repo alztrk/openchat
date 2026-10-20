@@ -86,6 +86,25 @@ export class LocalServiceClient {
   private startup: Promise<void> | undefined;
   private processStartup: Promise<void> | undefined;
   private initialized = false;
+  private broadcastListeners = new Set<(event: ServiceEvent) => void>();
+
+  /** Subscribes to broadcast and progress events emitted by the local service process. */
+  subscribe(listener: (event: ServiceEvent) => void): () => void {
+    this.broadcastListeners.add(listener);
+    return () => {
+      this.broadcastListeners.delete(listener);
+    };
+  }
+
+  private dispatchBroadcast(event: ServiceEvent): void {
+    for (const listener of this.broadcastListeners) {
+      try {
+        listener(event);
+      } catch (cause) {
+        globalThis.reportError(new Error('A local service broadcast listener failed.', { cause }));
+      }
+    }
+  }
 
   /** Starts and initializes the sidecar once, sharing concurrent startup attempts. */
   async initialize(): Promise<void> {
@@ -474,32 +493,39 @@ export class LocalServiceClient {
     }
 
     const pending = this.pending.get(response.id);
-    if (!pending) return;
     if (typeof response.event === 'string') {
       if (!isJsonObject(response.data)) {
-        pending.reject(
-          new LocalServiceError('invalid_service_response', 'The local service returned an invalid event.'),
-        );
-        this.removePending(response.id);
+        if (pending) {
+          pending.reject(
+            new LocalServiceError('invalid_service_response', 'The local service returned an invalid event.'),
+          );
+          this.removePending(response.id);
+        }
         return;
       }
-      try {
-        pending.onEvent?.({ name: response.event, data: response.data });
-      } catch (cause) {
-        this.removePending(response.id);
-        pending.reject(
-          new LocalServiceError(
-            'service_event_handler_failed',
-            'A local service progress update could not be processed.',
-          ),
-        );
-        globalThis.reportError(new Error('A local service progress event handler failed.', { cause }));
-        void this.cancelRequest(response.id).catch((cancelError: unknown) => {
-          this.reportUnexpectedCancellationFailure(cancelError);
-        });
+      const event: ServiceEvent = { name: response.event, data: response.data };
+      if (pending) {
+        try {
+          pending.onEvent?.(event);
+        } catch (cause) {
+          this.removePending(response.id);
+          pending.reject(
+            new LocalServiceError(
+              'service_event_handler_failed',
+              'A local service progress update could not be processed.',
+            ),
+          );
+          globalThis.reportError(new Error('A local service progress event handler failed.', { cause }));
+          void this.cancelRequest(response.id).catch((cancelError: unknown) => {
+            this.reportUnexpectedCancellationFailure(cancelError);
+          });
+        }
       }
+      this.dispatchBroadcast(event);
       return;
     }
+
+    if (!pending) return;
 
     this.removePending(response.id);
     if (isJsonObject(response.error)) {

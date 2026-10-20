@@ -14,6 +14,7 @@ const attachmentTypes: Record<string, { kind: ChatAttachmentKind; mimeType: stri
   jpg: { kind: 'image', mimeType: 'image/jpeg', maximumBytes: maximumImageBytes },
   jpeg: { kind: 'image', mimeType: 'image/jpeg', maximumBytes: maximumImageBytes },
   webp: { kind: 'image', mimeType: 'image/webp', maximumBytes: maximumImageBytes },
+  gif: { kind: 'image', mimeType: 'image/gif', maximumBytes: maximumImageBytes },
   txt: { kind: 'text', mimeType: 'text/plain', maximumBytes: maximumTextBytes },
   log: { kind: 'text', mimeType: 'text/plain', maximumBytes: maximumTextBytes },
   md: { kind: 'text', mimeType: 'text/markdown', maximumBytes: maximumTextBytes },
@@ -242,6 +243,17 @@ function hasValidImageSignature(mimeType: string, bytes: Uint8Array): boolean {
   }
   if (mimeType === 'image/jpeg')
     return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  if (mimeType === 'image/gif') {
+    return (
+      bytes.length >= 6 &&
+      bytes[0] === 0x47 &&
+      bytes[1] === 0x49 &&
+      bytes[2] === 0x46 &&
+      bytes[3] === 0x38 &&
+      (bytes[4] === 0x37 || bytes[4] === 0x39) &&
+      bytes[5] === 0x61
+    );
+  }
   return (
     mimeType === 'image/webp' &&
     bytes.length >= 12 &&

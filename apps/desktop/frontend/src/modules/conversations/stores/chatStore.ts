@@ -148,6 +148,7 @@ export interface ChatState {
   initialize(): Promise<void>;
   refreshConversations(): Promise<void>;
   renameConversation(conversationId: string, title: string): Promise<void>;
+  applyTitleUpdate(conversationId: string, title: string): void;
   refreshSavedOutputMessageKeys(): Promise<void>;
   refreshProjects(): Promise<void>;
   clearConversationHistory(): Promise<void>;
@@ -196,6 +197,8 @@ export interface ChatState {
   stopResponse(): Promise<void>;
   dismissError(): void;
 }
+
+let titleUpdateUnsubscribe: (() => void) | null = null;
 
 export const useChatStore = create<ChatState>((set, get) => ({
   serviceStatus: 'idle',
@@ -250,6 +253,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ serviceStatus: 'loading', storageInitializationErrorCode: null, projectsStatus: 'loading', errorCode: null });
     try {
       await localServiceClient.initialize();
+      if (!titleUpdateUnsubscribe) {
+        titleUpdateUnsubscribe = localServiceClient.subscribe((event) => {
+          if (event.name === 'chat.title_updated') {
+            const data = event.data;
+            if (typeof data.conversationId === 'string' && typeof data.title === 'string') {
+              get().applyTitleUpdate(data.conversationId, data.title);
+            }
+          }
+        });
+      }
       const [conversationResult, responseResult, projectResult] = await Promise.allSettled([
         listConversations(),
         hasCompletedAssistantResponseStorage(),

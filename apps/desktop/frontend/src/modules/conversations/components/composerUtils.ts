@@ -54,7 +54,7 @@ export const providerTranslationKeys: Partial<Record<string, TranslationKey>> = 
   llama_cpp: 'localEngines',
 };
 
-export const imageAttachmentExtensions = '.png,.jpg,.jpeg,.webp';
+export const imageAttachmentExtensions = '.png,.jpg,.jpeg,.webp,.gif';
 export const textAttachmentExtensions =
   '.txt,.md,.csv,.json,.jsonl,.xml,.html,.css,.js,.jsx,.ts,.tsx,.dart,.rs,.py,.go,.java,.kt,.swift,.c,.h,.cpp,.hpp,.cs,.sh,.ps1,.yaml,.yml,.toml,.ini,.sql,.log';
 

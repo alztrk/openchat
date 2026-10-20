@@ -31,6 +31,9 @@ impl ChatGptService {
         events: EventSink,
         target: Option<TitleGenerationModel>,
     ) {
+        if chatgpt_store::is_custom_title(&self.storage, conversation_id).unwrap_or(true) {
+            return;
+        }
         let started = Instant::now();
         self.record_chatgpt_event("request_started", "title", None, None, None, None);
         let (title_route, model) = if let Some(target) = target {

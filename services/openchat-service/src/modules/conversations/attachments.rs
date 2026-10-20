@@ -105,7 +105,7 @@ pub(crate) fn validate_attachment_metadata(
         ));
     }
     let maximum_size = match (metadata.kind.as_str(), metadata.mime_type.as_str()) {
-        ("image", "image/png" | "image/jpeg" | "image/webp") => MAXIMUM_IMAGE_BYTES,
+        ("image", "image/png" | "image/jpeg" | "image/webp" | "image/gif") => MAXIMUM_IMAGE_BYTES,
         ("text", mime_type) if is_text_mime_type(mime_type) => MAXIMUM_TEXT_BYTES,
         _ => {
             return Err(AttachmentMetadataError("The attachment type is invalid."));
@@ -456,6 +456,7 @@ fn image_extension(mime_type: &str) -> Option<&'static str> {
         "image/png" => Some("png"),
         "image/jpeg" => Some("jpg"),
         "image/webp" => Some("webp"),
+        "image/gif" => Some("gif"),
         _ => None,
     }
 }
@@ -623,6 +624,12 @@ fn has_valid_image_signature(mime_type: &str, bytes: &[u8]) -> bool {
         "image/png" => bytes.starts_with(b"\x89PNG\r\n\x1a\n"),
         "image/jpeg" => bytes.starts_with(&[0xff, 0xd8, 0xff]),
         "image/webp" => bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP",
+        "image/gif" => {
+            bytes.len() >= 6
+                && bytes.starts_with(b"GIF8")
+                && (bytes[4] == b'7' || bytes[4] == b'9')
+                && bytes[5] == b'a'
+        }
         _ => false,
     }
 }

@@ -28,10 +28,53 @@ pub async fn save_conversation_markdown(
     title: BoundedText<MAXIMUM_MARKDOWN_EXPORT_TITLE_BYTES>,
     content: BoundedText<MAXIMUM_MARKDOWN_EXPORT_CONTENT_BYTES>,
 ) -> Result<bool, ChatStorageError> {
-    let file_name = file_name.into_inner();
-    let title = title.into_inner();
-    let content = content.into_inner();
-    if !is_safe_markdown_export_file_name(&file_name)
+    save_conversation_export_inner(
+        &window,
+        file_name.into_inner(),
+        title.into_inner(),
+        content.into_inner(),
+        "md",
+    )
+    .await
+}
+
+#[tauri::command]
+/// Prompts the user for an export destination (Markdown, HTML, or JSON) and atomically writes the content.
+///
+/// # Errors
+/// Returns a validation, dialog, or storage error.
+pub async fn save_conversation_export(
+    window: tauri::WebviewWindow,
+    file_name: BoundedText<MAXIMUM_MARKDOWN_EXPORT_FILE_NAME_BYTES>,
+    title: BoundedText<MAXIMUM_MARKDOWN_EXPORT_TITLE_BYTES>,
+    content: BoundedText<MAXIMUM_MARKDOWN_EXPORT_CONTENT_BYTES>,
+    format: BoundedText<16>,
+) -> Result<bool, ChatStorageError> {
+    save_conversation_export_inner(
+        &window,
+        file_name.into_inner(),
+        title.into_inner(),
+        content.into_inner(),
+        &format.into_inner(),
+    )
+    .await
+}
+
+async fn save_conversation_export_inner(
+    window: &tauri::WebviewWindow,
+    file_name: String,
+    title: String,
+    content: String,
+    format: &str,
+) -> Result<bool, ChatStorageError> {
+    let (filter_name, extension) = match format.to_ascii_lowercase().as_str() {
+        "md" | "markdown" => ("Markdown", "md"),
+        "html" | "htm" => ("HTML Document", "html"),
+        "json" => ("JSON Document", "json"),
+        _ => return Err(ChatStorageError::invalid_input()),
+    };
+
+    if !is_safe_export_file_name(&file_name, extension)
         || title.is_empty()
         || title.len() > 128
         || title.chars().any(char::is_control)
@@ -41,7 +84,7 @@ pub async fn save_conversation_markdown(
         return Err(ChatStorageError::invalid_input());
     }
 
-    let Some(path) = select_save_file(&window, file_name, title, "Markdown", "md")
+    let Some(path) = select_save_file(window, file_name, title, filter_name, extension)
         .await
         .map_err(|error| match error {
             SaveFileDialogError::Unavailable => ChatStorageError::unavailable(),
@@ -53,7 +96,7 @@ pub async fn save_conversation_markdown(
         || path
             .extension()
             .and_then(std::ffi::OsStr::to_str)
-            .is_none_or(|extension| !extension.eq_ignore_ascii_case("md"))
+            .is_none_or(|ext| !ext.eq_ignore_ascii_case(extension))
     {
         return Err(ChatStorageError::invalid_input());
     }
@@ -92,7 +135,7 @@ pub(crate) fn write_markdown_export(path: &Path, content: &[u8]) -> Result<(), C
     Ok(())
 }
 
-pub(crate) fn is_safe_markdown_export_file_name(file_name: &str) -> bool {
+pub(crate) fn is_safe_export_file_name(file_name: &str, expected_ext: &str) -> bool {
     let path = Path::new(file_name);
     !file_name.is_empty()
         && file_name.len() <= 255
@@ -103,14 +146,18 @@ pub(crate) fn is_safe_markdown_export_file_name(file_name: &str) -> bool {
         && path
             .extension()
             .and_then(std::ffi::OsStr::to_str)
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("md"))
+            .is_some_and(|extension| extension.eq_ignore_ascii_case(expected_ext))
+}
+
+pub(crate) fn is_safe_markdown_export_file_name(file_name: &str) -> bool {
+    is_safe_export_file_name(file_name, "md")
 }
 
 #[cfg(test)]
 mod markdown_export_tests {
     use std::{fs, path::PathBuf};
 
-    use super::{is_safe_markdown_export_file_name, write_markdown_export};
+    use super::{is_safe_export_file_name, is_safe_markdown_export_file_name, write_markdown_export};
     use crate::chat_storage::CreateProjectInput;
 
     struct TestDirectory(PathBuf);
@@ -134,6 +181,15 @@ mod markdown_export_tests {
     fn markdown_export_file_name_accepts_a_simple_markdown_name() {
         assert!(is_safe_markdown_export_file_name("conversation-notes.md"));
         assert!(is_safe_markdown_export_file_name("Sohbet Özeti.MD"));
+    }
+
+    #[test]
+    fn export_file_name_accepts_html_and_json() {
+        assert!(is_safe_export_file_name("transcript.html", "html"));
+        assert!(is_safe_export_file_name("transcript.HTML", "html"));
+        assert!(is_safe_export_file_name("transcript.json", "json"));
+        assert!(is_safe_export_file_name("transcript.JSON", "json"));
+        assert!(!is_safe_export_file_name("transcript.json", "html"));
     }
 
     #[test]

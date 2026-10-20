@@ -157,12 +157,54 @@ export async function deleteConversation(conversationId: string): Promise<void> 
   await invoke('delete_conversation', { conversationId });
 }
 
-export async function saveConversationMarkdown(fileName: string, title: string, content: string): Promise<boolean> {
-  const value: unknown = await invoke('save_conversation_markdown', { fileName, title, content });
-  if (typeof value !== 'boolean') {
+export type ExportFormat = 'md' | 'html' | 'json';
+
+export async function saveConversationExport(
+  fileName: string,
+  title: string,
+  content: string,
+  format: ExportFormat,
+): Promise<boolean> {
+  try {
+    const value: unknown = await invoke('save_conversation_export', { fileName, title, content, format });
+    if (typeof value === 'boolean') {
+      return value;
+    }
+  } catch {
+    if (format === 'md') {
+      const value: unknown = await invoke('save_conversation_markdown', { fileName, title, content });
+      if (typeof value === 'boolean') {
+        return value;
+      }
+    }
+    if (typeof document !== 'undefined') {
+      triggerBrowserDownload(fileName, content, format);
+      return true;
+    }
     throw new Error('The conversation export result is invalid.');
   }
-  return value;
+  return false;
+}
+
+function triggerBrowserDownload(fileName: string, content: string, format: ExportFormat): void {
+  const mimeTypes: Record<ExportFormat, string> = {
+    md: 'text/markdown;charset=utf-8',
+    html: 'text/html;charset=utf-8',
+    json: 'application/json;charset=utf-8',
+  };
+  const blob = new Blob([content], { type: mimeTypes[format] });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  document.body.removeChild(anchor);
+  URL.revokeObjectURL(url);
+}
+
+export async function saveConversationMarkdown(fileName: string, title: string, content: string): Promise<boolean> {
+  return saveConversationExport(fileName, title, content, 'md');
 }
 
 export async function hasCompletedAssistantResponse(): Promise<boolean> {

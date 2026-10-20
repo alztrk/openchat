@@ -180,6 +180,7 @@ pub(crate) fn attachment_spec(name: &str) -> Option<(&'static str, &'static str,
         "png" => ("image", "image/png", MAXIMUM_ATTACHMENT_IMAGE_BYTES),
         "jpg" | "jpeg" => ("image", "image/jpeg", MAXIMUM_ATTACHMENT_IMAGE_BYTES),
         "webp" => ("image", "image/webp", MAXIMUM_ATTACHMENT_IMAGE_BYTES),
+        "gif" => ("image", "image/gif", MAXIMUM_ATTACHMENT_IMAGE_BYTES),
         "txt" | "log" => ("text", "text/plain", MAXIMUM_ATTACHMENT_TEXT_BYTES),
         "md" => ("text", "text/markdown", MAXIMUM_ATTACHMENT_TEXT_BYTES),
         "csv" => ("text", "text/csv", MAXIMUM_ATTACHMENT_TEXT_BYTES),
@@ -203,6 +204,12 @@ pub(crate) fn has_valid_image_signature(mime_type: &str, bytes: &[u8]) -> bool {
         "image/png" => bytes.starts_with(&[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
         "image/jpeg" => bytes.starts_with(&[0xff, 0xd8, 0xff]),
         "image/webp" => bytes.len() >= 12 && &bytes[..4] == b"RIFF" && &bytes[8..12] == b"WEBP",
+        "image/gif" => {
+            bytes.len() >= 6
+                && &bytes[..4] == b"GIF8"
+                && (bytes[4] == b'7' || bytes[4] == b'9')
+                && bytes[5] == b'a'
+        }
         _ => false,
     }
 }

@@ -295,7 +295,7 @@ export function ConversationSidebar({
         onArchive={() => void archiveConversation(conversation)}
         onDelete={() => setDeleteTarget(conversation)}
         onEditTags={() => setEditTarget({ conversation, mode: 'tags' })}
-        onExport={() => void exportConversation(conversation)}
+        onExport={(format) => void exportConversation(conversation, format)}
         onMoveToChats={() => void moveConversation(conversation, null)}
         onMoveToProject={(projectId) => void moveConversation(conversation, projectId)}
         onRename={() => setEditTarget({ conversation, mode: 'rename' })}
@@ -612,7 +612,7 @@ export function ConversationSidebar({
                     onDelete={(conversation) => setDeleteTarget(conversation)}
                     onDropConversationToProject={dropConversationToProject}
                     onEditTags={(conversation) => setEditTarget({ conversation, mode: 'tags' })}
-                    onExport={(conversation) => void exportConversation(conversation)}
+                    onExport={(conversation, format) => void exportConversation(conversation, format)}
                     onMoveToChats={(conversation) => void moveConversation(conversation, null)}
                     onMoveToProject={(conversation, projectId) => void moveConversation(conversation, projectId)}
                     onOpenOptions={setProjectOptionsTarget}

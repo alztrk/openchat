@@ -18,6 +18,11 @@ import { favoriteSourceConnection } from '@/modules/conversations/stores/chatSto
 import type { ToolPermissionMode } from '@/modules/projects/data/projectPreferences';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
+import {
+  shouldInsertNewlineFromKeyboard,
+  shouldSendFromKeyboard,
+  useComposerPreferencesStore,
+} from '@/modules/conversations/data/composerPreferences';
 import { keyboardShortcutMatches, useKeyboardShortcutsStore } from '@/modules/settings/stores/keyboardShortcutsStore';
 import { localServiceClient } from '@/platform/local-service';
 import { type ChatSlashCommand, matchingSlashCommands } from './ChatSlashCommandMenu';
@@ -34,6 +39,7 @@ export interface UseComposerStateOptions {
   onBeforeSend?: (providerId: string, providerName: string) => Promise<boolean>;
   onRequestTemporaryExit(action: () => void | Promise<void>): void;
   formRef: RefObject<HTMLFormElement | null>;
+  droppedFiles?: { id: number; files: File[] } | null;
 }
 
 export function useComposerState({
@@ -41,6 +47,7 @@ export function useComposerState({
   onBeforeSend,
   onRequestTemporaryExit,
   formRef,
+  droppedFiles,
 }: UseComposerStateOptions) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -67,8 +74,8 @@ export function useComposerState({
     'loading',
   );
   const temporaryDisclosureProviderIdRef = useRef<string | null>(null);
+  const submissionMode = useComposerPreferencesStore((state) => state.submissionMode);
   const keyboardShortcuts = useKeyboardShortcutsStore((state) => state.bindings);
-  const initializeKeyboardShortcuts = useKeyboardShortcutsStore((state) => state.initialize);
   const models = useChatStore((state) => state.models);
   const hiddenModelKeys = useChatStore((state) => state.hiddenModelKeys);
   const selectedModelKey = useChatStore((state) => state.selectedModelKey);
@@ -133,8 +140,6 @@ export function useComposerState({
       setPendingAttachmentCount(0);
     };
   }, [setPendingAttachmentCount]);
-
-  useEffect(() => initializeKeyboardShortcuts(), [initializeKeyboardShortcuts]);
 
   useEffect(() => {
     try {
@@ -556,6 +561,23 @@ export function useComposerState({
     }
   };
 
+  const lastHandledDropIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!droppedFiles || droppedFiles.files.length === 0) return;
+    if (lastHandledDropIdRef.current === droppedFiles.id) return;
+    lastHandledDropIdRef.current = droppedFiles.id;
+    void addAttachments(droppedFiles.files);
+  }, [droppedFiles]);
+
+  useEffect(() => {
+    const handleAddAttachmentsEvent = (event: Event) => {
+      if (!(event instanceof CustomEvent) || !isObject(event.detail) || !Array.isArray(event.detail.files)) return;
+      void addAttachments(event.detail.files as File[]);
+    };
+    window.addEventListener('openchat-composer-add-attachments', handleAddAttachmentsEvent);
+    return () => window.removeEventListener('openchat-composer-add-attachments', handleAddAttachmentsEvent);
+  }, []);
+
   const removeAttachment = (id: string) => {
     const currentAttachments = pendingAttachmentsRef.current;
     const attachment = currentAttachments.find((item) => item.id === id);
@@ -667,16 +689,17 @@ export function useComposerState({
       if (selectedCommand) selectSlashCommand(selectedCommand);
       return;
     }
-    if (keyboardShortcutMatches(event.nativeEvent, keyboardShortcuts.sendMessage)) {
+    if (shouldSendFromKeyboard(event, submissionMode)) {
       event.preventDefault();
       event.currentTarget.form?.requestSubmit();
       return;
     }
-    if (keyboardShortcutMatches(event.nativeEvent, keyboardShortcuts.insertNewLine)) {
+    if (shouldInsertNewlineFromKeyboard(event, submissionMode)) {
       event.preventDefault();
       const input = event.currentTarget;
       input.setRangeText('\n', input.selectionStart, input.selectionEnd, 'end');
       input.dispatchEvent(new Event('input', { bubbles: true }));
+      return;
     }
   };
 
@@ -770,5 +793,6 @@ export function useComposerState({
     selectedModel,
     isSendBlocked,
     isSending,
+    submissionMode,
   };
 }

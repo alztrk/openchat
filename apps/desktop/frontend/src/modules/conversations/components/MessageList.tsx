@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { ChatFileChange } from '@/modules/conversations/data/chatFileChanges';
 import type { ChatMessage } from '@/modules/conversations/data/chatStorage';
+import { useInChatSearchHighlight } from '@/modules/conversations/hooks/useInChatSearchHighlight';
 import { useVirtualMessageList } from '@/modules/conversations/hooks/useVirtualMessageList';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { ProviderIcon } from '@/modules/providers/components/ProviderIcon';
@@ -21,6 +22,8 @@ export interface MessageListProps {
   latestFileChanges?: ChatFileChange[];
   onOpenFileChanges?: () => void;
   onOpenConnections?: () => void;
+  inChatTargetMessageId?: string | null;
+  inChatSearchQuery?: string;
 }
 
 export function MessageList({
@@ -36,6 +39,8 @@ export function MessageList({
   latestFileChanges,
   onOpenFileChanges,
   onOpenConnections,
+  inChatTargetMessageId = null,
+  inChatSearchQuery = '',
 }: MessageListProps) {
   const { i18n, t } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language;
@@ -67,6 +72,14 @@ export function MessageList({
   const hasStreamingAssistant =
     visibleMessages.at(-1)?.role === 'assistant' && visibleMessages.at(-1)?.status === 'streaming';
   const virtualList = useVirtualMessageList(visibleMessages, activeConversationId);
+
+  useInChatSearchHighlight(
+    virtualList.containerRef,
+    inChatSearchQuery,
+    inChatTargetMessageId,
+    virtualList.rows,
+  );
+
   const selectResponseVersion = (message: ChatMessage, versionIndex: number) => {
     const group = responseGroups.find((candidate) => candidate.messages.some((item) => item.id === message.id));
     if (!group || versionIndex < 0 || versionIndex >= group.messages.length) return;
@@ -88,6 +101,19 @@ export function MessageList({
       current[group.id] === selectedIndex ? current : { ...current, [group.id]: selectedIndex },
     );
   }, [isLoadingMessages, responseGroups, searchTargetMessageId]);
+
+  useEffect(() => {
+    if (isLoadingMessages || !inChatTargetMessageId) return;
+    const group = responseGroups.find((candidate) =>
+      candidate.messages.some((message) => message.id === inChatTargetMessageId),
+    );
+    if (!group) return;
+    const selectedIndex = group.messages.findIndex((message) => message.id === inChatTargetMessageId);
+    if (selectedIndex < 0) return;
+    setSelectedResponseVersions((current) =>
+      current[group.id] === selectedIndex ? current : { ...current, [group.id]: selectedIndex },
+    );
+  }, [inChatTargetMessageId, isLoadingMessages, responseGroups]);
 
   useEffect(() => {
     if (isLoadingMessages || !searchTargetMessageId) return;
@@ -113,9 +139,28 @@ export function MessageList({
     virtualList.stopFollowingLatest,
   ]);
 
+  useEffect(() => {
+    if (isLoadingMessages || !inChatTargetMessageId) return;
+    if (!virtualList.rows.some(({ message }) => message.id === inChatTargetMessageId)) {
+      virtualList.scrollToMessage(inChatTargetMessageId);
+      return;
+    }
+    const target = document.getElementById(`openchat-message-${inChatTargetMessageId}`);
+    if (!target) return;
+    virtualList.stopFollowingLatest();
+    skipBottomScroll.current = true;
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }, [
+    inChatTargetMessageId,
+    isLoadingMessages,
+    virtualList.rows,
+    virtualList.scrollToMessage,
+    virtualList.stopFollowingLatest,
+  ]);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: Message, loading, and conversation changes intentionally trigger scroll-follow updates.
   useEffect(() => {
-    if (isLoadingMessages || searchTargetMessageId) return;
+    if (isLoadingMessages || searchTargetMessageId || inChatTargetMessageId) return;
     if (skipBottomScroll.current) {
       skipBottomScroll.current = false;
       return;
@@ -124,6 +169,7 @@ export function MessageList({
     virtualList.scrollToBottom();
   }, [
     activeConversationId,
+    inChatTargetMessageId,
     isLoadingMessages,
     messages.length,
     messages.at(-1)?.content,
@@ -188,7 +234,7 @@ export function MessageList({
                 assistantProviderFallback={assistantProviderFallback}
                 isSavedOutput={savedOutputMessageIds?.has(message.id) ?? false}
                 isSavingSavedOutput={pendingSavedOutputMessageIds?.has(message.id) ?? false}
-                isSearchMatch={message.id === searchHighlightMessageId}
+                isSearchMatch={message.id === (inChatTargetMessageId ?? searchHighlightMessageId)}
                 message={message}
                 latestFileChanges={latestFileChanges}
                 onOpenConnections={onOpenConnections}

@@ -167,3 +167,13 @@
   margin: 1.5rem 0;
   border-color: rgb(var(--border) / var(--border-alpha, 0.1));
 }
+
+::highlight(openchat-search-match) {
+  background-color: rgba(234, 179, 8, 0.4);
+  color: inherit;
+}
+
+::highlight(openchat-search-active) {
+  background-color: var(--accent, #3b82f6);
+  color: #ffffff;
+}

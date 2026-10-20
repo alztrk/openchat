@@ -1163,8 +1163,10 @@ impl ChatGptService {
         let title_events = events.clone();
         let service = Arc::clone(self);
         let conversation_model_id = model.id.clone();
-        let title_is_automatic = route.title_is_automatic;
-        if title_is_automatic && !matches!(&title_generation, TitleGenerationRequest::Disabled) {
+        let title_needed =
+            chatgpt_store::should_generate_automatic_title(&self.storage, conversation_id)
+                .unwrap_or(false);
+        if title_needed && !matches!(&title_generation, TitleGenerationRequest::Disabled) {
             tokio::spawn(async move {
                 match title_generation {
                     TitleGenerationRequest::Conversation => {

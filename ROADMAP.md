@@ -778,7 +778,7 @@ remains out of scope under the current product decision.
 
 ### 37. Add drag-and-drop file and image context ingestion
 
-**Status: planned, P1.** Enable seamless file sharing from the desktop into the conversation thread.
+**Status: implemented in source.** Enable seamless file sharing from the desktop into the conversation thread.
 
 - Allow users to drag and drop arbitrary files, folders, error logs, or screenshots directly into the active chat window or input composer.
 - Automatically route images to multimodal models, and extract or reference code and text files as structured context attachments.
@@ -796,16 +796,16 @@ remains out of scope under the current product decision.
 
 ### 39. Add quick clipboard copy and multi-format conversation export
 
-**Status: planned, P1.** Make assistant answers easily portable into other applications.
+**Status: implemented in source and covered by deterministic tests.** Make assistant answers easily portable into other applications.
 
 - Add dedicated copy actions on code blocks and assistant messages for `Clean Markdown`, `Code Only`, or `Plain Text`.
-- Support one-click conversation export to formatted Markdown, clean HTML, and standalone PDF documents.
+- Support one-click conversation export to formatted Markdown (.md), clean HTML (.html), and structured JSON (.json) transcripts.
 
 **Exit criteria:** clipboard actions copy the exact intended format; exports produce valid, clean documents with code highlighting; and exported files exclude internal system markers.
 
 ### 40. Add in-chat message search and filter (Ctrl+F)
 
-**Status: planned, P1.** Make long conversational threads easily searchable within the active viewport.
+**Status: implemented in source and covered by local validation.** Make long conversational threads easily searchable within the active viewport.
 
 - Implement an inline search bar (`Ctrl+F`) within the chat view to highlight and jump between matching keywords across messages.
 - Support quick filters to cycle specifically through code blocks, terminal outputs, error messages, or user prompts.
@@ -823,10 +823,11 @@ remains out of scope under the current product decision.
 
 ### 42. Add automated conversational titling (Smart Renaming)
 
-**Status: planned, P1.** Replace generic default conversation labels with concise, context-specific titles automatically.
+**Status: implemented in source and covered by deterministic tests.** Replace generic default conversation labels with concise, context-specific titles automatically.
 
-- Automatically evaluate the first 2-3 message exchanges in the background to generate an accurate, localized title summarizing the core topic.
-- Update the conversation title in the SQLite database and sidebar without blocking the active chat thread.
+- Automatically evaluate the first 1-2 message exchanges in the background to generate an accurate, localized title summarizing the core topic.
+- Update the conversation title in the SQLite database and broadcast updates to the frontend sidebar without delaying response streaming or blocking user interactions.
+- Protect manually edited and custom conversation titles so that automated titling never overwrites user-assigned titles.
 
 **Exit criteria:** new chats update from default labels to descriptive titles within the first few turns; background titling never delays response streaming; and manually renamed titles are never overwritten.
 
@@ -850,7 +851,7 @@ remains out of scope under the current product decision.
 
 ### 45. Add configurable composer send key bindings
 
-**Status: planned, P1.** Allow users to customize keyboard submission preferences in Settings > Chat behavior.
+**Status: implemented in source and covered by deterministic tests.** Users can customize keyboard submission preferences in Settings (General settings / Chat behavior).
 
 - Provide an explicit toggle between `Enter to Send / Shift+Enter for newline` and `Ctrl/Cmd+Enter to Send / Enter for newline`.
 - Persist the preference locally across sessions and update composer tooltip hints accordingly.

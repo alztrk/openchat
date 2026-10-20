@@ -19,7 +19,7 @@ import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/design-system';
-import type { ChatConversation, ChatProject } from '@/modules/conversations/data/chatStorage';
+import type { ChatConversation, ChatProject, ExportFormat } from '@/modules/conversations/data/chatStorage';
 import { useTransitionPresence } from '@/shared/hooks/useTransitionPresence';
 
 interface ConversationSidebarRowProps {
@@ -39,7 +39,7 @@ interface ConversationSidebarRowProps {
   onToggleBookmark(): void;
   onEditTags(): void;
   onRename(): void;
-  onExport(): void;
+  onExport(format?: ExportFormat): void;
   onArchive(): void;
   onDelete(): void;
   onMoveToProject(projectId: string): void;
@@ -290,12 +290,45 @@ export function ConversationSidebarRow({
                     label={t('renameConversation')}
                     onClick={() => runAction(onRename)}
                   />
-                  <MenuAction
-                    disabled={disabled}
-                    icon={Download}
-                    label={t('exportConversation')}
-                    onClick={() => runAction(onExport)}
-                  />
+                  <details className="openchat-native-disclosure group/export relative">
+                    <summary
+                      className="flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-button px-2.5 text-left text-sm text-secondary-text hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus [&::-webkit-details-marker]:hidden"
+                      role="menuitem"
+                      tabIndex={0}
+                    >
+                      <Download aria-hidden="true" size={15} />
+                      <span>{t('exportConversation')}</span>
+                    </summary>
+                    <div className="grid max-h-40 gap-0.5 overflow-y-auto border-l border-border pl-2">
+                      <button
+                        className="min-h-8 truncate rounded-button px-2 text-left text-xs text-secondary-text hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                        disabled={disabled}
+                        onClick={() => runAction(() => onExport('md'))}
+                        role="menuitem"
+                        type="button"
+                      >
+                        {t('exportFormatMarkdown')}
+                      </button>
+                      <button
+                        className="min-h-8 truncate rounded-button px-2 text-left text-xs text-secondary-text hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                        disabled={disabled}
+                        onClick={() => runAction(() => onExport('html'))}
+                        role="menuitem"
+                        type="button"
+                      >
+                        {t('exportFormatHtml')}
+                      </button>
+                      <button
+                        className="min-h-8 truncate rounded-button px-2 text-left text-xs text-secondary-text hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                        disabled={disabled}
+                        onClick={() => runAction(() => onExport('json'))}
+                        role="menuitem"
+                        type="button"
+                      >
+                        {t('exportFormatJson')}
+                      </button>
+                    </div>
+                  </details>
                   {allowMove && currentProjectId ? (
                     <MenuAction
                       disabled={disabled}

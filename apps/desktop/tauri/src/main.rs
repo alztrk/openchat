@@ -61,6 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             chat_storage::set_conversations_archived,
             chat_storage::delete_conversation,
             chat_storage::save_conversation_markdown,
+            chat_storage::save_conversation_export,
             chat_storage::save_message,
             mcp_storage::load_global_mcp_servers,
             mcp_storage::save_global_mcp_server,

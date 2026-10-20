@@ -1,5 +1,5 @@
 import { ArrowUp, Paperclip, Square, X } from 'lucide-react';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/design-system';
 import { useChatStreaming } from '@/modules/conversations/hooks/useChatStreaming';
@@ -25,10 +25,12 @@ export interface ChatComposerProps {
   onRequestTemporaryExit(action: () => void | Promise<void>): void;
   onBeforeSend?: (providerId: string, providerName: string) => Promise<boolean>;
   isTemporaryChat?: boolean;
+  droppedFiles?: { id: number; files: File[] } | null;
 }
 
 export function ChatComposer({
   isTemporaryChat = false,
+  droppedFiles,
   onBeforeSend,
   onOpenSettings,
   onRequestTemporaryExit,
@@ -80,7 +82,9 @@ export function ChatComposer({
     selectedModel,
     isSendBlocked,
     isSending,
+    submissionMode,
   } = useComposerState({
+    droppedFiles,
     isTemporaryChat,
     onBeforeSend,
     onRequestTemporaryExit,
@@ -117,6 +121,52 @@ export function ChatComposer({
   const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
   const contextProjectId = activeConversation?.projectId ?? pendingProjectId;
   const contextToolPermissionMode = composerMode === 'plan' ? 'plan' : selectedPermissionMode;
+  const placeholderHint =
+    submissionMode === 'ctrlEnter'
+      ? t('composerPlaceholderCtrlEnter')
+      : t('composerPlaceholderEnter');
+  const sendTooltip =
+    submissionMode === 'ctrlEnter'
+      ? t('composerSendTooltipCtrlEnter')
+      : t('composerSendTooltipEnter');
+
+  const [isComposerDraggingOver, setIsComposerDraggingOver] = useState(false);
+  const composerDragDepthRef = useRef(0);
+
+  const handleComposerDragEnter = (event: React.DragEvent) => {
+    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+    event.preventDefault();
+    composerDragDepthRef.current += 1;
+    setIsComposerDraggingOver(true);
+  };
+
+  const handleComposerDragOver = (event: React.DragEvent) => {
+    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleComposerDragLeave = (event: React.DragEvent) => {
+    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+    event.preventDefault();
+    composerDragDepthRef.current -= 1;
+    if (composerDragDepthRef.current <= 0) {
+      composerDragDepthRef.current = 0;
+      setIsComposerDraggingOver(false);
+    }
+  };
+
+  const handleComposerDrop = (event: React.DragEvent) => {
+    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+    event.preventDefault();
+    event.stopPropagation();
+    composerDragDepthRef.current = 0;
+    setIsComposerDraggingOver(false);
+    const files = Array.from(event.dataTransfer.files ?? []);
+    if (files.length > 0) {
+      void addAttachments(files);
+    }
+  };
 
   return (
     <div className="shrink-0 px-4 pb-5 pt-3 sm:px-8">
@@ -144,7 +194,17 @@ export function ChatComposer({
           selectedModel={selectedModel}
         />
 
-        <form className="composer-surface rounded-composer" onSubmit={send} ref={formRef}>
+        <form
+          className={`composer-surface rounded-composer transition-colors ${
+            isComposerDraggingOver ? 'border-accent bg-accent/5 ring-2 ring-accent' : ''
+          }`}
+          onDragEnter={handleComposerDragEnter}
+          onDragLeave={handleComposerDragLeave}
+          onDragOver={handleComposerDragOver}
+          onDrop={handleComposerDrop}
+          onSubmit={send}
+          ref={formRef}
+        >
           <input
             accept={
               selectedModel?.supportsImages === true
@@ -206,7 +266,7 @@ export function ChatComposer({
                 aria-hidden="true"
                 className="pointer-events-none absolute left-0 top-0 text-composer-input text-secondary-text"
               >
-                {t('messageHint')}
+                {placeholderHint}
               </span>
             ) : null}
             <textarea
@@ -229,7 +289,7 @@ export function ChatComposer({
               }
               role="combobox"
               aria-expanded={slashModelMenuOpen || slashCommands.length > 0}
-              aria-label={t('messageHint')}
+              aria-label={placeholderHint}
               className="composer-message-input w-full bg-transparent text-composer-input text-text outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
               disabled={pickerModels.length === 0 || isSending || isUpdatingConversationModel}
               id="chat-message"
@@ -323,7 +383,7 @@ export function ChatComposer({
               </Button>
             ) : (
               <Button
-                aria-label={t('send')}
+                aria-label={sendTooltip}
                 className="size-10"
                 disabled={
                   pickerModels.length === 0 ||
@@ -334,6 +394,7 @@ export function ChatComposer({
                   isSendBlocked
                 }
                 size="icon"
+                title={sendTooltip}
                 type="submit"
                 variant="primary"
               >

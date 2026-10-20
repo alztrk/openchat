@@ -1,10 +1,11 @@
-import { Clock3, FileDiff } from 'lucide-react';
+import { Clock3, FileDiff, FileUp, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog } from '@/design-system';
+import { Button, Dialog, Tooltip } from '@/design-system';
 import { type ChatFileChange, listConversationFileChanges } from '@/modules/conversations/data/chatFileChanges';
 import type { ChatMessage } from '@/modules/conversations/data/chatStorage';
+import { type InChatFilterType, findInChatMatches } from '@/modules/conversations/data/inChatSearch';
 import { useChatSession } from '@/modules/conversations/hooks/useChatSession';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
@@ -13,6 +14,7 @@ import { ChatFileChangesPanel } from './ChatFileChangesPanel';
 import { ConversationEmptyState } from './ConversationEmptyState';
 import { EditMessageBranchDialog } from './EditMessageBranchDialog';
 import { GoalStatusBar } from './GoalStatusBar';
+import { InChatSearchBar } from './InChatSearchBar';
 import { MessageList } from './MessageList';
 import { parseToolActivities } from './message/messageData';
 import { ToolPermissionCard } from './ToolPermissionCard';
@@ -60,6 +62,13 @@ export function ConversationPane({
   const [fileChangesLoadError, setFileChangesLoadError] = useState(false);
   const [fileChangesLoadRevision, setFileChangesLoadRevision] = useState(0);
   const [editingMessage, setEditingMessage] = useState<ChatMessage | null>(null);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchFilter, setSearchFilter] = useState<InChatFilterType>('all');
+  const [activeMatchIndex, setActiveMatchIndex] = useState(0);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [droppedFiles, setDroppedFiles] = useState<{ id: number; files: File[] } | null>(null);
+  const dragDepthRef = useRef(0);
   const disclosureResolver = useRef<((approved: boolean) => void) | null>(null);
   const {
     activeConversation,
@@ -179,10 +188,14 @@ export function ConversationPane({
     return set;
   }, [savedOutputMessageKeys, activeConversationId]);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Switching conversations resets transient editor and file-change panel state.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Switching conversations resets transient editor, search, and file-change panel state.
   useEffect(() => {
     setIsFileChangesPanelOpen(false);
     setEditingMessage(null);
+    setIsSearchOpen(false);
+    setSearchQuery('');
+    setSearchFilter('all');
+    setActiveMatchIndex(0);
   }, [activeConversationId]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: File-change revisions and new tool output are explicit refresh signals.
@@ -255,10 +268,117 @@ export function ConversationPane({
     );
   };
 
+  const inChatMatches = useMemo(
+    () => (isSearchOpen ? findInChatMatches(messages, searchQuery, searchFilter) : []),
+    [isSearchOpen, messages, searchQuery, searchFilter],
+  );
+
+  const clampedMatchIndex = inChatMatches.length > 0 ? Math.min(activeMatchIndex, inChatMatches.length - 1) : 0;
+  const activeMatch = inChatMatches[clampedMatchIndex] ?? null;
+
+  const handleNextMatch = useCallback(() => {
+    setActiveMatchIndex((idx) => (inChatMatches.length > 0 ? (idx + 1) % inChatMatches.length : 0));
+  }, [inChatMatches.length]);
+
+  const handlePreviousMatch = useCallback(() => {
+    setActiveMatchIndex((idx) =>
+      inChatMatches.length > 0 ? (idx - 1 + inChatMatches.length) % inChatMatches.length : 0,
+    );
+  }, [inChatMatches.length]);
+
+  const handleCloseSearch = useCallback(() => {
+    setIsSearchOpen(false);
+    setSearchQuery('');
+    setSearchFilter('all');
+    setActiveMatchIndex(0);
+  }, []);
+
+  const handleOpenSearch = useCallback(() => {
+    const selection = window.getSelection()?.toString().trim();
+    if (selection) {
+      setSearchQuery(selection);
+    }
+    setIsSearchOpen(true);
+    setActiveMatchIndex(0);
+  }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+        if (document.querySelector('[role="dialog"]')) return;
+        const active = document.activeElement;
+        const isPaneFocused =
+          paneRef.current?.contains(active) ||
+          active === document.body ||
+          active?.tagName === 'BODY' ||
+          active === null;
+        if (!isPaneFocused) return;
+        if (messages.length === 0) return;
+
+        event.preventDefault();
+        handleOpenSearch();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleOpenSearch, messages.length]);
+
+  const handleDragEnter = (event: React.DragEvent) => {
+    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+    event.preventDefault();
+    dragDepthRef.current += 1;
+    setIsDraggingOver(true);
+  };
+
+  const handleDragOver = (event: React.DragEvent) => {
+    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  };
+
+  const handleDragLeave = (event: React.DragEvent) => {
+    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+    event.preventDefault();
+    dragDepthRef.current -= 1;
+    if (dragDepthRef.current <= 0) {
+      dragDepthRef.current = 0;
+      setIsDraggingOver(false);
+    }
+  };
+
+  const handleDrop = (event: React.DragEvent) => {
+    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setIsDraggingOver(false);
+    const files = Array.from(event.dataTransfer.files ?? []);
+    if (files.length > 0) {
+      setDroppedFiles({ id: Date.now(), files });
+    }
+  };
+
+  useEffect(() => {
+    const handleWindowDragEnd = () => {
+      dragDepthRef.current = 0;
+      setIsDraggingOver(false);
+    };
+    window.addEventListener('dragend', handleWindowDragEnd);
+    window.addEventListener('drop', handleWindowDragEnd);
+    return () => {
+      window.removeEventListener('dragend', handleWindowDragEnd);
+      window.removeEventListener('drop', handleWindowDragEnd);
+    };
+  }, []);
+
   return (
     <section
       aria-label={t('chats')}
-      className="chat-conversation-pane flex min-h-0 min-w-0 flex-1 flex-row bg-background"
+      className="chat-conversation-pane relative flex min-h-0 min-w-0 flex-1 flex-row bg-background"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
       ref={paneRef}
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -271,7 +391,40 @@ export function ConversationPane({
             data-centered-empty={centerEmptyConversation ? 'true' : undefined}
             data-file-changes-open={isFileChangesPanelOpen && !isTemporaryChat}
           >
-            <div className="chat-conversation-content flex min-h-0 min-w-0 flex-1 flex-col">
+            <div className="chat-conversation-content relative flex min-h-0 min-w-0 flex-1 flex-col">
+              {isSearchOpen ? (
+                <InChatSearchBar
+                  activeMatchIndex={clampedMatchIndex}
+                  filter={searchFilter}
+                  matches={inChatMatches}
+                  onClose={handleCloseSearch}
+                  onFilterChange={(nextFilter) => {
+                    setSearchFilter(nextFilter);
+                    setActiveMatchIndex(0);
+                  }}
+                  onNext={handleNextMatch}
+                  onPrevious={handlePreviousMatch}
+                  onQueryChange={(nextQuery) => {
+                    setSearchQuery(nextQuery);
+                    setActiveMatchIndex(0);
+                  }}
+                  query={searchQuery}
+                />
+              ) : messages.length > 0 ? (
+                <div className="absolute top-3 right-5 z-10">
+                  <Tooltip label={`${t('inChatSearch')} (Ctrl+F)`}>
+                    <Button
+                      aria-label={t('inChatSearch')}
+                      className="size-8 rounded-full border border-border bg-raised/85 shadow-xs backdrop-blur-sm hover:bg-hover hover:text-text"
+                      onClick={handleOpenSearch}
+                      size="icon"
+                      variant="ghost"
+                    >
+                      <Search aria-hidden="true" size={15} />
+                    </Button>
+                  </Tooltip>
+                </div>
+              ) : null}
               {activeConversation && errorCode === 'messageHistoryLoadFailed' && !isLoadingMessages ? (
                 <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-8">
                   <div className="max-w-xl text-center">
@@ -291,6 +444,8 @@ export function ConversationPane({
                 <MessageList
                   assistantModelFallback={assistantModelFallback}
                   assistantProviderFallback={assistantProviderFallback}
+                  inChatSearchQuery={isSearchOpen ? searchQuery : ''}
+                  inChatTargetMessageId={isSearchOpen ? (activeMatch?.messageId ?? null) : null}
                   showAssistantLoading={isSending}
                   latestFileChanges={latestFileChanges}
                   onOpenConnections={onOpenSettings}
@@ -445,6 +600,7 @@ export function ConversationPane({
             ) : null}
             {activeGoal?.conversationId === activeConversationId ? <GoalStatusBar goal={activeGoal} /> : null}
             <ChatComposer
+              droppedFiles={droppedFiles}
               isTemporaryChat={temporaryChat !== null}
               onBeforeSend={askBeforeTemporarySend}
               onOpenSettings={onOpenSettings}
@@ -499,6 +655,23 @@ export function ConversationPane({
           open={editingMessage !== null}
         />
       </div>
+      {isDraggingOver ? (
+        <div
+          aria-label={t('dropFilesOverlayTitle')}
+          className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-background/80 p-6 backdrop-blur-sm"
+          role="region"
+        >
+          <div className="flex max-w-md flex-col items-center justify-center gap-3 rounded-card border-2 border-dashed border-accent bg-raised px-8 py-10 text-center shadow-elevation-3">
+            <div className="flex size-14 items-center justify-center rounded-full bg-accent/10 text-accent">
+              <FileUp aria-hidden="true" size={28} />
+            </div>
+            <div className="space-y-1">
+              <p className="text-base font-semibold text-text">{t('dropFilesOverlayTitle')}</p>
+              <p className="text-sm text-secondary-text">{t('dropFilesOverlayDescription')}</p>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
