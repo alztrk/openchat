@@ -149,6 +149,7 @@ pub(crate) fn is_safe_export_file_name(file_name: &str, expected_ext: &str) -> b
             .is_some_and(|extension| extension.eq_ignore_ascii_case(expected_ext))
 }
 
+#[allow(dead_code)]
 pub(crate) fn is_safe_markdown_export_file_name(file_name: &str) -> bool {
     is_safe_export_file_name(file_name, "md")
 }

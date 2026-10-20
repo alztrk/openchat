@@ -100,12 +100,12 @@ export function InChatSearchBar({
     >
       <style>{`
         ::highlight(openchat-search-match) {
-          background-color: rgba(234, 179, 8, 0.4);
+          background-color: rgba(250, 204, 21, 0.45);
           color: inherit;
         }
         ::highlight(openchat-search-active) {
-          background-color: var(--accent, #3b82f6);
-          color: #ffffff;
+          background-color: #facc15;
+          color: #000000;
         }
       `}</style>
       <div className="flex items-center gap-1.5">

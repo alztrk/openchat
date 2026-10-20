@@ -130,7 +130,7 @@ export function MessageItem({
     <article
       aria-current={isSearchMatch ? 'location' : undefined}
       aria-label={isUser ? t('userMessage') : undefined}
-      className={`group flex w-full ${isUser ? 'justify-end' : 'justify-start'} ${isSearchMatch ? 'rounded-control ring-2 ring-accent/70' : ''}`}
+      className={`group flex w-full ${isUser ? 'justify-end' : 'justify-start'}`}
       id={`openchat-message-${message.id}`}
     >
       <div

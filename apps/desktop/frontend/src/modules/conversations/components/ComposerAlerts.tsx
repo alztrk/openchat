@@ -19,18 +19,7 @@ export function ComposerModelBanner({
 }: ComposerModelBannerProps) {
   const { t } = useTranslation();
 
-  if (!hasModels) {
-    return (
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-card border border-border bg-surface px-4 py-3 text-sm text-secondary-text">
-        <span>{t('noModelConnectedBody')}</span>
-        <Button onClick={onOpenSettings} size="small" variant="secondary">
-          {t('settings')}
-        </Button>
-      </div>
-    );
-  }
-
-  if (!hasVisibleModels && isNewChat) {
+  if (hasModels && !hasVisibleModels && isNewChat) {
     return (
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-card border border-border bg-surface px-4 py-3 text-sm text-secondary-text">
         <span>{t('noVisibleModels')}</span>
@@ -76,7 +65,7 @@ export function ComposerFeedbackList({
           {t(commandFeedbackKey)}
         </p>
       ) : null}
-      {chatErrorCode && chatErrorCode !== 'searchMessageUnavailable' ? (
+      {chatErrorCode && chatErrorCode !== 'searchMessageUnavailable' && chatErrorCode !== 'messageHistoryLoadFailed' ? (
         <p className="mt-2 text-sm text-destructive" role="alert">
           {t(chatErrorCode)}
         </p>

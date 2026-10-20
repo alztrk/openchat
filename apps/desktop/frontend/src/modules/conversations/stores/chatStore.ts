@@ -119,6 +119,9 @@ export interface ChatState {
   messages: ChatMessage[];
   searchTargetMessageId: string | null;
   searchHighlightMessageId: string | null;
+  searchHighlightQuery: string | null;
+  searchMatchIndex: number;
+  searchMatchCount: number;
   models: ChatModel[];
   modelProviders: ChatModelProvider[];
   modelFavorites: ChatModelFavorite[];
@@ -177,7 +180,7 @@ export interface ChatState {
   selectModel(key: string | null): void;
   selectConversationModel(key: string): Promise<boolean>;
   selectReasoningEffort(effort: string | null): void;
-  selectConversation(id: string, targetMessageId?: string | null): Promise<void>;
+  selectConversation(id: string, targetMessageId?: string | null, targetQuery?: string | null): Promise<void>;
   refreshActiveGoal(conversationId: string): Promise<void>;
   pauseActiveGoal(): Promise<void>;
   stopActiveGoal(): Promise<void>;
@@ -196,6 +199,10 @@ export interface ChatState {
   branchFromUserMessage(messageId: string, editedContent: string, branchTitle: string): Promise<boolean>;
   stopResponse(): Promise<void>;
   dismissError(): void;
+  setSearchMatchInfo(index: number, count: number): void;
+  nextSearchMatch(): void;
+  prevSearchMatch(): void;
+  clearSearchHighlight(): void;
 }
 
 let titleUpdateUnsubscribe: (() => void) | null = null;
@@ -221,6 +228,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   searchTargetMessageId: null,
   searchHighlightMessageId: null,
+  searchHighlightQuery: null,
+  searchMatchIndex: 0,
+  searchMatchCount: 0,
   models: [],
   modelProviders: [],
   modelFavorites: [],
@@ -252,6 +262,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (get().serviceStatus === 'loading' || get().serviceStatus === 'ready') return;
     set({ serviceStatus: 'loading', storageInitializationErrorCode: null, projectsStatus: 'loading', errorCode: null });
     try {
+      const storagePromise = Promise.allSettled([
+        listConversations(),
+        hasCompletedAssistantResponseStorage(),
+        listProjects(),
+      ]);
+
       await localServiceClient.initialize();
       if (!titleUpdateUnsubscribe) {
         titleUpdateUnsubscribe = localServiceClient.subscribe((event) => {
@@ -263,11 +279,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
         });
       }
-      const [conversationResult, responseResult, projectResult] = await Promise.allSettled([
-        listConversations(),
-        hasCompletedAssistantResponseStorage(),
-        listProjects(),
-      ]);
+      const [conversationResult, responseResult, projectResult] = await storagePromise;
       if (conversationResult.status === 'rejected') {
         throw conversationResult.reason;
       }
@@ -284,9 +296,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         storageInitializationErrorCode: null,
         ...mapModelPreferences(preferences),
       });
-      await get().refreshModelFavorites();
-      await get().refreshSavedOutputMessageKeys();
-      await get().refreshModels();
+      await Promise.all([get().refreshModelFavorites(), get().refreshSavedOutputMessageKeys(), get().refreshModels()]);
     } catch (error) {
       set({
         serviceStatus: 'error',
@@ -595,6 +605,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
   ...createGoalsActions(set, get),
   sendMessage: createSendMessageAction(set, get, localServiceClient),
   ...createBranchesActions(set, get),
+
+  setSearchMatchInfo(index: number, count: number): void {
+    set({ searchMatchIndex: index, searchMatchCount: count });
+  },
+  nextSearchMatch(): void {
+    const { searchMatchIndex, searchMatchCount } = get();
+    if (searchMatchCount > 1) {
+      set({ searchMatchIndex: (searchMatchIndex + 1) % searchMatchCount });
+    }
+  },
+  prevSearchMatch(): void {
+    const { searchMatchIndex, searchMatchCount } = get();
+    if (searchMatchCount > 1) {
+      set({ searchMatchIndex: (searchMatchIndex - 1 + searchMatchCount) % searchMatchCount });
+    }
+  },
+  clearSearchHighlight(): void {
+    set({
+      searchHighlightQuery: null,
+      searchHighlightMessageId: null,
+      searchMatchIndex: 0,
+      searchMatchCount: 0,
+    });
+  },
 }));
 
 function mapModelPreferences(preferences: ReturnType<typeof readModelPreferences>) {

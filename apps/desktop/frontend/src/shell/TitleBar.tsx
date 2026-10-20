@@ -1,19 +1,44 @@
-import { ArrowLeft, ArrowRight, Copy, Minus, Square, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Copy,
+  Minus,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Square,
+  X,
+} from 'lucide-react';
 import { type MouseEvent, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/design-system';
 import { Tooltip } from '@/design-system/Tooltip';
 import { getCurrentWindow, isTauri } from '@/platform/tauri';
+import { TitleBarSearch } from './TitleBarSearch';
 
 export interface TitleBarProps {
   canGoBack: boolean;
   canGoForward: boolean;
+  isSidebarOpen?: boolean;
   onGoBack(): void;
   onGoForward(): void;
+  onSelectConversation(
+    conversationId: string,
+    messageId?: string | null,
+    searchQuery?: string | null,
+  ): void;
+  onToggleSidebar?(): void;
 }
 
-export function TitleBar({ canGoBack, canGoForward, onGoBack, onGoForward }: TitleBarProps) {
+export function TitleBar({
+  canGoBack,
+  canGoForward,
+  isSidebarOpen = true,
+  onGoBack,
+  onGoForward,
+  onSelectConversation,
+  onToggleSidebar,
+}: TitleBarProps) {
   const { t } = useTranslation();
   const [maximized, setMaximized] = useState(false);
   const desktop = isTauri();
@@ -47,7 +72,7 @@ export function TitleBar({ canGoBack, canGoForward, onGoBack, onGoForward }: Tit
 
   function handleTitleBarMouseDown(event: MouseEvent<HTMLElement>): void {
     if (!desktop || event.button !== 0) return;
-    if (event.target instanceof Element && event.target.closest('button')) return;
+    if (event.target instanceof Element && event.target.closest('button, input, [data-titlebar-no-drag]')) return;
 
     const currentWindow = getCurrentWindow();
     if (event.detail === 2) {
@@ -61,7 +86,7 @@ export function TitleBar({ canGoBack, canGoForward, onGoBack, onGoForward }: Tit
     <>
       {/* biome-ignore lint/a11y/noStaticElementInteractions: Tauri uses this header's native drag gesture to move the window. */}
       <header
-        className="app-shell-chrome app-shell-header titlebar flex h-12 shrink-0 items-center"
+        className="app-shell-chrome app-shell-header titlebar relative flex h-12 shrink-0 items-center justify-between"
         onMouseDown={handleTitleBarMouseDown}
       >
         <div className="titlebar-navigation items-center gap-2">
@@ -89,8 +114,27 @@ export function TitleBar({ canGoBack, canGoForward, onGoBack, onGoForward }: Tit
               <ArrowRight aria-hidden="true" size={18} />
             </Button>
           </Tooltip>
+          {onToggleSidebar ? (
+            <Tooltip label={t(isSidebarOpen ? 'collapseSidebars' : 'showSidebars')}>
+              <Button
+                aria-label={t(isSidebarOpen ? 'collapseSidebars' : 'showSidebars')}
+                className="size-8 text-secondary-icon opacity-70 transition-opacity hover:text-text hover:opacity-100"
+                onClick={onToggleSidebar}
+                size="icon"
+                variant="ghost"
+              >
+                {isSidebarOpen ? (
+                  <PanelLeftClose aria-hidden="true" size={18} />
+                ) : (
+                  <PanelLeftOpen aria-hidden="true" size={18} />
+                )}
+              </Button>
+            </Tooltip>
+          ) : null}
         </div>
-        <div className="titlebar-drag-region min-w-0 flex-1 self-stretch" />
+        <div className="titlebar-drag-region min-w-3 flex-1 self-stretch" />
+        <TitleBarSearch onSelectConversation={onSelectConversation} />
+        <div className="titlebar-drag-region min-w-3 flex-1 self-stretch" />
         {desktop ? (
           <div className="titlebar-window-controls h-full items-center gap-2">
             <Tooltip label={t('minimizeWindow')}>

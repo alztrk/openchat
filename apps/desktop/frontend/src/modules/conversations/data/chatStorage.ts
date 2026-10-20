@@ -284,6 +284,50 @@ export async function getMessages(conversationId: string): Promise<ChatMessage[]
   }));
 }
 
+export interface StoredSearchMessageResult {
+  id: string;
+  conversationId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt: number | null;
+}
+
+export interface SearchFilterOptions {
+  roleFilter?: 'user' | 'assistant' | null;
+  hasCodeOnly?: boolean | null;
+}
+
+export {
+  type ParsedSearchQuery,
+  normalizeSearchText,
+  parseSearchQuery,
+} from './chatSearchUtils';
+
+export async function searchStoredMessages(
+  query: string,
+  limit = 40,
+  options?: SearchFilterOptions,
+): Promise<StoredSearchMessageResult[]> {
+  const value: unknown = await invoke('search_messages', {
+    input: {
+      query,
+      limit,
+      roleFilter: options?.roleFilter ?? null,
+      hasCodeOnly: options?.hasCodeOnly ?? null,
+    },
+  });
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is Record<string, unknown> => typeof item === 'object' && item !== null)
+    .map((item) => ({
+      id: String(item.id ?? ''),
+      conversationId: String(item.conversationId ?? ''),
+      role: item.role === 'assistant' ? 'assistant' : 'user',
+      content: String(item.content ?? ''),
+      createdAt: typeof item.createdAt === 'number' ? item.createdAt : null,
+    }));
+}
+
 export async function createConversation(
   id: string,
   title: string,

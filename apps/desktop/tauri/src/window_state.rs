@@ -37,6 +37,7 @@ impl Default for WindowStateRecord {
 }
 
 /// Restores window size, position, and maximized state from the database.
+#[allow(dead_code)]
 pub fn restore_window_state(window: &Window) {
     migrate_legacy_window_state_file();
 
@@ -96,6 +97,7 @@ fn load_window_state() -> Option<WindowStateRecord> {
     serde_json::from_str(&json_str).ok()
 }
 
+#[allow(dead_code)]
 fn migrate_legacy_window_state_file() {
     let app_data = std::env::var_os("APPDATA");
     let Some(app_data) = app_data else { return };

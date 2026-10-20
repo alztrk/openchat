@@ -1,8 +1,8 @@
-import { Archive, CheckSquare, Clock3, Folder, MessagesSquare, Pin, Plus, RefreshCw, Search, X } from 'lucide-react';
+import { Archive, Clock3, MessagesSquare, Pin, Plus, RefreshCw } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog, Select } from '@/design-system';
+import { Button, Dialog } from '@/design-system';
 import { Tooltip } from '@/design-system/Tooltip';
 import type { ChatConversation, ChatProject } from '@/modules/conversations/data/chatStorage';
 import {
@@ -80,7 +80,6 @@ export interface ConversationSidebarProps {
   onRequestTemporaryExit(action: () => void | Promise<void>): void;
   onNewChat?(): void;
   onStartTemporaryChat?(): void;
-  onOpenSearch?(): void;
 }
 
 export function ConversationSidebar({
@@ -91,7 +90,6 @@ export function ConversationSidebar({
   onRequestTemporaryExit,
   onNewChat,
   onStartTemporaryChat,
-  onOpenSearch,
 }: ConversationSidebarProps) {
   const { t } = useTranslation();
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
@@ -100,10 +98,6 @@ export function ConversationSidebar({
     null,
   );
   const [deleteTarget, setDeleteTarget] = useState<ChatConversation | null>(null);
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const [moveTarget, setMoveTarget] = useState('__chats__');
-  const [searchQuery, setSearchQuery] = useState('');
   const [sidebarPreferences] = useState(readCollapsedSidebarSections);
   const [collapsedSections, setCollapsedSections] = useState<ReadonlySet<SidebarSectionId>>(
     () => sidebarPreferences.collapsedSections,
@@ -119,6 +113,7 @@ export function ConversationSidebar({
   const selectConversation = useChatStore((state) => state.selectConversation);
   const startNewChat = useChatStore((state) => state.startNewChat);
   const startTemporaryChat = useChatStore((state) => state.startTemporaryChat);
+  const temporaryChat = useChatStore((state) => state.temporaryChat);
   const refreshProjects = useChatStore((state) => state.refreshProjects);
 
   useEffect(() => {
@@ -150,80 +145,28 @@ export function ConversationSidebar({
     [activeConversations],
   );
 
-  const normalizedQuery = searchQuery.trim().toLocaleLowerCase();
-  const isSearching = normalizedQuery.length > 0;
-
-  const matchesSearch = (item: ChatConversation) =>
-    item.title.toLocaleLowerCase().includes(normalizedQuery) ||
-    item.tags.some((tag) => tag.toLocaleLowerCase().includes(normalizedQuery));
-
-  const visiblePinned = useMemo(
-    () => (isSearching ? pinnedConversations.filter(matchesSearch) : pinnedConversations),
-    [isSearching, pinnedConversations, normalizedQuery],
-  );
-
-  const visibleChats = useMemo(
-    () => (isSearching ? unassignedConversations.filter(matchesSearch) : unassignedConversations),
-    [isSearching, unassignedConversations, normalizedQuery],
-  );
-
-  const visibleArchived = useMemo(
-    () => (isSearching ? archivedConversations.filter(matchesSearch) : archivedConversations),
-    [isSearching, archivedConversations, normalizedQuery],
-  );
-
-  const filteredProjectConversations = useMemo(
-    () => (isSearching ? visibleProjectConversations.filter(matchesSearch) : visibleProjectConversations),
-    [isSearching, visibleProjectConversations, normalizedQuery],
-  );
-
-  const filteredProjects = useMemo(() => {
-    if (!isSearching) return visibleProjects;
-    return visibleProjects.filter(
-      (project) =>
-        project.name.toLocaleLowerCase().includes(normalizedQuery) ||
-        filteredProjectConversations.some((conversation) => conversation.projectId === project.id),
-    );
-  }, [isSearching, visibleProjects, normalizedQuery, filteredProjectConversations]);
+  const visiblePinned = pinnedConversations;
+  const visibleChats = unassignedConversations;
+  const visibleArchived = archivedConversations;
+  const filteredProjectConversations = visibleProjectConversations;
+  const filteredProjects = visibleProjects;
 
   const recencyBuckets = useMemo(() => groupConversationsByRecency(visibleChats), [visibleChats]);
 
-  const totalSearchResultsCount =
-    visiblePinned.length +
-    visibleChats.length +
-    visibleArchived.length +
-    filteredProjectConversations.length;
-
-  const toggleSelection = (conversationId: string) => {
-    setSelectedIds((current) => {
-      const next = new Set(current);
-      if (next.has(conversationId)) next.delete(conversationId);
-      else next.add(conversationId);
-      return next;
-    });
-  };
-
-  const closeSelection = () => {
-    setSelectionMode(false);
-    setSelectedIds(new Set());
-  };
-
   const {
     archiveConversation,
-    archiveSelected,
     createProject,
     deleteConversation,
     exportConversation,
     feedback,
     isBusy,
     moveConversation,
-    moveSelected,
     saveTags,
     saveTitle,
     showFeedback,
     toggleBookmark,
     togglePinned,
-  } = useConversationSidebarActions({ closeSelection, selectedIds });
+  } = useConversationSidebarActions();
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
@@ -272,7 +215,11 @@ export function ConversationSidebar({
       onStartTemporaryChat();
     } else {
       onRequestTemporaryExit(() => {
-        startTemporaryChat();
+        if (temporaryChat) {
+          startNewChat();
+        } else {
+          startTemporaryChat();
+        }
         onCloseMobile?.();
       });
     }
@@ -280,13 +227,12 @@ export function ConversationSidebar({
 
   const renderRows = (
     rows: readonly ChatConversation[],
-    options: { archived: boolean; currentProjectId: string | null; allowSelection: boolean; allowMove: boolean },
+    options: { archived: boolean; currentProjectId: string | null; allowMove: boolean },
   ) =>
     rows.map((conversation) => (
       <ConversationSidebarRow
         active={activeConversationId === conversation.id}
         allowMove={options.allowMove}
-        allowSelection={options.allowSelection}
         archived={options.archived}
         conversation={conversation}
         currentProjectId={conversation.projectId ?? options.currentProjectId}
@@ -302,10 +248,7 @@ export function ConversationSidebar({
         onSelect={() => requestSelectConversation(conversation.id)}
         onToggleBookmark={() => void toggleBookmark(conversation)}
         onTogglePinned={() => void togglePinned(conversation)}
-        onToggleSelection={() => toggleSelection(conversation.id)}
         projects={projects}
-        selectedForBatch={selectedIds.has(conversation.id)}
-        selectionMode={selectionMode && options.allowSelection}
       />
     ));
 
@@ -426,10 +369,14 @@ export function ConversationSidebar({
                 <Plus aria-hidden="true" size={16} />
               </Button>
             </Tooltip>
-            <Tooltip label={t('temporaryChatStart')}>
+            <Tooltip label={temporaryChat ? t('temporaryChatEnd') : t('temporaryChatStart')}>
               <Button
-                aria-label={t('temporaryChatStart')}
-                className="size-8 shrink-0 text-secondary-icon hover:text-text"
+                aria-label={temporaryChat ? t('temporaryChatEnd') : t('temporaryChatStart')}
+                className={`size-8 shrink-0 transition-colors ${
+                  temporaryChat
+                    ? 'bg-accent/15 text-accent hover:bg-accent/25'
+                    : 'text-secondary-icon hover:text-text'
+                }`}
                 onClick={handleStartTemporaryChat}
                 size="icon"
                 variant="ghost"
@@ -437,60 +384,6 @@ export function ConversationSidebar({
                 <Clock3 aria-hidden="true" size={16} />
               </Button>
             </Tooltip>
-            <Tooltip label={t('moveSelectedChats')}>
-              <Button
-                aria-label={t('moveSelectedChats')}
-                aria-pressed={selectionMode}
-                className={`size-8 shrink-0 ${selectionMode ? 'bg-selected text-accent' : 'text-secondary-icon hover:text-text'}`}
-                onClick={() => setSelectionMode((prev) => !prev)}
-                size="icon"
-                variant="ghost"
-              >
-                <CheckSquare aria-hidden="true" size={16} />
-              </Button>
-            </Tooltip>
-            {onCloseMobile ? (
-              <Tooltip label={t('close')}>
-                <Button
-                  aria-label={t('close')}
-                  className="size-8 shrink-0 text-secondary-icon hover:text-text"
-                  data-sidebar-close="true"
-                  onClick={onCloseMobile}
-                  size="icon"
-                  variant="ghost"
-                >
-                  <X aria-hidden="true" size={16} />
-                </Button>
-              </Tooltip>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="px-3 pt-1 pb-2">
-          <div className="relative flex items-center">
-            <Search
-              aria-hidden="true"
-              className="pointer-events-none absolute left-2.5 text-secondary-icon"
-              size={14}
-            />
-            <input
-              aria-label={t('searchChats')}
-              className="h-8 w-full rounded-button border border-border bg-background pl-8 pr-7 text-xs text-text placeholder:text-secondary-text focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
-              onChange={(event) => setSearchQuery(event.target.value)}
-              placeholder={t('searchChats')}
-              type="text"
-              value={searchQuery}
-            />
-            {searchQuery ? (
-              <button
-                aria-label={t('settingsSearchClear')}
-                className="absolute right-2 text-secondary-icon hover:text-text focus:outline-none"
-                onClick={() => setSearchQuery('')}
-                type="button"
-              >
-                <X aria-hidden="true" size={13} />
-              </button>
-            ) : null}
           </div>
         </div>
 
@@ -530,53 +423,6 @@ export function ConversationSidebar({
             ) : null}
             {serviceStatus === 'ready' ? (
               <>
-                {selectionMode ? (
-                  <div className="grid gap-2 rounded-card border border-border bg-raised p-2">
-                    <Select
-                      label={t('moveSelectedChats')}
-                      onChange={(event) => setMoveTarget(event.target.value)}
-                      options={[
-                        { value: '__chats__', label: t('moveToChats') },
-                        ...projects.map((project) => ({ value: project.id, label: project.name })),
-                      ]}
-                      value={moveTarget}
-                      visuallyHiddenLabel
-                    />
-                    <div className="flex gap-2">
-                      <Button
-                        className="min-w-0 flex-1"
-                        disabled={selectedIds.size === 0 || isBusy}
-                        onClick={() => void moveSelected(moveTarget)}
-                        size="small"
-                      >
-                        <Folder aria-hidden="true" size={14} />
-                        {t('moveSelectedChats')}
-                      </Button>
-                      <Button
-                        className="min-w-0 flex-1"
-                        disabled={selectedIds.size === 0 || isBusy}
-                        onClick={() => void archiveSelected()}
-                        size="small"
-                      >
-                        <Archive aria-hidden="true" size={14} />
-                        {t('archiveSelectedConversations')}
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-
-                {isSearching && totalSearchResultsCount === 0 ? (
-                  <div className="grid gap-2 px-3 py-6 text-center">
-                    <p className="text-xs text-secondary-text">{t('searchMessagesNoResults')}</p>
-                    {onOpenSearch ? (
-                      <Button className="mx-auto" onClick={onOpenSearch} size="small" variant="ghost">
-                        <Search aria-hidden="true" size={14} />
-                        <span>{t('searchChats')}</span>
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : null}
-
                 {showPinned ? (
                   <ConversationSidebarSection
                     collapsed={collapsedSections.has('pinned')}
@@ -589,7 +435,6 @@ export function ConversationSidebar({
                     {renderRows(visiblePinned, {
                       archived: false,
                       currentProjectId: null,
-                      allowSelection: true,
                       allowMove: true,
                     })}
                   </ConversationSidebarSection>
@@ -622,10 +467,7 @@ export function ConversationSidebar({
                     onToggleBookmark={(conversation) => void toggleBookmark(conversation)}
                     onToggleCollapsed={() => toggleSection('projects')}
                     onTogglePinned={(conversation) => void togglePinned(conversation)}
-                    onToggleSelection={toggleSelection}
                     projects={filteredProjects}
-                    selectedConversationIds={selectedIds}
-                    selectionMode={selectionMode}
                     status={projectsStatus}
                   />
                 ) : null}
@@ -650,7 +492,6 @@ export function ConversationSidebar({
                               {renderRows(bucket.conversations, {
                                 archived: false,
                                 currentProjectId: null,
-                                allowSelection: true,
                                 allowMove: true,
                               })}
                             </ul>
@@ -659,7 +500,6 @@ export function ConversationSidebar({
                       : renderRows(visibleChats, {
                           archived: false,
                           currentProjectId: null,
-                          allowSelection: true,
                           allowMove: true,
                         })}
                   </ConversationSidebarSection>
@@ -675,7 +515,6 @@ export function ConversationSidebar({
                     {renderRows(visibleArchived, {
                       archived: true,
                       currentProjectId: null,
-                      allowSelection: false,
                       allowMove: false,
                     })}
                   </ConversationSidebarSection>

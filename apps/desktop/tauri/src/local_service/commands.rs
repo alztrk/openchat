@@ -29,10 +29,17 @@ pub(crate) fn start_local_service(
     let command = app
         .shell()
         .sidecar("binaries/openchat_service")
-        .map_err(|_| "The packaged local service could not be located.")?;
+        .or_else(|_| app.shell().sidecar("openchat_service"))
+        .map_err(|err| {
+            eprintln!("OpenChat sidecar locate error: {err:?}");
+            "The packaged local service could not be located."
+        })?;
     let (mut events, child) = command
         .spawn()
-        .map_err(|_| "The local service could not be started.")?;
+        .map_err(|err| {
+            eprintln!("OpenChat sidecar spawn error: {err:?}");
+            "The local service could not be started."
+        })?;
     process.next_generation = generation;
     process.current = Some(RunningProcess { generation, child });
 

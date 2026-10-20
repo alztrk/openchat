@@ -22,20 +22,13 @@ import { localServiceClient } from '@/platform/local-service';
 
 type TranslationKey = keyof typeof import('@/localization/locales/en.json');
 
-interface UseConversationSidebarActionsProps {
-  selectedIds: ReadonlySet<string>;
-  closeSelection(): void;
-}
-
-export function useConversationSidebarActions({ selectedIds, closeSelection }: UseConversationSidebarActionsProps) {
+export function useConversationSidebarActions() {
   const { t } = useTranslation();
   const [isBusy, setIsBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ key: TranslationKey; success: boolean } | null>(null);
   const isBusyRef = useRef(false);
   const activeConversationId = useChatStore((state) => state.activeConversationId);
   const isSending = useChatStore((state) => state.isSending);
-  const conversations = useChatStore((state) => state.conversations);
-  const activeConversations = conversations.filter((item) => !item.isArchived);
   const refreshConversations = useChatStore((state) => state.refreshConversations);
   const refreshProjects = useChatStore((state) => state.refreshProjects);
 
@@ -217,39 +210,14 @@ export function useConversationSidebarActions({ selectedIds, closeSelection }: U
   const togglePinned = (conversation: ChatConversation) =>
     runMutation(() => setConversationPinned(conversation.id, !conversation.isPinned), 'chatHistoryUnavailable');
 
-  const archiveSelected = async () => {
-    const ids = [...selectedIds].filter((id) => activeConversations.some((conversation) => conversation.id === id));
-    if (ids.length === 0 || isBusy) return;
-    if (isSending && activeConversationId !== null && ids.includes(activeConversationId)) {
-      showFeedback('stopResponseBeforeArchive');
-      return;
-    }
-    const archived = await runMutation(
-      () => setConversationsArchived(ids, true),
-      'conversationArchiveFailed',
-      'conversationArchived',
-    );
-    if (archived) closeSelection();
-  };
-
-  const moveSelected = async (moveTarget: string) => {
-    const ids = [...selectedIds].filter((id) => activeConversations.some((conversation) => conversation.id === id));
-    if (ids.length === 0 || isBusy) return;
-    const projectId = moveTarget === '__chats__' ? null : moveTarget;
-    const moved = await runMutation(() => moveConversations(ids, projectId), 'projectMoveFailed');
-    if (moved) closeSelection();
-  };
-
   return {
     archiveConversation,
-    archiveSelected,
     createProject,
     deleteConversation,
     exportConversation,
     feedback,
     isBusy,
     moveConversation,
-    moveSelected,
     saveTags,
     saveTitle,
     showFeedback,

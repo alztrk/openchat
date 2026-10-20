@@ -39,6 +39,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             chat_storage::set_model_favorite,
             chat_storage::list_saved_output_message_keys,
             chat_storage::search_saved_outputs,
+            chat_storage::search_messages,
             chat_storage::set_saved_output,
             local_data::export_support_diagnostics,
             notifications::read_windows_notification_status,
@@ -101,9 +102,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 std::io::Error::other(format!("Database initialization failed: {error:?}"))
             })?;
             notifications::initialize(app.handle()).map_err(std::io::Error::other)?;
-            if let Some(main_window) = app.get_webview_window("main") {
-                window_state::restore_window_state(&main_window.as_ref().window());
-            }
             Ok(())
         })
         .on_window_event(|window, event| {

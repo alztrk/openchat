@@ -84,7 +84,7 @@ export function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 export function parseSlashCommand(value: string): { command: ChatSlashCommand; arguments: string } | null {
-  const match = /^\/(new|search|summarize|rename|model|compact|reasoning|plan|goal|hedef)(?:\s+([\s\S]*))?$/i.exec(
+  const match = /^\/(new|summarize|rename|model|compact|reasoning|plan|goal|hedef)(?:\s+([\s\S]*))?$/i.exec(
     value.trim(),
   );
   if (!match) return null;
@@ -94,9 +94,6 @@ export function parseSlashCommand(value: string): { command: ChatSlashCommand; a
   switch (name) {
     case 'new':
       command = 'new';
-      break;
-    case 'search':
-      command = 'search';
       break;
     case 'summarize':
       command = 'summarize';

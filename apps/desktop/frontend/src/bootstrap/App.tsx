@@ -3,12 +3,10 @@ import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useSta
 import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { ConversationPane } from '@/modules/conversations/components/ConversationPane';
-import { ConversationSearchDialog } from '@/modules/conversations/components/ConversationSearchDialog';
 import { ConversationSidebar } from '@/modules/conversations/components/ConversationSidebar';
 import { TemporaryChatExitDialog } from '@/modules/conversations/components/TemporaryChatExitDialog';
 import { parseAgentQuestionGroup } from '@/modules/conversations/data/agentQuestions';
 import { getMessages } from '@/modules/conversations/data/chatStorage';
-import type { HistorySearchResult } from '@/modules/conversations/data/historySearch';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import {
   resetNotificationWindowFocus,
@@ -99,18 +97,13 @@ export function App() {
   );
   const [temporaryExitIntent, setTemporaryExitIntent] = useState<(() => void | Promise<void>) | null>(null);
   const [isSavingTemporaryChat, setIsSavingTemporaryChat] = useState(false);
-  const [historySearchOpen, setHistorySearchOpen] = useState(false);
-  const [historySearchInitialQuery, setHistorySearchInitialQuery] = useState('');
   const [systemIsDark, setSystemIsDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const surfaceHeadingRef = useRef<HTMLElement>(null);
   const lastInteractionMethod = useRef<'keyboard' | 'pointer'>('pointer');
   const initializeChat = useChatStore((state) => state.initialize);
-  const projects = useChatStore((state) => state.projects);
-  const projectsStatus = useChatStore((state) => state.projectsStatus);
   const conversations = useChatStore((state) => state.conversations);
   const activeConversationId = useChatStore((state) => state.activeConversationId);
-  const selectConversation = useChatStore((state) => state.selectConversation);
   const startNewChat = useChatStore((state) => state.startNewChat);
   const startTemporaryChat = useChatStore((state) => state.startTemporaryChat);
   const temporaryChat = useChatStore((state) => state.temporaryChat);
@@ -162,17 +155,6 @@ export function App() {
   useEffect(() => {
     if (isTauri()) void initializeChat();
   }, [initializeChat]);
-
-  useEffect(() => {
-    const openHistorySearch = (event: Event) => {
-      if (!(event instanceof CustomEvent) || !isObject(event.detail)) return;
-      if (typeof event.detail.query !== 'string') return;
-      setHistorySearchInitialQuery(event.detail.query);
-      setHistorySearchOpen(true);
-    };
-    window.addEventListener('openchat-history-search', openHistorySearch);
-    return () => window.removeEventListener('openchat-history-search', openHistorySearch);
-  }, []);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -285,20 +267,14 @@ export function App() {
     [navigateSurface, requestTemporaryChatExit],
   );
 
-  const selectHistorySearchResult = useCallback(
-    (result: HistorySearchResult) => {
-      setHistorySearchOpen(false);
-      setHistorySearchInitialQuery('');
+  const openSearchConversation = useCallback(
+    (conversationId: string, messageId?: string | null, searchQuery?: string | null) => {
       requestTemporaryChatExit(async () => {
         navigateSurface('chats');
-        if (result.kind === 'project' && result.projectId !== null) {
-          startNewChat(result.projectId);
-          return;
-        }
-        await selectConversation(result.conversationId, result.messageId);
+        await useChatStore.getState().selectConversation(conversationId, messageId, searchQuery);
       });
     },
-    [navigateSurface, requestTemporaryChatExit, selectConversation, startNewChat],
+    [navigateSurface, requestTemporaryChatExit],
   );
 
   const navigate = useCallback(
@@ -314,11 +290,6 @@ export function App() {
     [activeSurface, navigateSurface, requestTemporaryChatExit],
   );
 
-  const openHistorySearch = () => {
-    setHistorySearchInitialQuery('');
-    setHistorySearchOpen(true);
-  };
-
   const startWorkspaceChat = () => {
     requestTemporaryChatExit(() => {
       navigateSurface('chats');
@@ -327,10 +298,18 @@ export function App() {
   };
 
   const startWorkspaceTemporaryChat = () => {
-    requestTemporaryChatExit(() => {
-      navigateSurface('chats');
-      startTemporaryChat();
-    });
+    const current = useChatStore.getState();
+    if (current.temporaryChat) {
+      requestTemporaryChatExit(() => {
+        navigateSurface('chats');
+        current.startNewChat();
+      });
+    } else {
+      requestTemporaryChatExit(() => {
+        navigateSurface('chats');
+        startTemporaryChat();
+      });
+    }
   };
 
 
@@ -573,8 +552,11 @@ export function App() {
       <TitleBar
         canGoBack={surfaceHistory.index > 0}
         canGoForward={surfaceHistory.index < surfaceHistory.surfaces.length - 1}
+        isSidebarOpen={isSidebarOpen}
         onGoBack={() => moveInHistory(-1)}
         onGoForward={() => moveInHistory(1)}
+        onSelectConversation={openSearchConversation}
+        onToggleSidebar={activeSurface === 'chats' ? () => setIsSidebarOpen((open) => !open) : undefined}
       />
       <NavigationRail activeSurface={activeSurface} isDark={isDark} onNavigate={navigate} onToggleTheme={toggleTheme} />
       <div className="app-shell-main relative flex min-h-0 min-w-0">
@@ -592,7 +574,6 @@ export function App() {
                 <ConversationSidebar
                   onCloseMobile={() => setIsSidebarOpen(false)}
                   onNewChat={startWorkspaceChat}
-                  onOpenSearch={openHistorySearch}
                   onRequestTemporaryExit={requestTemporaryChatExit}
                   onStartTemporaryChat={startWorkspaceTemporaryChat}
                 />
@@ -601,11 +582,6 @@ export function App() {
                 <ConversationActionsHeader
                   activeConversationId={activeConversationId}
                   conversations={conversations}
-                  isSidebarOpen={isSidebarOpen}
-                  onNewChat={startWorkspaceChat}
-                  onOpenSearch={openHistorySearch}
-                  onStartTemporaryChat={startWorkspaceTemporaryChat}
-                  onToggleSidebar={() => setIsSidebarOpen((open) => !open)}
                 />
                 <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
                   <ConversationPane
@@ -673,17 +649,6 @@ export function App() {
           <span>OpenChat</span>
         </span>
       </footer>
-      <ConversationSearchDialog
-        initialQuery={historySearchInitialQuery}
-        onOpenChange={(open) => {
-          setHistorySearchOpen(open);
-          if (!open) setHistorySearchInitialQuery('');
-        }}
-        onSelectResult={selectHistorySearchResult}
-        open={historySearchOpen}
-        projects={projects}
-        projectsStatus={projectsStatus}
-      />
       <TemporaryChatExitDialog
         canSave={temporaryChatMessageCount > 0 && temporaryChat?.route !== null}
         errorMessage={

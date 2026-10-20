@@ -28,13 +28,9 @@ interface ConversationSidebarRowProps {
   active: boolean;
   archived: boolean;
   currentProjectId: string | null;
-  selectionMode: boolean;
-  selectedForBatch: boolean;
-  allowSelection: boolean;
   allowMove: boolean;
   disabled: boolean;
   onSelect(): void;
-  onToggleSelection(): void;
   onTogglePinned(): void;
   onToggleBookmark(): void;
   onEditTags(): void;
@@ -52,13 +48,9 @@ export function ConversationSidebarRow({
   active,
   archived,
   currentProjectId,
-  selectionMode,
-  selectedForBatch,
-  allowSelection,
   allowMove,
   disabled,
   onSelect,
-  onToggleSelection,
   onTogglePinned,
   onToggleBookmark,
   onEditTags,
@@ -195,29 +187,18 @@ export function ConversationSidebarRow({
   return (
     <li
       className="group relative flex min-h-11 items-center rounded-button hover:bg-hover focus-within:bg-hover"
-      draggable={!disabled && allowMove && !archived && !selectionMode}
+      draggable={!disabled && allowMove && !archived}
       ref={rowRef}
       onDragStart={(event) => {
         event.dataTransfer.setData('application/x-openchat-conversation', conversation.id);
         event.dataTransfer.effectAllowed = 'move';
       }}
     >
-      {selectionMode && allowSelection ? (
-        <input
-          aria-label={t('selectConversation', { title: conversation.title })}
-          checked={selectedForBatch}
-          className="ml-2 size-4 shrink-0 accent-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-          disabled={disabled}
-          onChange={onToggleSelection}
-          type="checkbox"
-        />
-      ) : null}
       <Button
-        aria-current={!selectionMode && active ? 'page' : undefined}
-        aria-pressed={selectionMode && allowSelection ? selectedForBatch : undefined}
-        className={`min-h-11 min-w-0 flex-1 justify-start gap-2 rounded-button px-2.5 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${!selectionMode && active ? 'bg-selected text-text' : 'text-secondary-text hover:text-text'}`}
+        aria-current={active ? 'page' : undefined}
+        className={`min-h-11 min-w-0 flex-1 justify-start gap-2 rounded-button px-2.5 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${active ? 'bg-selected text-text' : 'text-secondary-text hover:text-text'}`}
         disabled={disabled}
-        onClick={selectionMode && allowSelection ? onToggleSelection : onSelect}
+        onClick={onSelect}
         size="small"
         variant="ghost"
       >
@@ -231,7 +212,7 @@ export function ConversationSidebarRow({
           <BookmarkCheck aria-label={t('conversationBookmarked')} className="shrink-0 text-accent" size={13} />
         ) : null}
       </Button>
-      {!selectionMode && !archived ? (
+      {!archived ? (
         <Button
           aria-label={conversation.isPinned ? t('unpinConversation') : t('pinConversation')}
           className="conversation-sidebar-pin-action pointer-events-none size-11 shrink-0 opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
@@ -244,22 +225,20 @@ export function ConversationSidebarRow({
           {conversation.isPinned ? <Pin aria-hidden="true" size={15} /> : <PinOff aria-hidden="true" size={15} />}
         </Button>
       ) : null}
-      {!selectionMode ? (
-        <>
-          <Button
-            aria-expanded={menuOpen}
-            aria-haspopup="menu"
-            aria-label={t('moreOptions')}
-            className="conversation-sidebar-overflow-action pointer-events-none mr-1 size-11 shrink-0 opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
-            data-conversation-menu-trigger="true"
-            onClick={() => setMenuOpen((current) => !current)}
-            size="icon"
-            title={t('moreOptions')}
-            variant="ghost"
-          >
-            <MoreHorizontal aria-hidden="true" size={16} />
-          </Button>
-          {menuIsPresent && menuPosition !== null
+      <Button
+        aria-expanded={menuOpen}
+        aria-haspopup="menu"
+        aria-label={t('moreOptions')}
+        className="conversation-sidebar-overflow-action pointer-events-none mr-1 size-11 shrink-0 opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100"
+        data-conversation-menu-trigger="true"
+        onClick={() => setMenuOpen((current) => !current)}
+        size="icon"
+        title={t('moreOptions')}
+        variant="ghost"
+      >
+        <MoreHorizontal aria-hidden="true" size={16} />
+      </Button>
+      {menuIsPresent && menuPosition !== null
             ? createPortal(
                 <div
                   aria-hidden={!menuOpen}
@@ -380,8 +359,6 @@ export function ConversationSidebarRow({
                 document.body,
               )
             : null}
-        </>
-      ) : null}
     </li>
   );
 }

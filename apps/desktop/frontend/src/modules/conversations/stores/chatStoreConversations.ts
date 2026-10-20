@@ -43,6 +43,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
           messages: [],
           searchTargetMessageId: null,
           searchHighlightMessageId: null,
+          searchHighlightQuery: null,
           isLoadingMessages: false,
         });
         await get().refreshSavedOutputMessageKeys();
@@ -115,6 +116,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
         personalMemoryExcludedForNewConversation: false,
         searchTargetMessageId: null,
         searchHighlightMessageId: null,
+        searchHighlightQuery: null,
         isLoadingMessages: false,
         errorCode: null,
       });
@@ -152,7 +154,11 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
       }
     },
 
-    async selectConversation(id: string, targetMessageId: string | null = null): Promise<void> {
+    async selectConversation(
+      id: string,
+      targetMessageId: string | null = null,
+      targetQuery: string | null = null,
+    ): Promise<void> {
       if (get().temporaryChat) {
         set({ errorCode: get().isSending ? 'temporaryChatStopBeforeLeaving' : 'temporaryChatExitRequired' });
         return;
@@ -170,6 +176,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
         errorCode: null,
         searchTargetMessageId: targetMessageId,
         searchHighlightMessageId: null,
+        searchHighlightQuery: targetQuery,
         selectedModelKey: null,
       });
 
@@ -241,6 +248,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
       set({
         searchTargetMessageId: null,
         searchHighlightMessageId: found ? targetMessageId : null,
+        searchHighlightQuery: found ? get().searchHighlightQuery : null,
         errorCode: found ? null : 'searchMessageUnavailable',
       });
     },
@@ -296,6 +304,7 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
         personalMemoryExcludedForNewConversation: false,
         searchTargetMessageId: null,
         searchHighlightMessageId: null,
+        searchHighlightQuery: null,
         isLoadingMessages: false,
         selectedModelKey: defaultModel?.key ?? null,
         errorCode: projectPreferenceInvalid ? 'projectDefaultModelLoadFailed' : null,

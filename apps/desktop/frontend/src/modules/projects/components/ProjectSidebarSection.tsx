@@ -13,8 +13,6 @@ interface ProjectSidebarSectionProps {
   status: 'idle' | 'loading' | 'ready' | 'error';
   collapsed: boolean;
   activeConversationId: string | null;
-  selectedConversationIds: ReadonlySet<string>;
-  selectionMode: boolean;
   isBusy: boolean;
   onToggleCollapsed(): void;
   onRetry(): void;
@@ -22,7 +20,6 @@ interface ProjectSidebarSectionProps {
   onOpenOptions(project: ChatProject): void;
   onCreateProjectChat(projectId: string): void;
   onSelectConversation(id: string): void;
-  onToggleSelection(id: string): void;
   onTogglePinned(conversation: ChatConversation): void;
   onToggleBookmark(conversation: ChatConversation): void;
   onEditTags(conversation: ChatConversation): void;
@@ -41,8 +38,6 @@ export function ProjectSidebarSection({
   status,
   collapsed,
   activeConversationId,
-  selectedConversationIds,
-  selectionMode,
   isBusy,
   onToggleCollapsed,
   onRetry,
@@ -50,7 +45,6 @@ export function ProjectSidebarSection({
   onOpenOptions,
   onCreateProjectChat,
   onSelectConversation,
-  onToggleSelection,
   onTogglePinned,
   onToggleBookmark,
   onEditTags,
@@ -163,7 +157,6 @@ export function ProjectSidebarSection({
                         <ConversationSidebarRow
                           active={activeConversationId === conversation.id}
                           allowMove
-                          allowSelection
                           archived={false}
                           conversation={conversation}
                           currentProjectId={project.id}
@@ -179,10 +172,7 @@ export function ProjectSidebarSection({
                           onSelect={() => onSelectConversation(conversation.id)}
                           onToggleBookmark={() => onToggleBookmark(conversation)}
                           onTogglePinned={() => onTogglePinned(conversation)}
-                          onToggleSelection={() => onToggleSelection(conversation.id)}
                           projects={projects}
-                          selectedForBatch={selectedConversationIds.has(conversation.id)}
-                          selectionMode={selectionMode}
                         />
                       ))}
                     </ul>

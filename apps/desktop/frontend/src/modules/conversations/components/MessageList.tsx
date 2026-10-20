@@ -48,6 +48,7 @@ export function MessageList({
   const isLoadingMessages = useChatStore((state) => state.isLoadingMessages);
   const searchTargetMessageId = useChatStore((state) => state.searchTargetMessageId);
   const searchHighlightMessageId = useChatStore((state) => state.searchHighlightMessageId);
+  const searchHighlightQuery = useChatStore((state) => state.searchHighlightQuery);
   const clearSearchTarget = useChatStore((state) => state.clearSearchTarget);
   const activeConversationId = useChatStore((state) => state.activeConversationId);
   const skipBottomScroll = useRef(false);
@@ -73,10 +74,13 @@ export function MessageList({
     visibleMessages.at(-1)?.role === 'assistant' && visibleMessages.at(-1)?.status === 'streaming';
   const virtualList = useVirtualMessageList(visibleMessages, activeConversationId);
 
+  const effectiveHighlightQuery = inChatSearchQuery || searchHighlightQuery || '';
+  const effectiveTargetId = inChatTargetMessageId || searchHighlightMessageId || searchTargetMessageId;
+
   useInChatSearchHighlight(
     virtualList.containerRef,
-    inChatSearchQuery,
-    inChatTargetMessageId,
+    effectiveHighlightQuery,
+    effectiveTargetId,
     virtualList.rows,
   );
 
@@ -234,7 +238,7 @@ export function MessageList({
                 assistantProviderFallback={assistantProviderFallback}
                 isSavedOutput={savedOutputMessageIds?.has(message.id) ?? false}
                 isSavingSavedOutput={pendingSavedOutputMessageIds?.has(message.id) ?? false}
-                isSearchMatch={message.id === (inChatTargetMessageId ?? searchHighlightMessageId)}
+                isSearchMatch={message.id === (inChatTargetMessageId ?? searchHighlightMessageId ?? searchTargetMessageId)}
                 message={message}
                 latestFileChanges={latestFileChanges}
                 onOpenConnections={onOpenConnections}

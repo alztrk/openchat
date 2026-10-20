@@ -27,12 +27,14 @@
         "minWidth": 800,
         "minHeight": 600,
         "resizable": true,
-        "decorations": false
+        "decorations": false,
+        "backgroundColor": "#F4F5F6",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu-sandbox"
       }
     ],
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self' data:; img-src 'self' asset: data:; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; frame-src 'none'",
-      "devCsp": "default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self' data:; img-src 'self' asset: data:; connect-src ipc: http://ipc.localhost http://127.0.0.1:5173 ws://127.0.0.1:5173; object-src 'none'; base-uri 'none'; frame-src 'none'"
+      "devCsp": null
     }
   },
   "bundle": {

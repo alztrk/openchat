@@ -1,11 +1,11 @@
-import { Clock3, FileDiff, FileUp, Search } from 'lucide-react';
+import { ChevronDown, ChevronUp, Clock3, FileDiff, FileUp, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog, Tooltip } from '@/design-system';
+import { Button, Dialog, Toast } from '@/design-system';
 import { type ChatFileChange, listConversationFileChanges } from '@/modules/conversations/data/chatFileChanges';
 import type { ChatMessage } from '@/modules/conversations/data/chatStorage';
-import { type InChatFilterType, findInChatMatches } from '@/modules/conversations/data/inChatSearch';
+import { findInChatMatches, type InChatFilterType } from '@/modules/conversations/data/inChatSearch';
 import { useChatSession } from '@/modules/conversations/hooks/useChatSession';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
@@ -70,15 +70,8 @@ export function ConversationPane({
   const [droppedFiles, setDroppedFiles] = useState<{ id: number; files: File[] } | null>(null);
   const dragDepthRef = useRef(0);
   const disclosureResolver = useRef<((approved: boolean) => void) | null>(null);
-  const {
-    activeConversation,
-    activeConversationId,
-    errorCode,
-    initialize,
-    messages,
-    serviceStatus,
-    isLoadingMessages,
-  } = useChatSession();
+  const { activeConversation, activeConversationId, errorCode, messages, serviceStatus, isLoadingMessages } =
+    useChatSession();
   const models = useChatStore((state) => state.models);
   const modelStatus = useChatStore((state) => state.modelStatus);
   const modelError = useChatStore((state) => state.modelError);
@@ -87,7 +80,6 @@ export function ConversationPane({
   const hasConfiguredProvider = useChatStore((state) => state.hasConfiguredProvider);
   const hasCompletedAssistantResponse = useChatStore((state) => state.hasCompletedAssistantResponse);
   const refreshModels = useChatStore((state) => state.refreshModels);
-  const selectConversation = useChatStore((state) => state.selectConversation);
   const activeGoal = useChatStore((state) => state.activeGoal);
   const goalStatus = useChatStore((state) => state.goalStatus);
   const refreshActiveGoal = useChatStore((state) => state.refreshActiveGoal);
@@ -105,16 +97,39 @@ export function ConversationPane({
   const isRespondingToToolPermission = useChatStore((state) => state.isRespondingToToolPermission);
   const toolPermissionError = useChatStore((state) => state.toolPermissionError);
   const respondToToolPermission = useChatStore((state) => state.respondToToolPermission);
+  const searchHighlightQuery = useChatStore((state) => state.searchHighlightQuery);
+  const searchMatchIndex = useChatStore((state) => state.searchMatchIndex);
+  const searchMatchCount = useChatStore((state) => state.searchMatchCount);
+  const nextSearchMatch = useChatStore((state) => state.nextSearchMatch);
+  const prevSearchMatch = useChatStore((state) => state.prevSearchMatch);
+  const clearSearchHighlight = useChatStore((state) => state.clearSearchHighlight);
   const isTemporaryChat = temporaryChat !== null;
   const isSending = useChatStore((state) => state.isSending);
-  const isEmptyConversation =
-    messages.length === 0 &&
-    !isLoadingMessages &&
-    !isSending &&
-    errorCode !== 'messageHistoryLoadFailed' &&
-    serviceStatus !== 'error';
+  const isEmptyConversation = messages.length === 0 && !isLoadingMessages && !isSending;
   const centerEmptyConversation =
     isEmptyConversation && !isLargeText && paneSize.width >= 640 && paneSize.height >= 640;
+  const [historyErrorToastVisible, setHistoryErrorToastVisible] = useState(false);
+
+  useEffect(() => {
+    if (errorCode === 'messageHistoryLoadFailed') {
+      setHistoryErrorToastVisible(true);
+      const timer = window.setTimeout(() => {
+        setHistoryErrorToastVisible(false);
+        if (useChatStore.getState().errorCode === 'messageHistoryLoadFailed') {
+          useChatStore.setState({ errorCode: null });
+        }
+      }, 5000);
+      return () => window.clearTimeout(timer);
+    }
+    setHistoryErrorToastVisible(false);
+  }, [errorCode]);
+
+  const handleDismissHistoryErrorToast = useCallback(() => {
+    setHistoryErrorToastVisible(false);
+    if (useChatStore.getState().errorCode === 'messageHistoryLoadFailed') {
+      useChatStore.setState({ errorCode: null });
+    }
+  }, []);
   const latestAssistant = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i]?.role === 'assistant') {
@@ -381,6 +396,15 @@ export function ConversationPane({
       onDrop={handleDrop}
       ref={paneRef}
     >
+      {historyErrorToastVisible ? (
+        <div className="fixed top-14 right-6 z-50 max-w-md shadow-lg">
+          <Toast
+            message={t('messageHistoryLoadFailed')}
+            onClose={handleDismissHistoryErrorToast}
+            variant="destructive"
+          />
+        </div>
+      ) : null}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div
           className="chat-content-workspace flex min-h-0 min-w-0 flex-1 flex-col"
@@ -392,6 +416,46 @@ export function ConversationPane({
             data-file-changes-open={isFileChangesPanelOpen && !isTemporaryChat}
           >
             <div className="chat-conversation-content relative flex min-h-0 min-w-0 flex-1 flex-col">
+              {searchHighlightQuery && !isSearchOpen ? (
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-full border border-border/80 bg-raised/95 px-3 py-1 shadow-elevation-2 backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-150">
+                  <span className="max-w-[120px] truncate text-xs font-medium text-text">
+                    "{searchHighlightQuery}"
+                  </span>
+                  <span className="text-[11px] text-secondary-text">
+                    {searchMatchCount > 0
+                      ? `${searchMatchIndex + 1} / ${searchMatchCount}`
+                      : t('inChatSearchNoMatches')}
+                  </span>
+                  <div className="flex items-center gap-0.5">
+                    <button
+                      aria-label="Önceki eşleşme"
+                      className="rounded-full p-1 text-secondary-icon transition-colors hover:bg-hover hover:text-text disabled:opacity-40"
+                      disabled={searchMatchCount <= 1}
+                      onClick={prevSearchMatch}
+                      type="button"
+                    >
+                      <ChevronUp size={14} />
+                    </button>
+                    <button
+                      aria-label="Sonraki eşleşme"
+                      className="rounded-full p-1 text-secondary-icon transition-colors hover:bg-hover hover:text-text disabled:opacity-40"
+                      disabled={searchMatchCount <= 1}
+                      onClick={nextSearchMatch}
+                      type="button"
+                    >
+                      <ChevronDown size={14} />
+                    </button>
+                    <button
+                      aria-label="Aramayı kapat"
+                      className="ml-1 rounded-full p-1 text-secondary-icon transition-colors hover:bg-hover hover:text-text"
+                      onClick={clearSearchHighlight}
+                      type="button"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               {isSearchOpen ? (
                 <InChatSearchBar
                   activeMatchIndex={clampedMatchIndex}
@@ -410,37 +474,8 @@ export function ConversationPane({
                   }}
                   query={searchQuery}
                 />
-              ) : messages.length > 0 ? (
-                <div className="absolute top-3 right-5 z-10">
-                  <Tooltip label={`${t('inChatSearch')} (Ctrl+F)`}>
-                    <Button
-                      aria-label={t('inChatSearch')}
-                      className="size-8 rounded-full border border-border bg-raised/85 shadow-xs backdrop-blur-sm hover:bg-hover hover:text-text"
-                      onClick={handleOpenSearch}
-                      size="icon"
-                      variant="ghost"
-                    >
-                      <Search aria-hidden="true" size={15} />
-                    </Button>
-                  </Tooltip>
-                </div>
               ) : null}
-              {activeConversation && errorCode === 'messageHistoryLoadFailed' && !isLoadingMessages ? (
-                <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-8">
-                  <div className="max-w-xl text-center">
-                    <p className="text-base text-destructive" role="alert">
-                      {t('messageHistoryLoadFailed')}
-                    </p>
-                    <Button
-                      className="mt-4"
-                      onClick={() => void selectConversation(activeConversation.id)}
-                      size="small"
-                    >
-                      {t('retry')}
-                    </Button>
-                  </div>
-                </div>
-              ) : messages.length > 0 || isLoadingMessages || isSending ? (
+              {messages.length > 0 || isLoadingMessages || isSending ? (
                 <MessageList
                   assistantModelFallback={assistantModelFallback}
                   assistantProviderFallback={assistantProviderFallback}
@@ -460,17 +495,6 @@ export function ConversationPane({
                   pendingSavedOutputMessageIds={new Set(pendingSavedOutputMessageIds)}
                   savedOutputMessageIds={savedMessageIds}
                 />
-              ) : serviceStatus === 'error' ? (
-                <div className="flex min-h-0 flex-1 items-center justify-center px-6 py-8">
-                  <div className="max-w-xl text-center">
-                    <p className="text-base text-destructive" role="alert">
-                      {t('messageHistoryLoadFailed')}
-                    </p>
-                    <Button className="mt-4" onClick={() => void initialize()} size="small">
-                      {t('retry')}
-                    </Button>
-                  </div>
-                </div>
               ) : (
                 <ConversationEmptyState
                   hasAvailableModels={visibleModels.length > 0}
@@ -656,10 +680,9 @@ export function ConversationPane({
         />
       </div>
       {isDraggingOver ? (
-        <div
+        <section
           aria-label={t('dropFilesOverlayTitle')}
           className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center bg-background/80 p-6 backdrop-blur-sm"
-          role="region"
         >
           <div className="flex max-w-md flex-col items-center justify-center gap-3 rounded-card border-2 border-dashed border-accent bg-raised px-8 py-10 text-center shadow-elevation-3">
             <div className="flex size-14 items-center justify-center rounded-full bg-accent/10 text-accent">
@@ -670,7 +693,7 @@ export function ConversationPane({
               <p className="text-sm text-secondary-text">{t('dropFilesOverlayDescription')}</p>
             </div>
           </div>
-        </div>
+        </section>
       ) : null}
     </section>
   );

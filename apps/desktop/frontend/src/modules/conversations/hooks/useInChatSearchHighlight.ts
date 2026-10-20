@@ -1,4 +1,27 @@
-import { type RefObject, useEffect } from 'react';
+import { type RefObject, useEffect, useRef } from 'react';
+
+import { normalizeSearchText } from '@/modules/conversations/data/chatStorage';
+import { useChatStore } from '@/modules/conversations/stores/chatStore';
+
+const HIGHLIGHT_STYLE_ID = 'openchat-search-highlight-style';
+
+function ensureHighlightStyle(): void {
+  if (typeof document === 'undefined') return;
+  if (document.getElementById(HIGHLIGHT_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = HIGHLIGHT_STYLE_ID;
+  style.textContent = `
+    ::highlight(openchat-search-active) {
+      background-color: #facc15 !important;
+      color: #000000 !important;
+    }
+    ::highlight(openchat-search-match) {
+      background-color: rgba(250, 204, 21, 0.45) !important;
+      color: inherit !important;
+    }
+  `;
+  document.head.appendChild(style);
+}
 
 /**
  * Highlights matching terms across rendered message text nodes in the conversation viewport
@@ -10,78 +33,121 @@ export function useInChatSearchHighlight(
   activeTargetId: string | null,
   renderRevision: unknown,
 ): void {
+  const searchMatchIndex = useChatStore((state) => state.searchMatchIndex);
+  const setSearchMatchInfo = useChatStore((state) => state.setSearchMatchInfo);
+  const rangesRef = useRef<Range[]>([]);
+
   useEffect(() => {
     if (typeof CSS === 'undefined' || !('highlights' in CSS)) return;
+    ensureHighlightStyle();
 
-    const trimmed = query.trim().toLowerCase();
-    if (!trimmed) {
+    const normalizedQuery = normalizeSearchText(query.trim());
+    if (!normalizedQuery) {
       CSS.highlights.delete('openchat-search-match');
       CSS.highlights.delete('openchat-search-active');
+      rangesRef.current = [];
+      setSearchMatchInfo(0, 0);
       return;
     }
 
-    const container = containerRef.current;
-    if (!container) return;
+    const scan = () => {
+      const container = containerRef.current;
+      if (!container) return;
 
-    const matchRanges: Range[] = [];
-    const activeRanges: Range[] = [];
+      const discoveredRanges: Range[] = [];
+      let targetInitialIndex = -1;
 
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        if (!node.nodeValue?.trim()) return NodeFilter.FILTER_SKIP;
-        const parent = node.parentElement;
-        if (!parent) return NodeFilter.FILTER_SKIP;
-        const tag = parent.tagName.toLowerCase();
-        if (tag === 'input' || tag === 'textarea' || tag === 'button') {
-          return NodeFilter.FILTER_REJECT;
+      const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+        acceptNode(node) {
+          if (!node.nodeValue?.trim()) return NodeFilter.FILTER_SKIP;
+          const parent = node.parentElement;
+          if (!parent) return NodeFilter.FILTER_SKIP;
+          const tag = parent.tagName.toLowerCase();
+          if (tag === 'input' || tag === 'textarea' || tag === 'button') {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      });
+
+      let currentNode: Node | null;
+      while ((currentNode = walker.nextNode())) {
+        const text = currentNode.nodeValue ?? '';
+        const normalizedText = normalizeSearchText(text);
+        let startIndex = 0;
+
+        while (startIndex < normalizedText.length) {
+          const foundIndex = normalizedText.indexOf(normalizedQuery, startIndex);
+          if (foundIndex === -1) break;
+
+          try {
+            const range = new Range();
+            range.setStart(currentNode, foundIndex);
+            range.setEnd(currentNode, foundIndex + normalizedQuery.length);
+
+            const messageArticle = currentNode.parentElement?.closest('[id^="openchat-message-"]');
+            if (
+              targetInitialIndex === -1 &&
+              activeTargetId &&
+              messageArticle?.id === `openchat-message-${activeTargetId}`
+            ) {
+              targetInitialIndex = discoveredRanges.length;
+            }
+
+            discoveredRanges.push(range);
+          } catch {
+            // Boundary adjustments during dynamic render can be safely ignored
+          }
+
+          startIndex = foundIndex + Math.max(1, normalizedQuery.length);
         }
-        return NodeFilter.FILTER_ACCEPT;
-      },
-    });
+      }
 
-    let currentNode: Node | null;
-    while ((currentNode = walker.nextNode())) {
-      const text = currentNode.nodeValue ?? '';
-      const lower = text.toLowerCase();
-      let startIndex = 0;
+      rangesRef.current = discoveredRanges;
 
-      while (startIndex < lower.length) {
-        const foundIndex = lower.indexOf(trimmed, startIndex);
-        if (foundIndex === -1) break;
+      if (discoveredRanges.length > 0) {
+        const activeIdx =
+          targetInitialIndex !== -1 && searchMatchIndex === 0
+            ? targetInitialIndex
+            : Math.min(searchMatchIndex, discoveredRanges.length - 1);
+
+        setSearchMatchInfo(activeIdx, discoveredRanges.length);
+
+        const activeRange = discoveredRanges[activeIdx];
+        const matchRanges = discoveredRanges.filter((_, i) => i !== activeIdx);
 
         try {
-          const range = new Range();
-          range.setStart(currentNode, foundIndex);
-          range.setEnd(currentNode, foundIndex + trimmed.length);
-
-          const messageArticle = currentNode.parentElement?.closest('[id^="openchat-message-"]');
-          const isActiveMessage = Boolean(
-            activeTargetId && messageArticle?.id === `openchat-message-${activeTargetId}`,
+          CSS.highlights.set('openchat-search-match', new Highlight(...matchRanges));
+          CSS.highlights.set(
+            'openchat-search-active',
+            activeRange ? new Highlight(activeRange) : new Highlight(),
           );
-
-          if (isActiveMessage) {
-            activeRanges.push(range);
-          } else {
-            matchRanges.push(range);
-          }
-        } catch {
-          // Boundary adjustments during dynamic render can be safely ignored
-        }
-
-        startIndex = foundIndex + Math.max(1, trimmed.length);
+        } catch {}
+      } else {
+        setSearchMatchInfo(0, 0);
+        CSS.highlights.delete('openchat-search-match');
+        CSS.highlights.delete('openchat-search-active');
       }
-    }
+    };
 
-    try {
-      CSS.highlights.set('openchat-search-match', new Highlight(...matchRanges));
-      CSS.highlights.set('openchat-search-active', new Highlight(...activeRanges));
-    } catch {
-      // In case Highlight constructor fails in test or restricted environments
-    }
+    scan();
+    const deferredTimer = setTimeout(scan, 80);
 
     return () => {
+      clearTimeout(deferredTimer);
       CSS.highlights.delete('openchat-search-match');
       CSS.highlights.delete('openchat-search-active');
     };
-  }, [containerRef, query, activeTargetId, renderRevision]);
+  }, [containerRef, query, activeTargetId, renderRevision, searchMatchIndex, setSearchMatchInfo]);
+
+  // Scroll to active range when searchMatchIndex changes
+  useEffect(() => {
+    const range = rangesRef.current[searchMatchIndex];
+    if (range) {
+      const element = range.startContainer.parentElement;
+      if (element) {
+        element.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }
+    }
+  }, [searchMatchIndex]);
 }

@@ -11,7 +11,7 @@ const requestTimeoutMs = 15_000;
 const maximumMessageBytes = 24 * 1024 * 1024;
 const maximumActiveOperations = 64;
 const maximumActiveRequestBytes = 64 * 1024 * 1024;
-export const chatSchemaVersion = 19;
+export const chatSchemaVersion = 20;
 
 /** JSON object accepted or returned by the local sidecar RPC boundary. */
 export type JsonObject = Record<string, unknown>;

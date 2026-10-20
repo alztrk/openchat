@@ -1,8 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import '../index.css';
-import { StartupErrorPage } from '@/shell/StartupErrorPage';
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { StartupErrorPage } from '@/shell/StartupErrorPage';
 
 const rootElement = document.getElementById('root');
 
@@ -12,8 +12,9 @@ if (!rootElement) {
 const reactRoot = ReactDOM.createRoot(rootElement);
 
 async function startApplication(): Promise<void> {
+  const appImportPromise = import('./App');
   await unifiedStorage.initialize();
-  const [{ App }, { i18n, i18nReady }] = await Promise.all([import('./App'), import('../localization/i18n')]);
+  const [{ App }, { i18n, i18nReady }] = await Promise.all([appImportPromise, import('../localization/i18n')]);
   await i18nReady;
 
   document.documentElement.lang = i18n.language;

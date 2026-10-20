@@ -112,7 +112,7 @@ export function useComposerState({
   const slashCommands = slashSuggestionsDismissed
     ? []
     : matchingSlashCommands(messageDraft).filter(
-        (command) => !isTemporaryChat || command === 'new' || command === 'search' || command === 'model',
+        (command) => !isTemporaryChat || command === 'new' || command === 'model',
       );
   const slashModelQuery = /^\/model(?:\s+([\s\S]*))?$/i.exec(messageDraft)?.[1]?.trim().toLocaleLowerCase('en') ?? '';
   const slashModelCandidates = selectableModels.filter((model) => {
@@ -275,10 +275,6 @@ export function useComposerState({
     return true;
   };
 
-  const openHistorySearch = (query: string) => {
-    window.dispatchEvent(new CustomEvent('openchat-history-search', { detail: { query } }));
-  };
-
   const runSlashCommand = async (command: ChatSlashCommand, rawArguments: string) => {
     const args = rawArguments.trim();
     setCommandFeedbackKey(null);
@@ -299,10 +295,6 @@ export function useComposerState({
         });
         return;
       }
-      case 'search':
-        openHistorySearch(args);
-        clearDraft();
-        return;
       case 'summarize': {
         if (!activeConversationId) {
           setCommandFeedbackKey('slashCommandSummarizeNoMessages');
@@ -496,7 +488,6 @@ export function useComposerState({
     }
     if (
       command === 'new' ||
-      command === 'search' ||
       command === 'summarize' ||
       command === 'compact' ||
       command === 'plan' ||

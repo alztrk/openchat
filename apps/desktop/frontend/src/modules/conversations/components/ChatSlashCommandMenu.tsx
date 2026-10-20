@@ -6,7 +6,6 @@ import {
   ListTodo,
   type LucideIcon,
   Pencil,
-  Search,
   SquarePen,
   TextQuote,
 } from 'lucide-react';
@@ -17,7 +16,6 @@ import { Button } from '@/design-system';
 
 export type ChatSlashCommand =
   | 'new'
-  | 'search'
   | 'summarize'
   | 'rename'
   | 'model'
@@ -39,7 +37,6 @@ interface SlashCommandDefinition {
 
 const definitions: readonly SlashCommandDefinition[] = [
   { id: 'new', name: '/new', label: 'slashCommandNewLabel', description: 'newConversation', icon: SquarePen },
-  { id: 'search', name: '/search', label: 'slashCommandSearchLabel', description: 'searchChatsHint', icon: Search },
   {
     id: 'summarize',
     name: '/summarize',

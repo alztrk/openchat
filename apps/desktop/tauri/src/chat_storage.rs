@@ -718,6 +718,113 @@ pub fn get_messages(
         .map_err(|_| ChatStorageError::unavailable())
 }
 
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchMessagesInput {
+    pub query: String,
+    pub limit: Option<usize>,
+    pub role_filter: Option<String>,
+    pub has_code_only: Option<bool>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredSearchMessage {
+    pub id: String,
+    pub conversation_id: String,
+    pub role: String,
+    pub content: String,
+    pub created_at: Option<i64>,
+}
+
+pub fn normalize_search_text(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    for ch in input.chars() {
+        match ch {
+            'İ' | 'I' | 'ı' => result.push('i'),
+            'Ç' | 'ç' => result.push('c'),
+            'Ş' | 'ş' => result.push('s'),
+            'Ğ' | 'ğ' => result.push('g'),
+            'Ü' | 'ü' => result.push('u'),
+            'Ö' | 'ö' => result.push('o'),
+            other => {
+                for lower in other.to_lowercase() {
+                    result.push(lower);
+                }
+            }
+        }
+    }
+    result
+}
+
+#[tauri::command]
+/// Searches messages across conversations matching the query string in user or assistant messages
+/// with optional role filtering and code block flags.
+///
+/// # Errors
+/// Returns a storage error if SQLite fails.
+pub fn search_messages(
+    input: SearchMessagesInput,
+) -> Result<Vec<StoredSearchMessage>, ChatStorageError> {
+    let raw_query = input.query.trim();
+    let normalized = normalize_search_text(raw_query);
+    let has_query = !normalized.is_empty();
+    let has_role = input.role_filter.as_deref().is_some_and(|r| !r.trim().is_empty());
+    let has_code = input.has_code_only.unwrap_or(false);
+
+    if !has_query && !has_role && !has_code {
+        return Ok(Vec::new());
+    }
+
+    let connection = open_database()?;
+    let limit = input.limit.unwrap_or(40).clamp(1, 100);
+
+    let mut sql = String::from(
+        "SELECT id, conversation_id, role, content, created_at
+         FROM messages
+         WHERE 1=1"
+    );
+
+    if has_query {
+        sql.push_str(" AND instr(openchat_normalize_text(content), ?1) > 0");
+    }
+    if let Some(role) = &input.role_filter {
+        let clean_role = role.trim();
+        if clean_role == "user" || clean_role == "assistant" {
+            sql.push_str(&format!(" AND role = '{clean_role}'"));
+        }
+    }
+    if has_code {
+        sql.push_str(" AND content LIKE '%```%'");
+    }
+
+    sql.push_str(" ORDER BY created_at DESC, id DESC LIMIT ?2");
+
+    let mut statement = connection
+        .prepare(&sql)
+        .map_err(|_| ChatStorageError::unavailable())?;
+
+    let rows = statement
+        .query_map(params![normalized, limit as i64], |row| {
+            Ok(StoredSearchMessage {
+                id: row.get(0)?,
+                conversation_id: row.get(1)?,
+                role: row.get(2)?,
+                content: row.get(3)?,
+                created_at: row.get(4)?,
+            })
+        })
+        .map_err(|_| ChatStorageError::unavailable())?;
+
+    let mut results = Vec::new();
+    for row in rows {
+        if let Ok(message) = row {
+            results.push(message);
+        }
+    }
+    Ok(results)
+}
+
 #[tauri::command]
 /// Creates a new conversation after validating its ID, route, and optional project.
 ///
@@ -1112,6 +1219,18 @@ fn open_supported_connection(path: &Path) -> Result<Connection, ChatStorageError
             },
         )
         .map_err(|_| ChatStorageError::unavailable())?;
+    connection
+        .create_scalar_function(
+            "openchat_normalize_text",
+            1,
+            rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC
+                | rusqlite::functions::FunctionFlags::SQLITE_INNOCUOUS,
+            |ctx| {
+                let value = ctx.get::<Option<String>>(0)?;
+                Ok(value.map(|s| normalize_search_text(&s)))
+            },
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
     Ok(connection)
 }
 
@@ -1130,6 +1249,20 @@ mod database_connection_tests {
             .expect("read trusted schema setting");
 
         assert!(!trusted_schema_enabled);
+    }
+
+    #[test]
+    fn supported_connections_register_turkish_normalize_function() {
+        let connection = open_supported_connection(Path::new(":memory:"))
+            .expect("open configured in-memory database");
+        let result: String = connection
+            .query_row(
+                "SELECT openchat_normalize_text('Veritabanı Şifresi Çıkış')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("normalize text in sqlite");
+        assert_eq!(result, "veritabani sifresi cikis");
     }
 
     #[test]
