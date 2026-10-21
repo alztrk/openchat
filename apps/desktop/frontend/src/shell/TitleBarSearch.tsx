@@ -449,10 +449,10 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
           className="openchat-glass-popover absolute left-0 right-0 top-full z-50 mt-1 flex w-full origin-top flex-col overflow-hidden rounded-dialog border border-border p-1"
           role="listbox"
         >
-          <div className="flex items-center justify-between px-2 py-1.5 text-[11px] font-medium text-secondary-text">
+          <div className="flex items-center justify-between px-2 py-1.5 text-caption font-medium text-secondary-text">
             <span>Son Aramalar</span>
             <button
-              className="flex items-center gap-1 text-[11px] text-secondary-text transition-colors hover:text-destructive"
+              className="flex items-center gap-1 text-caption text-secondary-text transition-colors hover:text-destructive"
               onClick={handleClearAllRecent}
               type="button"
             >
@@ -497,7 +497,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
           role="listbox"
         >
           {hasActiveFilter ? (
-            <div className="flex items-center gap-1.5 border-b border-border/70 bg-surface-raised/40 px-2.5 py-1.5 text-[11px] text-secondary-text">
+            <div className="flex items-center gap-1.5 border-b border-border/70 bg-surface-raised/40 px-2.5 py-1.5 text-caption text-secondary-text">
               <span className="font-medium">Filtre:</span>
               {parsedQuery.roleFilter ? (
                 <span className="rounded-xs bg-accent/15 px-1.5 py-0.2 text-accent font-medium">

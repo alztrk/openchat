@@ -141,7 +141,7 @@ export function ConversationExportMenu({ conversation, disabled = false }: Conve
             >
               <div className="flex items-center justify-between px-2.5 py-1.5 text-xs font-medium text-secondary-text">
                 <span>{t('exportConversation')}</span>
-                <span className="font-mono text-[11px] text-secondary-text/60">3 format</span>
+                <span className="font-mono text-caption text-secondary-text/60">3 format</span>
               </div>
               <div className="my-1 h-px bg-border/60" />
 
@@ -157,7 +157,7 @@ export function ConversationExportMenu({ conversation, disabled = false }: Conve
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-1.5">
                     <span className="truncate text-sm font-medium text-text">{t('exportFormatMarkdownTitle')}</span>
-                    <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-mono text-[11px] text-secondary-text">
+                    <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-mono text-caption text-secondary-text">
                       .md
                     </span>
                   </div>
@@ -177,7 +177,7 @@ export function ConversationExportMenu({ conversation, disabled = false }: Conve
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-1.5">
                     <span className="truncate text-sm font-medium text-text">{t('exportFormatHtmlTitle')}</span>
-                    <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-mono text-[11px] text-secondary-text">
+                    <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-mono text-caption text-secondary-text">
                       .html
                     </span>
                   </div>
@@ -197,7 +197,7 @@ export function ConversationExportMenu({ conversation, disabled = false }: Conve
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-1.5">
                     <span className="truncate text-sm font-medium text-text">{t('exportFormatJsonTitle')}</span>
-                    <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-mono text-[11px] text-secondary-text">
+                    <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-mono text-caption text-secondary-text">
                       .json
                     </span>
                   </div>

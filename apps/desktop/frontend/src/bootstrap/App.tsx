@@ -1002,7 +1002,7 @@ export function App() {
                   {activeDropZone !== null ? (
                     <div
                       aria-hidden="true"
-                      className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-background/55 p-6 backdrop-blur-[2px]"
+                      className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-background/55 p-6 backdrop-blur-overlay"
                     >
                       <div className="flex max-w-sm flex-col items-center justify-center gap-3 rounded-card border-2 border-dashed border-accent bg-accent/15 p-8 text-center text-text shadow-lg animate-in zoom-in-95 duration-150">
                         {activeDropZone === 'split' ? (

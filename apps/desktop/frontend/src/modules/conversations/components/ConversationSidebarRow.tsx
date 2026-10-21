@@ -528,7 +528,7 @@ export function ConversationSidebarRow({
                 {conversation.title}
               </span>
               {viewMode === 'detailed' ? (
-                <span className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] font-normal text-secondary-text/75">
+                <span className="mt-0.5 flex items-center gap-1.5 truncate text-caption font-normal text-secondary-text/75">
                   <span>{formattedUpdatedTime}</span>
                   {conversation.tags.length > 0 ? <span className="truncate">· #{conversation.tags[0]}</span> : null}
                 </span>

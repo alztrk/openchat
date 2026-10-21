@@ -812,7 +812,7 @@ export function ConversationSidebar({
                 className="openchat-popover-enter fixed sm:absolute right-2 sm:right-0 top-13 sm:top-10 z-50 grid w-52 gap-1 rounded-card border border-border bg-raised/90 p-1.5 shadow-lg backdrop-blur-xl"
                 role="menu"
               >
-                <div className="px-2 pt-1 pb-0.5 text-[11px] font-medium text-secondary-text/75">
+                <div className="px-2 pt-1 pb-0.5 text-caption font-medium text-secondary-text/75">
                   {t('sidebarViewModeLabel')}
                 </div>
                 {(['compact', 'detailed'] as const).map((mode) => (
@@ -833,7 +833,7 @@ export function ConversationSidebar({
                   </button>
                 ))}
                 <div aria-hidden="true" className="my-0.5 border-t border-border" />
-                <div className="px-2 pt-1 pb-0.5 text-[11px] font-medium text-secondary-text/75">
+                <div className="px-2 pt-1 pb-0.5 text-caption font-medium text-secondary-text/75">
                   {t('sidebarSortByLabel')}
                 </div>
                 {(

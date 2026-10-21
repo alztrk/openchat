@@ -547,8 +547,10 @@ export function ConversationPane({
             <div className="chat-conversation-content relative flex min-h-0 min-w-0 flex-1 flex-col">
               {searchHighlightQuery && !isSearchOpen ? (
                 <div className="openchat-glass-popover absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-full border border-border/80 px-3 py-1 animate-in fade-in slide-in-from-top-2 duration-150">
-                  <span className="max-w-[120px] truncate text-xs font-medium text-text">"{searchHighlightQuery}"</span>
-                  <span className="text-[11px] text-secondary-text">
+                  <span className="max-w-search-highlight truncate text-xs font-medium text-text">
+                    "{searchHighlightQuery}"
+                  </span>
+                  <span className="text-caption text-secondary-text">
                     {searchMatchCount > 0
                       ? `${searchMatchIndex + 1} / ${searchMatchCount}`
                       : t('inChatSearchNoMatches')}

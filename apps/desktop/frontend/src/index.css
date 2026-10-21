@@ -58,7 +58,13 @@
   --text-composer-input--line-height: calc(20px * var(--app-text-scale, 1));
   --text-settings-description: calc(13px * var(--app-text-scale, 1));
   --text-settings-description--line-height: calc(19px * var(--app-text-scale, 1));
+  --text-caption: calc(11px * var(--app-text-scale, 1));
+  --text-caption--line-height: calc(15px * var(--app-text-scale, 1));
+  --text-micro: calc(10px * var(--app-text-scale, 1));
+  --text-micro--line-height: calc(14px * var(--app-text-scale, 1));
   --text-relative-small: 0.9em;
+
+  --blur-overlay: 2px;
 
   --leading-4: calc(1rem * var(--app-text-scale, 1));
   --leading-5: calc(1.25rem * var(--app-text-scale, 1));
@@ -131,6 +137,18 @@
 
 @utility duration-quick {
   transition-duration: 160ms;
+}
+
+@utility max-w-in-chat-search {
+  max-width: calc(100% - 2.5rem);
+}
+
+@utility min-w-in-chat-search {
+  min-width: 420px;
+}
+
+@utility max-w-search-highlight {
+  max-width: 120px;
 }
 
 .app-shell {

@@ -300,7 +300,7 @@ export function ChatFileChangesPanel({
             <FileDiff aria-hidden="true" className="text-accent" size={14} />
             <span>{t('fileChangesTitle')}</span>
             {pendingApprovalChanges.length > 0 ? (
-              <span className="rounded-full bg-accent/15 px-1.5 py-0.2 text-[10px] font-bold text-accent">
+              <span className="rounded-full bg-accent/15 px-1.5 py-0.2 text-micro font-bold text-accent">
                 {pendingApprovalChanges.length}
               </span>
             ) : null}
@@ -336,7 +336,7 @@ export function ChatFileChangesPanel({
             {pendingApprovalChanges.length > 0 ? (
               <div className="flex items-center gap-1">
                 <Button
-                  className="h-7 gap-1 px-2 text-[11px]"
+                  className="h-7 gap-1 px-2 text-caption"
                   disabled={mutatingChangeId !== null}
                   onClick={() => void handleApproveAll()}
                   size="small"
@@ -346,7 +346,7 @@ export function ChatFileChangesPanel({
                   <span>{t('fileChangesApproveAll')}</span>
                 </Button>
                 <Button
-                  className="h-7 gap-1 px-2 text-[11px]"
+                  className="h-7 gap-1 px-2 text-caption"
                   disabled={mutatingChangeId !== null}
                   onClick={() => void handleRevertAll()}
                   size="small"
@@ -415,7 +415,7 @@ export function ChatFileChangesPanel({
                   <div className="flex shrink-0 items-center gap-1">
                     <button
                       aria-pressed={diffViewMode === 'unified'}
-                      className={`inline-flex items-center gap-1 rounded-control px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                      className={`inline-flex items-center gap-1 rounded-control px-2 py-0.5 text-caption font-medium transition-colors ${
                         diffViewMode === 'unified'
                           ? 'bg-accent text-white'
                           : 'bg-raised text-secondary-text hover:text-text'
@@ -428,7 +428,7 @@ export function ChatFileChangesPanel({
                     </button>
                     <button
                       aria-pressed={diffViewMode === 'split'}
-                      className={`inline-flex items-center gap-1 rounded-control px-2 py-0.5 text-[11px] font-medium transition-colors ${
+                      className={`inline-flex items-center gap-1 rounded-control px-2 py-0.5 text-caption font-medium transition-colors ${
                         diffViewMode === 'split'
                           ? 'bg-accent text-white'
                           : 'bg-raised text-secondary-text hover:text-text'
@@ -513,11 +513,11 @@ function DiffContent({
       <div className="flex flex-col gap-2">
         {parsed.hunks.map((hunk) => (
           <div className="overflow-hidden rounded-control border border-border/80 bg-composer" key={hunk.index}>
-            <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-raised px-2.5 py-1 text-[11px]">
+            <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-raised px-2.5 py-1 text-caption">
               <span className="truncate font-code text-secondary-text">{hunk.header}</span>
               {canRevertHunks ? (
                 <button
-                  className="inline-flex shrink-0 items-center gap-1 rounded-control border border-border bg-surface px-2 py-0.5 text-[11px] font-medium text-secondary-text transition-colors hover:bg-hover hover:text-destructive disabled:opacity-50"
+                  className="inline-flex shrink-0 items-center gap-1 rounded-control border border-border bg-surface px-2 py-0.5 text-caption font-medium text-secondary-text transition-colors hover:bg-hover hover:text-destructive disabled:opacity-50"
                   disabled={mutatingHunkIndex !== null}
                   onClick={() => onRevertHunk(hunk.index)}
                   type="button"
@@ -688,7 +688,7 @@ function FileChangeRow({
         </div>
       ) : change.approved ? (
         <span
-          className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success"
+          className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2 py-0.5 text-caption font-medium text-success"
           title={t('fileChangesApproved')}
         >
           <Check aria-hidden="true" size={12} />
