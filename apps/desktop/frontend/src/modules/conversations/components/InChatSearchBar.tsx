@@ -93,10 +93,9 @@ export function InChatSearchBar({
   }
 
   return (
-    <div
+    <search
       aria-label={t('inChatSearch')}
       className="openchat-in-chat-search absolute top-3 right-5 z-20 flex w-full max-w-[calc(100%-2.5rem)] flex-col gap-2 rounded-card border border-border bg-raised/95 p-2 shadow-lg backdrop-blur-md sm:w-auto sm:min-w-[420px]"
-      role="search"
     >
       <style>{`
         ::highlight(openchat-search-match) {
@@ -200,6 +199,6 @@ export function InChatSearchBar({
           );
         })}
       </div>
-    </div>
+    </search>
   );
 }

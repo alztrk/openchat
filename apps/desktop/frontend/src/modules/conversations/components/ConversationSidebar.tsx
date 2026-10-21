@@ -878,7 +878,8 @@ export function ConversationSidebar({
           </div>
         </div>
 
-        <div
+        <section
+          aria-label={t('statisticsConversations')}
           className="openchat-scroll-area flex-1 px-2.5 pb-4 pt-1"
           onKeyDown={handleScrollAreaKeyDown}
           onScroll={handleScrollAreaScroll}
@@ -1269,7 +1270,7 @@ export function ConversationSidebar({
               </>
             ) : null}
           </div>
-        </div>
+        </section>
 
         {!isDrawer ? (
           // biome-ignore lint/a11y/useSemanticElements: Custom interactive resize separator for the sidebar width.

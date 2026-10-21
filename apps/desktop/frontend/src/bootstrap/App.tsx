@@ -885,7 +885,8 @@ export function App() {
                 />
               </div>
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                <div
+                <section
+                  aria-label={t('composerDropTargetLabel')}
                   className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
                   onDragEnter={handleWorkspaceDragEnter}
                   onDragLeave={handleWorkspaceDragLeave}
@@ -931,6 +932,7 @@ export function App() {
 
                   {splitConversationId && !temporaryChat ? (
                     <>
+                      {/* biome-ignore lint/a11y/useSemanticElements: An adjustable split view separator is an ARIA window splitter, not a thematic break. */}
                       <div
                         aria-label={t('resizeSplitView')}
                         aria-orientation="vertical"
@@ -1023,7 +1025,7 @@ export function App() {
                       </div>
                     </div>
                   ) : null}
-                </div>
+                </section>
               </div>
             </div>
           ) : activeSurface === 'models' ? (

@@ -479,6 +479,7 @@ export function ConversationSidebarRow({
         </form>
       ) : (
         <>
+          {/* biome-ignore lint/a11y/useSemanticElements: The row contains nested action buttons, so it cannot be a native button. */}
           <div
             aria-current={active ? 'page' : undefined}
             className={`min-w-0 flex-1 flex items-center justify-start gap-2 rounded-button bg-transparent px-3 text-left text-settings-description transition-all duration-quick hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
@@ -556,6 +557,7 @@ export function ConversationSidebarRow({
                 : 'pointer-events-none opacity-0 group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100'
             }`}
             draggable={false}
+            role="toolbar"
             onDragStart={(event) => {
               event.preventDefault();
               event.stopPropagation();
