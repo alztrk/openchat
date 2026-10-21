@@ -1,4 +1,5 @@
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { isObject } from '@/shared/utils/json';
 
 export type SidebarSectionId = 'projects' | 'folders' | 'pinned' | 'chats' | 'archived' | 'trash';
 export type SidebarSortMode = 'updatedAt' | 'createdAt' | 'alphabetical' | 'manual';
@@ -143,30 +144,22 @@ export function readCustomSidebarFolders(): CustomSidebarFolder[] {
     if (!Array.isArray(parsed)) return [];
     const validFolders: CustomSidebarFolder[] = [];
     for (const item of parsed) {
-      if (
-        typeof item === 'object' &&
-        item !== null &&
-        typeof (item as { id?: unknown }).id === 'string' &&
-        typeof (item as { name?: unknown }).name === 'string' &&
-        Array.isArray((item as { conversationIds?: unknown }).conversationIds)
-      ) {
-        const id = (item as { id: string }).id.trim();
-        const name = (item as { name: string }).name.trim();
-        const conversationIds = (item as { conversationIds: unknown[] }).conversationIds.filter(
-          (cid): cid is string => typeof cid === 'string' && cid.length > 0,
-        );
-        const createdAt =
-          typeof (item as { createdAt?: unknown }).createdAt === 'number'
-            ? (item as { createdAt: number }).createdAt
-            : Date.now();
-        if (id && name) {
-          validFolders.push({
-            id,
-            name,
-            conversationIds: [...new Set(conversationIds)],
-            createdAt,
-          });
-        }
+      if (!isObject(item)) continue;
+      const { id, name, conversationIds, createdAt } = item;
+      if (typeof id !== 'string' || typeof name !== 'string' || !Array.isArray(conversationIds)) continue;
+      const trimmedId = id.trim();
+      const trimmedName = name.trim();
+      const validConversationIds = conversationIds.filter(
+        (conversationId): conversationId is string => typeof conversationId === 'string' && conversationId.length > 0,
+      );
+      const folderCreatedAt = typeof createdAt === 'number' ? createdAt : Date.now();
+      if (trimmedId && trimmedName) {
+        validFolders.push({
+          id: trimmedId,
+          name: trimmedName,
+          conversationIds: [...new Set(validConversationIds)],
+          createdAt: folderCreatedAt,
+        });
       }
     }
     return validFolders;

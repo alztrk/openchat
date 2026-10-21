@@ -96,7 +96,8 @@ export function ConversationExportMenu({ conversation, disabled = false }: Conve
     }
     const items = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? []);
     if (items.length === 0) return;
-    const currentIndex = items.indexOf(document.activeElement as HTMLElement);
+    const activeElement = document.activeElement;
+    const currentIndex = activeElement instanceof HTMLElement ? items.indexOf(activeElement) : -1;
 
     if (event.key === 'ArrowDown') {
       event.preventDefault();

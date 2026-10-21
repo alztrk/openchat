@@ -295,7 +295,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      if (containerRef.current && event.target instanceof Node && !containerRef.current.contains(event.target)) {
         setIsOpen(false);
       }
     };

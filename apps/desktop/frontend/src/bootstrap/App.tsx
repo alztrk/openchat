@@ -150,7 +150,7 @@ export function App() {
   useEffect(() => {
     const onDragState = (event: Event) => {
       if (!(event instanceof CustomEvent)) return;
-      const detail = event.detail as { conversationId?: unknown; dragging?: unknown } | null;
+      const detail = isObject(event.detail) ? event.detail : null;
       if (detail && typeof detail.conversationId === 'string' && detail.dragging === true) {
         setDraggingConversationId(detail.conversationId);
       } else {
@@ -160,7 +160,7 @@ export function App() {
     };
     const onOpenSplit = (event: Event) => {
       if (!(event instanceof CustomEvent)) return;
-      const detail = event.detail as { conversationId?: unknown } | null;
+      const detail = isObject(event.detail) ? event.detail : null;
       const targetId = detail && typeof detail.conversationId === 'string' ? detail.conversationId : null;
       if (!targetId) return;
       setSplitConversationId(targetId);

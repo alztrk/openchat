@@ -598,7 +598,9 @@ export function useComposerState({
   useEffect(() => {
     const handleAddAttachmentsEvent = (event: Event) => {
       if (!(event instanceof CustomEvent) || !isObject(event.detail) || !Array.isArray(event.detail.files)) return;
-      void addAttachmentsRef.current(event.detail.files as File[]);
+      const files = event.detail.files.filter((file): file is File => file instanceof File);
+      if (files.length === 0) return;
+      void addAttachmentsRef.current(files);
     };
     window.addEventListener('openchat-composer-add-attachments', handleAddAttachmentsEvent);
     return () => window.removeEventListener('openchat-composer-add-attachments', handleAddAttachmentsEvent);

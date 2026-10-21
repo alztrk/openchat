@@ -11,6 +11,7 @@ import { useChatSession } from '@/modules/conversations/hooks/useChatSession';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { upsertMessage } from '@/modules/conversations/stores/chatStoreUtils';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
+import { isObject } from '@/shared/utils/json';
 import { ChatComposer } from './ChatComposer';
 import { ChatFileChangesPanel, type RightWorkspaceTab } from './ChatFileChangesPanel';
 import { ConversationEmptyState } from './ConversationEmptyState';
@@ -21,6 +22,10 @@ import { MessageList } from './MessageList';
 import { parseToolActivities } from './message/messageData';
 import { ToolPermissionCard } from './ToolPermissionCard';
 import { UserQuestionPanel } from './UserQuestionPanel';
+
+function isChatMessage(value: unknown): value is ChatMessage {
+  return isObject(value) && typeof value.id === 'string' && typeof value.conversationId === 'string';
+}
 
 export interface ConversationPaneProps {
   conversationId?: string | null;
@@ -128,9 +133,10 @@ export function ConversationPane({
       });
 
     const onStream = (event: Event) => {
-      const detail = (event as CustomEvent<{ message: ChatMessage }>).detail;
-      if (detail?.message && detail.message.conversationId === resolvedTargetId) {
-        setSecondaryMessages((prev) => upsertMessage(prev, detail.message));
+      if (!(event instanceof CustomEvent) || !isObject(event.detail) || !isChatMessage(event.detail.message)) return;
+      const { message } = event.detail;
+      if (message.conversationId === resolvedTargetId) {
+        setSecondaryMessages((prev) => upsertMessage(prev, message));
       }
     };
     window.addEventListener('openchat-message-stream', onStream);

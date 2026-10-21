@@ -70,7 +70,7 @@ export function GeneralSettingsSection({
     for (const model of models) {
       list.push({
         value: model.key,
-        label: `${providerNameForModel(model, t as never)}: ${model.displayName}`,
+        label: `${providerNameForModel(model, (key) => t(key))}: ${model.displayName}`,
       });
     }
     return list;

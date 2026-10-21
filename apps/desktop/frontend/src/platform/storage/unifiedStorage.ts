@@ -1,4 +1,5 @@
 import { invoke, isTauri } from '@/platform/tauri';
+import { isObject } from '@/shared/utils/json';
 
 interface MigrationPayload {
   settings: Record<string, string>;
@@ -67,9 +68,9 @@ class UnifiedStorage {
               const parsed: unknown = JSON.parse(val);
               if (Array.isArray(parsed)) {
                 for (const item of parsed) {
-                  if (typeof item === 'object' && item !== null && 'id' in item && 'content' in item) {
-                    const id = String((item as { id: unknown }).id ?? '');
-                    const factText = String((item as { content: unknown }).content ?? '');
+                  if (isObject(item)) {
+                    const id = String(item.id ?? '');
+                    const factText = String(item.content ?? '');
                     if (id.length > 0 && factText.length > 0) {
                       legacyFacts.push({
                         id,

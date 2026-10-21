@@ -1,11 +1,16 @@
 import { readNotificationPreferences } from '@/modules/notifications/data/notificationPreferences';
 
+declare global {
+  interface Window {
+    webkitAudioContext?: typeof AudioContext;
+  }
+}
+
 let sharedAudioContext: AudioContext | null = null;
 
 export function getAudioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
-  const AudioContextClass =
-    window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  const AudioContextClass = window.AudioContext ?? window.webkitAudioContext;
   if (!AudioContextClass) return null;
 
   if (!sharedAudioContext || sharedAudioContext.state === 'closed') {
