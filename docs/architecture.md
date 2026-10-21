@@ -855,11 +855,11 @@ runtime, extraction throughput, CPU use, or memory use.
 
 ## Migration sequence
 
-1. **Relocate package roots and assets.** Move `frontend/` and `src-tauri/` to
-   `apps/desktop/`, `native/openchat-service/` to `services/`, and consolidate
-   the existing brand, font, and icon files under `apps/desktop/assets/`.
-   Update Vite, TypeScript, Tauri, CI, Dependabot, ignore rules, and contributor
-   documentation in the same change.
+1. **Relocate package roots and assets.** `frontend/` and `src-tauri/` now live
+   under `apps/desktop/`, `native/openchat-service/` under `services/`, and the
+   brand, font, and icon files under `apps/desktop/assets/`. Vite, TypeScript,
+   Tauri, CI, Dependabot, ignore rules, and contributor documentation were
+   updated in the same change.
 2. **Establish frontend runtime boundaries.** Move the React entry point and
    desktop shell into `bootstrap/` and `shell/`. Move Tauri APIs and the local
    service client out of feature stores into `platform/`; keep one sidecar
