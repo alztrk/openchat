@@ -106,7 +106,7 @@ class UnifiedStorage {
       }
     } catch (error) {
       // Degrade gracefully without crashing startup
-      console.warn('Failed to initialize unified SQLite storage:', error);
+      globalThis.reportError(new Error('Failed to initialize unified SQLite storage.', { cause: error }));
     }
 
     this.initialized = true;
@@ -120,7 +120,7 @@ class UnifiedStorage {
     this.cache.set(key, value);
     if (isTauri()) {
       invoke('set_app_setting', { key, valueJson: value }).catch((error) => {
-        console.warn(`Failed to persist setting '${key}' to SQLite:`, error);
+        globalThis.reportError(new Error(`Failed to persist setting '${key}' to SQLite.`, { cause: error }));
       });
     }
   }
@@ -129,7 +129,7 @@ class UnifiedStorage {
     this.cache.delete(key);
     if (isTauri()) {
       invoke('delete_app_setting', { key }).catch((error) => {
-        console.warn(`Failed to delete setting '${key}' from SQLite:`, error);
+        globalThis.reportError(new Error(`Failed to delete setting '${key}' from SQLite.`, { cause: error }));
       });
     }
   }
@@ -139,7 +139,9 @@ class UnifiedStorage {
     this.cache.clear();
     if (isTauri()) {
       for (const key of keys) {
-        invoke('delete_app_setting', { key }).catch(() => {});
+        invoke('delete_app_setting', { key }).catch((error) => {
+          globalThis.reportError(new Error(`Failed to clear setting '${key}' from SQLite.`, { cause: error }));
+        });
       }
     }
   }

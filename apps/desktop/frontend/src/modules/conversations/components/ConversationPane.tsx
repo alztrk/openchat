@@ -120,7 +120,9 @@ export function ConversationPane({
       .then((items) => {
         if (current) setSecondaryMessages(items);
       })
-      .catch(() => {})
+      .catch((error) => {
+        globalThis.reportError(new Error('Failed to load split conversation messages.', { cause: error }));
+      })
       .finally(() => {
         if (current) setSecondaryLoading(false);
       });

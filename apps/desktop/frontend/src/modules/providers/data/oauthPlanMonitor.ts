@@ -40,7 +40,7 @@ export function refreshOAuthPlans(): Promise<OAuthPlanRefreshSummary> {
 
 export function subscribeToOAuthPlanUpdates(listener: (summary: OAuthPlanRefreshSummary) => void): () => void {
   if (typeof window === 'undefined') {
-    return () => {};
+    return () => undefined;
   }
   const handler = (event: Event) => {
     if (event instanceof CustomEvent && isRefreshSummary(event.detail)) {

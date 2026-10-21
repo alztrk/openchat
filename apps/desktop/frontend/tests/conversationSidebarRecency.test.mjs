@@ -61,7 +61,9 @@ function sortSidebarConversations(conversations, sortMode, manualOrder = []) {
   }
   if (sortMode === 'manual') {
     const indexMap = new Map();
-    manualOrder.forEach((id, idx) => indexMap.set(id, idx));
+    manualOrder.forEach((id, idx) => {
+      indexMap.set(id, idx);
+    });
     return copy.sort((a, b) => {
       const idxA = indexMap.get(a.id);
       const idxB = indexMap.get(b.id);

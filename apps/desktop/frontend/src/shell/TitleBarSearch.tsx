@@ -77,7 +77,9 @@ function deleteRecentSearch(term: string): string[] {
 function clearAllRecentSearches(): void {
   try {
     localStorage.removeItem(RECENT_SEARCHES_STORAGE_KEY);
-  } catch {}
+  } catch {
+    // Storage may be unavailable in restricted environments.
+  }
 }
 
 function extractExcerpt(content: string, query: string, radius = 45): string {

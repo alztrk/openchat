@@ -70,8 +70,8 @@ export function useInChatSearchHighlight(
         },
       });
 
-      let currentNode: Node | null;
-      while ((currentNode = walker.nextNode())) {
+      let currentNode = walker.nextNode();
+      while (currentNode !== null) {
         const text = currentNode.nodeValue ?? '';
         const normalizedText = normalizeSearchText(text);
         let startIndex = 0;
@@ -101,6 +101,8 @@ export function useInChatSearchHighlight(
 
           startIndex = foundIndex + Math.max(1, normalizedQuery.length);
         }
+
+        currentNode = walker.nextNode();
       }
 
       rangesRef.current = discoveredRanges;
@@ -119,7 +121,9 @@ export function useInChatSearchHighlight(
         try {
           CSS.highlights.set('openchat-search-match', new Highlight(...matchRanges));
           CSS.highlights.set('openchat-search-active', activeRange ? new Highlight(activeRange) : new Highlight());
-        } catch {}
+        } catch {
+          // Highlight registration can fail while the DOM is being replaced.
+        }
       } else {
         setSearchMatchInfo(0, 0);
         CSS.highlights.delete('openchat-search-match');

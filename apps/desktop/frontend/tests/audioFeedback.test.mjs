@@ -72,7 +72,7 @@ function createMockAudioContext() {
   return {
     state: 'running',
     currentTime: 10,
-    resume: async () => {},
+    resume: async () => undefined,
     createGain: () => {
       const node = {
         kind: 'gain',

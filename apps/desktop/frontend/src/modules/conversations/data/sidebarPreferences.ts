@@ -272,7 +272,9 @@ export function sortSidebarConversations<T extends { id: string; title: string; 
   }
   if (sortMode === 'manual') {
     const indexMap = new Map<string, number>();
-    manualOrder.forEach((id, idx) => indexMap.set(id, idx));
+    manualOrder.forEach((id, idx) => {
+      indexMap.set(id, idx);
+    });
     return copy.sort((a, b) => {
       const idxA = indexMap.get(a.id);
       const idxB = indexMap.get(b.id);

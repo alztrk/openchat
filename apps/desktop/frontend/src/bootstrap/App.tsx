@@ -968,11 +968,11 @@ export function App() {
                             splitConversationId !== null && activeRightPanelConversationId === splitConversationId
                           }
                           notificationFeedbackKey={null}
-                          onDismissNotificationFeedback={() => {}}
+                          onDismissNotificationFeedback={() => undefined}
                           onDropConversation={handleOpenOrSplitConversation}
                           onOpenRightPanel={(tab) => handleOpenRightPanelForConversation(splitConversationId, tab)}
                           onOpenSettings={() => navigate('settings')}
-                          onQuestionFocusHandled={() => {}}
+                          onQuestionFocusHandled={() => undefined}
                           onRequestTemporaryExit={requestTemporaryChatExit}
                           onToggleRightPanel={handleToggleSecondaryRightPanel}
                           questionFocusTarget={null}

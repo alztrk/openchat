@@ -48,13 +48,14 @@ export function extractCodeBlocks(content: string): string {
   const cleaned = cleanMarkdown(content);
   const fenceRegex = /(?:```|~~~)[^\n\r]*\r?\n([\s\S]*?)\r?\n(?:```|~~~)/g;
   const blocks: string[] = [];
-  let match: RegExpExecArray | null;
+  let match = fenceRegex.exec(cleaned);
 
-  while ((match = fenceRegex.exec(cleaned)) !== null) {
+  while (match !== null) {
     const code = match[1];
     if (code !== undefined && code.trim().length > 0) {
       blocks.push(code.trimEnd());
     }
+    match = fenceRegex.exec(cleaned);
   }
 
   return blocks.join('\n\n');

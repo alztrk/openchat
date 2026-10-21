@@ -76,7 +76,9 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
           .then((usage) => {
             if (isMountedRef.current) setPlanType(usage.planType);
           })
-          .catch(() => {});
+          .catch((error) => {
+            globalThis.reportError(new Error('Failed to load Copilot plan usage.', { cause: error }));
+          });
       } else {
         setPlanType(null);
       }
@@ -131,7 +133,9 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
               .then((usage) => {
                 if (isMountedRef.current) setPlanType(usage.planType);
               })
-              .catch(() => {});
+              .catch((error) => {
+                globalThis.reportError(new Error('Failed to load Copilot plan usage.', { cause: error }));
+              });
             try {
               await onChanged();
             } catch {
