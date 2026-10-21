@@ -141,6 +141,7 @@ export function useComposerState({
     return null;
   }, [messages]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Reset the dismissal when the conversation or latest completed message changes.
   useEffect(() => {
     setGhostTextDismissed(false);
   }, [lastCompletedMessageId, activeConversationId]);
@@ -581,18 +582,23 @@ export function useComposerState({
     }
   };
 
+  const addAttachmentsRef = useRef(addAttachments);
+  useEffect(() => {
+    addAttachmentsRef.current = addAttachments;
+  });
+
   const lastHandledDropIdRef = useRef<number | null>(null);
   useEffect(() => {
     if (!droppedFiles || droppedFiles.files.length === 0) return;
     if (lastHandledDropIdRef.current === droppedFiles.id) return;
     lastHandledDropIdRef.current = droppedFiles.id;
-    void addAttachments(droppedFiles.files);
+    void addAttachmentsRef.current(droppedFiles.files);
   }, [droppedFiles]);
 
   useEffect(() => {
     const handleAddAttachmentsEvent = (event: Event) => {
       if (!(event instanceof CustomEvent) || !isObject(event.detail) || !Array.isArray(event.detail.files)) return;
-      void addAttachments(event.detail.files as File[]);
+      void addAttachmentsRef.current(event.detail.files as File[]);
     };
     window.addEventListener('openchat-composer-add-attachments', handleAddAttachmentsEvent);
     return () => window.removeEventListener('openchat-composer-add-attachments', handleAddAttachmentsEvent);

@@ -464,6 +464,15 @@ export function ChatFileChangesPanel({
   );
 }
 
+function keyedDiffLines(lines: readonly string[], prefix: string): { key: string; text: string }[] {
+  const occurrences = new Map<string, number>();
+  return lines.map((text) => {
+    const occurrence = (occurrences.get(text) ?? 0) + 1;
+    occurrences.set(text, occurrence);
+    return { key: `${prefix}-${occurrence}-${text}`, text };
+  });
+}
+
 function DiffContent({
   diff,
   isLoading,
@@ -524,9 +533,9 @@ function DiffContent({
             </div>
             {viewMode === 'unified' ? (
               <pre className="overflow-x-auto whitespace-pre px-2 py-1 font-code text-xs leading-5">
-                {hunk.lines.map((line, lineIdx) => (
-                  <span className={`block select-text ${diffLineClass(line)}`} key={`${hunk.index}-${lineIdx}`}>
-                    {line || ' '}
+                {keyedDiffLines(hunk.lines, `hunk-${hunk.index}`).map((line) => (
+                  <span className={`block select-text ${diffLineClass(line.text)}`} key={line.key}>
+                    {line.text || ' '}
                   </span>
                 ))}
               </pre>
@@ -562,16 +571,16 @@ function SplitHunkView({ hunkIndex, lines }: { hunkIndex: number; lines: string[
   return (
     <div className="grid grid-cols-2 divide-x divide-border/60 overflow-x-auto font-code text-xs leading-5">
       <pre className="overflow-x-auto whitespace-pre px-2 py-1">
-        {leftLines.map((line, idx) => (
-          <span className={`block select-text ${diffLineClass(line)}`} key={`left-${hunkIndex}-${idx}`}>
-            {line || ' '}
+        {keyedDiffLines(leftLines, `left-${hunkIndex}`).map((line) => (
+          <span className={`block select-text ${diffLineClass(line.text)}`} key={line.key}>
+            {line.text || ' '}
           </span>
         ))}
       </pre>
       <pre className="overflow-x-auto whitespace-pre px-2 py-1">
-        {rightLines.map((line, idx) => (
-          <span className={`block select-text ${diffLineClass(line)}`} key={`right-${hunkIndex}-${idx}`}>
-            {line || ' '}
+        {keyedDiffLines(rightLines, `right-${hunkIndex}`).map((line) => (
+          <span className={`block select-text ${diffLineClass(line.text)}`} key={line.key}>
+            {line.text || ' '}
           </span>
         ))}
       </pre>

@@ -288,6 +288,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
     return targets;
   }, [searchGroups]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Reset the selected result whenever the query changes.
   useEffect(() => {
     setSelectedIndex(0);
   }, [query]);

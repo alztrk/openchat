@@ -43,16 +43,23 @@ export function Kbd({ className, keys, children, ...props }: KbdProps) {
   const keyList = Array.isArray(keys) ? keys : keys ? [keys] : null;
 
   if (keyList && keyList.length > 0) {
+    const keyOccurrences = new Map<string, number>();
+    const keyEntries = keyList.map((key) => {
+      const occurrence = (keyOccurrences.get(key) ?? 0) + 1;
+      keyOccurrences.set(key, occurrence);
+      return { id: `${key}-${occurrence}`, key };
+    });
+
     return (
       <kbd
         className={cn('inline-flex items-center gap-1 font-code text-xs text-secondary-text select-none', className)}
         {...props}
       >
-        {keyList.map((k, index) => (
-          <span key={`${k}-${index}`} className="inline-flex items-center gap-1">
+        {keyEntries.map(({ id, key }, index) => (
+          <span key={id} className="inline-flex items-center gap-1">
             {index > 0 ? <span className="text-secondary-text/60">+</span> : null}
             <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded border border-border border-b-control-border/40 bg-raised px-1.5 py-0.5 font-code text-xs font-medium text-text shadow-xs">
-              {formatKey(k)}
+              {formatKey(key)}
             </kbd>
           </span>
         ))}

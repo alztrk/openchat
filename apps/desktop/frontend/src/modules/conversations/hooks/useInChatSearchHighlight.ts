@@ -37,6 +37,7 @@ export function useInChatSearchHighlight(
   const setSearchMatchInfo = useChatStore((state) => state.setSearchMatchInfo);
   const rangesRef = useRef<Range[]>([]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: renderRevision intentionally retriggers the scan after message renders.
   useEffect(() => {
     if (typeof CSS === 'undefined' || !('highlights' in CSS)) return;
     ensureHighlightStyle();
