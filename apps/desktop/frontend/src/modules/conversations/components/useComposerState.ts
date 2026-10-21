@@ -1,5 +1,6 @@
-import { type FormEvent, type KeyboardEvent, type RefObject, useEffect, useRef, useState } from 'react';
+import { type FormEvent, type KeyboardEvent, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { detectGhostTextSuggestion } from './ghostTextSuggestions';
 import {
   type ChatAttachmentErrorCode,
   ChatAttachmentInputError,
@@ -40,6 +41,7 @@ export interface UseComposerStateOptions {
   onRequestTemporaryExit(action: () => void | Promise<void>): void;
   formRef: RefObject<HTMLFormElement | null>;
   droppedFiles?: { id: number; files: File[] } | null;
+  targetConversationId?: string | null;
 }
 
 export function useComposerState({
@@ -48,6 +50,7 @@ export function useComposerState({
   onRequestTemporaryExit,
   formRef,
   droppedFiles,
+  targetConversationId,
 }: UseComposerStateOptions) {
   const { t } = useTranslation();
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -125,6 +128,31 @@ export function useComposerState({
   const isMountedRef = useRef(false);
   const isChatGptRoute = selectedModel?.providerId === 'chatgpt' || selectedModel?.providerId === 'chatgpt_api';
   const fastModeAvailable = selectedModel?.providerId === 'chatgpt_api' || selectedModel?.supportsFastMode === true;
+  const ghostTextEnabled = useComposerPreferencesStore((state) => state.ghostTextEnabled);
+  const [ghostTextDismissed, setGhostTextDismissed] = useState(false);
+
+  const lastCompletedMessageId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const msg = messages[i];
+      if (msg && msg.role === 'assistant' && msg.status === 'completed') {
+        return msg.id;
+      }
+    }
+    return null;
+  }, [messages]);
+
+  useEffect(() => {
+    setGhostTextDismissed(false);
+  }, [lastCompletedMessageId, activeConversationId]);
+
+  const ghostTextSuggestion = useMemo(() => {
+    if (!ghostTextEnabled || ghostTextDismissed || messageDraft.length > 0 || isSending) {
+      return null;
+    }
+    const candidate = detectGhostTextSuggestion(messages);
+    if (!candidate) return null;
+    return t(candidate.key, { defaultValue: candidate.fallbackText });
+  }, [ghostTextEnabled, ghostTextDismissed, messageDraft, isSending, messages, t]);
 
   useEffect(() => {
     pendingAttachmentsRef.current = pendingAttachments;
@@ -265,6 +293,7 @@ export function useComposerState({
       ...(mode === 'normal' ? {} : { mode }),
       ...(currentReasoningEffort ? { reasoningEffort: currentReasoningEffort } : {}),
       ...(!isTemporaryChat && isChatGptRoute && fastModeEnabled ? { fastMode: true } : {}),
+      ...(targetConversationId ? { conversationId: targetConversationId } : {}),
     };
     const saved = await sendMessage(content, attachments, undefined, undefined, options);
     if (!saved) return false;
@@ -579,7 +608,37 @@ export function useComposerState({
 
   const send = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!inputRef.current || isSending || isReadingAttachments || isUpdatingConversationModel) return;
+    if (!inputRef.current || isReadingAttachments || isUpdatingConversationModel) return;
+
+    if (isSending) {
+      if (!messageDraft.trim() && pendingAttachments.length === 0) {
+        void stopResponse();
+        return;
+      }
+      void (async () => {
+        try {
+          await stopResponse();
+          await new Promise((resolve) => setTimeout(resolve, 60));
+        } catch {
+          // Proceed with steer send
+        }
+        const slashCommand = parseSlashCommand(messageDraft);
+        if (slashCommand) {
+          if (isSendBlocked && isMessageSendingCommand(slashCommand.command)) return;
+          void runSlashCommand(slashCommand.command, slashCommand.arguments);
+          return;
+        }
+        if (isSendBlocked) return;
+        if (!messageDraft.trim() && pendingAttachments.length === 0) return;
+        void sendContent(messageDraft, composerMode, pendingAttachments)
+          .catch(() => {
+            setCommandFeedbackKey('chatRequestFailed');
+          })
+          .finally(() => inputRef.current?.focus());
+      })();
+      return;
+    }
+
     const slashCommand = parseSlashCommand(messageDraft);
     if (slashCommand) {
       if (isSendBlocked && isMessageSendingCommand(slashCommand.command)) return;
@@ -643,6 +702,22 @@ export function useComposerState({
         event.preventDefault();
         const selectedModel = slashModelCandidates[slashModelIndex] ?? slashModelCandidates[0];
         if (selectedModel) void selectSlashModel(selectedModel);
+        return;
+      }
+    }
+    if (ghostTextSuggestion && messageDraft.length === 0 && slashCommands.length === 0 && !slashModelMenuOpen) {
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        setMessageDraft(ghostTextSuggestion);
+        const form = event.currentTarget.form;
+        window.requestAnimationFrame(() => {
+          form?.requestSubmit();
+        });
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setGhostTextDismissed(true);
         return;
       }
     }
@@ -785,5 +860,6 @@ export function useComposerState({
     isSendBlocked,
     isSending,
     submissionMode,
+    ghostTextSuggestion,
   };
 }

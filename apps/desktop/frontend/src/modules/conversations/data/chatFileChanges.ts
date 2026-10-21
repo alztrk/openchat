@@ -13,6 +13,7 @@ export interface ChatFileChange {
   isBinary: boolean;
   diffAvailable: boolean;
   canRevert: boolean;
+  approved: boolean;
 }
 
 export interface ChatFileChangeDiff {
@@ -50,6 +51,7 @@ export function parseChatFileChange(value: unknown): ChatFileChange | null {
     isBinary: value.isBinary,
     diffAvailable: value.diffAvailable,
     canRevert: value.canRevert,
+    approved: value.approved === true,
   };
 }
 
@@ -98,6 +100,44 @@ export async function revertConversationFileChange(
   const response: JsonObject = await localServiceClient.call('chat.file_changes.revert', {
     conversationId,
     changeId,
+  });
+  return parseChatFileChanges(response);
+}
+
+export async function approveConversationFileChange(
+  conversationId: string,
+  changeId: string,
+): Promise<ChatFileChange[]> {
+  const response: JsonObject = await localServiceClient.call('chat.file_changes.approve', {
+    conversationId,
+    changeId,
+  });
+  return parseChatFileChanges(response);
+}
+
+export async function approveAllConversationFileChanges(conversationId: string): Promise<ChatFileChange[]> {
+  const response: JsonObject = await localServiceClient.call('chat.file_changes.approve_all', {
+    conversationId,
+  });
+  return parseChatFileChanges(response);
+}
+
+export async function revertAllConversationFileChanges(conversationId: string): Promise<ChatFileChange[]> {
+  const response: JsonObject = await localServiceClient.call('chat.file_changes.revert_all', {
+    conversationId,
+  });
+  return parseChatFileChanges(response);
+}
+
+export async function revertConversationFileChangeHunk(
+  conversationId: string,
+  changeId: string,
+  hunkIndex: number,
+): Promise<ChatFileChange[]> {
+  const response: JsonObject = await localServiceClient.call('chat.file_changes.revert_hunk', {
+    conversationId,
+    changeId,
+    hunkIndex,
   });
   return parseChatFileChanges(response);
 }

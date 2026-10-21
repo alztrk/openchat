@@ -6,10 +6,11 @@ import { Button, Input } from '@/design-system';
 
 interface ConversationTitleEditorProps {
   title: string;
+  isAiWorking?: boolean;
   onSave(title: string): Promise<void>;
 }
 
-export function ConversationTitleEditor({ onSave, title }: ConversationTitleEditorProps) {
+export function ConversationTitleEditor({ isAiWorking = false, onSave, title }: ConversationTitleEditorProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState(title);
   const [isEditing, setIsEditing] = useState(false);
@@ -102,7 +103,11 @@ export function ConversationTitleEditor({ onSave, title }: ConversationTitleEdit
         title={t('renameConversation')}
         variant="ghost"
       >
-        <span className="min-w-0 flex-1 truncate text-base font-semibold text-text">{title}</span>
+        <span
+          className={`min-w-0 flex-1 truncate text-base font-semibold ${isAiWorking ? 'openchat-title-shimmer' : 'text-text'}`}
+        >
+          {title}
+        </span>
         <Pencil aria-hidden="true" className="shrink-0 text-secondary-icon" size={15} />
       </Button>
     );

@@ -571,6 +571,7 @@ interface ProviderOption {
 const providerOrder = [
   'chatgpt',
   'opencode',
+  'kilo',
   'gemini',
   'groq',
   'cerebras',
@@ -617,7 +618,7 @@ function buildProviderOptions(sources: readonly ChatModelProvider[], models: rea
         source?.name ??
         models.find((model) => providerFamily(model.providerId) === providerId)?.customProvider?.name ??
         null,
-      available: source?.available ?? (providerId === 'opencode' || providerId === 'llama_cpp' || modelAvailable),
+      available: source?.available ?? (providerId === 'opencode' || providerId === 'kilo' || providerId === 'llama_cpp' || modelAvailable),
     };
   });
 }
@@ -729,7 +730,7 @@ function groupModels(
   const order =
     providerId === 'opencode'
       ? ['free', 'paid', 'models']
-      : providerId === 'openrouter'
+      : providerId === 'openrouter' || providerId === 'kilo'
         ? ['free', 'models']
         : providerId === 'chatgpt'
           ? ['api', 'oauth', 'models']
@@ -803,6 +804,7 @@ type PricingLoadState = {
 
 const providerTranslationKeys: Partial<Record<string, TranslationKey>> = {
   opencode: 'openCodeProvider',
+  kilo: 'providerNameKilo',
   copilot: 'providerNameCopilot',
   chatgpt: 'chatGptProvider',
   chatgpt_api: 'chatGptProvider',

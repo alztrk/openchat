@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, Card, Dialog } from '@/design-system';
 import { ProviderIcon } from '@/modules/providers/components/ProviderIcon';
+import { subscribeToOAuthPlanUpdates } from '@/modules/providers/data/oauthPlanMonitor';
 import { LocalServiceError, localServiceClient } from '@/platform/local-service';
 import { CopilotUsageCard } from './CopilotUsageCard';
 
@@ -83,6 +84,18 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
   const connectionLoadVersion = useRef(0);
   const workspaceLoadVersions = useRef(new Map<string, number>());
 
+  const syncConnectionPlans = useCallback(async () => {
+    try {
+      const response = await localServiceClient.call('chatgpt.connections.list');
+      const loadedConnections = parseConnections(response.connections);
+      if (isMounted.current) {
+        setConnections(loadedConnections);
+      }
+    } catch {
+      // Preserve currently displayed connections if a background metadata sync fails.
+    }
+  }, []);
+
   const loadWorkspaceUsage = useCallback(
     async (connection: UsageConnection, workspace: UsageWorkspace, userInitiated = false) => {
       const key = workspaceKey(connection.id, workspace.id);
@@ -105,6 +118,7 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
         const snapshot = parseUsageSnapshot(response);
         if (!requestIsCurrent()) return;
         setSnapshots((current) => ({ ...current, [key]: snapshot }));
+        void syncConnectionPlans();
         if (userInitiated) {
           setRefreshRequiredKeys((current) => {
             const next = new Set(current);
@@ -125,7 +139,7 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
         }
       }
     },
-    [],
+    [syncConnectionPlans],
   );
 
   const loadAll = useCallback(
@@ -160,8 +174,17 @@ export function UsageQuotasSection({ onNavigateToConnections }: UsageQuotasSecti
   useEffect(() => {
     isMounted.current = true;
     void loadAll();
+    const unsubscribe = subscribeToOAuthPlanUpdates((summary) => {
+      if (!isMounted.current || summary.chatGptConnections.length === 0) return;
+      try {
+        setConnections(parseConnections(summary.chatGptConnections));
+      } catch {
+        // Ignore unparseable background updates.
+      }
+    });
     return () => {
       isMounted.current = false;
+      unsubscribe();
       connectionLoadVersion.current += 1;
       workspaceLoadVersions.current.clear();
     };

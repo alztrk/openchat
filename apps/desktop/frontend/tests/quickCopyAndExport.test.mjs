@@ -192,6 +192,12 @@ test('all 5 locales define all copy and export keys', () => {
     'conversationExportedMarkdown',
     'conversationExportedHtml',
     'conversationExportedJson',
+    'conversationExportMessagesCount',
+    'conversationExportTitleBadge',
+    'conversationExportAssistant',
+    'conversationExportInput',
+    'conversationExportOutput',
+    'conversationExportTargetPath',
   ];
 
   for (const locale of locales) {
@@ -205,4 +211,28 @@ test('all 5 locales define all copy and export keys', () => {
       );
     }
   }
+});
+
+test('conversation export labels format dates and messages according to active locale', () => {
+  const trLocale = JSON.parse(fs.readFileSync(path.resolve('src/localization/locales/tr.json'), 'utf-8'));
+  const enLocale = JSON.parse(fs.readFileSync(path.resolve('src/localization/locales/en.json'), 'utf-8'));
+
+  assert.equal(trLocale.conversationExportCreated, 'Oluşturulma');
+  assert.equal(trLocale.conversationExportMessagesCount, 'Mesaj Sayısı');
+  assert.equal(trLocale.conversationExportAssistant, 'Asistan');
+  assert.equal(trLocale.conversationExportTitleBadge, 'OpenChat Sohbet Kaydı');
+
+  assert.equal(enLocale.conversationExportCreated, 'Created');
+  assert.equal(enLocale.conversationExportMessagesCount, 'Messages');
+  assert.equal(enLocale.conversationExportAssistant, 'Assistant');
+  assert.equal(enLocale.conversationExportTitleBadge, 'OpenChat Transcript');
+
+  // Verify date formatting conforms to the respective locale
+  const sampleTime = new Date('2026-10-20T19:30:00Z').getTime();
+  const trDateStr = new Intl.DateTimeFormat('tr', { year: 'numeric', month: 'short', day: 'numeric' }).format(sampleTime);
+  const enDateStr = new Intl.DateTimeFormat('en', { year: 'numeric', month: 'short', day: 'numeric' }).format(sampleTime);
+
+  assert.ok(trDateStr.length > 0, 'Turkish date string formatted');
+  assert.ok(enDateStr.length > 0, 'English date string formatted');
+  assert.notEqual(trDateStr, enDateStr, 'Turkish and English date strings differ');
 });

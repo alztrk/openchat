@@ -1,4 +1,4 @@
-import { Download, FileCode, FileJson, FileText } from 'lucide-react';
+import { FileCode, FileJson, FileText, Share } from 'lucide-react';
 import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
@@ -17,7 +17,7 @@ export interface ConversationExportMenuProps {
 }
 
 export function ConversationExportMenu({ conversation, disabled = false }: ConversationExportMenuProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number; placement: 'above' | 'below' } | null>(
     null,
@@ -32,10 +32,10 @@ export function ConversationExportMenu({ conversation, disabled = false }: Conve
     if (!trigger) return;
     const bounds = trigger.getBoundingClientRect();
     const menu = menuRef.current;
-    const menuHeight = menu?.offsetHeight ?? 128;
-    const menuWidth = menu?.offsetWidth ?? 240;
+    const menuHeight = menu?.offsetHeight ?? 230;
+    const menuWidth = menu?.offsetWidth ?? 320;
     const placement = bounds.bottom + menuHeight + 8 <= window.innerHeight ? 'below' : 'above';
-    const top = placement === 'below' ? bounds.bottom + 4 : Math.max(8, bounds.top - menuHeight - 4);
+    const top = placement === 'below' ? bounds.bottom + 6 : Math.max(8, bounds.top - menuHeight - 6);
     const left = Math.max(8, Math.min(window.innerWidth - menuWidth - 8, bounds.right - menuWidth));
     setMenuPosition({ top, left, placement });
   }, []);
@@ -82,7 +82,7 @@ export function ConversationExportMenu({ conversation, disabled = false }: Conve
     setMenuOpen(false);
     setExporting(true);
     try {
-      const labels = conversationMarkdownLabels(conversation, t);
+      const labels = conversationMarkdownLabels(conversation, t, i18n.language);
       await exportConversationToFile(conversation, format, labels, t('exportConversation'));
     } finally {
       setExporting(false);
@@ -119,13 +119,15 @@ export function ConversationExportMenu({ conversation, disabled = false }: Conve
           aria-expanded={menuOpen}
           aria-haspopup="menu"
           aria-label={t('exportConversation')}
-          className="size-9"
+          className={`size-8 rounded-control ${
+            menuOpen ? 'bg-hover text-text' : 'text-secondary-icon hover:bg-hover hover:text-text'
+          }`}
           disabled={disabled || exporting}
           onClick={() => setMenuOpen((open) => !open)}
           size="icon"
           variant="ghost"
         >
-          <Download aria-hidden="true" size={17} />
+          <Share aria-hidden="true" size={15} />
         </Button>
       </Tooltip>
 
@@ -133,38 +135,88 @@ export function ConversationExportMenu({ conversation, disabled = false }: Conve
         ? createPortal(
             <div
               aria-label={t('exportConversation')}
-              className="openchat-popover-enter fixed z-50 grid min-w-64 gap-0.5 rounded-card border border-border bg-raised p-1 shadow-lg"
+              className="openchat-popover-enter fixed z-50 w-80 min-w-80 rounded-card border border-border/80 bg-raised/95 p-1.5 shadow-xl backdrop-blur-md"
               onKeyDown={handleMenuKeyDown}
               ref={menuRef}
               role="menu"
               style={{ top: menuPosition.top, left: menuPosition.left }}
             >
+              <div className="flex items-center justify-between px-2.5 py-1.5 text-xs font-medium text-secondary-text">
+                <span>{t('exportConversation')}</span>
+                <span className="font-mono text-[11px] text-secondary-text/60">3 format</span>
+              </div>
+              <div className="my-1 h-px bg-border/60" />
+
               <button
-                className="flex min-h-9 items-center gap-2 rounded-button px-2.5 text-left text-sm text-secondary-text hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                className="group flex w-full items-center gap-3 rounded-button px-2.5 py-2 text-left transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                 onClick={() => void handleExport('md')}
                 role="menuitem"
                 type="button"
               >
-                <FileText aria-hidden="true" size={15} />
-                <span>{t('exportFormatMarkdown')}</span>
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-control bg-accent/10 text-accent transition-colors group-hover:bg-accent/20">
+                  <FileText aria-hidden="true" size={17} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span className="truncate text-sm font-medium text-text">
+                      {t('exportFormatMarkdownTitle')}
+                    </span>
+                    <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-mono text-[11px] text-secondary-text">
+                      .md
+                    </span>
+                  </div>
+                  <p className="truncate text-xs text-secondary-text">
+                    {t('exportFormatMarkdownHint')}
+                  </p>
+                </div>
               </button>
+
               <button
-                className="flex min-h-9 items-center gap-2 rounded-button px-2.5 text-left text-sm text-secondary-text hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                className="group flex w-full items-center gap-3 rounded-button px-2.5 py-2 text-left transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                 onClick={() => void handleExport('html')}
                 role="menuitem"
                 type="button"
               >
-                <FileCode aria-hidden="true" size={15} />
-                <span>{t('exportFormatHtml')}</span>
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-control bg-info/10 text-info transition-colors group-hover:bg-info/20">
+                  <FileCode aria-hidden="true" size={17} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span className="truncate text-sm font-medium text-text">
+                      {t('exportFormatHtmlTitle')}
+                    </span>
+                    <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-mono text-[11px] text-secondary-text">
+                      .html
+                    </span>
+                  </div>
+                  <p className="truncate text-xs text-secondary-text">
+                    {t('exportFormatHtmlHint')}
+                  </p>
+                </div>
               </button>
+
               <button
-                className="flex min-h-9 items-center gap-2 rounded-button px-2.5 text-left text-sm text-secondary-text hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+                className="group flex w-full items-center gap-3 rounded-button px-2.5 py-2 text-left transition-colors hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
                 onClick={() => void handleExport('json')}
                 role="menuitem"
                 type="button"
               >
-                <FileJson aria-hidden="true" size={15} />
-                <span>{t('exportFormatJson')}</span>
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-control bg-warning/10 text-warning transition-colors group-hover:bg-warning/20">
+                  <FileJson aria-hidden="true" size={17} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-1.5">
+                    <span className="truncate text-sm font-medium text-text">
+                      {t('exportFormatJsonTitle')}
+                    </span>
+                    <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-mono text-[11px] text-secondary-text">
+                      .json
+                    </span>
+                  </div>
+                  <p className="truncate text-xs text-secondary-text">
+                    {t('exportFormatJsonHint')}
+                  </p>
+                </div>
               </button>
             </div>,
             document.body,

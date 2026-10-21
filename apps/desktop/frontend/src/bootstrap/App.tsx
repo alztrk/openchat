@@ -1,17 +1,44 @@
-import { Github } from 'lucide-react';
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Columns2, Github, MessageSquare } from 'lucide-react';
+import {
+  type DragEvent as ReactDragEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  lazy,
+  type PointerEvent as ReactPointerEvent,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import {
+  ChatFileChangesPanel,
+  type RightWorkspaceTab,
+} from '@/modules/conversations/components/ChatFileChangesPanel';
 import { ConversationPane } from '@/modules/conversations/components/ConversationPane';
 import { ConversationSidebar } from '@/modules/conversations/components/ConversationSidebar';
 import { TemporaryChatExitDialog } from '@/modules/conversations/components/TemporaryChatExitDialog';
 import { parseAgentQuestionGroup } from '@/modules/conversations/data/agentQuestions';
 import { getMessages } from '@/modules/conversations/data/chatStorage';
+import {
+  clampSplitViewRatio,
+  getSidebarDraggingConversationId,
+  readSplitViewRatio,
+  setSidebarDraggingConversationId,
+  writeSplitViewRatio,
+} from '@/modules/conversations/data/sidebarPreferences';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import {
   resetNotificationWindowFocus,
   setNotificationWindowFocus,
 } from '@/modules/notifications/data/notificationRuntime';
+import {
+  OAUTH_PLAN_CHECK_INTERVAL_MS,
+  refreshOAuthPlans,
+  shouldRefreshOAuthPlansOnFocus,
+} from '@/modules/providers/data/oauthPlanMonitor';
 import type { ThemePreference } from '@/modules/settings/components/GeneralSettingsSection';
 import {
   type AppearancePreferences,
@@ -99,9 +126,15 @@ export function App() {
   const [isSavingTemporaryChat, setIsSavingTemporaryChat] = useState(false);
   const [systemIsDark, setSystemIsDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [splitConversationId, setSplitConversationId] = useState<string | null>(null);
+  const [splitRatio, setSplitRatio] = useState<number>(readSplitViewRatio);
+  const [draggingConversationId, setDraggingConversationId] = useState<string | null>(null);
+  const [activeDropZone, setActiveDropZone] = useState<'primary' | 'split' | null>(null);
+  const workspaceDropRef = useRef<HTMLDivElement>(null);
   const surfaceHeadingRef = useRef<HTMLElement>(null);
   const lastInteractionMethod = useRef<'keyboard' | 'pointer'>('pointer');
   const initializeChat = useChatStore((state) => state.initialize);
+  const serviceStatus = useChatStore((state) => state.serviceStatus);
   const conversations = useChatStore((state) => state.conversations);
   const activeConversationId = useChatStore((state) => state.activeConversationId);
   const startNewChat = useChatStore((state) => state.startNewChat);
@@ -110,6 +143,38 @@ export function App() {
   const temporaryChatMessageCount = useChatStore((state) => state.messages.length);
   const temporaryChatErrorCode = useChatStore((state) => state.errorCode);
   const isDark = theme === 'dark' || (theme === 'system' && systemIsDark);
+
+  useEffect(() => {
+    if (conversations.length === 0) return;
+    const validIds = new Set(conversations.filter((c) => !c.isArchived).map((c) => c.id));
+    setSplitConversationId((current) => (current && validIds.has(current) ? current : null));
+  }, [conversations]);
+
+  useEffect(() => {
+    const onDragState = (event: Event) => {
+      if (!(event instanceof CustomEvent)) return;
+      const detail = event.detail as { conversationId?: unknown; dragging?: unknown } | null;
+      if (detail && typeof detail.conversationId === 'string' && detail.dragging === true) {
+        setDraggingConversationId(detail.conversationId);
+      } else {
+        setDraggingConversationId(null);
+        setActiveDropZone(null);
+      }
+    };
+    const onOpenSplit = (event: Event) => {
+      if (!(event instanceof CustomEvent)) return;
+      const detail = event.detail as { conversationId?: unknown } | null;
+      const targetId = detail && typeof detail.conversationId === 'string' ? detail.conversationId : null;
+      if (!targetId) return;
+      setSplitConversationId(targetId);
+    };
+    window.addEventListener('openchat-conversation-drag-state', onDragState);
+    window.addEventListener('openchat-open-split-conversation', onOpenSplit);
+    return () => {
+      window.removeEventListener('openchat-conversation-drag-state', onDragState);
+      window.removeEventListener('openchat-open-split-conversation', onOpenSplit);
+    };
+  }, []);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -155,6 +220,40 @@ export function App() {
   useEffect(() => {
     if (isTauri()) void initializeChat();
   }, [initializeChat]);
+
+  useEffect(() => {
+    if (!isTauri() || serviceStatus !== 'ready') return;
+    let disposed = false;
+
+    const runCheck = () => {
+      if (disposed || document.visibilityState === 'hidden') return;
+      void refreshOAuthPlans().then((summary) => {
+        if (!disposed && summary.planOrAuthChanged) {
+          void useChatStore.getState().refreshModels(true);
+        }
+      });
+    };
+
+    const initialTimer = window.setTimeout(runCheck, 2500);
+    const intervalTimer = window.setInterval(runCheck, OAUTH_PLAN_CHECK_INTERVAL_MS);
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible' && shouldRefreshOAuthPlansOnFocus()) {
+        runCheck();
+      }
+    };
+
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+
+    return () => {
+      disposed = true;
+      window.clearTimeout(initialTimer);
+      window.clearInterval(intervalTimer);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+    };
+  }, [serviceStatus]);
 
   useEffect(() => {
     if (!isTauri()) return;
@@ -537,6 +636,219 @@ export function App() {
     changeThemePreference(nextTheme);
   };
 
+  const [activeRightPanelConversationId, setActiveRightPanelConversationId] = useState<string | null>(null);
+  const [rightPanelTab, setRightPanelTab] = useState<RightWorkspaceTab>('changes');
+
+  const handleTogglePrimaryRightPanel = useCallback(() => {
+    if (!activeConversationId) return;
+    setActiveRightPanelConversationId((current) =>
+      current === activeConversationId ? null : activeConversationId,
+    );
+  }, [activeConversationId]);
+
+  const handleToggleSecondaryRightPanel = useCallback(() => {
+    if (!splitConversationId) return;
+    setActiveRightPanelConversationId((current) =>
+      current === splitConversationId ? null : splitConversationId,
+    );
+  }, [splitConversationId]);
+
+  const handleOpenRightPanelForConversation = useCallback(
+    (conversationId: string | null, tab: RightWorkspaceTab = 'changes') => {
+      if (!conversationId) return;
+      setRightPanelTab(tab);
+      setActiveRightPanelConversationId(conversationId);
+    },
+    [],
+  );
+
+  const handleToggleSplitView = useCallback(() => {
+    if (splitConversationId) {
+      if (activeRightPanelConversationId === splitConversationId) {
+        setActiveRightPanelConversationId(null);
+      }
+      setSplitConversationId(null);
+      return;
+    }
+    setSplitConversationId('__empty__');
+  }, [activeRightPanelConversationId, splitConversationId]);
+
+  const handleCloseSecondarySplit = useCallback(() => {
+    if (activeRightPanelConversationId === splitConversationId) {
+      setActiveRightPanelConversationId(null);
+    }
+    setSplitConversationId(null);
+  }, [activeRightPanelConversationId, splitConversationId]);
+
+  const handleSwapSplitPanes = useCallback(() => {
+    if (!splitConversationId) return;
+    const previousPrimary = activeConversationId;
+    const nextPrimary = splitConversationId;
+    requestTemporaryChatExit(async () => {
+      setSplitConversationId(previousPrimary ?? nextPrimary);
+      await useChatStore.getState().selectConversation(nextPrimary);
+      setActiveRightPanelConversationId((current) => {
+        if (current === previousPrimary) return nextPrimary;
+        if (current === nextPrimary) return previousPrimary;
+        return current;
+      });
+    });
+  }, [activeConversationId, requestTemporaryChatExit, splitConversationId]);
+
+  const handlePromoteSplitToPrimary = useCallback(() => {
+    if (!splitConversationId) return;
+    const targetId = splitConversationId;
+    setSplitConversationId(null);
+    requestTemporaryChatExit(async () => {
+      await useChatStore.getState().selectConversation(targetId);
+    });
+  }, [requestTemporaryChatExit, splitConversationId]);
+
+  const handleOpenOrSplitConversation = useCallback(
+    (draggedId: string) => {
+      if (!draggedId) return;
+      if (!activeConversationId) {
+        requestTemporaryChatExit(async () => {
+          await useChatStore.getState().selectConversation(draggedId);
+        });
+        return;
+      }
+      if (draggedId !== activeConversationId) {
+        setSplitConversationId(draggedId);
+      }
+    },
+    [activeConversationId, requestTemporaryChatExit],
+  );
+
+  const isConversationDragEvent = (event: ReactDragEvent<HTMLElement> | DragEvent): boolean => {
+    if (draggingConversationId !== null) return true;
+    if (getSidebarDraggingConversationId() !== null) return true;
+    const types = Array.from(event.dataTransfer?.types ?? []);
+    return (
+      types.includes('application/x-openchat-conversation') ||
+      types.includes('text/plain')
+    );
+  };
+
+  const workspaceDragDepthRef = useRef(0);
+
+  useEffect(() => {
+    const handleGlobalDragOver = (event: DragEvent) => {
+      const isConv =
+        getSidebarDraggingConversationId() !== null ||
+        Array.from(event.dataTransfer?.types ?? []).includes('application/x-openchat-conversation');
+      if (isConv) {
+        event.preventDefault();
+        if (event.dataTransfer) {
+          event.dataTransfer.dropEffect = 'copy';
+        }
+      }
+    };
+
+    const handleGlobalDragEnd = () => {
+      workspaceDragDepthRef.current = 0;
+      setActiveDropZone(null);
+      setDraggingConversationId(null);
+      setSidebarDraggingConversationId(null);
+    };
+
+    window.addEventListener('dragover', handleGlobalDragOver);
+    window.addEventListener('dragend', handleGlobalDragEnd);
+    window.addEventListener('drop', handleGlobalDragEnd);
+    return () => {
+      window.removeEventListener('dragover', handleGlobalDragOver);
+      window.removeEventListener('dragend', handleGlobalDragEnd);
+      window.removeEventListener('drop', handleGlobalDragEnd);
+    };
+  }, []);
+
+  const handleWorkspaceDragEnter = (event: ReactDragEvent<HTMLDivElement>) => {
+    if (!isConversationDragEvent(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    workspaceDragDepthRef.current += 1;
+    const targetZone = activeConversationId ? 'split' : 'primary';
+    setActiveDropZone(targetZone);
+  };
+
+  const handleWorkspaceDragOver = (event: ReactDragEvent<HTMLDivElement>) => {
+    if (!isConversationDragEvent(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    const targetZone = activeConversationId ? 'split' : 'primary';
+    if (activeDropZone !== targetZone) {
+      setActiveDropZone(targetZone);
+    }
+  };
+
+  const handleWorkspaceDragLeave = (event: ReactDragEvent<HTMLDivElement>) => {
+    if (!isConversationDragEvent(event)) return;
+    event.preventDefault();
+    workspaceDragDepthRef.current = Math.max(0, workspaceDragDepthRef.current - 1);
+    if (workspaceDragDepthRef.current === 0) {
+      setActiveDropZone(null);
+    }
+  };
+
+  const handleWorkspaceDrop = (event: ReactDragEvent<HTMLDivElement>) => {
+    if (!isConversationDragEvent(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    workspaceDragDepthRef.current = 0;
+    setActiveDropZone(null);
+
+    const customData = event.dataTransfer.getData('application/x-openchat-conversation');
+    const inMemoryId = draggingConversationId || getSidebarDraggingConversationId();
+    const plainText = event.dataTransfer.getData('text/plain');
+    const matchingPlainId = conversations.some((c) => c.id === plainText) ? plainText : '';
+    const draggedId = customData || inMemoryId || matchingPlainId;
+
+    setDraggingConversationId(null);
+    setSidebarDraggingConversationId(null);
+    if (draggedId) {
+      handleOpenOrSplitConversation(draggedId);
+    }
+  };
+
+  const handleSplitResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const container = workspaceDropRef.current;
+    if (!container) return;
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const bounds = container.getBoundingClientRect();
+      if (bounds.width <= 0) return;
+      const nextRatio = clampSplitViewRatio(((moveEvent.clientX - bounds.left) / bounds.width) * 100);
+      setSplitRatio(nextRatio);
+    };
+
+    const handlePointerUp = (upEvent: PointerEvent) => {
+      const bounds = container.getBoundingClientRect();
+      if (bounds.width > 0) {
+        const finalRatio = clampSplitViewRatio(((upEvent.clientX - bounds.left) / bounds.width) * 100);
+        setSplitRatio(finalRatio);
+        writeSplitViewRatio(finalRatio);
+      }
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+  };
+
+  const handleSplitResizeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    const delta = event.key === 'ArrowLeft' ? -5 : 5;
+    setSplitRatio((current) => {
+      const next = clampSplitViewRatio(current + delta);
+      writeSplitViewRatio(next);
+      return next;
+    });
+  };
+
   return (
     <div
       className="app-shell h-screen min-h-desktop-window overflow-hidden bg-background text-text"
@@ -570,29 +882,165 @@ export function App() {
         >
           {activeSurface === 'chats' ? (
             <div className="flex min-h-0 min-w-0 flex-1 flex-row overflow-hidden">
-              {isSidebarOpen ? (
+              <div
+                aria-hidden={!isSidebarOpen || undefined}
+                className="conversation-sidebar-shell"
+                data-open={isSidebarOpen ? 'true' : 'false'}
+                inert={!isSidebarOpen}
+              >
                 <ConversationSidebar
                   onCloseMobile={() => setIsSidebarOpen(false)}
                   onNewChat={startWorkspaceChat}
                   onRequestTemporaryExit={requestTemporaryChatExit}
                   onStartTemporaryChat={startWorkspaceTemporaryChat}
                 />
-              ) : null}
+              </div>
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-                <ConversationActionsHeader
-                  activeConversationId={activeConversationId}
-                  conversations={conversations}
-                />
-                <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
-                  <ConversationPane
-                    isLargeText={appearance.conversationTextSize === 'large'}
-                    notificationFeedbackKey={notificationFeedback}
-                    onDismissNotificationFeedback={() => setNotificationFeedback(null)}
-                    onOpenSettings={() => navigate('settings')}
-                    onQuestionFocusHandled={clearQuestionFocusTarget}
-                    onRequestTemporaryExit={requestTemporaryChatExit}
-                    questionFocusTarget={questionFocusTarget}
-                  />
+                <div
+                  className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden"
+                  onDragEnter={handleWorkspaceDragEnter}
+                  onDragLeave={handleWorkspaceDragLeave}
+                  onDragOver={handleWorkspaceDragOver}
+                  onDrop={handleWorkspaceDrop}
+                  ref={workspaceDropRef}
+                >
+                  <div
+                    className="relative flex min-h-0 min-w-0 flex-col overflow-hidden"
+                    style={
+                      splitConversationId && !temporaryChat
+                        ? { width: `${splitRatio}%`, flexShrink: 0 }
+                        : { flex: '1 1 0%' }
+                    }
+                  >
+                    <ConversationPane
+                      header={({ isRightPanelOpen, toggleRightPanel }) => (
+                        <ConversationActionsHeader
+                          activeConversationId={activeConversationId}
+                          conversations={conversations}
+                          isRightPanelOpen={isRightPanelOpen}
+                          onToggleRightPanel={toggleRightPanel}
+                          onToggleSplitView={handleToggleSplitView}
+                          splitConversationId={splitConversationId}
+                        />
+                      )}
+                      hideInternalRightPanel
+                      isLargeText={appearance.conversationTextSize === 'large'}
+                      isRightPanelOpen={
+                        activeConversationId !== null &&
+                        activeRightPanelConversationId === activeConversationId
+                      }
+                      notificationFeedbackKey={notificationFeedback}
+                      onDismissNotificationFeedback={() => setNotificationFeedback(null)}
+                      onDropConversation={handleOpenOrSplitConversation}
+                      onOpenRightPanel={(tab) =>
+                        handleOpenRightPanelForConversation(activeConversationId, tab)
+                      }
+                      onOpenSettings={() => navigate('settings')}
+                      onQuestionFocusHandled={clearQuestionFocusTarget}
+                      onRequestTemporaryExit={requestTemporaryChatExit}
+                      onToggleRightPanel={handleTogglePrimaryRightPanel}
+                      questionFocusTarget={questionFocusTarget}
+                    />
+                  </div>
+
+                  {splitConversationId && !temporaryChat ? (
+                    <>
+                      <div
+                        aria-label={t('resizeSplitView')}
+                        aria-orientation="vertical"
+                        aria-valuemax={70}
+                        aria-valuemin={30}
+                        aria-valuenow={splitRatio}
+                        className="group relative z-20 flex w-1.5 shrink-0 cursor-col-resize items-center justify-center bg-border/60 transition-colors hover:bg-accent/50 focus-visible:bg-accent focus-visible:outline-none"
+                        onKeyDown={handleSplitResizeKeyDown}
+                        onPointerDown={handleSplitResizePointerDown}
+                        role="separator"
+                        tabIndex={0}
+                      >
+                        <span className="h-8 w-0.5 rounded-full bg-secondary-icon/50 transition-colors group-hover:bg-accent" />
+                      </div>
+                      <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden animate-in fade-in slide-in-from-right-4 duration-200 ease-out">
+                        <ConversationPane
+                          conversationId={splitConversationId}
+                          header={
+                            <ConversationActionsHeader
+                              activeConversationId={splitConversationId}
+                              conversations={conversations}
+                              isRightPanelOpen={
+                                splitConversationId !== null &&
+                                activeRightPanelConversationId === splitConversationId
+                              }
+                              isSplitSecondary={true}
+                              onCloseSplit={handleCloseSecondarySplit}
+                              onPromoteToPrimary={handlePromoteSplitToPrimary}
+                              onSwapWithPrimary={handleSwapSplitPanes}
+                              onToggleRightPanel={handleToggleSecondaryRightPanel}
+                            />
+                          }
+                          hideInternalRightPanel
+                          isLargeText={appearance.conversationTextSize === 'large'}
+                          isRightPanelOpen={
+                            splitConversationId !== null &&
+                            activeRightPanelConversationId === splitConversationId
+                          }
+                          notificationFeedbackKey={null}
+                          onDismissNotificationFeedback={() => {}}
+                          onDropConversation={handleOpenOrSplitConversation}
+                          onOpenRightPanel={(tab) =>
+                            handleOpenRightPanelForConversation(splitConversationId, tab)
+                          }
+                          onOpenSettings={() => navigate('settings')}
+                          onQuestionFocusHandled={() => {}}
+                          onRequestTemporaryExit={requestTemporaryChatExit}
+                          onToggleRightPanel={handleToggleSecondaryRightPanel}
+                          questionFocusTarget={null}
+                        />
+                      </div>
+                    </>
+                  ) : null}
+
+                  <div
+                    aria-hidden={!activeRightPanelConversationId || undefined}
+                    className="chat-right-panel-shell"
+                    data-open={activeRightPanelConversationId ? 'true' : 'false'}
+                    inert={!activeRightPanelConversationId}
+                  >
+                    {activeRightPanelConversationId ? (
+                      <ChatFileChangesPanel
+                        conversationId={activeRightPanelConversationId}
+                        initialTab={rightPanelTab}
+                        key={activeRightPanelConversationId}
+                        onClose={() => setActiveRightPanelConversationId(null)}
+                      />
+                    ) : null}
+                  </div>
+
+                  {activeDropZone !== null ? (
+                    <div
+                      aria-hidden="true"
+                      className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-background/55 p-6 backdrop-blur-[2px]"
+                    >
+                      <div className="flex max-w-sm flex-col items-center justify-center gap-3 rounded-card border-2 border-dashed border-accent bg-accent/15 p-8 text-center text-text shadow-lg animate-in zoom-in-95 duration-150">
+                        {activeDropZone === 'split' ? (
+                          <>
+                            <Columns2 aria-hidden="true" className="text-accent" size={32} />
+                            <div className="space-y-1">
+                              <p className="text-base font-semibold">{t('dropConversationSplitTitle')}</p>
+                              <p className="text-xs text-secondary-text">{t('dropConversationSplitHint')}</p>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <MessageSquare aria-hidden="true" className="text-accent" size={32} />
+                            <div className="space-y-1">
+                              <p className="text-base font-semibold">{t('dropConversationPrimaryTitle')}</p>
+                              <p className="text-xs text-secondary-text">{t('dropConversationPrimaryHint')}</p>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>

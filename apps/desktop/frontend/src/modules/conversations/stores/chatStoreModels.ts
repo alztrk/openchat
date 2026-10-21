@@ -33,6 +33,7 @@ export function createRefreshModelsAction(
     const models = [...(chatGptCatalog?.models ?? []), ...(apiKeyCatalog?.models ?? []), ...localModels];
     const providerMap = new Map<string, ChatModelProvider>([
       ['opencode', { providerId: 'opencode', name: null, available: true }],
+      ['kilo', { providerId: 'kilo', name: null, available: true }],
       ['llama_cpp', { providerId: 'llama_cpp', name: null, available: true }],
     ]);
     for (const provider of [...(chatGptCatalog?.providers ?? []), ...(apiKeyCatalog?.providers ?? [])]) {

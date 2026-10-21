@@ -29,6 +29,7 @@
         "resizable": true,
         "decorations": false,
         "backgroundColor": "#F4F5F6",
+        "dragDropEnabled": false,
         "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu-sandbox"
       }
     ],

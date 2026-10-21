@@ -2,12 +2,14 @@
 
 use std::path::Path;
 
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use rusqlite::OptionalExtension;
 use serde_json::{Value, json};
 use tokio::sync::watch;
 
 use crate::{
-    chatgpt_store, conversation_archive, instructions, openai_compatible, profile_archive,
+    chatgpt_store, conversation_archive, document_parser, instructions, openai_compatible,
+    profile_archive,
     protocol::{EventSink, Response, ServiceError},
     storage::AppStorage,
     tools::{self, ToolPermissionMode},
@@ -28,6 +30,52 @@ pub(super) async fn dispatch(
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<Value, ServiceError> {
     match method {
+        "chat.document.extract" => {
+            let name = required_string(params, "name")?;
+            let data_base64 = required_string(params, "dataBase64")?;
+            let maximum_base64 = document_parser::MAXIMUM_DOCUMENT_INPUT_BYTES
+                .div_ceil(3)
+                .saturating_mul(4);
+            if data_base64.is_empty() || data_base64.len() > maximum_base64 {
+                return Err(ServiceError::new(
+                    document_parser::DocumentParseError::FileTooLarge.code(),
+                    document_parser::DocumentParseError::FileTooLarge.message(),
+                    false,
+                ));
+            }
+            let bytes = STANDARD.decode(data_base64).map_err(|_| {
+                ServiceError::new(
+                    document_parser::DocumentParseError::MalformedDocument.code(),
+                    document_parser::DocumentParseError::MalformedDocument.message(),
+                    false,
+                )
+            })?;
+            let extracted = document_parser::extract_document(name, &bytes).map_err(|err| {
+                ServiceError::new(err.code(), err.message(), false)
+            })?;
+            Ok(json!({
+                "text": extracted.text,
+                "truncated": extracted.truncated,
+                "sectionCount": extracted.section_count,
+            }))
+        }
+        "browser.open_default" => {
+            let raw_url = required_string(params, "url")?;
+            let parsed = validate_browser_panel_url(raw_url)?;
+            webbrowser::open(parsed.as_str()).map_err(|_| {
+                ServiceError::new(
+                    "browser_open_failed",
+                    "The URL could not be opened in the default browser.",
+                    true,
+                )
+            })?;
+            Ok(json!({"opened": true, "url": parsed.as_str()}))
+        }
+        "browser.inspect_url" => {
+            let raw_url = required_string(params, "url")?;
+            let parsed = validate_browser_panel_url(raw_url)?;
+            inspect_browser_panel_url(&parsed).await
+        }
         "chat.memory.inspect" => {
             let conversation_id = required_memory_conversation_id(params)?;
             let state = chatgpt_store::load_conversation_context_state(storage, conversation_id)
@@ -795,6 +843,164 @@ fn required_string_array(params: &Value, name: &str) -> Result<Vec<String>, Serv
         })
         .map(|values| values.into_iter().map(str::to_owned).collect())
         .ok_or_else(invalid_request_params)
+}
+
+fn validate_browser_panel_url(raw: &str) -> Result<url::Url, ServiceError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.len() > 2_048 {
+        return Err(ServiceError::new(
+            "invalid_browser_url",
+            "Enter a valid http:// or https:// URL.",
+            false,
+        ));
+    }
+    let parsed = url::Url::parse(trimmed).map_err(|_| {
+        ServiceError::new(
+            "invalid_browser_url",
+            "Enter a valid http:// or https:// URL.",
+            false,
+        )
+    })?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.host_str().is_none()
+    {
+        return Err(ServiceError::new(
+            "invalid_browser_url",
+            "Only standard http:// and https:// URLs without embedded credentials are allowed.",
+            false,
+        ));
+    }
+    if let Some(host) = parsed.host() {
+        match host {
+            url::Host::Ipv4(ip) => {
+                if !ip.is_loopback()
+                    && (ip.is_private()
+                        || ip.is_link_local()
+                        || ip.is_multicast()
+                        || ip.is_broadcast()
+                        || ip.is_unspecified())
+                {
+                    return Err(ServiceError::new(
+                        "browser_url_blocked",
+                        "Private network and metadata addresses are blocked by outbound security policy.",
+                        false,
+                    ));
+                }
+            }
+            url::Host::Ipv6(ip) => {
+                if !ip.is_loopback() && (ip.is_multicast() || ip.is_unspecified()) {
+                    return Err(ServiceError::new(
+                        "browser_url_blocked",
+                        "Private network and metadata addresses are blocked by outbound security policy.",
+                        false,
+                    ));
+                }
+            }
+            url::Host::Domain(domain) => {
+                let lower = domain.to_ascii_lowercase();
+                if lower == "metadata.google.internal" || lower == "169.254.169.254" {
+                    return Err(ServiceError::new(
+                        "browser_url_blocked",
+                        "Cloud metadata endpoints are blocked by outbound security policy.",
+                        false,
+                    ));
+                }
+            }
+        }
+    }
+    Ok(parsed)
+}
+
+async fn inspect_browser_panel_url(parsed: &url::Url) -> Result<Value, ServiceError> {
+    use futures_util::StreamExt;
+    const MAX_INSPECT_BYTES: usize = 256 * 1024;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
+        .user_agent("OpenChat-IsolatedBrowser/1.0")
+        .build()
+        .map_err(|_| {
+            ServiceError::new(
+                "browser_inspect_failed",
+                "The isolated browser client could not be initialized.",
+                true,
+            )
+        })?;
+    let response = client.get(parsed.as_str()).send().await.map_err(|_| {
+        ServiceError::new(
+            "browser_inspect_failed",
+            "The target page could not be reached.",
+            true,
+        )
+    })?;
+    let status = response.status().as_u16();
+    let content_type = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|val| val.to_str().ok())
+        .unwrap_or("text/plain")
+        .to_owned();
+    let frame_blocked = response.headers().contains_key("x-frame-options")
+        || response
+            .headers()
+            .get("content-security-policy")
+            .and_then(|val| val.to_str().ok())
+            .is_some_and(|csp| csp.to_ascii_lowercase().contains("frame-ancestors"));
+
+    let mut body = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|_| {
+            ServiceError::new(
+                "browser_inspect_failed",
+                "Failed while reading the target page response.",
+                true,
+            )
+        })?;
+        let remaining = MAX_INSPECT_BYTES.saturating_sub(body.len());
+        if remaining == 0 {
+            break;
+        }
+        body.extend_from_slice(&bytes[..bytes.len().min(remaining)]);
+    }
+
+    let raw_text = String::from_utf8_lossy(&body).into_owned();
+    let title = extract_html_title(&raw_text).unwrap_or_else(|| parsed.as_str().to_owned());
+    let text_preview = if content_type.contains("html") {
+        htmd::convert(&raw_text).unwrap_or_else(|_| raw_text.clone())
+    } else {
+        raw_text
+    };
+    let mut preview_trimmed = text_preview.trim().to_owned();
+    if preview_trimmed.len() > 16_000 {
+        let mut cut = 16_000;
+        while cut > 0 && !preview_trimmed.is_char_boundary(cut) {
+            cut -= 1;
+        }
+        preview_trimmed.truncate(cut);
+    }
+
+    Ok(json!({
+        "url": parsed.as_str(),
+        "status": status,
+        "contentType": content_type,
+        "title": title,
+        "frameBlocked": frame_blocked,
+        "textPreview": preview_trimmed,
+    }))
+}
+
+fn extract_html_title(html: &str) -> Option<String> {
+    let lower = html.to_ascii_lowercase();
+    let start = lower.find("<title")?;
+    let after = &html[start..];
+    let gt = after.find('>')?;
+    let content = &after[gt + 1..];
+    let end = content.to_ascii_lowercase().find("</title>")?;
+    let title = content[..end].trim();
+    (!title.is_empty()).then(|| title.to_owned())
 }
 
 #[cfg(test)]

@@ -1,16 +1,18 @@
-import { ChevronDown, ChevronUp, Clock3, FileDiff, FileUp, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Clock3, FileDiff, FileUp, MessageSquare, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button, Dialog, Toast } from '@/design-system';
 import { type ChatFileChange, listConversationFileChanges } from '@/modules/conversations/data/chatFileChanges';
-import type { ChatMessage } from '@/modules/conversations/data/chatStorage';
+import { type ChatMessage, getMessages } from '@/modules/conversations/data/chatStorage';
 import { findInChatMatches, type InChatFilterType } from '@/modules/conversations/data/inChatSearch';
+import { getSidebarDraggingConversationId } from '@/modules/conversations/data/sidebarPreferences';
 import { useChatSession } from '@/modules/conversations/hooks/useChatSession';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
+import { upsertMessage } from '@/modules/conversations/stores/chatStoreUtils';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
 import { ChatComposer } from './ChatComposer';
-import { ChatFileChangesPanel } from './ChatFileChangesPanel';
+import { ChatFileChangesPanel, type RightWorkspaceTab } from './ChatFileChangesPanel';
 import { ConversationEmptyState } from './ConversationEmptyState';
 import { EditMessageBranchDialog } from './EditMessageBranchDialog';
 import { GoalStatusBar } from './GoalStatusBar';
@@ -21,6 +23,10 @@ import { ToolPermissionCard } from './ToolPermissionCard';
 import { UserQuestionPanel } from './UserQuestionPanel';
 
 export interface ConversationPaneProps {
+  conversationId?: string | null;
+  header?:
+    | React.ReactNode
+    | ((controls: { isRightPanelOpen: boolean; toggleRightPanel: () => void }) => React.ReactNode);
   isLargeText: boolean;
   onOpenSettings(): void;
   onRequestTemporaryExit(action: () => void | Promise<void>): void;
@@ -36,9 +42,16 @@ export interface ConversationPaneProps {
   questionFocusTarget: { conversationId: string; groupId: string } | null;
   onDismissNotificationFeedback(): void;
   onQuestionFocusHandled(): void;
+  onDropConversation?(conversationId: string): void;
+  isRightPanelOpen?: boolean;
+  onToggleRightPanel?(): void;
+  onOpenRightPanel?(tab?: RightWorkspaceTab): void;
+  hideInternalRightPanel?: boolean;
 }
 
 export function ConversationPane({
+  conversationId: propConversationId,
+  header,
   isLargeText,
   onOpenSettings,
   onRequestTemporaryExit,
@@ -46,6 +59,11 @@ export function ConversationPane({
   questionFocusTarget,
   onDismissNotificationFeedback,
   onQuestionFocusHandled,
+  onDropConversation,
+  isRightPanelOpen: propIsRightPanelOpen,
+  onToggleRightPanel: propOnToggleRightPanel,
+  onOpenRightPanel,
+  hideInternalRightPanel = false,
 }: ConversationPaneProps) {
   const { t } = useTranslation();
   const paneRef = useRef<HTMLElement | null>(null);
@@ -55,6 +73,7 @@ export function ConversationPane({
   }));
   const [disclosureRequest, setDisclosureRequest] = useState<{ providerId: string; providerName: string } | null>(null);
   const [isFileChangesPanelOpen, setIsFileChangesPanelOpen] = useState(false);
+  const [rightPanelTab, setRightPanelTab] = useState<RightWorkspaceTab>('changes');
   const [fileChangesState, setFileChangesState] = useState<{
     conversationId: string | null;
     changes: ChatFileChange[];
@@ -70,8 +89,67 @@ export function ConversationPane({
   const [droppedFiles, setDroppedFiles] = useState<{ id: number; files: File[] } | null>(null);
   const dragDepthRef = useRef(0);
   const disclosureResolver = useRef<((approved: boolean) => void) | null>(null);
-  const { activeConversation, activeConversationId, errorCode, messages, serviceStatus, isLoadingMessages } =
-    useChatSession();
+  const {
+    activeConversation: storeActiveConversation,
+    activeConversationId: storeActiveConversationId,
+    errorCode,
+    messages: storeMessages,
+    serviceStatus,
+    isLoadingMessages: storeIsLoadingMessages,
+  } = useChatSession();
+  const conversations = useChatStore((state) => state.conversations);
+
+  const isSplitSecondary = propConversationId !== undefined;
+  const isPlaceholder = propConversationId === '__empty__' || (isSplitSecondary && !propConversationId);
+  const resolvedTargetId = isPlaceholder ? null : (propConversationId ?? storeActiveConversationId);
+  const isStoreActive = resolvedTargetId !== null && resolvedTargetId === storeActiveConversationId;
+
+  const [secondaryMessages, setSecondaryMessages] = useState<ChatMessage[]>([]);
+  const [secondaryLoading, setSecondaryLoading] = useState(false);
+
+  useEffect(() => {
+    if (!isSplitSecondary || isStoreActive) return;
+    if (!resolvedTargetId) {
+      setSecondaryMessages([]);
+      setSecondaryLoading(false);
+      return;
+    }
+    let current = true;
+    setSecondaryLoading(true);
+    void getMessages(resolvedTargetId)
+      .then((items) => {
+        if (current) setSecondaryMessages(items);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (current) setSecondaryLoading(false);
+      });
+
+    const onStream = (event: Event) => {
+      const detail = (event as CustomEvent<{ message: ChatMessage }>).detail;
+      if (detail?.message && detail.message.conversationId === resolvedTargetId) {
+        setSecondaryMessages((prev) => upsertMessage(prev, detail.message));
+      }
+    };
+    window.addEventListener('openchat-message-stream', onStream);
+    return () => {
+      current = false;
+      window.removeEventListener('openchat-message-stream', onStream);
+    };
+  }, [isSplitSecondary, isStoreActive, resolvedTargetId]);
+
+  const activeConversationId = isSplitSecondary ? resolvedTargetId : storeActiveConversationId;
+  const activeConversation = useMemo(() => {
+    if (isSplitSecondary) {
+      return resolvedTargetId
+        ? conversations.find((c) => c.id === resolvedTargetId) ?? null
+        : null;
+    }
+    return storeActiveConversation;
+  }, [conversations, isSplitSecondary, resolvedTargetId, storeActiveConversation]);
+
+  const messages = isSplitSecondary && !isStoreActive ? secondaryMessages : storeMessages;
+  const isLoadingMessages = isSplitSecondary && !isStoreActive ? secondaryLoading : storeIsLoadingMessages;
   const models = useChatStore((state) => state.models);
   const modelStatus = useChatStore((state) => state.modelStatus);
   const modelError = useChatStore((state) => state.modelError);
@@ -339,21 +417,37 @@ export function ConversationPane({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleOpenSearch, messages.length]);
 
+  const isConversationDrag = (event: React.DragEvent) => {
+    if (getSidebarDraggingConversationId() !== null) return true;
+    const types = Array.from(event.dataTransfer?.types ?? []);
+    return (
+      types.includes('application/x-openchat-conversation') ||
+      types.includes('text/plain')
+    );
+  };
+
   const handleDragEnter = (event: React.DragEvent) => {
-    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+    const isFiles = Array.from(event.dataTransfer?.types ?? []).includes('Files');
+    const isConv = isConversationDrag(event);
+    if (!isFiles && !isConv) return;
     event.preventDefault();
-    dragDepthRef.current += 1;
-    setIsDraggingOver(true);
+    if (isFiles) {
+      dragDepthRef.current += 1;
+      setIsDraggingOver(true);
+    }
   };
 
   const handleDragOver = (event: React.DragEvent) => {
-    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+    const isFiles = Array.from(event.dataTransfer?.types ?? []).includes('Files');
+    const isConv = isConversationDrag(event);
+    if (!isFiles && !isConv) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
   };
 
   const handleDragLeave = (event: React.DragEvent) => {
-    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+    const isFiles = Array.from(event.dataTransfer?.types ?? []).includes('Files');
+    if (!isFiles) return;
     event.preventDefault();
     dragDepthRef.current -= 1;
     if (dragDepthRef.current <= 0) {
@@ -363,13 +457,26 @@ export function ConversationPane({
   };
 
   const handleDrop = (event: React.DragEvent) => {
-    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
-    event.preventDefault();
-    dragDepthRef.current = 0;
-    setIsDraggingOver(false);
-    const files = Array.from(event.dataTransfer.files ?? []);
-    if (files.length > 0) {
-      setDroppedFiles({ id: Date.now(), files });
+    const isFiles = Array.from(event.dataTransfer?.types ?? []).includes('Files');
+    if (isFiles) {
+      event.preventDefault();
+      dragDepthRef.current = 0;
+      setIsDraggingOver(false);
+      const files = Array.from(event.dataTransfer.files ?? []);
+      if (files.length > 0) {
+        setDroppedFiles({ id: Date.now(), files });
+      }
+      return;
+    }
+    if (isConversationDrag(event)) {
+      event.preventDefault();
+      const customData = event.dataTransfer.getData('application/x-openchat-conversation');
+      const inMemoryId = getSidebarDraggingConversationId();
+      const plainText = event.dataTransfer.getData('text/plain');
+      const draggedId = customData || inMemoryId || plainText;
+      if (draggedId && onDropConversation) {
+        onDropConversation(draggedId);
+      }
     }
   };
 
@@ -389,7 +496,7 @@ export function ConversationPane({
   return (
     <section
       aria-label={t('chats')}
-      className="chat-conversation-pane relative flex min-h-0 min-w-0 flex-1 flex-row bg-background"
+      className="chat-conversation-pane relative flex h-full min-h-0 min-w-0 flex-1 flex-row overflow-hidden bg-background"
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}
       onDragOver={handleDragOver}
@@ -405,7 +512,25 @@ export function ConversationPane({
           />
         </div>
       ) : null}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        {typeof header === 'function'
+          ? header({
+              isRightPanelOpen:
+                propIsRightPanelOpen !== undefined ? propIsRightPanelOpen : isFileChangesPanelOpen,
+              toggleRightPanel: () => {
+                if (propOnToggleRightPanel) {
+                  propOnToggleRightPanel();
+                  return;
+                }
+                setIsFileChangesPanelOpen((open) => {
+                  if (!open && latestFileChanges.length === 0) {
+                    setRightPanelTab('browser');
+                  }
+                  return !open;
+                });
+              },
+            })
+          : header}
         <div
           className="chat-content-workspace flex min-h-0 min-w-0 flex-1 flex-col"
           data-centered-empty={centerEmptyConversation ? 'true' : undefined}
@@ -413,11 +538,14 @@ export function ConversationPane({
           <div
             className="chat-content-row flex min-h-0 min-w-0 flex-1"
             data-centered-empty={centerEmptyConversation ? 'true' : undefined}
-            data-file-changes-open={isFileChangesPanelOpen && !isTemporaryChat}
+            data-file-changes-open={
+              (propIsRightPanelOpen !== undefined ? propIsRightPanelOpen : isFileChangesPanelOpen) &&
+              !isTemporaryChat
+            }
           >
             <div className="chat-conversation-content relative flex min-h-0 min-w-0 flex-1 flex-col">
               {searchHighlightQuery && !isSearchOpen ? (
-                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-full border border-border/80 bg-raised/95 px-3 py-1 shadow-elevation-2 backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-150">
+                <div className="openchat-glass-popover absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-full border border-border/80 px-3 py-1 animate-in fade-in slide-in-from-top-2 duration-150">
                   <span className="max-w-[120px] truncate text-xs font-medium text-text">
                     "{searchHighlightQuery}"
                   </span>
@@ -475,25 +603,42 @@ export function ConversationPane({
                   query={searchQuery}
                 />
               ) : null}
-              {messages.length > 0 || isLoadingMessages || isSending ? (
+              {isPlaceholder ? (
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-secondary-text">
+                  <MessageSquare aria-hidden="true" className="opacity-45" size={32} />
+                  <p className="text-sm font-medium text-text">{t('splitViewEmptyHint')}</p>
+                </div>
+              ) : messages.length > 0 || isLoadingMessages || isSending ? (
                 <MessageList
                   assistantModelFallback={assistantModelFallback}
                   assistantProviderFallback={assistantProviderFallback}
+                  conversationIdOverride={activeConversationId ?? undefined}
                   inChatSearchQuery={isSearchOpen ? searchQuery : ''}
                   inChatTargetMessageId={isSearchOpen ? (activeMatch?.messageId ?? null) : null}
-                  showAssistantLoading={isSending}
+                  isLoadingMessagesOverride={isSplitSecondary && !isStoreActive ? secondaryLoading : undefined}
                   latestFileChanges={latestFileChanges}
+                  messagesOverride={isSplitSecondary && !isStoreActive ? secondaryMessages : undefined}
+                  onEditMessage={!isTemporaryChat ? (message) => setEditingMessage(message) : undefined}
                   onOpenConnections={onOpenSettings}
                   onOpenFileChanges={
-                    activeConversationId && !isTemporaryChat ? () => setIsFileChangesPanelOpen(true) : undefined
+                    activeConversationId && !isTemporaryChat
+                      ? () => {
+                          if (onOpenRightPanel) {
+                            onOpenRightPanel('changes');
+                          } else {
+                            setRightPanelTab('changes');
+                            setIsFileChangesPanelOpen(true);
+                          }
+                        }
+                      : undefined
                   }
-                  onEditMessage={!isTemporaryChat ? (message) => setEditingMessage(message) : undefined}
                   onRetryMessage={!isTemporaryChat ? (message) => void retryMessage(message.id) : undefined}
                   onToggleSavedOutput={
                     activeConversationId ? (message) => void toggleSavedOutput(message.id) : undefined
                   }
                   pendingSavedOutputMessageIds={new Set(pendingSavedOutputMessageIds)}
                   savedOutputMessageIds={savedMessageIds}
+                  showAssistantLoading={isSending}
                 />
               ) : (
                 <ConversationEmptyState
@@ -525,15 +670,6 @@ export function ConversationPane({
                 </div>
               ) : null}
             </div>
-            {isFileChangesPanelOpen && activeConversationId && !isTemporaryChat ? (
-              <ChatFileChangesPanel
-                conversationId={activeConversationId}
-                key={activeConversationId}
-                onChangesUpdated={updateConversationFileChanges}
-                onClose={() => setIsFileChangesPanelOpen(false)}
-                refreshRevision={latestToolActivitiesJson}
-              />
-            ) : null}
           </div>
           <div className="shrink-0">
             {fileChangesLoadError && !isFileChangesPanelOpen && activeConversationId ? (
@@ -551,15 +687,18 @@ export function ConversationPane({
                 </Button>
               </div>
             ) : null}
-            {latestFileChanges.length > 0 && activeConversationId && !isTemporaryChat ? (
-              <div className="flex justify-center px-4 pb-2">
+            {activeConversationId && !isTemporaryChat && latestFileChanges.length > 0 ? (
+              <div className="flex flex-wrap justify-center gap-2 px-4 pb-2">
                 <Button
-                  className="min-h-11"
-                  onClick={() => setIsFileChangesPanelOpen(true)}
+                  className="min-h-9"
+                  onClick={() => {
+                    setRightPanelTab('changes');
+                    setIsFileChangesPanelOpen(true);
+                  }}
                   size="small"
                   variant="secondary"
                 >
-                  <FileDiff aria-hidden="true" size={16} />
+                  <FileDiff aria-hidden="true" size={15} />
                   <span>{t('fileChangesOpenButton')}</span>
                   {latestFileChanges.some((change) => change.addedLines === null || change.removedLines === null) ? (
                     <span className="text-xs text-secondary-text">{t('fileChangesSomeCountsUnavailable')}</span>
@@ -629,6 +768,7 @@ export function ConversationPane({
               onBeforeSend={askBeforeTemporarySend}
               onOpenSettings={onOpenSettings}
               onRequestTemporaryExit={onRequestTemporaryExit}
+              targetConversationId={isPlaceholder ? null : isSplitSecondary ? activeConversationId : undefined}
             />
             {temporaryChat ? (
               <div className="temporary-chat-notice-width mx-auto mb-2 flex max-w-composer flex-wrap items-start gap-3 rounded-card border border-border bg-raised px-3 py-2.5">
@@ -679,6 +819,23 @@ export function ConversationPane({
           open={editingMessage !== null}
         />
       </div>
+      {!hideInternalRightPanel ? (
+        <div
+          aria-hidden={!isFileChangesPanelOpen || undefined}
+          className="chat-right-panel-shell"
+          data-open={isFileChangesPanelOpen ? 'true' : 'false'}
+          inert={!isFileChangesPanelOpen}
+        >
+          <ChatFileChangesPanel
+            conversationId={activeConversationId}
+            initialTab={rightPanelTab}
+            key={activeConversationId ?? 'workspace-panel'}
+            onChangesUpdated={updateConversationFileChanges}
+            onClose={() => setIsFileChangesPanelOpen(false)}
+            refreshRevision={latestToolActivitiesJson}
+          />
+        </div>
+      ) : null}
       {isDraggingOver ? (
         <section
           aria-label={t('dropFilesOverlayTitle')}

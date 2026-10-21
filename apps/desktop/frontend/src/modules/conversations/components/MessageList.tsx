@@ -24,6 +24,9 @@ export interface MessageListProps {
   onOpenConnections?: () => void;
   inChatTargetMessageId?: string | null;
   inChatSearchQuery?: string;
+  messagesOverride?: ChatMessage[];
+  conversationIdOverride?: string | null;
+  isLoadingMessagesOverride?: boolean;
 }
 
 export function MessageList({
@@ -41,16 +44,23 @@ export function MessageList({
   onOpenConnections,
   inChatTargetMessageId = null,
   inChatSearchQuery = '',
+  messagesOverride,
+  conversationIdOverride,
+  isLoadingMessagesOverride,
 }: MessageListProps) {
   const { i18n, t } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language;
-  const messages = useChatStore((state) => state.messages);
-  const isLoadingMessages = useChatStore((state) => state.isLoadingMessages);
+  const storeMessages = useChatStore((state) => state.messages);
+  const storeIsLoadingMessages = useChatStore((state) => state.isLoadingMessages);
   const searchTargetMessageId = useChatStore((state) => state.searchTargetMessageId);
   const searchHighlightMessageId = useChatStore((state) => state.searchHighlightMessageId);
   const searchHighlightQuery = useChatStore((state) => state.searchHighlightQuery);
   const clearSearchTarget = useChatStore((state) => state.clearSearchTarget);
-  const activeConversationId = useChatStore((state) => state.activeConversationId);
+  const storeActiveConversationId = useChatStore((state) => state.activeConversationId);
+  const messages = messagesOverride ?? storeMessages;
+  const isLoadingMessages = isLoadingMessagesOverride ?? storeIsLoadingMessages;
+  const activeConversationId =
+    conversationIdOverride !== undefined ? conversationIdOverride : storeActiveConversationId;
   const skipBottomScroll = useRef(false);
   const responseGroups = useMemo(() => groupResponses(messages), [messages]);
   const [selectedResponseVersions, setSelectedResponseVersions] = useState<Record<string, number>>({});

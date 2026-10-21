@@ -15,6 +15,7 @@ import perplexityIconUrl from '@assets/icons/providers/perplexity.svg?no-inline'
 import sambaNovaIconUrl from '@assets/icons/providers/sambanova.svg?no-inline';
 import togetherIconUrl from '@assets/icons/providers/together.svg?no-inline';
 import xAiIconUrl from '@assets/icons/providers/xai.svg?no-inline';
+import kiloIconUrl from '@assets/icons/providers/kilo.svg?no-inline';
 import { Github, Network, Star } from 'lucide-react';
 import { LocalEngineIcon } from './EngineIcon';
 
@@ -37,6 +38,7 @@ export const providerIconUrls: Record<string, string> = {
   deepinfra: deepInfraIconUrl,
   dashscope: dashScopeIconUrl,
   cohere: cohereIconUrl,
+  kilo: kiloIconUrl,
 };
 
 export interface ProviderIconProps {

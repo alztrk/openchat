@@ -179,7 +179,11 @@ function estimateMessages(messages: readonly ChatMessage[]): {
       userTokens += estimateText(message.content);
       continue;
     }
-    assistantTokens += estimateText(message.content);
+    const assistantMessageTokens =
+      typeof message.outputTokens === 'number' && Number.isFinite(message.outputTokens) && message.outputTokens >= 0
+        ? message.outputTokens
+        : estimateText(message.content);
+    assistantTokens += assistantMessageTokens;
     for (const activity of parseToolActivities(message.toolActivities)) {
       if (activity.status !== 'completed') continue;
       let activityTokens = estimateText(

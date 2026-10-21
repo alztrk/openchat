@@ -19,6 +19,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, Card, Dialog, Select } from '@/design-system';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import { formatModelRouteKey, modelRouteKey } from '@/modules/providers/data/modelPreferences';
+import { refreshOAuthPlans, subscribeToOAuthPlanUpdates } from '@/modules/providers/data/oauthPlanMonitor';
 import {
   type ProviderRequestOutcomeRecord,
   readProviderRequestOutcomeRecord,
@@ -169,11 +170,25 @@ export function ProviderSettingsSection({
       setLastRequestReadFailed(requestReadFailed);
       setErrorCode(null);
       setRequest('idle');
+      if (items.some((connection) => connection.authStatus === 'active')) {
+        void refreshOAuthPlans();
+      }
     } catch {
       if (!isMountedRef.current) return;
       setErrorCode('oauthConnectionsLoadFailed');
       setRequest('error');
     }
+  }, []);
+
+  useEffect(() => {
+    return subscribeToOAuthPlanUpdates((summary) => {
+      if (!isMountedRef.current || summary.chatGptConnections.length === 0) return;
+      const items = summary.chatGptConnections.flatMap(parseConnection);
+      if (items.length === 0) return;
+      const selectedConnection = items.find((connection) => connection.isSelected);
+      setConnections(items);
+      setSelectedId(selectedConnection?.id ?? null);
+    });
   }, []);
 
   useEffect(() => {
@@ -556,7 +571,7 @@ function ConnectionRow({
             <p className="truncate font-medium">{label}</p>
             <p className="mt-1 truncate text-sm text-secondary-text">
               {connection.authStatus === 'active'
-                ? t('accountPlan', { plan: connection.planType ?? t('planUnavailable') })
+                ? t('accountPlan', { plan: selectedWorkspace?.planType ?? connection.planType ?? t('planUnavailable') })
                 : t('connectionNeedsSignIn')}
             </p>
           </div>

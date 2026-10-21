@@ -200,7 +200,10 @@ pub async fn models(
     cancellation: &mut watch::Receiver<bool>,
 ) -> Result<Value, ServiceError> {
     let provider = api_compatible_provider(provider_id).ok_or_else(invalid_request_error)?;
-    if api_key.trim().is_empty() || api_key.len() > 4096 || api_key.chars().any(char::is_control) {
+    if (api_key.trim().is_empty() && provider_id != "kilo")
+        || api_key.len() > 4096
+        || api_key.chars().any(char::is_control)
+    {
         return Err(invalid_request_error());
     }
 
@@ -225,7 +228,7 @@ pub async fn models(
                     sensitive_api_key_header(api_key).map_err(|_| invalid_request_error())?,
                 )
                 .header("anthropic-version", "2023-06-01");
-        } else {
+        } else if !api_key.trim().is_empty() {
             request = request.bearer_auth(api_key);
         }
         let response = request
@@ -268,7 +271,10 @@ pub async fn models(
         } else {
             None
         };
-        let models = parse_models(provider.id, &value, metadata.as_ref())?;
+        let mut models = parse_models(provider.id, &value, metadata.as_ref())?;
+        if provider_id == "kilo" && api_key.trim().is_empty() {
+            models.retain(|m| m.get("groupId").and_then(Value::as_str) == Some("free"));
+        }
         save_catalog(storage, provider.id, &key_hash, &models)?;
         Ok::<_, ServiceError>(models)
     };
@@ -307,6 +313,7 @@ fn default_provider_context_window(provider_id: &str, model_id: &str) -> Option<
         "deepinfra" => Some(131_072),
         "dashscope" => Some(131_072),
         "cohere" => Some(128_000),
+        "kilo" => Some(256_000),
         _ => None,
     }
 }
@@ -317,6 +324,7 @@ fn default_provider_max_output_tokens(provider_id: &str, _model_id: &str) -> Opt
         "perplexity" => Some(4_096),
         "anthropic" => Some(8_192),
         "cohere" => Some(4_096),
+        "kilo" => Some(8_192),
         _ => None,
     }
 }
@@ -405,10 +413,28 @@ fn parse_models(
                     } else {
                         Vec::new()
                     };
+                    let is_kilo_free = provider_id == "kilo"
+                        && (item.get("isFree").and_then(Value::as_bool) == Some(true)
+                            || id.ends_with(":free")
+                            || id.contains("/free")
+                            || id == "kilo-auto/free");
+                    let is_kilo_reasoning = provider_id == "kilo"
+                        && (id.contains("reasoning")
+                            || id.contains("r1")
+                            || item
+                                .get("supported_parameters")
+                                .and_then(Value::as_array)
+                                .is_some_and(|params| {
+                                    params.iter().any(|p| {
+                                        p.as_str() == Some("reasoning")
+                                            || p.as_str() == Some("include_reasoning")
+                                    })
+                                }));
                     let supports_reasoning = !reasoning_levels.is_empty()
                         || (provider_id == "deepseek" && id.contains("reasoner"))
                         || (provider_id == "perplexity" && id.contains("reasoning"))
-                        || (provider_id == "anthropic" && (id.contains("claude-3-7") || id.contains("claude-3.7")));
+                        || (provider_id == "anthropic" && (id.contains("claude-3-7") || id.contains("claude-3.7")))
+                        || is_kilo_reasoning;
                     let mut model = json!({
                         "id": id,
                         "displayName": item.get("name").or_else(|| details.and_then(|model| model.get("name").or_else(|| model.get("displayName")))).and_then(Value::as_str).filter(|name| !name.trim().is_empty()).unwrap_or(id),
@@ -418,7 +444,7 @@ fn parse_models(
                         "supportsTools": supports_tools,
                         "inputTokenLimit": input_token_limit,
                         "maxOutputTokens": max_output_tokens,
-                        "groupId": if provider_id == "openrouter" { "free" } else { "models" },
+                        "groupId": if provider_id == "openrouter" || is_kilo_free { "free" } else { "models" },
                         "defaultReasoningLevel": null,
                         "reasoningLevels": reasoning_levels,
                         "isAvailable": true,
@@ -484,6 +510,11 @@ fn provider_tool_support(provider_id: &str, model_id: &str, model: &Value) -> Op
             .and_then(Value::as_bool)
             .or(Some(true)),
         "deepinfra" | "dashscope" | "cohere" => Some(true),
+        "kilo" => model
+            .get("supported_parameters")
+            .and_then(Value::as_array)
+            .map(|params| params.iter().any(|p| p.as_str() == Some("tools")))
+            .or(Some(true)),
         _ => None,
     }
 }
@@ -620,6 +651,7 @@ fn supports_images(
                 || model_id.to_ascii_lowercase().contains("vision")
         }
         "deepseek" | "perplexity" | "cohere" => false,
+        "kilo" => advertised_vision || modalities_include_image,
         _ => false,
     }
 }
@@ -984,6 +1016,64 @@ mod tests {
             provider_tool_support("mistral", "custom-model", &json!({})),
             None
         );
+    }
+
+    #[test]
+    fn kilo_catalog_parses_free_and_paid_models_correctly() {
+        let catalog = parse_models(
+            "kilo",
+            &json!({
+                "data": [
+                    {
+                        "id": "kilo-auto/free",
+                        "name": "Auto Free",
+                        "description": "Free model router",
+                        "context_length": 256000,
+                        "isFree": true,
+                        "supported_parameters": ["tools", "reasoning"],
+                        "architecture": {
+                            "input_modalities": ["text"]
+                        },
+                        "top_provider": {
+                            "max_completion_tokens": 32768
+                        }
+                    },
+                    {
+                        "id": "anthropic/claude-opus-5.5",
+                        "name": "Claude Opus 5.5",
+                        "description": "Frontier intelligence",
+                        "context_length": 200000,
+                        "isFree": false,
+                        "supported_parameters": ["tools", "reasoning"],
+                        "architecture": {
+                            "input_modalities": ["text", "image"]
+                        },
+                        "top_provider": {
+                            "max_completion_tokens": 8192
+                        }
+                    }
+                ]
+            }),
+            None,
+        )
+        .expect("parse Kilo models");
+
+        assert_eq!(catalog.len(), 2);
+
+        let free_model = &catalog[0];
+        assert_eq!(free_model["id"], "kilo-auto/free");
+        assert_eq!(free_model["groupId"], "free");
+        assert_eq!(free_model["contextWindow"], 256000);
+        assert_eq!(free_model["supportsTools"], true);
+        assert_eq!(free_model["supportsImages"], false);
+        assert_eq!(free_model["supportsReasoning"], true);
+
+        let paid_model = &catalog[1];
+        assert_eq!(paid_model["id"], "anthropic/claude-opus-5.5");
+        assert_eq!(paid_model["groupId"], "models");
+        assert_eq!(paid_model["contextWindow"], 200000);
+        assert_eq!(paid_model["supportsTools"], true);
+        assert_eq!(paid_model["supportsImages"], true);
     }
 
     #[test]

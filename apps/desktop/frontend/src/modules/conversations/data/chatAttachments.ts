@@ -1,3 +1,4 @@
+import { LocalServiceError, localServiceClient } from '@/platform/local-service';
 import { containsAsciiControlCharacters } from '@/shared/utils/textValidation';
 
 const attachmentContentPrefix = '\u001eopenchat-attachments-v1:';
@@ -8,13 +9,37 @@ export const maximumAttachmentBytes = 14 * 1024 * 1024;
 
 const maximumImageBytes = 10 * 1024 * 1024;
 const maximumTextBytes = 1024 * 1024;
+const maximumDocumentInputBytes = 10 * 1024 * 1024;
 
-const attachmentTypes: Record<string, { kind: ChatAttachmentKind; mimeType: string; maximumBytes: number }> = {
+const binaryDocumentExtensions = new Set(['pdf', 'docx', 'xlsx']);
+
+const attachmentTypes: Record<
+  string,
+  { kind: ChatAttachmentKind; mimeType: string; maximumBytes: number; rawMaximumBytes?: number }
+> = {
   png: { kind: 'image', mimeType: 'image/png', maximumBytes: maximumImageBytes },
   jpg: { kind: 'image', mimeType: 'image/jpeg', maximumBytes: maximumImageBytes },
   jpeg: { kind: 'image', mimeType: 'image/jpeg', maximumBytes: maximumImageBytes },
   webp: { kind: 'image', mimeType: 'image/webp', maximumBytes: maximumImageBytes },
   gif: { kind: 'image', mimeType: 'image/gif', maximumBytes: maximumImageBytes },
+  pdf: {
+    kind: 'text',
+    mimeType: 'application/pdf',
+    maximumBytes: maximumTextBytes,
+    rawMaximumBytes: maximumDocumentInputBytes,
+  },
+  docx: {
+    kind: 'text',
+    mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    maximumBytes: maximumTextBytes,
+    rawMaximumBytes: maximumDocumentInputBytes,
+  },
+  xlsx: {
+    kind: 'text',
+    mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    maximumBytes: maximumTextBytes,
+    rawMaximumBytes: maximumDocumentInputBytes,
+  },
   txt: { kind: 'text', mimeType: 'text/plain', maximumBytes: maximumTextBytes },
   log: { kind: 'text', mimeType: 'text/plain', maximumBytes: maximumTextBytes },
   md: { kind: 'text', mimeType: 'text/markdown', maximumBytes: maximumTextBytes },
@@ -23,6 +48,7 @@ const attachmentTypes: Record<string, { kind: ChatAttachmentKind; mimeType: stri
   jsonl: { kind: 'text', mimeType: 'application/json', maximumBytes: maximumTextBytes },
   xml: { kind: 'text', mimeType: 'application/xml', maximumBytes: maximumTextBytes },
   html: { kind: 'text', mimeType: 'text/html', maximumBytes: maximumTextBytes },
+  htm: { kind: 'text', mimeType: 'text/html', maximumBytes: maximumTextBytes },
   css: { kind: 'text', mimeType: 'text/css', maximumBytes: maximumTextBytes },
   js: { kind: 'text', mimeType: 'text/javascript', maximumBytes: maximumTextBytes },
   jsx: { kind: 'text', mimeType: 'text/javascript', maximumBytes: maximumTextBytes },
@@ -57,7 +83,10 @@ export type ChatAttachmentErrorCode =
   | 'attachmentCountExceeded'
   | 'attachmentReadFailed'
   | 'attachmentMustBeUtf8'
-  | 'attachmentInvalidImage';
+  | 'attachmentInvalidImage'
+  | 'attachmentDocumentEncrypted'
+  | 'attachmentDocumentNoText'
+  | 'attachmentDocumentMalformed';
 
 export interface ChatAttachmentMetadata {
   id: string;
@@ -71,6 +100,8 @@ export interface PendingChatAttachment extends ChatAttachmentMetadata {
   file: File;
   bytes: Uint8Array;
   previewUrl: string | null;
+  extractedSectionCount?: number;
+  extractedTruncated?: boolean;
 }
 
 export interface AttachmentWritePayload extends ChatAttachmentMetadata {
@@ -91,7 +122,8 @@ export async function readAttachmentFile(file: File): Promise<PendingChatAttachm
   if (file.size <= 0 || Array.from(file.name).length > 255 || containsAsciiControlCharacters(file.name)) {
     throw new ChatAttachmentInputError('attachmentReadFailed');
   }
-  if (file.size > type.maximumBytes) throw new ChatAttachmentInputError('attachmentFileTooLarge');
+  const inputLimit = type.rawMaximumBytes ?? type.maximumBytes;
+  if (file.size > inputLimit) throw new ChatAttachmentInputError('attachmentFileTooLarge');
 
   let bytes: Uint8Array;
   try {
@@ -100,16 +132,51 @@ export async function readAttachmentFile(file: File): Promise<PendingChatAttachm
     throw new ChatAttachmentInputError('attachmentReadFailed');
   }
   if (bytes.length !== file.size) throw new ChatAttachmentInputError('attachmentReadFailed');
-  if (type.kind === 'image' && !hasValidImageSignature(type.mimeType, bytes)) {
+
+  let extractedSectionCount: number | undefined;
+  let extractedTruncated: boolean | undefined;
+
+  if (binaryDocumentExtensions.has(extension)) {
+    try {
+      const response = await localServiceClient.call('chat.document.extract', {
+        name: file.name,
+        dataBase64: encodeBase64(bytes),
+      });
+      if (typeof response.text !== 'string' || response.text.length === 0) {
+        throw new ChatAttachmentInputError('attachmentDocumentNoText');
+      }
+      bytes = new TextEncoder().encode(response.text);
+      if (bytes.length > type.maximumBytes) {
+        bytes = bytes.slice(0, type.maximumBytes);
+        extractedTruncated = true;
+      } else {
+        extractedTruncated = response.truncated === true;
+      }
+      if (typeof response.sectionCount === 'number') {
+        extractedSectionCount = response.sectionCount;
+      }
+    } catch (error) {
+      if (error instanceof ChatAttachmentInputError) throw error;
+      if (error instanceof LocalServiceError) {
+        if (error.code === 'document_encrypted') throw new ChatAttachmentInputError('attachmentDocumentEncrypted');
+        if (error.code === 'document_no_extractable_text')
+          throw new ChatAttachmentInputError('attachmentDocumentNoText');
+        if (error.code === 'document_file_too_large' || error.code === 'document_archive_limit_exceeded')
+          throw new ChatAttachmentInputError('attachmentFileTooLarge');
+        throw new ChatAttachmentInputError('attachmentDocumentMalformed');
+      }
+      throw new ChatAttachmentInputError('attachmentReadFailed');
+    }
+  } else if (type.kind === 'image' && !hasValidImageSignature(type.mimeType, bytes)) {
     throw new ChatAttachmentInputError('attachmentInvalidImage');
-  }
-  if (type.kind === 'text') {
+  } else if (type.kind === 'text') {
     try {
       new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     } catch {
       throw new ChatAttachmentInputError('attachmentMustBeUtf8');
     }
   }
+
   return {
     id: crypto.randomUUID().replaceAll('-', ''),
     name: file.name,
@@ -119,6 +186,8 @@ export async function readAttachmentFile(file: File): Promise<PendingChatAttachm
     file,
     bytes,
     previewUrl: null,
+    extractedSectionCount,
+    extractedTruncated,
   };
 }
 

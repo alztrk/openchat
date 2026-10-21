@@ -19,12 +19,12 @@ use serde_json::{Value, json};
 
 use crate::{protocol::ServiceError, provider_schema::ToolDefinition};
 
-pub(crate) mod gemini_search;
 mod search;
 pub use search::search_files;
+pub mod hashline;
+pub use hashline::{apply_resilient_edit, compute_hashline_tag};
 #[cfg(windows)]
 pub(crate) mod mcp;
-pub(crate) mod mistral_search;
 pub(crate) mod project_tasks;
 pub(crate) mod project_tools;
 pub mod terminal;
@@ -318,6 +318,7 @@ pub fn read_file(
     }
 
     let mut reader = reader.take((MAX_OUTPUT_BYTES + 1) as u64);
+    let mut hashlines = Vec::with_capacity(line_count.min(128));
     loop {
         line.clear();
         let read = reader
@@ -335,13 +336,17 @@ pub fn read_file(
             break;
         }
         output_bytes += read;
-        output.push(json!({"line": number, "text": line.trim_end_matches(['\r', '\n'])}));
+        let clean_text = line.trim_end_matches(['\r', '\n']);
+        let tag = compute_hashline_tag(clean_text);
+        hashlines.push(format!("{number}:{tag}| {clean_text}"));
+        output.push(json!({"line": number, "text": clean_text}));
     }
     truncated |= reader.get_ref().limit() == 0;
     let next_line = truncated.then_some(number);
     Ok(json!({
         "path": relative_path.to_string_lossy().replace('\\', "/"),
         "lines": output,
+        "hashlines": hashlines,
         "nextLine": next_line,
         "truncated": truncated,
     }))
@@ -442,26 +447,8 @@ pub fn edit_file(
         return Err(invalid("The file exceeds the 10MB edit limit."));
     }
 
-    let mut matches = content.match_indices(old_string);
-    let Some((start_idx, _)) = matches.next() else {
-        return Err(invalid(
-            "The target text to replace was not found in the file.",
-        ));
-    };
-    if matches.next().is_some() {
-        return Err(invalid(
-            "The target text is ambiguous and appears multiple times. Provide more unique surrounding context.",
-        ));
-    }
-
-    let new_capacity = content
-        .len()
-        .saturating_add(new_string.len())
-        .saturating_sub(old_string.len());
-    let mut output = String::with_capacity(new_capacity);
-    output.push_str(&content[..start_idx]);
-    output.push_str(new_string);
-    output.push_str(&content[start_idx + old_string.len()..]);
+    let (output, match_stage) = apply_resilient_edit(&content, old_string, new_string)
+        .map_err(|diagnostic| invalid(&diagnostic))?;
 
     file.seek(SeekFrom::Start(0))
         .map_err(|_| unavailable("Failed to rewind file for editing."))?;
@@ -475,6 +462,7 @@ pub fn edit_file(
     Ok(json!({
         "path": relative_path.to_string_lossy().replace('\\', "/"),
         "replacements": 1,
+        "matchStage": match_stage,
         "success": true,
     }))
 }

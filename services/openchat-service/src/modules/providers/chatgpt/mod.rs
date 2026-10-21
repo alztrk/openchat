@@ -642,6 +642,67 @@ impl ChatGptService {
         self.read_latest_usage(connection_id, workspace_id)
     }
 
+    pub async fn refresh_connection_plans(
+        &self,
+        cancellation: &mut watch::Receiver<bool>,
+    ) -> Result<Value, ServiceError> {
+        let connections = chatgpt_store::list_connections(&self.storage).map_err(database_error)?;
+        for connection in connections
+            .iter()
+            .filter(|connection| connection.auth_status == "active")
+        {
+            for workspace in &connection.workspaces {
+                if *cancellation.borrow() {
+                    return Err(request_cancelled());
+                }
+                let usage_result = tokio::select! {
+                    _ = cancellation.changed() => return Err(request_cancelled()),
+                    result = tokio::time::timeout(
+                        USAGE_REQUEST_TIMEOUT,
+                        self.authorized_json_request(
+                            "usage",
+                            Method::GET,
+                            format!("{CHATGPT_WHAM_BASE}/usage"),
+                            &connection.id,
+                            &workspace.external_id,
+                            None,
+                        ),
+                    ) => result,
+                };
+                if let Ok(Ok((_, usage))) = usage_result
+                    && let Some(plan_type) = usage
+                        .get("plan_type")
+                        .and_then(Value::as_str)
+                        .map(str::trim)
+                        .filter(|plan| {
+                            !plan.is_empty()
+                                && plan.len() <= 128
+                                && !plan.chars().any(char::is_control)
+                        })
+                {
+                    if workspace.is_selected || connection.workspaces.len() == 1 {
+                        chatgpt_store::update_profile(
+                            &self.storage,
+                            &connection.id,
+                            None,
+                            None,
+                            Some(plan_type),
+                        )
+                        .map_err(database_error)?;
+                    }
+                    chatgpt_store::update_workspace_plan(
+                        &self.storage,
+                        &connection.id,
+                        &workspace.id,
+                        Some(plan_type),
+                    )
+                    .map_err(database_error)?;
+                }
+            }
+        }
+        self.list_connections()
+    }
+
     async fn authorized_request(
         &self,
         method: Method,
@@ -868,7 +929,8 @@ impl ChatGptService {
                 false,
             )
         })?;
-        self.oauth.store_token_pair(&reference, &refreshed)?;
+        self.oauth
+            .store_token_pair(&reference, &refreshed.tokens)?;
         let old_reference =
             match self
                 .oauth
@@ -884,7 +946,37 @@ impl ChatGptService {
                     return Err(error);
                 }
             };
-        self.oauth.delete_token_pair(&old_reference)
+        let delete_result = self.oauth.delete_token_pair(&old_reference);
+        if let Some(identity) = refreshed.identity {
+            chatgpt_store::update_profile(
+                &self.storage,
+                connection_id,
+                identity.email.as_deref(),
+                identity.display_name.as_deref(),
+                identity.plan_type.as_deref(),
+            )
+            .map_err(database_error)?;
+            if let Ok(connections) = chatgpt_store::list_connections(&self.storage)
+                && let Some(connection) = connections.into_iter().find(|item| item.id == connection_id)
+            {
+                for refreshed_workspace in identity.workspaces {
+                    if let Some(plan_type) = refreshed_workspace.plan_type.as_deref()
+                        && let Some(stored_workspace) = connection
+                            .workspaces
+                            .iter()
+                            .find(|workspace| workspace.external_id == refreshed_workspace.id)
+                    {
+                        let _ = chatgpt_store::update_workspace_plan(
+                            &self.storage,
+                            connection_id,
+                            &stored_workspace.id,
+                            Some(plan_type),
+                        );
+                    }
+                }
+            }
+        }
+        delete_result
     }
 
     async fn connection_refresh_lock(&self, connection_id: &str) -> Arc<Mutex<()>> {

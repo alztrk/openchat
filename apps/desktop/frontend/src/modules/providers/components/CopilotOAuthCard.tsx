@@ -9,9 +9,11 @@ import {
   cancelCopilotOAuth,
   disconnectCopilotOAuth,
   loadCopilotOAuthStatus,
+  loadCopilotUsage,
   pollCopilotOAuth,
   startCopilotOAuth,
 } from '@/modules/providers/data/copilotOAuth';
+import { getCachedCopilotPlanType, subscribeToOAuthPlanUpdates } from '@/modules/providers/data/oauthPlanMonitor';
 import { LocalServiceError } from '@/platform/local-service';
 import { ProviderIcon } from './ProviderIcon';
 
@@ -37,6 +39,7 @@ type CardError =
 export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardProps) {
   const { t } = useTranslation();
   const [connection, setConnection] = useState<CopilotOAuthConnection | null>(null);
+  const [planType, setPlanType] = useState<string | null>(() => getCachedCopilotPlanType());
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [flow, setFlow] = useState<ActiveFlow | null>(null);
@@ -53,6 +56,14 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
     };
   }, []);
 
+  useEffect(() => {
+    return subscribeToOAuthPlanUpdates((summary) => {
+      if (isMountedRef.current) {
+        setPlanType(summary.copilotPlanType);
+      }
+    });
+  }, []);
+
   const loadStatus = useCallback(async () => {
     if (isMountedRef.current) setLoading(true);
     try {
@@ -60,6 +71,15 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
       if (!isMountedRef.current) return;
       setConnection(status.connection);
       setError(null);
+      if (status.connected && status.connection?.authStatus === 'active') {
+        void loadCopilotUsage()
+          .then((usage) => {
+            if (isMountedRef.current) setPlanType(usage.planType);
+          })
+          .catch(() => {});
+      } else {
+        setPlanType(null);
+      }
     } catch {
       if (isMountedRef.current) setError('copilotOAuthLoadFailed');
     } finally {
@@ -107,6 +127,11 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
             setFlow(null);
             setPollPaused(false);
             setError(null);
+            void loadCopilotUsage()
+              .then((usage) => {
+                if (isMountedRef.current) setPlanType(usage.planType);
+              })
+              .catch(() => {});
             try {
               await onChanged();
             } catch {
@@ -202,6 +227,7 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
       await disconnectCopilotOAuth();
       if (generation !== flowGenerationRef.current || !isMountedRef.current) return;
       setConnection(null);
+      setPlanType(null);
       await onChanged();
     } catch {
       if (generation !== flowGenerationRef.current || !isMountedRef.current) return;
@@ -275,6 +301,9 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
         <div className="flex flex-wrap items-center gap-2 border-t border-border px-5 py-4" role="status">
           <span className="text-sm font-medium">{connection.name ?? connection.login}</span>
           <span className="text-sm text-secondary-text">@{connection.login}</span>
+          {!isReauthRequired && planType ? (
+            <span className="text-sm text-secondary-text">· {t('accountPlan', { plan: planType })}</span>
+          ) : null}
           {isReauthRequired ? (
             <span className="inline-flex items-center gap-1 text-sm text-destructive">
               <CircleAlert aria-hidden="true" size={15} />

@@ -16,19 +16,19 @@ const OPENAI_OIDC_ISSUER: &str = "https://auth.openai.com";
 const ID_TOKEN_SIGNING_ALGORITHM: &str = "RS256";
 const MAX_ID_TOKEN_ISSUED_AT_FUTURE_SKEW_SECONDS: u64 = 5 * 60;
 
-pub(super) struct ExternalWorkspace {
-    pub(super) id: String,
-    pub(super) name: Option<String>,
-    pub(super) plan_type: Option<String>,
-    pub(super) is_default: bool,
+pub(crate) struct ExternalWorkspace {
+    pub(crate) id: String,
+    pub(crate) name: Option<String>,
+    pub(crate) plan_type: Option<String>,
+    pub(crate) is_default: bool,
 }
 
-pub(super) struct ParsedIdentity {
-    pub(super) email: Option<String>,
-    pub(super) display_name: Option<String>,
-    pub(super) plan_type: Option<String>,
-    pub(super) external_user_id: Option<String>,
-    pub(super) workspaces: Vec<ExternalWorkspace>,
+pub(crate) struct ParsedIdentity {
+    pub(crate) email: Option<String>,
+    pub(crate) display_name: Option<String>,
+    pub(crate) plan_type: Option<String>,
+    pub(crate) external_user_id: Option<String>,
+    pub(crate) workspaces: Vec<ExternalWorkspace>,
 }
 
 /// Extracts the account profile only after validating the OpenAI ID token claims.
@@ -45,12 +45,47 @@ pub(super) fn parse_identity(token: &str) -> Result<ParsedIdentity, ServiceError
     parse_identity_at(token, now)
 }
 
+/// Extracts updated account and workspace plan claims from a refreshed token response.
+///
+/// Prefer the refreshed `id_token` when present, falling back to validated OpenAI auth
+/// claims embedded in the refreshed `access_token` JWT when `id_token` is omitted.
+pub(super) fn parse_refreshed_identity(
+    id_token: Option<&str>,
+    access_token: &str,
+) -> Option<ParsedIdentity> {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+    parse_refreshed_identity_at(id_token, access_token, now)
+}
+
+fn parse_refreshed_identity_at(
+    id_token: Option<&str>,
+    access_token: &str,
+    now: u64,
+) -> Option<ParsedIdentity> {
+    if let Some(token) = id_token.filter(|token| !token.is_empty())
+        && let Ok(identity) = parse_identity_at(token, now)
+    {
+        return Some(identity);
+    }
+    parse_access_token_identity_at(access_token, now).ok()
+}
+
 /// Validates and parses an ID token against a caller-provided Unix timestamp.
 ///
 /// Taking `now` explicitly keeps expiration checks deterministic in tests.
 fn parse_identity_at(token: &str, now: u64) -> Result<ParsedIdentity, ServiceError> {
     let claims = decode_id_token_claims(token)?;
     validate_id_token_claims(&claims, now)?;
+    extract_identity_from_claims(&claims)
+}
+
+fn parse_access_token_identity_at(token: &str, now: u64) -> Result<ParsedIdentity, ServiceError> {
+    let claims = decode_id_token_claims(token)?;
+    validate_access_token_claims(&claims, now)?;
+    extract_identity_from_claims(&claims)
+}
+
+fn extract_identity_from_claims(claims: &Value) -> Result<ParsedIdentity, ServiceError> {
     let auth = claims
         .get("https://api.openai.com/auth")
         .and_then(Value::as_object)
@@ -187,6 +222,32 @@ fn validate_id_token_claims(claims: &Value, now: u64) -> Result<(), ServiceError
         return Err(account_info_error());
     }
 
+    validate_token_time_claims(claims, now)
+}
+
+/// Enforces issuer, client party, subject, and token-time constraints on an OpenAI access token.
+fn validate_access_token_claims(claims: &Value, now: u64) -> Result<(), ServiceError> {
+    if claims.get("iss").and_then(Value::as_str) != Some(OPENAI_OIDC_ISSUER) {
+        return Err(account_info_error());
+    }
+    let client_id = claims
+        .get("client_id")
+        .and_then(Value::as_str)
+        .or_else(|| claims.get("azp").and_then(Value::as_str));
+    if client_id != Some(super::CLIENT_ID) {
+        return Err(account_info_error());
+    }
+    if claims
+        .get("sub")
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+    {
+        return Err(account_info_error());
+    }
+    validate_token_time_claims(claims, now)
+}
+
+fn validate_token_time_claims(claims: &Value, now: u64) -> Result<(), ServiceError> {
     let expiration = claims
         .get("exp")
         .and_then(Value::as_u64)
@@ -218,7 +279,7 @@ mod tests {
     use super::super::CLIENT_ID;
     use super::{
         ID_TOKEN_SIGNING_ALGORITHM, MAX_ID_TOKEN_ISSUED_AT_FUTURE_SKEW_SECONDS, OPENAI_OIDC_ISSUER,
-        ParsedIdentity, parse_identity_at,
+        ParsedIdentity, parse_identity_at, parse_refreshed_identity_at,
     };
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
     use serde_json::{Value, json};
@@ -326,5 +387,23 @@ mod tests {
         assert!(parse_identity_at("header.payload", NOW).is_err());
         assert!(parse_identity_at(".payload.signature", NOW).is_err());
         assert!(parse_identity_at("header.payload.signature.extra", NOW).is_err());
+    }
+
+    #[test]
+    fn parses_refreshed_plan_from_id_token_or_access_token_claims() {
+        let mut id_claims = valid_claims();
+        id_claims["https://api.openai.com/auth"]["chatgpt_plan_type"] = json!("pro");
+        let refreshed_from_id =
+            parse_refreshed_identity_at(Some(&token(&id_claims)), "opaque-access-token", NOW)
+                .expect("extract identity from refreshed id_token");
+        assert_eq!(refreshed_from_id.plan_type.as_deref(), Some("pro"));
+
+        let mut access_claims = valid_claims();
+        access_claims["aud"] = json!("https://api.openai.com/v1");
+        access_claims["client_id"] = json!(CLIENT_ID);
+        access_claims["https://api.openai.com/auth"]["chatgpt_plan_type"] = json!("team");
+        let refreshed_from_access = parse_refreshed_identity_at(None, &token(&access_claims), NOW)
+            .expect("extract identity from refreshed access_token");
+        assert_eq!(refreshed_from_access.plan_type.as_deref(), Some("team"));
     }
 }

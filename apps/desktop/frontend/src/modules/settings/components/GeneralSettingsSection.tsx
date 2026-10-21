@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { SegmentedControl, Select } from '@/design-system';
+import { SegmentedControl, Select, Switch } from '@/design-system';
+import { useChatStore } from '@/modules/conversations/stores/chatStore';
+import { providerNameForModel } from '@/modules/conversations/components/composerUtils';
 import {
   changeLocalePreference,
   getLocalePreference,
@@ -57,6 +59,40 @@ export function GeneralSettingsSection({
   const [saveError, setSaveError] = useState<'language' | 'theme' | 'appearance' | 'composer' | null>(null);
   const submissionMode = useComposerPreferencesStore((state) => state.submissionMode);
   const setSubmissionMode = useComposerPreferencesStore((state) => state.setSubmissionMode);
+  const ghostTextEnabled = useComposerPreferencesStore((state) => state.ghostTextEnabled);
+  const setGhostTextEnabled = useComposerPreferencesStore((state) => state.setGhostTextEnabled);
+  const ghostTextModelKey = useComposerPreferencesStore((state) => state.ghostTextModelKey);
+  const setGhostTextModelKey = useComposerPreferencesStore((state) => state.setGhostTextModelKey);
+  const models = useChatStore((state) => state.models);
+
+  const ghostModelOptions = useMemo(() => {
+    const list = [{ value: 'auto', label: t('composerGhostTextModelAuto') }];
+    for (const model of models) {
+      list.push({
+        value: model.key,
+        label: `${providerNameForModel(model, t as never)}: ${model.displayName}`,
+      });
+    }
+    return list;
+  }, [models, t]);
+
+  const changeGhostTextEnabled = (value: boolean) => {
+    try {
+      setGhostTextEnabled(value);
+      setSaveError(null);
+    } catch {
+      setSaveError('composer');
+    }
+  };
+
+  const changeGhostTextModel = (value: string) => {
+    try {
+      setGhostTextModelKey(value);
+      setSaveError(null);
+    } catch {
+      setSaveError('composer');
+    }
+  };
 
   const changeLocale = async (preference: LocalePreference) => {
     try {
@@ -210,6 +246,24 @@ export function GeneralSettingsSection({
           value={submissionMode}
         />
       </SettingRow>
+      <SettingRow description={t('composerGhostTextEnabledDescription')} label={t('composerGhostTextEnabled')}>
+        <Switch
+          aria-label={t('composerGhostTextEnabled')}
+          checked={ghostTextEnabled}
+          onCheckedChange={changeGhostTextEnabled}
+        />
+      </SettingRow>
+      {ghostTextEnabled ? (
+        <SettingRow description={t('composerGhostTextModelDescription')} label={t('composerGhostTextModel')}>
+          <Select
+            label={t('composerGhostTextModel')}
+            onChange={(event) => changeGhostTextModel(event.target.value)}
+            options={ghostModelOptions}
+            value={ghostTextModelKey}
+            visuallyHiddenLabel
+          />
+        </SettingRow>
+      ) : null}
       {saveError ? (
         <p className="text-sm text-destructive" role="alert">
           {t(errorKey)}

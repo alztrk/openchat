@@ -56,7 +56,7 @@ export const providerTranslationKeys: Partial<Record<string, TranslationKey>> = 
 
 export const imageAttachmentExtensions = '.png,.jpg,.jpeg,.webp,.gif';
 export const textAttachmentExtensions =
-  '.txt,.md,.csv,.json,.jsonl,.xml,.html,.css,.js,.jsx,.ts,.tsx,.dart,.rs,.py,.go,.java,.kt,.swift,.c,.h,.cpp,.hpp,.cs,.sh,.ps1,.yaml,.yml,.toml,.ini,.sql,.log';
+  '.pdf,.docx,.xlsx,.txt,.md,.csv,.json,.jsonl,.xml,.html,.htm,.css,.js,.jsx,.ts,.tsx,.dart,.rs,.py,.go,.java,.kt,.swift,.c,.h,.cpp,.hpp,.cs,.sh,.ps1,.yaml,.yml,.toml,.ini,.sql,.log';
 
 export function effectiveContextWindow(model: ChatModel, limits: Record<string, number>): number | null {
   const configured = limits[modelRouteKey(model)];

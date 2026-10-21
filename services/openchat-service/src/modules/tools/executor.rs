@@ -243,8 +243,6 @@ pub struct ToolExecutor {
     tool_activities: Mutex<Vec<ToolActivity>>,
     allowed_tool_names: HashSet<String>,
     permission_rules: ToolPermissionRules,
-    mistral_search: Option<super::mistral_search::MistralSearchConfig>,
-    gemini_search: Option<super::gemini_search::GeminiSearchConfig>,
     #[cfg(windows)]
     project_tools: Vec<super::project_tools::ProjectTool>,
     #[cfg(windows)]
@@ -327,27 +325,11 @@ impl ToolExecutor {
             tool_activities: Mutex::new(Vec::new()),
             allowed_tool_names: allowed_tool_names.into_iter().collect(),
             permission_rules,
-            mistral_search: None,
-            gemini_search: None,
             #[cfg(windows)]
             project_tools: Vec::new(),
             #[cfg(windows)]
             mcp_registry: None,
         }
-    }
-
-    pub(crate) fn with_mistral_search(mut self, api_key: &str, model_id: &str) -> Self {
-        self.mistral_search = Some(super::mistral_search::MistralSearchConfig::new(
-            api_key, model_id,
-        ));
-        self
-    }
-
-    pub(crate) fn with_gemini_search(mut self, api_key: &str, model_id: &str) -> Self {
-        self.gemini_search = Some(super::gemini_search::GeminiSearchConfig::new(
-            api_key, model_id,
-        ));
-        self
     }
 
     #[cfg(windows)]
@@ -1000,28 +982,8 @@ impl ToolExecutor {
                     json!({"error": {"code": "subagent_unavailable", "message": "Delegated analysis is unavailable for this provider route."}})
                 }
             }
-            ToolOperation::WebSearch { query, limit } => {
-                if let Some(config) = self.gemini_search.as_ref() {
-                    match super::gemini_search::execute(config, query, *limit, cancellation).await {
-                        Ok(output) => output,
-                        Err(message) => {
-                            json!({"error":{"code":"gemini_search_failed","message":message}})
-                        }
-                    }
-                } else if let Some(config) = self.mistral_search.as_ref() {
-                    match super::mistral_search::execute(config, query, *limit, cancellation).await
-                    {
-                        Ok(output) => output,
-                        Err(message) => json!({
-                            "error": {
-                                "code": "mistral_search_failed",
-                                "message": message,
-                            }
-                        }),
-                    }
-                } else {
-                    execute_model_tool(&prepared, &snapshot.conversation_id).await
-                }
+            ToolOperation::WebSearch { .. } => {
+                execute_model_tool(&prepared, &snapshot.conversation_id).await
             }
             #[cfg(windows)]
             ToolOperation::ProjectTool {

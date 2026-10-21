@@ -12,6 +12,7 @@ import {
   loadCopilotOAuthStatus,
   loadCopilotUsage,
 } from '@/modules/providers/data/copilotOAuth';
+import { subscribeToOAuthPlanUpdates } from '@/modules/providers/data/oauthPlanMonitor';
 import { LocalServiceError } from '@/platform/local-service';
 
 interface CopilotUsageCardProps {
@@ -78,7 +79,15 @@ export function CopilotUsageCard({ onNavigateToConnections, refreshSequence }: C
   // biome-ignore lint/correctness/useExhaustiveDependencies: refreshSequence invalidates the quota response after an explicit refresh.
   useEffect(() => {
     void load();
+    const unsubscribe = subscribeToOAuthPlanUpdates((summary) => {
+      if (snapshotRef.current && snapshotRef.current.planType !== summary.copilotPlanType) {
+        const nextSnapshot = { ...snapshotRef.current, planType: summary.copilotPlanType };
+        snapshotRef.current = nextSnapshot;
+        setSnapshot(nextSnapshot);
+      }
+    });
     return () => {
+      unsubscribe();
       latestRequest.current += 1;
     };
   }, [load, refreshSequence]);

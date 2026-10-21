@@ -77,6 +77,7 @@ pub(crate) fn uses_saved_api_key(provider_id: &str) -> bool {
 pub(crate) fn requires_saved_api_key(provider_id: &str) -> bool {
     provider_id == "chatgpt_api"
         || (provider_id != "opencode"
+            && provider_id != "kilo"
             && !is_custom_provider_id(provider_id)
             && crate::openai_compatible::api_compatible_provider(provider_id).is_some())
 }

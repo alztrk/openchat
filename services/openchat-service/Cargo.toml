@@ -58,3 +58,14 @@ windows-sys = { version = "=0.61.2", features = [
     "Win32_System_Threading",
     "Win32_System_WindowsProgramming",
 ] }
+
+[profile.dev]
+debug = "limited"
+incremental = false
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.release]
+debug = 0
+strip = "debuginfo"

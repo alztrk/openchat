@@ -159,19 +159,18 @@ These bullets describe code present in the repository. They do not mean that eve
 
 **Exit criteria:** repository state is visible without parsing arbitrary shell output; named tasks have bounded execution and clear exit status; isolated work can be reviewed before it is retained.
 
-### 4. Add usage and model evaluation
+### 4. Add usage tracking and cost visibility
 
-**Status: planned.** Help users compare actual provider and local-model behavior and manage spending.
+**Status: planned.** Help users track actual provider and local-model usage and manage spending.
 
 - Store per-request provider-reported input, output, reasoning, cache-read, and cache-write counts when available, plus cost when known, first-token latency, total latency, throughput, retries, and tool outcomes. Normalize provider fields while retaining their source and avoiding double-counting cache tokens in total input.
 - Attribute usage to connection/account, workspace, conversation, project, model, run, and subagent. Show plan quotas and API usage limits only when the provider supplies them; include freshness and reset information when available.
 - Show actual provider usage separately from estimated context use and cost. Keep cached-token cost separate from plan quota semantics, which vary by provider and authentication route. Represent missing usage, pricing, or quota data as unavailable rather than inferring it.
 - Calculate cache-hit ratios from provider-reported usage using that provider's documented denominator. Show the ratio's source and aggregation window, and avoid direct comparisons when providers or harnesses use different denominators or session scopes.
 - Show usage with budget thresholds and limit warnings, including cache hit/write counts and effective cost where the provider reports enough data to calculate them.
-- Add an opt-in evaluation workspace that replays local fixtures or user-selected prompts and compares response quality, latency, cost, tool success, cancellation, and context handling.
 - Add local model benchmarks and memory estimates while distinguishing measured values from estimates.
 
-**Exit criteria:** usage records identify their connection, provider/model, run, and whether values are reported or estimated; cache reads/writes are not double-counted; unavailable fields remain explicit; evaluations are separated from ordinary conversations and require clear opt-in before sending billable requests.
+**Exit criteria:** usage records identify their connection, provider/model, run, and whether values are reported or estimated; cache reads/writes are not double-counted; and unavailable fields remain explicit.
 
 ### 5. Add message branches and durable runs
 
@@ -211,16 +210,14 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 8. Add provider-native API capabilities
 
-**Status: partially implemented in source.** Anthropic Claude Messages API adapter is implemented (`/messages` route, header-based auth, streaming, tools, vision, and reasoning). Public OpenAI Responses API and Mistral hosted search remain planned.
+**Status: partially implemented in source.** Anthropic Claude Messages API adapter is implemented (`/messages` route, header-based auth, streaming, tools, vision, and reasoning). Public OpenAI Responses API remains planned. All providers use OpenChat's built-in local `web_search` and `read_url_content` system rather than provider-hosted search tools.
 
-- Add the public OpenAI Responses API for OpenAI API-key connections, including streaming, function calling, and optional hosted tools such as web search. Keep this route distinct from ChatGPT OAuth and its private Codex endpoints.
+- Add the public OpenAI Responses API for OpenAI API-key connections, including streaming and function calling. Keep this route distinct from ChatGPT OAuth and its private Codex endpoints.
 - Evaluate Anthropic Messages and xAI Responses as separate provider adapters, with model catalogs and capabilities obtained from their documented APIs. Anthropic Messages adapter is implemented in source and covered by deterministic unit tests.
-- Evaluate native Mistral APIs for provider-hosted tools that its compatibility endpoint does not expose. Add only documented features that fit the shared request and event contract.
 - Treat prompt caching as a provider/model/runtime capability. Keep reusable instructions and tool schemas stable at the start of requests; add documented cache breakpoints or keys only in adapters that support them. Adapters can shape cache eligibility, but the provider/runtime owns cache storage and actual hits, and a marker or key does not guarantee reuse.
-- Label provider-hosted tools, the information sent to them, citations or returned sources, and any provider-side billing. Never enable these tools implicitly when a user selects a model.
 - Handle streaming, cancellation, tool-call errors, usage, context limits, prompt-cache reporting, and unavailable capabilities consistently across every adapter.
 
-**Exit criteria:** each released native adapter passes the provider-specific account checks and shared streaming/tool/error contract; provider-hosted tools require explicit enablement and clearly describe their data and cost behavior.
+**Exit criteria:** each released native adapter passes the provider-specific account checks and shared streaming/tool/error contract.
 
 ### 9. Build a searchable conversation library
 
@@ -235,7 +232,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 10. Add citations and request-data visibility
 
-**Status: implemented in source; live-provider validation remains open.** Built-in web-search and page-read results include local source IDs, retrieval times, and source cards linked from valid assistant citations. ChatGPT OAuth Responses URL annotations, OpenAI API-key Chat Completions URL annotations, OpenCode Responses API completed-output URL annotations, and OpenRouter URL citation annotations are stored per assistant message and linked to source cards with provider-supplied titles and URLs. Valid provider text end offsets place source links after the cited text; missing or invalid offsets place links at the end of the response. No retrieval time is shown because the responses do not provide one. Groq URL citations are stored as provider-native sources. The Gemini stream parser recognizes Google `groundingMetadata` web chunks and maps byte-based grounding segment offsets to visible source anchors when such metadata is present. Approved Gemini API-key `web_search` tool calls use native `generateContent` Google Search grounding, store provider-native grounding sources and support text, and render returned Search entry-point attribution. The full Gemini answer route remains OpenAI-compatible Chat Completions. Mistral API-key conversations use the provider's Conversations API hosted search for approved `web_search` calls. Provider-native results are linked from inline citations and use the local tool approval/activity lifecycle. Request records keep a privacy-preserving manifest of message-role counts, image/tool-result counts, instruction byte counts/source categories, tool names, cache-control field names, included message IDs, archived message IDs, the compaction boundary, and bounded attachment name/type/ID metadata. Exact request contents and attachment bytes are not retained. Usage request details and CSV exports include the durable run ID when available, including child-run attribution. Live Mistral and Gemini account validation remains outstanding; this requires configured accounts and is not a credential-free source or CI check. Other provider formats are connected only when their documented response shapes are supported by deterministic parser tests.
+**Status: implemented in source; live-provider validation remains open.** Built-in web-search and page-read results include local source IDs, retrieval times, and source cards linked from valid assistant citations. All providers execute `web_search` and `read_url_content` through OpenChat's local web tool engine. ChatGPT OAuth Responses URL annotations, OpenAI API-key Chat Completions URL annotations, OpenCode Responses API completed-output URL annotations, and OpenRouter URL citation annotations are stored per assistant message and linked to source cards with provider-supplied titles and URLs. Valid provider text end offsets place source links after the cited text; missing or invalid offsets place links at the end of the response. No retrieval time is shown because the responses do not provide one. Groq URL citations are stored as provider-native sources. The Gemini stream parser recognizes Google `groundingMetadata` web chunks and maps byte-based grounding segment offsets to visible source anchors when such metadata is present. Request records keep a privacy-preserving manifest of message-role counts, image/tool-result counts, instruction byte counts/source categories, tool names, cache-control field names, included message IDs, archived message IDs, the compaction boundary, and bounded attachment name/type/ID metadata. Exact request contents and attachment bytes are not retained. Usage request details and CSV exports include the durable run ID when available, including child-run attribution. Other provider formats are connected only when their documented response shapes are supported by deterministic parser tests.
 
 - Store web and provider-returned sources as structured records linked to the response that used them.
 - Add citation anchors in assistant output and let users open the source card with title, domain, URL, and retrieval time.
@@ -245,14 +242,12 @@ These bullets describe code present in the repository. They do not mean that eve
 
 **Exit criteria:** displayed citations resolve to stored source records; the user can inspect the request route, included data, and reported usage for a response; missing provenance or provider visibility is shown as unavailable.
 
-### 11. Expand document and media input
+### 11. Expand document input
 
-**Status: planned.** Add common research and work documents with bounded parsing and source location tracking.
+**Status: implemented in source and covered by deterministic tests.** Common research and work documents (PDF, DOCX, XLSX, CSV, and HTML) are extracted locally with bounded parsing and source location tracking (page, sheet, cell/row, and section references). Audio, video, and image OCR are excluded by product decision.
 
-- Evaluate PDF, DOCX, and XLSX extraction, including page, sheet, and cell references where available.
-- Add OCR for image-only documents and opt-in audio transcription with timestamps and speaker labels when supported.
-- Evaluate video input through bounded frame sampling and transcript alignment.
-- Keep extracted content local by default where possible; show size, extraction status, and which provider receives the resulting content.
+- Extract text from PDF, DOCX, XLSX, CSV, and HTML documents locally, including page, sheet, and cell/row references where available.
+- Keep extracted content local by default; show size, extraction status, and which provider receives the resulting content.
 - Apply archive-bomb, malformed-file, memory, time, and output-size limits to parsers.
 
 **Exit criteria:** supported files produce reviewable extracted text with source locations; malformed, oversized, or unsupported files show a specific error and recovery path.
@@ -707,22 +702,23 @@ remains out of scope under the current product decision.
 
 ### 30. Add visual multi-file diff inspection with manual per-file approval in side panel
 
-**Status: planned, P1.** Enhance developer control during code modifications by introducing an explicit right-side review panel where every file change requires granular user approval.
+**Status: implemented in source and covered by deterministic tests.** Enhance developer control during code modifications by introducing an explicit right-side review panel where every file change supports granular user approval (`Approve` / `Reject`), batch actions (`Approve all` / `Reject all`), unified and split diff views, and hunk-level rejection.
 
 - Provide a dedicated right-side changes panel in the UI displaying all staged and generated file modifications resulting from an agent turn.
-- Require manual, per-file user confirmation (`Approve` / `Reject`) before any AI-generated change is permanently committed to disk or downstream build steps.
-- Enable selective hunk staging within the side panel, allowing users to inspect unified/split diffs and approve specific change blocks while discarding others.
+- Require manual, per-file user confirmation (`Approve` / `Reject`) before any AI-generated change is finalized in the baseline or reverted on disk.
+- Enable selective hunk rejection within the side panel, allowing users to inspect unified/split diffs and approve specific change blocks while discarding others.
 
-**Exit criteria:** no multi-file AI modification is applied without explicit per-file user consent; the right-side review panel accurately renders file-level diffs; and rejected files or hunks leave target workspaces completely unmodified.
+**Exit criteria:** no multi-file AI modification is finalized without explicit per-file user consent; the right-side review panel accurately renders file-level diffs; and rejected files or hunks restore target workspace lines cleanly.
 
 ### 31. Add multi-chat tabs and split-view workspace
 
-**Status: planned, P1.** Enable multitasking across independent conversations and side-by-side terminal or diff monitoring.
+**Status: implemented in source and covered by deterministic tests.** Enable side-by-side chat workspace with direct sidebar drag-and-drop.
 
-- Support multiple concurrent conversation tabs so users can switch between ongoing tasks without interrupting active generation or subagent runs.
-- Add an adjustable split-view layout allowing the main chat thread to sit alongside live diff panels, terminal outputs, or secondary conversations.
+- Allow users to drag any conversation from the sidebar onto the chat workspace to open it (as primary if no conversation is open, or as secondary side-by-side chat if a primary chat is active, capped at 2 concurrent chats).
+- Render the secondary split chat pane with the exact same component hierarchy, design tokens, typography, message list, and composer card styling as the primary chat view.
+- Support an adjustable split-view ratio (30% to 70%) with pane swapping, promoting to primary, and header toggle actions.
 
-**Exit criteria:** conversation state persists cleanly across active tabs; split views resize smoothly without breaking composer layout; and background tabs receive unobtrusive completion indicators.
+**Exit criteria:** dragging a conversation from the sidebar opens it as primary or secondary; secondary pane matches primary design and composer capabilities; at most 2 chats open side by side; and split view resizes smoothly.
 
 ### 32. Migrate full conversation listing to sidebar navigation
 
@@ -747,14 +743,14 @@ remains out of scope under the current product decision.
 
 ### 34. Add embedded browser tab in side panel for agent navigation and visual verification
 
-**Status: planned, P1.** Integrate an embedded web browser directly into the right-side inspection panel alongside file changes.
+**Status: implemented in source.** Integrate an embedded web browser directly into the right-side inspection panel alongside file changes, using an isolated session that never reads personal browser cookies and bridges to the user's OS default browser when requested.
 
-- Provide a dedicated Browser tab in the right-side workspace panel, allowing live website navigation, local dev server rendering, and real-time frontend verification.
-- Expose model-callable browser tools enabling the agent to navigate to URLs, scroll, click interactive elements, and capture high-resolution screenshots.
-- Support automated visual feedback loops: the agent can inspect rendered web pages, detect layout flaws or console errors, and perform self-corrections autonomously.
+- Provide a dedicated Browser tab in the right-side workspace panel, allowing live website navigation, local dev server rendering (`localhost`), and real-time frontend verification.
+- Provide an isolated cookie/session mode selector (stateless ephemeral vs. isolated OpenChat profile) with one-click session clearing, plus a direct action to launch URLs in the user's OS default browser (`browser.open_default`).
+- Include a local page inspector (`browser.inspect_url`) that extracts headings, links, HTTP status, and Markdown content even when a target site sends `X-Frame-Options` or restrictive CSP frame headers.
 - Enforce strict network and iframe policies so embedded browsing honors the application's outbound security boundaries.
 
-**Exit criteria:** the embedded browser renders smoothly within the right-side panel; the agent can autonomously browse, interact with DOM elements, and capture screenshots; and network boundaries prevent prohibited egress.
+**Exit criteria:** the embedded browser renders smoothly within the right-side panel; users and agents can inspect DOM structure and launch the default browser cleanly; and personal browser cookies remain strictly isolated.
 
 ### 35. Add native computer use automation for desktop apps, mouse, and keyboard
 
@@ -769,7 +765,7 @@ remains out of scope under the current product decision.
 
 ### 36. Add smart ghost-text suggestions with one-key auto-completion
 
-**Status: planned, P1.** Accelerate conversational flow by predicting contextual follow-ups directly in the composer.
+**Status: implemented in source and covered by deterministic tests.** Accelerate conversational flow by predicting contextual follow-ups directly in the composer.
 
 - Display context-aware placeholder suggestions ("ghost text") in the message input field based on the assistant's latest response (e.g. "Run tests", "Apply changes", "Explain details").
 - Enable instant insertion and submission when the user presses `Tab` or `Shift+Enter`, clearing the ghost text immediately when the user starts typing custom text.
@@ -814,7 +810,7 @@ remains out of scope under the current product decision.
 
 ### 41. Add live streaming interruption and mid-generation steering (Live Steer & Interrupt)
 
-**Status: planned, P1.** Enable users to course-correct the assistant immediately without waiting for a flawed generation to finish.
+**Status: implemented in source and covered by deterministic tests.** Enable users to course-correct the assistant immediately without waiting for a flawed generation to finish.
 
 - Keep the message input composer unlocked and active while the assistant is streaming an answer.
 - Allow the user to submit an immediate correction (e.g. "Wait, use PostgreSQL instead"), automatically halting the current generation turn and feeding the correction into a seamless follow-up turn.
@@ -831,23 +827,14 @@ remains out of scope under the current product decision.
 
 **Exit criteria:** new chats update from default labels to descriptive titles within the first few turns; background titling never delays response streaming; and manually renamed titles are never overwritten.
 
-### 43. Add image generation and visual editing studio
-
-**Status: planned, P2.** Enable users to generate, modify, and export visual assets directly within chat and side panels.
-
-- Support text-to-image prompts using multimodal cloud providers and local diffusion runtimes.
-- Provide inline preview, download, and variations (aspect ratio, style refinement, and visual editing) with images stored locally as attachments.
-
-**Exit criteria:** generated images render inline with clear download options; prompt history is preserved; and assets are saved in the local profile attachments folder.
-
 ### 44. Add conversation folders and priority pinning
 
-**Status: planned, P1.** Enable custom hierarchical organization of conversation histories in the sidebar.
+**Status: implemented in source.** Enable custom hierarchical organization of conversation histories in the sidebar.
 
 - Allow users to create custom folders (e.g. Work, Personal, Research) and drag-and-drop or move conversations into folders.
 - Support pinning high-priority conversations to the top of the sidebar above folder hierarchies.
 
-**Exit criteria:** folders and pin states persist cleanly in SQLite; moving chats between folders is transactional; and the sidebar hierarchy scales smoothly.
+**Exit criteria:** folders and pin states persist cleanly; moving chats between folders is transactional; and the sidebar hierarchy scales smoothly.
 
 ### 45. Add configurable composer send key bindings
 
@@ -860,7 +847,7 @@ remains out of scope under the current product decision.
 
 ### 46. Add completion chimes and audio feedback settings
 
-**Status: planned, P2.** Provide non-intrusive sound notifications when long-running responses or tasks complete.
+**Status: implemented in source and covered by deterministic tests.** Provide non-intrusive sound notifications when long-running responses or tasks complete.
 
 - Offer an optional, subtle completion chime when an assistant response finishes, particularly when the application is unfocused or running in the background.
 - Include a distinct warning tone for unexpected generation errors or task blockers.
@@ -880,11 +867,11 @@ remains out of scope under the current product decision.
 
 ### 48. Add hashline edits and drift-resilient file modification engine
 
-**Status: planned, P1.** Eliminate code patch fragility caused by conventional string-matching and whitespace drift.
+**Status: implemented in source and covered by deterministic tests.** Eliminate code patch fragility caused by conventional string-matching and whitespace drift.
 
-- Upgrade the core `edit_file` tool to support hashline targeting (compact hash tags per line or fuzzy line anchors) similar to Aider and Oh My Pi, preventing failed edits when models produce minor indentation or whitespace variations.
-- Introduce line-drift tolerance and multi-stage fallback matching: exact match first, normalized whitespace match second, and hashline anchor resolution third before returning an edit failure.
-- Provide structured conflict feedback to the agent when target lines cannot be resolved, identifying the exact mismatch and surrounding file context to allow instant retry.
+- Upgrade `read_file` to emit deterministic `hashlines` (`"{line}:{hash}| {text}"` using a 4-hex FNV-1a line content digest) alongside backwards-compatible `lines`, and upgrade `edit_file` to strip and validate hashline anchors automatically.
+- Introduce line-drift tolerance and 4-stage fallback matching (`exact`, `normalized_whitespace`, `hashline_anchor`, and `indentation_drift` with automatic baseline indentation re-alignment) before returning an edit failure.
+- Provide structured conflict feedback (`hashline_conflict` with `line:hash| text` snippet preview) to the agent when target lines cannot be resolved, identifying the exact mismatch and surrounding file context without modifying the target file.
 
 **Exit criteria:** file edits succeed reliably across minor model formatting drift; hashline resolution avoids corrupting surrounding lines; and failed replacements return precise line diagnostics without modifying the target file.
 

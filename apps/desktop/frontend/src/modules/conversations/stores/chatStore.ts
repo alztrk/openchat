@@ -54,6 +54,7 @@ export interface ChatSendOptions {
   fastMode?: boolean;
   excludedAssistantMessageId?: string;
   userMessageAlreadySaved?: boolean;
+  conversationId?: string | null;
 }
 
 export interface ChatToolPermissionRequest {
@@ -145,6 +146,7 @@ export interface ChatState {
   selectedModelKey: string | null;
   isLoadingMessages: boolean;
   isSending: boolean;
+  sendingConversationId: string | null;
   activeOperation: ServiceOperation | null;
   modelError: boolean;
   errorCode: ChatErrorCode | null;
@@ -254,6 +256,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   selectedModelKey: null,
   isLoadingMessages: false,
   isSending: false,
+  sendingConversationId: null,
   activeOperation: null,
   modelError: false,
   errorCode: null,

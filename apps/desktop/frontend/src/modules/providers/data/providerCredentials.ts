@@ -18,6 +18,7 @@ export const compatibleProviderIds = [
   'deepinfra',
   'dashscope',
   'cohere',
+  'kilo',
 ] as const;
 
 /** A supported provider whose API key is stored by the native host. */

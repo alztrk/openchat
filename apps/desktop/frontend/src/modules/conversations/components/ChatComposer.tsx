@@ -10,12 +10,8 @@ import { ChatSlashCommandMenu } from './ChatSlashCommandMenu';
 import { ChatSlashModelMenu } from './ChatSlashModelMenu';
 import { ComposerFeedbackList, ComposerModelBanner } from './ComposerAlerts';
 import { ComposerContextRow } from './ComposerContextRow';
-import {
-  effectiveContextWindow,
-  imageAttachmentExtensions,
-  providerNameForModel,
-  textAttachmentExtensions,
-} from './composerUtils';
+import { effectiveContextWindow, imageAttachmentExtensions, providerNameForModel, textAttachmentExtensions } from './composerUtils';
+import { getSidebarDraggingConversationId } from '@/modules/conversations/data/sidebarPreferences';
 import { ModelPicker } from './ModelPicker';
 import { PendingAttachmentGallery } from './PendingAttachmentGallery';
 import { useComposerState } from './useComposerState';
@@ -26,6 +22,7 @@ export interface ChatComposerProps {
   onBeforeSend?: (providerId: string, providerName: string) => Promise<boolean>;
   isTemporaryChat?: boolean;
   droppedFiles?: { id: number; files: File[] } | null;
+  targetConversationId?: string | null;
 }
 
 export function ChatComposer({
@@ -34,6 +31,7 @@ export function ChatComposer({
   onBeforeSend,
   onOpenSettings,
   onRequestTemporaryExit,
+  targetConversationId,
 }: ChatComposerProps) {
   const { t } = useTranslation();
   const formRef = useRef<HTMLFormElement>(null);
@@ -83,12 +81,14 @@ export function ChatComposer({
     isSendBlocked,
     isSending,
     submissionMode,
+    ghostTextSuggestion,
   } = useComposerState({
     droppedFiles,
     isTemporaryChat,
     onBeforeSend,
     onRequestTemporaryExit,
     formRef,
+    targetConversationId,
   });
 
   const models = useChatStore((state) => state.models);
@@ -121,8 +121,10 @@ export function ChatComposer({
   const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
   const contextProjectId = activeConversation?.projectId ?? pendingProjectId;
   const contextToolPermissionMode = composerMode === 'plan' ? 'plan' : selectedPermissionMode;
-  const placeholderHint =
-    submissionMode === 'ctrlEnter'
+  const isTargetPlaceholder = targetConversationId === null;
+  const placeholderHint = isTargetPlaceholder
+    ? t('splitViewEmptyHint')
+    : submissionMode === 'ctrlEnter'
       ? t('composerPlaceholderCtrlEnter')
       : t('composerPlaceholderEnter');
   const sendTooltip =
@@ -133,21 +135,37 @@ export function ChatComposer({
   const [isComposerDraggingOver, setIsComposerDraggingOver] = useState(false);
   const composerDragDepthRef = useRef(0);
 
+  const isComposerConversationDrag = (event: React.DragEvent) => {
+    if (getSidebarDraggingConversationId() !== null) return true;
+    const types = Array.from(event.dataTransfer?.types ?? []);
+    return (
+      types.includes('application/x-openchat-conversation') ||
+      types.includes('text/plain')
+    );
+  };
+
   const handleComposerDragEnter = (event: React.DragEvent) => {
-    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+    const isFiles = Array.from(event.dataTransfer?.types ?? []).includes('Files');
+    const isConv = isComposerConversationDrag(event);
+    if (!isFiles && !isConv) return;
     event.preventDefault();
-    composerDragDepthRef.current += 1;
-    setIsComposerDraggingOver(true);
+    if (isFiles) {
+      composerDragDepthRef.current += 1;
+      setIsComposerDraggingOver(true);
+    }
   };
 
   const handleComposerDragOver = (event: React.DragEvent) => {
-    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+    const isFiles = Array.from(event.dataTransfer?.types ?? []).includes('Files');
+    const isConv = isComposerConversationDrag(event);
+    if (!isFiles && !isConv) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
   };
 
   const handleComposerDragLeave = (event: React.DragEvent) => {
-    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
+    const isFiles = Array.from(event.dataTransfer?.types ?? []).includes('Files');
+    if (!isFiles) return;
     event.preventDefault();
     composerDragDepthRef.current -= 1;
     if (composerDragDepthRef.current <= 0) {
@@ -157,14 +175,21 @@ export function ChatComposer({
   };
 
   const handleComposerDrop = (event: React.DragEvent) => {
-    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return;
-    event.preventDefault();
-    event.stopPropagation();
-    composerDragDepthRef.current = 0;
-    setIsComposerDraggingOver(false);
-    const files = Array.from(event.dataTransfer.files ?? []);
-    if (files.length > 0) {
-      void addAttachments(files);
+    const isFiles = Array.from(event.dataTransfer?.types ?? []).includes('Files');
+    if (isFiles) {
+      event.preventDefault();
+      event.stopPropagation();
+      composerDragDepthRef.current = 0;
+      setIsComposerDraggingOver(false);
+      const files = Array.from(event.dataTransfer.files ?? []);
+      if (files.length > 0) {
+        void addAttachments(files);
+      }
+      return;
+    }
+    if (isComposerConversationDrag(event)) {
+      event.preventDefault();
+      // Allow bubble to workspace
     }
   };
 
@@ -262,12 +287,24 @@ export function ChatComposer({
               />
             ) : null}
             {messageDraft.length === 0 ? (
-              <span
-                aria-hidden="true"
-                className="pointer-events-none absolute left-0 top-0 text-composer-input text-secondary-text"
-              >
-                {placeholderHint}
-              </span>
+              ghostTextSuggestion ? (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-0 top-0 flex items-center gap-1.5 text-composer-input text-secondary-text/80 select-none"
+                >
+                  <kbd className="rounded border border-border bg-surface px-1.5 py-0.5 text-2xs font-semibold text-text shadow-sm">
+                    Tab
+                  </kbd>
+                  <span className="italic">{ghostTextSuggestion}</span>
+                </span>
+              ) : (
+                <span
+                  aria-hidden="true"
+                  className="pointer-events-none absolute left-0 top-0 text-composer-input text-secondary-text"
+                >
+                  {placeholderHint}
+                </span>
+              )
             ) : null}
             <textarea
               aria-activedescendant={
@@ -290,8 +327,8 @@ export function ChatComposer({
               role="combobox"
               aria-expanded={slashModelMenuOpen || slashCommands.length > 0}
               aria-label={placeholderHint}
-              className="composer-message-input w-full bg-transparent text-composer-input text-text outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
-              disabled={pickerModels.length === 0 || isSending || isUpdatingConversationModel}
+              className="composer-message-input w-full bg-transparent text-composer-input text-text outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-50"
+              disabled={isTargetPlaceholder || pickerModels.length === 0 || isUpdatingConversationModel}
               id="chat-message"
               onChange={(event) => {
                 const input = event.currentTarget;
@@ -313,7 +350,7 @@ export function ChatComposer({
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <Button
                 aria-label={t('attachmentChooseFile')}
-                disabled={pickerModels.length === 0 || isSending || isReadingAttachments}
+                disabled={isTargetPlaceholder || pickerModels.length === 0 || isSending || isReadingAttachments}
                 onClick={() => filePickerRef.current?.click()}
                 size="icon"
                 type="button"
@@ -371,7 +408,7 @@ export function ChatComposer({
               />
               <ToolPermissionModeSelector onModeChange={setSelectedPermissionMode} />
             </div>
-            {isSending ? (
+            {isSending && messageDraft.trim().length === 0 ? (
               <Button
                 aria-label={t('stop')}
                 className="size-10"
@@ -383,9 +420,10 @@ export function ChatComposer({
               </Button>
             ) : (
               <Button
-                aria-label={sendTooltip}
+                aria-label={isSending ? t('composerSteerResponse') : sendTooltip}
                 className="size-10"
                 disabled={
+                  isTargetPlaceholder ||
                   pickerModels.length === 0 ||
                   !selectedModelKey ||
                   messageDraft.trim().length === 0 ||
@@ -394,7 +432,7 @@ export function ChatComposer({
                   isSendBlocked
                 }
                 size="icon"
-                title={sendTooltip}
+                title={isSending ? t('composerSteerResponse') : sendTooltip}
                 type="submit"
                 variant="primary"
               >

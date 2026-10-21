@@ -616,7 +616,15 @@ fn checked_attachment_subdirectory(
 }
 
 fn is_text_mime_type(mime_type: &str) -> bool {
-    mime_type.starts_with("text/") || matches!(mime_type, "application/json" | "application/xml")
+    mime_type.starts_with("text/")
+        || matches!(
+            mime_type,
+            "application/json"
+                | "application/xml"
+                | "application/pdf"
+                | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                | "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
 }
 
 fn has_valid_image_signature(mime_type: &str, bytes: &[u8]) -> bool {

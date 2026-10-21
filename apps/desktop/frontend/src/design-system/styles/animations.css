@@ -46,6 +46,65 @@
   }
 }
 
+@keyframes openchat-ai-ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes openchat-ai-ring-dash {
+  0% {
+    stroke-dasharray: 8, 40;
+    stroke-dashoffset: 0;
+  }
+  50% {
+    stroke-dasharray: 24, 40;
+    stroke-dashoffset: -10;
+  }
+  100% {
+    stroke-dasharray: 8, 40;
+    stroke-dashoffset: -37.7;
+  }
+}
+
+@keyframes openchat-title-shimmer-flow {
+  0% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: -100% 50%;
+  }
+}
+
+.openchat-ai-ring-spinner {
+  animation: openchat-ai-ring-spin 1.35s linear infinite;
+  transform-origin: center;
+}
+
+.openchat-ai-ring-arc {
+  animation: openchat-ai-ring-dash 1.35s ease-in-out infinite;
+  stroke-linecap: round;
+}
+
+.openchat-title-shimmer {
+  background-image: linear-gradient(
+    90deg,
+    rgb(var(--text) / 0.72) 0%,
+    rgb(var(--text) / 0.72) 32%,
+    rgb(var(--accent)) 47%,
+    rgb(var(--text)) 53%,
+    rgb(var(--accent)) 59%,
+    rgb(var(--text) / 0.72) 74%,
+    rgb(var(--text) / 0.72) 100%
+  );
+  background-size: 240% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: openchat-title-shimmer-flow 2.1s linear infinite;
+}
+
 ::view-transition-old(root),
 ::view-transition-new(root) {
   animation-duration: var(--motion-duration-ui);
@@ -178,7 +237,16 @@ section:has([aria-expanded='true']:focus-visible) > .openchat-disclosure-enter,
     animation: none;
   }
 
-  .openchat-skeleton {
+  .openchat-skeleton,
+  .openchat-ai-ring-spinner,
+  .openchat-ai-ring-arc {
     animation: none;
+  }
+
+  .openchat-title-shimmer {
+    animation: none;
+    background-image: none;
+    color: rgb(var(--accent));
+    -webkit-text-fill-color: currentColor;
   }
 }

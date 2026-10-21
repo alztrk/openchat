@@ -38,6 +38,7 @@ pub(super) async fn dispatch(
         "copilot.oauth.disconnect" => service.copilot_oauth_disconnect().await,
         "copilot.usage.get" => service.copilot_usage(cancellation).await,
         "chatgpt.connections.list" => service.list_connections(),
+        "chatgpt.connections.refresh_plans" => service.refresh_connection_plans(cancellation).await,
         "chatgpt.connections.delete" => {
             service
                 .delete_connection(required_string(params, "connectionId")?)
@@ -139,7 +140,13 @@ pub(super) async fn dispatch(
                     Some(token) => token,
                     None => {
                         let credentials = ProviderCredentials::load()?;
-                        credentials.required_api_key(provider_id, Some(provider_id))?
+                        if provider_id == "kilo" {
+                            credentials
+                                .api_key(provider_id, Some(provider_id))?
+                                .unwrap_or_else(|| zeroize::Zeroizing::new(String::new()))
+                        } else {
+                            credentials.required_api_key(provider_id, Some(provider_id))?
+                        }
                     }
                 };
                 openai_compatible::models_for_provider(

@@ -32,7 +32,8 @@ use callback::{
     CallbackRequestOutcome, authorization_url, bind_callback_listener, create_verifier,
     parse_callback_request, read_callback_request_line, record_oauth_event,
 };
-use identity::{ParsedIdentity, parse_identity};
+pub(crate) use identity::ParsedIdentity;
+use identity::{parse_identity, parse_refreshed_identity};
 
 fn deserialize_zeroizing_string<'de, D>(deserializer: D) -> Result<Zeroizing<String>, D::Error>
 where
@@ -75,6 +76,11 @@ pub struct OAuthConnectionResult {
     pub workspaces: Vec<NewChatGptWorkspace>,
     pub credential_reference: OAuthCredentialReference,
     pub tokens: OAuthTokenPair,
+}
+
+pub(crate) struct OAuthTokenRefreshResult {
+    pub(crate) tokens: OAuthTokenPair,
+    pub(crate) identity: Option<ParsedIdentity>,
 }
 
 fn build_oauth_http_client() -> Result<Client, ServiceError> {
@@ -180,10 +186,10 @@ impl OAuthClient {
             .map_err(credential_error)
     }
 
-    pub async fn refresh_tokens(
+    pub(crate) async fn refresh_tokens(
         &self,
         old_tokens: &OAuthTokenPair,
-    ) -> Result<OAuthTokenPair, ServiceError> {
+    ) -> Result<OAuthTokenRefreshResult, ServiceError> {
         let form = [
             ("grant_type", "refresh_token"),
             ("client_id", CLIENT_ID),
@@ -224,7 +230,13 @@ impl OAuthClient {
             .take()
             .map(|mut token| std::mem::take(&mut *token))
             .unwrap_or_else(|| old_tokens.refresh_token().to_owned());
-        OAuthTokenPair::new(access_token, refresh_token).map_err(credential_error)
+        let id_token = response.id_token.take();
+        let identity = parse_refreshed_identity(
+            id_token.as_deref().map(String::as_str),
+            access_token.as_str(),
+        );
+        let tokens = OAuthTokenPair::new(access_token, refresh_token).map_err(credential_error)?;
+        Ok(OAuthTokenRefreshResult { tokens, identity })
     }
 
     pub fn store_token_pair(

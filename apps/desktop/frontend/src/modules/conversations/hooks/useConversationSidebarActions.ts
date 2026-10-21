@@ -4,6 +4,7 @@ import {
   type ChatConversation,
   createProject as createProjectStorage,
   deleteConversation as deleteConversationStorage,
+  duplicateConversation as duplicateConversationStorage,
   getConversation,
   moveConversations,
   renameConversation as renameConversationStorage,
@@ -23,14 +24,21 @@ import { localServiceClient } from '@/platform/local-service';
 type TranslationKey = keyof typeof import('@/localization/locales/en.json');
 
 export function useConversationSidebarActions() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [isBusy, setIsBusy] = useState(false);
   const [feedback, setFeedback] = useState<{ key: TranslationKey; success: boolean } | null>(null);
   const isBusyRef = useRef(false);
   const activeConversationId = useChatStore((state) => state.activeConversationId);
   const isSending = useChatStore((state) => state.isSending);
+  const sendingConversationId = useChatStore((state) => state.sendingConversationId);
+  const compactingConversationId = useChatStore((state) => state.compactingConversationId);
   const refreshConversations = useChatStore((state) => state.refreshConversations);
   const refreshProjects = useChatStore((state) => state.refreshProjects);
+
+  const isConversationBusy = (conversationId: string) =>
+    sendingConversationId === conversationId ||
+    compactingConversationId === conversationId ||
+    (isSending && activeConversationId === conversationId);
 
   const showFeedback = (key: TranslationKey, success = false) => setFeedback({ key, success });
 
@@ -73,7 +81,7 @@ export function useConversationSidebarActions() {
 
   const archiveConversation = async (conversation: ChatConversation) => {
     const willArchive = !conversation.isArchived;
-    if (willArchive && isSending && activeConversationId === conversation.id) {
+    if (willArchive && isConversationBusy(conversation.id)) {
       showFeedback('stopResponseBeforeArchive');
       return;
     }
@@ -92,7 +100,7 @@ export function useConversationSidebarActions() {
   const exportConversation = async (conversation: ChatConversation, format: ExportFormat = 'md') => {
     if (!beginAction()) return;
     try {
-      const labels = conversationMarkdownLabels(conversation, t);
+      const labels = conversationMarkdownLabels(conversation, t, i18n.language);
       const saved = await exportConversationToFile(conversation, format, labels, t('exportConversation'));
       if (!saved) return;
       const feedbackKey: TranslationKey =
@@ -111,7 +119,7 @@ export function useConversationSidebarActions() {
 
   const deleteConversation = async (conversation: ChatConversation): Promise<boolean> => {
     if (!beginAction()) return false;
-    if (isSending && activeConversationId === conversation.id) {
+    if (isConversationBusy(conversation.id)) {
       showFeedback('stopResponseBeforeDelete');
       endAction();
       return false;
@@ -210,13 +218,37 @@ export function useConversationSidebarActions() {
   const togglePinned = (conversation: ChatConversation) =>
     runMutation(() => setConversationPinned(conversation.id, !conversation.isPinned), 'chatHistoryUnavailable');
 
+  const duplicateConversation = async (conversation: ChatConversation): Promise<ChatConversation | null> => {
+    if (!beginAction()) return null;
+    try {
+      const duplicateId = crypto.randomUUID().replaceAll('-', '');
+      const duplicateTitle = `${conversation.title} (${t('conversationDuplicateSuffix')})`.slice(0, 500);
+      const duplicated = await duplicateConversationStorage(conversation.id, duplicateId, duplicateTitle);
+      try {
+        await refreshConversations();
+      } catch {
+        showFeedback('chatHistoryUnavailable');
+        return duplicated;
+      }
+      showFeedback('conversationDuplicated', true);
+      return duplicated;
+    } catch {
+      showFeedback('conversationDuplicateFailed');
+      return null;
+    } finally {
+      endAction();
+    }
+  };
+
   return {
     archiveConversation,
     createProject,
     deleteConversation,
+    duplicateConversation,
     exportConversation,
     feedback,
     isBusy,
+    isConversationBusy,
     moveConversation,
     saveTags,
     saveTitle,

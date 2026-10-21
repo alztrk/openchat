@@ -331,6 +331,12 @@ pub(super) fn api_compatible_provider(provider_id: &str) -> Option<ApiCompatible
             base_url: "https://api.cohere.ai/compatibility/v1",
             protocol: CustomProviderProtocol::OpenAi,
         }),
+        "kilo" => Some(ApiCompatibleProvider {
+            id: "kilo",
+            name: "Kilo AI",
+            base_url: "https://ai-gateway.kilo.ai/api/v1",
+            protocol: CustomProviderProtocol::OpenAi,
+        }),
         _ => None,
     }
 }

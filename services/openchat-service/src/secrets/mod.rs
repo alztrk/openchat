@@ -28,7 +28,7 @@ const COMPATIBLE_KEY_PREFIX: &str = "openchat.compatible_provider.api_key.";
 const CUSTOM_PROVIDER_KEY_PREFIX: &str = "openchat.custom_provider.api_key.";
 const CUSTOM_PROVIDER_CONFIG_PREFIX: &str = "openchat.custom_provider.config.";
 const OPENCODE_KEY: &str = "openchat.opencode.console_api_key";
-const COMPATIBLE_PROVIDER_IDS: [&str; 15] = [
+const COMPATIBLE_PROVIDER_IDS: [&str; 16] = [
     "gemini",
     "groq",
     "cerebras",
@@ -44,6 +44,7 @@ const COMPATIBLE_PROVIDER_IDS: [&str; 15] = [
     "deepinfra",
     "dashscope",
     "cohere",
+    "kilo",
 ];
 
 /// A validated secret-store operation error.

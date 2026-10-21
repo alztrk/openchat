@@ -699,16 +699,6 @@ pub async fn send_message(
             .map(|tool| tool.name.to_owned()),
         tool_permission_rules,
     );
-    if provider_id == "mistral"
-        && let Some(api_key) = api_key
-    {
-        tool_executor = tool_executor.with_mistral_search(api_key, &route.provider_model_id);
-    }
-    if provider_id == "gemini"
-        && let Some(api_key) = api_key
-    {
-        tool_executor = tool_executor.with_gemini_search(api_key, &route.provider_model_id);
-    }
     #[cfg(windows)]
     {
         tool_executor = tool_executor

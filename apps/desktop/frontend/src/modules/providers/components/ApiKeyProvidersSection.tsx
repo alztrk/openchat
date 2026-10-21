@@ -67,7 +67,8 @@ type CompatibleProviderNameKey =
   | 'providerNameFireworks'
   | 'providerNameDeepInfra'
   | 'providerNameDashScope'
-  | 'providerNameCohere';
+  | 'providerNameCohere'
+  | 'providerNameKilo';
 
 const providerNameKeys: Record<CompatibleProviderId, CompatibleProviderNameKey> = {
   gemini: 'providerNameGemini',
@@ -85,6 +86,7 @@ const providerNameKeys: Record<CompatibleProviderId, CompatibleProviderNameKey> 
   deepinfra: 'providerNameDeepInfra',
   dashscope: 'providerNameDashScope',
   cohere: 'providerNameCohere',
+  kilo: 'providerNameKilo',
 };
 
 type CompatibleProviderDescriptionKey =
@@ -102,7 +104,8 @@ type CompatibleProviderDescriptionKey =
   | 'fireworksApiDescription'
   | 'deepInfraApiDescription'
   | 'dashScopeApiDescription'
-  | 'cohereApiDescription';
+  | 'cohereApiDescription'
+  | 'kiloApiDescription';
 
 const providerDescriptionKeys: Record<CompatibleProviderId, CompatibleProviderDescriptionKey> = {
   gemini: 'geminiApiDescription',
@@ -120,6 +123,7 @@ const providerDescriptionKeys: Record<CompatibleProviderId, CompatibleProviderDe
   deepinfra: 'deepInfraApiDescription',
   dashscope: 'dashScopeApiDescription',
   cohere: 'cohereApiDescription',
+  kilo: 'kiloApiDescription',
 };
 
 const providerDocumentationUrls: Record<CompatibleProviderId, string> = {
@@ -138,6 +142,7 @@ const providerDocumentationUrls: Record<CompatibleProviderId, string> = {
   deepinfra: 'https://docs.deepinfra.com/',
   dashscope: 'https://www.alibabacloud.com/help/en/model-studio/',
   cohere: 'https://docs.cohere.com/',
+  kilo: 'https://kilo.ai/docs',
 };
 
 type CredentialRoute =

@@ -465,7 +465,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
       {showRecentSearches ? (
         <div
           aria-label="Recent searches"
-          className="absolute left-0 right-0 top-full z-50 mt-1 flex w-full origin-top flex-col overflow-hidden rounded-dialog border border-border bg-surface p-1 shadow-elevation-3 backdrop-blur-md"
+          className="openchat-glass-popover absolute left-0 right-0 top-full z-50 mt-1 flex w-full origin-top flex-col overflow-hidden rounded-dialog border border-border p-1"
           role="listbox"
         >
           <div className="flex items-center justify-between px-2 py-1.5 text-[11px] font-medium text-secondary-text">
@@ -512,7 +512,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
       {isOpen && shouldSearch ? (
         <div
           aria-label={t('searchChats')}
-          className="absolute left-0 right-0 top-full z-50 mt-1 flex w-full origin-top flex-col overflow-hidden rounded-dialog border border-border bg-surface shadow-elevation-3 backdrop-blur-md transition-all duration-150 ease-out"
+          className="openchat-glass-popover absolute left-0 right-0 top-full z-50 mt-1 flex w-full origin-top flex-col overflow-hidden rounded-dialog border border-border transition-all duration-150 ease-out"
           role="listbox"
         >
           {hasActiveFilter ? (

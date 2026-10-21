@@ -31,6 +31,8 @@ const MAX_TEXT_DIFF_BYTES: usize = 1024 * 1024;
 const MAX_DIFF_OUTPUT_BYTES: usize = 256 * 1024;
 const MAX_DIFF_LINES: usize = 4_000;
 const MAX_LEGACY_MANIFEST_BYTES: usize = 32 * 1024 * 1024;
+const APPROVED_BASELINE_SENTINEL: &str =
+    "0000000000000000000000000000000000000000000000000000000000000000";
 
 static FILE_CHANGE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -56,6 +58,9 @@ pub(crate) struct FileChangeSummary {
     pub status: String,
     /// Whether reverting can be offered for this state.
     pub can_revert: bool,
+    /// Whether the user has explicitly approved this file change.
+    #[serde(default)]
+    pub approved: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -241,7 +246,9 @@ pub(crate) fn record_deltas(
 
         let existing_index = entries.iter().position(|entry| entry.id == id);
         let (baseline_exists, baseline_hash, baseline_blob_hash, was_conflicted) =
-            if let Some(index) = existing_index {
+            if let Some(index) = existing_index
+                && !is_entry_approved(&entries[index])
+            {
                 let existing = &entries[index];
                 let expected = existing.expected_hash.as_deref();
                 let baseline_is_current = if existing.baseline_exists {
@@ -513,6 +520,217 @@ pub(crate) fn revert_change(
         })
 }
 
+/// Marks one active file change as approved by locking its current state.
+pub(crate) fn approve_change(
+    storage: &AppStorage,
+    conversation_id: &str,
+    id: &str,
+) -> Result<Vec<FileChangeSummary>, RevertError> {
+    validate_conversation_id(conversation_id).map_err(|_| RevertError::Unavailable)?;
+    validate_change_id(id).map_err(|_| RevertError::Unavailable)?;
+    let _guard = lock_file_changes().map_err(|_| RevertError::Unavailable)?;
+    cleanup_pending_snapshot_blobs(storage).map_err(|_| RevertError::Unavailable)?;
+    migrate_legacy_conversation(storage, conversation_id).map_err(|_| RevertError::Unavailable)?;
+    let mut connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
+    let mut entry = load_change(&connection, conversation_id, id)
+        .map_err(|_| RevertError::Unavailable)?
+        .ok_or(RevertError::Unavailable)?;
+    if entry.status != "active" {
+        return Err(RevertError::Unavailable);
+    }
+    if !is_current_version(&entry).map_err(|_| RevertError::Unavailable)? {
+        entry.status = "conflict".to_owned();
+        let transaction = connection
+            .transaction()
+            .map_err(|_| RevertError::Unavailable)?;
+        store_change(&transaction, conversation_id, &entry)
+            .map_err(|_| RevertError::Unavailable)?;
+        transaction.commit().map_err(|_| RevertError::Unavailable)?;
+        return Err(RevertError::Conflict);
+    }
+    entry.baseline_hash = Some(APPROVED_BASELINE_SENTINEL.to_owned());
+    let transaction = connection
+        .transaction()
+        .map_err(|_| RevertError::Unavailable)?;
+    store_change(&transaction, conversation_id, &entry).map_err(|_| RevertError::Unavailable)?;
+    transaction.commit().map_err(|_| RevertError::Unavailable)?;
+    let connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
+    load_changes(&connection, conversation_id)
+        .map_err(|_| RevertError::Unavailable)
+        .map(|entries| {
+            entries
+                .iter()
+                .map(|entry| summary_for_entry(storage.root(), entry, true))
+                .collect()
+        })
+}
+
+/// Marks all active, non-conflicting file changes in a conversation as approved.
+pub(crate) fn approve_all_changes(
+    storage: &AppStorage,
+    conversation_id: &str,
+) -> Result<Vec<FileChangeSummary>, RevertError> {
+    validate_conversation_id(conversation_id).map_err(|_| RevertError::Unavailable)?;
+    let _guard = lock_file_changes().map_err(|_| RevertError::Unavailable)?;
+    cleanup_pending_snapshot_blobs(storage).map_err(|_| RevertError::Unavailable)?;
+    migrate_legacy_conversation(storage, conversation_id).map_err(|_| RevertError::Unavailable)?;
+    let mut connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
+    let mut entries =
+        load_changes(&connection, conversation_id).map_err(|_| RevertError::Unavailable)?;
+    for entry in &mut entries {
+        if entry.status == "active"
+            && !is_entry_approved(entry)
+            && is_current_version(entry).unwrap_or(false)
+        {
+            entry.baseline_hash = Some(APPROVED_BASELINE_SENTINEL.to_owned());
+        }
+    }
+    let transaction = connection
+        .transaction()
+        .map_err(|_| RevertError::Unavailable)?;
+    store_changes(&transaction, conversation_id, &entries).map_err(|_| RevertError::Unavailable)?;
+    transaction.commit().map_err(|_| RevertError::Unavailable)?;
+    Ok(entries
+        .iter()
+        .map(|entry| summary_for_entry(storage.root(), entry, true))
+        .collect())
+}
+
+/// Reverts all active, non-approved file changes in a conversation back to baseline.
+pub(crate) fn revert_all_changes(
+    storage: &AppStorage,
+    conversation_id: &str,
+) -> Result<Vec<FileChangeSummary>, RevertError> {
+    validate_conversation_id(conversation_id).map_err(|_| RevertError::Unavailable)?;
+    let connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
+    let entries =
+        load_changes(&connection, conversation_id).map_err(|_| RevertError::Unavailable)?;
+    drop(connection);
+    for entry in &entries {
+        if entry.status == "active" && !is_entry_approved(entry) {
+            let _ = revert_change(storage, conversation_id, &entry.id);
+        }
+    }
+    list_changes(storage, conversation_id).map_err(|_| RevertError::Unavailable)
+}
+
+/// Reverts a single diff hunk (0-indexed) of a modified text file back to its baseline lines.
+pub(crate) fn revert_hunk(
+    storage: &AppStorage,
+    conversation_id: &str,
+    id: &str,
+    hunk_index: usize,
+) -> Result<Vec<FileChangeSummary>, RevertError> {
+    validate_conversation_id(conversation_id).map_err(|_| RevertError::Unavailable)?;
+    validate_change_id(id).map_err(|_| RevertError::Unavailable)?;
+    let _guard = lock_file_changes().map_err(|_| RevertError::Unavailable)?;
+    cleanup_pending_snapshot_blobs(storage).map_err(|_| RevertError::Unavailable)?;
+    migrate_legacy_conversation(storage, conversation_id).map_err(|_| RevertError::Unavailable)?;
+    let mut connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
+    let mut entry = load_change(&connection, conversation_id, id)
+        .map_err(|_| RevertError::Unavailable)?
+        .ok_or(RevertError::Unavailable)?;
+    if entry.status != "active" || is_entry_approved(&entry) || !entry.expected_exists {
+        return Err(RevertError::Unavailable);
+    }
+    if !is_current_version(&entry).map_err(|_| RevertError::Unavailable)? {
+        entry.status = "conflict".to_owned();
+        let transaction = connection
+            .transaction()
+            .map_err(|_| RevertError::Unavailable)?;
+        store_change(&transaction, conversation_id, &entry)
+            .map_err(|_| RevertError::Unavailable)?;
+        transaction.commit().map_err(|_| RevertError::Unavailable)?;
+        return Err(RevertError::Conflict);
+    }
+
+    let baseline_bytes = read_baseline(storage.root(), &entry)
+        .map_err(|_| RevertError::Unavailable)?
+        .ok_or(RevertError::Unavailable)?;
+    let target = resolve_record_path(&entry).map_err(|_| RevertError::Unavailable)?;
+    let current_bytes = read_bounded_file(&target, MAX_SNAPSHOT_FILE_BYTES as usize)
+        .map_err(|_| RevertError::Unavailable)?
+        .ok_or(RevertError::Unavailable)?;
+    let (Some(old_text), Some(new_text)) = (as_text(&baseline_bytes), as_text(&current_bytes))
+    else {
+        return Err(RevertError::Unavailable);
+    };
+
+    let diff = TextDiff::configure()
+        .timeout(Duration::from_millis(200))
+        .diff_lines(&old_text, &new_text);
+    let groups = diff.grouped_ops(3);
+    let Some(target_group) = groups.get(hunk_index) else {
+        return Err(RevertError::Unavailable);
+    };
+
+    let old_lines: Vec<&str> = old_text.split_inclusive('\n').collect();
+    let new_lines: Vec<&str> = new_text.split_inclusive('\n').collect();
+
+    let mut group_new_start = None;
+    let mut group_new_end = 0usize;
+    let mut group_old_lines: Vec<&str> = Vec::new();
+    for op in target_group {
+        if group_new_start.is_none() {
+            group_new_start = Some(op.new_range().start);
+        }
+        group_new_end = op.new_range().end;
+        for idx in op.old_range() {
+            if let Some(line) = old_lines.get(idx) {
+                group_old_lines.push(*line);
+            }
+        }
+    }
+    let Some(replace_start) = group_new_start else {
+        return Err(RevertError::Unavailable);
+    };
+
+    let mut updated_text = String::with_capacity(new_text.len());
+    for line in &new_lines[..replace_start.min(new_lines.len())] {
+        updated_text.push_str(line);
+    }
+    for line in &group_old_lines {
+        updated_text.push_str(line);
+    }
+    for line in &new_lines[group_new_end.min(new_lines.len())..] {
+        updated_text.push_str(line);
+    }
+
+    let updated_bytes = updated_text.as_bytes();
+    atomic_write(&target, updated_bytes).map_err(|_| RevertError::Unavailable)?;
+    let new_hash = sha256(updated_bytes);
+    let (added, removed, is_binary, diff_available) = diff_stats(&baseline_bytes, updated_bytes);
+
+    entry.expected_hash = Some(new_hash.clone());
+    entry.added_lines = added;
+    entry.removed_lines = removed;
+    entry.is_binary = is_binary;
+    entry.diff_available = diff_available;
+    if entry.baseline_exists && entry.baseline_hash.as_deref() == Some(new_hash.as_str()) {
+        entry.status = "reverted".to_owned();
+    } else if !entry.baseline_exists && updated_bytes.is_empty() {
+        let _ = fs::remove_file(&target);
+        entry.expected_exists = false;
+        entry.expected_hash = None;
+        entry.status = "reverted".to_owned();
+    }
+
+    let transaction = connection
+        .transaction()
+        .map_err(|_| RevertError::Unavailable)?;
+    store_change(&transaction, conversation_id, &entry).map_err(|_| RevertError::Unavailable)?;
+    transaction.commit().map_err(|_| RevertError::Unavailable)?;
+    let connection = storage.connect().map_err(|_| RevertError::Unavailable)?;
+    load_changes(&connection, conversation_id)
+        .map_err(|_| RevertError::Unavailable)
+        .map(|entries| {
+            entries
+                .iter()
+                .map(|entry| summary_for_entry(storage.root(), entry, true))
+                .collect()
+        })
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 /// Failure categories for a user-requested file change revert.
 pub(crate) enum RevertError {
@@ -674,12 +892,17 @@ fn read_bounded_file(path: &Path, max_bytes: usize) -> io::Result<Option<Vec<u8>
     }
 }
 
+fn is_entry_approved(entry: &ManifestEntry) -> bool {
+    entry.status == "active" && entry.baseline_hash.as_deref() == Some(APPROVED_BASELINE_SENTINEL)
+}
+
 fn summary_for_entry(
     data_root: &Path,
     entry: &ManifestEntry,
     validate_current: bool,
 ) -> FileChangeSummary {
     let mut status = entry.status.clone();
+    let approved = is_entry_approved(entry);
     let expected_matches = !validate_current || is_current_version(entry).unwrap_or(false);
     if validate_current && !expected_matches && status != "reverted" {
         status = "conflict".to_owned();
@@ -689,7 +912,7 @@ fn summary_for_entry(
             .baseline_blob_hash
             .as_deref()
             .is_some_and(|hash| snapshot_blob_exists(data_root, hash));
-    let can_revert = status == "active" && expected_matches && backup_available;
+    let can_revert = !approved && status == "active" && expected_matches && backup_available;
     let kind = if !entry.baseline_exists {
         "added"
     } else if !entry.expected_exists {
@@ -707,6 +930,7 @@ fn summary_for_entry(
         diff_available: entry.diff_available,
         status,
         can_revert,
+        approved,
     }
 }
 
@@ -2083,5 +2307,38 @@ mod tests {
         super::cleanup_pending_snapshot_blobs(&data.storage)
             .expect("clean orphaned cascade snapshot");
         assert!(!blob_path.exists());
+    }
+
+    #[test]
+    fn approve_change_and_revert_hunk_update_tracked_state() {
+        let workspace = TestDirectory::new("approve-and-hunk-workspace");
+        let data = TestStorage::new("approve-and-hunk-data");
+        let baseline = b"line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\n";
+        let edited = b"line1-mod\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10-mod\n";
+        std::fs::write(workspace.0.join("multi.txt"), edited).expect("write edited file");
+        let id = record_file_change(
+            &workspace.0,
+            &data.storage,
+            "hunk-conversation",
+            "multi.txt",
+            Some(baseline),
+            Some(edited),
+        );
+
+        // Revert only the first hunk (hunk 0), preserving the second hunk at line 10.
+        let after_hunk = super::revert_hunk(&data.storage, "hunk-conversation", &id, 0)
+            .expect("revert first hunk");
+        assert_eq!(after_hunk[0].status, "active");
+        assert!(!after_hunk[0].approved);
+        let on_disk =
+            std::fs::read_to_string(workspace.0.join("multi.txt")).expect("read updated file");
+        assert!(on_disk.starts_with("line1\n"));
+        assert!(on_disk.ends_with("line10-mod\n"));
+
+        // Approve the remaining change.
+        let after_approve = super::approve_change(&data.storage, "hunk-conversation", &id)
+            .expect("approve remaining change");
+        assert!(after_approve[0].approved);
+        assert!(!after_approve[0].can_revert);
     }
 }

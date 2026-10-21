@@ -155,15 +155,19 @@ export async function loadApiKeyModels(client: LocalServiceClient, forceRefresh:
   } catch {
     copilotStatusFailed = true;
   }
+  const kiloConfigured = status.compatibleProviders.find((provider) => provider.providerId === 'kilo')?.isConfigured ?? false;
   const providers: ChatModelProvider[] = [
     { providerId: 'opencode', name: null, available: true },
+    { providerId: 'kilo', name: null, available: true },
     { providerId: 'copilot', name: null, available: copilotConnected },
     ...(status.chatgptApiKeys.length > 0 ? [{ providerId: 'chatgpt', name: null, available: true }] : []),
-    ...status.compatibleProviders.map((provider) => ({
-      providerId: provider.providerId,
-      name: null,
-      available: provider.isConfigured,
-    })),
+    ...status.compatibleProviders
+      .filter((provider) => provider.providerId !== 'kilo')
+      .map((provider) => ({
+        providerId: provider.providerId,
+        name: null,
+        available: provider.isConfigured,
+      })),
     ...status.customProviders
       .filter((provider) => provider.isConfigured)
       .map((provider) => ({
@@ -220,6 +224,9 @@ export async function loadApiKeyModels(client: LocalServiceClient, forceRefresh:
   }
 
   tasks.push(loadOpenCodeFreeCatalog(client, forceRefresh));
+  if (!kiloConfigured) {
+    tasks.push(loadKiloFreeCatalog(client, forceRefresh));
+  }
   const results = await Promise.all(tasks);
   return {
     models: results.flatMap((result) => result.models),
@@ -270,6 +277,25 @@ async function loadOpenCodeFreeCatalog(
   try {
     const response = await client.call('opencode.models.list', forceRefresh ? { forceRefresh: true } : {});
     const result = parseProviderCatalog(response, { providerId: 'opencode' });
+    return {
+      ...result,
+      models: result.models.filter((model) => model.groupId === 'free'),
+    };
+  } catch {
+    return { models: [], failed: true };
+  }
+}
+
+async function loadKiloFreeCatalog(
+  client: LocalServiceClient,
+  forceRefresh: boolean,
+): Promise<{ models: ChatModel[]; failed: boolean }> {
+  try {
+    const response = await client.call('compatible.models.list', {
+      providerId: 'kilo',
+      ...(forceRefresh ? { forceRefresh: true } : {}),
+    });
+    const result = parseProviderCatalog(response, { providerId: 'kilo', connectionId: 'kilo' });
     return {
       ...result,
       models: result.models.filter((model) => model.groupId === 'free'),

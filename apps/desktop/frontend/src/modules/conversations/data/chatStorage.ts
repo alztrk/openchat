@@ -420,6 +420,69 @@ export async function createConversationBranchFromUserMessage(
   return { conversation, messages: copiedMessages };
 }
 
+export async function duplicateConversation(
+  sourceConversationId: string,
+  duplicateId: string,
+  duplicateTitle: string,
+): Promise<ChatConversation> {
+  const sourceConversation = await getConversation(sourceConversationId);
+  if (!sourceConversation) throw new Error('The source conversation was not found.');
+  if (!sourceConversation.providerId || !sourceConversation.modelId) {
+    throw new Error('The source conversation has no provider route.');
+  }
+  const sourceMessages = await getMessages(sourceConversationId);
+  await createConversation(
+    duplicateId,
+    duplicateTitle,
+    {
+      providerId: sourceConversation.providerId,
+      modelId: sourceConversation.modelId,
+      ...(sourceConversation.connectionId ? { connectionId: sourceConversation.connectionId } : {}),
+      ...(sourceConversation.workspaceId ? { workspaceId: sourceConversation.workspaceId } : {}),
+      ...(sourceConversation.apiKeyConnectionId ? { apiKeyConnectionId: sourceConversation.apiKeyConnectionId } : {}),
+    },
+    sourceConversation.projectId,
+  );
+
+  try {
+    if (sourceConversation.tags.length > 0) {
+      await setConversationTags(duplicateId, sourceConversation.tags);
+    }
+    for (const [index, sourceMessage] of sourceMessages.entries()) {
+      const copiedMessage: ChatMessage = {
+        ...sourceMessage,
+        id: `${duplicateId}_m${index}`,
+        conversationId: duplicateId,
+        status: sourceMessage.status === 'streaming' ? 'stopped' : sourceMessage.status,
+      };
+      const attachments: PendingChatAttachment[] = [];
+      for (const attachment of sourceMessage.attachments) {
+        const bytes = await readMessageAttachment(sourceConversationId, sourceMessage.id, attachment.id);
+        const fileBytes = new ArrayBuffer(bytes.byteLength);
+        new Uint8Array(fileBytes).set(bytes);
+        attachments.push({
+          ...attachment,
+          file: new File([fileBytes], attachment.name, { type: attachment.mimeType }),
+          bytes,
+          previewUrl: null,
+        });
+      }
+      await saveMessage(copiedMessage, attachments);
+    }
+  } catch (error) {
+    try {
+      await deleteConversation(duplicateId);
+    } catch {
+      // Preserve the original storage error; duplicate cleanup is best effort.
+    }
+    throw error;
+  }
+
+  const conversation = await getConversation(duplicateId);
+  if (!conversation) throw new Error('The duplicated conversation was not found.');
+  return conversation;
+}
+
 export async function saveMessage(
   message: ChatMessage,
   attachments: readonly PendingChatAttachment[] = [],

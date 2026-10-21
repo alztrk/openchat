@@ -290,19 +290,25 @@ async fn resolve_chat_route_for_model(
             let Some(provider) = api_compatible_provider(id) else {
                 return Err(route_error());
             };
-            if requested_api_key_connection_id != Some(id)
-                || stored_api_key_connection_id != Some(id)
+            let is_kilo_free = id == "kilo"
+                && (model_id.ends_with(":free")
+                    || model_id.contains("/free")
+                    || model_id == "kilo-auto/free");
+            if !is_kilo_free
+                && (requested_api_key_connection_id != Some(id)
+                    || stored_api_key_connection_id != Some(id))
             {
                 return Err(route_error());
             }
-            let Some(api_key) = api_key else {
+            if !is_kilo_free && api_key.is_none() {
                 return Err(provider_authentication_required_error(id));
-            };
-            let limits = super::provider_models::context_limits(storage, id, api_key, &model_id)?;
+            }
+            let key = api_key.unwrap_or("");
+            let limits = super::provider_models::context_limits(storage, id, key, &model_id)?;
             let supports_images =
-                super::provider_models::supports_image_input(storage, id, api_key, &model_id)?;
+                super::provider_models::supports_image_input(storage, id, key, &model_id)?;
             let supports_tool_calls =
-                super::provider_models::supports_tool_calls(storage, id, api_key, &model_id)?;
+                super::provider_models::supports_tool_calls(storage, id, key, &model_id)?;
             ResolvedProviderRoute {
                 provider_model_id: model_id.clone(),
                 chat_url: if provider.is_anthropic() {
@@ -310,7 +316,7 @@ async fn resolve_chat_route_for_model(
                 } else {
                     format!("{}/chat/completions", provider.base_url)
                 },
-                is_free: false,
+                is_free: is_kilo_free,
                 uses_responses_api: false,
                 limits,
                 supports_images,

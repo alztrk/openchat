@@ -48,7 +48,7 @@ export function createSendMessageAction(
     const isRetry = options?.excludedAssistantMessageId !== undefined;
     const userMessageAlreadySaved = options?.userMessageAlreadySaved === true;
     const state = get();
-    let conversationId = state.activeConversationId;
+    let conversationId = options?.conversationId ?? state.activeConversationId;
     let conversationCreated = conversationId !== null;
     const isRequestConversationActive = () =>
       conversationCreated
@@ -57,15 +57,15 @@ export function createSendMessageAction(
     const setRequestError = (errorCode: ChatState['errorCode']) => {
       if (isRequestConversationActive()) set({ errorCode });
     };
-    const activeConversationId = state.activeConversationId;
+    const targetConvId = conversationId;
     const pendingQuestionBlocksSend =
       resumeRunId === undefined &&
-      activeConversationId !== null &&
-      state.pendingQuestionSendBlock?.conversationId === activeConversationId &&
+      targetConvId !== null &&
+      state.pendingQuestionSendBlock?.conversationId === targetConvId &&
       state.pendingQuestionSendBlock.blocked;
     const conversationOperationBlocksSend =
-      activeConversationId !== null &&
-      (state.compactingConversationId === activeConversationId || state.isCreatingMessageBranch);
+      targetConvId !== null &&
+      (state.compactingConversationId === targetConvId || state.isCreatingMessageBranch);
     if (
       (!content && attachments.length === 0 && !resumeRunId && !isRetry && !userMessageAlreadySaved) ||
       state.isSending ||
@@ -84,11 +84,11 @@ export function createSendMessageAction(
       set({ errorCode: 'goalObjectiveTooLong' });
       return false;
     }
-    const activeConversation =
-      state.activeConversationId === null
+    const targetConversation =
+      conversationId === null
         ? undefined
-        : state.conversations.find((conversation) => conversation.id === state.activeConversationId);
-    const projectId = activeConversation?.projectId ?? state.pendingProjectId;
+        : state.conversations.find((conversation) => conversation.id === conversationId);
+    const projectId = targetConversation?.projectId ?? state.pendingProjectId;
     let projectSkillIds: string[] = [];
     try {
       await loadToolPermissionMode();
@@ -119,28 +119,28 @@ export function createSendMessageAction(
       set({ errorCode: 'modelDoesNotSupportImages' });
       return false;
     }
-    if (resumeRunId && !state.activeConversationId) {
+    if (resumeRunId && !conversationId) {
       set({ errorCode: 'userQuestionUnavailable' });
       return false;
     }
 
-    set({ isSending: true, errorCode: null });
-    if (goalObjective && state.activeConversationId !== null) {
+    set({ isSending: true, sendingConversationId: conversationId, errorCode: null });
+    if (goalObjective && conversationId !== null) {
       try {
         const response = await localServiceClient.call('chat.goal.active', {
-          conversationId: state.activeConversationId,
+          conversationId,
         });
         if (!('goal' in response)) throw new Error('The active goal response is invalid.');
         const existingGoal = parseChatGoal(response.goal);
         if (existingGoal) {
-          set({ isSending: false });
+          set({ isSending: false, sendingConversationId: null });
           if (isRequestConversationActive()) {
             set({ activeGoal: existingGoal, goalStatus: 'ready', errorCode: 'goalAlreadyActive' });
           }
           return false;
         }
       } catch {
-        set({ isSending: false });
+        set({ isSending: false, sendingConversationId: null });
         if (isRequestConversationActive()) set({ goalStatus: 'error', errorCode: 'goalStateUnavailable' });
         return false;
       }
@@ -155,6 +155,11 @@ export function createSendMessageAction(
     const streamUi = createStreamMessagePublisher((message) => {
       if (get().activeConversationId === message.conversationId) {
         set((current) => ({ messages: upsertMessage(current.messages, message) }));
+      }
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('openchat-message-stream', { detail: { message } }),
+        );
       }
     });
     let requestOutcome: ProviderRequestOutcome | null = null;
@@ -209,6 +214,7 @@ export function createSendMessageAction(
           const shouldActivate = current.activeConversationId === state.activeConversationId;
           return {
             activeConversationId: shouldActivate ? conversationId : current.activeConversationId,
+            sendingConversationId: conversationId,
             pendingProjectId: shouldActivate ? null : current.pendingProjectId,
             conversations: [conversation, ...current.conversations],
             messages: shouldActivate ? [] : current.messages,
@@ -473,6 +479,7 @@ export function createSendMessageAction(
       }
       set({
         isSending: false,
+        sendingConversationId: null,
         activeOperation: null,
         pendingToolPermissionRequest: null,
         isRespondingToToolPermission: false,

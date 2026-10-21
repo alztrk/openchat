@@ -50,7 +50,16 @@ export function PendingAttachmentGallery({ attachments, disabled = false, onRemo
               ) : (
                 <Paperclip aria-hidden="true" className="shrink-0 text-secondary-icon" size={16} />
               )}
-              <span className="min-w-0 flex-1 truncate text-xs text-text">{attachment.name}</span>
+              <div className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-medium text-text">{attachment.name}</span>
+                <span className="block truncate text-xs text-secondary-text">
+                  {Math.max(1, Math.round(attachment.sizeBytes / 1024))} KB
+                  {attachment.extractedSectionCount !== undefined
+                    ? ` · ${t('attachmentExtractedSections', { count: attachment.extractedSectionCount })}`
+                    : ''}
+                  {attachment.extractedTruncated ? ` (${t('attachmentExtractedTruncated')})` : ''}
+                </span>
+              </div>
               <Button
                 aria-label={`${t('removeAttachment')}: ${attachment.name}`}
                 className="size-8 shrink-0"

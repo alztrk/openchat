@@ -134,6 +134,8 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
     if method.starts_with("chat.memory.")
         || method.starts_with("chat.history.")
         || method == "chat.context.usage.estimate"
+        || method == "chat.document.extract"
+        || method.starts_with("browser.")
         || method.starts_with("conversation.archive.")
         || method.starts_with("profile.archive.")
     {

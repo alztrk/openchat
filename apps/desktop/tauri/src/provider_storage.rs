@@ -25,7 +25,7 @@ const MAXIMUM_PROVIDER_NAME_BYTES: usize = 320;
 const MAXIMUM_PROVIDER_URL_BYTES: usize = 2048;
 const MAXIMUM_PROVIDER_PROTOCOL_BYTES: usize = 16;
 const MAXIMUM_LOCALE_BYTES: usize = 32;
-const COMPATIBLE_PROVIDER_IDS: [&str; 15] = [
+const COMPATIBLE_PROVIDER_IDS: [&str; 16] = [
     "gemini",
     "groq",
     "cerebras",
@@ -41,6 +41,7 @@ const COMPATIBLE_PROVIDER_IDS: [&str; 15] = [
     "deepinfra",
     "dashscope",
     "cohere",
+    "kilo",
 ];
 static HTTP_PROVIDER_CONFIRMATION_ACTIVE: AtomicBool = AtomicBool::new(false);
 

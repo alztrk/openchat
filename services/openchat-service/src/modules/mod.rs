@@ -17,6 +17,8 @@ pub(crate) mod context_compaction;
 pub(crate) mod conversation_archive;
 #[path = "providers/copilot_oauth.rs"]
 pub(crate) mod copilot_oauth;
+#[path = "conversations/document_parser.rs"]
+pub(crate) mod document_parser;
 #[path = "conversations/file_changes.rs"]
 pub(crate) mod file_changes;
 #[path = "projects/git_inspection.rs"]
