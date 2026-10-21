@@ -152,9 +152,7 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreate }: Cr
             <div className="flex min-w-0 flex-1 items-center gap-2.5">
               <span
                 className={`flex size-8 shrink-0 items-center justify-center rounded-control transition-colors ${
-                  folderPath
-                    ? 'bg-accent/15 text-accent'
-                    : 'bg-hover text-secondary-icon group-hover:text-text'
+                  folderPath ? 'bg-accent/15 text-accent' : 'bg-hover text-secondary-icon group-hover:text-text'
                 }`}
               >
                 {isSelectingFolder ? (
@@ -185,7 +183,10 @@ export function CreateProjectDialog({ open: isOpen, onOpenChange, onCreate }: Cr
         </div>
 
         {error ? (
-          <p className="rounded-control border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive" role="alert">
+          <p
+            className="rounded-control border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs font-medium text-destructive"
+            role="alert"
+          >
             {error}
           </p>
         ) : null}

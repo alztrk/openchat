@@ -8,7 +8,7 @@ function detectGhostTextSuggestion(messages) {
 
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
-    if (!msg || msg.role !== 'assistant') continue;
+    if (msg?.role !== 'assistant') continue;
     if (msg.status !== 'completed') continue;
 
     const content = msg.content.trim();
@@ -85,14 +85,9 @@ function detectGhostTextSuggestion(messages) {
 test('detectGhostTextSuggestion returns null for empty or incomplete messages', () => {
   assert.equal(detectGhostTextSuggestion([]), null);
   assert.equal(detectGhostTextSuggestion(null), null);
+  assert.equal(detectGhostTextSuggestion([{ role: 'user', content: 'Merhaba', status: 'completed' }]), null);
   assert.equal(
-    detectGhostTextSuggestion([{ role: 'user', content: 'Merhaba', status: 'completed' }]),
-    null,
-  );
-  assert.equal(
-    detectGhostTextSuggestion([
-      { role: 'assistant', content: 'Çalışıyorum...', status: 'streaming' },
-    ]),
+    detectGhostTextSuggestion([{ role: 'assistant', content: 'Çalışıyorum...', status: 'streaming' }]),
     null,
   );
 });

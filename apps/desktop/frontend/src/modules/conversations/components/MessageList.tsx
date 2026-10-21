@@ -87,12 +87,7 @@ export function MessageList({
   const effectiveHighlightQuery = inChatSearchQuery || searchHighlightQuery || '';
   const effectiveTargetId = inChatTargetMessageId || searchHighlightMessageId || searchTargetMessageId;
 
-  useInChatSearchHighlight(
-    virtualList.containerRef,
-    effectiveHighlightQuery,
-    effectiveTargetId,
-    virtualList.rows,
-  );
+  useInChatSearchHighlight(virtualList.containerRef, effectiveHighlightQuery, effectiveTargetId, virtualList.rows);
 
   const selectResponseVersion = (message: ChatMessage, versionIndex: number) => {
     const group = responseGroups.find((candidate) => candidate.messages.some((item) => item.id === message.id));
@@ -248,7 +243,9 @@ export function MessageList({
                 assistantProviderFallback={assistantProviderFallback}
                 isSavedOutput={savedOutputMessageIds?.has(message.id) ?? false}
                 isSavingSavedOutput={pendingSavedOutputMessageIds?.has(message.id) ?? false}
-                isSearchMatch={message.id === (inChatTargetMessageId ?? searchHighlightMessageId ?? searchTargetMessageId)}
+                isSearchMatch={
+                  message.id === (inChatTargetMessageId ?? searchHighlightMessageId ?? searchTargetMessageId)
+                }
                 message={message}
                 latestFileChanges={latestFileChanges}
                 onOpenConnections={onOpenConnections}

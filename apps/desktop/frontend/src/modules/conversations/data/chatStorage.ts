@@ -298,8 +298,8 @@ export interface SearchFilterOptions {
 }
 
 export {
-  type ParsedSearchQuery,
   normalizeSearchText,
+  type ParsedSearchQuery,
   parseSearchQuery,
 } from './chatSearchUtils';
 

@@ -150,9 +150,9 @@ export function readCustomSidebarFolders(): CustomSidebarFolder[] {
         typeof (item as { name?: unknown }).name === 'string' &&
         Array.isArray((item as { conversationIds?: unknown }).conversationIds)
       ) {
-        const id = ((item as { id: string }).id).trim();
-        const name = ((item as { name: string }).name).trim();
-        const conversationIds = ((item as { conversationIds: unknown[] }).conversationIds).filter(
+        const id = (item as { id: string }).id.trim();
+        const name = (item as { name: string }).name.trim();
+        const conversationIds = (item as { conversationIds: unknown[] }).conversationIds.filter(
           (cid): cid is string => typeof cid === 'string' && cid.length > 0,
         );
         const createdAt =
@@ -258,9 +258,11 @@ export function resolveWorkspaceDropZone(
   return relativeX >= 0.52 ? 'split' : 'primary';
 }
 
-export function sortSidebarConversations<
-  T extends { id: string; title: string; updatedAt: number; createdAt: number },
->(conversations: readonly T[], sortMode: SidebarSortMode, manualOrder: readonly string[] = []): T[] {
+export function sortSidebarConversations<T extends { id: string; title: string; updatedAt: number; createdAt: number }>(
+  conversations: readonly T[],
+  sortMode: SidebarSortMode,
+  manualOrder: readonly string[] = [],
+): T[] {
   const copy = [...conversations];
   if (sortMode === 'createdAt') {
     return copy.sort((a, b) => b.createdAt - a.createdAt || b.updatedAt - a.updatedAt);

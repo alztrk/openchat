@@ -141,9 +141,7 @@ export function ConversationPane({
   const activeConversationId = isSplitSecondary ? resolvedTargetId : storeActiveConversationId;
   const activeConversation = useMemo(() => {
     if (isSplitSecondary) {
-      return resolvedTargetId
-        ? conversations.find((c) => c.id === resolvedTargetId) ?? null
-        : null;
+      return resolvedTargetId ? (conversations.find((c) => c.id === resolvedTargetId) ?? null) : null;
     }
     return storeActiveConversation;
   }, [conversations, isSplitSecondary, resolvedTargetId, storeActiveConversation]);
@@ -420,10 +418,7 @@ export function ConversationPane({
   const isConversationDrag = (event: React.DragEvent) => {
     if (getSidebarDraggingConversationId() !== null) return true;
     const types = Array.from(event.dataTransfer?.types ?? []);
-    return (
-      types.includes('application/x-openchat-conversation') ||
-      types.includes('text/plain')
-    );
+    return types.includes('application/x-openchat-conversation') || types.includes('text/plain');
   };
 
   const handleDragEnter = (event: React.DragEvent) => {
@@ -515,8 +510,7 @@ export function ConversationPane({
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {typeof header === 'function'
           ? header({
-              isRightPanelOpen:
-                propIsRightPanelOpen !== undefined ? propIsRightPanelOpen : isFileChangesPanelOpen,
+              isRightPanelOpen: propIsRightPanelOpen !== undefined ? propIsRightPanelOpen : isFileChangesPanelOpen,
               toggleRightPanel: () => {
                 if (propOnToggleRightPanel) {
                   propOnToggleRightPanel();
@@ -539,16 +533,13 @@ export function ConversationPane({
             className="chat-content-row flex min-h-0 min-w-0 flex-1"
             data-centered-empty={centerEmptyConversation ? 'true' : undefined}
             data-file-changes-open={
-              (propIsRightPanelOpen !== undefined ? propIsRightPanelOpen : isFileChangesPanelOpen) &&
-              !isTemporaryChat
+              (propIsRightPanelOpen !== undefined ? propIsRightPanelOpen : isFileChangesPanelOpen) && !isTemporaryChat
             }
           >
             <div className="chat-conversation-content relative flex min-h-0 min-w-0 flex-1 flex-col">
               {searchHighlightQuery && !isSearchOpen ? (
                 <div className="openchat-glass-popover absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-full border border-border/80 px-3 py-1 animate-in fade-in slide-in-from-top-2 duration-150">
-                  <span className="max-w-[120px] truncate text-xs font-medium text-text">
-                    "{searchHighlightQuery}"
-                  </span>
+                  <span className="max-w-[120px] truncate text-xs font-medium text-text">"{searchHighlightQuery}"</span>
                   <span className="text-[11px] text-secondary-text">
                     {searchMatchCount > 0
                       ? `${searchMatchIndex + 1} / ${searchMatchCount}`

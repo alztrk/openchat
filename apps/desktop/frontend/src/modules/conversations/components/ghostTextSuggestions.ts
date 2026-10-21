@@ -21,7 +21,7 @@ export function detectGhostTextSuggestion(
 
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
-    if (!msg || msg.role !== 'assistant') continue;
+    if (msg?.role !== 'assistant') continue;
     if (msg.status !== 'completed') continue;
 
     const content = msg.content.trim();

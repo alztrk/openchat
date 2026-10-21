@@ -2,6 +2,7 @@ import { ArrowUp, Paperclip, Square, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/design-system';
+import { getSidebarDraggingConversationId } from '@/modules/conversations/data/sidebarPreferences';
 import { useChatStreaming } from '@/modules/conversations/hooks/useChatStreaming';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { ToolPermissionModeSelector } from '@/modules/projects/components/ToolPermissionModeSelector';
@@ -10,8 +11,12 @@ import { ChatSlashCommandMenu } from './ChatSlashCommandMenu';
 import { ChatSlashModelMenu } from './ChatSlashModelMenu';
 import { ComposerFeedbackList, ComposerModelBanner } from './ComposerAlerts';
 import { ComposerContextRow } from './ComposerContextRow';
-import { effectiveContextWindow, imageAttachmentExtensions, providerNameForModel, textAttachmentExtensions } from './composerUtils';
-import { getSidebarDraggingConversationId } from '@/modules/conversations/data/sidebarPreferences';
+import {
+  effectiveContextWindow,
+  imageAttachmentExtensions,
+  providerNameForModel,
+  textAttachmentExtensions,
+} from './composerUtils';
 import { ModelPicker } from './ModelPicker';
 import { PendingAttachmentGallery } from './PendingAttachmentGallery';
 import { useComposerState } from './useComposerState';
@@ -128,9 +133,7 @@ export function ChatComposer({
       ? t('composerPlaceholderCtrlEnter')
       : t('composerPlaceholderEnter');
   const sendTooltip =
-    submissionMode === 'ctrlEnter'
-      ? t('composerSendTooltipCtrlEnter')
-      : t('composerSendTooltipEnter');
+    submissionMode === 'ctrlEnter' ? t('composerSendTooltipCtrlEnter') : t('composerSendTooltipEnter');
 
   const [isComposerDraggingOver, setIsComposerDraggingOver] = useState(false);
   const composerDragDepthRef = useRef(0);
@@ -138,10 +141,7 @@ export function ChatComposer({
   const isComposerConversationDrag = (event: React.DragEvent) => {
     if (getSidebarDraggingConversationId() !== null) return true;
     const types = Array.from(event.dataTransfer?.types ?? []);
-    return (
-      types.includes('application/x-openchat-conversation') ||
-      types.includes('text/plain')
-    );
+    return types.includes('application/x-openchat-conversation') || types.includes('text/plain');
   };
 
   const handleComposerDragEnter = (event: React.DragEvent) => {

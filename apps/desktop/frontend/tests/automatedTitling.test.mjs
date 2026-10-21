@@ -13,9 +13,7 @@ function createMockConversationStore(initialConversations) {
 
   const renameConversation = (conversationId, title) => {
     set((s) => ({
-      conversations: s.conversations.map((c) =>
-        c.id === conversationId ? { ...c, title, titleSource: 'manual' } : c,
-      ),
+      conversations: s.conversations.map((c) => (c.id === conversationId ? { ...c, title, titleSource: 'manual' } : c)),
     }));
   };
 
@@ -50,9 +48,7 @@ test('automated titling updates conversation with automatic title source', () =>
 });
 
 test('automated titling NEVER overwrites manually edited custom title', () => {
-  const store = createMockConversationStore([
-    { id: 'conv-1', title: 'My Custom Project', titleSource: 'manual' },
-  ]);
+  const store = createMockConversationStore([{ id: 'conv-1', title: 'My Custom Project', titleSource: 'manual' }]);
 
   store.applyTitleUpdate('conv-1', 'Auto Generated Title');
 
@@ -62,9 +58,7 @@ test('automated titling NEVER overwrites manually edited custom title', () => {
 });
 
 test('renameConversation marks conversation titleSource as manual', () => {
-  const store = createMockConversationStore([
-    { id: 'conv-1', title: 'New Conversation', titleSource: 'automatic' },
-  ]);
+  const store = createMockConversationStore([{ id: 'conv-1', title: 'New Conversation', titleSource: 'automatic' }]);
 
   store.renameConversation('conv-1', 'Alican Project Plan');
 

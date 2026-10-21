@@ -53,12 +53,7 @@ export function parseSearchQuery(rawQuery: string): ParsedSearchQuery {
     const lower = token.toLowerCase();
     if (lower === 'is:user' || lower === 'role:user') {
       roleFilter = 'user';
-    } else if (
-      lower === 'is:ai' ||
-      lower === 'is:assistant' ||
-      lower === 'role:ai' ||
-      lower === 'role:assistant'
-    ) {
+    } else if (lower === 'is:ai' || lower === 'is:assistant' || lower === 'role:ai' || lower === 'role:assistant') {
       roleFilter = 'assistant';
     } else if (lower === 'has:code') {
       hasCodeOnly = true;

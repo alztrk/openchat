@@ -2,8 +2,6 @@ import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { SegmentedControl, Select, Switch } from '@/design-system';
-import { useChatStore } from '@/modules/conversations/stores/chatStore';
-import { providerNameForModel } from '@/modules/conversations/components/composerUtils';
 import {
   changeLocalePreference,
   getLocalePreference,
@@ -11,6 +9,9 @@ import {
   type SupportedLocale,
   supportedLocales,
 } from '@/localization/i18n';
+import { providerNameForModel } from '@/modules/conversations/components/composerUtils';
+import { useComposerPreferencesStore } from '@/modules/conversations/data/composerPreferences';
+import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import {
   type AppearancePreferences,
   type AppFontPreference,
@@ -18,7 +19,6 @@ import {
   writeConversationTextSizePreference,
   writeConversationWidthPreference,
 } from '@/modules/settings/data/appearancePreferences';
-import { useComposerPreferencesStore } from '@/modules/conversations/data/composerPreferences';
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
 
 export type ThemePreference = 'system' | 'light' | 'dark';

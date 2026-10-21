@@ -53,7 +53,7 @@ export function ConversationActionsHeader({
   const activeConversation = useMemo(
     () =>
       activeConversationId && activeConversationId !== '__empty__'
-        ? conversations.find((conversation) => conversation.id === activeConversationId) ?? null
+        ? (conversations.find((conversation) => conversation.id === activeConversationId) ?? null)
         : null,
     [conversations, activeConversationId],
   );
@@ -66,9 +66,7 @@ export function ConversationActionsHeader({
   );
 
   const canToggleSplitView = Boolean(
-    !temporaryChat &&
-      onToggleSplitView &&
-      (splitConversationId !== null || conversations.length >= 2),
+    !temporaryChat && onToggleSplitView && (splitConversationId !== null || conversations.length >= 2),
   );
 
   return (
@@ -77,9 +75,7 @@ export function ConversationActionsHeader({
         {temporaryChat ? (
           <div className="flex min-w-0 items-center gap-2">
             <Clock3 aria-hidden="true" className="shrink-0 text-secondary-icon" size={16} />
-            <h1
-              className={`truncate text-sm font-semibold ${isSending ? 'openchat-title-shimmer' : 'text-text'}`}
-            >
+            <h1 className={`truncate text-sm font-semibold ${isSending ? 'openchat-title-shimmer' : 'text-text'}`}>
               {t('temporaryChatTitle')}
             </h1>
           </div>
@@ -157,10 +153,7 @@ export function ConversationActionsHeader({
               </Button>
             ) : null}
             {activeConversation ? (
-              <ConversationExportMenu
-                conversation={activeConversation}
-                disabled={isSending}
-              />
+              <ConversationExportMenu conversation={activeConversation} disabled={isSending} />
             ) : null}
             {onCloseSplit ? (
               <Button
@@ -212,10 +205,7 @@ export function ConversationActionsHeader({
               </Button>
             ) : null}
             {activeConversation && !temporaryChat ? (
-              <ConversationExportMenu
-                conversation={activeConversation}
-                disabled={isSending}
-              />
+              <ConversationExportMenu conversation={activeConversation} disabled={isSending} />
             ) : null}
           </>
         )}

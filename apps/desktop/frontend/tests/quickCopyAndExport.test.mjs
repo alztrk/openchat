@@ -134,10 +134,7 @@ function add(a, b) {
 End of message.`;
 
   const extracted = extractCodeBlocks(text);
-  assert.equal(
-    extracted,
-    'def greet():\n    return "Hello"\n\nfunction add(a, b) {\n  return a + b;\n}',
-  );
+  assert.equal(extracted, 'def greet():\n    return "Hello"\n\nfunction add(a, b) {\n  return a + b;\n}');
 });
 
 test('extractCodeBlocks returns empty string when no code blocks exist', () => {
@@ -229,8 +226,12 @@ test('conversation export labels format dates and messages according to active l
 
   // Verify date formatting conforms to the respective locale
   const sampleTime = new Date('2026-10-20T19:30:00Z').getTime();
-  const trDateStr = new Intl.DateTimeFormat('tr', { year: 'numeric', month: 'short', day: 'numeric' }).format(sampleTime);
-  const enDateStr = new Intl.DateTimeFormat('en', { year: 'numeric', month: 'short', day: 'numeric' }).format(sampleTime);
+  const trDateStr = new Intl.DateTimeFormat('tr', { year: 'numeric', month: 'short', day: 'numeric' }).format(
+    sampleTime,
+  );
+  const enDateStr = new Intl.DateTimeFormat('en', { year: 'numeric', month: 'short', day: 'numeric' }).format(
+    sampleTime,
+  );
 
   assert.ok(trDateStr.length > 0, 'Turkish date string formatted');
   assert.ok(enDateStr.length > 0, 'English date string formatted');

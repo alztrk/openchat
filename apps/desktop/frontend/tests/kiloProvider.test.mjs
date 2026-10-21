@@ -1,7 +1,7 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import test from 'node:test';
 
 test('kilo provider is registered in compatibleProviderIds and provider documentation URLs', () => {
   const credsPath = path.resolve('src/modules/providers/data/providerCredentials.ts');

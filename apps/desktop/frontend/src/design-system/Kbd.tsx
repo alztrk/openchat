@@ -39,21 +39,13 @@ function formatKey(key: string): string {
 /**
  * Renders an accessible keyboard shortcut badge with subtle elevation and border.
  */
-export function Kbd({
-  className,
-  keys,
-  children,
-  ...props
-}: KbdProps) {
+export function Kbd({ className, keys, children, ...props }: KbdProps) {
   const keyList = Array.isArray(keys) ? keys : keys ? [keys] : null;
 
   if (keyList && keyList.length > 0) {
     return (
       <kbd
-        className={cn(
-          'inline-flex items-center gap-1 font-code text-xs text-secondary-text select-none',
-          className,
-        )}
+        className={cn('inline-flex items-center gap-1 font-code text-xs text-secondary-text select-none', className)}
         {...props}
       >
         {keyList.map((k, index) => (

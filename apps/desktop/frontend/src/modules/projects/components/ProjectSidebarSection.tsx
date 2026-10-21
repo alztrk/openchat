@@ -212,9 +212,7 @@ export function ProjectSidebarSection({
                           onDuplicate={onDuplicate ? () => onDuplicate(conversation) : undefined}
                           onEditTags={() => onEditTags(conversation)}
                           onExport={(format) => onExport(conversation, format)}
-                          onInlineRename={
-                            onInlineRename ? (title) => onInlineRename(conversation, title) : undefined
-                          }
+                          onInlineRename={onInlineRename ? (title) => onInlineRename(conversation, title) : undefined}
                           onMoveToChats={() => onMoveToChats(conversation)}
                           onMoveToFolder={
                             onMoveToFolder ? (folderId) => onMoveToFolder(conversation, folderId) : undefined

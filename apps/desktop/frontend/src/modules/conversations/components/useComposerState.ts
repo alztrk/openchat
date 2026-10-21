@@ -1,6 +1,5 @@
 import { type FormEvent, type KeyboardEvent, type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { detectGhostTextSuggestion } from './ghostTextSuggestions';
 import {
   type ChatAttachmentErrorCode,
   ChatAttachmentInputError,
@@ -13,17 +12,17 @@ import {
 import { readChatGptFastMode, writeChatGptFastMode } from '@/modules/conversations/data/chatGptFastMode';
 import type { ChatModelFavorite } from '@/modules/conversations/data/chatStorage';
 import { renameConversation } from '@/modules/conversations/data/chatStorage';
+import {
+  shouldInsertNewlineFromKeyboard,
+  shouldSendFromKeyboard,
+  useComposerPreferencesStore,
+} from '@/modules/conversations/data/composerPreferences';
 import { useChatStreaming } from '@/modules/conversations/hooks/useChatStreaming';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { favoriteSourceConnection } from '@/modules/conversations/stores/chatStoreUtils';
 import type { ToolPermissionMode } from '@/modules/projects/data/projectPreferences';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
-import {
-  shouldInsertNewlineFromKeyboard,
-  shouldSendFromKeyboard,
-  useComposerPreferencesStore,
-} from '@/modules/conversations/data/composerPreferences';
 import { keyboardShortcutMatches, useKeyboardShortcutsStore } from '@/modules/settings/stores/keyboardShortcutsStore';
 import { localServiceClient } from '@/platform/local-service';
 import { type ChatSlashCommand, matchingSlashCommands } from './ChatSlashCommandMenu';
@@ -34,6 +33,7 @@ import {
   parseSlashCommand,
   providerNameForModel,
 } from './composerUtils';
+import { detectGhostTextSuggestion } from './ghostTextSuggestions';
 
 export interface UseComposerStateOptions {
   isTemporaryChat: boolean;

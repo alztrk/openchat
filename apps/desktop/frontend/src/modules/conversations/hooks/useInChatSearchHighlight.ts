@@ -118,10 +118,7 @@ export function useInChatSearchHighlight(
 
         try {
           CSS.highlights.set('openchat-search-match', new Highlight(...matchRanges));
-          CSS.highlights.set(
-            'openchat-search-active',
-            activeRange ? new Highlight(activeRange) : new Highlight(),
-          );
+          CSS.highlights.set('openchat-search-active', activeRange ? new Highlight(activeRange) : new Highlight());
         } catch {}
       } else {
         setSearchMatchInfo(0, 0);

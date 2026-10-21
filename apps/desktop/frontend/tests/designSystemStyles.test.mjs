@@ -21,10 +21,7 @@ test('index.css imports modularized tokens, typography, and animations styleshee
 });
 
 test('tokens.css defines color, surface, and elevation variables', () => {
-  const tokensCss = fs.readFileSync(
-    path.join(frontendRoot, 'src', 'design-system', 'styles', 'tokens.css'),
-    'utf-8',
-  );
+  const tokensCss = fs.readFileSync(path.join(frontendRoot, 'src', 'design-system', 'styles', 'tokens.css'), 'utf-8');
 
   assert.match(tokensCss, /--background:/);
   assert.match(tokensCss, /--navigation:/);
@@ -58,10 +55,7 @@ test('animations.css defines keyframes, micro-interactions, and reduced-motion f
 });
 
 test('design-system index.ts exports Badge, Kbd, and Skeleton primitives', () => {
-  const indexTs = fs.readFileSync(
-    path.join(frontendRoot, 'src', 'design-system', 'index.ts'),
-    'utf-8',
-  );
+  const indexTs = fs.readFileSync(path.join(frontendRoot, 'src', 'design-system', 'index.ts'), 'utf-8');
 
   assert.match(indexTs, /export\s*\{\s*Badge/);
   assert.match(indexTs, /export\s*\{\s*Kbd/);

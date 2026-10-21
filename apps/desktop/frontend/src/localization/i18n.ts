@@ -1,9 +1,8 @@
 import i18n, { type Resource } from 'i18next';
 import ICU from 'i18next-icu';
 import { initReactI18next } from 'react-i18next';
-
-import type en from './locales/en.json';
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import type en from './locales/en.json';
 
 export const supportedLocales = ['de', 'en', 'es', 'fr', 'tr'] as const;
 export type SupportedLocale = (typeof supportedLocales)[number];

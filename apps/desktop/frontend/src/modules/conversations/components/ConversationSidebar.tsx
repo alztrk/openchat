@@ -293,9 +293,7 @@ export function ConversationSidebar({
       sortSidebarConversations(
         activeConversations.filter(
           (conversation) =>
-            conversation.projectId === null &&
-            !conversation.isPinned &&
-            !folderIdByConversationId.has(conversation.id),
+            conversation.projectId === null && !conversation.isPinned && !folderIdByConversationId.has(conversation.id),
         ),
         sortMode,
         manualOrder,
@@ -621,9 +619,7 @@ export function ConversationSidebar({
         isAiWorking={isConversationAiWorking(conversation.id)}
         key={conversation.id}
         onArchive={() => void archiveConversation(conversation)}
-        onDelete={() =>
-          options.trashed ? setDeleteTarget(conversation) : handleMoveToTrash(conversation)
-        }
+        onDelete={() => (options.trashed ? setDeleteTarget(conversation) : handleMoveToTrash(conversation))}
         onDuplicate={() => handleDuplicateConversation(conversation)}
         onEditTags={() => setEditTarget({ conversation, mode: 'tags' })}
         onExport={(format) => void exportConversation(conversation, format)}
@@ -726,8 +722,7 @@ export function ConversationSidebar({
     return () => drawer.removeEventListener('keydown', keepFocusInside);
   }, [isModal]);
 
-  const showPinned =
-    (sectionFilter === 'all' || sectionFilter === 'chats') && sectionIsVisible(visiblePinned, false);
+  const showPinned = (sectionFilter === 'all' || sectionFilter === 'chats') && sectionIsVisible(visiblePinned, false);
   const showProjects = sectionFilter === 'all' || sectionFilter === 'projects';
   const showFolders =
     (sectionFilter === 'all' || sectionFilter === 'chats') && (customFolders.length > 0 || isCreatingFolder);
@@ -1058,7 +1053,10 @@ export function ConversationSidebar({
                           }`}
                           key={folder.id}
                           onDragLeave={(event) => {
-                            if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget))
+                            if (
+                              event.relatedTarget instanceof Node &&
+                              event.currentTarget.contains(event.relatedTarget)
+                            )
                               return;
                             setFolderDropTargetId(null);
                           }}
@@ -1302,11 +1300,7 @@ export function ConversationSidebar({
           </div>
         ) : null}
 
-        <CreateProjectDialog
-          onCreate={createProject}
-          onOpenChange={setCreateProjectOpen}
-          open={createProjectOpen}
-        />
+        <CreateProjectDialog onCreate={createProject} onOpenChange={setCreateProjectOpen} open={createProjectOpen} />
         <ProjectOptionsDialog
           onOpenChange={(open) => {
             if (!open) setProjectOptionsTarget(null);

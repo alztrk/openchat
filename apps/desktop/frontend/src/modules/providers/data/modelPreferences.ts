@@ -1,5 +1,5 @@
-import { containsAsciiControlCharacters } from '@/shared/utils/textValidation';
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { containsAsciiControlCharacters } from '@/shared/utils/textValidation';
 
 import type { ChatModel } from './chatModels';
 

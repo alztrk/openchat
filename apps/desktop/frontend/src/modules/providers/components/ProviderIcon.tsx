@@ -10,12 +10,12 @@ import deepSeekIconUrl from '@assets/icons/providers/deepseek.svg?no-inline';
 import fireworksIconUrl from '@assets/icons/providers/fireworks.svg?no-inline';
 import geminiIconUrl from '@assets/icons/providers/gemini.svg?no-inline';
 import groqIconUrl from '@assets/icons/providers/groq.svg?no-inline';
+import kiloIconUrl from '@assets/icons/providers/kilo.svg?no-inline';
 import mistralIconUrl from '@assets/icons/providers/mistral.svg?no-inline';
 import perplexityIconUrl from '@assets/icons/providers/perplexity.svg?no-inline';
 import sambaNovaIconUrl from '@assets/icons/providers/sambanova.svg?no-inline';
 import togetherIconUrl from '@assets/icons/providers/together.svg?no-inline';
 import xAiIconUrl from '@assets/icons/providers/xai.svg?no-inline';
-import kiloIconUrl from '@assets/icons/providers/kilo.svg?no-inline';
 import { Github, Network, Star } from 'lucide-react';
 import { LocalEngineIcon } from './EngineIcon';
 

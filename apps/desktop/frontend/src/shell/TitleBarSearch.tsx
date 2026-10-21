@@ -6,17 +6,13 @@ import {
   type ChatConversation,
   normalizeSearchText,
   parseSearchQuery,
-  searchStoredMessages,
   type StoredSearchMessageResult,
+  searchStoredMessages,
 } from '@/modules/conversations/data/chatStorage';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 
 export interface TitleBarSearchProps {
-  onSelectConversation(
-    conversationId: string,
-    messageId?: string | null,
-    searchQuery?: string | null,
-  ): void;
+  onSelectConversation(conversationId: string, messageId?: string | null, searchQuery?: string | null): void;
 }
 
 interface ThreadMessageItem {
@@ -214,9 +210,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
       : conversations.filter((conversation) => {
           const normTitle = normalizeSearchText(conversation.title);
           const matchesTitle = normTitle.includes(normalizedCleanQuery);
-          const matchesTags = conversation.tags.some((tag) =>
-            normalizeSearchText(tag).includes(normalizedCleanQuery),
-          );
+          const matchesTags = conversation.tags.some((tag) => normalizeSearchText(tag).includes(normalizedCleanQuery));
           return matchesTitle || matchesTags;
         });
 
@@ -232,7 +226,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
         isPinned: conversation.isPinned,
         isArchived: conversation.isArchived,
         projectId: conversation.projectId,
-        projectName: conversation.projectId ? projectMap.get(conversation.projectId) ?? null : null,
+        projectName: conversation.projectId ? (projectMap.get(conversation.projectId) ?? null) : null,
         updatedAt: conversation.updatedAt,
         isTitleMatch: true,
         messages,
@@ -252,7 +246,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
         isPinned: conversation?.isPinned ?? false,
         isArchived: conversation?.isArchived ?? false,
         projectId: conversation?.projectId ?? null,
-        projectName: conversation?.projectId ? projectMap.get(conversation.projectId) ?? null : null,
+        projectName: conversation?.projectId ? (projectMap.get(conversation.projectId) ?? null) : null,
         updatedAt: conversation?.updatedAt ?? messages[0]?.createdAtUnixMs ?? 0,
         isTitleMatch: false,
         messages,
@@ -331,11 +325,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
         if (selected.type === 'conversation') {
           onSelectConversation(selected.conversationId);
         } else {
-          onSelectConversation(
-            selected.conversationId,
-            selected.messageId,
-            parsedQuery.cleanQuery || query.trim(),
-          );
+          onSelectConversation(selected.conversationId, selected.messageId, parsedQuery.cleanQuery || query.trim());
         }
         setIsOpen(false);
         inputRef.current?.blur();
@@ -358,11 +348,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
     if (query.trim()) {
       setRecentSearches(persistRecentSearch(query.trim()));
     }
-    onSelectConversation(
-      conversationId,
-      messageId,
-      parsedQuery.cleanQuery || query.trim(),
-    );
+    onSelectConversation(conversationId, messageId, parsedQuery.cleanQuery || query.trim());
     setIsOpen(false);
   };
 
@@ -414,11 +400,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
       ref={containerRef}
     >
       <div className="relative flex w-full items-center">
-        <Search
-          aria-hidden="true"
-          className="pointer-events-none absolute left-2.5 text-secondary-icon"
-          size={14}
-        />
+        <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 text-secondary-icon" size={14} />
         <input
           aria-autocomplete="list"
           aria-expanded={isOpen}
@@ -443,11 +425,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
 
         <div className="absolute right-2 flex items-center gap-1">
           {isSearchingMessages ? (
-            <LoaderCircle
-              aria-hidden="true"
-              className="animate-spin text-secondary-icon"
-              size={13}
-            />
+            <LoaderCircle aria-hidden="true" className="animate-spin text-secondary-icon" size={13} />
           ) : null}
           {query ? (
             <button
@@ -524,9 +502,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
                 </span>
               ) : null}
               {parsedQuery.hasCodeOnly ? (
-                <span className="rounded-xs bg-accent/15 px-1.5 py-0.2 text-accent font-medium">
-                  Kod bloğu
-                </span>
+                <span className="rounded-xs bg-accent/15 px-1.5 py-0.2 text-accent font-medium">Kod bloğu</span>
               ) : null}
             </div>
           ) : null}

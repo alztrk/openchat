@@ -19,11 +19,7 @@ const variantClasses: Record<SkeletonVariant, string> = {
 /**
  * Renders a layout-shift-free loading placeholder block with a gentle shimmer animation.
  */
-export function Skeleton({
-  className,
-  variant = 'rounded',
-  ...props
-}: SkeletonProps) {
+export function Skeleton({ className, variant = 'rounded', ...props }: SkeletonProps) {
   return (
     <div
       aria-hidden="true"

@@ -8,7 +8,6 @@ import {
   saveMessage,
 } from '@/modules/conversations/data/chatStorage';
 import { notifyAssistantResponse, notifyPendingQuestion } from '@/modules/notifications/data/notificationRuntime';
-import { getAudioContext, playAssistantResponseAudio } from '@/shared/utils/audioFeedback';
 import {
   loadProjectToolPermissionRules,
   loadToolPermissionMode,
@@ -26,6 +25,7 @@ import {
 } from '@/modules/settings/data/personalMemory';
 import { readSharedInstructions } from '@/modules/settings/data/sharedInstructions';
 import { type LocalServiceClient, LocalServiceError } from '@/platform/local-service';
+import { getAudioContext, playAssistantResponseAudio } from '@/shared/utils/audioFeedback';
 import type { ChatState } from './chatStore';
 import { loadTitleGenerationRequest } from './chatStoreTitleGeneration';
 import { handleToolPermissionEvent } from './chatStoreToolPermissions';
@@ -64,8 +64,7 @@ export function createSendMessageAction(
       state.pendingQuestionSendBlock?.conversationId === targetConvId &&
       state.pendingQuestionSendBlock.blocked;
     const conversationOperationBlocksSend =
-      targetConvId !== null &&
-      (state.compactingConversationId === targetConvId || state.isCreatingMessageBranch);
+      targetConvId !== null && (state.compactingConversationId === targetConvId || state.isCreatingMessageBranch);
     if (
       (!content && attachments.length === 0 && !resumeRunId && !isRetry && !userMessageAlreadySaved) ||
       state.isSending ||
@@ -157,9 +156,7 @@ export function createSendMessageAction(
         set((current) => ({ messages: upsertMessage(current.messages, message) }));
       }
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent('openchat-message-stream', { detail: { message } }),
-        );
+        window.dispatchEvent(new CustomEvent('openchat-message-stream', { detail: { message } }));
       }
     });
     let requestOutcome: ProviderRequestOutcome | null = null;

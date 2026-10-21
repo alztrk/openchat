@@ -47,7 +47,11 @@ test('assistant message uses ground-truth outputTokens when reported by model', 
   ];
 
   const estimate = estimateMessages(messages);
-  assert.equal(estimate.assistantTokens, 4, 'Assistant tokens should match message.outputTokens (4), not byte count (6)');
+  assert.equal(
+    estimate.assistantTokens,
+    4,
+    'Assistant tokens should match message.outputTokens (4), not byte count (6)',
+  );
   assert.equal(estimate.userTokens, 7, 'User tokens should use estimateText ("Merhaba" -> 7 bytes)');
 });
 
@@ -64,5 +68,9 @@ test('assistant message falls back to text byte estimation when outputTokens is 
   ];
 
   const estimate = estimateMessages(messages);
-  assert.equal(estimate.assistantTokens, 6, 'Assistant tokens should fall back to byte count when outputTokens is null');
+  assert.equal(
+    estimate.assistantTokens,
+    6,
+    'Assistant tokens should fall back to byte count when outputTokens is null',
+  );
 });

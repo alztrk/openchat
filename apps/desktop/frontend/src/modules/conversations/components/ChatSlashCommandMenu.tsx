@@ -1,28 +1,10 @@
-import {
-  Archive,
-  Bot,
-  Brain,
-  Flag,
-  ListTodo,
-  type LucideIcon,
-  Pencil,
-  SquarePen,
-  TextQuote,
-} from 'lucide-react';
+import { Archive, Bot, Brain, Flag, ListTodo, type LucideIcon, Pencil, SquarePen, TextQuote } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/design-system';
 
-export type ChatSlashCommand =
-  | 'new'
-  | 'summarize'
-  | 'rename'
-  | 'model'
-  | 'compact'
-  | 'reasoning'
-  | 'plan'
-  | 'goal';
+export type ChatSlashCommand = 'new' | 'summarize' | 'rename' | 'model' | 'compact' | 'reasoning' | 'plan' | 'goal';
 
 type TranslationKey = keyof typeof import('@/localization/locales/en.json');
 

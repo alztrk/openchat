@@ -1,8 +1,8 @@
 import { Columns2, Github, MessageSquare } from 'lucide-react';
 import {
+  lazy,
   type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
-  lazy,
   type PointerEvent as ReactPointerEvent,
   Suspense,
   useCallback,
@@ -13,10 +13,7 @@ import {
 } from 'react';
 import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import {
-  ChatFileChangesPanel,
-  type RightWorkspaceTab,
-} from '@/modules/conversations/components/ChatFileChangesPanel';
+import { ChatFileChangesPanel, type RightWorkspaceTab } from '@/modules/conversations/components/ChatFileChangesPanel';
 import { ConversationPane } from '@/modules/conversations/components/ConversationPane';
 import { ConversationSidebar } from '@/modules/conversations/components/ConversationSidebar';
 import { TemporaryChatExitDialog } from '@/modules/conversations/components/TemporaryChatExitDialog';
@@ -411,7 +408,6 @@ export function App() {
     }
   };
 
-
   const moveInHistory = (offset: number) => {
     requestTemporaryChatExit(() => {
       setSurfaceHistory((current) => {
@@ -641,16 +637,12 @@ export function App() {
 
   const handleTogglePrimaryRightPanel = useCallback(() => {
     if (!activeConversationId) return;
-    setActiveRightPanelConversationId((current) =>
-      current === activeConversationId ? null : activeConversationId,
-    );
+    setActiveRightPanelConversationId((current) => (current === activeConversationId ? null : activeConversationId));
   }, [activeConversationId]);
 
   const handleToggleSecondaryRightPanel = useCallback(() => {
     if (!splitConversationId) return;
-    setActiveRightPanelConversationId((current) =>
-      current === splitConversationId ? null : splitConversationId,
-    );
+    setActiveRightPanelConversationId((current) => (current === splitConversationId ? null : splitConversationId));
   }, [splitConversationId]);
 
   const handleOpenRightPanelForConversation = useCallback(
@@ -724,10 +716,7 @@ export function App() {
     if (draggingConversationId !== null) return true;
     if (getSidebarDraggingConversationId() !== null) return true;
     const types = Array.from(event.dataTransfer?.types ?? []);
-    return (
-      types.includes('application/x-openchat-conversation') ||
-      types.includes('text/plain')
-    );
+    return types.includes('application/x-openchat-conversation') || types.includes('text/plain');
   };
 
   const workspaceDragDepthRef = useRef(0);
@@ -926,15 +915,12 @@ export function App() {
                       hideInternalRightPanel
                       isLargeText={appearance.conversationTextSize === 'large'}
                       isRightPanelOpen={
-                        activeConversationId !== null &&
-                        activeRightPanelConversationId === activeConversationId
+                        activeConversationId !== null && activeRightPanelConversationId === activeConversationId
                       }
                       notificationFeedbackKey={notificationFeedback}
                       onDismissNotificationFeedback={() => setNotificationFeedback(null)}
                       onDropConversation={handleOpenOrSplitConversation}
-                      onOpenRightPanel={(tab) =>
-                        handleOpenRightPanelForConversation(activeConversationId, tab)
-                      }
+                      onOpenRightPanel={(tab) => handleOpenRightPanelForConversation(activeConversationId, tab)}
                       onOpenSettings={() => navigate('settings')}
                       onQuestionFocusHandled={clearQuestionFocusTarget}
                       onRequestTemporaryExit={requestTemporaryChatExit}
@@ -967,8 +953,7 @@ export function App() {
                               activeConversationId={splitConversationId}
                               conversations={conversations}
                               isRightPanelOpen={
-                                splitConversationId !== null &&
-                                activeRightPanelConversationId === splitConversationId
+                                splitConversationId !== null && activeRightPanelConversationId === splitConversationId
                               }
                               isSplitSecondary={true}
                               onCloseSplit={handleCloseSecondarySplit}
@@ -980,15 +965,12 @@ export function App() {
                           hideInternalRightPanel
                           isLargeText={appearance.conversationTextSize === 'large'}
                           isRightPanelOpen={
-                            splitConversationId !== null &&
-                            activeRightPanelConversationId === splitConversationId
+                            splitConversationId !== null && activeRightPanelConversationId === splitConversationId
                           }
                           notificationFeedbackKey={null}
                           onDismissNotificationFeedback={() => {}}
                           onDropConversation={handleOpenOrSplitConversation}
-                          onOpenRightPanel={(tab) =>
-                            handleOpenRightPanelForConversation(splitConversationId, tab)
-                          }
+                          onOpenRightPanel={(tab) => handleOpenRightPanelForConversation(splitConversationId, tab)}
                           onOpenSettings={() => navigate('settings')}
                           onQuestionFocusHandled={() => {}}
                           onRequestTemporaryExit={requestTemporaryChatExit}

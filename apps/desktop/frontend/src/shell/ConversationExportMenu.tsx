@@ -5,10 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/design-system';
 import { Tooltip } from '@/design-system/Tooltip';
 import type { ChatConversation } from '@/modules/conversations/data/chatStorage';
-import {
-  type ExportFormat,
-  exportConversationToFile,
-} from '@/modules/conversations/data/conversationExport';
+import { type ExportFormat, exportConversationToFile } from '@/modules/conversations/data/conversationExport';
 import { conversationMarkdownLabels } from '@/modules/conversations/data/conversationMarkdownLabels';
 
 export interface ConversationExportMenuProps {
@@ -158,16 +155,12 @@ export function ConversationExportMenu({ conversation, disabled = false }: Conve
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-1.5">
-                    <span className="truncate text-sm font-medium text-text">
-                      {t('exportFormatMarkdownTitle')}
-                    </span>
+                    <span className="truncate text-sm font-medium text-text">{t('exportFormatMarkdownTitle')}</span>
                     <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-mono text-[11px] text-secondary-text">
                       .md
                     </span>
                   </div>
-                  <p className="truncate text-xs text-secondary-text">
-                    {t('exportFormatMarkdownHint')}
-                  </p>
+                  <p className="truncate text-xs text-secondary-text">{t('exportFormatMarkdownHint')}</p>
                 </div>
               </button>
 
@@ -182,16 +175,12 @@ export function ConversationExportMenu({ conversation, disabled = false }: Conve
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-1.5">
-                    <span className="truncate text-sm font-medium text-text">
-                      {t('exportFormatHtmlTitle')}
-                    </span>
+                    <span className="truncate text-sm font-medium text-text">{t('exportFormatHtmlTitle')}</span>
                     <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-mono text-[11px] text-secondary-text">
                       .html
                     </span>
                   </div>
-                  <p className="truncate text-xs text-secondary-text">
-                    {t('exportFormatHtmlHint')}
-                  </p>
+                  <p className="truncate text-xs text-secondary-text">{t('exportFormatHtmlHint')}</p>
                 </div>
               </button>
 
@@ -206,16 +195,12 @@ export function ConversationExportMenu({ conversation, disabled = false }: Conve
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-1.5">
-                    <span className="truncate text-sm font-medium text-text">
-                      {t('exportFormatJsonTitle')}
-                    </span>
+                    <span className="truncate text-sm font-medium text-text">{t('exportFormatJsonTitle')}</span>
                     <span className="shrink-0 rounded bg-surface px-1.5 py-0.5 font-mono text-[11px] text-secondary-text">
                       .json
                     </span>
                   </div>
-                  <p className="truncate text-xs text-secondary-text">
-                    {t('exportFormatJsonHint')}
-                  </p>
+                  <p className="truncate text-xs text-secondary-text">{t('exportFormatJsonHint')}</p>
                 </div>
               </button>
             </div>,

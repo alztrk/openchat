@@ -31,13 +31,7 @@ const sizeClasses: Record<BadgeSize, string> = {
 /**
  * Renders an accessible, rounded pill badge with semantic color variants.
  */
-export function Badge({
-  className,
-  variant = 'neutral',
-  size = 'default',
-  children,
-  ...props
-}: BadgeProps) {
+export function Badge({ className, variant = 'neutral', size = 'default', children, ...props }: BadgeProps) {
   return (
     <span
       className={cn(

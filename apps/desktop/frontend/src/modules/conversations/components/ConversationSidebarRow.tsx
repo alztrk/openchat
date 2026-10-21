@@ -483,9 +483,7 @@ export function ConversationSidebarRow({
             aria-current={active ? 'page' : undefined}
             className={`min-w-0 flex-1 flex items-center justify-start gap-2 rounded-button bg-transparent px-3 text-left text-settings-description transition-all duration-quick hover:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
               canDrag ? 'cursor-grab active:cursor-grabbing' : ''
-            } ${
-              viewMode === 'detailed' ? 'min-h-12 py-1.5' : 'min-h-9 py-1.5'
-            } ${
+            } ${viewMode === 'detailed' ? 'min-h-12 py-1.5' : 'min-h-9 py-1.5'} ${
               active
                 ? 'font-medium text-text'
                 : 'font-normal text-text/80 group-hover:text-text group-focus-within:text-text'
@@ -518,43 +516,20 @@ export function ConversationSidebarRow({
                 className="relative flex size-4 shrink-0 items-center justify-center text-accent"
                 role="status"
               >
-                <svg
-                  aria-hidden="true"
-                  className="openchat-ai-ring-spinner size-3.5"
-                  fill="none"
-                  viewBox="0 0 16 16"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="8"
-                    cy="8"
-                    r="6"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  />
-                  <circle
-                    className="openchat-ai-ring-arc"
-                    cx="8"
-                    cy="8"
-                    r="6"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                  />
+                <svg aria-hidden="true" className="openchat-ai-ring-spinner size-3.5" fill="none" viewBox="0 0 16 16">
+                  <circle className="opacity-25" cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" />
+                  <circle className="openchat-ai-ring-arc" cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" />
                 </svg>
               </span>
             ) : null}
             <span className="min-w-0 flex-1">
-              <span
-                className={`block truncate ${isAiWorking ? 'openchat-title-shimmer font-medium' : ''}`}
-              >
+              <span className={`block truncate ${isAiWorking ? 'openchat-title-shimmer font-medium' : ''}`}>
                 {conversation.title}
               </span>
               {viewMode === 'detailed' ? (
                 <span className="mt-0.5 flex items-center gap-1.5 truncate text-[11px] font-normal text-secondary-text/75">
                   <span>{formattedUpdatedTime}</span>
-                  {conversation.tags.length > 0 ? (
-                    <span className="truncate">· #{conversation.tags[0]}</span>
-                  ) : null}
+                  {conversation.tags.length > 0 ? <span className="truncate">· #{conversation.tags[0]}</span> : null}
                 </span>
               ) : null}
             </span>
@@ -643,7 +618,11 @@ export function ConversationSidebarRow({
                   title={archived ? t('restoreConversation') : t('archiveConversation')}
                   variant="ghost"
                 >
-                  {archived ? <ArchiveRestore aria-hidden="true" size={13.5} /> : <Archive aria-hidden="true" size={13.5} />}
+                  {archived ? (
+                    <ArchiveRestore aria-hidden="true" size={13.5} />
+                  ) : (
+                    <Archive aria-hidden="true" size={13.5} />
+                  )}
                 </Button>
                 <Button
                   aria-expanded={menuOpen}

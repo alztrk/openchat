@@ -1,13 +1,4 @@
-import {
-  ArrowLeft,
-  ArrowRight,
-  Copy,
-  Minus,
-  PanelLeftClose,
-  PanelLeftOpen,
-  Square,
-  X,
-} from 'lucide-react';
+import { ArrowLeft, ArrowRight, Copy, Minus, PanelLeftClose, PanelLeftOpen, Square, X } from 'lucide-react';
 import { type MouseEvent, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -22,11 +13,7 @@ export interface TitleBarProps {
   isSidebarOpen?: boolean;
   onGoBack(): void;
   onGoForward(): void;
-  onSelectConversation(
-    conversationId: string,
-    messageId?: string | null,
-    searchQuery?: string | null,
-  ): void;
+  onSelectConversation(conversationId: string, messageId?: string | null, searchQuery?: string | null): void;
   onToggleSidebar?(): void;
 }
 

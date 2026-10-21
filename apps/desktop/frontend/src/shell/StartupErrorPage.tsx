@@ -1,8 +1,8 @@
 import { AlertTriangle, Copy, LoaderCircle, Minus, Square, X } from 'lucide-react';
 import { type MouseEvent, useEffect, useLayoutEffect, useState } from 'react';
 import { Button, Tooltip } from '@/design-system';
-import { getCurrentWindow, isTauri } from '@/platform/tauri';
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { getCurrentWindow, isTauri } from '@/platform/tauri';
 import { BrandMark } from './BrandMark';
 
 const supportedLocales = ['de', 'en', 'es', 'fr', 'tr'] as const;

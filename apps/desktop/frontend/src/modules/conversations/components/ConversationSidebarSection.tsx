@@ -71,7 +71,9 @@ export function ConversationSidebarSection({
           <ChevronDown
             aria-hidden="true"
             className={`openchat-disclosure-chevron shrink-0 text-secondary-icon/70 transition-opacity duration-quick ${
-              collapsed ? 'opacity-100' : 'opacity-0 group-hover/sidebar-heading:opacity-100 group-focus-within/sidebar-heading:opacity-100'
+              collapsed
+                ? 'opacity-100'
+                : 'opacity-0 group-hover/sidebar-heading:opacity-100 group-focus-within/sidebar-heading:opacity-100'
             }`}
             data-collapsed={collapsed}
             size={13}

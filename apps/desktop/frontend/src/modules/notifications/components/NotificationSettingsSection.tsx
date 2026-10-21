@@ -276,9 +276,7 @@ export function NotificationSettingsSection() {
           <VolumeRow
             description={t('notificationSoundVolumeDescription')}
             disabled={
-              isSaving ||
-              preferences.soundMuted ||
-              (!preferences.soundEnabled && !preferences.failureSoundEnabled)
+              isSaving || preferences.soundMuted || (!preferences.soundEnabled && !preferences.failureSoundEnabled)
             }
             isTesting={isTestingChime}
             label={t('notificationSoundVolume')}
@@ -368,9 +366,7 @@ function VolumeRow({
             }
           }}
         />
-        <span className="min-w-10 text-right text-xs tabular-nums text-secondary-text">
-          {Math.round(value * 100)}%
-        </span>
+        <span className="min-w-10 text-right text-xs tabular-nums text-secondary-text">{Math.round(value * 100)}%</span>
         <Button disabled={disabled || isTesting} onClick={onTest} size="small" variant="ghost">
           {isTesting ? (
             <LoaderCircle aria-hidden="true" className="animate-spin" size={14} />

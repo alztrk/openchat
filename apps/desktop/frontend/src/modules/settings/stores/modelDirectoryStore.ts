@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import { containsAsciiControlCharacters } from '@/shared/utils/textValidation';
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { containsAsciiControlCharacters } from '@/shared/utils/textValidation';
 
 const preferencePrefix = 'openchat.localModelDirectory.';
 const llamaCppEngineId = 'llama_cpp';

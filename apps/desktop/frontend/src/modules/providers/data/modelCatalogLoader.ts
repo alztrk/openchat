@@ -155,7 +155,8 @@ export async function loadApiKeyModels(client: LocalServiceClient, forceRefresh:
   } catch {
     copilotStatusFailed = true;
   }
-  const kiloConfigured = status.compatibleProviders.find((provider) => provider.providerId === 'kilo')?.isConfigured ?? false;
+  const kiloConfigured =
+    status.compatibleProviders.find((provider) => provider.providerId === 'kilo')?.isConfigured ?? false;
   const providers: ChatModelProvider[] = [
     { providerId: 'opencode', name: null, available: true },
     { providerId: 'kilo', name: null, available: true },

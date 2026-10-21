@@ -71,8 +71,7 @@ export function parseReasoningSummaries(value: string): ReasoningSummary[] {
       const elapsed = item.elapsedMicroseconds;
       return {
         content: item.content,
-        elapsedMicroseconds:
-          typeof elapsed === 'number' && Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : null,
+        elapsedMicroseconds: typeof elapsed === 'number' && Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : null,
       };
     });
   } catch {
@@ -211,10 +210,7 @@ export function buildConversationMarkdown(
   return markdown.join('\n');
 }
 
-export function buildConversationJson(
-  conversation: ChatConversation,
-  messages: readonly ChatMessage[],
-): string {
+export function buildConversationJson(conversation: ChatConversation, messages: readonly ChatMessage[]): string {
   const transcript = {
     $schema: 'https://openchat.dev/schemas/transcript-v1.json',
     version: 1,

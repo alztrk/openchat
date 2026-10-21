@@ -1,6 +1,6 @@
 import type { JsonObject, LocalServiceClient } from '@/platform/local-service';
-import { isObject } from '@/shared/utils/json';
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { isObject } from '@/shared/utils/json';
 
 export type ModelPricingState = 'current' | 'stale' | 'unavailable';
 

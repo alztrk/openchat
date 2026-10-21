@@ -6,11 +6,7 @@ import test from 'node:test';
 // Localized strings verification
 test('all 5 locales define drag-and-drop context ingestion keys', () => {
   const locales = ['en', 'tr', 'de', 'es', 'fr'];
-  const requiredKeys = [
-    'dropFilesOverlayTitle',
-    'dropFilesOverlayDescription',
-    'composerDropTargetLabel',
-  ];
+  const requiredKeys = ['dropFilesOverlayTitle', 'dropFilesOverlayDescription', 'composerDropTargetLabel'];
 
   for (const locale of locales) {
     const filePath = resolve(`src/localization/locales/${locale}.json`);
@@ -238,9 +234,7 @@ test('attachment size limits enforce bounds on single files and combined totals'
   }));
   assert.equal(validateTotalAttachments(tenFiles, []).ok, true);
 
-  const eleventhFile = [
-    { id: 'file-11', name: 'doc-11.txt', mimeType: 'text/plain', sizeBytes: 100, kind: 'text' },
-  ];
+  const eleventhFile = [{ id: 'file-11', name: 'doc-11.txt', mimeType: 'text/plain', sizeBytes: 100, kind: 'text' }];
   assert.deepEqual(validateTotalAttachments(tenFiles, eleventhFile), {
     ok: false,
     error: 'attachmentCountExceeded',
@@ -254,9 +248,7 @@ test('attachment size limits enforce bounds on single files and combined totals'
   ];
   assert.equal(validateTotalAttachments(threeImages, []).ok, true);
 
-  const fourthImage = [
-    { id: 'img-4', name: '4.png', mimeType: 'image/png', sizeBytes: 1000, kind: 'image' },
-  ];
+  const fourthImage = [{ id: 'img-4', name: '4.png', mimeType: 'image/png', sizeBytes: 1000, kind: 'image' }];
   assert.deepEqual(validateTotalAttachments(threeImages, fourthImage), {
     ok: false,
     error: 'attachmentCountExceeded',
@@ -269,9 +261,7 @@ test('attachment size limits enforce bounds on single files and combined totals'
   ];
   assert.equal(validateTotalAttachments(largeFiles, []).ok, true); // 14 MB
 
-  const extraFile = [
-    { id: 'doc-1', name: 'extra.txt', mimeType: 'text/plain', sizeBytes: 1024, kind: 'text' },
-  ];
+  const extraFile = [{ id: 'doc-1', name: 'extra.txt', mimeType: 'text/plain', sizeBytes: 1024, kind: 'text' }];
   assert.deepEqual(validateTotalAttachments(largeFiles, extraFile), {
     ok: false,
     error: 'attachmentTotalTooLarge',

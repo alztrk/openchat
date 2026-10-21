@@ -13,10 +13,7 @@ import {
   setConversationsArchived,
   setConversationTags,
 } from '@/modules/conversations/data/chatStorage';
-import {
-  type ExportFormat,
-  exportConversationToFile,
-} from '@/modules/conversations/data/conversationExport';
+import { type ExportFormat, exportConversationToFile } from '@/modules/conversations/data/conversationExport';
 import { conversationMarkdownLabels } from '@/modules/conversations/data/conversationMarkdownLabels';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { localServiceClient } from '@/platform/local-service';

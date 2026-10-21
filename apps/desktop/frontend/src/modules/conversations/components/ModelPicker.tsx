@@ -618,7 +618,9 @@ function buildProviderOptions(sources: readonly ChatModelProvider[], models: rea
         source?.name ??
         models.find((model) => providerFamily(model.providerId) === providerId)?.customProvider?.name ??
         null,
-      available: source?.available ?? (providerId === 'opencode' || providerId === 'kilo' || providerId === 'llama_cpp' || modelAvailable),
+      available:
+        source?.available ??
+        (providerId === 'opencode' || providerId === 'kilo' || providerId === 'llama_cpp' || modelAvailable),
     };
   });
 }

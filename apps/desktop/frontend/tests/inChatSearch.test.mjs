@@ -5,7 +5,6 @@ import {
   findInChatMatches,
   isCodeBlockMessage,
   isErrorMessage,
-  matchesInChatFilter,
 } from '../src/modules/conversations/data/inChatSearch.ts';
 
 function createMessage(overrides = {}) {
@@ -56,9 +55,7 @@ test('findInChatMatches finds matches case-insensitively across messages', () =>
 });
 
 test('findInChatMatches finds multiple occurrences within a single message', () => {
-  const messages = [
-    createMessage({ id: 'msg-1', content: 'The test results showed test passed on the first test.' }),
-  ];
+  const messages = [createMessage({ id: 'msg-1', content: 'The test results showed test passed on the first test.' })];
 
   const matches = findInChatMatches(messages, 'test', 'all');
   assert.equal(matches.length, 3);

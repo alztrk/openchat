@@ -231,7 +231,11 @@ export function MessageItem({
                 size="icon"
                 variant="ghost"
               >
-                {copyResult === 'copied' ? <Check aria-hidden="true" size={16} /> : <Copy aria-hidden="true" size={16} />}
+                {copyResult === 'copied' ? (
+                  <Check aria-hidden="true" size={16} />
+                ) : (
+                  <Copy aria-hidden="true" size={16} />
+                )}
               </Button>
             )
           ) : null}

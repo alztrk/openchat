@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import test from 'node:test';
 
 // Storage mock for unifiedStorage
@@ -80,7 +79,10 @@ test('Option 1 (Enter): keyboard send and newline rules', () => {
     true,
   );
   assert.equal(
-    shouldInsertNewlineFromKeyboard({ key: 'Enter', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false }, mode),
+    shouldInsertNewlineFromKeyboard(
+      { key: 'Enter', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false },
+      mode,
+    ),
     false,
   );
 
@@ -90,7 +92,10 @@ test('Option 1 (Enter): keyboard send and newline rules', () => {
     false,
   );
   assert.equal(
-    shouldInsertNewlineFromKeyboard({ key: 'Enter', ctrlKey: false, metaKey: false, altKey: false, shiftKey: true }, mode),
+    shouldInsertNewlineFromKeyboard(
+      { key: 'Enter', ctrlKey: false, metaKey: false, altKey: false, shiftKey: true },
+      mode,
+    ),
     true,
   );
 
@@ -122,7 +127,10 @@ test('Option 2 (Ctrl/Cmd+Enter): keyboard send and newline rules', () => {
     false,
   );
   assert.equal(
-    shouldInsertNewlineFromKeyboard({ key: 'Enter', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false }, mode),
+    shouldInsertNewlineFromKeyboard(
+      { key: 'Enter', ctrlKey: false, metaKey: false, altKey: false, shiftKey: false },
+      mode,
+    ),
     true,
   );
 
@@ -132,7 +140,10 @@ test('Option 2 (Ctrl/Cmd+Enter): keyboard send and newline rules', () => {
     false,
   );
   assert.equal(
-    shouldInsertNewlineFromKeyboard({ key: 'Enter', ctrlKey: false, metaKey: false, altKey: false, shiftKey: true }, mode),
+    shouldInsertNewlineFromKeyboard(
+      { key: 'Enter', ctrlKey: false, metaKey: false, altKey: false, shiftKey: true },
+      mode,
+    ),
     true,
   );
 
@@ -142,7 +153,10 @@ test('Option 2 (Ctrl/Cmd+Enter): keyboard send and newline rules', () => {
     true,
   );
   assert.equal(
-    shouldInsertNewlineFromKeyboard({ key: 'Enter', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false }, mode),
+    shouldInsertNewlineFromKeyboard(
+      { key: 'Enter', ctrlKey: true, metaKey: false, altKey: false, shiftKey: false },
+      mode,
+    ),
     false,
   );
 
@@ -152,7 +166,10 @@ test('Option 2 (Ctrl/Cmd+Enter): keyboard send and newline rules', () => {
     true,
   );
   assert.equal(
-    shouldInsertNewlineFromKeyboard({ key: 'Enter', ctrlKey: false, metaKey: true, altKey: false, shiftKey: false }, mode),
+    shouldInsertNewlineFromKeyboard(
+      { key: 'Enter', ctrlKey: false, metaKey: true, altKey: false, shiftKey: false },
+      mode,
+    ),
     false,
   );
 
