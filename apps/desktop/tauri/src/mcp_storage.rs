@@ -13,7 +13,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-pub(crate) use openchat_service::secrets::{SecretMap, SecretMapUpdateLock};
+pub(crate) use openchat_local_service::secrets::{SecretMap, SecretMapUpdateLock};
 use serde::{Deserialize, Deserializer, Serialize};
 use zeroize::Zeroizing;
 

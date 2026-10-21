@@ -27,12 +27,13 @@ migrate_working_dir/
 # Build output
 /build/
 /target/
-/services/openchat-service/target/
+/services/openchat-local-service/target/
 /apps/desktop/frontend/node_modules/
 /apps/desktop/frontend/dist/
 /apps/desktop/tauri/target/
 /apps/desktop/tauri/gen/schemas/
 /apps/desktop/tauri/binaries/
+/scripts/
 /coverage/
 /test/failures/
 

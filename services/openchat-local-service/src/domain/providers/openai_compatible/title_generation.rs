@@ -16,7 +16,7 @@ use crate::{
     chat_operation::TitleGenerationModel,
     chatgpt::ChatGptService,
     chatgpt_store::{self, StoredMessage},
-    modules::http_headers::sensitive_api_key_header,
+    domain::http_headers::sensitive_api_key_header,
     protocol::{EventSink, Response as RpcResponse},
     storage::AppStorage,
 };

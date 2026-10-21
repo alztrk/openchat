@@ -54,6 +54,20 @@ absent, while `noImplicitOverride` requires inherited class members to mark
 intentional overrides explicitly. Suppress a rule only when the behavior is
 intentional and the source explains why.
 
+## Cargo build artifacts
+
+Cargo writes generated build artifacts to the workspace `target` directory.
+The development profile keeps line tables for the workspace and omits debug
+symbols from dependencies. Use `cargo build --profile debugging` when full
+debug symbols are needed.
+
+Use `.\scripts\maintain-target.ps1` to report the size of Cargo-marked target
+directories. It only previews by default. Passing `-Apply` cleans those listed
+directories when their combined size exceeds 20 GiB, after checking that no
+`cargo` or `rustc` process is running and previewing Cargo's cleanup. The
+scheduled weekly task is configured per Windows user and is not installed by
+cloning the repository.
+
 ## Validation and packaging
 
 The Windows CI workflow lints the frontend's required design rules, formats
@@ -69,7 +83,7 @@ this requirement.
 Run the service and sandbox tests with:
 
 ```powershell
-cargo test -p openchat_service --locked -- --test-threads=1
+cargo test -p openchat-local-service --locked -- --test-threads=1
 ```
 
 Use the repository's pinned lockfile when building. The service sidecar must

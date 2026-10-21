@@ -10,7 +10,7 @@ use reqwest::{StatusCode, header::ACCEPT};
 use serde_json::Value;
 
 use crate::{
-    modules::http_headers::sensitive_api_key_header,
+    domain::http_headers::sensitive_api_key_header,
     protocol::ServiceError,
     provider_schema::{
         ChatStreamDelta, ChatStreamEvent, ChatStreamSnapshot, ReasoningSummary, ToolCall,

@@ -25,7 +25,7 @@ updates:
     open-pull-requests-limit: 5
 
   - package-ecosystem: cargo
-    directory: /services/openchat-service
+    directory: /services/openchat-local-service
     schedule:
       interval: weekly
     cooldown:

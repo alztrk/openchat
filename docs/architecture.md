@@ -36,7 +36,7 @@ apps/
         localization/
     tauri/                # Tauri host, capabilities, icons, and bundle config
 services/
-  openchat-service/       # Unified core service sidecar
+  openchat-local-service/ # Unified local service sidecar
     src/
       bootstrap/
       transport/
@@ -56,7 +56,7 @@ remain separate Rust processes with their existing storage and RPC boundaries.
 ## Current implementation status
 
 - Package roots and shared desktop assets are under `apps/desktop/`; the local
-  service is under `services/openchat-service/`.
+  service is under `services/openchat-local-service/`.
 - A repository-root Cargo workspace unifies the service and Tauri host under one
   lockfile, one target directory, and shared build profiles.
 - React startup is under `apps/desktop/frontend/src/bootstrap/`, the top-level
@@ -79,37 +79,37 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   are grouped under `bootstrap/`, `transport/`, `modules/`, and `adapters/`.
 - Project instructions, skills, indexing, MCP settings and credentials,
   worktrees, and named-task operations are dispatched by
-  `services/openchat-service/src/transport/rpc/projects.rs`. The transport
+  `services/openchat-local-service/src/transport/rpc/projects.rs`. The transport
   dispatcher routes the `project.*` namespace to this domain module.
 - Local engine and model catalog routes, including Hugging Face model search
   and downloads, are dispatched by
-  `services/openchat-service/src/transport/rpc/local_engine_models.rs`. The
+  `services/openchat-local-service/src/transport/rpc/local_engine_models.rs`. The
   temporary conversation provider routing and bounded transcript parsing are
   dispatched by
-  `services/openchat-service/src/transport/rpc/temporary_conversation.rs`.
+  `services/openchat-local-service/src/transport/rpc/temporary_conversation.rs`.
   The transport dispatcher still owns system initialization and durable chat
   run orchestration; those flows stay centralized because they coordinate
   shared startup and cancellation state.
 - Conversation file-change history, diffs, reverts, and cleanup routes are
-  dispatched by `services/openchat-service/src/transport/rpc/file_changes.rs`;
+  dispatched by `services/openchat-local-service/src/transport/rpc/file_changes.rs`;
   the module preserves the existing validation and stable error contract.
 - Usage statistics and model-pricing routes are dispatched by
-  `services/openchat-service/src/transport/rpc/statistics.rs`. Date ranges,
+  `services/openchat-local-service/src/transport/rpc/statistics.rs`. Date ranges,
   filters, pagination, and batch size are validated at the RPC boundary.
 - ChatGPT and Copilot account/authentication routes, plus OpenCode and
   OpenAI-compatible model discovery, are dispatched by
-  `services/openchat-service/src/transport/rpc/providers.rs`. Provider secrets
+  `services/openchat-local-service/src/transport/rpc/providers.rs`. Provider secrets
   continue to resolve from saved credential references inside the service.
 - Conversation memory, history search, context measurement, and archive routes
   are dispatched by
-  `services/openchat-service/src/transport/rpc/conversations.rs`. Archive
+  `services/openchat-local-service/src/transport/rpc/conversations.rs`. Archive
   passphrases are removed from mutable request parameters and held in
   zeroizing values before file operations begin.
 - Run listing, goal pause/stop, pending question responses, and tool approval
   responses are dispatched by
-  `services/openchat-service/src/transport/rpc/run_control.rs`. Durable
+  `services/openchat-local-service/src/transport/rpc/run_control.rs`. Durable
   `chat.send` request parsing and validation are handled by
-  `services/openchat-service/src/transport/rpc/chat_request.rs`; project Skill
+  `services/openchat-local-service/src/transport/rpc/chat_request.rs`; project Skill
   selections are capped before their IDs are copied, and title credentials are
   resolved only after the request passes validation. New runs validate bounded
   renderer-supplied instructions before creating persistent run state and save
@@ -117,7 +117,7 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   validate the saved checkpoint. Goal validation, project context preparation,
   checkpoint restoration, atomic run creation, saved route credential
   resolution, and run finalization are isolated in
-  `services/openchat-service/src/transport/rpc/chat_execution.rs`. Route loading
+  `services/openchat-local-service/src/transport/rpc/chat_execution.rs`. Route loading
   returns the same request-scoped SQLite connection for run operations, while
   provider invocation remains in the dispatcher. Provider, pause, cancellation,
   interruption, and failure outcomes are tested as a pure state classification.
@@ -349,8 +349,8 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   blocks, and their Clippy checks pass. Semgrep parsed about 99.9% of Rust
   source lines; two files were not fully parsed because the Semgrep Rust parser
   rejected valid `#[cfg(windows)]` attributes in
-  `services/openchat-service/src/modules/providers/chatgpt/streaming.rs` and
-  `services/openchat-service/src/modules/providers/openai_compatible/conversation.rs`.
+  `services/openchat-local-service/src/domain/providers/chatgpt/streaming.rs` and
+  `services/openchat-local-service/src/domain/providers/openai_compatible/conversation.rs`.
   Manual inspection confirmed those attributes are Windows-only context
   destructuring patterns; neither file contains an `unsafe` block. The parser
   gap remains, so Semgrep findings from those two modules are incomplete.
@@ -469,7 +469,7 @@ it does not measure SQLite writes, end-to-end IPC latency, or frontend rendering
 The manual Windows filesystem benchmark is available with:
 
 ```powershell
-cargo test --locked --manifest-path services/openchat-service/Cargo.toml benchmark_search_at_monorepo_scales -- --ignored --nocapture --test-threads=1
+cargo test --locked --manifest-path services/openchat-local-service/Cargo.toml benchmark_search_at_monorepo_scales -- --ignored --nocapture --test-threads=1
 ```
 
 Reusing metadata already collected by the directory walker reduced per-entry
@@ -582,7 +582,7 @@ three times on 2026-10-18 with no service-runtime changes between runs. The
 table reports the median of each run's p50, p95, and p99. Reproduce it with:
 
 ```powershell
-cargo test --locked --manifest-path services/openchat-service/Cargo.toml --test process_rpc benchmarks_debug_service_startup_and_health_rpc -- --ignored --nocapture --test-threads=1
+cargo test --locked --manifest-path services/openchat-local-service/Cargo.toml --test process_rpc benchmarks_debug_service_startup_and_health_rpc -- --ignored --nocapture --test-threads=1
 ```
 
 Startup is measured from process launch through the first successful health
@@ -758,8 +758,8 @@ fan-out.
 The existing ignored sidecar benchmark was run three times serially on 2026-10-18 with Cargo's Windows test profile after adding test-only startup phase timers. Each run used 100 cold starts, 100 warm starts, 20 RPC warm-ups, and 200 health RPCs. The table reports the median of the three runs' p50, p95, and p99 values. Reproduce it with:
 
 ```powershell
-cargo test --locked --manifest-path services/openchat-service/Cargo.toml --test process_rpc benchmarks_debug_service_startup_and_health_rpc -- --ignored --nocapture --test-threads=1
-cargo test --locked --manifest-path services/openchat-service/Cargo.toml --lib benchmarks_service_bootstrap_components -- --ignored --nocapture --test-threads=1
+cargo test --locked --manifest-path services/openchat-local-service/Cargo.toml --test process_rpc benchmarks_debug_service_startup_and_health_rpc -- --ignored --nocapture --test-threads=1
+cargo test --locked --manifest-path services/openchat-local-service/Cargo.toml --lib benchmarks_service_bootstrap_components -- --ignored --nocapture --test-threads=1
 ```
 
 | Metric | p50 | p95 | p99 |

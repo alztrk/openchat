@@ -1,13 +1,17 @@
 [workspace]
 resolver = "3"
-members = ["services/openchat-service", "apps/desktop/tauri"]
+members = ["services/openchat-local-service", "apps/desktop/tauri"]
 
 [profile.dev]
-debug = "limited"
+debug = "line-tables-only"
 incremental = false
 
 [profile.dev.package."*"]
 debug = false
+
+[profile.debugging]
+inherits = "dev"
+debug = true
 
 [profile.release]
 debug = 0

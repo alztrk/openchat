@@ -45,6 +45,6 @@
       "minimumWebview2Version": "111.0.1661.0"
     },
     "icon": ["icons/icon.ico"],
-    "externalBin": ["binaries/openchat_service"]
+    "externalBin": ["binaries/openchat-local-service"]
   }
 }

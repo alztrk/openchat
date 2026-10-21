@@ -1455,7 +1455,7 @@ async fn download_file_from_url(
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(15))
         .timeout(Duration::from_secs(600))
-        .redirect(crate::modules::hugging_face::hugging_face_redirect_policy())
+        .redirect(crate::domain::hugging_face::hugging_face_redirect_policy())
         .build()
         .map_err(|error| SemanticMemoryError::Http(error.to_string()))?;
     let mut request = client.get(url);

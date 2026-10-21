@@ -28,8 +28,8 @@ pub(crate) fn start_local_service(
         .ok_or("The local service generation limit was reached.")?;
     let command = app
         .shell()
-        .sidecar("binaries/openchat_service")
-        .or_else(|_| app.shell().sidecar("openchat_service"))
+        .sidecar("binaries/openchat-local-service")
+        .or_else(|_| app.shell().sidecar("openchat-local-service"))
         .map_err(|err| {
             eprintln!("OpenChat sidecar locate error: {err:?}");
             "The packaged local service could not be located."

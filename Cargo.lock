@@ -3641,7 +3641,7 @@ name = "openchat-desktop"
 version = "0.1.8"
 dependencies = [
  "base64 0.22.1",
- "openchat_service",
+ "openchat-local-service",
  "rusqlite",
  "serde",
  "serde_json",
@@ -3660,7 +3660,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "openchat_service"
+name = "openchat-local-service"
 version = "0.1.0"
 dependencies = [
  "age",

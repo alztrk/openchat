@@ -5,7 +5,7 @@ $root = Split-Path -Parent $PSScriptRoot
 
 $targets = @(
     (Join-Path $root 'target'),
-    (Join-Path $root 'services\openchat-service\target'),
+    (Join-Path $root 'services\openchat-local-service\target'),
     (Join-Path $root 'apps\desktop\tauri\target'),
     (Join-Path $root 'apps\desktop\frontend\dist'),
     (Join-Path $root 'apps\desktop\tauri\binaries'),

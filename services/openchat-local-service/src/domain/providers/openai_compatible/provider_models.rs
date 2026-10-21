@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 
-use crate::modules::http_headers::sensitive_api_key_header;
+use crate::domain::http_headers::sensitive_api_key_header;
 use crate::response_budget::{MAX_MODEL_CATALOG_RESPONSE_BYTES, read_bounded_response_body};
 use crate::{protocol::ServiceError, storage::AppStorage};
 

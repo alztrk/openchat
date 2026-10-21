@@ -71,27 +71,21 @@ jobs:
 
       - name: Check Rust API documentation
         run: |
-          cargo rustdoc -p openchat_service --locked --lib -- -D missing-docs -D rustdoc::broken_intra_doc_links
+          cargo rustdoc -p openchat-local-service --locked --lib -- -D missing-docs -D rustdoc::broken_intra_doc_links
           cargo rustdoc -p openchat-desktop --locked --bin openchat-desktop -- -D missing-docs -D rustdoc::broken_intra_doc_links
 
       - name: Reject unused Rust dependencies
         run: |
-          cargo rustc -p openchat_service --lib --locked -- -D unused_crate_dependencies
+          cargo rustc -p openchat-local-service --lib --locked -- -D unused_crate_dependencies
           cargo rustc -p openchat-desktop --bin openchat-desktop --locked -- -D unused_crate_dependencies
 
       - name: Reject production panic paths
-        run: cargo clippy -p openchat_service --lib --bins --locked -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic
+        run: cargo clippy -p openchat-local-service --lib --bins --locked -- -D warnings -D clippy::unwrap_used -D clippy::expect_used -D clippy::panic
 
-      - name: Check and test native service
+      - name: Check and test Rust workspace
         run: |
-          cargo check -p openchat_service --all-targets --locked
-          cargo test -p openchat_service --locked -- --test-threads=1
-
-      - name: Build the Tauri host
-        run: cargo check -p openchat-desktop --locked
-
-      - name: Test the Tauri host
-        run: cargo test -p openchat-desktop --locked -- --test-threads=1
+          cargo check --workspace --locked
+          cargo test --workspace --locked -- --test-threads=1
 
       - name: Lint the Tauri host
         run: cargo clippy -p openchat-desktop --all-targets --locked -- -D warnings
@@ -101,9 +95,9 @@ jobs:
 
       - name: Build the local service sidecar
         run: |
-          cargo build --release --locked -p openchat_service
+          cargo build --release --locked -p openchat-local-service
           New-Item -ItemType Directory -Force apps/desktop/tauri/binaries | Out-Null
-          Copy-Item -LiteralPath target/release/openchat_service.exe -Destination apps/desktop/tauri/binaries/openchat_service-x86_64-pc-windows-msvc.exe -Force
+          Copy-Item -LiteralPath target/release/openchat-local-service.exe -Destination apps/desktop/tauri/binaries/openchat-local-service-x86_64-pc-windows-msvc.exe -Force
         shell: pwsh
 
       - name: Build the Windows installer

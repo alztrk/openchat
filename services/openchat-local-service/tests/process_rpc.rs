@@ -21,7 +21,7 @@ use uuid::Uuid;
 async fn child_service_handles_health_and_shutdown_rpc_in_an_isolated_profile()
 -> Result<(), Box<dyn Error>> {
     let profile = TemporaryProfile::new()?;
-    let mut child = Command::new(env!("CARGO_BIN_EXE_openchat_service"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_openchat-local-service"))
         .arg("--data-root")
         .arg(profile.path())
         .stdin(Stdio::piped())
@@ -65,7 +65,7 @@ async fn child_service_rejects_complex_json_without_losing_rpc_frame_alignment()
     const PARAMETER_NODE_LIMIT: usize = 100_000;
 
     let profile = TemporaryProfile::new()?;
-    let mut child = Command::new(env!("CARGO_BIN_EXE_openchat_service"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_openchat-local-service"))
         .arg("--data-root")
         .arg(profile.path())
         .stdin(Stdio::piped())
@@ -277,7 +277,7 @@ impl RunningService {
     /// Starts the service with an explicit data root and piped standard input/output.
     fn start(data_root: &Path) -> io::Result<Self> {
         let started = Instant::now();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_openchat_service"))
+        let mut child = Command::new(env!("CARGO_BIN_EXE_openchat-local-service"))
             .arg("--data-root")
             .arg(data_root)
             .stdin(Stdio::piped())

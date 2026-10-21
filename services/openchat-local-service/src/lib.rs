@@ -9,8 +9,8 @@
 #[cfg(windows)]
 use ort as _;
 
-mod modules;
-pub(crate) use modules::{
+mod domain;
+pub(crate) use domain::{
     attachments, chat_operation, chatgpt, chatgpt_store, context_compaction, conversation_archive,
     copilot_oauth, document_parser, file_changes, git_inspection, git_worktrees, goals, history,
     hugging_face, instructions, local_engines, oauth, openai_api, openai_compatible,

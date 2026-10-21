@@ -83,7 +83,7 @@ async fn execute_at(
     client: &Client,
     endpoint: &str,
 ) -> Result<Value, String> {
-    let api_key = crate::modules::http_headers::sensitive_api_key_header(config.api_key.as_str())
+    let api_key = crate::domain::http_headers::sensitive_api_key_header(config.api_key.as_str())
         .map_err(|_| "Gemini web search is unavailable.".to_owned())?;
     let request = client
         .post(endpoint)

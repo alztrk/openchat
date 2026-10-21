@@ -54,9 +54,9 @@ Run development tasks safely through configurable permission boundaries:
 
 2. Compile the backend service:
    ```powershell
-   cargo build -p openchat_service --release
+   cargo build -p openchat-local-service --release
    New-Item -ItemType Directory -Force apps/desktop/tauri/binaries
-   Copy-Item -LiteralPath target/release/openchat_service.exe -Destination apps/desktop/tauri/binaries/openchat_service-x86_64-pc-windows-msvc.exe -Force
+   Copy-Item -LiteralPath target/release/openchat-local-service.exe -Destination apps/desktop/tauri/binaries/openchat-local-service-x86_64-pc-windows-msvc.exe -Force
    ```
 
    The full sidecar and installer sequence is also available as `.\scripts\build.ps1`.

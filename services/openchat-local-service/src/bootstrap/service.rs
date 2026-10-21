@@ -173,7 +173,7 @@ impl std::fmt::Display for RunError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidArguments => {
-                formatter.write_str("usage: openchat_service [--data-root <absolute-path>]")
+                formatter.write_str("usage: openchat-local-service [--data-root <absolute-path>]")
             }
             Self::StorageInitialization => {
                 formatter.write_str("local_storage_initialization_failed")
@@ -682,7 +682,7 @@ mod tests {
         /// Creates a unique temporary root so the benchmark cannot touch a user's profile.
         fn new() -> io::Result<Self> {
             let path = env::temp_dir().join(format!(
-                "openchat-service-bootstrap-benchmark-{}",
+                "openchat-local-service-bootstrap-benchmark-{}",
                 uuid::Uuid::new_v4()
             ));
             fs::create_dir(&path)?;

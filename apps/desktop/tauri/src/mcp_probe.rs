@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use zeroize::Zeroizing;
 
 #[cfg(windows)]
-use openchat_service::sandbox::{SandboxJobLimits, SandboxOptions, SandboxedProcess};
+use openchat_local_service::sandbox::{SandboxJobLimits, SandboxOptions, SandboxedProcess};
 #[cfg(windows)]
 use std::{
     ffi::OsString,
