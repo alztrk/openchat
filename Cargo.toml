@@ -1,0 +1,14 @@
+[workspace]
+resolver = "3"
+members = ["services/openchat-service", "apps/desktop/tauri"]
+
+[profile.dev]
+debug = "limited"
+incremental = false
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.release]
+debug = 0
+strip = "debuginfo"

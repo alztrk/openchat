@@ -277,8 +277,7 @@ fn extract_xlsx(bytes: &[u8]) -> Result<ExtractedDocument, DocumentParseError> {
                 continue;
             };
             let row_xml = &row_chunk[..row_end];
-            let row_number = extract_xml_attribute(row_xml, "r")
-                .unwrap_or_else(|| "?".to_owned());
+            let row_number = extract_xml_attribute(row_xml, "r").unwrap_or_else(|| "?".to_owned());
 
             let mut cells = Vec::new();
             for cell_chunk in row_xml.split("<c").skip(1) {
@@ -291,8 +290,8 @@ fn extract_xlsx(bytes: &[u8]) -> Result<ExtractedDocument, DocumentParseError> {
                 }
                 let cell_end = cell_chunk.find("</c>").unwrap_or(cell_chunk.len());
                 let cell_xml = &cell_chunk[..cell_end];
-                let cell_ref = extract_xml_attribute(cell_xml, "r")
-                    .unwrap_or_else(|| "Cell".to_owned());
+                let cell_ref =
+                    extract_xml_attribute(cell_xml, "r").unwrap_or_else(|| "Cell".to_owned());
                 let cell_type = extract_xml_attribute(cell_xml, "t").unwrap_or_default();
 
                 let value = if cell_type == "inlineStr" {
@@ -527,7 +526,10 @@ fn extract_pdf_text_operators(stream: &[u8]) -> String {
                 }
             }
             i = j;
-        } else if bytes[i..].starts_with(b"T*") || bytes[i..].starts_with(b"Td") || bytes[i..].starts_with(b"TD") {
+        } else if bytes[i..].starts_with(b"T*")
+            || bytes[i..].starts_with(b"Td")
+            || bytes[i..].starts_with(b"TD")
+        {
             if !extracted.ends_with('\n') && !extracted.is_empty() {
                 extracted.push('\n');
             }
@@ -610,7 +612,11 @@ fn extract_html(bytes: &[u8]) -> Result<ExtractedDocument, DocumentParseError> {
     }
     let mut output = String::new();
     let truncated = !append_bounded(&mut output, trimmed);
-    let section_count = output.lines().filter(|line| line.starts_with('#')).count().max(1);
+    let section_count = output
+        .lines()
+        .filter(|line| line.starts_with('#'))
+        .count()
+        .max(1);
     Ok(ExtractedDocument {
         text: output,
         truncated,
@@ -619,8 +625,8 @@ fn extract_html(bytes: &[u8]) -> Result<ExtractedDocument, DocumentParseError> {
 }
 
 fn open_bounded_zip(bytes: &[u8]) -> Result<ZipArchive<Cursor<&[u8]>>, DocumentParseError> {
-    let mut archive = ZipArchive::new(Cursor::new(bytes))
-        .map_err(|_| DocumentParseError::MalformedDocument)?;
+    let mut archive =
+        ZipArchive::new(Cursor::new(bytes)).map_err(|_| DocumentParseError::MalformedDocument)?;
     if archive.len() == 0 || archive.len() > MAXIMUM_ZIP_ENTRIES {
         return Err(DocumentParseError::ArchiveLimitExceeded);
     }
@@ -730,8 +736,8 @@ mod tests {
         let mut cursor = std::io::Cursor::new(Vec::new());
         {
             let mut zip = zip::ZipWriter::new(&mut cursor);
-            let options = SimpleFileOptions::default()
-                .compression_method(zip::CompressionMethod::Deflated);
+            let options =
+                SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
             for (name, content) in entries {
                 zip.start_file(*name, options).expect("start zip entry");
                 zip.write_all(content).expect("write zip entry");
@@ -757,7 +763,11 @@ mod tests {
             </w:document>"#;
         let bytes = create_test_zip(&[("word/document.xml", document_xml)]);
         let extracted = extract_document("report.docx", &bytes).expect("docx should parse");
-        assert!(extracted.text.contains("[Paragraph 1] Quarterly Architecture Review"));
+        assert!(
+            extracted
+                .text
+                .contains("[Paragraph 1] Quarterly Architecture Review")
+        );
         assert!(extracted.text.contains("[Table 1 | Row 1] Module | Status"));
         assert_eq!(extracted.section_count, 2);
     }
@@ -781,7 +791,11 @@ mod tests {
             ("xl/worksheets/sheet1.xml", sheet_xml),
         ]);
         let extracted = extract_document("metrics.xlsx", &bytes).expect("xlsx should parse");
-        assert!(extracted.text.contains("[Sheet: Budget | Row 1] A1: Compute | B1: 420"));
+        assert!(
+            extracted
+                .text
+                .contains("[Sheet: Budget | Row 1] A1: Compute | B1: 420")
+        );
         assert_eq!(extracted.section_count, 1);
     }
 

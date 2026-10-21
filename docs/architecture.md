@@ -10,6 +10,11 @@ stable during the reorganization.
 ## Target structure
 
 ```text
+Cargo.toml               # workspace manifest and shared build profiles
+Cargo.lock               # single Rust workspace lockfile
+rust-toolchain.toml
+docs/
+scripts/
 apps/
   desktop/
     assets/
@@ -52,6 +57,8 @@ remain separate Rust processes with their existing storage and RPC boundaries.
 
 - Package roots and shared desktop assets are under `apps/desktop/`; the local
   service is under `services/openchat-service/`.
+- A repository-root Cargo workspace unifies the service and Tauri host under one
+  lockfile, one target directory, and shared build profiles.
 - React startup is under `apps/desktop/frontend/src/bootstrap/`, the top-level
   window UI is under `apps/desktop/frontend/src/shell/`, and translations are
   under `apps/desktop/frontend/src/localization/`.
@@ -888,7 +895,8 @@ runtime, extraction throughput, CPU use, or memory use.
   one-time native folder-selection token instead of a renderer-supplied path.
 - Do not change database, credential, attachment, model, or cache locations.
 - Do not redesign screens or change user-facing behavior.
-- Keep frontend and Rust lockfiles beside their respective manifests.
+- Keep the frontend package lockfile beside its manifest and a single Rust
+  workspace lockfile at the repository root.
 - Keep generated `build/`, Cargo `target/`, frontend `dist/`, and installed
   dependencies out of the source architecture; preserve existing local data.
 - Keep `third_party_licenses/` at the repository root because it describes
@@ -901,7 +909,7 @@ runtime, extraction throughput, CPU use, or memory use.
 - Imports resolve from the new frontend modules without cycles or feature-store
   access to platform I/O. Conversations consume provider data through the
   provider module, and the provider module does not import conversation stores.
-- The sidecar and Tauri host build independently from their new manifest paths.
+- The sidecar and Tauri host build as workspace packages from the repository root.
 - Existing RPC and persistence contracts remain unchanged except for the
   documented credential and native file-path boundary hardening.
 - The documented commands run from the stated directories, and any unavailable

@@ -929,8 +929,7 @@ impl ChatGptService {
                 false,
             )
         })?;
-        self.oauth
-            .store_token_pair(&reference, &refreshed.tokens)?;
+        self.oauth.store_token_pair(&reference, &refreshed.tokens)?;
         let old_reference =
             match self
                 .oauth
@@ -957,7 +956,9 @@ impl ChatGptService {
             )
             .map_err(database_error)?;
             if let Ok(connections) = chatgpt_store::list_connections(&self.storage)
-                && let Some(connection) = connections.into_iter().find(|item| item.id == connection_id)
+                && let Some(connection) = connections
+                    .into_iter()
+                    .find(|item| item.id == connection_id)
             {
                 for refreshed_workspace in identity.workspaces {
                     if let Some(plan_type) = refreshed_workspace.plan_type.as_deref()

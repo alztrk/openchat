@@ -272,8 +272,10 @@ pub fn apply_resilient_edit(
 
         for start_line_idx in 0..=(file_lines.len() - window_len) {
             let window = &file_lines[start_line_idx..start_line_idx + window_len];
-            let matches_hashes = window.iter().zip(old_lines.iter().zip(parsed_hashlines.iter())).all(
-                |(file_line, (raw_pat, parsed_opt))| {
+            let matches_hashes = window
+                .iter()
+                .zip(old_lines.iter().zip(parsed_hashlines.iter()))
+                .all(|(file_line, (raw_pat, parsed_opt))| {
                     if let Some(parsed) = parsed_opt {
                         // Hash must match, and trimmed content must match if non-empty.
                         let hash_ok = file_line.hash_tag == parsed.hash_tag;
@@ -283,8 +285,7 @@ pub fn apply_resilient_edit(
                     } else {
                         file_line.text.trim() == raw_pat.trim()
                     }
-                },
-            );
+                });
             if matches_hashes {
                 let hinted_line = parsed_hashlines
                     .iter()
@@ -322,12 +323,7 @@ pub fn apply_resilient_edit(
         let pattern_clean_lines: Vec<&str> = old_lines
             .iter()
             .zip(parsed_hashlines.iter())
-            .map(|(raw, parsed)| {
-                parsed
-                    .as_ref()
-                    .map(|p| p.text.as_str())
-                    .unwrap_or(*raw)
-            })
+            .map(|(raw, parsed)| parsed.as_ref().map(|p| p.text.as_str()).unwrap_or(*raw))
             .collect();
 
         let has_non_empty = pattern_clean_lines.iter().any(|l| !l.trim().is_empty());

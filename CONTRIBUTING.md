@@ -30,7 +30,7 @@ supported workflows.
 ## Windows development requirements
 
 - Node.js 22 and npm for the React frontend.
-- Rust 1.95 and Cargo for the Tauri host and local service, matching the pinned Windows CI toolchain.
+- Rust 1.95 and Cargo for the Tauri host and local service, pinned by `rust-toolchain.toml` and matching the Windows CI toolchain.
 - Visual Studio C++ build tools and WebView2 for Tauri's Windows target.
 
 Install frontend dependencies from the repository root with
@@ -58,7 +58,7 @@ intentional and the source explains why.
 
 The Windows CI workflow lints the frontend's required design rules, formats
 and checks the unified Rust service and Tauri host, runs their Rust tests, audits
-both Rust lockfiles with RustSec, audits shipped npm dependencies, builds the React frontend,
+the Rust workspace lockfile with RustSec, audits shipped npm dependencies, builds the React frontend,
 compiles the Tauri application, and uploads the NSIS installer as a short-lived artifact.
 It does not publish a GitHub release or perform live provider-account checks.
 Both Rust packages deny undocumented unsafe blocks. Add a focused `// SAFETY:`
@@ -69,10 +69,10 @@ this requirement.
 Run the service and sandbox tests with:
 
 ```powershell
-cargo test --locked --manifest-path services/openchat-service/Cargo.toml -- --test-threads=1
+cargo test -p openchat_service --locked -- --test-threads=1
 ```
 
-Use the repository's pinned lockfiles when building. The service sidecar must
+Use the repository's pinned lockfile when building. The service sidecar must
 be built for the Tauri target and placed in `apps/desktop/tauri/binaries` using the
 target-triple filename configured by Tauri before packaging. The CI workflow
 shows the supported Windows build sequence.

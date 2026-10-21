@@ -769,7 +769,10 @@ pub fn search_messages(
     let raw_query = input.query.trim();
     let normalized = normalize_search_text(raw_query);
     let has_query = !normalized.is_empty();
-    let has_role = input.role_filter.as_deref().is_some_and(|r| !r.trim().is_empty());
+    let has_role = input
+        .role_filter
+        .as_deref()
+        .is_some_and(|r| !r.trim().is_empty());
     let has_code = input.has_code_only.unwrap_or(false);
 
     if !has_query && !has_role && !has_code {
@@ -782,7 +785,7 @@ pub fn search_messages(
     let mut sql = String::from(
         "SELECT id, conversation_id, role, content, created_at
          FROM messages
-         WHERE 1=1"
+         WHERE 1=1",
     );
 
     if has_query {

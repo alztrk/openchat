@@ -34,12 +34,10 @@ pub(crate) fn start_local_service(
             eprintln!("OpenChat sidecar locate error: {err:?}");
             "The packaged local service could not be located."
         })?;
-    let (mut events, child) = command
-        .spawn()
-        .map_err(|err| {
-            eprintln!("OpenChat sidecar spawn error: {err:?}");
-            "The local service could not be started."
-        })?;
+    let (mut events, child) = command.spawn().map_err(|err| {
+        eprintln!("OpenChat sidecar spawn error: {err:?}");
+        "The local service could not be started."
+    })?;
     process.next_generation = generation;
     process.current = Some(RunningProcess { generation, child });
 

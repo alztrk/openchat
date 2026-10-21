@@ -2314,7 +2314,8 @@ mod tests {
         let workspace = TestDirectory::new("approve-and-hunk-workspace");
         let data = TestStorage::new("approve-and-hunk-data");
         let baseline = b"line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\n";
-        let edited = b"line1-mod\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10-mod\n";
+        let edited =
+            b"line1-mod\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10-mod\n";
         std::fs::write(workspace.0.join("multi.txt"), edited).expect("write edited file");
         let id = record_file_change(
             &workspace.0,

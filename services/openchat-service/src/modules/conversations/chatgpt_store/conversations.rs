@@ -61,10 +61,7 @@ pub fn conversation_title_is_automatic(
     )
 }
 
-pub fn is_custom_title(
-    storage: &AppStorage,
-    conversation_id: &str,
-) -> rusqlite::Result<bool> {
+pub fn is_custom_title(storage: &AppStorage, conversation_id: &str) -> rusqlite::Result<bool> {
     storage.connect()?.query_row(
         "SELECT title_source != 'automatic' FROM conversations WHERE id = ?1",
         params![conversation_id],
@@ -558,11 +555,16 @@ mod tests {
         assert!(should_generate_automatic_title(&storage, conv_id).expect("should gen"));
 
         // Apply generated title
-        let applied = apply_generated_title(&storage, conv_id, "Cargo Configuration").expect("apply");
+        let applied =
+            apply_generated_title(&storage, conv_id, "Cargo Configuration").expect("apply");
         assert!(applied);
 
         let current_title: String = conn
-            .query_row("SELECT title FROM conversations WHERE id = ?1", params![conv_id], |row| row.get(0))
+            .query_row(
+                "SELECT title FROM conversations WHERE id = ?1",
+                params![conv_id],
+                |row| row.get(0),
+            )
             .expect("query title");
         assert_eq!(current_title, "Cargo Configuration");
 
@@ -594,11 +596,16 @@ mod tests {
         assert!(!should_generate_automatic_title(&storage, conv_id).expect("should not gen"));
 
         // Automated titling must NEVER overwrite manual/custom title
-        let overwritten = apply_generated_title(&storage, conv_id, "Another Auto Title").expect("apply");
+        let overwritten =
+            apply_generated_title(&storage, conv_id, "Another Auto Title").expect("apply");
         assert!(!overwritten);
 
         let final_title: String = conn
-            .query_row("SELECT title FROM conversations WHERE id = ?1", params![conv_id], |row| row.get(0))
+            .query_row(
+                "SELECT title FROM conversations WHERE id = ?1",
+                params![conv_id],
+                |row| row.get(0),
+            )
             .expect("query title");
         assert_eq!(final_title, "My Custom Title");
     }

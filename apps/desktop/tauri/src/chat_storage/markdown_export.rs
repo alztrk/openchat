@@ -158,7 +158,9 @@ pub(crate) fn is_safe_markdown_export_file_name(file_name: &str) -> bool {
 mod markdown_export_tests {
     use std::{fs, path::PathBuf};
 
-    use super::{is_safe_export_file_name, is_safe_markdown_export_file_name, write_markdown_export};
+    use super::{
+        is_safe_export_file_name, is_safe_markdown_export_file_name, write_markdown_export,
+    };
     use crate::chat_storage::CreateProjectInput;
 
     struct TestDirectory(PathBuf);

@@ -41,23 +41,25 @@ Run development tasks safely through configurable permission boundaries:
 
 ### Requirements
 - Windows 10 or 11 (64-bit)
-- Node.js (v18+) and npm
-- Rust stable toolchain
+- Node.js 22 and npm
+- Rust 1.95 (pinned by `rust-toolchain.toml`)
 
 ### Building from Source
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-org/OpenChat.git
+   git clone https://github.com/alztrk/openchat.git
    cd OpenChat
    ```
 
 2. Compile the backend service:
    ```powershell
-   cargo build --manifest-path services/openchat-service/Cargo.toml --release
+   cargo build -p openchat_service --release
    New-Item -ItemType Directory -Force apps/desktop/tauri/binaries
-   Copy-Item -LiteralPath services/openchat-service/target/release/openchat_service.exe -Destination apps/desktop/tauri/binaries/openchat_service-x86_64-pc-windows-msvc.exe -Force
+   Copy-Item -LiteralPath target/release/openchat_service.exe -Destination apps/desktop/tauri/binaries/openchat_service-x86_64-pc-windows-msvc.exe -Force
    ```
+
+   The full sidecar and installer sequence is also available as `.\scripts\build.ps1`.
 
 3. Install frontend dependencies and start development mode:
    ```bash
@@ -80,7 +82,7 @@ npm run tauri:build
 
 - **Local-First Design:** Chat transcripts and vector stores reside in local SQLite databases under `%LOCALAPPDATA%\OpenChat`. No telemetry or personal information is transmitted to third parties.
 - **Explicit Authorizations:** Three security tiers (`Ask for approval`, `Approve safe operations`, `Full access`) govern filesystem, network, and execution privileges.
-- **Technical Documentation:** Detailed architecture contracts and design notes are available in [docs/architecture.md](docs/architecture.md) and [ROADMAP.md](ROADMAP.md).
+- **Technical Documentation:** Architecture, design, roadmap, and security notes are indexed in [docs/README.md](docs/README.md).
 
 ---
 

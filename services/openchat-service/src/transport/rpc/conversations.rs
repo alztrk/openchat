@@ -50,9 +50,8 @@ pub(super) async fn dispatch(
                     false,
                 )
             })?;
-            let extracted = document_parser::extract_document(name, &bytes).map_err(|err| {
-                ServiceError::new(err.code(), err.message(), false)
-            })?;
+            let extracted = document_parser::extract_document(name, &bytes)
+                .map_err(|err| ServiceError::new(err.code(), err.message(), false))?;
             Ok(json!({
                 "text": extracted.text,
                 "truncated": extracted.truncated,
