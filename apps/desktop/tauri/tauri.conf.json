@@ -42,7 +42,12 @@
     "active": true,
     "targets": ["nsis"],
     "windows": {
-      "minimumWebview2Version": "111.0.1661.0"
+      "minimumWebview2Version": "111.0.1661.0",
+      "nsis": {
+        "headerImage": "../assets/brand/installer/header.bmp",
+        "sidebarImage": "../assets/brand/installer/sidebar.bmp",
+        "installerIcon": "icons/icon.ico"
+      }
     },
     "icon": ["icons/icon.ico"],
     "externalBin": ["binaries/openchat-local-service"]

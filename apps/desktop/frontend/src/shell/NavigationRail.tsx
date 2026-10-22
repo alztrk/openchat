@@ -64,7 +64,7 @@ interface RailButtonProps {
 
 function RailButton({ active, icon, label, onClick }: RailButtonProps) {
   return (
-    <Tooltip label={label}>
+    <Tooltip label={label} side="right" sideOffset={6}>
       <Button
         aria-label={label}
         aria-current={active ? 'page' : undefined}
