@@ -17,7 +17,6 @@ test('index.css imports modularized tokens, typography, and animations styleshee
 
   assert.match(indexCss, /@source "\.\/";/);
   assert.match(indexCss, /@custom-variant dark/);
-  assert.match(indexCss, /@theme\s*\{/);
 });
 
 test('tokens.css defines color, surface, and elevation variables', () => {
@@ -29,6 +28,7 @@ test('tokens.css defines color, surface, and elevation variables', () => {
   assert.match(tokensCss, /--raised-surface:/);
   assert.match(tokensCss, /--accent:/);
   assert.match(tokensCss, /\.dark\s*\{/);
+  assert.match(tokensCss, /@theme\s*\{/);
 });
 
 test('typography.css defines base element rules, markdown prose, and code formatting', () => {

@@ -1,5 +1,33 @@
 # OpenChat UI design system
 
+## Brand mark
+
+OpenChat's mark uses three rounded, separated forms arranged around an open
+center. Two graphite forms and one copper form make one flat, high-contrast
+symbol. The mark began as an ImageGen concept at
+`apps/desktop/assets/brand/source/openchat-imagegen-concept-v2.png` and was
+traced into clean SVG paths for desktop assets. Do not add terminal or
+developer-tool motifs, gradients, shadows, or extra surrounding badges.
+
+Use `apps/desktop/assets/brand/logo.svg` on light surfaces and
+`apps/desktop/assets/brand/logo-dark.svg` on dark surfaces. The horizontal
+wordmark in `apps/desktop/assets/brand/variants/openchat-horizontal.svg` is for
+documents and external presentation; the desktop UI uses the symbol alone.
+Keep the mark readable at 16, 32, and 48 pixels. Use the mark without the
+wordmark in app-icon spaces; do not shrink the horizontal lockup. The Tauri
+bundle icon is generated from `apps/desktop/assets/brand/app-icon.svg` so its
+warm light tile remains visible on both light and dark taskbars.
+
+The wordmark uses a two-tone OpenChat name and specifies Source Sans 3 to match
+the product's interface typography, followed by system sans-serif fallbacks
+for external renderers. Use the provided SVG assets instead of recreating the
+symbol or wordmark with text and CSS.
+
+The NSIS installer uses `apps/desktop/assets/brand/installer/header.bmp` and
+`sidebar.bmp`, with corresponding SVG source files in the same directory. Keep
+the header at 150 × 57 pixels and the sidebar at 164 × 314 pixels when editing
+these assets.
+
 This document is the required implementation contract for every React UI
 change. A new screen or component must follow these rules from its first
 implementation; visual similarity to an existing screen does not excuse a
@@ -31,26 +59,32 @@ describe the actual state instead of showing sample or fabricated product data.
 
 These are required rules, not suggestions:
 
-1. **Option selection uses the OpenChat dropdown.** Import `Select` from
-   `@/design-system` for every control that chooses one value from a list.
-   Native HTML `<select>` elements and one-off select popovers are prohibited.
-   This applies to settings, filters, model/provider choices, permission modes,
-   and other finite option lists. Use `Tabs` or `SegmentedControl` when the
-   choices switch between peer views or modes, and `Switch` for a binary
-   setting; do not use a dropdown for those cases.
+1. **Option selection uses a shared OpenChat control.** Import `Select` from
+   `@/design-system` by default for controls that choose one value from a
+   finite list. Native HTML `<select>` elements and ad-hoc select popovers are
+   prohibited. A named specialized picker may be used when its options need a
+   richer presentation, such as permission choices with descriptions; it must
+   use the shared dropdown surface and preserve single-selection semantics,
+   keyboard navigation, focus, and dismissal. Use `Tabs` or
+   `SegmentedControl` when choices switch between peer views or modes, and
+   `Switch` for a binary setting; do not use a dropdown for those cases.
 2. **Use shared controls.** Use `Button`, `Input`, `Select`, `Switch`, `Tabs`,
-   `SegmentedControl`, `Dialog`, `Tooltip`, `Card`, and `ScrollArea` from
-   `@/design-system` where their behavior fits. Do not fork their border,
-   focus, keyboard, disabled, or motion behavior in a feature component.
+   `SegmentedControl`, `Dialog`, `Tooltip`, `DropdownMenu`, `Card`, and
+   `ScrollArea` from `@/design-system` where their behavior fits. Radix UI
+   primitives provide focus management, keyboard navigation, dismissal, and
+   accessible semantics for selects, tabs, dialogs, tooltips, and dropdown
+   menus. Do not fork their border, focus, keyboard, disabled, or motion
+   behavior in a feature component.
    Extend the shared primitive when a real product-wide behavior is missing.
 3. **Use the `@/` import alias.** Frontend code must not use relative parent
    imports such as `../` or `../../` to cross module boundaries. Keep shared
    primitives in `apps/desktop/frontend/src/design-system`; keep feature
    presentation and data with their owning module.
 4. **Use named design tokens.** Use the color, type, spacing, radius, and
-   layout tokens defined in `apps/desktop/frontend/src/index.css`. When a
-   repeated or product-specific value is missing, add a clearly named token
-   or semantic CSS class instead of embedding the value at the call site.
+   layout tokens defined in
+   `apps/desktop/frontend/src/design-system/styles/tokens.css`. When a repeated
+   or product-specific value is missing, add a clearly named token or semantic
+   CSS class instead of embedding the value at the call site.
 5. **Do not add static inline styles.** Static layout and appearance belong in
    named Tailwind tokens or semantic CSS classes. Inline style is allowed only
    for runtime values that cannot be represented as a class, such as a value
@@ -58,8 +92,22 @@ These are required rules, not suggestions:
 6. **Respect the shared motion and accessibility behavior.** Reuse the
    primitive's keyboard interaction, focus treatment, dismissal, and reduced
    motion behavior. A custom control requires the same keyboard, pointer,
-   touch, screen-reader, disabled, and dismissal support before it can replace
-   a shared primitive.
+   touch, disabled, and dismissal support before it can replace a shared
+   primitive. Preserve semantic names and states for controls.
+7. **Share dropdown surfaces.** Use `Select` for choosing one value and
+   `DropdownMenu` for actions. Their content panels use the shared
+   `openchat-dropdown-surface` class. A specialized dropdown may use custom
+   content and interaction when it needs richer options, but it must keep the
+   same surface class and preserve the appropriate accessible semantics and
+   keyboard behavior. Customize placement, width, spacing, and content in the
+   owning component; change the shared glass surface only through a named
+   design-system token or documented variant.
+8. **Share selection triggers.** `Select` and custom value pickers use the
+   `openchat-dropdown-trigger` class for height, border, alignment, hover,
+   focus, and disabled states. Use `openchat-dropdown-trigger--subtle` for
+   embedded controls that need a transparent resting fill, and
+   `openchat-dropdown-trigger--compact` only in a genuinely dense layout.
+   Action-menu buttons and search inputs keep their own control semantics.
 
 If a shared primitive cannot express a real product need, change the shared
 primitive or propose a named design-system extension. Do not silently create a
@@ -84,6 +132,12 @@ second control with different behavior.
 - Do not use one-off negative spacing or custom utility classes to bypass a
   shared component's contract. Prefer a semantic class whose name describes
   the product role.
+
+Keep design-system CSS separated by role: theme and layout values in
+`styles/tokens.css`, text and rendered Markdown in `styles/typography.css`,
+motion in `styles/animations.css`, and shared primitive styling in
+`styles/components.css`. Keep app-shell and feature layout in `src/index.css`
+or the owning feature stylesheet.
 
 The frontend's pinned Biome configuration enables the recommended lint preset
 and the project's additional strict rules. It rejects unsafe TypeScript type
@@ -111,10 +165,10 @@ values into components. The standard light and dark palettes are:
 
 | Role | Light | Dark |
 | --- | --- | --- |
-| Background | `#F4F5F6` | `#15171A` |
+| Canvas / background | `#F4F5F6` | `#15171A` |
 | Navigation | `#EBEDF0` | `#1A1D21` |
 | Surface | `#FAFBFC` | `#202328` |
-| Raised surface | `#FFFFFF` | `#282C31` |
+| Raised / overlay surface | `#FFFFFF` | `#282C31` |
 | Composer | `#F1F3F5` | `#24282D` |
 | Selected | `#E3E7EB` | `#343940` |
 | Hover | `#EDF0F2` | `#2B3036` |
@@ -126,9 +180,11 @@ values into components. The standard light and dark palettes are:
 
 Destructive, warning, success, informational, focus-ring, and high-contrast
 colors are defined with the theme variables in
-`apps/desktop/frontend/src/index.css`. Theme classes can override the standard
-palette. Use those semantic roles so theme changes remain consistent across
-the application.
+`apps/desktop/frontend/src/design-system/styles/tokens.css`. `Canvas` maps to
+the page background, `Surface` to the base panel, `Raised` to floating panels,
+and `Overlay` aliases the raised surface for portalled controls. Theme classes
+can override the standard palette. Use these semantic roles so theme changes
+remain consistent across the application.
 
 ## Typography
 
@@ -161,8 +217,29 @@ available to users.
 - Conversation reading width: 920 px maximum; composer width: 800 px maximum.
 
 Use shared surface, border, radius, and motion tokens from
-`apps/desktop/frontend/src/index.css`. Keep elevated effects restrained, honor
+`apps/desktop/frontend/src/design-system/styles/tokens.css`. Keep elevated effects restrained, honor
 reduced motion, and make loading feedback understandable without animation.
+
+Dropdown panels share a glass surface defined by `openchat-dropdown-surface` in
+`styles/components.css`. The surface uses the `--dropdown-surface-alpha`,
+`--dropdown-backdrop-blur`, `--dropdown-backdrop-saturation`, and
+`--dropdown-surface-shadow` tokens, with a shared border and radius from
+`--dropdown-surface-radius`. Selects, action menus, and specialized
+dropdowns may arrange their contents differently, while keeping this shared
+surface. High-contrast and forced-color modes use an opaque raised surface and
+remove backdrop filtering and shadows.
+
+Use `Select` for finite single-value controls, `DropdownMenu` for action menus,
+and a named specialized picker only when its content needs richer rows, search,
+or descriptions. The project picker is a searchable action menu; the model and
+permission pickers are specialized value pickers. Title-bar and slash-command
+suggestions keep combobox/listbox semantics and share the panel surface. Context
+usage and statistics filters are floating information/filter panels, not value
+selectors. In-chat search is a floating tool panel, not a selector. Static model
+search results, tabs, switches, and disclosure sections remain in their
+existing layouts instead of becoming dropdowns. The conversation-row menu may
+keep its custom viewport-aware positioning, but it uses the shared panel
+surface and preserves menu keyboard semantics.
 
 ## Navigation and responsive layout
 
@@ -206,9 +283,12 @@ controls only while selection mode is active.
 - Preserve logical keyboard order and accessible names for controls and
   navigation. Inputs and dropdowns need programmatic labels even when the
   visible label is visually hidden.
-- The custom `Select` must retain its listbox semantics, arrow-key navigation,
-  Home/End navigation, Escape dismissal, outside-pointer dismissal, selected
-  state, and disabled-option behavior.
+- The shared `Select` uses Radix listbox semantics and must retain arrow-key
+  navigation, Home/End navigation, Escape dismissal, selected state, and
+  disabled-option behavior.
+- `Select` options are listbox options, not action buttons. Radix may render
+  them as `div` elements with `role="option"`; keep their listbox semantics and
+  use native buttons for actions instead.
 - Give the composer message field a localized accessible name on the editable
   text field itself, and exclude the visual placeholder from semantics to avoid
   duplicate announcements.

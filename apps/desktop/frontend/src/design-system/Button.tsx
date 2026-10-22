@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes } from 'react';
+import { type ButtonHTMLAttributes, forwardRef } from 'react';
 
 import { cn } from '@/shared/utils/cn';
 
@@ -30,7 +30,10 @@ const sizeClasses: Record<ButtonSize, string> = {
 };
 
 /** Renders a keyboard-accessible native button using shared OpenChat styles. */
-export function Button({ className, variant = 'secondary', size = 'default', type = 'button', ...props }: ButtonProps) {
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  { className, variant = 'secondary', size = 'default', type = 'button', ...props },
+  ref,
+) {
   return (
     <button
       className={cn(
@@ -39,8 +42,9 @@ export function Button({ className, variant = 'secondary', size = 'default', typ
         sizeClasses[size],
         className,
       )}
+      ref={ref}
       type={type}
       {...props}
     />
   );
-}
+});

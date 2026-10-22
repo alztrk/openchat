@@ -1,12 +1,15 @@
-import { type DialogHTMLAttributes, type ReactNode, useEffect, useId, useRef } from 'react';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
+import type { ReactNode } from 'react';
 
 import { cn } from '@/shared/utils/cn';
 
-/** Controlled native dialog with a required accessible title and close callback. */
-export interface DialogProps extends Omit<DialogHTMLAttributes<HTMLDialogElement>, 'open' | 'onClose' | 'title'> {
+/** Controlled modal dialog with a required accessible title. */
+export interface DialogProps {
+  /** Additional content classes. */
+  className?: string;
   /** Whether the dialog is currently open. */
   open: boolean;
-  /** Called when Escape or a native close event requests a state change. */
+  /** Called when Escape requests a state change. */
   onOpenChange(open: boolean): void;
   /** Content announced as the dialog's accessible name. */
   title: ReactNode;
@@ -14,35 +17,21 @@ export interface DialogProps extends Omit<DialogHTMLAttributes<HTMLDialogElement
   children: ReactNode;
 }
 
-/** Keeps the native modal dialog synchronized with its controlled `open` state. */
-export function Dialog({ children, className, onOpenChange, open, title, ...props }: DialogProps) {
-  const dialogRef = useRef<HTMLDialogElement>(null);
-  const titleId = useId();
-
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
-  }, [open]);
-
+/** Renders a modal with managed focus, Escape dismissal, and an accessible title. */
+export function Dialog({ children, className, onOpenChange, open, title }: DialogProps) {
   return (
-    <dialog
-      aria-labelledby={titleId}
-      className={cn('openchat-dialog w-dialog', className)}
-      onCancel={(event) => {
-        event.preventDefault();
-        onOpenChange(false);
-      }}
-      onClose={() => onOpenChange(false)}
-      ref={dialogRef}
-      {...props}
-    >
-      <h2 className="mb-4 text-section-title font-semibold" id={titleId}>
-        {title}
-      </h2>
-      {children}
-    </dialog>
+    <DialogPrimitive.Root onOpenChange={onOpenChange} open={open}>
+      <DialogPrimitive.Portal>
+        <DialogPrimitive.Overlay className="openchat-dialog-overlay" />
+        <DialogPrimitive.Content
+          aria-describedby={undefined}
+          className={cn('openchat-dialog w-dialog', className)}
+          onPointerDownOutside={(event) => event.preventDefault()}
+        >
+          <DialogPrimitive.Title className="mb-4 text-section-title font-semibold">{title}</DialogPrimitive.Title>
+          {children}
+        </DialogPrimitive.Content>
+      </DialogPrimitive.Portal>
+    </DialogPrimitive.Root>
   );
 }

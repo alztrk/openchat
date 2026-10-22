@@ -1,0 +1,522 @@
+
+
+.openchat-tabs-list {
+  display: flex;
+  min-width: 0;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.openchat-tabs-list[data-variant='default'] {
+  width: fit-content;
+  align-items: center;
+  border-radius: var(--radius-control);
+  background: rgb(var(--navigation));
+  padding: 3px;
+}
+
+.openchat-tabs-list[data-variant='line'] {
+  width: fit-content;
+  border-bottom: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
+}
+
+.openchat-tabs-list[data-variant='rounded'] {
+  flex: 1 1 0%;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-inline: contain;
+}
+
+.openchat-tabs-list[data-variant='rounded']::-webkit-scrollbar {
+  display: none;
+}
+
+.openchat-tabs-trigger {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-tab);
+  padding: 6px 10px;
+  color: rgb(var(--secondary-text));
+  font-size: var(--text-settings-description);
+  font-weight: 500;
+  line-height: 18px;
+  user-select: none;
+  white-space: nowrap;
+  transition: color var(--motion-duration-fast) var(--motion-ease-out),
+    background-color var(--motion-duration-fast) var(--motion-ease-out),
+    border-color var(--motion-duration-fast) var(--motion-ease-out),
+    transform var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.openchat-tabs-trigger:hover {
+  color: rgb(var(--text));
+}
+
+.openchat-tabs-trigger[data-state='active'] {
+  background: rgb(var(--selected));
+  color: rgb(var(--text));
+}
+
+.openchat-tabs-trigger:focus-visible {
+  z-index: 1;
+  outline: 2px solid rgb(var(--focus));
+  outline-offset: -2px;
+  transition: none;
+}
+
+.openchat-tabs-trigger:disabled {
+  pointer-events: none;
+  opacity: 0.45;
+}
+
+.openchat-tabs-list[data-variant='line'] .openchat-tabs-trigger {
+  border-radius: 0;
+}
+
+.openchat-tabs-list[data-variant='line'] .openchat-tabs-trigger[data-state='active']::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  background: rgb(var(--text));
+  content: '';
+}
+
+.openchat-tabs-list[data-variant='rounded'] .openchat-tabs-trigger {
+  flex: 0 0 auto;
+  max-width: 240px;
+  border-radius: var(--radius-control);
+  padding-inline: 12px;
+}
+
+.openchat-tabs-list[data-variant='rounded'] .openchat-tabs-trigger[data-state='active'] {
+  background: rgb(var(--selected));
+  color: rgb(var(--text));
+}
+
+.openchat-tabs-content {
+  min-width: 0;
+  outline: none;
+}
+
+.openchat-tabs-content[data-state='active'] {
+  animation: openchat-content-in var(--motion-duration-ui) var(--motion-ease-out) both;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-ease-out);
+}
+
+button * {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.openchat-button {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: var(--motion-duration-fast);
+  transition-timing-function: var(--motion-ease-out);
+}
+
+button:disabled {
+  transition: none;
+}
+
+button:focus-visible,
+button:focus-visible * {
+  transition: none;
+}
+
+:focus-visible {
+  outline-color: rgb(var(--focus-ring));
+}
+
+@keyframes openchat-dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 6px)) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes openchat-overlay-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.openchat-dialog {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 50;
+  width: var(--spacing-dialog);
+  max-height: min(80dvh, 48rem);
+  overflow: auto;
+  border: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
+  border-radius: var(--radius-dialog);
+  padding: 24px;
+  background: rgb(var(--raised-surface) / 0.88);
+  backdrop-filter: blur(20px) saturate(1.35);
+  -webkit-backdrop-filter: blur(20px) saturate(1.35);
+  color: rgb(var(--text));
+  box-shadow: 0 20px 56px rgb(0 0 0 / 24%), inset 0 1px 0 rgb(255 255 255 / 0.07);
+  opacity: 1;
+  transform: translate(-50%, -50%);
+  animation: openchat-dialog-in var(--motion-duration-ui) var(--motion-ease-out) both;
+}
+
+.saved-response-workspace-body {
+  display: grid;
+  gap: var(--spacing-response-workspace-gap);
+  max-height: var(--spacing-response-workspace-body);
+  overflow-y: auto;
+}
+
+.saved-response-workspace-editor {
+  min-height: var(--spacing-response-workspace-editor-min);
+  max-height: var(--spacing-response-workspace-editor-max);
+}
+
+.openchat-dialog:has(:focus-visible),
+html[data-motion-input='keyboard'] .openchat-dialog {
+  animation: none;
+}
+
+.openchat-dialog-overlay {
+  position: fixed;
+  z-index: 49;
+  inset: 0;
+  background: rgb(10 12 14 / 36%);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.openchat-dialog-overlay[data-state='open'] {
+  animation: openchat-overlay-in var(--motion-duration-fast) var(--motion-ease-out) both;
+}
+
+.openchat-tooltip {
+  z-index: 1000;
+  width: max-content;
+  max-width: min(18rem, calc(100vw - 16px));
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  transform-origin: var(--radix-tooltip-content-transform-origin);
+  border: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
+  border-radius: var(--radius-control);
+  padding: 7px 10px;
+  background: rgb(var(--raised-surface) / 0.86);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 16%), inset 0 1px 0 rgb(255 255 255 / 0.05);
+  color: rgb(var(--text));
+  font-size: calc(12px * var(--app-text-scale, 1));
+  line-height: calc(16px * var(--app-text-scale, 1));
+  overflow-wrap: anywhere;
+  animation: openchat-content-in var(--motion-duration-fast) var(--motion-ease-out) both;
+}
+
+.openchat-tooltip-arrow {
+  fill: rgb(var(--raised-surface));
+  stroke: rgb(var(--border) / var(--border-alpha, 0.1));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .openchat-tooltip,
+  .openchat-dialog,
+  .openchat-dialog-overlay {
+    animation: none;
+  }
+}
+
+.openchat-dropdown-surface,
+.openchat-glass-popover {
+  background: rgb(var(--raised-surface) / var(--dropdown-surface-alpha));
+  backdrop-filter: blur(var(--dropdown-backdrop-blur)) saturate(var(--dropdown-backdrop-saturation));
+  -webkit-backdrop-filter: blur(var(--dropdown-backdrop-blur)) saturate(var(--dropdown-backdrop-saturation));
+  box-shadow: var(--dropdown-surface-shadow);
+}
+
+.openchat-dropdown-surface {
+  border: 1px solid rgb(var(--border) / var(--border-alpha, 0.1));
+  border-radius: var(--dropdown-surface-radius);
+}
+
+.openchat-popover-enter,
+.openchat-disclosure-enter {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  transition: opacity var(--motion-duration-fast) var(--motion-ease-out),
+    transform var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.openchat-popover-enter {
+  transform-origin: var(--openchat-popover-origin, top left);
+}
+
+.openchat-popover-enter[data-state='closed'] {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(4px) scale(0.985);
+}
+
+.openchat-popover-enter--right {
+  --openchat-popover-origin: top right;
+}
+
+.openchat-popover-enter--bottom {
+  --openchat-popover-origin: bottom left;
+}
+
+.openchat-popover-enter--bottom-right {
+  --openchat-popover-origin: bottom right;
+}
+
+.openchat-popover-enter:has(:focus-visible),
+:has(> [aria-expanded='true']:focus-visible) > .openchat-popover-enter {
+  animation: none;
+  transition: none;
+}
+
+.openchat-scroll-area {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.conversation-sidebar-scroll-area {
+  overflow-x: hidden;
+}
+
+.openchat-dropdown-trigger {
+  min-height: 2.5rem;
+  min-width: 0;
+  border: 1px solid rgb(var(--control-border) / var(--border-alpha, 0.1));
+  border-radius: var(--radius-control);
+  background: rgb(var(--surface));
+  padding-inline: 0.75rem;
+  text-align: left;
+  color: rgb(var(--text));
+  outline: none;
+  transition: background-color var(--motion-duration-fast) var(--motion-ease-out),
+    border-color var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+.openchat-dropdown-trigger:hover:not(:disabled) {
+  background: rgb(var(--hover));
+}
+
+.openchat-dropdown-trigger--subtle {
+  background: transparent;
+}
+
+.openchat-dropdown-trigger--compact {
+  min-height: 2rem;
+  padding-inline: 0.5rem;
+}
+
+.openchat-dropdown-trigger:focus-visible {
+  box-shadow: 0 0 0 2px rgb(var(--focus-ring));
+}
+
+.openchat-dropdown-trigger:disabled,
+.openchat-dropdown-trigger[data-disabled] {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.openchat-select-content,
+.openchat-dropdown-menu {
+  z-index: 100;
+  max-height: min(var(--radix-select-content-available-height), 18rem);
+  min-width: var(--radix-select-trigger-width);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 0.25rem;
+  color: rgb(var(--text));
+  animation: openchat-content-in var(--motion-duration-fast) var(--motion-ease-out) both;
+}
+
+.openchat-dropdown-menu {
+  max-height: min(70dvh, 24rem);
+}
+
+.composer-project-menu {
+  width: min(24rem, calc(100vw - 2rem));
+  max-width: calc(100vw - 2rem);
+}
+
+.composer-project-list {
+  max-height: min(14rem, 35dvh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.openchat-select-item {
+  position: relative;
+  display: flex;
+  min-height: 2.25rem;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: var(--radius-control);
+  padding: 0.375rem 2rem 0.375rem 0.625rem;
+  outline: none;
+  cursor: pointer;
+  color: rgb(var(--text));
+  font-size: var(--text-sm);
+}
+
+.openchat-select-item[data-highlighted] {
+  background: rgb(var(--hover));
+}
+
+.openchat-select-item[data-state='checked'] {
+  background: rgb(var(--selected));
+}
+
+.openchat-select-item[data-disabled] {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.openchat-select-item-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: rgb(var(--secondary-icon));
+}
+
+.openchat-select-item-indicator {
+  position: absolute;
+  right: 0.625rem;
+  display: inline-flex;
+  align-items: center;
+  color: rgb(var(--accent));
+}
+
+.openchat-select-scroll-button {
+  display: grid;
+  width: 100%;
+  height: 1.5rem;
+  place-items: center;
+  color: rgb(var(--secondary-icon));
+}
+
+.openchat-dropdown-menu-label {
+  padding: 0.375rem 0.625rem;
+  color: rgb(var(--secondary-text));
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.openchat-dropdown-menu-separator {
+  height: 1px;
+  margin-block: 0.25rem;
+  background: rgb(var(--border) / var(--border-alpha, 0.1));
+}
+
+.openchat-dropdown-menu-item {
+  display: flex;
+  min-height: 2.5rem;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: var(--radius-button);
+  padding: 0.5rem 0.625rem;
+  outline: none;
+  color: rgb(var(--text));
+  font-size: var(--text-sm);
+}
+
+.openchat-dropdown-menu-item[data-highlighted] {
+  background: rgb(var(--hover));
+}
+
+.openchat-dropdown-menu-item[data-disabled] {
+  pointer-events: none;
+  opacity: 0.5;
+}
+
+.openchat-dropdown-menu-item:focus-visible {
+  box-shadow: inset 0 0 0 2px rgb(var(--focus-ring));
+}
+
+.composer-project-menu .openchat-dropdown-menu-item:focus-visible {
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .openchat-select-content,
+  .openchat-dropdown-menu {
+    animation: none;
+  }
+}
+
+@media (prefers-contrast: more), (forced-colors: active) {
+  .openchat-dialog,
+  .openchat-tooltip {
+    background: rgb(var(--raised-surface));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .openchat-dropdown-surface,
+  .openchat-glass-popover {
+    background: rgb(var(--raised-surface));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+  }
+
+  .openchat-dialog-overlay {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (max-width: 640px) {
+
+  .openchat-dialog {
+    padding: 20px;
+  }
+}
+
+@media (max-width: 480px) {
+
+  .openchat-dialog {
+    max-height: calc(100dvh - 16px);
+    border-radius: var(--radius-card);
+    padding: 16px;
+  }
+}

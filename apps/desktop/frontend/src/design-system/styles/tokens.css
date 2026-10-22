@@ -27,6 +27,11 @@
   --motion-duration-ui: 180ms;
   --motion-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --motion-ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --dropdown-surface-radius: 8px;
+  --dropdown-surface-alpha: 0.84;
+  --dropdown-backdrop-blur: 18px;
+  --dropdown-backdrop-saturation: 1.35;
+  --dropdown-surface-shadow: 0 12px 32px rgb(0 0 0 / 20%), inset 0 1px 0 rgb(255 255 255 / 0.06);
   --conversation-reading-width: 920px;
   --app-text-scale: 1;
   --app-font-family: 'Source Sans 3', sans-serif;
@@ -138,4 +143,157 @@
     --info: 145 217 255;
     --focus-ring: 255 255 0;
   }
+}
+
+@theme {
+  --breakpoint-compact: 560px;
+  --breakpoint-diagnostics: 680px;
+  --breakpoint-library: 900px;
+
+  --color-background: rgb(var(--background));
+  --color-canvas: rgb(var(--background));
+  --color-navigation: rgb(var(--navigation));
+  --color-surface: rgb(var(--surface));
+  --color-raised: rgb(var(--raised-surface));
+  --color-overlay: rgb(var(--raised-surface));
+  --color-composer: rgb(var(--composer));
+  --color-selected: rgb(var(--selected));
+  --color-hover: rgb(var(--hover));
+  --color-border: rgb(var(--border) / var(--border-alpha, 0.1));
+  --color-control-border: rgb(var(--control-border) / var(--border-alpha, 0.1));
+  --color-text: rgb(var(--text));
+  --color-secondary-text: rgb(var(--secondary-text));
+  --color-secondary-icon: rgb(var(--secondary-icon));
+  --color-accent: rgb(var(--accent));
+  --color-accent-hover: rgb(var(--accent-hover));
+  --color-accent-active: rgb(var(--accent-active));
+  --color-accent-foreground: rgb(var(--accent-foreground));
+  --color-accent-icon: rgb(var(--accent));
+  --color-destructive: rgb(var(--destructive));
+  --color-warning: rgb(var(--warning));
+  --color-success: rgb(var(--success));
+  --color-info: rgb(var(--info));
+  --color-focus: rgb(var(--focus-ring));
+
+  --font-ui: var(--app-font-family);
+  --font-code: 'Source Code Pro', monospace;
+
+  --text-xs: calc(0.75rem * var(--app-text-scale, 1));
+  --text-xs--line-height: calc(1rem * var(--app-text-scale, 1));
+  --text-sm: calc(0.875rem * var(--app-text-scale, 1));
+  --text-sm--line-height: calc(1.25rem * var(--app-text-scale, 1));
+  --text-base: calc(1rem * var(--app-text-scale, 1));
+  --text-base--line-height: calc(1.5rem * var(--app-text-scale, 1));
+  --text-body: calc(15px * var(--app-text-scale, 1));
+  --text-body--line-height: calc(22px * var(--app-text-scale, 1));
+  --text-lg: calc(1.125rem * var(--app-text-scale, 1));
+  --text-lg--line-height: calc(1.75rem * var(--app-text-scale, 1));
+  --text-xl: calc(1.25rem * var(--app-text-scale, 1));
+  --text-xl--line-height: calc(1.75rem * var(--app-text-scale, 1));
+  --text-2xl: calc(1.5rem * var(--app-text-scale, 1));
+  --text-2xl--line-height: calc(2rem * var(--app-text-scale, 1));
+  --text-3xl: calc(1.75rem * var(--app-text-scale, 1));
+  --text-3xl--line-height: calc(2.25rem * var(--app-text-scale, 1));
+  --text-section-title: calc(20px * var(--app-text-scale, 1));
+  --text-section-title--line-height: calc(28px * var(--app-text-scale, 1));
+  --text-composer-input: calc(15px * var(--app-text-scale, 1));
+  --text-composer-input--line-height: calc(20px * var(--app-text-scale, 1));
+  --text-settings-description: calc(13px * var(--app-text-scale, 1));
+  --text-settings-description--line-height: calc(19px * var(--app-text-scale, 1));
+  --text-caption: calc(11px * var(--app-text-scale, 1));
+  --text-caption--line-height: calc(15px * var(--app-text-scale, 1));
+  --text-micro: calc(10px * var(--app-text-scale, 1));
+  --text-micro--line-height: calc(14px * var(--app-text-scale, 1));
+  --text-relative-small: 0.9em;
+
+  --blur-overlay: 2px;
+
+  --leading-4: calc(1rem * var(--app-text-scale, 1));
+  --leading-5: calc(1.25rem * var(--app-text-scale, 1));
+  --leading-6: calc(1.5rem * var(--app-text-scale, 1));
+  --leading-7: calc(1.75rem * var(--app-text-scale, 1));
+  --leading-8: calc(2rem * var(--app-text-scale, 1));
+  --leading-9: calc(2.25rem * var(--app-text-scale, 1));
+
+  --container-conversation: var(--conversation-reading-width, 920px);
+  --container-composer: 800px;
+  --container-assistant-message: 680px;
+  --container-user-message: min(100%, 540px);
+  --container-settings: 1600px;
+  --container-empty-title: 600px;
+  --container-empty-description: 480px;
+  --container-setup-steps: 520px;
+  --container-message-menu: calc(100vw - 1rem);
+  --container-attachment-card: 17.5rem;
+  --container-attachment-gallery: 35.5rem;
+
+  --spacing-sidebar-category: 280px;
+  --spacing-dialog-viewport: calc(100vh - 2rem);
+  --spacing-dialog-archive: min(88vh, 58rem);
+  --spacing-response-workspace-body: min(75vh, 48rem);
+  --spacing-response-workspace-editor-min: 16rem;
+  --spacing-response-workspace-editor-max: 50vh;
+  --spacing-response-workspace-gap: 1rem;
+  --spacing-dialog-connector: min(88vh, 56rem);
+  --spacing-mcp-environment-list: min(55vh, 28rem);
+  --spacing-project-mcp-list: 48vh;
+  --spacing-project-permission-list: 62vh;
+  --spacing-project-skills-list: 65vh;
+  --spacing-worktree-list: 48vh;
+  --spacing-worktree-details: 62vh;
+  --spacing-worktree-output: 55vh;
+  --spacing-conversation-menu: min(70vh, 24rem);
+  --spacing-diagnostics-preview: 360px;
+  --spacing-desktop-window: 480px;
+  --spacing-attachment-card: 200px;
+  --spacing-navigation-rail: 60px;
+  --spacing-dialog: min(36rem, calc(100vw - 2rem));
+  --spacing-dialog-compact: min(28rem, calc(100vw - 2rem));
+  --spacing-dialog-medium: min(32rem, calc(100vw - 2rem));
+  --spacing-dialog-provider: min(34rem, calc(100vw - 2rem));
+  --spacing-dialog-wide: min(42rem, calc(100vw - 2rem));
+  --spacing-dialog-search: min(58rem, calc(100vw - 2rem));
+  --spacing-statistics-filter: min(32rem, calc(100vw - 2rem));
+  --spacing-attachment-preview: 200px;
+  --spacing-usage-chart: 190px;
+
+  --radius-control: 8px;
+  --radius-tab: 6px;
+  --radius-button: 12px;
+  --radius-card: 12px;
+  --radius-dialog: 16px;
+  --radius-composer: 20px;
+  --radius-attachment-preview: 9px;
+}
+
+@utility flex-model-sort {
+  flex: 0 1 220px;
+}
+
+@utility grid-cols-library {
+  grid-template-columns: minmax(18rem, 21.25rem) minmax(0, 1fr);
+}
+
+@utility grid-cols-diagnostics-actions {
+  grid-template-columns: minmax(0, 1fr) 220px;
+}
+
+@utility grid-cols-tool-lines {
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+}
+
+@utility duration-quick {
+  transition-duration: 160ms;
+}
+
+@utility max-w-in-chat-search {
+  max-width: calc(100% - 2.5rem);
+}
+
+@utility min-w-in-chat-search {
+  min-width: 420px;
+}
+
+@utility max-w-search-highlight {
+  max-width: 120px;
 }

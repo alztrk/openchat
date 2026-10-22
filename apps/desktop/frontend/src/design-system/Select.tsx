@@ -1,7 +1,7 @@
-import { ChevronDown } from 'lucide-react';
-import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
+import * as SelectPrimitive from '@radix-ui/react-select';
+import { Check, ChevronDown, ChevronUp } from 'lucide-react';
+import { type ReactNode, useId } from 'react';
 
-import { useTransitionPresence } from '@/shared/hooks/useTransitionPresence';
 import { cn } from '@/shared/utils/cn';
 
 /** A selectable value with optional leading icon and disabled state. */
@@ -16,9 +16,9 @@ export interface SelectOption {
   disabled?: boolean;
 }
 
-/** Controlled props for OpenChat's keyboard-accessible custom listbox. */
+/** Controlled props for OpenChat's accessible select. */
 export interface SelectProps {
-  /** Accessible name overriding the visible label for the trigger and listbox. */
+  /** Accessible name overriding the visible label for the trigger. */
   'aria-label'?: string;
   /** Additional trigger classes. */
   className?: string;
@@ -26,15 +26,19 @@ export interface SelectProps {
   disabled?: boolean;
   /** Optional stable trigger ID. */
   id?: string;
+  /** Optional icon shown before the selected value in the trigger. */
+  leadingIcon?: ReactNode;
   /** Visible field label. */
   label: string;
-  /** Optional hidden form field name. */
+  /** Form field name. */
   name?: string;
   /** Called with the selected value using a select-like event shape. */
   onChange?: (event: { target: { value: string }; currentTarget: { value: string } }) => void;
   /** Available options in display order. */
   options: readonly SelectOption[];
-  /** Requires an explicit value instead of displaying the first option as an empty-value label. */
+  /** Optional text shown when no option is selected. */
+  placeholder?: string;
+  /** Requires a selected value. */
   required?: boolean;
   /** Currently selected value. */
   value?: string;
@@ -42,179 +46,99 @@ export interface SelectProps {
   visuallyHiddenLabel?: boolean;
 }
 
-/** Renders a controlled custom select with outside-click dismissal and keyboard navigation. */
+/** Renders the shared select control with managed focus and keyboard behavior. */
 export function Select({
   'aria-label': ariaLabel,
   className,
   disabled = false,
   id,
+  leadingIcon,
   label,
   name,
   onChange,
   options,
+  placeholder,
   required,
-  value = '',
+  value,
   visuallyHiddenLabel = false,
 }: SelectProps) {
   const generatedId = useId();
   const selectId = id ?? generatedId;
-  const listboxId = `${selectId}-options`;
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const [isOpen, setIsOpen] = useState(false);
-  const isPresent = useTransitionPresence(isOpen);
-  const [activeIndex, setActiveIndex] = useState(0);
+  const labelId = `${selectId}-label`;
   const selectedOption = options.find((option) => option.value === value);
-  const enabledIndexes = options.flatMap((option, index) => (option.disabled ? [] : [index]));
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (event.target instanceof Node && !rootRef.current?.contains(event.target)) setIsOpen(false);
-    };
-    document.addEventListener('pointerdown', closeOnOutsidePointer);
-    return () => document.removeEventListener('pointerdown', closeOnOutsidePointer);
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (isOpen) optionRefs.current[activeIndex]?.focus();
-  }, [activeIndex, isOpen]);
-
-  const openAt = (direction: 1 | -1 = 1) => {
-    if (enabledIndexes.length === 0) return;
-    const selectedIndex = options.findIndex((option) => option.value === value && !option.disabled);
-    const fallbackIndex = enabledIndexes[direction === 1 ? 0 : enabledIndexes.length - 1];
-    if (fallbackIndex === undefined) return;
-    const startIndex = selectedIndex >= 0 ? selectedIndex : fallbackIndex;
-    setActiveIndex(startIndex);
-    setIsOpen(true);
-  };
-
-  const moveActive = (direction: 1 | -1) => {
-    if (enabledIndexes.length === 0) return;
-    const currentPosition = enabledIndexes.indexOf(activeIndex);
-    const startPosition = currentPosition >= 0 ? currentPosition : direction === 1 ? -1 : 0;
-    const nextPosition = (startPosition + direction + enabledIndexes.length) % enabledIndexes.length;
-    const nextIndex = enabledIndexes[nextPosition];
-    if (nextIndex !== undefined) setActiveIndex(nextIndex);
-  };
-
-  const choose = (option: SelectOption) => {
-    if (option.disabled) return;
-    onChange?.({ target: { value: option.value }, currentTarget: { value: option.value } });
-    setIsOpen(false);
-    triggerRef.current?.focus();
-  };
-
-  const onTriggerKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      openAt(event.key === 'ArrowDown' ? 1 : -1);
-    } else if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      openAt();
-    }
-  };
-
-  const onOptionKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      moveActive(event.key === 'ArrowDown' ? 1 : -1);
-    } else if (event.key === 'Home' || event.key === 'End') {
-      event.preventDefault();
-      const targetIndex = enabledIndexes[event.key === 'Home' ? 0 : enabledIndexes.length - 1];
-      if (targetIndex !== undefined) setActiveIndex(targetIndex);
-    } else if (event.key === 'Escape') {
-      event.preventDefault();
-      setIsOpen(false);
-      triggerRef.current?.focus();
-    } else if (event.key === 'Tab') {
-      setIsOpen(false);
-    }
-  };
 
   return (
-    <div className="grid min-w-0 gap-2" ref={rootRef}>
-      <label className={visuallyHiddenLabel ? 'sr-only' : 'text-sm font-medium text-text'} htmlFor={selectId}>
+    <div className="grid min-w-0 gap-2">
+      <label
+        className={visuallyHiddenLabel ? 'sr-only' : 'text-sm font-medium text-text'}
+        htmlFor={selectId}
+        id={labelId}
+      >
         {label}
       </label>
-      <div className="relative min-w-0">
-        <button
+      <SelectPrimitive.Root
+        disabled={disabled}
+        name={name}
+        onValueChange={(nextValue) => onChange?.({ target: { value: nextValue }, currentTarget: { value: nextValue } })}
+        required={required}
+        value={value}
+      >
+        <SelectPrimitive.Trigger
           aria-label={ariaLabel}
-          aria-controls={listboxId}
-          aria-expanded={isOpen}
-          aria-haspopup="listbox"
-          className={cn(
-            'flex min-h-10 w-full select-none items-center justify-between gap-2 rounded-control border border-control-border bg-surface px-3 text-left text-sm text-text outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-focus disabled:cursor-not-allowed disabled:opacity-50',
-            className,
-          )}
-          disabled={disabled}
+          aria-labelledby={ariaLabel ? undefined : labelId}
+          className={cn('openchat-dropdown-trigger flex w-full items-center justify-between gap-2', className)}
           id={selectId}
-          onClick={() => (isOpen ? setIsOpen(false) : openAt())}
-          onKeyDown={onTriggerKeyDown}
-          ref={triggerRef}
-          type="button"
         >
-          {selectedOption?.icon ? (
-            <span aria-hidden="true" className="flex shrink-0 items-center justify-center text-secondary-icon">
-              {selectedOption.icon}
+          {(leadingIcon ?? selectedOption?.icon) ? (
+            <span aria-hidden="true" className="flex shrink-0 items-center text-secondary-icon">
+              {leadingIcon ?? selectedOption?.icon}
             </span>
           ) : null}
-          <span className="min-w-0 flex-1 truncate">
-            {selectedOption?.label ?? (required ? '' : (options[0]?.label ?? ''))}
-          </span>
-          <ChevronDown
-            aria-hidden="true"
-            className={cn('openchat-select-chevron shrink-0', isOpen && 'rotate-180')}
-            size={15}
-          />
-        </button>
-        {name ? <input name={name} type="hidden" value={value} /> : null}
-        {isPresent ? (
-          <div
-            aria-hidden={!isOpen}
-            className="openchat-popover-enter openchat-select-popover absolute left-0 top-full z-50 max-h-72 w-full overflow-y-auto rounded-control border border-border bg-raised p-1 shadow-lg"
-            data-state={isOpen ? 'open' : 'closed'}
-            inert={!isOpen}
-            id={listboxId}
-            onKeyDown={onOptionKeyDown}
-            role="listbox"
-            aria-label={ariaLabel ?? label}
+          <SelectPrimitive.Value placeholder={placeholder ?? (required ? undefined : options[0]?.label)}>
+            {selectedOption ? (
+              <span className="truncate">{selectedOption.label}</span>
+            ) : undefined}
+          </SelectPrimitive.Value>
+          <SelectPrimitive.Icon aria-hidden="true" className="shrink-0 text-secondary-icon">
+            <ChevronDown size={15} />
+          </SelectPrimitive.Icon>
+        </SelectPrimitive.Trigger>
+        <SelectPrimitive.Portal>
+          <SelectPrimitive.Content
+            className="openchat-dropdown-surface openchat-select-content"
+            position="popper"
+            sideOffset={6}
           >
-            {options.map((option, index) => (
-              <button
-                aria-selected={option.value === value}
-                className={cn(
-                  'flex min-h-9 w-full select-none items-center rounded-control px-2.5 text-left text-sm text-text outline-none hover:bg-hover focus-visible:bg-hover',
-                  option.value === value && 'bg-selected',
-                  option.disabled && 'cursor-not-allowed opacity-50',
-                )}
-                disabled={option.disabled}
-                key={option.value}
-                onClick={() => choose(option)}
-                onFocus={() => setActiveIndex(index)}
-                ref={(element) => {
-                  optionRefs.current[index] = element;
-                }}
-                role="option"
-                tabIndex={index === activeIndex ? 0 : -1}
-                type="button"
-              >
-                {option.icon ? (
-                  <span
-                    aria-hidden="true"
-                    className="mr-2 flex shrink-0 items-center justify-center text-secondary-icon"
-                  >
-                    {option.icon}
-                  </span>
-                ) : null}
-                <span className="min-w-0 truncate">{option.label}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
+            <SelectPrimitive.ScrollUpButton className="openchat-select-scroll-button" aria-hidden="true">
+              <ChevronUp size={15} />
+            </SelectPrimitive.ScrollUpButton>
+            <SelectPrimitive.Viewport>
+              {options.map((option) => (
+                <SelectPrimitive.Item
+                  className="openchat-select-item"
+                  disabled={option.disabled}
+                  key={option.value}
+                  textValue={option.label}
+                  value={option.value}
+                >
+                  {option.icon ? (
+                    <span aria-hidden="true" className="openchat-select-item-icon">
+                      {option.icon}
+                    </span>
+                  ) : null}
+                  <SelectPrimitive.ItemText>{option.label}</SelectPrimitive.ItemText>
+                  <SelectPrimitive.ItemIndicator className="openchat-select-item-indicator">
+                    <Check aria-hidden="true" size={14} />
+                  </SelectPrimitive.ItemIndicator>
+                </SelectPrimitive.Item>
+              ))}
+            </SelectPrimitive.Viewport>
+            <SelectPrimitive.ScrollDownButton className="openchat-select-scroll-button" aria-hidden="true">
+              <ChevronDown size={15} />
+            </SelectPrimitive.ScrollDownButton>
+          </SelectPrimitive.Content>
+        </SelectPrimitive.Portal>
+      </SelectPrimitive.Root>
     </div>
   );
 }

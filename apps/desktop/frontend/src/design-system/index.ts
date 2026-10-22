@@ -3,6 +3,15 @@ export { Badge, type BadgeProps, type BadgeSize, type BadgeVariant } from './Bad
 export { Button, type ButtonProps } from './Button';
 export { Card } from './Card';
 export { Dialog, type DialogProps } from './Dialog';
+export {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from './DropdownMenu';
 export { Input, type InputProps } from './Input';
 export { Kbd, type KbdProps } from './Kbd';
 export { ScrollArea } from './ScrollArea';
