@@ -177,6 +177,17 @@ pub(crate) async fn execute_model_tool(
                 "message": "Delegated analysis could not be started in this execution context."
             }});
         }
+        ToolOperation::ListSubagentModels
+        | ToolOperation::GetSubagentResult { .. }
+        | ToolOperation::CancelSubagent { .. }
+        | ToolOperation::SaveMemory { .. } => {
+            return json!({
+                "error": {
+                    "code": "tool_execution_unavailable",
+                    "message": "This tool must run through the permission-aware executor."
+                }
+            });
+        }
         #[cfg(windows)]
         ToolOperation::ProjectTool { .. } => {
             return json!({"error": {

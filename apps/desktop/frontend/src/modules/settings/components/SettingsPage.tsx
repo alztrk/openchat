@@ -1,9 +1,12 @@
 import {
+  Bot,
   Bell,
+  Brain,
   ChartBarIncreasing,
   ChartNoAxesCombined,
   Cpu,
   HardDrive,
+  Keyboard,
   Link,
   NotebookPen,
   Palette,
@@ -34,10 +37,16 @@ const loadConnectorCatalog = () =>
   import('./ConnectorCatalogSettingsSection').then((module) => ({ default: module.ConnectorCatalogSettingsSection }));
 const loadLocalData = () =>
   import('./LocalDataSettingsSection').then((module) => ({ default: module.LocalDataSettingsSection }));
+const loadPersonalMemory = () =>
+  import('./PersonalMemorySettingsSection').then((module) => ({ default: module.PersonalMemorySettingsSection }));
 const loadNotifications = () =>
   import('@/modules/notifications/components/NotificationSettingsSection').then((module) => ({
     default: module.NotificationSettingsSection,
   }));
+const loadShortcuts = () =>
+  import('./ShortcutsSection').then((module) => ({ default: module.ShortcutsSection }));
+const loadAssistantProfiles = () =>
+  import('./AssistantProfilesSettingsSection').then((module) => ({ default: module.AssistantProfilesSettingsSection }));
 
 const GeneralSettingsSection = lazy(loadGeneralSettings);
 const ProviderSettingsSection = lazy(loadProviderSettings);
@@ -48,7 +57,10 @@ const UsageQuotasSection = lazy(loadUsageQuotas);
 const StatisticsSettingsSection = lazy(loadStatisticsSettings);
 const ConnectorCatalogSettingsSection = lazy(loadConnectorCatalog);
 const LocalDataSettingsSection = lazy(loadLocalData);
+const PersonalMemorySettingsSection = lazy(loadPersonalMemory);
 const NotificationSettingsSection = lazy(loadNotifications);
+const ShortcutsSection = lazy(loadShortcuts);
+const AssistantProfilesSettingsSection = lazy(loadAssistantProfiles);
 
 import type { AppearancePreferences } from '@/modules/settings/data/appearancePreferences';
 import '@/modules/settings/settings.css';
@@ -59,10 +71,13 @@ type SettingsSection =
   | 'models'
   | 'appearance'
   | 'sharedInstructions'
+  | 'assistantProfiles'
+  | 'shortcuts'
   | 'usageQuotas'
   | 'statistics'
   | 'connectors'
   | 'localData'
+  | 'personalMemory'
   | 'notifications';
 type TranslationKey = keyof typeof import('@/localization/locales/en.json');
 
@@ -72,10 +87,13 @@ const sectionTitleKeys: Record<SettingsSection, TranslationKey> = {
   models: 'models',
   appearance: 'appearance',
   sharedInstructions: 'sharedInstructions',
+  assistantProfiles: 'assistantProfiles',
+  shortcuts: 'keyboardShortcuts',
   usageQuotas: 'usageQuotas',
   statistics: 'statistics',
   connectors: 'settingsConnectors',
   localData: 'localData',
+  personalMemory: 'personalMemoryTitle',
   notifications: 'settingsNotifications',
 };
 
@@ -85,10 +103,13 @@ const sectionDescriptionKeys: Record<SettingsSection, TranslationKey> = {
   models: 'settingsModelPreferencesDescription',
   appearance: 'settingsAppearanceDescription',
   sharedInstructions: 'settingsSharedInstructionsDescription',
+  assistantProfiles: 'settingsAssistantProfilesDescription',
+  shortcuts: 'keyboardShortcutsDescription',
   usageQuotas: 'settingsUsageQuotasDescription',
   statistics: 'settingsStatisticsDescription',
   connectors: 'settingsConnectorsDescription',
   localData: 'settingsLocalDataDescription',
+  personalMemory: 'personalMemoryDescription',
   notifications: 'settingsNotificationsDescription',
 };
 
@@ -119,7 +140,10 @@ export function SettingsPage({
       loadStatisticsSettings(),
       loadConnectorCatalog(),
       loadLocalData(),
+      loadPersonalMemory(),
       loadNotifications(),
+      loadShortcuts(),
+      loadAssistantProfiles(),
     ]);
   }, []);
   const [section, setSection] = useState<SettingsSection>('connections');
@@ -156,6 +180,18 @@ export function SettingsPage({
                 icon={<NotebookPen aria-hidden="true" size={18} />}
                 label={t('sharedInstructions')}
                 onClick={() => navigateToSection('sharedInstructions')}
+              />
+              <SettingsNavigationButton
+                active={section === 'assistantProfiles'}
+                icon={<Bot aria-hidden="true" size={18} />}
+                label={t('assistantProfiles')}
+                onClick={() => navigateToSection('assistantProfiles')}
+              />
+              <SettingsNavigationButton
+                active={section === 'shortcuts'}
+                icon={<Keyboard aria-hidden="true" size={18} />}
+                label={t('keyboardShortcuts')}
+                onClick={() => navigateToSection('shortcuts')}
               />
             </SettingsNavigationGroup>
             <SettingsNavigationGroup label={t('settingsProvidersModelsGroup')}>
@@ -207,6 +243,12 @@ export function SettingsPage({
               />
             </SettingsNavigationGroup>
             <SettingsNavigationGroup label={t('settingsDataPrivacyGroup')}>
+              <SettingsNavigationButton
+                active={section === 'personalMemory'}
+                icon={<Brain aria-hidden="true" size={18} />}
+                label={t('personalMemoryTitle')}
+                onClick={() => navigateToSection('personalMemory')}
+              />
               <SettingsNavigationButton
                 active={section === 'localData'}
                 icon={<HardDrive aria-hidden="true" size={18} />}
@@ -278,6 +320,20 @@ export function SettingsPage({
               <SharedInstructionsSection />
             </SettingsSectionPage>
             <SettingsSectionPage
+              active={section === 'shortcuts'}
+              fallback={t('settingsSectionLoading')}
+              visited={visitedSections.has('shortcuts')}
+            >
+              <ShortcutsSection />
+            </SettingsSectionPage>
+            <SettingsSectionPage
+              active={section === 'assistantProfiles'}
+              fallback={t('settingsSectionLoading')}
+              visited={visitedSections.has('assistantProfiles')}
+            >
+              <AssistantProfilesSettingsSection />
+            </SettingsSectionPage>
+            <SettingsSectionPage
               active={section === 'usageQuotas'}
               fallback={t('settingsSectionLoading')}
               visited={visitedSections.has('usageQuotas')}
@@ -304,6 +360,13 @@ export function SettingsPage({
               visited={visitedSections.has('localData')}
             >
               <LocalDataSettingsSection />
+            </SettingsSectionPage>
+            <SettingsSectionPage
+              active={section === 'personalMemory'}
+              fallback={t('settingsSectionLoading')}
+              visited={visitedSections.has('personalMemory')}
+            >
+              <PersonalMemorySettingsSection />
             </SettingsSectionPage>
             <SettingsSectionPage
               active={section === 'notifications'}

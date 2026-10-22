@@ -65,8 +65,20 @@ pub(crate) enum ToolOperation {
         output_limit_bytes: usize,
     },
     DelegateTask {
+        model_key: String,
+        reasoning_effort: Option<String>,
         task: String,
         context: Option<String>,
+    },
+    ListSubagentModels,
+    GetSubagentResult {
+        run_id: String,
+    },
+    CancelSubagent {
+        run_id: String,
+    },
+    SaveMemory {
+        fact: String,
     },
     GitStatus,
     GitDiff,
@@ -80,7 +92,10 @@ impl ToolOperation {
     pub(crate) fn is_safe_for_auto_approval(&self) -> bool {
         matches!(
             self,
-            Self::List { .. }
+            Self::ListSubagentModels
+                | Self::GetSubagentResult { .. }
+                | Self::CancelSubagent { .. }
+                | Self::List { .. }
                 | Self::Search { .. }
                 | Self::Read { .. }
                 | Self::GitStatus
@@ -153,18 +168,78 @@ impl ToolExecutor {
             });
         }
         let operation = match call.name.as_str() {
+            "save_memory" => {
+                if !only_keys(&call.arguments, &["fact"]) {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The saved memory arguments are invalid.",
+                    ));
+                }
+                let Some(fact) = string_argument(&call.arguments, "fact") else {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "A memory fact is required.",
+                    ));
+                };
+                let fact = fact.trim();
+                if fact.is_empty() || fact.len() > 2000 || fact.chars().count() > 500 {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "A memory fact must contain 1 to 500 characters.",
+                    ));
+                }
+                let root = self.data_root.clone();
+                return Ok(PreparedToolCall {
+                    root: root.clone(),
+                    relative_path: String::new(),
+                    requested_path: "personal memory".to_owned(),
+                    target_path: PathBuf::from("personal memory"),
+                    scope: ToolPathScope::Project,
+                    operation: ToolOperation::SaveMemory {
+                        fact: fact.to_owned(),
+                    },
+                });
+            }
             "delegate_task" => {
-                if !only_keys(&call.arguments, &["task", "context"]) {
+                if !only_keys(
+                    &call.arguments,
+                    &["modelKey", "reasoningEffort", "task", "context"],
+                ) {
                     return Err(tool_error(
                         "invalid_tool_input",
                         "The delegated task arguments are invalid.",
                     ));
                 }
+                let Some(model_key) = string_argument(&call.arguments, "modelKey")
+                    .filter(|value| !value.trim().is_empty() && value.len() <= 1024)
+                else {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "Choose a model from the available subagent models.",
+                    ));
+                };
                 let Some(task) = string_argument(&call.arguments, "task") else {
                     return Err(tool_error(
                         "invalid_tool_input",
                         "The delegated task is required.",
                     ));
+                };
+                let reasoning_effort = match call.arguments.get("reasoningEffort") {
+                    None | Some(Value::Null) => None,
+                    Some(Value::String(value))
+                        if matches!(
+                            value.as_str(),
+                            "minimal" | "low" | "medium" | "high" | "xhigh"
+                        ) =>
+                    {
+                        Some(value.clone())
+                    }
+                    _ => {
+                        return Err(tool_error(
+                            "invalid_tool_input",
+                            "The selected reasoning level is invalid.",
+                        ));
+                    }
                 };
                 let context = string_argument(&call.arguments, "context");
                 if task.trim().is_empty()
@@ -187,8 +262,60 @@ impl ToolExecutor {
                     target_path: root,
                     scope: ToolPathScope::Project,
                     operation: ToolOperation::DelegateTask {
+                        model_key: model_key.to_owned(),
+                        reasoning_effort,
                         task: task.to_owned(),
                         context: context.map(str::to_owned),
+                    },
+                });
+            }
+            "list_subagent_models" => {
+                if !only_keys(&call.arguments, &[]) {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The model-list arguments are invalid.",
+                    ));
+                }
+                let root = self.data_root.clone();
+                return Ok(PreparedToolCall {
+                    root: root.clone(),
+                    relative_path: String::new(),
+                    requested_path: "available subagent models".to_owned(),
+                    target_path: root,
+                    scope: ToolPathScope::Project,
+                    operation: ToolOperation::ListSubagentModels,
+                });
+            }
+            "get_subagent_result" | "cancel_subagent" => {
+                if !only_keys(&call.arguments, &["runId"]) {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "The child run arguments are invalid.",
+                    ));
+                }
+                let Some(run_id) = string_argument(&call.arguments, "runId")
+                    .filter(|value| !value.trim().is_empty() && value.len() <= 64)
+                else {
+                    return Err(tool_error(
+                        "invalid_tool_input",
+                        "A valid child run id is required.",
+                    ));
+                };
+                let root = self.data_root.clone();
+                return Ok(PreparedToolCall {
+                    root: root.clone(),
+                    relative_path: String::new(),
+                    requested_path: "delegated analysis".to_owned(),
+                    target_path: root,
+                    scope: ToolPathScope::Project,
+                    operation: if call.name == "get_subagent_result" {
+                        ToolOperation::GetSubagentResult {
+                            run_id: run_id.to_owned(),
+                        }
+                    } else {
+                        ToolOperation::CancelSubagent {
+                            run_id: run_id.to_owned(),
+                        }
                     },
                 });
             }

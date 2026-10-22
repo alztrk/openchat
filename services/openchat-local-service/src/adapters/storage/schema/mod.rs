@@ -6,7 +6,7 @@
 use rusqlite::Connection;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-pub(super) const SCHEMA_VERSION: i64 = 31;
+pub(super) const SCHEMA_VERSION: i64 = 33;
 pub(super) const INITIAL_SCHEMA_VERSION: i64 = 2;
 
 pub(super) mod agent_migrations;
@@ -49,6 +49,7 @@ pub(super) fn initialize_schema(
     }
     if current_version >= target_version {
         if target_version >= SCHEMA_VERSION && current_version >= 13 {
+            repair::repair_missing_conversation_context_state(connection, current_version)?;
             let indexes_repaired =
                 repair::repair_missing_memory_indexes_and_triggers(connection, current_version)?;
             if indexes_repaired {
@@ -59,6 +60,10 @@ pub(super) fn initialize_schema(
             }
         }
         return Ok(current_version);
+    }
+
+    if current_version >= 11 {
+        repair::repair_missing_conversation_context_state(connection, current_version)?;
     }
 
     if current_version >= 13 {

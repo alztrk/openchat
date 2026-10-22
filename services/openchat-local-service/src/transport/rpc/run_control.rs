@@ -52,6 +52,28 @@ pub(super) async fn dispatch(
                 })?;
             Ok(json!({"runs": runs}))
         }
+        "chat.subagents.list" => {
+            let conversation_id = required_string(params, "conversationId")?;
+            let requested_limit = match params.get("limit") {
+                Some(value) => value.as_u64().ok_or_else(invalid_subagent_list_request)?,
+                None => 50,
+            };
+            let limit = usize::try_from(requested_limit)
+                .ok()
+                .filter(|limit| (1..=100).contains(limit))
+                .ok_or_else(invalid_subagent_list_request)?;
+            crate::chatgpt::subagents::list_child_runs(storage, conversation_id, limit)
+        }
+        "chat.subagents.get" => {
+            let conversation_id = required_string(params, "conversationId")?;
+            let run_id = required_string(params, "runId")?;
+            crate::chatgpt::subagents::child_run_result(storage, conversation_id, run_id)
+        }
+        "chat.subagents.cancel" => {
+            let conversation_id = required_string(params, "conversationId")?;
+            let run_id = required_string(params, "runId")?;
+            crate::chatgpt::subagents::cancel_child_analysis(storage, conversation_id, run_id)
+        }
         "chat.goal.pause" => {
             let conversation_id = required_string(params, "conversationId")?;
             let run_id = required_string(params, "runId")?;
@@ -120,6 +142,14 @@ fn invalid_run_list_request() -> ServiceError {
     ServiceError::new(
         "invalid_request_params",
         "The run list limit must be between 1 and 50.",
+        false,
+    )
+}
+
+fn invalid_subagent_list_request() -> ServiceError {
+    ServiceError::new(
+        "invalid_request_params",
+        "The child run list limit must be between 1 and 100.",
         false,
     )
 }

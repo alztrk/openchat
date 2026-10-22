@@ -1,6 +1,7 @@
 //! Repairs missing derived memory indexes, FTS tables, and SQLite triggers.
 
 use super::SCHEMA_VERSION;
+use super::legacy_migrations;
 use rusqlite::Connection;
 
 pub(super) fn schema_table_exists(connection: &Connection, name: &str) -> rusqlite::Result<bool> {
@@ -31,6 +32,23 @@ pub(super) fn schema_trigger_exists(connection: &Connection, name: &str) -> rusq
         [name],
         |row| row.get(0),
     )
+}
+
+pub(super) fn repair_missing_conversation_context_state(
+    connection: &Connection,
+    backend_version: i64,
+) -> rusqlite::Result<bool> {
+    if backend_version < 11 || schema_table_exists(connection, "conversation_context_state")? {
+        return Ok(false);
+    }
+
+    let transaction = connection.unchecked_transaction()?;
+    transaction.execute_batch(legacy_migrations::CREATE_CONVERSATION_CONTEXT_STATE_TABLE)?;
+    if backend_version >= 12 {
+        transaction.execute_batch(legacy_migrations::ADD_CONVERSATION_CONTEXT_ROUTE_COLUMNS)?;
+    }
+    transaction.commit()?;
+    Ok(true)
 }
 
 pub(super) fn repair_missing_memory_indexes_and_triggers(

@@ -3,6 +3,41 @@
 use super::unix_time_millis;
 use rusqlite::Connection;
 
+pub(super) const CREATE_CONVERSATION_CONTEXT_STATE_TABLE: &str =
+    "CREATE TABLE conversation_context_state (
+    conversation_id TEXT PRIMARY KEY NOT NULL
+        REFERENCES conversations(id) ON DELETE CASCADE,
+    compaction_kind TEXT CHECK (
+        compaction_kind IS NULL
+        OR compaction_kind IN ('responses_checkpoint', 'summary')
+    ),
+    compaction_payload TEXT,
+    compaction_provider_id TEXT,
+    compaction_connection_id TEXT,
+    compaction_workspace_id TEXT,
+    compaction_model_id TEXT,
+    compacted_through_message_id TEXT,
+    last_prompt_tokens INTEGER CHECK (
+        last_prompt_tokens IS NULL OR last_prompt_tokens >= 0
+    ),
+    last_prompt_message_id TEXT,
+    last_prompt_provider_id TEXT,
+    last_prompt_model_id TEXT,
+    updated_at_unix_ms INTEGER NOT NULL,
+    CHECK (
+        (compaction_kind IS NULL AND compaction_payload IS NULL
+            AND compacted_through_message_id IS NULL)
+        OR (compaction_kind IS NOT NULL AND compaction_payload IS NOT NULL
+            AND compacted_through_message_id IS NOT NULL)
+    )
+);";
+
+pub(super) const ADD_CONVERSATION_CONTEXT_ROUTE_COLUMNS: &str =
+    "ALTER TABLE conversation_context_state
+    ADD COLUMN last_prompt_connection_id TEXT;
+ALTER TABLE conversation_context_state
+    ADD COLUMN last_prompt_workspace_id TEXT;";
+
 pub(super) fn apply_legacy_migrations(
     connection: &Connection,
     mut current_version: i64,
@@ -365,35 +400,7 @@ pub(super) fn apply_legacy_migrations(
 
     if current_version < 11 {
         let transaction = connection.unchecked_transaction()?;
-        transaction.execute_batch(
-            "CREATE TABLE conversation_context_state (
-                conversation_id TEXT PRIMARY KEY NOT NULL
-                    REFERENCES conversations(id) ON DELETE CASCADE,
-                compaction_kind TEXT CHECK (
-                    compaction_kind IS NULL
-                    OR compaction_kind IN ('responses_checkpoint', 'summary')
-                ),
-                compaction_payload TEXT,
-                compaction_provider_id TEXT,
-                compaction_connection_id TEXT,
-                compaction_workspace_id TEXT,
-                compaction_model_id TEXT,
-                compacted_through_message_id TEXT,
-                last_prompt_tokens INTEGER CHECK (
-                    last_prompt_tokens IS NULL OR last_prompt_tokens >= 0
-                ),
-                last_prompt_message_id TEXT,
-                last_prompt_provider_id TEXT,
-                last_prompt_model_id TEXT,
-                updated_at_unix_ms INTEGER NOT NULL,
-                CHECK (
-                    (compaction_kind IS NULL AND compaction_payload IS NULL
-                        AND compacted_through_message_id IS NULL)
-                    OR (compaction_kind IS NOT NULL AND compaction_payload IS NOT NULL
-                        AND compacted_through_message_id IS NOT NULL)
-                )
-            );",
-        )?;
+        transaction.execute_batch(CREATE_CONVERSATION_CONTEXT_STATE_TABLE)?;
         transaction.execute(
             "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (11, ?1)",
             [unix_time_millis()?],
@@ -407,12 +414,7 @@ pub(super) fn apply_legacy_migrations(
 
     if current_version < 12 {
         let transaction = connection.unchecked_transaction()?;
-        transaction.execute_batch(
-            "ALTER TABLE conversation_context_state
-                 ADD COLUMN last_prompt_connection_id TEXT;
-             ALTER TABLE conversation_context_state
-                 ADD COLUMN last_prompt_workspace_id TEXT;",
-        )?;
+        transaction.execute_batch(ADD_CONVERSATION_CONTEXT_ROUTE_COLUMNS)?;
         transaction.execute(
             "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (12, ?1)",
             [unix_time_millis()?],

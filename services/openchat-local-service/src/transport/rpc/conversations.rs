@@ -11,7 +11,7 @@ use crate::{
     chatgpt_store, conversation_archive, document_parser, instructions, openai_compatible,
     profile_archive,
     protocol::{EventSink, Response, ServiceError},
-    storage::AppStorage,
+    storage::{AppStorage, sqlite_error_code},
     tools::{self, ToolPermissionMode},
 };
 
@@ -78,18 +78,16 @@ pub(super) async fn dispatch(
         "chat.memory.inspect" => {
             let conversation_id = required_memory_conversation_id(params)?;
             let state = chatgpt_store::load_conversation_context_state(storage, conversation_id)
-                .map_err(|_| {
+                .map_err(|error| {
+                    if storage
+                        .log_rpc_failure("chat.memory.inspect", sqlite_error_code(&error))
+                        .is_err()
+                    {
+                        eprintln!("conversation_memory_diagnostic_write_failed");
+                    }
                     ServiceError::new(
-                        "conversation_memory_unavailable",
+                        "conversation_memory_state_unavailable",
                         "Conversation memory could not be loaded.",
-                        true,
-                    )
-                })?;
-            let archive_index_settings =
-                chatgpt_store::archive_index_settings(storage, conversation_id).map_err(|_| {
-                    ServiceError::new(
-                        "conversation_memory_unavailable",
-                        "Conversation archive settings could not be loaded.",
                         true,
                     )
                 })?;
@@ -137,7 +135,6 @@ pub(super) async fn dispatch(
                 "compactedThroughMessageId": compacted_through_message_id,
                 "summary": summary,
                 "lastPrompt": last_prompt,
-                "archiveIndexSettings": archive_index_settings_json(&archive_index_settings),
             }))
         }
         "chat.memory.archive.set_conversation" => {
@@ -207,6 +204,7 @@ pub(super) async fn dispatch(
                     | "deepinfra"
                     | "dashscope"
                     | "cohere"
+                    | "kilo"
                     | "llama_cpp"
             ) && !is_custom_provider_id(provider_id)
             {
@@ -437,7 +435,6 @@ pub(super) async fn dispatch(
                 model_id: optional_history_filter_string(params, "modelId")?,
                 project_id: optional_history_filter_string(params, "projectId")?,
                 is_archived: optional_history_filter_bool(params, "isArchived")?,
-                tag: optional_history_tag_filter(params)?,
                 result_type,
                 sort_order,
             };
@@ -474,7 +471,6 @@ pub(super) async fn dispatch(
             Ok(json!({
                 "providerIds": options.provider_ids,
                 "modelIds": options.model_ids,
-                "tags": options.tags,
             }))
         }
         "conversation.archive.export" => {
@@ -779,14 +775,6 @@ fn optional_history_filter_string(
     Ok(Some(value.to_owned()))
 }
 
-fn optional_history_tag_filter(params: &Value) -> Result<Option<String>, ServiceError> {
-    let tag = optional_history_filter_string(params, "tag")?;
-    if tag.as_ref().is_some_and(|value| value.chars().count() > 32) {
-        return Err(invalid_history_filter());
-    }
-    Ok(tag)
-}
-
 fn optional_history_filter_bool(params: &Value, field: &str) -> Result<Option<bool>, ServiceError> {
     let Some(value) = params.get(field) else {
         return Ok(None);
@@ -1013,8 +1001,8 @@ mod tests {
     use crate::{protocol::EventSink, storage::AppStorage};
 
     use super::{
-        dispatch, optional_history_tag_filter, required_memory_conversation_id,
-        required_memory_search_query, required_secret_string, required_string_array,
+        dispatch, required_memory_conversation_id, required_memory_search_query,
+        required_secret_string, required_string_array,
     };
 
     #[test]
@@ -1034,12 +1022,6 @@ mod tests {
                 .expect("valid archive query"),
             "archive clue"
         );
-        assert_eq!(
-            optional_history_tag_filter(&json!({"tag": "Research"})).expect("valid tag"),
-            Some("Research".to_owned())
-        );
-        assert!(optional_history_tag_filter(&json!({"tag": "x".repeat(33)})).is_err());
-        assert!(optional_history_tag_filter(&json!({"tag": 12})).is_err());
     }
 
     #[test]
@@ -1110,6 +1092,172 @@ mod tests {
         .await
         .expect_err("unknown conversation methods are rejected");
         assert_eq!(unknown_error.code, "method_not_found");
+    }
+
+    #[tokio::test]
+    async fn kilo_context_usage_estimate_does_not_require_provider_credentials() {
+        let directory = TestDirectory::new();
+        let storage = initialized_storage(&directory);
+        let events = EventSink::new();
+        let (_sender, mut cancellation) = watch::channel(false);
+        let request_id = json!("kilo-context-test");
+        let mut params = json!({
+            "providerId": "kilo",
+            "modelId": "kilo-auto/free",
+            "supportsTools": true,
+            "conversationId": null,
+            "projectId": null,
+            "customInstructions": null,
+            "planMode": false,
+            "projectSkillIds": [],
+        });
+
+        let result = dispatch(
+            "chat.context.usage.estimate",
+            &mut params,
+            &request_id,
+            &storage,
+            &events,
+            &mut cancellation,
+        )
+        .await
+        .expect("Kilo context estimates should be local and credential independent");
+
+        assert!(
+            result["instructionsTokens"]
+                .as_i64()
+                .is_some_and(|tokens| tokens >= 0)
+        );
+        assert!(result["toolDefinitions"].is_array());
+        assert_eq!(result["projectContextUnavailable"], false);
+    }
+
+    #[tokio::test]
+    async fn memory_inspection_returns_an_empty_snapshot_for_a_new_conversation() {
+        let directory = TestDirectory::new();
+        let storage = initialized_storage(&directory);
+        let connection = storage.connect().expect("open test database");
+        connection
+            .execute(
+                "INSERT INTO conversations (id) VALUES ('conversation-without-memory')",
+                [],
+            )
+            .expect("create an uncompacted conversation");
+        drop(connection);
+
+        let events = EventSink::new();
+        let (_sender, mut cancellation) = watch::channel(false);
+        let mut params = json!({"conversationId": "conversation-without-memory"});
+        let result = dispatch(
+            "chat.memory.inspect",
+            &mut params,
+            &json!("memory-inspect-test"),
+            &storage,
+            &events,
+            &mut cancellation,
+        )
+        .await
+        .expect("new conversation memory should be inspectable");
+
+        assert_eq!(result["compactionKind"], serde_json::Value::Null);
+        assert_eq!(result["lastPrompt"], serde_json::Value::Null);
+        assert!(result.get("archiveIndexSettings").is_none());
+    }
+
+    #[tokio::test]
+    async fn memory_inspection_distinguishes_context_state_storage_failure() {
+        let directory = TestDirectory::new();
+        let storage = initialized_storage(&directory);
+        storage
+            .connect()
+            .expect("open test database")
+            .execute_batch("DROP TABLE conversation_context_state")
+            .expect("remove context state table to simulate a read failure");
+        let events = EventSink::new();
+        let (_sender, mut cancellation) = watch::channel(false);
+        let mut params = json!({"conversationId": "conversation-without-memory"});
+
+        let error = dispatch(
+            "chat.memory.inspect",
+            &mut params,
+            &json!("memory-inspect-state-failure-test"),
+            &storage,
+            &events,
+            &mut cancellation,
+        )
+        .await
+        .expect_err("missing context state table should be diagnosed");
+
+        assert_eq!(error.code, "conversation_memory_state_unavailable");
+        let diagnostic = fs::read_to_string(
+            directory
+                .0
+                .join("data")
+                .join("logs")
+                .join("openchat-service.log"),
+        )
+        .expect("read safe memory failure diagnostic");
+        assert!(diagnostic.contains("operation=chat.memory.inspect code=sqlite_failure"));
+    }
+
+    #[tokio::test]
+    async fn memory_inspection_does_not_depend_on_archive_settings() {
+        let directory = TestDirectory::new();
+        let storage = initialized_storage(&directory);
+        let connection = storage.connect().expect("open test database");
+        connection
+            .execute_batch("DROP TABLE conversation_memory_archive_settings")
+            .expect("remove archive settings table");
+        connection
+            .execute(
+                "INSERT INTO conversations (id) VALUES ('conversation-without-archive-settings')",
+                [],
+            )
+            .expect("create an uncompacted conversation");
+        drop(connection);
+        let events = EventSink::new();
+        let (_sender, mut cancellation) = watch::channel(false);
+        let mut params = json!({"conversationId": "conversation-without-archive-settings"});
+
+        let result = dispatch(
+            "chat.memory.inspect",
+            &mut params,
+            &json!("memory-inspect-archive-failure-test"),
+            &storage,
+            &events,
+            &mut cancellation,
+        )
+        .await
+        .expect("memory inspection should not query archive settings");
+
+        assert_eq!(result["lastPrompt"], serde_json::Value::Null);
+        assert!(result.get("archiveIndexSettings").is_none());
+    }
+
+    fn initialized_storage(directory: &TestDirectory) -> AppStorage {
+        let storage = AppStorage::open_at(directory.0.join("data")).expect("open test storage");
+        let connection = storage.connect().expect("open test database");
+        connection
+            .execute_batch(
+                "CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                 CREATE TABLE messages (
+                     id TEXT NOT NULL,
+                     conversation_id TEXT NOT NULL REFERENCES conversations(id),
+                     role TEXT NOT NULL,
+                     content TEXT NOT NULL,
+                     status TEXT NOT NULL,
+                     created_at INTEGER,
+                     output_tokens INTEGER,
+                     tool_activities TEXT NOT NULL DEFAULT '[]',
+                     PRIMARY KEY (conversation_id, id)
+                 );",
+            )
+            .expect("create the host conversation schema");
+        drop(connection);
+        storage
+            .initialize_backend_schema()
+            .expect("initialize the complete backend schema");
+        storage
     }
 
     struct TestDirectory(PathBuf);

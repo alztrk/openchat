@@ -216,6 +216,7 @@ export function createTemporarySendMessageAction(
       isSending: true,
       errorCode: null,
     }));
+    options?.onUserMessageCommitted?.(session.id);
 
     const serializedMessages = [...transcript, userMessage].map((message) => {
       const attachments = nextAttachmentsByMessageId[message.id];

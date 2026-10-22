@@ -5,24 +5,27 @@
 
 use super::{MAX_TOOL_CALLS_PER_TURN, MAX_TOOL_ROUNDS};
 use crate::{
-    chatgpt::{
-        ChatGptService, ImageGenerationAuth, ImageGenerationRequest, ImageQuality,
-        subagents::{ChildRunAuth, ChildRunContext, ChildRunRoute},
-    },
+    chat_operation::SubagentModelOption,
+    chatgpt::{ChatGptService, ImageGenerationAuth, ImageGenerationRequest, ImageQuality},
     permissions::ToolPermissionBroker,
     protocol::{EventSink, ServiceError},
-    provider_schema::{ChatStreamEvent, ChatStreamSnapshot, ToolActivity, ToolCall, ToolResult},
+    provider_schema::{
+        ChatStreamEvent, ChatStreamSnapshot, ToolActivity, ToolCall, ToolDefinition, ToolResult,
+    },
     storage::AppStorage,
     user_question_broker::UserQuestionBroker,
 };
+use rusqlite::OptionalExtension;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Mutex as StdMutex,
+    time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::{Mutex, watch};
+use uuid::Uuid;
 
 mod execution;
 mod paths;
@@ -143,8 +146,12 @@ fn is_permission_rule_tool(name: &str) -> bool {
             | "git_history"
             | "web_search"
             | "read_url_content"
+            | "save_memory"
             | "run_project_task"
             | "delegate_task"
+            | "list_subagent_models"
+            | "get_subagent_result"
+            | "cancel_subagent"
     )
 }
 
@@ -154,6 +161,94 @@ fn invalid_tool_permission_rules() -> ServiceError {
         "One or more project tool permission rules are invalid.",
         false,
     )
+}
+
+fn save_personal_memory(storage: &AppStorage, conversation_id: &str, fact: &str) -> Value {
+    let connection = match storage.connect() {
+        Ok(connection) => connection,
+        Err(_) => {
+            return tool_error(
+                "personal_memory_unavailable",
+                "Personal memory could not be saved locally.",
+            );
+        }
+    };
+    let enabled_json = match connection
+        .query_row(
+            "SELECT value_json FROM app_settings WHERE key = 'privacy.personal_memory_enabled'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+    {
+        Ok(value) => value,
+        Err(_) => {
+            return tool_error(
+                "personal_memory_unavailable",
+                "Personal memory settings could not be read.",
+            );
+        }
+    };
+    let Some(enabled_json) = enabled_json else {
+        return tool_error(
+            "personal_memory_disabled",
+            "Personal memory is turned off in Settings.",
+        );
+    };
+    if !matches!(serde_json::from_str::<bool>(&enabled_json), Ok(true)) {
+        return tool_error(
+            "personal_memory_disabled",
+            "Personal memory is turned off in Settings.",
+        );
+    }
+    let fact_count =
+        match connection.query_row("SELECT COUNT(*) FROM personal_memory_facts", [], |row| {
+            row.get::<_, i64>(0)
+        }) {
+            Ok(count) => count,
+            Err(_) => {
+                return tool_error(
+                    "personal_memory_unavailable",
+                    "Personal memory could not be read locally.",
+                );
+            }
+        };
+    if fact_count >= 100 {
+        return tool_error(
+            "personal_memory_limit_reached",
+            "Personal memory is full. Remove an existing fact in Settings before saving another.",
+        );
+    }
+    let now = match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => match i64::try_from(duration.as_millis()) {
+            Ok(value) => value,
+            Err(_) => {
+                return tool_error(
+                    "personal_memory_unavailable",
+                    "Personal memory could not be saved locally.",
+                );
+            }
+        },
+        Err(_) => {
+            return tool_error(
+                "personal_memory_unavailable",
+                "Personal memory could not be saved locally.",
+            );
+        }
+    };
+    let fact_id = Uuid::new_v4().simple().to_string();
+    match connection.execute(
+        "INSERT INTO personal_memory_facts
+         (id, fact_text, category, source_conversation_id, created_at, updated_at)
+         VALUES (?1, ?2, NULL, ?3, ?4, ?4)",
+        rusqlite::params![fact_id, fact, conversation_id, now],
+    ) {
+        Ok(_) => json!({"saved": true, "factId": fact_id, "fact": fact}),
+        Err(_) => tool_error(
+            "personal_memory_unavailable",
+            "Personal memory could not be saved locally.",
+        ),
+    }
 }
 
 pub(crate) enum ImageGenerationContext<'a> {
@@ -174,7 +269,6 @@ pub(crate) enum ImageGenerationContext<'a> {
         reasoning_effort: Option<String>,
     },
     CompatibleApiKey {
-        service: &'a ChatGptService,
         api_key: &'a str,
         provider_id: &'a str,
         endpoint: &'a str,
@@ -182,7 +276,6 @@ pub(crate) enum ImageGenerationContext<'a> {
         reasoning_effort: Option<String>,
     },
     LocalEndpoint {
-        service: &'a ChatGptService,
         api_key: Option<&'a str>,
         provider_id: &'a str,
         endpoint: &'a str,
@@ -243,6 +336,9 @@ pub struct ToolExecutor {
     tool_activities: Mutex<Vec<ToolActivity>>,
     allowed_tool_names: HashSet<String>,
     permission_rules: ToolPermissionRules,
+    chat_service: Option<ChatGptService>,
+    subagent_models: Vec<SubagentModelOption>,
+    subagent_tool_definitions: Vec<ToolDefinition>,
     #[cfg(windows)]
     project_tools: Vec<super::project_tools::ProjectTool>,
     #[cfg(windows)]
@@ -325,11 +421,85 @@ impl ToolExecutor {
             tool_activities: Mutex::new(Vec::new()),
             allowed_tool_names: allowed_tool_names.into_iter().collect(),
             permission_rules,
+            chat_service: None,
+            subagent_models: Vec::new(),
+            subagent_tool_definitions: Vec::new(),
             #[cfg(windows)]
             project_tools: Vec::new(),
             #[cfg(windows)]
             mcp_registry: None,
         }
+    }
+
+    pub(crate) fn with_subagent_models(mut self, models: Vec<SubagentModelOption>) -> Self {
+        self.subagent_models = models;
+        self
+    }
+
+    pub(crate) fn with_chat_service(mut self, service: ChatGptService) -> Self {
+        self.chat_service = Some(service);
+        self
+    }
+
+    pub(crate) fn with_subagent_tool_definitions(
+        mut self,
+        definitions: Vec<ToolDefinition>,
+    ) -> Self {
+        self.subagent_tool_definitions = definitions;
+        self
+    }
+
+    pub(crate) fn child_executor(
+        &self,
+        supports_tools: Option<bool>,
+        supports_image_generation: bool,
+    ) -> Self {
+        let mut definitions = self
+            .subagent_tool_definitions
+            .iter()
+            .filter(|definition| {
+                !matches!(
+                    definition.name.as_str(),
+                    "delegate_task"
+                        | "list_subagent_models"
+                        | "get_subagent_result"
+                        | "cancel_subagent"
+                        | "save_memory"
+                        | "ask_user"
+                        | crate::goals::START_GOAL_TOOL_NAME
+                        | crate::goals::CONTROL_TOOL_NAME
+                        | crate::goals::STOP_GOAL_TOOL_NAME
+                )
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if supports_tools == Some(false) {
+            definitions.clear();
+        } else if !supports_image_generation {
+            definitions.retain(|definition| definition.name != "generate_image");
+        }
+        let mut executor = Self::with_permission_rules(
+            self.project_root.as_deref(),
+            &self.data_root,
+            self.permission_mode,
+            definitions.iter().map(|definition| definition.name.clone()),
+            self.permission_rules.clone(),
+        )
+        .with_subagent_tool_definitions(definitions);
+        if let Some(service) = self.chat_service.clone() {
+            executor = executor.with_chat_service(service);
+        }
+        #[cfg(windows)]
+        {
+            executor = executor
+                .with_project_tools(self.project_tools.clone())
+                .with_mcp_registry(self.mcp_registry.clone());
+        }
+        executor
+    }
+
+    pub(crate) fn subagent_tool_definitions(&self) -> &[ToolDefinition] {
+        &self.subagent_tool_definitions
     }
 
     #[cfg(windows)]
@@ -648,6 +818,18 @@ impl ToolExecutor {
             }
         };
 
+        if matches!(&prepared.operation, ToolOperation::SaveMemory { .. })
+            && snapshot.conversation_id.starts_with("tmp_")
+        {
+            return Ok(ToolResult {
+                call_id: call.id.clone(),
+                output: tool_error(
+                    "temporary_chat_memory_unavailable",
+                    "Personal memory is unavailable in temporary chats.",
+                ),
+            });
+        }
+
         let mut activity_call = call.clone();
         if call.name == "run_project_task"
             && let ToolOperation::Bash {
@@ -761,6 +943,7 @@ impl ToolExecutor {
                     | ToolOperation::SendTerminalInput { .. }
                     | ToolOperation::WebSearch { .. }
                     | ToolOperation::ReadUrlContent { .. }
+                    | ToolOperation::SaveMemory { .. }
                     | ToolOperation::DelegateTask { .. }
                     | ToolOperation::ProjectTool { .. }
             );
@@ -874,113 +1057,104 @@ impl ToolExecutor {
         }
         let file_change_capture = capture_file_change_before(&prepared);
         let mut output = match &prepared.operation {
-            ToolOperation::DelegateTask { task, context } => {
-                if let Some(image_generation) = image_generation {
-                    let service = match image_generation {
-                        ImageGenerationContext::ChatGptOAuth { service, .. }
-                        | ImageGenerationContext::ApiKey { service, .. }
-                        | ImageGenerationContext::CompatibleApiKey { service, .. }
-                        | ImageGenerationContext::LocalEndpoint { service, .. } => *service,
-                    };
-                    let parent_message_id = match image_generation {
-                        ImageGenerationContext::ChatGptOAuth { turn_id, .. } => {
-                            turn_id.unwrap_or(&snapshot.message_id)
+            ToolOperation::SaveMemory { fact } => {
+                save_personal_memory(storage, &snapshot.conversation_id, fact)
+            }
+            ToolOperation::ListSubagentModels => json!({
+                "models": self.subagent_models.iter().map(|model| json!({
+                    "modelKey": model.key,
+                    "providerId": model.provider_id,
+                    "modelId": model.model_id,
+                    "displayName": model.display_name,
+                    "supportsTools": model.supports_tools,
+                    "reasoningLevels": model.reasoning_levels,
+                })).collect::<Vec<_>>()
+            }),
+            ToolOperation::DelegateTask {
+                model_key,
+                reasoning_effort,
+                task,
+                context,
+            } => {
+                match self
+                    .subagent_models
+                    .iter()
+                    .find(|model| model.key == *model_key)
+                    .cloned()
+                {
+                    Some(model) => match self.chat_service.clone() {
+                        Some(service) => {
+                            let route = crate::chatgpt::subagents::resolve_child_run_route(
+                                &service,
+                                storage,
+                                &model,
+                                reasoning_effort.as_deref(),
+                                cancellation,
+                            )
+                            .await;
+                            match route {
+                                Ok(route) => {
+                                    let child_image_generation = image_generation
+                                        .map(crate::chatgpt::subagents::OwnedImageGenerationContext::from_borrowed);
+                                    let child_executor = self.child_executor(
+                                        model.supports_tools,
+                                        child_image_generation.is_some(),
+                                    );
+                                    crate::chatgpt::subagents::start_child_analysis(
+                                        crate::chatgpt::subagents::ChildRunTask {
+                                            service: service.clone(),
+                                            call: call.clone(),
+                                            task: task.clone(),
+                                            additional_context: context.clone(),
+                                            parent_message_id: snapshot.message_id.clone(),
+                                            project_root: self.project_root.clone(),
+                                            permission_broker: permissions.clone(),
+                                            request_id: request_id.clone(),
+                                            snapshot: snapshot.clone(),
+                                            events: events.clone(),
+                                            storage: service.storage_handle(),
+                                            parent_run_id: run_id.to_owned(),
+                                            tool_executor: child_executor,
+                                            image_generation: child_image_generation,
+                                            user_questions: user_questions.clone(),
+                                        },
+                                        route,
+                                    )
+                                    .unwrap_or_else(|error| json!({"error":{"code":error.code,"message":error.message}}))
+                                }
+                                Err(error) => {
+                                    json!({"error":{"code":error.code,"message":error.message}})
+                                }
+                            }
                         }
-                        ImageGenerationContext::ApiKey { .. }
-                        | ImageGenerationContext::CompatibleApiKey { .. }
-                        | ImageGenerationContext::LocalEndpoint { .. } => &snapshot.message_id,
-                    };
-                    let route = match image_generation {
-                        ImageGenerationContext::ChatGptOAuth {
-                            connection_id,
-                            workspace_id,
-                            external_workspace_id,
-                            model_id,
-                            reasoning_effort,
-                            fast_mode,
-                            ..
-                        } => ChildRunRoute {
-                            provider_id: "chatgpt",
-                            model_id,
-                            reasoning_effort: reasoning_effort.as_deref(),
-                            fast_mode: *fast_mode,
-                            auth: ChildRunAuth::ChatGptOAuth {
-                                connection_id,
-                                workspace_id,
-                                external_workspace_id,
-                            },
-                        },
-                        ImageGenerationContext::ApiKey {
-                            api_key,
-                            model_id,
-                            reasoning_effort,
-                            ..
-                        } => ChildRunRoute {
-                            provider_id: "chatgpt_api",
-                            model_id,
-                            reasoning_effort: reasoning_effort.as_deref(),
-                            fast_mode: false,
-                            auth: ChildRunAuth::OpenAiApiKey(api_key),
-                        },
-                        ImageGenerationContext::CompatibleApiKey {
-                            api_key,
-                            provider_id,
-                            endpoint,
-                            model_id,
-                            reasoning_effort,
-                            ..
-                        } => ChildRunRoute {
-                            provider_id,
-                            model_id,
-                            reasoning_effort: reasoning_effort.as_deref(),
-                            fast_mode: false,
-                            auth: ChildRunAuth::CompatibleEndpoint {
-                                api_key: Some(api_key),
-                                endpoint,
-                            },
-                        },
-                        ImageGenerationContext::LocalEndpoint {
-                            api_key,
-                            provider_id,
-                            endpoint,
-                            model_id,
-                            reasoning_effort,
-                            ..
-                        } => ChildRunRoute {
-                            provider_id,
-                            model_id,
-                            reasoning_effort: reasoning_effort.as_deref(),
-                            fast_mode: false,
-                            auth: ChildRunAuth::CompatibleEndpoint {
-                                api_key: *api_key,
-                                endpoint,
-                            },
-                        },
-                    };
-                    crate::chatgpt::subagents::run_child_analysis(
-                        ChildRunContext {
-                            service,
-                            call,
-                            task,
-                            additional_context: context.as_deref(),
-                            parent_message_id,
-                            project_root: self.project_root.as_deref(),
-                            permission_broker: permissions,
-                            request_id,
-                            snapshot,
-                            events,
-                            cancellation,
-                            storage,
-                            parent_run_id: run_id,
-                            tool_executor: self,
-                            user_questions,
-                        },
-                        route,
-                    )
-                    .await
-                } else {
-                    json!({"error": {"code": "subagent_unavailable", "message": "Delegated analysis is unavailable for this provider route."}})
+                        None => {
+                            json!({"error":{"code":"subagent_unavailable","message":"Delegated work is unavailable for this provider route."}})
+                        }
+                    },
+                    None => {
+                        json!({"error":{"code":"invalid_subagent_model","message":"The selected child model is no longer available. List the available models again."}})
+                    }
                 }
+            }
+            ToolOperation::GetSubagentResult { run_id } => {
+                crate::chatgpt::subagents::child_run_result(
+                    storage,
+                    &snapshot.conversation_id,
+                    run_id,
+                )
+                .unwrap_or_else(
+                    |error| json!({"error":{"code":error.code,"message":error.message}}),
+                )
+            }
+            ToolOperation::CancelSubagent { run_id } => {
+                crate::chatgpt::subagents::cancel_child_analysis(
+                    storage,
+                    &snapshot.conversation_id,
+                    run_id,
+                )
+                .unwrap_or_else(
+                    |error| json!({"error":{"code":error.code,"message":error.message}}),
+                )
             }
             ToolOperation::WebSearch { .. } => {
                 execute_model_tool(&prepared, &snapshot.conversation_id).await

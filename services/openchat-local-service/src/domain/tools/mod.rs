@@ -61,6 +61,9 @@ pub(crate) fn parse_profile_tool_allowlist(
     supported.extend([
         "run_project_task".to_owned(),
         "delegate_task".to_owned(),
+        "list_subagent_models".to_owned(),
+        "get_subagent_result".to_owned(),
+        "cancel_subagent".to_owned(),
         crate::goals::START_GOAL_TOOL_NAME.to_owned(),
         crate::goals::CONTROL_TOOL_NAME.to_owned(),
         crate::goals::STOP_GOAL_TOOL_NAME.to_owned(),
@@ -731,22 +734,61 @@ fn apply_tool_call_capability(
 
 pub fn definitions_for_chatgpt_model() -> Vec<ToolDefinition> {
     let mut definitions = chatgpt_model_tool_definitions();
+    definitions.push(list_subagent_models_tool_definition());
     definitions.push(delegate_task_tool_definition());
     definitions
+}
+
+pub(crate) fn list_subagent_models_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "list_subagent_models".to_owned(),
+        description: "List every model route available to the user for delegated work. Call this before choosing a child model and use an exact returned modelKey.".to_owned(),
+        parameters: json!({"type":"object","properties":{},"additionalProperties":false}),
+    }
 }
 
 pub(crate) fn delegate_task_tool_definition() -> ToolDefinition {
     ToolDefinition {
         name: "delegate_task".to_owned(),
-        description: "Run one bounded child analysis with the current model. The child can only use read-only project and web tools, and its work is reported back to this response.".to_owned(),
+        description: "Start a child agent in the background using a modelKey returned by list_subagent_models. The child receives the same project permissions as you, cannot create further child agents, and reports progress and its final response in the subagent panel.".to_owned(),
         parameters: json!({
             "type": "object",
             "properties": {
+                "modelKey": {"type": "string", "minLength": 1, "maxLength": 1024},
+                "reasoningEffort": {"type": "string", "enum": ["minimal", "low", "medium", "high", "xhigh"]},
                 "task": {"type": "string", "minLength": 1, "maxLength": 4000},
                 "context": {"type": "string", "maxLength": 8000}
             },
-            "required": ["task"],
+            "required": ["modelKey", "task"],
             "additionalProperties": false
+        }),
+    }
+}
+
+pub(crate) fn get_subagent_result_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "get_subagent_result".to_owned(),
+        description:
+            "Read the current status, progress, and output of a child agent in this conversation."
+                .to_owned(),
+        parameters: json!({
+            "type":"object",
+            "properties":{"runId":{"type":"string","minLength":1,"maxLength":64}},
+            "required":["runId"],
+            "additionalProperties":false
+        }),
+    }
+}
+
+pub(crate) fn cancel_subagent_tool_definition() -> ToolDefinition {
+    ToolDefinition {
+        name: "cancel_subagent".to_owned(),
+        description: "Stop an active child agent in this conversation by its runId.".to_owned(),
+        parameters: json!({
+            "type":"object",
+            "properties":{"runId":{"type":"string","minLength":1,"maxLength":64}},
+            "required":["runId"],
+            "additionalProperties":false
         }),
     }
 }
@@ -808,7 +850,7 @@ pub fn definitions_for_request(
     provider_id: &str,
     supports_tool_calls: Option<bool>,
 ) -> Vec<ToolDefinition> {
-    match provider_id {
+    let mut definitions = match provider_id {
         "chatgpt" => {
             apply_tool_call_capability(definitions_for_chatgpt_model(), supports_tool_calls)
         }
@@ -816,7 +858,21 @@ pub fn definitions_for_request(
             apply_tool_call_capability(definitions_for_chatgpt_api(), supports_tool_calls)
         }
         _ => definitions_for_model(provider_id, supports_tool_calls),
+    };
+    if supports_tool_calls != Some(false) && !definitions.is_empty() {
+        if !definitions
+            .iter()
+            .any(|tool| tool.name == "list_subagent_models")
+        {
+            definitions.push(list_subagent_models_tool_definition());
+        }
+        if !definitions.iter().any(|tool| tool.name == "delegate_task") {
+            definitions.push(delegate_task_tool_definition());
+        }
+        definitions.push(get_subagent_result_tool_definition());
+        definitions.push(cancel_subagent_tool_definition());
     }
+    definitions
 }
 
 pub(crate) fn disable_tools_for_plan_mode(definitions: &mut Vec<ToolDefinition>) {
@@ -1121,6 +1177,18 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     }
                 },
                 "required": ["prompt"],
+                "additionalProperties": false
+            }),
+        ),
+        (
+            "save_memory",
+            "Save a concise, durable fact the user asked you to remember or that will clearly improve future conversations. Do not save secrets, credentials, temporary task details, or sensitive personal data. This memory is shared across normal conversations and cannot be used in temporary chats.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "fact": {"type": "string", "minLength": 1, "maxLength": 500}
+                },
+                "required": ["fact"],
                 "additionalProperties": false
             }),
         ),

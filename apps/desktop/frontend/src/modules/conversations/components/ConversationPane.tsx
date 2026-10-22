@@ -103,6 +103,7 @@ export function ConversationPane({
     isLoadingMessages: storeIsLoadingMessages,
   } = useChatSession();
   const conversations = useChatStore((state) => state.conversations);
+  const chatGptWorkspaceSelectionRequired = useChatStore((state) => state.chatGptWorkspaceSelectionRequired);
 
   const isSplitSecondary = propConversationId !== undefined;
   const isPlaceholder = propConversationId === '__empty__' || (isSplitSecondary && !propConversationId);
@@ -648,6 +649,7 @@ export function ConversationPane({
                   isLoading={isLoadingModels}
                   modelCatalogFailed={modelError && models.length === 0}
                   modelCatalogStale={modelCatalogStale}
+                  chatGptWorkspaceSelectionRequired={chatGptWorkspaceSelectionRequired}
                   onOpenConnections={onOpenSettings}
                   onRetryModels={() => void refreshModels(true)}
                   selectedModel={selectedModel !== undefined}

@@ -1,4 +1,5 @@
 import { unifiedStorage } from '@/platform/storage/unifiedStorage';
+import { invoke, isTauri } from '@/platform/tauri';
 
 export const maxPersonalMemoryFacts = 100;
 export const maxPersonalMemoryFactCharacters = 500;
@@ -17,22 +18,46 @@ export interface PersonalMemoryPreferences {
   facts: PersonalMemoryFact[];
 }
 
-export function readPersonalMemoryPreferences(): PersonalMemoryPreferences {
+export async function readPersonalMemoryPreferences(): Promise<PersonalMemoryPreferences> {
   const enabledValue = unifiedStorage.getItem(enabledKey);
   if (enabledValue !== null && enabledValue !== 'true' && enabledValue !== 'false') {
     throw new Error('Saved personal memory preferences are invalid.');
   }
   return {
     enabled: enabledValue === 'true',
-    facts: readPersonalMemoryFacts(),
+    facts: await readPersonalMemoryFacts(),
   };
 }
 
-export function writePersonalMemoryEnabled(enabled: boolean): void {
+export async function writePersonalMemoryEnabled(enabled: boolean): Promise<void> {
+  if (isTauri()) {
+    await invoke('set_app_setting', { key: enabledKey, valueJson: String(enabled) });
+  }
   unifiedStorage.setItem(enabledKey, String(enabled));
 }
 
-export function readPersonalMemoryFacts(): PersonalMemoryFact[] {
+export async function readPersonalMemoryFacts(): Promise<PersonalMemoryFact[]> {
+  if (isTauri()) {
+    const decoded: unknown = await invoke('list_personal_memory_facts');
+    if (!isUnknownArray(decoded) || decoded.length > maxPersonalMemoryFacts) {
+      throw new Error('Saved personal memories are invalid.');
+    }
+    const facts = decoded.map((value) => {
+      if (!isRecord(value) || typeof value.factText !== 'string') {
+        throw new Error('A saved personal memory is invalid.');
+      }
+      return parseFact({ id: value.id, content: value.factText });
+    });
+    if (new Set(facts.map((fact) => fact.id)).size !== facts.length) {
+      throw new Error('Saved personal memories are invalid.');
+    }
+    return facts;
+  }
+
+  return readStoredPersonalMemoryFacts();
+}
+
+function readStoredPersonalMemoryFacts(): PersonalMemoryFact[] {
   const raw = unifiedStorage.getItem(factsKey);
   if (raw === null) return [];
 
@@ -53,15 +78,19 @@ export function readPersonalMemoryFacts(): PersonalMemoryFact[] {
   return facts;
 }
 
-export function writePersonalMemoryFacts(facts: readonly PersonalMemoryFact[]): void {
-  if (facts.length > maxPersonalMemoryFacts || new Set(facts.map((fact) => fact.id)).size !== facts.length) {
-    throw new Error('Personal memories exceed the supported count or contain duplicate IDs.');
+export async function deletePersonalMemoryFact(id: string): Promise<void> {
+  if (!/^[a-f0-9]{32}$/.test(id)) throw new Error('The personal memory ID is invalid.');
+  if (isTauri()) {
+    await invoke('delete_personal_memory_fact', { id });
+    unifiedStorage.removeItem(factsKey);
+    return;
   }
-  const validated = facts.map(parseFact);
-  unifiedStorage.setItem(factsKey, JSON.stringify(validated));
+  const facts = readStoredPersonalMemoryFacts();
+  unifiedStorage.setItem(factsKey, JSON.stringify(facts.filter((fact) => fact.id !== id)));
 }
 
-export function clearPersonalMemory(): void {
+export async function clearPersonalMemory(): Promise<void> {
+  if (isTauri()) await invoke('clear_personal_memory_facts');
   unifiedStorage.removeItem(enabledKey);
   unifiedStorage.removeItem(factsKey);
 }
@@ -131,21 +160,15 @@ export function parsePersonalMemoryFactIds(raw: string): string[] | null {
   return new Set(ids).size === ids.length ? ids : null;
 }
 
-export function createPersonalMemoryFact(content: string): PersonalMemoryFact {
-  const normalized = validateContent(content);
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  const id = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
-  return { id, content: normalized };
-}
-
-export function personalMemoryContextForConversation(
+export async function personalMemoryContextForConversation(
   conversationId: string | null,
   excludeForRequest = false,
-): {
+): Promise<{
   context: string;
   factIds: string[];
-} {
-  const preferences = readPersonalMemoryPreferences();
+}> {
+  if (conversationId?.startsWith('tmp_')) return { context: '', factIds: [] };
+  const preferences = await readPersonalMemoryPreferences();
   const excluded = readPersonalMemoryExcludedConversationIds();
   const facts =
     preferences.enabled && !excludeForRequest && (conversationId === null || !excluded.has(conversationId))
@@ -185,14 +208,6 @@ function validateStoredContent(content: string): string | null {
     : null;
 }
 
-function validateContent(content: string): string {
-  const normalized = content.trim();
-  if (normalized.length === 0 || normalized.length > maxPersonalMemoryFactCharacters) {
-    throw new Error('A personal memory must contain 1 to 500 characters.');
-  }
-  return normalized;
-}
-
 function isConversationId(value: unknown): value is string {
   return (
     typeof value === 'string' &&
@@ -205,4 +220,8 @@ function isConversationId(value: unknown): value is string {
 
 function isUnknownArray(value: unknown): value is unknown[] {
   return Array.isArray(value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

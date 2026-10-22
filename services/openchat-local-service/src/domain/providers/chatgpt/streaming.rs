@@ -53,6 +53,7 @@ impl ChatGptService {
         external_workspace_id: &str,
         model: &ChatGptModel,
         last_prompt_message_id: Option<&str>,
+        tool_definitions: Vec<crate::provider_schema::ToolDefinition>,
         mut payload: Value,
     ) -> Result<Value, ServiceError> {
         let ChatSendContext {
@@ -68,6 +69,7 @@ impl ChatGptService {
             storage,
             permission_mode,
             tool_permission_rules,
+            available_subagent_models,
             #[cfg(windows)]
                 mcp_configs: _,
             #[cfg(windows)]
@@ -151,7 +153,10 @@ impl ChatGptService {
             permission_mode,
             response_tool_names(&payload),
             tool_permission_rules,
-        );
+        )
+        .with_chat_service(self.as_ref().clone())
+        .with_subagent_models(available_subagent_models)
+        .with_subagent_tool_definitions(tool_definitions);
         #[cfg(windows)]
         {
             tool_executor = tool_executor.with_mcp_registry(mcp_registry);
@@ -1135,7 +1140,7 @@ impl ChatGptService {
         })?;
         if let (Some(input_tokens), Some(last_message_id)) = (input_tokens, last_prompt_message_id)
         {
-            chatgpt_store::save_prompt_usage(
+            if chatgpt_store::save_prompt_usage(
                 &self.storage,
                 conversation_id,
                 chatgpt_store::PromptUsage {
@@ -1147,7 +1152,11 @@ impl ChatGptService {
                     workspace_id: Some(&route.workspace_id),
                 },
             )
-            .map_err(database_error)?;
+            .is_err()
+                && self.storage.log_context_usage_save_failure().is_err()
+            {
+                eprintln!("context_usage_diagnostic_write_failed");
+            }
         }
         self.record_chatgpt_event(
             "request_completed",

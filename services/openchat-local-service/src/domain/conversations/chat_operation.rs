@@ -81,6 +81,8 @@ pub struct ChatSendContext<'a> {
     pub tool_permission_rules: ToolPermissionRules,
     /// Optional tool allowlist imposed by the active profile.
     pub profile_tool_allowlist: Option<std::collections::HashSet<String>>,
+    /// User-visible model routes the primary agent may select for child runs.
+    pub available_subagent_models: Vec<SubagentModelOption>,
     #[cfg(windows)]
     /// Validated project MCP configurations for the Windows tool runtime.
     pub mcp_configs: Vec<crate::tools::mcp::StdioServerConfig>,
@@ -99,4 +101,20 @@ pub struct ChatSendContext<'a> {
     pub context_limit_override: Option<i64>,
     /// Title-generation route selected for this conversation.
     pub title_generation: TitleGenerationRequest,
+}
+
+/// A renderer-listed model route offered to the primary agent for delegation.
+/// The service still resolves credentials and provider endpoints locally.
+#[derive(Clone, Debug)]
+pub struct SubagentModelOption {
+    pub key: String,
+    pub provider_id: String,
+    pub model_id: String,
+    pub display_name: String,
+    pub connection_id: Option<String>,
+    pub workspace_id: Option<String>,
+    pub api_key_connection_id: Option<String>,
+    pub supports_tools: Option<bool>,
+    pub reasoning_levels: Vec<String>,
+    pub request_protocol: String,
 }

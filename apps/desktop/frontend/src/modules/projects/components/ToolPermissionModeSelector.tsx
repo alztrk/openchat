@@ -103,7 +103,7 @@ export function ToolPermissionModeSelector({ onModeChange }: { onModeChange?(mod
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         aria-label={t('toolPermissions')}
-        className="chat-control-trigger flex w-full items-center justify-between gap-2 text-left text-sm outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+        className="openchat-dropdown-trigger openchat-dropdown-trigger--subtle flex w-full items-center justify-between gap-2 text-sm"
         disabled={!isReady || isSaving}
         onClick={() => {
           setActiveIndex(
@@ -151,7 +151,7 @@ export function ToolPermissionModeSelector({ onModeChange }: { onModeChange?(mod
         <div
           aria-hidden={!isOpen}
           aria-label={t('toolPermissions')}
-          className="openchat-popover-enter openchat-popover-enter--bottom tool-permission-menu absolute bottom-full left-0 z-30 mb-2 grid max-h-64 gap-1.5 overflow-y-auto rounded-control border border-border bg-raised p-1.5 shadow-lg"
+          className="openchat-dropdown-surface openchat-popover-enter openchat-popover-enter--bottom tool-permission-menu absolute bottom-full left-0 z-30 mb-2 grid max-h-64 gap-1.5 overflow-y-auto p-1.5"
           data-state={isOpen ? 'open' : 'closed'}
           inert={!isOpen}
           onKeyDown={(event) => {

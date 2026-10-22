@@ -3,7 +3,8 @@ import { readProjectSkillIds, type ToolPermissionMode } from '@/modules/projects
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import { personalMemoryContextForConversation } from '@/modules/settings/data/personalMemory';
 import { readSharedInstructions } from '@/modules/settings/data/sharedInstructions';
-import { localServiceClient } from '@/platform/local-service';
+import { LocalServiceError, localServiceClient } from '@/platform/local-service';
+import { invoke } from '@/platform/tauri';
 import type { PendingChatAttachment } from './chatAttachments';
 import type { ChatMessage } from './chatStorage';
 
@@ -57,33 +58,58 @@ export async function loadContextUsageConfiguration(
   conversationId: string | null,
   projectId: string | null,
   toolPermissionMode: ToolPermissionMode | 'plan',
+  isTemporaryChat = false,
 ): Promise<ContextUsageConfiguration> {
-  const sharedInstructions = readSharedInstructions() ?? '';
-  const personalMemory = personalMemoryContextForConversation(conversationId);
-  const projectSkillIds = projectId === null ? [] : readProjectSkillIds(projectId);
-  const customInstructions = [sharedInstructions, personalMemory.context]
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0)
-    .join('\n\n');
-  const response = await localServiceClient.call('chat.context.usage.estimate', {
-    providerId: model.providerId,
-    modelId: model.modelId,
-    supportsTools: model.supportsTools ?? null,
-    ...(model.providerId === 'copilot' && model.requestProtocol ? { requestProtocol: model.requestProtocol } : {}),
-    conversationId,
-    projectId: conversationId === null ? projectId : null,
-    customInstructions: customInstructions.length === 0 ? null : customInstructions,
-    planMode: toolPermissionMode === 'plan',
-    projectSkillIds,
-  });
-  return {
-    ...parseContextUsageConfiguration(response),
-  };
+  try {
+    const sharedInstructions = readSharedInstructions() ?? '';
+    const personalMemory = isTemporaryChat
+      ? { context: '', factIds: [] }
+      : await personalMemoryContextForConversation(conversationId);
+    const projectSkillIds = projectId === null ? [] : readProjectSkillIds(projectId);
+    const customInstructions = [sharedInstructions, personalMemory.context]
+      .map((value) => value.trim())
+      .filter((value) => value.length > 0)
+      .join('\n\n');
+    const response = await localServiceClient.call('chat.context.usage.estimate', {
+      providerId: model.providerId,
+      modelId: model.modelId,
+      supportsTools: model.supportsTools ?? null,
+      ...(model.providerId === 'copilot' && model.requestProtocol ? { requestProtocol: model.requestProtocol } : {}),
+      conversationId,
+      projectId: conversationId === null ? projectId : null,
+      customInstructions: customInstructions.length === 0 ? null : customInstructions,
+      planMode: toolPermissionMode === 'plan',
+      projectSkillIds,
+    });
+    return parseContextUsageConfiguration(response);
+  } catch (cause) {
+    await recordContextUsageFailure('contextConfiguration', cause);
+    throw cause;
+  }
 }
 
 export async function inspectContextUsageMemory(conversationId: string): Promise<ContextUsageMemory> {
-  const response = await localServiceClient.call('chat.memory.inspect', { conversationId });
-  return parseContextUsageMemory(response);
+  try {
+    const response = await localServiceClient.call('chat.memory.inspect', { conversationId });
+    return parseContextUsageMemory(response);
+  } catch (cause) {
+    await recordContextUsageFailure('memoryInspection', cause);
+    throw cause;
+  }
+}
+
+async function recordContextUsageFailure(operation: 'contextConfiguration' | 'memoryInspection', cause: unknown) {
+  const code =
+    cause instanceof LocalServiceError && /^[a-z0-9_]{1,96}$/.test(cause.code)
+      ? cause.code
+      : cause instanceof Error
+        ? 'client_error'
+        : 'unknown_error';
+  try {
+    await invoke('record_context_usage_failure', { operation, code });
+  } catch (diagnosticCause) {
+    globalThis.reportError(new Error('Context usage failure diagnostic could not be recorded.', { cause: diagnosticCause }));
+  }
 }
 
 export function estimateContextUsage(

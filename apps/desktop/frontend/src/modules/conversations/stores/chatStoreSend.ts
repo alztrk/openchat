@@ -5,6 +5,7 @@ import {
   type ChatMessage,
   createConversation,
   listConversations,
+  recordChatRequestFailure,
   saveMessage,
 } from '@/modules/conversations/data/chatStorage';
 import { notifyAssistantResponse, notifyPendingQuestion } from '@/modules/notifications/data/notificationRuntime';
@@ -24,12 +25,19 @@ import {
   setPersonalMemoryExcludedForConversation,
 } from '@/modules/settings/data/personalMemory';
 import { readSharedInstructions } from '@/modules/settings/data/sharedInstructions';
+import { useAssistantProfilesStore } from '@/modules/settings/stores/assistantProfilesStore';
 import { type LocalServiceClient, LocalServiceError } from '@/platform/local-service';
 import { getAudioContext, playAssistantResponseAudio } from '@/shared/utils/audioFeedback';
 import type { ChatState } from './chatStore';
+import { refreshConversationListAfterResponse } from './chatStorePostResponse';
 import { loadTitleGenerationRequest } from './chatStoreTitleGeneration';
 import { handleToolPermissionEvent } from './chatStoreToolPermissions';
-import { applyStreamEvent, numberOrNull, titleFromMessage, upsertMessage } from './chatStoreUtils';
+import {
+  applyStreamEvent,
+  numberOrNull,
+  titleFromMessage,
+  upsertMessage,
+} from './chatStoreUtils';
 import { createStreamMessagePublisher } from './streamMessagePublisher';
 
 const STREAM_PERSISTENCE_CHECKPOINT_BYTES = 256 * 1024;
@@ -146,6 +154,7 @@ export function createSendMessageAction(
     }
     const excludePersonalMemory = conversationId === null && state.personalMemoryExcludedForNewConversation;
     let userMessageSaved = resumeRunId !== undefined || userMessageAlreadySaved || isRetry;
+    let sendStage: 'conversationCreation' | 'userMessagePersistence' | 'requestExecution' = 'requestExecution';
     let personalMemoryFactIds: string[] = [];
     const resumedMessage = resumeAssistantMessageId
       ? (state.messages.find((message) => message.id === resumeAssistantMessageId) ?? null)
@@ -187,7 +196,13 @@ export function createSendMessageAction(
       if (!conversationId && !resumeRunId) {
         conversationId = crypto.randomUUID().replaceAll('-', '');
         const conversationTitle = titleFromMessage(content, attachments[0]?.name);
-        await createConversation(conversationId, conversationTitle, selectedModel, state.pendingProjectId);
+        sendStage = 'conversationCreation';
+        try {
+          await createConversation(conversationId, conversationTitle, selectedModel, state.pendingProjectId);
+        } catch (cause) {
+          globalThis.reportError(new Error('The new conversation could not be persisted.', { cause }));
+          throw cause;
+        }
         conversationCreated = true;
         const now = Date.now();
         const conversation: ChatConversation = {
@@ -200,10 +215,8 @@ export function createSendMessageAction(
           workspaceId: selectedModel.workspaceId ?? null,
           apiKeyConnectionId: selectedModel.apiKeyConnectionId ?? null,
           projectId: state.pendingProjectId,
-          tags: [],
           isPinned: false,
           isArchived: false,
-          isBookmarked: false,
           createdAt: now,
           updatedAt: now,
         };
@@ -232,7 +245,7 @@ export function createSendMessageAction(
           if (excludePersonalMemory) {
             setPersonalMemoryExcludedForConversation(targetConversationId, true);
           }
-          const personalMemory = personalMemoryContextForConversation(targetConversationId, excludePersonalMemory);
+          const personalMemory = await personalMemoryContextForConversation(targetConversationId, excludePersonalMemory);
           personalMemoryContext = personalMemory.context;
           personalMemoryFactIds = personalMemory.factIds;
         } catch {
@@ -267,20 +280,37 @@ export function createSendMessageAction(
           status: 'completed',
           failureCode: null,
         };
-        await saveMessage(userMessage, attachments);
+        sendStage = 'userMessagePersistence';
+        try {
+          await saveMessage(userMessage, attachments);
+        } catch (cause) {
+          globalThis.reportError(new Error('The initial user message could not be persisted.', { cause }));
+          throw cause;
+        }
         userMessageSaved = true;
         if (get().activeConversationId === targetConversationId) {
           set((current) => ({ messages: [...current.messages, userMessage] }));
         }
+        options?.onUserMessageCommitted?.(targetConversationId);
       }
 
       let unpersistedTextBytes = 0;
       const sharedInstructions = readSharedInstructions();
-      const customInstructions = [sharedInstructions?.trim(), personalMemoryContext]
+      const assistantProfile = state.temporaryChat === null
+        ? useAssistantProfilesStore.getState().getActiveProfile()
+        : null;
+      const profileInstructions = assistantProfile
+        ? [
+            `Response style: ${assistantProfile.responseStyle}.`,
+            assistantProfile.instructions.trim(),
+          ].filter(Boolean).join('\n\n')
+        : null;
+      const customInstructions = [sharedInstructions?.trim(), profileInstructions, personalMemoryContext]
         .filter((value): value is string => Boolean(value))
         .join('\n\n');
       const contextLimit = state.modelContextLimits[modelRouteKey(selectedModel)];
       const titleGeneration = await loadTitleGenerationRequest(state.models);
+      sendStage = 'requestExecution';
       const operation = await localServiceClient.startOperation(
         'chat.send',
         {
@@ -292,10 +322,31 @@ export function createSendMessageAction(
           ...(options?.fastMode === true ? { fastMode: true } : {}),
           ...routeParameters,
           ...(customInstructions ? { customInstructions } : {}),
+          ...(assistantProfile?.toolAllowlist === null || assistantProfile === null
+            ? {}
+            : { profileToolAllowlist: assistantProfile.toolAllowlist }),
           titleGeneration,
           ...(projectSkillIds.length === 0 ? {} : { projectSkillIds }),
           planMode: options?.mode === 'plan',
           ...(contextLimit === undefined ? {} : { contextLimit }),
+          availableSubagentModels: state.models.map((model) => ({
+            key: model.key,
+            providerId: model.providerId,
+            modelId: model.modelId,
+            displayName: model.displayName,
+            ...(model.connectionId ? { connectionId: model.connectionId } : {}),
+            ...(model.workspaceId ? { workspaceId: model.workspaceId } : {}),
+            ...(model.apiKeyConnectionId ? { apiKeyConnectionId: model.apiKeyConnectionId } : {}),
+            supportsTools: model.supportsTools ?? null,
+            reasoningLevels: model.reasoningLevels,
+            requestProtocol:
+              model.requestProtocol ??
+              (model.providerId === 'chatgpt' || model.providerId === 'chatgpt_api'
+                ? 'responses'
+                : model.customProvider?.protocol === 'anthropic' || model.providerId === 'anthropic'
+                  ? 'messages'
+                  : 'chatCompletions'),
+          })),
         },
         (event) => {
           handleToolPermissionEvent(event, targetConversationId, set, get);
@@ -398,11 +449,18 @@ export function createSendMessageAction(
           }));
         }
       }
-      const conversations = await listConversations();
-      set({ conversations });
+      const conversations = await refreshConversationListAfterResponse(
+        listConversations,
+        (items) => set({ conversations: items }),
+        (cause) => {
+          globalThis.reportError(
+            new Error('Conversation list refresh failed after the assistant response completed.', { cause }),
+          );
+        },
+      );
       if (finalStatus === 'completed' && streamedMessage) {
         void playAssistantResponseAudio('completed');
-        const conversation = conversations.find((item) => item.id === targetConversationId);
+        const conversation = conversations?.find((item) => item.id === targetConversationId);
         if (conversation) {
           const completedMessage = assistantMessage.current;
           if (completedMessage) {
@@ -414,6 +472,13 @@ export function createSendMessageAction(
       }
       return true;
     } catch (error) {
+      try {
+        await recordChatRequestFailure(sendStage, error instanceof LocalServiceError ? error.code : 'unexpected_error');
+      } catch (diagnosticError) {
+        globalThis.reportError(
+          new Error('The chat request failure could not be recorded.', { cause: diagnosticError }),
+        );
+      }
       requestOutcome ??= providerRequestOutcomeForError(error);
       if (requestOutcome !== 'stopped') {
         void playAssistantResponseAudio('failed');
@@ -421,7 +486,9 @@ export function createSendMessageAction(
       const code =
         !userMessageSaved && attachments.length > 0
           ? 'attachmentSaveFailed'
-          : !userMessageSaved
+          : sendStage === 'conversationCreation'
+            ? 'conversationCreateFailed'
+            : !userMessageSaved && sendStage === 'userMessagePersistence'
             ? 'messageSaveFailed'
             : error instanceof LocalServiceError && error.code === 'message_save_failed'
               ? 'messageSaveFailed'
@@ -429,6 +496,8 @@ export function createSendMessageAction(
                 ? 'modelRequired'
                 : error instanceof LocalServiceError && error.code === 'provider_credentials_missing'
                   ? 'providerCredentialMissing'
+                  : error instanceof LocalServiceError && error.code === 'connection_unavailable'
+                    ? 'providerConnectionUnavailable'
                   : 'chatRequestFailed';
       setRequestError(code);
       await persistenceQueue;

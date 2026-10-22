@@ -9,6 +9,7 @@ use serde_json::Value;
 
 use super::types::*;
 
+#[cfg(test)]
 pub(crate) fn create_run(
     connection: &Connection,
     new_run: &NewAgentRun,
@@ -83,6 +84,40 @@ pub(crate) fn load_run_for_conversation(
     let run = load_run(connection, run_id)?;
     ensure_run_conversation(&run, conversation_id)?;
     Ok(run)
+}
+
+pub(crate) fn list_subagent_runs_for_conversation(
+    connection: &Connection,
+    conversation_id: &str,
+    requested_limit: usize,
+) -> Result<Vec<AgentRun>, UserQuestionError> {
+    validate_identifier(conversation_id, "conversation id")?;
+    if !(1..=100).contains(&requested_limit) {
+        return Err(UserQuestionError::InvalidInput(
+            "subagent run limit is outside the supported range".to_owned(),
+        ));
+    }
+    let limit = i64::try_from(requested_limit)
+        .map_err(|_| UserQuestionError::InvalidInput("subagent run limit is invalid".to_owned()))?;
+    let run_ids = {
+        let mut statement = connection.prepare(
+            "SELECT id
+             FROM agent_runs
+             WHERE conversation_id = ?1
+               AND json_extract(checkpoint_json, '$.runKind') = 'subagent'
+             ORDER BY updated_at_unix_ms DESC, id DESC
+             LIMIT ?2",
+        )?;
+        statement
+            .query_map(rusqlite::params![conversation_id, limit], |row| {
+                row.get::<_, String>(0)
+            })?
+            .collect::<Result<Vec<_>, _>>()?
+    };
+    run_ids
+        .into_iter()
+        .map(|run_id| load_run_for_conversation(connection, conversation_id, &run_id))
+        .collect()
 }
 
 pub(crate) fn list_run_summaries(

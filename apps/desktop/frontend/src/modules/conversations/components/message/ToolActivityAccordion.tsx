@@ -1,6 +1,7 @@
 import type { TFunction } from 'i18next';
 import {
   Ban,
+  Brain,
   CircleAlert,
   CircleCheck,
   CircleX,
@@ -47,6 +48,10 @@ const toolNameKeys: Partial<Record<string, TranslationKey>> = {
   bash: 'toolExecuteCommand',
   run_project_task: 'toolRunProjectTask',
   delegate_task: 'toolDelegateTask',
+  list_subagent_models: 'toolListSubagentModels',
+  get_subagent_result: 'toolGetSubagentResult',
+  cancel_subagent: 'toolCancelSubagent',
+  save_memory: 'toolSavePersonalMemory',
   send_terminal_input: 'toolSendTerminalInput',
   git_status: 'toolGitStatus',
   git_diff: 'toolGitDiff',
@@ -186,7 +191,12 @@ function toolIcon(name: string) {
     case 'run_project_task':
       return Terminal;
     case 'delegate_task':
+    case 'list_subagent_models':
+    case 'get_subagent_result':
+    case 'cancel_subagent':
       return GitFork;
+    case 'save_memory':
+      return Brain;
     case 'send_terminal_input':
       return Keyboard;
     case 'git_status':

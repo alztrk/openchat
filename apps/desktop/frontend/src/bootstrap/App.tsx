@@ -654,6 +654,21 @@ export function App() {
     [],
   );
 
+  useEffect(
+    () =>
+      localServiceClient.subscribe((event) => {
+        if (
+          event.name === 'chat.subagent.updated' &&
+          event.data.status === 'running' &&
+          event.data.phase === 'queued' &&
+          typeof event.data.conversationId === 'string'
+        ) {
+          handleOpenRightPanelForConversation(event.data.conversationId, 'subagents');
+        }
+      }),
+    [handleOpenRightPanelForConversation],
+  );
+
   const handleToggleSplitView = useCallback(() => {
     if (splitConversationId) {
       if (activeRightPanelConversationId === splitConversationId) {

@@ -16,7 +16,7 @@ use crate::{
     project_skills::ProjectSkill,
     protocol::ServiceError,
     provider_credentials::{self, ProviderCredentials},
-    storage::{AppStorage, user_questions::AgentRunStatus},
+    storage::{AppStorage, sqlite_error_code, user_questions::AgentRunStatus},
     tools::{self, ToolPermissionMode},
     user_question_broker::{RunOutcome, UserQuestionBroker},
 };
@@ -76,7 +76,10 @@ pub(super) fn load_saved_route(
     storage: &AppStorage,
     conversation_id: &str,
 ) -> Result<(Connection, SavedChatRoute), ServiceError> {
-    let connection = storage.connect().map_err(|_| storage_unavailable())?;
+    let connection = storage.connect().map_err(|error| {
+        log_chat_storage_failure(storage, "chat.send.route_open", &error);
+        storage_unavailable()
+    })?;
     let route = connection
         .query_row(
             "SELECT conversations.provider_id, projects.folder_path, projects.id,
@@ -99,7 +102,10 @@ pub(super) fn load_saved_route(
             },
         )
         .optional()
-        .map_err(|_| storage_unavailable())?
+        .map_err(|error| {
+            log_chat_storage_failure(storage, "chat.send.route_read", &error);
+            storage_unavailable()
+        })?
         .unwrap_or((None, None, None, None, None, None, None));
 
     let (
@@ -291,7 +297,8 @@ fn validate_goal_start(
         return Ok(());
     };
     let messages =
-        chatgpt_store::conversation_messages(storage, conversation_id).map_err(|_| {
+        chatgpt_store::conversation_messages(storage, conversation_id).map_err(|error| {
+            log_chat_storage_failure(storage, "chat.send.goal_history_read", &error);
             ServiceError::new(
                 "storage_unavailable",
                 "Chat history could not be read.",
@@ -518,14 +525,16 @@ fn load_project_context(
                     true,
                 ));
             }
-            let messages =
-                chatgpt_store::conversation_messages(storage, conversation_id).map_err(|_| {
+            let messages = chatgpt_store::conversation_messages(storage, conversation_id).map_err(
+                |error| {
+                    log_chat_storage_failure(storage, "chat.send.project_history_read", &error);
                     ServiceError::new(
                         "storage_unavailable",
                         "Chat history could not be read.",
                         false,
                     )
-                })?;
+                },
+            )?;
             messages
                 .iter()
                 .rev()
@@ -796,6 +805,19 @@ fn storage_unavailable() -> ServiceError {
         "Chat history could not be read.",
         false,
     )
+}
+
+fn log_chat_storage_failure(
+    storage: &AppStorage,
+    operation: &'static str,
+    error: &rusqlite::Error,
+) {
+    if storage
+        .log_rpc_failure(operation, sqlite_error_code(error))
+        .is_err()
+    {
+        eprintln!("chat_storage_diagnostic_write_failed");
+    }
 }
 
 #[cfg(test)]

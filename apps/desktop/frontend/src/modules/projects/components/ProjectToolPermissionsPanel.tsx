@@ -26,6 +26,10 @@ const standardTools = [
   'web_search',
   'read_url_content',
   'delegate_task',
+  'list_subagent_models',
+  'get_subagent_result',
+  'cancel_subagent',
+  'save_memory',
   'run_project_task',
 ] as const;
 
@@ -235,6 +239,9 @@ function toolLabel(
     web_search: 'toolWebSearch',
     read_url_content: 'toolReadUrlContent',
     delegate_task: 'toolDelegateTask',
+    list_subagent_models: 'toolListSubagentModels',
+    get_subagent_result: 'toolGetSubagentResult',
+    cancel_subagent: 'toolCancelSubagent',
     run_project_task: 'toolRunProjectTask',
   };
   const taskPrefix = 'run_project_task__';

@@ -282,6 +282,10 @@ pub(super) fn qualify_output_paths(output: &mut Value, prepared: &PreparedToolCa
         | ToolOperation::WebSearch { .. }
         | ToolOperation::ReadUrlContent { .. }
         | ToolOperation::DelegateTask { .. }
+        | ToolOperation::ListSubagentModels
+        | ToolOperation::GetSubagentResult { .. }
+        | ToolOperation::CancelSubagent { .. }
+        | ToolOperation::SaveMemory { .. }
         | ToolOperation::ProjectTool { .. }
         | ToolOperation::GitStatus
         | ToolOperation::GitDiff

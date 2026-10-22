@@ -9,7 +9,7 @@ use std::{collections::HashSet, time::SystemTime, time::UNIX_EPOCH};
 use serde_json::Value;
 
 use crate::{
-    chat_operation::{TitleGenerationModel, TitleGenerationRequest},
+    chat_operation::{SubagentModelOption, TitleGenerationModel, TitleGenerationRequest},
     goals, instructions,
     protocol::ServiceError,
     provider_credentials::{self, ProviderCredentials},
@@ -46,6 +46,8 @@ pub(super) struct ChatSendParameters<'a> {
     pub(super) excluded_assistant_message_id: Option<&'a str>,
     /// Resolved title-generation route, when title generation is enabled.
     pub(super) title_generation: TitleGenerationRequest,
+    /// Validated route descriptors available to the primary agent for delegation.
+    pub(super) available_subagent_models: Vec<SubagentModelOption>,
 }
 
 /// Validates chat input before credential reads or persistent execution work.
@@ -101,6 +103,7 @@ pub(super) fn parse_send_request(
     let plan_mode_requested = optional_bool(params, "planMode")?.unwrap_or(false);
     let profile_tool_allowlist =
         tools::parse_profile_tool_allowlist(params.get("profileToolAllowlist"))?;
+    let available_subagent_models = parse_subagent_models(params.get("availableSubagentModels"))?;
     let excluded_assistant_message_id = optional_string(params, "excludedAssistantMessageId")?;
     if goal_requested && (resume_run_id.is_some() || excluded_assistant_message_id.is_some()) {
         return Err(invalid_chat_goal_request("goal start parameters"));
@@ -121,7 +124,93 @@ pub(super) fn parse_send_request(
         profile_tool_allowlist,
         excluded_assistant_message_id,
         title_generation,
+        available_subagent_models,
     })
+}
+
+fn parse_subagent_models(value: Option<&Value>) -> Result<Vec<SubagentModelOption>, ServiceError> {
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    let models = value.as_array().ok_or_else(invalid_request_params)?;
+    if models.len() > 256 {
+        return Err(invalid_request_params());
+    }
+    let mut parsed = Vec::with_capacity(models.len());
+    for value in models {
+        let object = value.as_object().ok_or_else(invalid_request_params)?;
+        let read_string = |name: &str, max_bytes: usize| -> Result<String, ServiceError> {
+            let value = object
+                .get(name)
+                .and_then(Value::as_str)
+                .filter(|value| {
+                    !value.trim().is_empty()
+                        && value.len() <= max_bytes
+                        && !value.chars().any(char::is_control)
+                })
+                .ok_or_else(invalid_request_params)?;
+            Ok(value.to_owned())
+        };
+        let read_optional_string =
+            |name: &str, max_bytes: usize| -> Result<Option<String>, ServiceError> {
+                match object.get(name) {
+                    None | Some(Value::Null) => Ok(None),
+                    Some(Value::String(value))
+                        if !value.trim().is_empty()
+                            && value.len() <= max_bytes
+                            && !value.chars().any(char::is_control) =>
+                    {
+                        Ok(Some(value.to_owned()))
+                    }
+                    _ => Err(invalid_request_params()),
+                }
+            };
+        let provider_id = read_string("providerId", 128)?;
+        let request_protocol = read_string("requestProtocol", 32)?;
+        if !matches!(
+            request_protocol.as_str(),
+            "chatCompletions" | "responses" | "messages"
+        ) {
+            return Err(invalid_request_params());
+        }
+        let reasoning_levels = match object.get("reasoningLevels") {
+            Some(Value::Array(levels)) if levels.len() <= 8 => levels
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .filter(|level| {
+                            matches!(*level, "minimal" | "low" | "medium" | "high" | "xhigh")
+                        })
+                        .map(str::to_owned)
+                        .ok_or_else(invalid_request_params)
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            _ => return Err(invalid_request_params()),
+        };
+        let supports_tools = match object.get("supportsTools") {
+            None | Some(Value::Null) => None,
+            Some(Value::Bool(value)) => Some(*value),
+            _ => return Err(invalid_request_params()),
+        };
+        parsed.push(SubagentModelOption {
+            key: read_string("key", 1024)?,
+            provider_id,
+            model_id: read_string("modelId", 512)?,
+            display_name: read_string("displayName", 256)?,
+            connection_id: read_optional_string("connectionId", 256)?,
+            workspace_id: read_optional_string("workspaceId", 256)?,
+            api_key_connection_id: read_optional_string("apiKeyConnectionId", 256)?,
+            supports_tools,
+            reasoning_levels,
+            request_protocol,
+        });
+    }
+    let mut keys = std::collections::HashSet::with_capacity(parsed.len());
+    if parsed.iter().any(|model| !keys.insert(model.key.as_str())) {
+        return Err(invalid_request_params());
+    }
+    Ok(parsed)
 }
 
 /// Parses a bounded project Skill selection without cloning rejected IDs.
