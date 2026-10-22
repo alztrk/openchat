@@ -2,6 +2,26 @@
 
 This roadmap reflects the current product implementation and has no calendar estimates. Some validation notes below record evidence collected for the retired Flutter client; they are historical and do not validate the current React/Tauri UI. The Windows desktop experience remains the first release target. Confirmed baseline and implemented milestones are listed separately. The numbered priorities are ordered from highest to lowest by product value, safety, and dependencies; a priority does not block unrelated work unless its dependency is stated.
 
+## Alican's current product focus
+
+Prioritize making the core desktop experience useful and reliable:
+
+- Finish the provider-usage coverage audit in priority 4. The local usage ledger
+  and statistics are already implemented; focus on provider-specific fields
+  that are not yet mapped, rather than rebuilding usage tracking.
+- Keep validating the public OpenAI Responses API request and stream handling
+  in priority 8; defer live-account checks until an API account is available.
+- Continue the local-first privacy and personal-memory controls in priority 20.
+- Keep the generic delegated-agent design in priority 26: the main agent writes
+  the subagent prompt; subagents are not fixed to roles such as researcher and
+  receive names based on historical people.
+- Treat live provider-account checks as a pre-release gate, not as current
+  feature work.
+
+All other roadmap product expansions are deferred until the core experience is
+usable. In particular, reusable workflows and lifecycle hooks (priority 6) and
+additional local-provider connections (priority 12) are later work.
+
 ## Current implementation
 
 - React desktop UI hosted by Tauri, with a local Rust service and SQLite conversation storage under `%LOCALAPPDATA%\OpenChat`.
@@ -129,7 +149,7 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 1. Add a first-party tool runtime and safer coding-agent workflows
 
-**Status: implemented for the supported Windows target.** Built-in file, terminal, web, and read-only Git tools have centralized schemas, local Rust executors, validated arguments, bounded operations, and persisted activity. Windows terminal sessions use a temporary AppContainer; file changes have review and conditional revert support. Per-project `Ask`, `Allow`, and `Deny` rules now override the global permission mode for supported built-in tools. Bounded child runs can use a restricted read-only subset of the built-in tools under the same permission boundary. The first-party `run_project_task` executor is advertised only on Windows when an attached project's validated task catalog contains entries; its schema is restricted to declared task IDs, the catalog is read with a 64 KiB plus one byte cap only when the tool can be offered, so an inactive task tool does not block ordinary chat; execution uses the same approval, timeout, output, cancellation, activity, and Windows sandbox path as terminal commands. Windows project options manage local stdio and remote Streamable HTTP MCP catalogs, validate and atomically replace settings, disable saving after load errors, and check an enabled server on demand, including unsaved edits. Remote MCP connections require HTTPS, reject private or reserved destinations after DNS resolution, pin resolved addresses, disable redirects, and send optional bearer credentials from Windows Credential Manager. MCP server and discovered per-tool `Ask`, `Allow`, and `Deny` overrides are stored locally per project, outside the repository catalog; server `Deny` takes precedence. Client and service permission limits accommodate the maximum configured set of eight servers with up to 128 tools each. During chat, discovered MCP tools use namespaced provider schemas, per-call approval unless local settings allow or deny them, persisted activity, and untrusted-result handling. MCP environment-variable names stay in the project catalog while their secret values are scoped to project, server, and variable in Windows Credential Manager; stdio secrets enter only the sandboxed child environment and remote credentials are sent only as HTTPS bearer authorization. Remote MCP JSON success/error bodies are incrementally capped at 64 KiB, SSE events are bounded before parsing, and transport headers cannot override reserved protocol headers. Versioned project-scoped first-party executors are available on Windows through `.openchat/tools.json`, with schema validation, per-tool permissions, AppContainer execution, bounded input/output, timeout, cancellation, and persisted activity. Project instructions, reusable project Skills, profile settings, bounded child runs, and plan-mode restrictions are implemented. Non-Windows process isolation remains future platform work because Windows is the only supported desktop target.
+**Status: implemented for the supported Windows target.** Built-in file, terminal, web, and read-only Git tools have centralized schemas, local Rust executors, validated arguments, bounded operations, and persisted activity. Windows terminal sessions use a temporary AppContainer; file changes have review and conditional revert support. Per-project `Ask`, `Allow`, and `Deny` rules now override the global permission mode for supported built-in tools. Child agents inherit the request's applicable tool grants and permission rules; item 26 documents child-specific exclusions and limits. The first-party `run_project_task` executor is advertised only on Windows when an attached project's validated task catalog contains entries; its schema is restricted to declared task IDs, the catalog is read with a 64 KiB plus one byte cap only when the tool can be offered, so an inactive task tool does not block ordinary chat; execution uses the same approval, timeout, output, cancellation, activity, and Windows sandbox path as terminal commands. Windows project options manage local stdio and remote Streamable HTTP MCP catalogs, validate and atomically replace settings, disable saving after load errors, and check an enabled server on demand, including unsaved edits. Remote MCP connections require HTTPS, reject private or reserved destinations after DNS resolution, pin resolved addresses, disable redirects, and send optional bearer credentials from Windows Credential Manager. MCP server and discovered per-tool `Ask`, `Allow`, and `Deny` overrides are stored locally per project, outside the repository catalog; server `Deny` takes precedence. Client and service permission limits accommodate the maximum configured set of eight servers with up to 128 tools each. During chat, discovered MCP tools use namespaced provider schemas, per-call approval unless local settings allow or deny them, persisted activity, and untrusted-result handling. MCP environment-variable names stay in the project catalog while their secret values are scoped to project, server, and variable in Windows Credential Manager; stdio secrets enter only the sandboxed child environment and remote credentials are sent only as HTTPS bearer authorization. Remote MCP JSON success/error bodies are incrementally capped at 64 KiB, SSE events are bounded before parsing, and transport headers cannot override reserved protocol headers. Versioned project-scoped first-party executors are available on Windows through `.openchat/tools.json`, with schema validation, per-tool permissions, AppContainer execution, bounded input/output, timeout, cancellation, and persisted activity. Project instructions, reusable project Skills, profile settings, bounded child runs, and plan-mode restrictions are implemented. Non-Windows process isolation remains future platform work because Windows is the only supported desktop target.
 
 - Keep LSP diagnostics and navigation as a separate code-intelligence capability. Non-Windows process isolation, browser/computer control, and other desktop-platform executors require separate platform support and security validation before being enabled.
 
@@ -161,20 +181,20 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 4. Add usage tracking and cost visibility
 
-**Status: planned.** Help users track actual provider and local-model usage and manage spending.
+**Status: partially implemented in source; provider-coverage audit remains.** The local request ledger and statistics views calculate one estimated cost locally from normalized token counts and matching models.dev rates. The UI labels it as an estimate, shows the number of priced requests, and leaves unmatched or missing values unavailable. Provider-reported cost is not presented as a second user-facing amount. Usage mapping captures Anthropic's reported thinking-token breakdown from the final `message_delta`, along with its input/output and cache counts. Finish mapping provider-specific token, latency, throughput, retry, and tool-outcome fields where responses support them; keep estimates separate from provider plan quotas.
 
 - Store per-request provider-reported input, output, reasoning, cache-read, and cache-write counts when available, plus cost when known, first-token latency, total latency, throughput, retries, and tool outcomes. Normalize provider fields while retaining their source and avoiding double-counting cache tokens in total input.
 - Attribute usage to connection/account, workspace, conversation, project, model, run, and subagent. Show plan quotas and API usage limits only when the provider supplies them; include freshness and reset information when available.
-- Show actual provider usage separately from estimated context use and cost. Keep cached-token cost separate from plan quota semantics, which vary by provider and authentication route. Represent missing usage, pricing, or quota data as unavailable rather than inferring it.
+- Show provider-reported token usage separately from estimated context use. Calculate one user-facing cost from available token counts and matching models.dev input, output, reasoning, and cache rates. Keep cost separate from plan quota semantics, which vary by provider and authentication route. Represent missing usage or matching pricing as unavailable rather than inferring it.
 - Calculate cache-hit ratios from provider-reported usage using that provider's documented denominator. Show the ratio's source and aggregation window, and avoid direct comparisons when providers or harnesses use different denominators or session scopes.
-- Show usage with budget thresholds and limit warnings, including cache hit/write counts and effective cost where the provider reports enough data to calculate them.
+- Show usage with budget thresholds and limit warnings, including cache hit/write counts and cost where token counts and matching models.dev prices are available.
 - Add local model benchmarks and memory estimates while distinguishing measured values from estimates.
 
-**Exit criteria:** usage records identify their connection, provider/model, run, and whether values are reported or estimated; cache reads/writes are not double-counted; and unavailable fields remain explicit.
+**Exit criteria:** usage records identify their connection, provider/model, run, and source values needed to audit local cost calculations; the UI presents one cost value; cache reads/writes are not double-counted; and unavailable fields remain explicit.
 
 ### 5. Add message branches and durable runs
 
-**Status: implemented in source and covered by deterministic tests.** User messages can be edited into a new conversation branch that copies the prior transcript and attachments while retaining the original. Adjacent retry responses can be selected as versions. Each assistant response stores its provider and model, and a selected version displays its own route. Runs and checkpoints are persisted for chat requests and goal/question continuation, with interrupted runs represented explicitly. The sidebar run manager lists running, paused, and interrupted runs across conversations, opens the related conversation, and the UI notifies users when a run ends in another chat. ChatGPT OAuth and OpenAI Responses API-key requests use their Responses routes for bounded child runs. Gemini, Groq, Cerebras, OpenRouter, and Mistral API-key requests use Chat Completions for bounded child runs when the selected model supports tools. Local llama.cpp requests use the selected model's loopback Chat Completions endpoint, with its configured local API key when present, if the model supports tools. Child runs inherit the selected model and reasoning setting; OAuth runs also inherit speed and workspace settings. Child runs have a read-only built-in tool allowlist, request/tool/output/time/concurrency caps, cancellation, durable run IDs, and separate usage attribution. MCP tools and provider-hosted tools are not available in child runs. The UI shows child objectives and final status/result, with live phase updates while the run manager is open and the last saved phase available when it opens later. On Windows, child runs can invoke user-declared named project tasks through the same permission rules and AppContainer process sandbox as the parent. Arbitrary shell commands, direct file writes, MCP tools, and provider-hosted tools remain outside the child allowlist.
+**Status: implemented in source and covered by deterministic tests.** User messages can be edited into a new conversation branch that copies the prior transcript and attachments while retaining the original. Adjacent retry responses can be selected as versions. Each assistant response stores its provider and model, and a selected version displays its own route. Runs and checkpoints are persisted for chat requests and goal/question continuation, with interrupted runs represented explicitly. The sidebar run manager lists running, paused, and interrupted runs across conversations, opens the related conversation, and the UI notifies users when a run ends in another chat. The durable run and cancellation infrastructure also supports the general subagent workflow described in item 26.
 
 - Support editing a user message and starting a branch from that point while preserving the previous message and response history.
 - Keep regenerated or alternative model responses as versions that can be compared and selected; preserve provider/model provenance for each version.
@@ -210,22 +230,22 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 8. Add provider-native API capabilities
 
-**Status: partially implemented in source.** Anthropic Claude Messages API adapter is implemented (`/messages` route, header-based auth, streaming, tools, vision, and reasoning). Public OpenAI Responses API remains planned. All providers use OpenChat's built-in local `web_search` and `read_url_content` system rather than provider-hosted search tools.
+**Status: implemented in source; live-account validation deferred.** Anthropic Claude Messages API adapter is implemented (`/messages` route, header-based auth, streaming, tools, vision, and reasoning). OpenAI API-key conversations now use the public Responses API route, existing Responses stream/tool handling, and `store: false`. Alican does not have an OpenAI API account, so live-account validation is unavailable; validate request construction and stream parsing locally, and revisit provider-account checks before release if credentials become available. All providers use OpenChat's built-in local `web_search` and `read_url_content` system rather than provider-hosted search tools.
 
-- Add the public OpenAI Responses API for OpenAI API-key connections, including streaming and function calling. Keep this route distinct from ChatGPT OAuth and its private Codex endpoints.
+- Keep the public OpenAI Responses API for OpenAI API-key connections distinct from ChatGPT OAuth and its private Codex endpoints. Streaming, function calling, and local-only response storage are implemented in source; local request/stream validation remains applicable, while live-account validation is deferred because no OpenAI API account is available.
 - Evaluate Anthropic Messages and xAI Responses as separate provider adapters, with model catalogs and capabilities obtained from their documented APIs. Anthropic Messages adapter is implemented in source and covered by deterministic unit tests.
 - Treat prompt caching as a provider/model/runtime capability. Keep reusable instructions and tool schemas stable at the start of requests; add documented cache breakpoints or keys only in adapters that support them. Adapters can shape cache eligibility, but the provider/runtime owns cache storage and actual hits, and a marker or key does not guarantee reuse.
 - Handle streaming, cancellation, tool-call errors, usage, context limits, prompt-cache reporting, and unavailable capabilities consistently across every adapter.
 
-**Exit criteria:** each released native adapter passes the provider-specific account checks and shared streaming/tool/error contract.
+**Exit criteria:** each released native adapter passes deterministic request/stream/tool/error contract checks. Provider-specific live-account checks are performed before release when an account is available; they are not a prerequisite for local development in the absence of credentials.
 
 ### 9. Build a searchable conversation library
 
-**Status: implemented in source.** Message and completed tool activity search supports provider, model, project, archive-status, date, and tag filters. Per-conversation tags, bookmarks, archive/unarchive, saved searches, transactional multi-select move/archive, encrypted selected-conversation bulk export, and opt-in local text-attachment indexing are implemented.
+**Status: implemented in source.** Message and completed tool activity search supports provider, model, project, archive-status, and date filters. Archive/unarchive, saved searches, transactional multi-select move/archive, encrypted selected-conversation bulk export, and opt-in local text-attachment indexing are implemented.
 
-- Sidebar search covers indexed messages and completed tool activity, with snippets, match highlighting, lazy indexing of opted-in conversations, navigation to the matching message, and optional inclusive local-date, assistant-message provider/model, project, archive-status, and tag filters.
+- Sidebar search covers indexed messages and completed tool activity, with snippets, match highlighting, lazy indexing of opted-in conversations, navigation to the matching message, and optional inclusive local-date, assistant-message provider/model, project, and archive-status filters.
 - Keep attachment-content indexing separately configurable. Implemented as off by default; users can rebuild or clear the derived local index in Settings > Local data. It indexes supported UTF-8 text attachments only, caps the index at 5,000 files or 100 MB, and never changes source files. Images are excluded because OCR is not available.
-- Tags are stored per conversation, limited to 12 labels of 32 characters each, and shown accessibly in the sidebar. Bookmarks are stored per conversation and exposed with an accessible sidebar indicator and menu action. Up to 20 named searches preserve their query, filters, and date range in local preferences. Multi-select can move active conversations between projects and the general chat list or archive them atomically. The encrypted conversation archive supports exporting multiple selected conversations.
+- Up to 20 named searches preserve their query, filters, and date range in local preferences. Multi-select can move active conversations between projects and the general chat list or archive them atomically. The encrypted conversation archive supports exporting multiple selected conversations.
 - Keep the existing per-conversation memory search as a focused context tool; make the broader library search a separate history workflow.
 
 **Exit criteria:** search results identify the source conversation and message, can open that message directly, and honor the user's indexing and archive settings. Met by source behavior and deterministic tests.
@@ -265,11 +285,12 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 13. Establish an accessibility and locale quality matrix
 
-**Status: in progress.** Tool approvals, project permission controls, worktree controls (including named-task selection and command confirmation), the run manager, provider citations, conversation selection/bookmark labels, the chat composer send and stop actions, stop-disabled state, assistant response-version controls, and the localized editable name of the composer message field have semantic coverage across five locales and narrow/wide layouts. Temporary-chat notices and their end action now have locale and width coverage from 320 logical pixels through desktop; the compact empty-chat guide scrolls without losing its setup steps or composer, and its step labels wrap at narrow widths. Citation source actions open their stored source card by keyboard in all supported locales. The conversation sidebar and response-version selector tests cover widths down to 320 logical pixels and text scales through 200%; keyboard-only activation tests cover conversation selection, citation opening, tool approval and denial, response-version selection, and composer sending. The worktree and run-manager matrices also cover simulated display pixel ratios through 200% and reduced animation settings. System high-contrast light/dark themes and key text/focus contrast have focused checks. Flutter widget coverage also exercises settings, model routes, active messages, chat controls, and keyboard-revealed conversation actions at narrow and enlarged layouts. Native Windows UI Automation/screen-reader workflows and real Windows display-scaling validation remain open; widget tests do not substitute for those desktop checks.
+**Status: in progress.** Tool approvals, project permission controls, worktree controls (including named-task selection and command confirmation), the run manager, provider citations, conversation selection, the chat composer send and stop actions, stop-disabled state, assistant response-version controls, and the localized editable name of the composer message field have semantic coverage across five locales and narrow/wide layouts. Temporary-chat notices and their end action now have locale and width coverage from 320 logical pixels through desktop; the compact empty-chat guide scrolls without losing its setup steps or composer, and its step labels wrap at narrow widths. Citation source actions open their stored source card by keyboard in all supported locales. The conversation sidebar and response-version selector tests cover widths down to 320 logical pixels and text scales through 200%; keyboard-only activation tests cover conversation selection, citation opening, tool approval and denial, response-version selection, and composer sending. The worktree and run-manager matrices also cover simulated display pixel ratios through 200% and reduced animation settings. System high-contrast light/dark themes and key text/focus contrast have focused checks. Flutter widget coverage also exercises settings, model routes, active messages, chat controls, and keyboard-revealed conversation actions at narrow and enlarged layouts. Real Windows display-scaling validation remains open; widget tests do not substitute for those desktop checks. Native Windows UI Automation and screen-reader validation is deferred until after the first stable release, as a post-release update.
 
-- Cover keyboard-only navigation, focus visibility and restoration, screen-reader labels, high contrast, and reduced motion.
+- Cover keyboard-only navigation, focus visibility and restoration, high contrast, and reduced motion.
 - Test text scaling, 125–200% Windows display scaling, narrow layouts, long translations, and input composition.
 - Add semantic accessibility assertions alongside screenshot tests for Turkish, English, German, Spanish, and French.
+- **Post-release update:** validate native Windows UI Automation and screen-reader workflows after the first stable release.
 
 **Exit criteria:** core chat, settings, model selection, tool approval, and local-model workflows pass the accessibility matrix in all supported locales.
 
@@ -304,18 +325,18 @@ These bullets describe code present in the repository. They do not mean that eve
 
 ### 17. Package and distribute extensions
 
-**Status: local app-wide MCP templates and user-pinned signed metadata sources implemented in source; independent publisher verification and package distribution remain later.** Settings can save, edit, search, and remove reusable MCP connection templates. User-added sources use a pinned Ed25519 key and bounded, user-initiated HTTPS retrieval. The app verifies catalog integrity against that key, not the publisher's real-world identity. Signed entries are limited to Streamable HTTP and are imported as templates. Adding any template copies it to the active project as a disabled MCP server, records `Ask` for its tools, and leaves credentials scoped to that project. Catalog templates do not download or execute software.
+**Status: local signed-package installation implemented in source; publisher identity and release validation remain open.** Settings can save, edit, search, and remove reusable MCP connection templates. User-added sources use a pinned Ed25519 key and bounded, user-initiated HTTPS retrieval. For a package entry, installation requires explicit confirmation, refetches and verifies the signed catalog, downloads a version-pinned Windows PE under a 128 MiB limit, checks exact size and SHA-256, and stores a project-scoped package reference. Before launch, the digest is checked again; the AppContainer receives read-only access to the package directory. Packages are added disabled, their MCP tools default to `Ask`, updates require confirmation and reset rules to `Ask`, and previous versions are cleaned up with a visible retry on failure. The pinned key proves control of that key, not the publisher's real-world identity.
 
 - Define versioned manifests with declared tools, permissions, provider requirements, and configuration needs.
 - Extend the local template catalog with safe update and removal flows for servers already installed in the active project.
 - [x] Add user-pinned Ed25519 source verification for Streamable HTTP connector metadata; publisher identity remains unverified.
-- [ ] Define and review a package installation path before distributing executable connector packages. Signed metadata sources do not fetch binaries.
+- [x] Define and implement a bounded package installation path for signed Windows executable packages. A centrally hosted catalog and binaries are not provided.
 - Keep package permissions separate from the user's built-in tool permissions and require explicit enablement.
 - Keep catalog entries disabled by default; listing or installing one must not connect it, grant credentials, or send conversation data.
 - Keep connector configuration, permissions, and credentials scoped to each project when adding a catalog entry to that project.
-- Require renewed consent when an update expands a package's declared capabilities. Removing a package must disable it and remove its local data and stored credentials, with cleanup failures shown clearly.
+- Require renewed consent for every update and reset connector tool rules to `Ask`. Removing a package removes the project reference and scoped credentials; package cleanup failures are shown clearly and can be retried.
 
-**Exit criteria:** verified packages are version-pinned, their requested access is visible before installation, and removal leaves no active server or hook behind. These criteria are not yet met for third-party package distribution.
+**Exit criteria:** package metadata and bytes are verified against the user-pinned key and digest, versions are pinned, access/data disclosures are shown before installation, and removal leaves no active project reference. Real-world publisher verification and Windows release-signing remain open release gates.
 
 ### 18. Add user-controlled encrypted sync
 
@@ -339,7 +360,7 @@ explicitly changes them. Existing work is tracked under priorities 4, 6–8,
 
 ### 19. Guide first-time setup and provider recovery
 
-**Status: partially implemented in source, P0.** The empty-chat screen shows a
+**Status: implemented in source, P0; live provider validation remains open.** The empty-chat screen shows a
 four-step connection, provider catalog verification, model selection, and
 message guide. Its active step advances as a provider is configured, a catalog
 loads, and a model is selected; completed steps are announced accessibly.
@@ -422,11 +443,14 @@ messages and files remain in memory, and leaving offers save, discard, or
   The selected ChatGPT OAuth account and workspace are supported on this path,
   with model and image-capability validation and a memory-only response stream.
   Tool calls remain unsupported.
-Personal memory now supports user-entered local facts, editing and removal,
-with use disabled by default. When enabled, the facts are included as reference
-data in new model requests and the settings explain that their text goes to the
-selected provider. Users can now persist a per-conversation exclusion from the
-chat header; excluded conversations do not include saved facts in requests.
+Personal memory is local and off by default. The settings page lets users turn
+it on or off, review saved facts, remove individual facts, or clear the store;
+it no longer offers direct fact creation or editing. In standard chats, the
+assistant can save bounded durable facts through the `save_memory` tool when
+memory is enabled. Saved facts are included as reference data in new model
+requests, and the settings explain that their text goes to the selected
+provider. Users can persist a per-conversation exclusion from the chat header;
+excluded conversations do not include saved facts in requests.
 New standard chats expose the same control before the first message. The
 pending choice is applied to that first request and saved against the generated
 conversation ID before the provider is called. If the privacy preference cannot
@@ -440,24 +464,33 @@ Temporary sends use the same preparation lock before credential reads and
 provider-retention confirmation. Leaving a temporary session is blocked during
 preparation and while its provider request is active, preventing the session
 from being discarded before its first message is committed in memory.
-Each assistant response now stores the IDs of personal-memory facts included
-in its request and offers a disclosure that resolves the current saved text.
-Edited or removed facts are identified as no longer available, and fact edits
-create new IDs so an old response cannot show changed text as its source.
+Each assistant response stores the IDs of personal-memory facts included in
+its request and offers a disclosure that resolves the current saved text.
+Removed facts are identified as no longer available. Temporary chats neither
+receive persistent personal-memory context nor expose the memory-save tool.
 Temporary chats use the selected ChatGPT OAuth account and workspace without
 creating local message, run, or usage records. Make local retention and
-cross-conversation personalization explicit, separate choices.
-The temporary-chat retention contract and provider/tool boundaries are defined
-in [temporary conversations](docs/temporary-conversations.md).
+cross-conversation personalization explicit, separate choices. Personal-memory
+controls are available as their own page in Settings > Data and privacy,
+separate from local history and archive management.
+Temporary chats operate in memory without durable conversation, run, or usage
+records. They do not read from or write to persistent personal memory, and
+provider and tool boundaries are explicit in the temporary-chat flow.
 
-- Continue opt-in, local-only personal memory so it can be paused and excluded
-  per conversation. Show which saved facts informed a response; do not silently
-  infer that archived content should become a durable memory.
+- Replace direct memory creation in settings with a bounded local memory-save
+  tool for standard chats. Users can ask the assistant to remember something,
+  and the assistant can save relevant durable facts when appropriate. Keep
+  memory opt-in, reviewable, pausable, and removable in settings, and show which
+  saved facts informed a response. Do not silently turn archived conversation
+  content into durable memory.
+- Keep the memory-save tool unavailable in temporary chats. Temporary chats
+  neither receive persistent personal-memory context nor write to its store.
 - Keep conversation memory search scoped to its current conversation and
   project indexing scoped to its selected project unless the user enables a
   separate cross-conversation memory feature.
-- Add a privacy settings group for these controls and make archive/index
-  behavior understandable at the point where users enable it.
+- Make archive and index behavior understandable at the point where users
+  enable it; keep local-history and personal-memory controls in separate pages
+  under the data and privacy settings group.
 
 **Exit criteria:** temporary chats do not enter durable history, search,
 project indexes, or exports unless explicitly saved; personal memory is off by
@@ -465,7 +498,7 @@ default and every remembered item and source can be reviewed or removed.
 
 ### 21. Add reusable assistant profiles and an editable response workspace
 
-**Status: partially implemented in source, P1.** Assistant profiles can be
+**Status: implemented in source, P1; provider and native UI validation remain.** Assistant profiles can be
 created, edited, activated, deactivated, and removed in settings. Their name,
 bounded instructions, and concise/balanced/detailed response style persist in
 local preferences. The active profile's style and instructions are included in
@@ -476,14 +509,18 @@ can save a preferred model from the currently selected available model. That
 preference applies to new chats after project-specific defaults and retains its
 reasoning effort where supported. Existing conversations keep their saved
 model. Explicit per-profile tool allowlists and the editable response workspace
-are partly implemented: profiles can restrict built-in tool groups; the service
+are implemented: profiles can restrict built-in tool groups; the service
 validates the allowlist, filters advertised tools, and limits the executor. The
 profile limit takes precedence over global and project tool grants. When a
-project is active, named project tasks and configured project tools can also be
-selected in the profile; the service advertises only entries present in that
-project's validated catalogs. MCP tool discovery is user initiated, and only
-servers containing an allowed tool are connected during the request. An absent
-allowlist preserves existing behavior, while an empty list disables tools.
+project is active, the profile editor lists configured project tools from the
+validated project catalog. Enabled MCP servers can be checked on user request
+and their discovered tool names can be selected individually. The project task
+runner is a single allowlisted tool; its task choices still come from the
+validated project task catalog at request time. The service advertises only
+entries present in the applicable validated catalogs. During chat, only MCP
+servers containing an allowed tool are connected. An absent allowlist preserves
+existing behavior, while an empty list disables tools. Profile selections are
+capped at 32 without silently dropping excess selections.
 Before sending, the conversation header now shows whether the active profile
 sets a tool limit, disables tools, or inherits the app and project permissions.
 The accessible label and tooltip clarify that app and project permissions can
@@ -520,7 +557,7 @@ version; unsupported editing or export formats fail explicitly.
 
 ### 22. Expand library search and reusable file access
 
-**Status: partially implemented in source, P1.** The local-data settings now
+**Status: implemented in source, P1.** The local-data settings now
 offer a user-reviewed support diagnostics export. It contains only an explicit
 allowlist of app/runtime, history-storage, service-health, and database schema
 fields; the preview and saved JSON are identical. Chat content, credentials,
@@ -567,7 +604,7 @@ export.
 
 ### 23. Make notifications, permissions, and keyboard help configurable
 
-**Status: partially implemented in source, P2.** Settings now persist controls
+**Status: implemented in source, P2; native Windows notification presentation remains open.** Settings now persist controls
 for background response alerts, pending-question alerts, response-text
 previews, and quick reply. Notification delivery reads these preferences before
 showing an alert; defaults preserve the existing Windows behavior. Settings
@@ -613,21 +650,24 @@ notification modes remains a manual Windows validation item.
 
 ### 24. Evaluate sharing and first-party connectors within the local-first model
 
-**Status: local encrypted file transfer and an application-wide connector catalog selected.** Alican chose local,
+**Status: local encrypted file transfer, signed metadata sources, and user-confirmed signed Windows package installation implemented.** Alican chose local,
 encrypted archives for conversation sharing. Hosted links, hosted conversation
 storage, and multi-user collaboration are outside the current product scope.
 Readable Markdown exports remain separate, explicitly user-directed exports;
 they are not encrypted by OpenChat. The current transfer formats and
 project-scoped MCP/tool boundaries and the selected local catalog scope are
-documented in [sharing and connector boundaries](docs/sharing-and-connectors.md).
+documented in [sharing and connector boundaries](sharing-and-connectors.md).
 Connector installation restores the previous project permission map if saving
 the project server catalog fails. Signed catalog refresh saves entries before
 advancing the source revision and restores the previous entries if that source
-metadata update fails.
+metadata update fails. Package bytes are verified before storage and before
+launch; update and removal flows retain visible cleanup recovery.
 The install confirmation also explains the endpoint or local process, the
-project-scoped authentication path, what a signed-source refresh changes, and
-what removing a local template leaves in project settings. These disclosures
-are localized and covered across the supported locales.
+project-scoped authentication path, package size and digest, the pinned key
+fingerprint, what a signed-source refresh changes, and what removing a local
+template leaves in project settings. These disclosures are localized and
+covered across the supported locales. Users must verify that fingerprint
+through a separate trusted channel to establish trust in the catalog operator.
 
 - Keep conversation sharing in the existing encrypted archive flow. Review
   selected conversations and attachments before export; the passphrase stays
@@ -642,12 +682,12 @@ are localized and covered across the supported locales.
   product approval and a service, access, deletion, and abuse response model.
 
 **Exit criteria:** encrypted local archives remain the conversation-sharing
-path; connector entries are verified, opt-in, and show their data-flow and
-permission model before use; no feature implies cloud sync or public access.
-The user-managed local template catalog and pinned-key signed metadata sources
-are implemented, but independent publisher verification and executable package
-distribution remain open. Hosted sharing
-remains out of scope under the current product decision.
+path; signed catalog integrity and package bytes are checked against a
+user-pinned key and digest; imports are opt-in and show their data-flow and
+permission model before project use; no feature implies cloud sync or public
+access. The app does not independently verify a publisher's real-world identity
+or provide a centrally hosted catalog.
+Hosted sharing remains out of scope under the current product decision.
 
 ### 25. Add persistent project agent memory and semantic context engine
 
@@ -660,15 +700,18 @@ remains out of scope under the current product decision.
 
 **Exit criteria:** agent runs preserve verified project conventions across session boundaries; memories are strictly isolated to their originating project; users can inspect and delete stored items; and memory injection does not degrade token budgets on small-context models.
 
-### 26. Add task-isolated subagents
+### 26. Add main-agent-delegated general subagents
 
-**Status: planned, P1.** Enable main agent runs to delegate bounded, heavy, or long-running tasks into isolated child processes without context pollution.
+**Status: implemented in source; live provider validation remains.** The user prompts the main agent, and only the main agent creates each general-purpose child and supplies its prompt. A child works independently from that prompt rather than receiving a fixed role such as researcher or reviewer. Child runs are persisted, stream progress and text into the conversation's right-side panel, and can be cancelled from the panel.
 
-- Support delegating exploratory code searches, large test suites, or modular implementations to dedicated background subagents (`fork_task`).
-- Hand off results through structured summaries, diffs, and artifact envelopes rather than forwarding complete conversation histories, keeping the parent context clean.
-- Permit parallel child task execution for independent operations with strict per-task concurrency limits, cancellation propagation, and timeouts.
+- Give each agent a historical-person name as its display identity; do not encode a specialist role in the name or agent type.
+- Let the main agent choose each child's model and supported reasoning level from all models the user can access; do not restrict selection to the main conversation's provider or account.
+- Within the permissions selected by the user, let children use the same tools and actions advertised to the main agent, including the existing approval rules. Child tools inherit that permission boundary; children cannot create nested agents, ask the user directly, access personal memory, or broaden the parent's permissions.
+- Let the main agent create multiple children, inspect their states and results, and interrupt individual runs. Keep each child's context and execution state isolated and attribute its usage separately.
+- Show child agents in a right-side panel with live status and streamed response text. Selecting an agent opens a read-only chat view; the user cannot send messages to the child.
+- Return concise child reports to the parent without copying the full child transcript. Permit parallel work with bounded concurrency, provider usage, timeouts, and cancellation propagation.
 
-**Exit criteria:** child runs operate within isolated execution scopes; parent context windows remain uncluttered by child turn history; cancellation cascades properly; and completed results report clean diffs and outcomes.
+**Exit criteria:** users can trace which parent prompt created each child run; the main agent can select any user-accessible model and its supported reasoning level; child agents operate within the parent's selected permissions; their responses stream in a read-only side panel; and results, cancellation, and resource limits are enforced. Validate each provider route with a connected account before release.
 
 ### 27. Add deterministic lifecycle hooks and self-healing lint feedback
 
@@ -725,7 +768,7 @@ remains out of scope under the current product decision.
 **Status: implemented in source.** Full conversation history, project groupings, pinned chats, and recency categories are organized in the collapsible left sidebar with real-time search filtering, quick actions, drag-and-drop, and context menus. The top header displays only the active conversation title, active model and status indicator, and clean window and tab actions.
 
 - Move the entire conversation list, history, and project groupings into a collapsible left sidebar, freeing vertical space in the main workspace.
-- Group conversations vertically by project, recency, tags, and pinned status with fast search and action menus per item.
+- Group conversations vertically by project, recency, and pinned status with fast search and action menus per item.
 - Restrict the top header strictly to open, active working tabs (as defined in item 31), closing the tab without removing the conversation from the sidebar history.
 
 **Exit criteria:** all historical chats and project hierarchies are easily navigable in the left sidebar; the top header displays only actively open tabs; and closing an active tab does not delete or alter conversation persistence.
@@ -877,24 +920,24 @@ remains out of scope under the current product decision.
 
 ### 49. Redesign brand identity and logo for OpenChat
 
-**Status: planned, P2.** Replace the legacy organic/botanical logo with a modern, iconic brand identity reflecting an open, autonomous AI workspace.
+**Status: implemented in source.** The organic legacy mark is replaced with three rounded, separated forms arranged around an open center, using two graphite forms and one copper form. The wordmark uses the product's Source Sans 3 typography and copper accent.
 
-- Redesign the application mark and typography to convey open dialogue, autonomous action, and local workstation power rather than rustic or environmental motifs.
-- Ensure the new mark scales cleanly down to taskbar and favicon sizes (16x16, 32x32, 48x48) with high contrast and instant recognition, while providing dark and light theme variants.
-- Update desktop application icons (`icon.ico`, NSIS installer banners, Tauri bundles) and document assets across `apps/desktop/assets/brand`.
+- Add light and dark application marks, a horizontal wordmark lockup, and source artwork plus 150 × 57 header and 164 × 314 sidebar bitmaps for the NSIS installer.
+- Regenerate `apps/desktop/tauri/icons/icon.ico` from `apps/desktop/assets/brand/app-icon.svg`; its ICO frames cover Windows taskbar and installer icon sizes.
+- Configure Tauri NSIS to use the matching installer icon and branded header and sidebar images.
 
-**Exit criteria:** the new logo clearly communicates OpenChat's open and communicative identity; renders crisply across small desktop icon scales; and integrates consistently across UI assets and installer packages.
+**Exit criteria:** the new mark communicates developer chat, remains legible at 16 × 16, 32 × 32, and 48 × 48 pixels in light and dark contexts, and is integrated across the desktop UI, Tauri bundle, README lockup, and NSIS installer.
 
 ### 50. Elevate frontend design system to industry standard
 
-**Status: planned, P2.** Refactor the UI design system into modular tokens, headless accessible primitives, and consistent elevation hierarchy matching Raycast, Linear, and Cursor standards.
+**Status: implemented in source.** Shared theme, typography, motion, and primitive styles are separated. Radix-backed selects, tabs, dialogs, tooltips, and dropdown menus share managed focus, keyboard, and dismissal behavior; dropdown menus are used for export, copy, and sidebar view/sort actions. Canvas, surface, raised, and overlay palette roles share the light/dark token system and border contrast roles. Badge, Kbd, and Skeleton primitives were already present and remain part of the shared library.
 
-- Modularize the 2,200-line monolithic `index.css` into dedicated stylesheets (`tokens.css`, `typography.css`, `animations.css`, `components.css`).
-- Adopt headless accessibility primitives (e.g. Radix UI or Ariakit) for complex controls (`Select`, `Dialog`, `Tooltip`, `Popover`, `ContextMenu`) to ensure rigorous keyboard navigation, ARIA tagging, and roving tab indices.
-- Introduce missing high-frequency primitives into `src/design-system`: `Badge/Pill`, `Kbd` (standardized keyboard shortcut badge), `Skeleton` (layout-shift free loading shimmers), and `DropdownMenu`.
-- Enforce strict surface elevation tokens (`Canvas`, `Surface`, `Raised`, `Overlay`) paired with 1px border contrast hierarchy for professional dark/light modes.
+- Keep theme and layout values in `src/design-system/styles/tokens.css`, typography and rendered Markdown in `typography.css`, motion in `animations.css`, and shared control styling in `components.css`; reserve `src/index.css` for app-shell and feature layout.
+- Keep complex shared controls on accessible headless primitives and add new patterns to `src/design-system` before using them in features.
+- Maintain the shared Badge, Kbd, Skeleton, and DropdownMenu primitives for common interface patterns.
+- Use Canvas, Surface, Raised, and Overlay semantic roles with shared border contrast in both themes.
 
-**Exit criteria:** design tokens are neatly split and maintained; all interactive primitives achieve strict keyboard and screen reader accessibility; loading states eliminate layout shifts; and the UI visual rhythm is consistent across all panels.
+**Exit criteria:** met for the shared design-system controls and stylesheet structure. New and remaining feature-specific controls continue to use the shared primitives where their interaction model fits.
 
 ### 51. Add shadow git checkpoints and instant timeline rollback
 
@@ -970,7 +1013,7 @@ remains out of scope under the current product decision.
 - Windows terminal execution defaults to AppContainer process sandboxing with opt-in WSL2 container (`bwrap`) isolation; non-Windows terminal execution uses process isolation.
 - No automatic use of ChatGPT reset credits.
 - No additional OpenCode wire protocols until the shared provider contract is complete.
-- GitHub Copilot is an explicit experimental exception requested by Alican: use the Copilot CLI public OAuth client ID with Device Flow, keep OAuth tokens in Windows Credential Manager, and call Copilot's private user/model/inference endpoints directly. Do not ask for a PAT or import gh credentials. The account settings show only plan, access SKU, and recognized quota fields returned by the private user endpoint; no allowance or remaining balance is inferred. GitHub does not document third-party reuse of the CLI OAuth client or a stable external contract for these endpoints, so this display remains best-effort and may change.
+- GitHub Copilot is an explicit experimental exception requested by Alican: use the Copilot CLI public OAuth client ID with Device Flow, keep per-account OAuth tokens in Windows Credential Manager, and call Copilot's private user/model/inference endpoints directly. Multiple GitHub accounts can be connected; the selected account supplies Copilot chat, model catalog, and usage requests. Do not ask for a PAT or import gh credentials. The account settings show only plan, access SKU, and recognized quota fields returned by the private user endpoint; no allowance or remaining balance is inferred. GitHub does not document third-party reuse of the CLI OAuth client or a stable external contract for these endpoints, so this display remains best-effort and may change.
 
 ## Research references
 

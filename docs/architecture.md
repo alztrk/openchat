@@ -99,7 +99,9 @@ remain separate Rust processes with their existing storage and RPC boundaries.
 - ChatGPT and Copilot account/authentication routes, plus OpenCode and
   OpenAI-compatible model discovery, are dispatched by
   `services/openchat-local-service/src/transport/rpc/providers.rs`. Provider secrets
-  continue to resolve from saved credential references inside the service.
+  continue to resolve from saved credential references inside the service. Copilot
+  connections are keyed by GitHub user ID, keep per-account credentials in Windows
+  Credential Manager, and route requests through the explicitly selected account.
 - Conversation memory, history search, context measurement, and archive routes
   are dispatched by
   `services/openchat-local-service/src/transport/rpc/conversations.rs`. Archive
@@ -205,6 +207,11 @@ remain separate Rust processes with their existing storage and RPC boundaries.
   project-scoped process can write only within its selected project root; its
   stdout is capped at 1 MiB per frame while being read, and its Job Object
   limits it to 32 active processes, 1 GiB per process, and 2 GiB total memory.
+  User-confirmed signed Windows connector packages are pinned by version,
+  digest, and catalog-key fingerprint in project configuration. The service
+  rechecks the executable digest before launch and grants its package directory
+  read-only access in the AppContainer. The pinned key identifies the signing
+  key but does not verify the publisher's real-world identity.
   Global MCP tool discovery uses the shared Windows AppContainer process sandbox. It
   grants write access only to that server's validated install directory and
   read/execute access to the selected `npx`/Node/npm or `uv`/`uvx` runtime paths.

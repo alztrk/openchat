@@ -4,3 +4,4 @@
 - [Design system](design.md): product and visual direction, component rules, tokens, typography, and interaction standards.
 - [Roadmap](roadmap.md): current implementation, release gate, completed milestones, and prioritized work.
 - [Security review](security-review.md): audit scope, findings, and hardening status.
+- [Sharing and connectors](sharing-and-connectors.md): local archive formats, signed metadata sources, and connector trust boundaries.
