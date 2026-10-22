@@ -33,6 +33,8 @@ use crate::{
 mod chat_execution;
 #[path = "rpc/chat_request.rs"]
 mod chat_request;
+#[path = "rpc/connector_catalog.rs"]
+mod connector_catalog;
 #[path = "rpc/conversations.rs"]
 mod conversations;
 #[path = "rpc/file_changes.rs"]
@@ -81,6 +83,9 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
         startup_recovered,
     } = context;
     let method = request.method.clone();
+    if method.starts_with("connector.catalog.") || method.starts_with("connector.package.") {
+        return connector_catalog::dispatch(&method, &request.params, storage).await;
+    }
     if method.starts_with("chat.file_changes.") {
         return file_changes::dispatch(&method, &request.params, storage);
     }
@@ -151,6 +156,7 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
     }
     if method.starts_with("chat.goal.")
         || method.starts_with("chat.runs.")
+        || method.starts_with("chat.subagents.")
         || method.starts_with("chat.questions.")
         || method == "chat.tool.permission.respond"
     {
@@ -204,6 +210,7 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                     false,
                 )
             })?;
+            service.schedule_pending_credential_cleanup();
             usage_statistics::mark_interrupted_requests(storage).map_err(|_| {
                 ServiceError::new(
                     "usage_statistics_unavailable",
@@ -269,6 +276,7 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 profile_tool_allowlist,
                 excluded_assistant_message_id,
                 title_generation,
+                available_subagent_models,
             } = chat_request;
             let (connection, route) = chat_execution::load_saved_route(storage, conversation_id)?;
             let permission_mode = if plan_mode_requested {
@@ -365,14 +373,16 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                             | "deepinfra"
                             | "dashscope"
                             | "cohere"
+                            | "kilo"
                             | "llama_cpp"
                     )
                 ) {
                 match project_root.as_deref() {
                     Some(project_root) => {
-                        match tools::mcp::load_server_configs(
+                        match tools::mcp::load_server_configs_with_storage_root(
                             Path::new(project_root),
                             project_id.as_deref().unwrap_or_default(),
+                            storage.root(),
                         ) {
                             Ok(configs) => configs,
                             Err(error) => {
@@ -407,6 +417,7 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                 permission_mode,
                 tool_permission_rules,
                 profile_tool_allowlist,
+                available_subagent_models,
                 #[cfg(windows)]
                 mcp_configs,
                 #[cfg(windows)]
@@ -446,7 +457,7 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                     "opencode" | "chatgpt_api" | "copilot" | "gemini" | "groq" | "cerebras"
                     | "openrouter" | "mistral" | "deepseek" | "xai" | "perplexity" | "together"
                     | "sambanova" | "anthropic" | "fireworks" | "deepinfra" | "dashscope"
-                    | "cohere" | "llama_cpp",
+                    | "cohere" | "kilo" | "llama_cpp",
                 ) => {
                     openai_compatible::send_message(
                         service,
@@ -462,16 +473,16 @@ pub(crate) async fn dispatch(context: RpcDispatchContext<'_>) -> Result<Value, S
                     )
                     .await
                 }
+                Some("chatgpt") | None => {
+                    service
+                        .send_message(context, reasoning_effort.as_deref(), fast_mode)
+                        .await
+                }
                 Some(_) => Err(ServiceError::new(
                     "provider_unavailable",
                     "This provider is not available.",
                     false,
                 )),
-                None => {
-                    service
-                        .send_message(context, reasoning_effort.as_deref(), fast_mode)
-                        .await
-                }
             };
             chat_execution::finish_run(
                 chat_execution::ChatRunFinalization {
@@ -770,6 +781,53 @@ mod tests {
         .expect_err("temporary IDs must not use the durable send route");
 
         assert_eq!(error.code, "invalid_request_params");
+        drop(service);
+        drop(storage);
+    }
+
+    #[tokio::test]
+    async fn chat_send_dispatches_oauth_chatgpt_routes_to_the_chatgpt_service() {
+        let directory = TestDirectory::new();
+        let storage =
+            Arc::new(AppStorage::open_at(directory.0.clone()).expect("open test storage"));
+        initialize_chat_test_schema(&storage);
+        let connection = storage.connect().expect("connect test storage");
+        connection
+            .execute(
+                "INSERT INTO conversations (
+                    id, provider_id, model_id, connection_id, workspace_id
+                 ) VALUES (?1, 'chatgpt', 'test-model', 'missing-connection', 'test-workspace')",
+                ["conversation"],
+            )
+            .expect("insert ChatGPT OAuth conversation route");
+        drop(connection);
+
+        let service = Arc::new(
+            ChatGptService::new(Arc::clone(&storage)).expect("initialize ChatGPT service"),
+        );
+        let request = Request {
+            id: json!(1),
+            method: "chat.send".to_owned(),
+            params: json!({"conversationId": "conversation"}),
+        };
+        let (_cancel_sender, cancellation) = watch::channel(false);
+
+        let error = dispatch(RpcDispatchContext {
+            storage: &storage,
+            service: &service,
+            request,
+            cancellation,
+            cancellation_gate: Arc::new(OperationGate::default()),
+            events: EventSink::new(),
+            permission_broker: ToolPermissionBroker::default(),
+            user_question_broker: UserQuestionBroker::default(),
+            shutdown_requested: Arc::new(AtomicBool::new(false)),
+            startup_recovered: Arc::new(AtomicBool::new(true)),
+        })
+        .await
+        .expect_err("the ChatGPT service should validate the saved OAuth route");
+
+        assert_eq!(error.code, "connection_unavailable");
         drop(service);
         drop(storage);
     }
@@ -1138,7 +1196,10 @@ mod tests {
         let connection = storage.connect().expect("connect test storage");
         connection
             .execute_batch(
-                "CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+                "CREATE TABLE conversations (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    title_source TEXT NOT NULL DEFAULT 'automatic'
+                 );
                  ALTER TABLE conversations ADD COLUMN project_id TEXT;
                  ALTER TABLE conversations ADD COLUMN model_id TEXT;
                  ALTER TABLE conversations ADD COLUMN connection_id TEXT;

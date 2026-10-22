@@ -21,8 +21,9 @@ pub use compaction::{
     reset_conversation_context, save_compaction_state, save_prompt_usage,
 };
 pub use connections::{
-    connection_id_for_external_user, connection_workspace, create_connection, credential_reference,
-    delete_connection, list_connections, reconnect_connection, replace_credential_reference,
+    complete_credential_deletion, connection_id_for_external_user, connection_workspace,
+    create_connection, credential_reference, delete_connection, list_connections,
+    pending_credential_deletions, reconnect_connection, replace_credential_reference,
     set_connection_auth_status, set_selected_connection, set_selected_workspace,
     set_title_preference, title_preference, update_profile, update_workspace_plan,
     workspace_external_id,
@@ -36,10 +37,10 @@ pub use conversations::{
 };
 pub use memory::{
     ArchiveIndexSettings, ArchiveIndexTool, ArchivedMemoryExcerpt, HistorySearchFilterOptions,
-    HistorySearchFilters, archive_index_settings, history_search_filter_options,
-    prepare_semantic_search, retrieve_archived_memories, search_chat_history,
-    search_conversation_archive, semantic_search_is_ready, set_archive_tool_included,
-    set_conversation_archive_included, turkish_search,
+    HistorySearchFilters, history_search_filter_options, prepare_semantic_search,
+    retrieve_archived_memories, search_chat_history, search_conversation_archive,
+    semantic_search_is_ready, set_archive_tool_included, set_conversation_archive_included,
+    turkish_search,
 };
 pub use models::{list_fresh_models, list_models, save_models, selected_model};
 pub use usage::{latest_usage_snapshot, save_usage_snapshot};
