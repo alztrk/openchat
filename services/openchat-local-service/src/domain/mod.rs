@@ -11,6 +11,8 @@ pub(crate) mod chat_operation;
 pub(crate) mod chatgpt;
 #[path = "conversations/chatgpt_store/mod.rs"]
 pub(crate) mod chatgpt_store;
+pub(crate) mod connector_packages;
+pub(crate) mod connectors;
 #[path = "conversations/context_compaction.rs"]
 pub(crate) mod context_compaction;
 #[path = "conversations/conversation_archive.rs"]

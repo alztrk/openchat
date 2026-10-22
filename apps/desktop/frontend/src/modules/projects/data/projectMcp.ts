@@ -1,5 +1,12 @@
 export type ProjectMcpTransport = 'stdio' | 'streamableHttp';
 
+export interface ProjectMcpPackage {
+  version: string;
+  sha256: string;
+  sourceKeyFingerprint: string;
+  sizeBytes: number;
+}
+
 export interface ProjectMcpServer {
   id: string;
   enabled: boolean;
@@ -9,6 +16,7 @@ export interface ProjectMcpServer {
   environmentVariables: string[];
   endpoint?: string;
   authEnvironmentVariable?: string;
+  package?: ProjectMcpPackage;
 }
 
 export interface ProjectMcpCatalog {
@@ -49,6 +57,7 @@ export function parseProjectMcpServer(value: unknown): ProjectMcpServer {
   const program = value.program;
   const endpoint = value.endpoint;
   const authEnvironmentVariable = value.authEnvironmentVariable;
+  const packageReference = value.package === undefined ? undefined : parseProjectMcpPackage(value.package);
   if (
     (program !== undefined && typeof program !== 'string') ||
     (endpoint !== undefined && typeof endpoint !== 'string') ||
@@ -65,6 +74,7 @@ export function parseProjectMcpServer(value: unknown): ProjectMcpServer {
     ...(program === undefined ? {} : { program }),
     ...(endpoint === undefined ? {} : { endpoint }),
     ...(authEnvironmentVariable === undefined ? {} : { authEnvironmentVariable }),
+    ...(packageReference === undefined ? {} : { package: packageReference }),
   };
   validateProjectMcpServer(server);
   return server;
@@ -73,7 +83,11 @@ export function parseProjectMcpServer(value: unknown): ProjectMcpServer {
 export function validateProjectMcpServer(server: ProjectMcpServer): void {
   if (!/^[a-z0-9_]{1,24}$/.test(server.id)) throw new Error('invalid_id');
   if (server.transport === 'stdio') {
-    if (!server.program || !isAbsoluteProgramPath(server.program)) throw new Error('program_required');
+    if (server.package === undefined) {
+      if (!server.program || !isAbsoluteProgramPath(server.program)) throw new Error('program_required');
+    } else if (server.program !== undefined) {
+      throw new Error('invalid_server');
+    }
     if (server.endpoint !== undefined || server.authEnvironmentVariable !== undefined)
       throw new Error('invalid_server');
     if (
@@ -91,10 +105,32 @@ export function validateProjectMcpServer(server: ProjectMcpServer): void {
   if (server.program !== undefined || server.arguments.length > 0 || server.environmentVariables.length > 0) {
     throw new Error('invalid_server');
   }
+  if (server.package !== undefined) throw new Error('invalid_server');
   if (!server.endpoint || !isHttpsEndpoint(server.endpoint)) throw new Error('endpoint_required');
   if (server.authEnvironmentVariable !== undefined && !isEnvironmentName(server.authEnvironmentVariable)) {
     throw new Error('environment_variables_invalid');
   }
+}
+
+function parseProjectMcpPackage(value: unknown): ProjectMcpPackage {
+  if (!isObject(value)) throw new Error('invalid_server');
+  const packageReference: ProjectMcpPackage = {
+    version: typeof value.version === 'string' ? value.version : '',
+    sha256: typeof value.sha256 === 'string' ? value.sha256 : '',
+    sourceKeyFingerprint: typeof value.sourceKeyFingerprint === 'string' ? value.sourceKeyFingerprint : '',
+    sizeBytes: typeof value.sizeBytes === 'number' ? value.sizeBytes : Number.NaN,
+  };
+  if (
+    !/^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$/.test(packageReference.version) ||
+    !/^[a-f0-9]{64}$/.test(packageReference.sha256) ||
+    !/^[a-f0-9]{64}$/.test(packageReference.sourceKeyFingerprint) ||
+    !Number.isSafeInteger(packageReference.sizeBytes) ||
+    packageReference.sizeBytes < 1 ||
+    packageReference.sizeBytes > 128 * 1024 * 1024
+  ) {
+    throw new Error('invalid_server');
+  }
+  return packageReference;
 }
 
 function isAbsoluteProgramPath(value: string): boolean {

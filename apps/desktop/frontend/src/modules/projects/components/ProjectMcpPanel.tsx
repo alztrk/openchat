@@ -29,7 +29,8 @@ type McpError =
   | 'projectMcpLoadFailed'
   | 'projectMcpSaveFailed'
   | 'projectMcpCredentialUnavailable'
-  | 'projectMcpDuplicateId';
+  | 'projectMcpDuplicateId'
+  | 'connectorPackageCleanupFailed';
 type McpEditorError =
   | 'projectMcpInvalidId'
   | 'projectMcpProgramRequired'
@@ -52,6 +53,9 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [errorKey, setErrorKey] = useState<McpError | null>(null);
+  const [packageCleanupPending, setPackageCleanupPending] = useState<
+    Array<{ id: string; package: NonNullable<ProjectMcpServer['package']> }>
+  >([]);
 
   const loadCatalog = useCallback(async () => {
     const generation = projectGeneration.current;
@@ -96,6 +100,7 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
     setToolNames({});
     setCheckResults({});
     setErrorKey(null);
+    setPackageCleanupPending([]);
     void loadCatalog();
     return () => {
       mounted.current = false;
@@ -129,9 +134,28 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
         ),
       );
       await saveProjectToolPermissionRules(projectId, nextRules);
+      const removedPackages = savedServers.flatMap((previous) => {
+        if (previous.package === undefined) return [];
+        const current = servers.find((server) => server.id === previous.id);
+        if (current?.package && samePackage(current.package, previous.package)) return [];
+        return [{ id: previous.id, package: previous.package }];
+      });
+      const cleanupFailures: typeof removedPackages = [];
+      for (const packageReference of removedPackages) {
+        try {
+          await removeInstalledMcpPackage(projectId, packageReference.id, packageReference.package);
+        } catch {
+          cleanupFailures.push(packageReference);
+        }
+      }
       if (mounted.current && generation === projectGeneration.current) {
         setSavedServers(servers);
-        onClose();
+        setPackageCleanupPending(cleanupFailures);
+        if (cleanupFailures.length > 0) {
+          setErrorKey('connectorPackageCleanupFailed');
+        } else {
+          onClose();
+        }
       }
     } catch (error) {
       if (mounted.current && generation === projectGeneration.current) {
@@ -271,14 +295,40 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
         />
       ) : null}
       {errorKey && errorKey !== 'projectMcpLoadFailed' ? (
-        <p className="text-sm text-destructive" role="alert">
-          {t(errorKey)}
-        </p>
+        <div className="flex flex-wrap items-center gap-3" role="alert">
+          <p className="text-sm text-destructive">{t(errorKey)}</p>
+          {packageCleanupPending.length > 0 ? (
+            <Button
+              disabled={isSaving}
+              onClick={() => {
+                const pending = packageCleanupPending;
+                setIsSaving(true);
+                void cleanupInstalledMcpPackages(project.id, pending)
+                  .then(() => {
+                    setPackageCleanupPending([]);
+                    setErrorKey(null);
+                    onClose();
+                  })
+                  .catch(() => setErrorKey('connectorPackageCleanupFailed'))
+                  .finally(() => setIsSaving(false));
+              }}
+              size="small"
+              variant="secondary"
+            >
+              {t('retry')}
+            </Button>
+          ) : null}
+        </div>
       ) : null}
       <div className="flex flex-wrap justify-between gap-2">
         <Button
           disabled={
-            isSaving || isLoading || editing !== null || errorKey === 'projectMcpLoadFailed' || servers.length >= 8
+            isSaving ||
+            isLoading ||
+            editing !== null ||
+            packageCleanupPending.length > 0 ||
+            errorKey === 'projectMcpLoadFailed' ||
+            servers.length >= 8
           }
           onClick={() => setEditing({ server: null, rule: 'inherit' })}
           size="small"
@@ -287,11 +337,11 @@ export function ProjectMcpPanel({ project, onClose }: ProjectMcpPanelProps) {
           {t('projectMcpAdd')}
         </Button>
         <div className="flex justify-end gap-2">
-          <Button disabled={isSaving} onClick={onClose}>
+          <Button disabled={isSaving || packageCleanupPending.length > 0} onClick={onClose}>
             {t('cancel')}
           </Button>
           <Button
-            disabled={isSaving || isLoading || errorKey === 'projectMcpLoadFailed'}
+            disabled={isSaving || isLoading || packageCleanupPending.length > 0 || errorKey === 'projectMcpLoadFailed'}
             onClick={() => void saveCatalog()}
             variant="primary"
           >
@@ -464,7 +514,8 @@ function ProjectMcpServerEditor({ server, permission, onSave, onCancel }: Projec
       transport,
       arguments: transport === 'stdio' ? argumentsList : [],
       environmentVariables: transport === 'stdio' ? environmentVariables : [],
-      ...(transport === 'stdio' ? { program: program.trim() } : {}),
+      ...(transport === 'stdio' && server?.package === undefined ? { program: program.trim() } : {}),
+      ...(transport === 'stdio' && server?.package !== undefined ? { package: server.package } : {}),
       ...(transport === 'streamableHttp' ? { endpoint: endpoint.trim() } : {}),
       ...(transport === 'streamableHttp' && authEnvironmentVariable.trim()
         ? { authEnvironmentVariable: authEnvironmentVariable.trim() }
@@ -505,6 +556,7 @@ function ProjectMcpServerEditor({ server, permission, onSave, onCancel }: Projec
           value={id}
         />
         <Select
+          disabled={server?.package !== undefined}
           label={t('projectMcpTransport')}
           onChange={(event) => {
             if (event.target.value === 'stdio' || event.target.value === 'streamableHttp')
@@ -521,10 +573,14 @@ function ProjectMcpServerEditor({ server, permission, onSave, onCancel }: Projec
         <>
           <Input
             autoComplete="off"
+            disabled={server?.package !== undefined}
             label={t('projectMcpProgram')}
             onChange={(event) => setProgram(event.target.value)}
-            value={program}
+            value={server?.package ? t('projectMcpManagedPackage', { version: server.package.version }) : program}
           />
+          {server?.package ? (
+            <p className="text-xs text-secondary-text">{server.package.sourceKeyFingerprint}</p>
+          ) : null}
           <label className="grid gap-2 text-sm font-medium text-text">
             {t('projectMcpArguments')}
             <textarea
@@ -607,6 +663,39 @@ function permissionOptions(t: (key: TranslationKey) => string) {
 function readPermissionChoice(value: string): PermissionChoice {
   if (value === 'inherit' || value === 'ask' || value === 'allow' || value === 'deny') return value;
   throw new Error('The selected MCP permission is invalid.');
+}
+
+async function removeInstalledMcpPackage(
+  projectId: string,
+  id: string,
+  packageReference: NonNullable<ProjectMcpServer['package']>,
+): Promise<void> {
+  await localServiceClient.call('connector.package.remove', {
+    projectId,
+    id,
+    package: packageReference,
+  });
+}
+
+async function cleanupInstalledMcpPackages(
+  projectId: string,
+  packages: ReadonlyArray<{ id: string; package: NonNullable<ProjectMcpServer['package']> }>,
+): Promise<void> {
+  for (const packageReference of packages) {
+    await removeInstalledMcpPackage(projectId, packageReference.id, packageReference.package);
+  }
+}
+
+function samePackage(
+  first: NonNullable<ProjectMcpServer['package']>,
+  second: NonNullable<ProjectMcpServer['package']>,
+): boolean {
+  return (
+    first.version === second.version &&
+    first.sha256 === second.sha256 &&
+    first.sourceKeyFingerprint === second.sourceKeyFingerprint &&
+    first.sizeBytes === second.sizeBytes
+  );
 }
 
 function isMcpToolNames(value: unknown, expectedCount: number): value is string[] {

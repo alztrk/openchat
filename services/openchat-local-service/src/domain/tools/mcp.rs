@@ -41,6 +41,7 @@ use tokio::{
 };
 
 use crate::{
+    connector_packages::{self, InstalledPackageReference},
     permissions::ToolPermissionBroker,
     protocol::{EventSink, ServiceError},
 };
@@ -77,6 +78,8 @@ pub(crate) struct StdioServerConfig {
     pub(crate) id: String,
     pub(crate) enabled: bool,
     pub(crate) program: PathBuf,
+    pub(crate) package: Option<InstalledPackageReference>,
+    pub(crate) package_directory: Option<PathBuf>,
     pub(crate) arguments: Vec<OsString>,
     pub(crate) environment_variables: Vec<String>,
     pub(crate) endpoint: Option<url::Url>,
@@ -184,6 +187,8 @@ struct StdioServerSettings {
     transport: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     program: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    package: Option<InstalledPackageReference>,
     #[serde(default)]
     arguments: Vec<String>,
     #[serde(default)]
@@ -221,13 +226,14 @@ fn parse_server_configs(
                 false,
             )
         })?;
-    parse_server_settings(settings, working_directory, "test-project")
+    parse_server_settings(settings, working_directory, "test-project", Path::new("."))
 }
 
 fn parse_server_settings(
     settings: Vec<StdioServerSettings>,
     working_directory: &Path,
     project_id: &str,
+    storage_root: &Path,
 ) -> Result<Vec<StdioServerConfig>, crate::protocol::ServiceError> {
     if settings.len() > MAX_MCP_SERVERS_PER_REQUEST {
         return Err(invalid_mcp_servers());
@@ -239,56 +245,72 @@ fn parse_server_settings(
         if !valid_server_id(&setting.id) || !seen_ids.insert(setting.id.clone()) {
             return Err(invalid_mcp_servers());
         }
-        let (program, endpoint, auth_environment_variable) = match setting.transport.as_str() {
-            "stdio" => {
-                let program = setting
-                    .program
-                    .as_deref()
-                    .filter(|program| {
-                        !program.is_empty()
-                            && program.len() <= 4096
-                            && !program.contains('\0')
-                            && Path::new(program).is_absolute()
-                    })
-                    .ok_or_else(invalid_mcp_servers)?;
-                if setting.endpoint.is_some() || setting.auth_environment_variable.is_some() {
-                    return Err(invalid_mcp_servers());
+        let (program, package_directory, endpoint, auth_environment_variable) =
+            match setting.transport.as_str() {
+                "stdio" => {
+                    if setting.endpoint.is_some() || setting.auth_environment_variable.is_some() {
+                        return Err(invalid_mcp_servers());
+                    }
+                    validate_stdio_settings(&setting)?;
+                    match (setting.program.as_deref(), setting.package.as_ref()) {
+                        (Some(program), None)
+                            if !program.is_empty()
+                                && program.len() <= 4096
+                                && !program.contains('\0')
+                                && Path::new(program).is_absolute() =>
+                        {
+                            (PathBuf::from(program), None, None, None)
+                        }
+                        (None, Some(package)) => {
+                            let (program, package_directory) =
+                                connector_packages::resolve_installed_package(
+                                    storage_root,
+                                    working_directory,
+                                    &setting.id,
+                                    package,
+                                )
+                                .map_err(|_| invalid_mcp_servers())?;
+                            (program, Some(package_directory), None, None)
+                        }
+                        _ => return Err(invalid_mcp_servers()),
+                    }
                 }
-                validate_stdio_settings(&setting)?;
-                (PathBuf::from(program), None, None)
-            }
-            "streamableHttp" => {
-                if setting.program.is_some()
-                    || !setting.arguments.is_empty()
-                    || !setting.environment_variables.is_empty()
-                {
-                    return Err(invalid_mcp_servers());
+                "streamableHttp" => {
+                    if setting.program.is_some()
+                        || setting.package.is_some()
+                        || !setting.arguments.is_empty()
+                        || !setting.environment_variables.is_empty()
+                    {
+                        return Err(invalid_mcp_servers());
+                    }
+                    let endpoint = setting
+                        .endpoint
+                        .as_deref()
+                        .ok_or_else(invalid_mcp_servers)?;
+                    let endpoint =
+                        validate_remote_endpoint(endpoint).map_err(|_| invalid_mcp_servers())?;
+                    if setting
+                        .auth_environment_variable
+                        .as_deref()
+                        .is_some_and(|name| !crate::credentials::is_valid_environment_name(name))
+                    {
+                        return Err(invalid_mcp_servers());
+                    }
+                    (
+                        PathBuf::new(),
+                        None,
+                        Some(endpoint),
+                        setting.auth_environment_variable,
+                    )
                 }
-                let endpoint = setting
-                    .endpoint
-                    .as_deref()
-                    .ok_or_else(invalid_mcp_servers)?;
-                let endpoint =
-                    validate_remote_endpoint(endpoint).map_err(|_| invalid_mcp_servers())?;
-                if setting
-                    .auth_environment_variable
-                    .as_deref()
-                    .is_some_and(|name| !crate::credentials::is_valid_environment_name(name))
-                {
-                    return Err(invalid_mcp_servers());
-                }
-                (
-                    PathBuf::new(),
-                    Some(endpoint),
-                    setting.auth_environment_variable,
-                )
-            }
-            _ => return Err(invalid_mcp_servers()),
-        };
+                _ => return Err(invalid_mcp_servers()),
+            };
         servers.push(StdioServerConfig {
             id: setting.id,
             enabled: setting.enabled,
             program,
+            package: setting.package,
+            package_directory,
             arguments: setting.arguments.into_iter().map(OsString::from).collect(),
             environment_variables: setting.environment_variables,
             endpoint,
@@ -341,39 +363,75 @@ pub(crate) fn validate_remote_endpoint(value: &str) -> Result<url::Url, String> 
 }
 
 /// Loads project MCP configurations and returns only validated server entries.
+#[cfg(test)]
 pub(crate) fn load_server_configs(
     project_root: &Path,
     project_id: &str,
 ) -> Result<Vec<StdioServerConfig>, crate::protocol::ServiceError> {
-    let (root, catalog) = read_server_catalog(project_root)?;
-    parse_server_settings(catalog.servers, &root, project_id)
+    load_server_configs_with_storage_root(project_root, project_id, project_root)
+}
+
+pub(crate) fn load_server_configs_with_storage_root(
+    project_root: &Path,
+    project_id: &str,
+    storage_root: &Path,
+) -> Result<Vec<StdioServerConfig>, crate::protocol::ServiceError> {
+    let (root, catalog) = read_server_catalog(project_root, storage_root)?;
+    parse_server_settings(catalog.servers, &root, project_id, storage_root)
 }
 
 /// Parses and validates a single project MCP server configuration.
+#[cfg(test)]
 pub(crate) fn parse_server_config(
     project_root: &Path,
     project_id: &str,
     value: &Value,
 ) -> Result<StdioServerConfig, crate::protocol::ServiceError> {
+    parse_server_config_with_storage_root(project_root, project_id, value, project_root)
+}
+
+pub(crate) fn parse_server_config_with_storage_root(
+    project_root: &Path,
+    project_id: &str,
+    value: &Value,
+    storage_root: &Path,
+) -> Result<StdioServerConfig, crate::protocol::ServiceError> {
     let root = fs::canonicalize(project_root).map_err(|_| invalid_mcp_servers())?;
     let setting: StdioServerSettings =
         serde_json::from_value(value.clone()).map_err(|_| invalid_mcp_servers())?;
-    parse_server_settings(vec![setting], &root, project_id)?
+    parse_server_settings(vec![setting], &root, project_id, storage_root)?
         .into_iter()
         .next()
         .ok_or_else(invalid_mcp_servers)
 }
 
 /// Reads the bounded project catalog used to render available MCP server definitions.
+#[cfg(test)]
 pub(crate) fn server_catalog(project_root: &Path) -> Result<Value, crate::protocol::ServiceError> {
-    let (_, catalog) = read_server_catalog(project_root)?;
+    server_catalog_with_storage_root(project_root, project_root)
+}
+
+pub(crate) fn server_catalog_with_storage_root(
+    project_root: &Path,
+    storage_root: &Path,
+) -> Result<Value, crate::protocol::ServiceError> {
+    let (_, catalog) = read_server_catalog(project_root, storage_root)?;
     serde_json::to_value(catalog).map_err(|_| invalid_mcp_servers())
 }
 
 /// Validates and atomically saves the bounded project MCP catalog.
+#[cfg(test)]
 pub(crate) fn save_server_catalog(
     project_root: &Path,
     value: &Value,
+) -> Result<Value, crate::protocol::ServiceError> {
+    save_server_catalog_with_storage_root(project_root, value, project_root)
+}
+
+pub(crate) fn save_server_catalog_with_storage_root(
+    project_root: &Path,
+    value: &Value,
+    storage_root: &Path,
 ) -> Result<Value, crate::protocol::ServiceError> {
     let root = fs::canonicalize(project_root).map_err(|_| invalid_mcp_servers())?;
     let root_directory =
@@ -383,7 +441,7 @@ pub(crate) fn save_server_catalog(
     if catalog.version != 1 {
         return Err(invalid_mcp_servers());
     }
-    parse_server_settings(catalog.servers.clone(), &root, "validation")?;
+    parse_server_settings(catalog.servers.clone(), &root, "validation", storage_root)?;
 
     let directory = match project_mcp_directory(&root_directory)? {
         Some(directory) => directory,
@@ -428,7 +486,23 @@ pub(crate) fn save_server_catalog(
         let _ = directory.remove_file(&temporary);
     }
     result?;
-    server_catalog(&root)
+    server_catalog_with_storage_root(&root, storage_root)
+}
+
+pub(crate) fn package_is_referenced(
+    project_root: &Path,
+    id: &str,
+    reference: &InstalledPackageReference,
+    storage_root: &Path,
+) -> Result<bool, crate::protocol::ServiceError> {
+    let (_, catalog) = read_server_catalog(project_root, storage_root)?;
+    Ok(catalog.servers.iter().any(|server| {
+        server.id == id
+            && server
+                .package
+                .as_ref()
+                .is_some_and(|package| package == reference)
+    }))
 }
 
 fn project_mcp_directory(
@@ -449,6 +523,7 @@ fn project_mcp_directory(
 
 fn read_server_catalog(
     project_root: &Path,
+    storage_root: &Path,
 ) -> Result<(PathBuf, StdioServerCatalog), crate::protocol::ServiceError> {
     let root = fs::canonicalize(project_root).map_err(|_| invalid_mcp_servers())?;
     let root_directory =
@@ -496,7 +571,7 @@ fn read_server_catalog(
     if catalog.version != 1 {
         return Err(invalid_mcp_servers());
     }
-    parse_server_settings(catalog.servers.clone(), &root, "validation")?;
+    parse_server_settings(catalog.servers.clone(), &root, "validation", storage_root)?;
     Ok((root, catalog))
 }
 
@@ -840,12 +915,18 @@ impl SandboxedStdioTransport {
         config: &StdioServerConfig,
         environment: &[(String, zeroize::Zeroizing<String>)],
     ) -> Result<Self, String> {
+        if let Some(reference) = &config.package {
+            crate::connector_packages::verify_installed_package(&config.program, reference)
+                .map_err(|_| "The installed MCP package failed its integrity check.".to_owned())?;
+        }
+        let package_read_paths = config.package_directory.iter().cloned().collect::<Vec<_>>();
         let mut process = SandboxedProcess::spawn_program_with_options(
             &config.program,
             &config.arguments,
             &config.working_directory,
             environment,
             SandboxOptions {
+                additional_read_only_paths: &package_read_paths,
                 job_limits: Some(SandboxJobLimits {
                     active_process_limit: MCP_ACTIVE_PROCESS_LIMIT,
                     process_memory_limit_bytes: MCP_PROCESS_MEMORY_LIMIT_BYTES,

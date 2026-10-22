@@ -19,22 +19,41 @@ const DNS_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_REDIRECTS: usize = 5;
 
 /// Bounded page bytes and response metadata after the URL passes destination checks.
-pub(super) struct FetchedPage {
-    pub(super) url: Url,
-    pub(super) content_type: String,
-    pub(super) bytes: Vec<u8>,
-    pub(super) truncated: bool,
+pub(crate) struct FetchedPage {
+    pub(crate) url: Url,
+    pub(crate) content_type: String,
+    pub(crate) bytes: Vec<u8>,
+    pub(crate) truncated: bool,
 }
 
 /// Fetches a public HTTP(S) page and follows only individually validated redirects.
 ///
 /// DNS results are pinned to the client so the connected address matches the checked public
 /// address set. The body is capped at `maximum_bytes`; network and redirect counts are bounded.
-pub(super) async fn fetch_public_page(
+pub(crate) async fn fetch_public_page(
     original_url: Url,
     maximum_bytes: usize,
 ) -> Result<FetchedPage, String> {
+    fetch_public_page_with_scheme(original_url, maximum_bytes, false).await
+}
+
+/// Fetches an HTTPS page and rejects redirects that downgrade the transport.
+pub(crate) async fn fetch_public_https_page(
+    original_url: Url,
+    maximum_bytes: usize,
+) -> Result<FetchedPage, String> {
+    fetch_public_page_with_scheme(original_url, maximum_bytes, true).await
+}
+
+async fn fetch_public_page_with_scheme(
+    original_url: Url,
+    maximum_bytes: usize,
+    require_https: bool,
+) -> Result<FetchedPage, String> {
     let mut url = validate_http_url(original_url)?;
+    if require_https && url.scheme() != "https" {
+        return Err("Only HTTPS pages are supported for this request.".to_owned());
+    }
 
     for redirect_number in 0..=MAX_REDIRECTS {
         let client = pinned_public_http_client(&url, Some(REQUEST_TIMEOUT)).await?;
@@ -54,6 +73,9 @@ pub(super) async fn fetch_public_page(
                 .and_then(|value| value.to_str().ok())
                 .ok_or_else(|| "The web page returned an invalid redirect.".to_owned())?;
             url = redirect_url(&url, location)?;
+            if require_https && url.scheme() != "https" {
+                return Err("HTTPS requests cannot redirect to an insecure page.".to_owned());
+            }
             continue;
         }
 

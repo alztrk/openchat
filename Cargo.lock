@@ -3677,6 +3677,7 @@ dependencies = [
  "ort",
  "process-wrap",
  "reqwest",
+ "ring",
  "rmcp",
  "rusqlite",
  "serde",

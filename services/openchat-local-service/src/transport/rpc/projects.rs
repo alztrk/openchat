@@ -108,19 +108,28 @@ pub(super) async fn dispatch(
         "project.mcp.catalog.get" => {
             let project_id = required_string(params, "projectId")?;
             let project_root = project_root_for_mcp(storage, project_id)?;
-            tools::mcp::server_catalog(&project_root)
+            tools::mcp::server_catalog_with_storage_root(&project_root, storage.root())
         }
         "project.mcp.catalog.save" => {
             let project_id = required_string(params, "projectId")?;
             let catalog = params.get("catalog").ok_or_else(invalid_request_params)?;
             let project_root = project_root_for_mcp(storage, project_id)?;
-            tools::mcp::save_server_catalog(&project_root, catalog)
+            tools::mcp::save_server_catalog_with_storage_root(
+                &project_root,
+                catalog,
+                storage.root(),
+            )
         }
         "project.mcp.server.check" => {
             let project_id = required_string(params, "projectId")?;
             let project_root = project_root_for_mcp(storage, project_id)?;
             let server = params.get("server").ok_or_else(invalid_request_params)?;
-            let config = tools::mcp::parse_server_config(&project_root, project_id, server)?;
+            let config = tools::mcp::parse_server_config_with_storage_root(
+                &project_root,
+                project_id,
+                server,
+                storage.root(),
+            )?;
             if !config.enabled {
                 return Ok(json!({"status": "disabled", "toolCount": 0, "toolNames": []}));
             }

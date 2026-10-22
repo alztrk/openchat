@@ -12,11 +12,14 @@ import {
 } from '@/modules/projects/data/projectPermissionSettings';
 import {
   type ConnectorCatalogEntry,
+  type ConnectorCatalogTrust,
+  type ConnectorExecutablePackage,
   readConnectorCatalog,
   writeConnectorCatalog,
 } from '@/modules/settings/data/connectorCatalog';
 import { localServiceClient } from '@/platform/local-service';
 import { ConnectorTemplateDialog } from './ConnectorTemplateDialog';
+import { ConnectorCatalogSourcesPanel } from './ConnectorCatalogSourcesPanel';
 
 type LoadState = 'loading' | 'ready' | 'failed';
 type SaveOutcome = 'saved' | 'duplicate' | 'failed';
@@ -25,6 +28,13 @@ class DuplicateProjectConnectorError extends Error {
   constructor() {
     super('The connector is already installed in this project.');
     this.name = 'DuplicateProjectConnectorError';
+  }
+}
+
+class ConnectorPackageCleanupError extends Error {
+  constructor() {
+    super('The newly downloaded connector package could not be removed after installation failed.');
+    this.name = 'ConnectorPackageCleanupError';
   }
 }
 
@@ -45,8 +55,17 @@ export function ConnectorCatalogSettingsSection() {
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [installFeedback, setInstallFeedback] = useState<'installed' | null>(null);
   const [installErrorKey, setInstallErrorKey] = useState<
-    'connectorCatalogDuplicate' | 'connectorCatalogInstallFailed' | null
+    | 'connectorCatalogDuplicate'
+    | 'connectorCatalogInstallFailed'
+    | 'connectorPackageCleanupFailed'
+    | 'connectorPackageRollbackCleanupFailed'
+    | null
   >(null);
+  const [packageCleanupRetry, setPackageCleanupRetry] = useState<{
+    id: string;
+    package: NonNullable<ProjectMcpServer['package']>;
+    errorKey: 'connectorPackageCleanupFailed' | 'connectorPackageRollbackCleanupFailed';
+  } | null>(null);
   const [errorKey, setErrorKey] = useState<'connectorCatalogLoadFailed' | 'connectorCatalogSaveFailed' | null>(null);
 
   const activeProjectId =
@@ -83,7 +102,16 @@ export function ConnectorCatalogSettingsSection() {
     const nextEntries =
       editingId === undefined
         ? [...entries, entry]
-        : entries.map((current) => (current.id === editingId ? entry : current));
+        : entries.map((current) =>
+            current.id === editingId
+              ? {
+                  ...entry,
+                  ...(entry.package === undefined && current.package !== undefined
+                    ? { package: current.package, catalogTrust: current.catalogTrust }
+                    : {}),
+                }
+              : current,
+          );
     const duplicateId = nextEntries.some((current, index) =>
       nextEntries.some(
         (other, otherIndex) =>
@@ -132,43 +160,104 @@ export function ConnectorCatalogSettingsSection() {
     setInstallingId(entry.id);
     setInstallFeedback(null);
     setInstallErrorKey(null);
+    setPackageCleanupRetry(null);
     setErrorKey(null);
     try {
       const existingResponse = await localServiceClient.call('project.mcp.catalog.get', { projectId });
       const existingCatalog = parseProjectMcpCatalog(existingResponse);
-      if (existingCatalog.servers.some((server) => server.id === entry.id)) {
+      const existingServer = existingCatalog.servers.find((server) => server.id === entry.id);
+      const isPackageUpdate =
+        existingServer?.package !== undefined &&
+        entry.package !== undefined &&
+        existingServer.package.version !== entry.version;
+      if (existingServer && !isPackageUpdate) {
         throw new DuplicateProjectConnectorError();
       }
 
-      const previousRules = await loadProjectToolPermissionRules(projectId);
-      const nextRules = {
-        ...previousRules,
-        [`mcp__${entry.id}__*`]: 'ask' as const,
-      };
-      await saveProjectToolPermissionRules(projectId, nextRules);
-
+      const packageReference =
+        entry.package === undefined
+          ? undefined
+          : expectedPackageReference(entry.version, entry.package, entry.catalogTrust);
+      let previousRules: Awaited<ReturnType<typeof loadProjectToolPermissionRules>> | null = null;
       try {
-        const server = projectServerFromEntry(entry);
+        if (entry.package !== undefined && packageReference !== undefined) {
+          await installSignedPackage(entry.id, entry.version, projectId, entry.package, entry.catalogTrust);
+        }
+
+        previousRules = await loadProjectToolPermissionRules(projectId);
+        const nextRules = { ...previousRules };
+        if (entry.package !== undefined) {
+          for (const name of Object.keys(nextRules)) {
+            if (name.startsWith(`mcp__${entry.id}__`)) delete nextRules[name];
+          }
+        }
+        nextRules[`mcp__${entry.id}__*`] = 'ask';
+        await saveProjectToolPermissionRules(projectId, nextRules);
+        const server = projectServerFromEntry(entry, packageReference);
         const catalog = parseProjectMcpCatalog({
           version: 1,
-          servers: [...existingCatalog.servers, server],
+          servers: existingServer
+            ? existingCatalog.servers.map((item) => (item.id === entry.id ? server : item))
+            : [...existingCatalog.servers, server],
         });
         await localServiceClient.call('project.mcp.catalog.save', {
           projectId,
           catalog,
         });
       } catch (saveError) {
+        let permissionRollbackFailed = false;
+        let packageCleanupFailed = false;
+        if (previousRules !== null) {
+          try {
+            await saveProjectToolPermissionRules(projectId, previousRules);
+          } catch {
+            permissionRollbackFailed = true;
+          }
+        }
         try {
-          await saveProjectToolPermissionRules(projectId, previousRules);
+          if (packageReference) await removeSignedPackage(projectId, entry.id, packageReference);
         } catch {
+          packageCleanupFailed = true;
+        }
+        if (packageCleanupFailed && packageReference) {
+          setPackageCleanupRetry({
+            id: entry.id,
+            package: packageReference,
+            errorKey: 'connectorPackageRollbackCleanupFailed',
+          });
+          throw new ConnectorPackageCleanupError();
+        }
+        if (permissionRollbackFailed) {
           throw new Error('Connector installation rollback failed.', { cause: saveError });
         }
         throw saveError;
       }
-      setInstallFeedback('installed');
+      if (existingServer?.package && packageReference && !samePackage(existingServer.package, packageReference)) {
+        let cleanupFailed = false;
+        try {
+          await removeSignedPackage(projectId, entry.id, existingServer.package);
+        } catch {
+          cleanupFailed = true;
+          setInstallErrorKey('connectorPackageCleanupFailed');
+          setPackageCleanupRetry({
+            id: entry.id,
+            package: existingServer.package,
+            errorKey: 'connectorPackageCleanupFailed',
+          });
+        }
+        if (cleanupFailed) {
+          setInstallFeedback(null);
+        } else {
+          setInstallFeedback('installed');
+        }
+      } else {
+        setInstallFeedback('installed');
+      }
     } catch (error) {
       if (error instanceof DuplicateProjectConnectorError) {
         setInstallErrorKey('connectorCatalogDuplicate');
+      } else if (error instanceof ConnectorPackageCleanupError) {
+        setInstallErrorKey('connectorPackageRollbackCleanupFailed');
       } else {
         setInstallErrorKey('connectorCatalogInstallFailed');
       }
@@ -197,9 +286,31 @@ export function ConnectorCatalogSettingsSection() {
         </p>
       ) : null}
       {installErrorKey ? (
-        <p className="text-sm text-destructive" role="alert">
-          {t(installErrorKey)}
-        </p>
+        <div className="flex flex-wrap items-center gap-3" role="alert">
+          <p className="text-sm text-destructive">{t(installErrorKey)}</p>
+          {packageCleanupRetry ? (
+            <Button
+              disabled={installingId !== null || activeProjectId === null}
+              onClick={() => {
+                const retry = packageCleanupRetry;
+                const projectId = activeProjectId;
+                if (!retry || !projectId) return;
+                setInstallingId(retry.id);
+                void removeSignedPackage(projectId, retry.id, retry.package)
+                  .then(() => {
+                    setPackageCleanupRetry(null);
+                    setInstallErrorKey(null);
+                  })
+                  .catch(() => setInstallErrorKey(retry.errorKey))
+                  .finally(() => setInstallingId(null));
+              }}
+              size="small"
+              variant="secondary"
+            >
+              {t('retry')}
+            </Button>
+          ) : null}
+        </div>
       ) : null}
 
       {loadState === 'failed' ? (
@@ -268,6 +379,12 @@ export function ConnectorCatalogSettingsSection() {
           {t(errorKey)}
         </p>
       ) : null}
+
+      <ConnectorCatalogSourcesPanel
+        canRefresh={serviceStatus === 'ready'}
+        existingEntries={entries}
+        onImport={saveEntry}
+      />
 
       {editorEntry !== undefined ? (
         <ConnectorTemplateDialog
@@ -413,11 +530,17 @@ function ConnectorInstallDialog({
     <Dialog onOpenChange={onOpenChange} open title={t('connectorCatalogInstall')}>
       <div className="grid gap-3">
         <p className="text-sm text-secondary-text">{t('connectorCatalogInstallPrompt')}</p>
+        {entry.package ? (
+          <p className="text-sm text-secondary-text">{t('connectorPackageDownloadPrompt')}</p>
+        ) : null}
         <dl className="grid gap-2 text-sm">
           <ConnectorDetail label={t('connectorCatalogPublisher')} value={entry.publisher} />
           <ConnectorDetail label={t('connectorCatalogVersion')} value={entry.version} />
           <ConnectorDetail label={t('connectorCatalogSourceUrl')} value={entry.sourceUrl} />
-          <ConnectorDetail label={t('projectMcpEndpoint')} value={entry.endpoint ?? entry.program ?? ''} />
+          <ConnectorDetail
+            label={t('projectMcpEndpoint')}
+            value={entry.endpoint ?? entry.package?.url ?? entry.program ?? ''}
+          />
           <ConnectorDetail label={t('connectorCatalogAuthentication')} value={authentication} />
           {entry.authEnvironmentVariable ? (
             <ConnectorDetail label={t('connectorCatalogAuthVariable')} value={entry.authEnvironmentVariable} />
@@ -432,6 +555,19 @@ function ConnectorInstallDialog({
           <ConnectorDetail label={t('connectorCatalogDataDisclosure')} value={entry.dataDisclosure} />
         </dl>
         <p className="text-sm text-secondary-text">{t('connectorCatalogRemovalImpact')}</p>
+        {entry.package && entry.catalogTrust ? (
+          <>
+            <dl className="grid gap-2 text-sm">
+              <ConnectorDetail
+                label={t('connectorPackageSize')}
+                value={`${Math.ceil(entry.package.sizeBytes / 1024).toLocaleString()} KB`}
+              />
+              <ConnectorDetail label={t('connectorPackageSha256')} value={entry.package.sha256} />
+              <ConnectorDetail label={t('connectorPackageSigner')} value={entry.catalogTrust.keyFingerprint} />
+            </dl>
+            <p className="text-sm text-secondary-text">{t('connectorPackageTrustNotice')}</p>
+          </>
+        ) : null}
         <div className="flex flex-wrap justify-end gap-2 border-t border-border pt-3">
           <Button onClick={() => onOpenChange(false)}>{t('cancel')}</Button>
           <Button onClick={onConfirm} variant="primary">
@@ -443,17 +579,99 @@ function ConnectorInstallDialog({
   );
 }
 
-function projectServerFromEntry(entry: ConnectorCatalogEntry): ProjectMcpServer {
+function projectServerFromEntry(
+  entry: ConnectorCatalogEntry,
+  packageReference?: ProjectMcpServer['package'],
+): ProjectMcpServer {
   return {
     id: entry.id,
     enabled: false,
     transport: entry.transport,
     arguments: entry.arguments,
     environmentVariables: entry.environmentVariables,
-    ...(entry.program === undefined ? {} : { program: entry.program }),
+    ...(entry.package === undefined && entry.program !== undefined ? { program: entry.program } : {}),
     ...(entry.endpoint === undefined ? {} : { endpoint: entry.endpoint }),
     ...(entry.authEnvironmentVariable === undefined ? {} : { authEnvironmentVariable: entry.authEnvironmentVariable }),
+    ...(packageReference === undefined ? {} : { package: packageReference }),
   };
+}
+
+async function installSignedPackage(
+  id: string,
+  version: string,
+  projectId: string,
+  packageMetadata: ConnectorExecutablePackage,
+  trust: ConnectorCatalogTrust | undefined,
+): Promise<NonNullable<ProjectMcpServer['package']>> {
+  if (trust === undefined) throw new Error('The package has no verified catalog source.');
+  const response = await localServiceClient.call(
+    'connector.package.install_signed',
+    {
+      projectId,
+      sourceUrl: trust.sourceUrl,
+      publicKeyBase64: trust.publicKeyBase64,
+      id,
+      version,
+    },
+    180_000,
+  );
+  if (
+    !isRecord(response) ||
+    response.version !== version ||
+    response.sha256 !== packageMetadata.sha256 ||
+    response.sizeBytes !== packageMetadata.sizeBytes ||
+    response.sourceKeyFingerprint !== trust.keyFingerprint
+  ) {
+    throw new Error('The installed package response is invalid.');
+  }
+  return {
+    version,
+    sha256: packageMetadata.sha256,
+    sourceKeyFingerprint: trust.keyFingerprint,
+    sizeBytes: packageMetadata.sizeBytes,
+  };
+}
+
+function expectedPackageReference(
+  version: string,
+  packageMetadata: ConnectorExecutablePackage,
+  trust: ConnectorCatalogTrust | undefined,
+): NonNullable<ProjectMcpServer['package']> {
+  if (trust === undefined) throw new Error('The package has no verified catalog source.');
+  return {
+    version,
+    sha256: packageMetadata.sha256,
+    sourceKeyFingerprint: trust.keyFingerprint,
+    sizeBytes: packageMetadata.sizeBytes,
+  };
+}
+
+async function removeSignedPackage(
+  projectId: string,
+  id: string,
+  packageReference: NonNullable<ProjectMcpServer['package']>,
+): Promise<void> {
+  await localServiceClient.call('connector.package.remove', {
+    projectId,
+    id,
+    package: packageReference,
+  });
+}
+
+function samePackage(
+  first: NonNullable<ProjectMcpServer['package']>,
+  second: NonNullable<ProjectMcpServer['package']>,
+): boolean {
+  return (
+    first.version === second.version &&
+    first.sha256 === second.sha256 &&
+    first.sourceKeyFingerprint === second.sourceKeyFingerprint &&
+    first.sizeBytes === second.sizeBytes
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function ConnectorDetail({ label, value }: { label: string; value: string }) {

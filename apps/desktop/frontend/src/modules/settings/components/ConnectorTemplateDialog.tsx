@@ -51,7 +51,7 @@ export function ConnectorTemplateDialog({ entry, onOpenChange, onSave }: Connect
 
     let parsed: ConnectorCatalogEntry;
     try {
-      parsed = parseConnectorEntry(toEntry(draft));
+      parsed = parseConnectorEntry(toEntry(draft, entry));
     } catch {
       setErrorKey('connectorCatalogInvalid');
       return;
@@ -256,7 +256,7 @@ function createDraft(entry: ConnectorCatalogEntry | null): ConnectorDraft {
   };
 }
 
-function toEntry(draft: ConnectorDraft): unknown {
+function toEntry(draft: ConnectorDraft, currentEntry: ConnectorCatalogEntry | null): unknown {
   const lines = (value: string) =>
     value
       .split(/\r?\n/)
@@ -278,5 +278,8 @@ function toEntry(draft: ConnectorDraft): unknown {
     ...(draft.transport === 'streamableHttp' && draft.authEnvironmentVariable.trim()
       ? { authEnvironmentVariable: draft.authEnvironmentVariable.trim() }
       : {}),
+    ...(currentEntry?.package === undefined
+      ? {}
+      : { package: currentEntry.package, catalogTrust: currentEntry.catalogTrust }),
   };
 }
