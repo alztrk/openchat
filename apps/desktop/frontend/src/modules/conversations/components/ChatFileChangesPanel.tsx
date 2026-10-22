@@ -4,6 +4,7 @@ import {
   Columns2,
   FileDiff,
   FilePlus2,
+  GitFork,
   Globe,
   Info,
   LoaderCircle,
@@ -31,8 +32,9 @@ import {
 } from '@/modules/conversations/data/chatFileChanges';
 import { LocalServiceError } from '@/platform/local-service';
 import { EmbeddedBrowserPanel } from './EmbeddedBrowserPanel';
+import { SubagentsPanel } from './SubagentsPanel';
 
-export type RightWorkspaceTab = 'changes' | 'browser';
+export type RightWorkspaceTab = 'changes' | 'browser' | 'subagents';
 
 export interface ChatFileChangesPanelProps {
   conversationId: string | null;
@@ -283,7 +285,13 @@ export function ChatFileChangesPanel({
 
   return (
     <aside
-      aria-label={activeTab === 'browser' ? t('browserPanelTitle') : t('fileChangesTitle')}
+      aria-label={
+        activeTab === 'browser'
+          ? t('browserPanelTitle')
+          : activeTab === 'subagents'
+            ? t('subagentsPanelTitle')
+            : t('fileChangesTitle')
+      }
       className="chat-file-changes-panel flex h-full min-h-0 min-w-0 shrink-0 flex-col border-border bg-surface"
     >
       <header className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-3">
@@ -317,6 +325,18 @@ export function ChatFileChangesPanel({
             <Globe aria-hidden="true" className="text-accent" size={14} />
             <span>{t('browserPanelTitle')}</span>
           </button>
+          <button
+            aria-selected={activeTab === 'subagents'}
+            className={`inline-flex items-center gap-1.5 rounded-control px-2.5 py-1 text-xs font-semibold transition-colors ${
+              activeTab === 'subagents' ? 'bg-surface text-text shadow-xs' : 'text-secondary-text hover:text-text'
+            }`}
+            onClick={() => setActiveTab('subagents')}
+            role="tab"
+            type="button"
+          >
+            <GitFork aria-hidden="true" className="text-accent" size={14} />
+            <span>{t('subagentsPanelTitle')}</span>
+          </button>
         </div>
         <Button aria-label={t('close')} className="size-9" onClick={onClose} size="icon" variant="ghost">
           <X aria-hidden="true" size={16} />
@@ -325,6 +345,8 @@ export function ChatFileChangesPanel({
 
       {activeTab === 'browser' ? (
         <EmbeddedBrowserPanel initialUrl={initialBrowserUrl} />
+      ) : activeTab === 'subagents' ? (
+        <SubagentsPanel conversationId={conversationId} />
       ) : (
         <>
           <div className="flex min-h-10 shrink-0 flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-1.5 text-xs">
