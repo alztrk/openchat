@@ -9,7 +9,7 @@ import { discardProjectFolderSelection, selectProjectFolder } from '@/platform/t
 interface CreateProjectDialogProps {
   open: boolean;
   onOpenChange(open: boolean): void;
-  onCreate(name: string, folderSelectionId: string): Promise<void>;
+  onCreate(name: string, folderSelectionId: string): Promise<unknown>;
 }
 
 function getFolderBaseName(folderPath: string): string {

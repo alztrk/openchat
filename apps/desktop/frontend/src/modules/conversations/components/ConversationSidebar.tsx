@@ -27,7 +27,16 @@ import {
 } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Dialog } from '@/design-system';
+import {
+  Button,
+  Dialog,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/design-system';
 import type { ChatConversation, ChatProject } from '@/modules/conversations/data/chatStorage';
 import {
   type CustomSidebarFolder,
@@ -140,7 +149,7 @@ export function ConversationSidebar({
   const { t } = useTranslation();
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
   const [projectOptionsTarget, setProjectOptionsTarget] = useState<ChatProject | null>(null);
-  const [editTarget, setEditTarget] = useState<{ conversation: ChatConversation; mode: 'rename' | 'tags' } | null>(
+  const [editTarget, setEditTarget] = useState<{ conversation: ChatConversation; mode: 'rename' } | null>(
     null,
   );
   const [deleteTarget, setDeleteTarget] = useState<ChatConversation | null>(null);
@@ -161,13 +170,11 @@ export function ConversationSidebar({
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [editingFolderName, setEditingFolderName] = useState('');
   const [trashedMap, setTrashedMap] = useState<Record<string, number>>(readTrashedConversations);
-  const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
   const [isChatsDropTarget, setIsChatsDropTarget] = useState(false);
   const [visibleChatLimit, setVisibleChatLimit] = useState(SIDEBAR_PAGE_SIZE);
 
   const drawerRef = useRef<HTMLElement | null>(null);
   const scrollAreaRef = useRef<HTMLDivElement | null>(null);
-  const viewOptionsRef = useRef<HTMLDivElement | null>(null);
   const newFolderInputRef = useRef<HTMLInputElement | null>(null);
 
   const conversations = useChatStore((state) => state.conversations);
@@ -194,10 +201,8 @@ export function ConversationSidebar({
     isBusy,
     isConversationBusy,
     moveConversation,
-    saveTags,
     saveTitle,
     showFeedback,
-    toggleBookmark,
     togglePinned,
   } = useConversationSidebarActions();
 
@@ -223,24 +228,6 @@ export function ConversationSidebar({
       shell.dataset.resizing = isResizing ? 'true' : 'false';
     }
   }, [isResizing, sidebarWidth]);
-
-  useEffect(() => {
-    if (!viewOptionsOpen) return;
-    const closeOnPointerDown = (event: PointerEvent) => {
-      if (event.target instanceof Node && !viewOptionsRef.current?.contains(event.target)) {
-        setViewOptionsOpen(false);
-      }
-    };
-    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') setViewOptionsOpen(false);
-    };
-    document.addEventListener('pointerdown', closeOnPointerDown);
-    document.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('pointerdown', closeOnPointerDown);
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [viewOptionsOpen]);
 
   useEffect(() => {
     if (!isCreatingFolder) return;
@@ -621,7 +608,6 @@ export function ConversationSidebar({
         onArchive={() => void archiveConversation(conversation)}
         onDelete={() => (options.trashed ? setDeleteTarget(conversation) : handleMoveToTrash(conversation))}
         onDuplicate={() => handleDuplicateConversation(conversation)}
-        onEditTags={() => setEditTarget({ conversation, mode: 'tags' })}
         onExport={(format) => void exportConversation(conversation, format)}
         onInlineRename={(title) => saveTitle(conversation.id, title)}
         onMoveToChats={() => {
@@ -637,7 +623,6 @@ export function ConversationSidebar({
         onReorderConversation={handleReorderConversation}
         onRestoreFromTrash={options.trashed ? () => handleRestoreFromTrash(conversation) : undefined}
         onSelect={() => requestSelectConversation(conversation.id)}
-        onToggleBookmark={() => void toggleBookmark(conversation)}
         onTogglePinned={() => void togglePinned(conversation)}
         projects={projects}
         trashed={options.trashed}
@@ -790,97 +775,74 @@ export function ConversationSidebar({
           >
             <Clock3 aria-hidden="true" size={15} />
           </button>
-          <div className="relative" ref={viewOptionsRef}>
-            <button
-              aria-expanded={viewOptionsOpen}
-              aria-haspopup="menu"
-              aria-label={t('sidebarViewAndSortOptions')}
-              className={`flex size-9 shrink-0 items-center justify-center rounded-button border backdrop-blur-sm transition-all duration-quick focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus ${
-                viewOptionsOpen
-                  ? 'border-control-border bg-raised text-text'
-                  : 'border-border bg-surface/80 text-secondary-icon shadow-2xs hover:border-control-border hover:bg-raised/90 hover:text-text'
-              }`}
-              onClick={() => setViewOptionsOpen((current) => !current)}
-              title={t('sidebarViewAndSortOptions')}
-              type="button"
-            >
-              <SlidersHorizontal aria-hidden="true" size={15} />
-            </button>
-            {viewOptionsOpen ? (
-              <div
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
                 aria-label={t('sidebarViewAndSortOptions')}
-                className="openchat-popover-enter fixed sm:absolute right-2 sm:right-0 top-13 sm:top-10 z-50 grid w-52 gap-1 rounded-card border border-border bg-raised/90 p-1.5 shadow-lg backdrop-blur-xl"
-                role="menu"
+                className="flex size-9 shrink-0 items-center justify-center rounded-button border border-border bg-surface/80 text-secondary-icon shadow-2xs backdrop-blur-sm transition-all duration-quick hover:border-control-border hover:bg-raised/90 hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus data-[state=open]:border-control-border data-[state=open]:bg-raised data-[state=open]:text-text"
+                title={t('sidebarViewAndSortOptions')}
+                type="button"
               >
-                <div className="px-2 pt-1 pb-0.5 text-caption font-medium text-secondary-text/75">
-                  {t('sidebarViewModeLabel')}
-                </div>
-                {(['compact', 'detailed'] as const).map((mode) => (
-                  <button
-                    className="flex min-h-8 items-center justify-between gap-2 rounded-control px-2.5 text-left text-xs font-medium text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                    key={mode}
-                    onClick={() => {
-                      setViewMode(mode);
-                      writeSidebarViewMode(mode);
-                      setViewOptionsOpen(false);
-                    }}
-                    role="menuitemradio"
-                    aria-checked={viewMode === mode}
-                    type="button"
-                  >
-                    <span>{t(mode === 'compact' ? 'sidebarViewCompact' : 'sidebarViewDetailed')}</span>
-                    {viewMode === mode ? <Check aria-hidden="true" className="text-accent" size={13} /> : null}
-                  </button>
-                ))}
-                <div aria-hidden="true" className="my-0.5 border-t border-border" />
-                <div className="px-2 pt-1 pb-0.5 text-caption font-medium text-secondary-text/75">
-                  {t('sidebarSortByLabel')}
-                </div>
-                {(
-                  [
-                    { id: 'updatedAt', labelKey: 'sidebarSortUpdatedAt' },
-                    { id: 'createdAt', labelKey: 'sidebarSortCreatedAt' },
-                    { id: 'alphabetical', labelKey: 'sidebarSortAlphabetical' },
-                    { id: 'manual', labelKey: 'sidebarSortManual' },
-                  ] as const
-                ).map((option) => (
-                  <button
-                    aria-checked={sortMode === option.id}
-                    className="flex min-h-8 items-center justify-between gap-2 rounded-control px-2.5 text-left text-xs font-medium text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                    key={option.id}
-                    onClick={() => {
-                      setSortMode(option.id);
-                      writeSidebarSortMode(option.id);
-                      setViewOptionsOpen(false);
-                    }}
-                    role="menuitemradio"
-                    type="button"
-                  >
-                    <span>{t(option.labelKey)}</span>
-                    {sortMode === option.id ? <Check aria-hidden="true" className="text-accent" size={13} /> : null}
-                  </button>
-                ))}
-                <div aria-hidden="true" className="my-0.5 border-t border-border" />
-                <button
-                  className="flex min-h-8 items-center gap-2 rounded-control px-2.5 text-left text-xs font-medium text-secondary-text transition-colors hover:bg-hover hover:text-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-                  onClick={() => {
-                    setViewOptionsOpen(false);
-                    setIsCreatingFolder(true);
+                <SlidersHorizontal aria-hidden="true" size={15} />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent aria-label={t('sidebarViewAndSortOptions')} className="min-w-52">
+              <DropdownMenuLabel>{t('sidebarViewModeLabel')}</DropdownMenuLabel>
+              {(['compact', 'detailed'] as const).map((mode) => (
+                <DropdownMenuItem
+                  aria-checked={viewMode === mode}
+                  className="justify-between"
+                  key={mode}
+                  onSelect={() => {
+                    setViewMode(mode);
+                    writeSidebarViewMode(mode);
                   }}
-                  role="menuitem"
-                  type="button"
+                  role="menuitemradio"
                 >
-                  <Folder aria-hidden="true" size={14} />
-                  <span>{t('createCustomFolder')}</span>
-                </button>
-              </div>
-            ) : null}
-          </div>
+                  <span>{t(mode === 'compact' ? 'sidebarViewCompact' : 'sidebarViewDetailed')}</span>
+                  {viewMode === mode ? <Check aria-hidden="true" className="text-accent" size={13} /> : null}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>{t('sidebarSortByLabel')}</DropdownMenuLabel>
+              {(
+                [
+                  { id: 'updatedAt', labelKey: 'sidebarSortUpdatedAt' },
+                  { id: 'createdAt', labelKey: 'sidebarSortCreatedAt' },
+                  { id: 'alphabetical', labelKey: 'sidebarSortAlphabetical' },
+                  { id: 'manual', labelKey: 'sidebarSortManual' },
+                ] as const
+              ).map((option) => (
+                <DropdownMenuItem
+                  aria-checked={sortMode === option.id}
+                  className="justify-between"
+                  key={option.id}
+                  onSelect={() => {
+                    setSortMode(option.id);
+                    writeSidebarSortMode(option.id);
+                  }}
+                  role="menuitemradio"
+                >
+                  <span>{t(option.labelKey)}</span>
+                  {sortMode === option.id ? <Check aria-hidden="true" className="text-accent" size={13} /> : null}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => {
+                  setIsCreatingFolder(true);
+                }}
+              >
+                <Folder aria-hidden="true" size={14} />
+                <span>{t('createCustomFolder')}</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         <section
           aria-label={t('statisticsConversations')}
-          className="openchat-scroll-area flex-1 px-2.5 pb-4 pt-1"
+          className="openchat-scroll-area conversation-sidebar-scroll-area min-w-0 flex-1 px-2.5 pb-4 pt-1"
           onKeyDown={handleScrollAreaKeyDown}
           onScroll={handleScrollAreaScroll}
           ref={scrollAreaRef}
@@ -952,7 +914,6 @@ export function ConversationSidebar({
                     onDelete={(conversation) => handleMoveToTrash(conversation)}
                     onDropConversationToProject={dropConversationToProject}
                     onDuplicate={handleDuplicateConversation}
-                    onEditTags={(conversation) => setEditTarget({ conversation, mode: 'tags' })}
                     onExport={(conversation, format) => void exportConversation(conversation, format)}
                     onInlineRename={(conversation, title) => saveTitle(conversation.id, title)}
                     onMoveToChats={(conversation) => void moveConversation(conversation, null)}
@@ -962,7 +923,6 @@ export function ConversationSidebar({
                     onRename={(conversation) => setEditTarget({ conversation, mode: 'rename' })}
                     onRetry={() => void refreshProjects().catch(() => showFeedback('projectLoadFailed'))}
                     onSelectConversation={(id) => requestSelectConversation(id)}
-                    onToggleBookmark={(conversation) => void toggleBookmark(conversation)}
                     onToggleCollapsed={() => toggleSection('projects')}
                     onTogglePinned={(conversation) => void togglePinned(conversation)}
                     projects={filteredProjects}
@@ -1341,7 +1301,6 @@ export function ConversationSidebar({
           onOpenChange={(open) => {
             if (!open) setEditTarget(null);
           }}
-          onSaveTags={saveTags}
           onSaveTitle={saveTitle}
           open={editTarget !== null}
         />

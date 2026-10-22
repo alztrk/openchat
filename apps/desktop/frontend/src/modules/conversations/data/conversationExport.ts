@@ -222,9 +222,7 @@ export function buildConversationJson(conversation: ChatConversation, messages: 
       providerId: conversation.providerId,
       modelId: conversation.modelId,
       projectId: conversation.projectId,
-      isBookmarked: conversation.isBookmarked,
       isPinned: conversation.isPinned,
-      tags: conversation.tags,
     },
     messages: messages.map((message) => ({
       id: message.id,

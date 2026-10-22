@@ -24,8 +24,6 @@ interface ProjectSidebarSectionProps {
   onCreateProjectChat(projectId: string): void;
   onSelectConversation(id: string): void;
   onTogglePinned(conversation: ChatConversation): void;
-  onToggleBookmark(conversation: ChatConversation): void;
-  onEditTags(conversation: ChatConversation): void;
   onRename(conversation: ChatConversation): void;
   onInlineRename?(conversation: ChatConversation, title: string): Promise<void> | void;
   onDuplicate?(conversation: ChatConversation): void;
@@ -54,8 +52,6 @@ export function ProjectSidebarSection({
   onCreateProjectChat,
   onSelectConversation,
   onTogglePinned,
-  onToggleBookmark,
-  onEditTags,
   onRename,
   onInlineRename,
   onDuplicate,
@@ -210,7 +206,6 @@ export function ProjectSidebarSection({
                           onArchive={() => onArchive(conversation)}
                           onDelete={() => onDelete(conversation)}
                           onDuplicate={onDuplicate ? () => onDuplicate(conversation) : undefined}
-                          onEditTags={() => onEditTags(conversation)}
                           onExport={(format) => onExport(conversation, format)}
                           onInlineRename={onInlineRename ? (title) => onInlineRename(conversation, title) : undefined}
                           onMoveToChats={() => onMoveToChats(conversation)}
@@ -220,7 +215,6 @@ export function ProjectSidebarSection({
                           onMoveToProject={(projectId) => onMoveToProject(conversation, projectId)}
                           onRename={() => onRename(conversation)}
                           onSelect={() => onSelectConversation(conversation.id)}
-                          onToggleBookmark={() => onToggleBookmark(conversation)}
                           onTogglePinned={() => onTogglePinned(conversation)}
                           projects={projects}
                           viewMode={viewMode}

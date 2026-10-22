@@ -39,7 +39,6 @@ pub struct HistorySearchFilters {
     pub model_id: Option<String>,
     pub project_id: Option<String>,
     pub is_archived: Option<bool>,
-    pub tag: Option<String>,
     pub result_type: String,
     pub sort_order: String,
 }
@@ -48,18 +47,9 @@ pub struct HistorySearchFilters {
 pub struct HistorySearchFilterOptions {
     pub provider_ids: Vec<String>,
     pub model_ids: Vec<String>,
-    pub tags: Vec<String>,
 }
 
 pub use preferences::{ArchiveIndexSettings, ArchiveIndexTool};
-
-pub fn archive_index_settings(
-    storage: &AppStorage,
-    conversation_id: &str,
-) -> rusqlite::Result<ArchiveIndexSettings> {
-    let connection = storage.connect()?;
-    preferences::load(&connection, conversation_id)
-}
 
 pub async fn set_conversation_archive_included(
     storage: &AppStorage,
@@ -264,25 +254,9 @@ pub fn history_search_filter_options(
             .query_map([], |row| row.get::<_, String>(0))?
             .collect::<rusqlite::Result<Vec<_>>>()?
     };
-    let tags = {
-        let mut statement = connection.prepare(
-            "SELECT DISTINCT tag.value
-             FROM conversations AS conversation,
-                  json_each(CASE WHEN json_valid(conversation.tags)
-                                 THEN conversation.tags ELSE '[]' END) AS tag
-             WHERE typeof(tag.value) = 'text'
-               AND trim(tag.value) != ''
-               AND length(tag.value) <= 32
-             ORDER BY tag.value COLLATE NOCASE LIMIT 100",
-        )?;
-        statement
-            .query_map([], |row| row.get::<_, String>(0))?
-            .collect::<rusqlite::Result<Vec<_>>>()?
-    };
     Ok(HistorySearchFilterOptions {
         provider_ids,
         model_ids,
-        tags,
     })
 }
 

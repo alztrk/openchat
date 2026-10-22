@@ -8,10 +8,8 @@ import {
   getConversation,
   moveConversations,
   renameConversation as renameConversationStorage,
-  setConversationBookmarked,
   setConversationPinned,
   setConversationsArchived,
-  setConversationTags,
 } from '@/modules/conversations/data/chatStorage';
 import { type ExportFormat, exportConversationToFile } from '@/modules/conversations/data/conversationExport';
 import { conversationMarkdownLabels } from '@/modules/conversations/data/conversationMarkdownLabels';
@@ -173,18 +171,20 @@ export function useConversationSidebarActions() {
   const createProject = async (name: string, folderSelectionId: string) => {
     if (!beginAction()) throw new Error('A sidebar action is already in progress.');
     try {
-      await createProjectStorage(crypto.randomUUID().replaceAll('-', ''), name, folderSelectionId);
+      const projectId = crypto.randomUUID().replaceAll('-', '');
+      await createProjectStorage(projectId, name, folderSelectionId);
       try {
         await refreshProjects();
       } catch {
         showFeedback('projectLoadFailed');
-        return;
+        return projectId;
       }
       if (useChatStore.getState().projectsStatus === 'error') {
         showFeedback('projectLoadFailed');
-        return;
+        return projectId;
       }
       showFeedback('projectCreated', true);
+      return projectId;
     } catch {
       showFeedback('projectCreateFailed');
       throw new Error('The project could not be created.');
@@ -200,17 +200,6 @@ export function useConversationSidebarActions() {
     );
     if (!saved) throw new Error('The conversation title could not be saved.');
   };
-
-  const saveTags = async (conversationId: string, tags: string[]) => {
-    const saved = await runMutation(() => setConversationTags(conversationId, tags), 'conversationTagsSaveFailed');
-    if (!saved) throw new Error('Conversation tags could not be saved.');
-  };
-
-  const toggleBookmark = (conversation: ChatConversation) =>
-    runMutation(
-      () => setConversationBookmarked(conversation.id, !conversation.isBookmarked),
-      'conversationBookmarkFailed',
-    );
 
   const togglePinned = (conversation: ChatConversation) =>
     runMutation(() => setConversationPinned(conversation.id, !conversation.isPinned), 'chatHistoryUnavailable');
@@ -247,10 +236,8 @@ export function useConversationSidebarActions() {
     isBusy,
     isConversationBusy,
     moveConversation,
-    saveTags,
     saveTitle,
     showFeedback,
-    toggleBookmark,
     togglePinned,
   };
 }

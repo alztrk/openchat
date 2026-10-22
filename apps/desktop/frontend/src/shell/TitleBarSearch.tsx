@@ -1,4 +1,4 @@
-import { Bot, Clock, LoaderCircle, MessageSquare, Pin, Search, Trash2, User, X } from 'lucide-react';
+import { Bot, Clock, File, LoaderCircle, MessageSquare, Pin, Search, Trash2, User, X } from 'lucide-react';
 import { type KeyboardEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -7,6 +7,7 @@ import {
   normalizeSearchText,
   parseSearchQuery,
   type StoredSearchMessageResult,
+  listConversationAttachments,
   searchStoredMessages,
 } from '@/modules/conversations/data/chatStorage';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
@@ -17,9 +18,11 @@ export interface TitleBarSearchProps {
 
 interface ThreadMessageItem {
   messageId: string;
+  attachmentId: string | null;
   role: 'user' | 'assistant';
   excerpt: string;
   createdAtUnixMs: number;
+  isAttachment: boolean;
 }
 
 interface SearchConversationGroup {
@@ -123,6 +126,9 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [isSearchingMessages, setIsSearchingMessages] = useState(false);
   const [messageResults, setMessageResults] = useState<StoredSearchMessageResult[]>([]);
+  const [attachmentResults, setAttachmentResults] = useState<
+    Awaited<ReturnType<typeof listConversationAttachments>>['items']
+  >([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -159,6 +165,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
   useEffect(() => {
     if (!shouldSearch) {
       setMessageResults([]);
+      setAttachmentResults([]);
       setIsSearchingMessages(false);
       return;
     }
@@ -167,19 +174,25 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
     setIsSearchingMessages(true);
 
     const timeoutId = window.setTimeout(() => {
-      searchStoredMessages(parsedQuery.cleanQuery, 50, {
+      const messageSearch = searchStoredMessages(parsedQuery.cleanQuery, 50, {
         roleFilter: parsedQuery.roleFilter,
         hasCodeOnly: parsedQuery.hasCodeOnly,
-      })
-        .then((results) => {
+      });
+      const attachmentSearch = normalizedCleanQuery.length >= 2 && !parsedQuery.roleFilter && !parsedQuery.hasCodeOnly
+        ? listConversationAttachments(0, 30, parsedQuery.cleanQuery, 'all')
+        : Promise.resolve({ items: [], nextOffset: null });
+      void Promise.all([messageSearch, attachmentSearch])
+        .then(([messages, attachments]) => {
           if (!isCancelled) {
-            setMessageResults(results);
+            setMessageResults(messages);
+            setAttachmentResults(attachments.items);
             setIsSearchingMessages(false);
           }
         })
         .catch(() => {
           if (!isCancelled) {
             setMessageResults([]);
+            setAttachmentResults([]);
             setIsSearchingMessages(false);
           }
         });
@@ -189,7 +202,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
       isCancelled = true;
       window.clearTimeout(timeoutId);
     };
-  }, [shouldSearch, parsedQuery.cleanQuery, parsedQuery.roleFilter, parsedQuery.hasCodeOnly]);
+  }, [shouldSearch, parsedQuery.cleanQuery, parsedQuery.roleFilter, parsedQuery.hasCodeOnly, normalizedCleanQuery]);
 
   const searchGroups = useMemo<SearchConversationGroup[]>(() => {
     if (!shouldSearch) return [];
@@ -200,11 +213,25 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
       const existing = messagesByConversation.get(msg.conversationId) ?? [];
       existing.push({
         messageId: msg.id,
+        attachmentId: null,
         role: msg.role === 'assistant' ? 'assistant' : 'user',
         excerpt: extractExcerpt(msg.content, parsedQuery.cleanQuery),
         createdAtUnixMs: msg.createdAt ?? 0,
+        isAttachment: false,
       });
       messagesByConversation.set(msg.conversationId, existing);
+    }
+    for (const attachment of attachmentResults) {
+      const existing = messagesByConversation.get(attachment.conversationId) ?? [];
+      existing.push({
+        messageId: attachment.messageId,
+        attachmentId: attachment.attachmentId,
+        role: 'user',
+        excerpt: attachment.fileName,
+        createdAtUnixMs: attachment.createdAt,
+        isAttachment: true,
+      });
+      messagesByConversation.set(attachment.conversationId, existing);
     }
 
     const titleMatchingConversations = hasActiveFilter
@@ -212,8 +239,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
       : conversations.filter((conversation) => {
           const normTitle = normalizeSearchText(conversation.title);
           const matchesTitle = normTitle.includes(normalizedCleanQuery);
-          const matchesTags = conversation.tags.some((tag) => normalizeSearchText(tag).includes(normalizedCleanQuery));
-          return matchesTitle || matchesTags;
+          return matchesTitle;
         });
 
     const groups: SearchConversationGroup[] = [];
@@ -266,6 +292,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
     conversationMap,
     hasActiveFilter,
     messageResults,
+    attachmentResults,
     normalizedCleanQuery,
     parsedQuery.cleanQuery,
     projectMap,
@@ -408,7 +435,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
           aria-autocomplete="list"
           aria-expanded={isOpen}
           aria-label={t('searchChats')}
-          className="h-7.5 w-full rounded-control border border-border/70 bg-surface/80 pl-8 pr-12 text-xs text-text placeholder:text-secondary-text transition-colors duration-150 hover:border-border focus:border-accent focus:bg-surface focus:outline-none focus:ring-1 focus:ring-accent"
+          className="h-7.5 w-full rounded-control border border-border/70 bg-surface/80 pl-8 pr-12 text-xs text-text placeholder:text-secondary-text transition-colors duration-150 hover:border-border focus:bg-surface focus:outline-none focus:ring-1 focus:ring-accent"
           onChange={(event) => {
             const nextValue = event.target.value;
             setQuery(nextValue);
@@ -446,7 +473,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
       {showRecentSearches ? (
         <div
           aria-label="Recent searches"
-          className="openchat-glass-popover absolute left-0 right-0 top-full z-50 mt-1 flex w-full origin-top flex-col overflow-hidden rounded-dialog border border-border p-1"
+          className="openchat-dropdown-surface absolute left-0 right-0 top-full z-50 mt-1 flex w-full origin-top flex-col overflow-hidden p-1"
           role="listbox"
         >
           <div className="flex items-center justify-between px-2 py-1.5 text-caption font-medium text-secondary-text">
@@ -493,7 +520,7 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
       {isOpen && shouldSearch ? (
         <div
           aria-label={t('searchChats')}
-          className="openchat-glass-popover absolute left-0 right-0 top-full z-50 mt-1 flex w-full origin-top flex-col overflow-hidden rounded-dialog border border-border transition-all duration-150 ease-out"
+          className="openchat-dropdown-surface absolute left-0 right-0 top-full z-50 mt-1 flex w-full origin-top flex-col overflow-hidden transition-all duration-150 ease-out"
           role="listbox"
         >
           {hasActiveFilter ? (
@@ -571,14 +598,16 @@ export function TitleBarSearch({ onSelectConversation }: TitleBarSearchProps) {
                                   ? 'bg-accent/15 font-medium text-text'
                                   : 'text-secondary-text hover:bg-hover hover:text-text'
                               }`}
-                              key={msg.messageId}
+                              key={`${msg.messageId}:${msg.attachmentId ?? 'message'}`}
                               onClick={() => handleSelectMessage(group.conversationId, msg.messageId)}
                               onMouseEnter={() => setSelectedIndex(messageTargetIndex)}
                               role="option"
                               type="button"
                             >
                               <span className="mt-0.5 shrink-0 text-secondary-icon transition-colors group-hover:text-accent">
-                                {msg.role === 'user' ? (
+                                {msg.isAttachment ? (
+                                  <File aria-hidden="true" size={12} />
+                                ) : msg.role === 'user' ? (
                                   <User aria-hidden="true" size={12} />
                                 ) : (
                                   <Bot aria-hidden="true" size={12} />

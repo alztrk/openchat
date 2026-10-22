@@ -218,14 +218,6 @@ pub(super) fn search_chat_history_from_connection(
                AND (?6 IS NULL OR candidate_message.model_id = ?6)
                AND (?7 IS NULL OR candidate_conversation.project_id = ?7)
                AND (?8 IS NULL OR candidate_conversation.is_archived = ?8)
-               AND (?9 IS NULL OR EXISTS (
-                    SELECT 1 FROM json_each(
-                        CASE WHEN json_valid(candidate_conversation.tags)
-                             THEN candidate_conversation.tags ELSE '[]' END
-                    ) AS conversation_tag
-                    WHERE typeof(conversation_tag.value) = 'text'
-                      AND lower(conversation_tag.value) = lower(?9)
-               ))
              ORDER BY score
              LIMIT {MAX_HISTORY_SEARCH_CANDIDATES}
          ) AS candidate
@@ -261,14 +253,6 @@ pub(super) fn search_chat_history_from_connection(
                AND (?6 IS NULL OR candidate_message.model_id = ?6)
                AND (?7 IS NULL OR candidate_conversation.project_id = ?7)
                AND (?8 IS NULL OR candidate_conversation.is_archived = ?8)
-               AND (?9 IS NULL OR EXISTS (
-                    SELECT 1 FROM json_each(
-                        CASE WHEN json_valid(candidate_conversation.tags)
-                             THEN candidate_conversation.tags ELSE '[]' END
-                    ) AS conversation_tag
-                    WHERE typeof(conversation_tag.value) = 'text'
-                      AND lower(conversation_tag.value) = lower(?9)
-               ))
              ORDER BY score
              LIMIT {MAX_HISTORY_SEARCH_CANDIDATES}
          ) AS candidate
@@ -342,23 +326,15 @@ pub(super) fn search_chat_history_from_connection(
            ))
            AND (?7 IS NULL OR conversation.project_id = ?7)
            AND (?8 IS NULL OR conversation.is_archived = ?8)
-           AND (?9 IS NULL OR EXISTS (
-                SELECT 1 FROM json_each(
-                    CASE WHEN json_valid(conversation.tags)
-                         THEN conversation.tags ELSE '[]' END
-                ) AS conversation_tag
-                WHERE typeof(conversation_tag.value) = 'text'
-                  AND lower(conversation_tag.value) = lower(?9)
-           ))
-           AND (?10 = 'all'
-                OR (?10 = 'messages' AND deduplicated.is_conversation_title_match = 0)
-                OR (?10 = 'conversations' AND deduplicated.is_conversation_title_match = 1))
-         ORDER BY CASE WHEN ?11 = 'relevance' THEN deduplicated.relevance END DESC,
-                  CASE WHEN ?11 = 'newest' THEN deduplicated.created_at END DESC,
-                  CASE WHEN ?11 = 'oldest' THEN deduplicated.created_at END ASC,
+           AND (?9 = 'all'
+                OR (?9 = 'messages' AND deduplicated.is_conversation_title_match = 0)
+                OR (?9 = 'conversations' AND deduplicated.is_conversation_title_match = 1))
+         ORDER BY CASE WHEN ?10 = 'relevance' THEN deduplicated.relevance END DESC,
+                  CASE WHEN ?10 = 'newest' THEN deduplicated.created_at END DESC,
+                  CASE WHEN ?10 = 'oldest' THEN deduplicated.created_at END ASC,
                   deduplicated.created_at DESC,
                   deduplicated.message_id DESC
-         LIMIT ?12"
+         LIMIT ?11"
     ))?;
     let rows = statement.query_map(
         params![
@@ -370,7 +346,6 @@ pub(super) fn search_chat_history_from_connection(
             filters.model_id,
             filters.project_id,
             filters.is_archived.map(i64::from),
-            filters.tag,
             filters.result_type,
             filters.sort_order,
             result_limit

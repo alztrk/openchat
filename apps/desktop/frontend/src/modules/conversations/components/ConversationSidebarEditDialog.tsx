@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, Dialog, Input } from '@/design-system';
 import type { ChatConversation } from '@/modules/conversations/data/chatStorage';
 
-type EditMode = 'rename' | 'tags';
+type EditMode = 'rename';
 
 interface ConversationSidebarEditDialogProps {
   conversation: ChatConversation | null;
@@ -12,7 +12,6 @@ interface ConversationSidebarEditDialogProps {
   open: boolean;
   onOpenChange(open: boolean): void;
   onSaveTitle(conversationId: string, title: string): Promise<void>;
-  onSaveTags(conversationId: string, tags: string[]): Promise<void>;
 }
 
 export function ConversationSidebarEditDialog({
@@ -21,7 +20,6 @@ export function ConversationSidebarEditDialog({
   open,
   onOpenChange,
   onSaveTitle,
-  onSaveTags,
 }: ConversationSidebarEditDialogProps) {
   const { t } = useTranslation();
   const [value, setValue] = useState('');
@@ -30,7 +28,7 @@ export function ConversationSidebarEditDialog({
 
   useEffect(() => {
     if (!open || !conversation || !mode) return;
-    setValue(mode === 'rename' ? conversation.title : conversation.tags.join(', '));
+    setValue(conversation.title);
     setError(null);
   }, [conversation, mode, open]);
 
@@ -42,36 +40,19 @@ export function ConversationSidebarEditDialog({
       setError(t('conversationTitleRequired'));
       return;
     }
-    const tags =
-      mode === 'tags'
-        ? normalized
-            .split(',')
-            .map((tag) => tag.trim())
-            .filter(Boolean)
-        : [];
-    const distinctTags = new Set(tags.map((tag) => tag.toLowerCase()));
-    if (mode === 'tags' && (distinctTags.size > 12 || tags.some((tag) => [...tag].length > 32))) {
-      setError(t('conversationTagsHelp'));
-      return;
-    }
-
     setIsBusy(true);
     setError(null);
     try {
-      if (mode === 'rename') {
-        await onSaveTitle(conversation.id, normalized);
-      } else {
-        await onSaveTags(conversation.id, tags);
-      }
+      await onSaveTitle(conversation.id, normalized);
       onOpenChange(false);
     } catch {
-      setError(t(mode === 'rename' ? 'conversationTitleSaveFailed' : 'conversationTagsSaveFailed'));
+      setError(t('conversationTitleSaveFailed'));
     } finally {
       setIsBusy(false);
     }
   };
 
-  const title = mode === 'rename' ? t('renameConversation') : t('conversationTagsDialogTitle');
+  const title = t('renameConversation');
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open} title={title}>
@@ -79,16 +60,14 @@ export function ConversationSidebarEditDialog({
         <Input
           autoFocus
           disabled={isBusy}
-          label={mode === 'rename' ? t('conversationTitle') : t('conversationTagsFieldLabel')}
+          label={t('conversationTitle')}
           maxLength={500}
           onChange={(event) => {
             setValue(event.target.value);
             setError(null);
           }}
-          placeholder={mode === 'tags' ? t('conversationTagsFieldHint') : undefined}
           value={value}
         />
-        {mode === 'tags' ? <p className="text-sm text-secondary-text">{t('conversationTagsHelp')}</p> : null}
         {error ? (
           <p className="text-sm text-destructive" role="alert">
             {error}

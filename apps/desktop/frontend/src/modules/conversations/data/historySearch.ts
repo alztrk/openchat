@@ -14,7 +14,6 @@ export interface HistorySearchFilters {
   modelId: string | null;
   projectId: string | null;
   isArchived: boolean | null;
-  tag: string | null;
   resultType: HistoryResultType;
   sortOrder: HistorySortOrder;
 }
@@ -22,7 +21,6 @@ export interface HistorySearchFilters {
 export interface HistorySearchFilterOptions {
   providerIds: string[];
   modelIds: string[];
-  tags: string[];
 }
 
 export interface HistorySearchResult {
@@ -64,7 +62,6 @@ export const emptyHistorySearchFilters: HistorySearchFilters = {
   modelId: null,
   projectId: null,
   isArchived: null,
-  tag: null,
   resultType: 'all',
   sortOrder: 'relevance',
 };
@@ -74,17 +71,14 @@ export async function loadHistorySearchFilterOptions(): Promise<HistorySearchFil
   if (
     !Array.isArray(response.providerIds) ||
     !Array.isArray(response.modelIds) ||
-    !Array.isArray(response.tags) ||
     response.providerIds.length > 100 ||
-    response.modelIds.length > 200 ||
-    response.tags.length > 100
+    response.modelIds.length > 200
   ) {
     throw new LocalServiceError('invalid_service_response', 'The history search filters are invalid.');
   }
   return {
     providerIds: parseStringOptions(response.providerIds, 256),
     modelIds: parseStringOptions(response.modelIds, 256),
-    tags: parseStringOptions(response.tags, 32),
   };
 }
 
@@ -140,7 +134,6 @@ async function searchNativeHistory(
       modelId: filters.modelId,
       projectId: filters.projectId,
       isArchived: filters.isArchived,
-      tag: filters.tag,
       resultType: nativeResultType(filters.resultType),
       sortOrder: filters.sortOrder,
     },
@@ -172,7 +165,6 @@ async function searchLocalLibrary(
           modelId: filters.modelId,
           projectId: filters.projectId,
           isArchived: filters.isArchived,
-          tag: filters.tag,
           sortOrder: filters.sortOrder,
           fromUnixMs,
           throughUnixMs,
@@ -187,8 +179,7 @@ async function searchLocalLibrary(
       if (
         filters.providerId !== null ||
         filters.modelId !== null ||
-        filters.isArchived !== null ||
-        filters.tag !== null
+        filters.isArchived !== null
       )
         continue;
       results.push({
@@ -347,7 +338,6 @@ function parseHistorySearchFilters(value: JsonObject): HistorySearchFilters {
     !isOptionalString(value.modelId, 256) ||
     !isOptionalString(value.projectId, 256) ||
     (value.isArchived !== null && typeof value.isArchived !== 'boolean') ||
-    !isOptionalString(value.tag, 32) ||
     (resultType !== 'all' &&
       resultType !== 'chats' &&
       resultType !== 'projects' &&
@@ -363,7 +353,6 @@ function parseHistorySearchFilters(value: JsonObject): HistorySearchFilters {
     modelId: typeof value.modelId === 'string' ? value.modelId : null,
     projectId: typeof value.projectId === 'string' ? value.projectId : null,
     isArchived: typeof value.isArchived === 'boolean' ? value.isArchived : null,
-    tag: typeof value.tag === 'string' ? value.tag : null,
     resultType,
     sortOrder,
   };

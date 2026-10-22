@@ -2,8 +2,6 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Archive,
   ArchiveRestore,
-  Bookmark,
-  BookmarkCheck,
   Check,
   Columns2,
   Copy,
@@ -17,7 +15,6 @@ import {
   Pin,
   PinOff,
   RotateCcw,
-  Tags,
   Trash2,
   X,
 } from 'lucide-react';
@@ -28,6 +25,8 @@ import {
   type MouseEvent as ReactMouseEvent,
   useCallback,
   useEffect,
+  useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -42,6 +41,8 @@ import { setSidebarDraggingConversationId } from '@/modules/conversations/data/s
 import { useTransitionPresence } from '@/shared/hooks/useTransitionPresence';
 
 type MenuAnchor = { kind: 'trigger' } | { kind: 'point'; x: number; y: number };
+
+const CONVERSATION_MENU_OPEN_EVENT = 'openchat-conversation-menu-open';
 
 export interface ConversationSidebarRowProps {
   conversation: ChatConversation;
@@ -58,8 +59,6 @@ export interface ConversationSidebarRowProps {
   disabled: boolean;
   onSelect(): void;
   onTogglePinned(): void;
-  onToggleBookmark(): void;
-  onEditTags(): void;
   onRename(): void;
   onInlineRename?(title: string): Promise<void> | void;
   onDuplicate?(): void;
@@ -88,8 +87,6 @@ export function ConversationSidebarRow({
   disabled,
   onSelect,
   onTogglePinned,
-  onToggleBookmark,
-  onEditTags,
   onRename,
   onInlineRename,
   onDuplicate,
@@ -106,12 +103,18 @@ export function ConversationSidebarRow({
   const availableProjects = projects.filter((project) => project.id !== currentProjectId);
   const availableFolders = customFolders.filter((folder) => folder.id !== currentFolderId);
 
+  const menuInstanceId = useId();
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<MenuAnchor>({ kind: 'trigger' });
   const menuIsPresent = useTransitionPresence(menuOpen);
-  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number; placement: 'above' | 'below' } | null>(
-    null,
-  );
+  const [menuPosition, setMenuPosition] = useState<{
+    top: number;
+    left: number;
+    minWidth: number;
+    maxWidth: number;
+    maxHeight: number;
+    placement: 'above' | 'below';
+  } | null>(null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [draftTitle, setDraftTitle] = useState(conversation.title);
   const [isSavingTitle, setIsSavingTitle] = useState(false);
@@ -138,6 +141,22 @@ export function ConversationSidebarRow({
     () => rowRef.current?.querySelector<HTMLButtonElement>('[data-conversation-menu-trigger]') ?? null,
     [],
   );
+
+  const openMenu = (anchor: MenuAnchor) => {
+    setMenuAnchor(anchor);
+    window.dispatchEvent(new CustomEvent(CONVERSATION_MENU_OPEN_EVENT, { detail: menuInstanceId }));
+    setMenuOpen(true);
+  };
+
+  useEffect(() => {
+    const closeWhenAnotherMenuOpens = (event: Event) => {
+      if (!(event instanceof CustomEvent) || typeof event.detail !== 'string') return;
+      if (event.detail !== menuInstanceId) setMenuOpen(false);
+    };
+
+    window.addEventListener(CONVERSATION_MENU_OPEN_EVENT, closeWhenAnotherMenuOpens);
+    return () => window.removeEventListener(CONVERSATION_MENU_OPEN_EVENT, closeWhenAnotherMenuOpens);
+  }, [menuInstanceId]);
 
   const primaryButton = useCallback(
     () => rowRef.current?.querySelector<HTMLElement>('[data-sidebar-nav-item]') ?? null,
@@ -198,39 +217,58 @@ export function ConversationSidebarRow({
     }
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!menuOpen) return;
 
     const updatePosition = () => {
+      const viewportMargin = 8;
+      const anchorGap = 4;
+      const viewportWidth = document.documentElement.clientWidth;
+      const viewportHeight = document.documentElement.clientHeight;
       const menu = menuRef.current;
-      const menuHeight = menu?.offsetHeight ?? Math.min(window.innerHeight * 0.7, 384);
-      const menuWidth = menu?.offsetWidth ?? 208;
+      const maxWidth = Math.max(0, viewportWidth - viewportMargin * 2);
+      const minWidth = Math.min(192, maxWidth);
+      const maxMenuHeight = Math.min(viewportHeight * 0.7, 384);
+      const contentHeight = Math.min(menu?.scrollHeight || maxMenuHeight, maxMenuHeight);
+      const menuWidth = Math.min(menu?.offsetWidth || 208, maxWidth);
+      let anchorTop: number;
+      let anchorBottom: number;
+      let anchorRight: number;
 
       if (menuAnchor.kind === 'point') {
-        const placement = menuAnchor.y + menuHeight + 8 <= window.innerHeight ? 'below' : 'above';
-        const top =
-          placement === 'below'
-            ? Math.max(8, Math.min(window.innerHeight - menuHeight - 8, menuAnchor.y + 2))
-            : Math.max(8, menuAnchor.y - menuHeight - 2);
-        const left = Math.max(8, Math.min(window.innerWidth - menuWidth - 8, menuAnchor.x + 2));
-        setMenuPosition((current) =>
-          current !== null && current.top === top && current.left === left && current.placement === placement
-            ? current
-            : { top, left, placement },
-        );
-        return;
+        anchorTop = menuAnchor.y;
+        anchorBottom = menuAnchor.y;
+        anchorRight = menuAnchor.x;
+      } else {
+        const trigger = menuTrigger() ?? rowRef.current;
+        if (!trigger) return;
+        const bounds = trigger.getBoundingClientRect();
+        anchorTop = bounds.top;
+        anchorBottom = bounds.bottom;
+        anchorRight = bounds.right;
       }
 
-      const trigger = menuTrigger() ?? rowRef.current;
-      if (!trigger) return;
-      const bounds = trigger.getBoundingClientRect();
-      const placement = bounds.bottom + menuHeight + 8 <= window.innerHeight ? 'below' : 'above';
-      const top = placement === 'below' ? bounds.bottom + 4 : Math.max(8, bounds.top - menuHeight - 4);
-      const left = Math.max(8, Math.min(window.innerWidth - menuWidth - 8, bounds.right - menuWidth));
+      const availableBelow = Math.max(0, viewportHeight - anchorBottom - anchorGap - viewportMargin);
+      const availableAbove = Math.max(0, anchorTop - anchorGap - viewportMargin);
+      const placement = availableBelow >= contentHeight || availableBelow >= availableAbove ? 'below' : 'above';
+      const availableHeight = placement === 'below' ? availableBelow : availableAbove;
+      const maxHeight = Math.min(contentHeight, availableHeight);
+      const visibleHeight = Math.min(menu?.offsetHeight || contentHeight, maxHeight);
+      const top = placement === 'below' ? anchorBottom + anchorGap : anchorTop - anchorGap - visibleHeight;
+      const left = Math.max(
+        viewportMargin,
+        Math.min(viewportWidth - menuWidth - viewportMargin, anchorRight - menuWidth),
+      );
       setMenuPosition((current) =>
-        current !== null && current.top === top && current.left === left && current.placement === placement
+        current !== null &&
+        current.top === top &&
+        current.left === left &&
+        current.minWidth === minWidth &&
+        current.maxWidth === maxWidth &&
+        current.maxHeight === maxHeight &&
+        current.placement === placement
           ? current
-          : { top, left, placement },
+          : { top, left, minWidth, maxWidth, maxHeight, placement },
       );
     };
 
@@ -257,8 +295,12 @@ export function ConversationSidebarRow({
     };
 
     updatePosition();
+    const resizeObserver = new ResizeObserver(updatePosition);
     const focusFrame = window.requestAnimationFrame(() => {
       updatePosition();
+      if (menuRef.current) resizeObserver.observe(menuRef.current);
+      const trigger = menuTrigger();
+      if (trigger) resizeObserver.observe(trigger);
       const firstEnabledItem = Array.from(
         menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? [],
       ).find((item) => !item.matches(':disabled'));
@@ -271,6 +313,7 @@ export function ConversationSidebarRow({
     document.addEventListener('keydown', closeOnEscape);
     return () => {
       window.cancelAnimationFrame(focusFrame);
+      resizeObserver.disconnect();
       window.removeEventListener('resize', updatePosition);
       window.removeEventListener('scroll', updatePosition, true);
       document.removeEventListener('pointerdown', closeOnOutsidePointer);
@@ -335,12 +378,11 @@ export function ConversationSidebarRow({
     if (disabled || isEditingTitle) return;
     event.preventDefault();
     event.stopPropagation();
-    if (event.clientX === 0 && event.clientY === 0) {
-      setMenuAnchor({ kind: 'trigger' });
-    } else {
-      setMenuAnchor({ kind: 'point', x: event.clientX, y: event.clientY });
-    }
-    setMenuOpen(true);
+    openMenu(
+      event.clientX === 0 && event.clientY === 0
+        ? { kind: 'trigger' }
+        : { kind: 'point', x: event.clientX, y: event.clientY },
+    );
   };
 
   const handleRowKeyDown = (event: KeyboardEvent<HTMLElement>) => {
@@ -413,7 +455,7 @@ export function ConversationSidebarRow({
 
   return (
     <li
-      className={`conversation-sidebar-virtual-row group relative flex items-center rounded-button transition-colors duration-quick select-none cursor-pointer ${
+      className={`conversation-sidebar-virtual-row group relative flex w-full min-w-0 max-w-full items-center rounded-button transition-colors duration-quick select-none cursor-pointer hover:z-10 focus-within:z-10 ${
         viewMode === 'detailed' ? 'min-h-12' : 'min-h-9'
       } ${isReorderDropTarget ? 'ring-1 ring-accent/70 bg-accent/5' : ''} ${
         active
@@ -530,25 +572,9 @@ export function ConversationSidebarRow({
               {viewMode === 'detailed' ? (
                 <span className="mt-0.5 flex items-center gap-1.5 truncate text-caption font-normal text-secondary-text/75">
                   <span>{formattedUpdatedTime}</span>
-                  {conversation.tags.length > 0 ? <span className="truncate">· #{conversation.tags[0]}</span> : null}
                 </span>
               ) : null}
             </span>
-            {conversation.tags.length > 0 && viewMode === 'compact' ? (
-              <span
-                className="shrink-0 opacity-75 transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
-                title={conversation.tags.join(', ')}
-              >
-                <Tags aria-hidden="true" className="text-secondary-icon" size={12} />
-              </span>
-            ) : null}
-            {conversation.isBookmarked ? (
-              <BookmarkCheck
-                aria-label={t('conversationBookmarked')}
-                className="shrink-0 text-accent transition-opacity group-hover:opacity-0 group-focus-within:opacity-0"
-                size={12}
-              />
-            ) : null}
           </div>
           <div
             className={`conversation-sidebar-row-actions absolute right-1.5 inset-y-0 flex items-center gap-0.5 transition-opacity duration-quick ${
@@ -635,8 +661,8 @@ export function ConversationSidebarRow({
                   }`}
                   data-conversation-menu-trigger="true"
                   onClick={() => {
-                    setMenuAnchor({ kind: 'trigger' });
-                    setMenuOpen((current) => !current);
+                    if (menuOpen) setMenuOpen(false);
+                    else openMenu({ kind: 'trigger' });
                   }}
                   size="icon"
                   title={t('conversationMoreOptionsButtonTitle')}
@@ -649,19 +675,26 @@ export function ConversationSidebarRow({
           </div>
         </>
       )}
-      {menuIsPresent && menuPosition !== null
+      {menuOpen || menuIsPresent
         ? createPortal(
             <div
               aria-hidden={!menuOpen}
               aria-label={t('moreOptions')}
-              className={`openchat-popover-enter ${menuPosition.placement === 'above' ? 'openchat-popover-enter--bottom-right' : 'openchat-popover-enter--right'} fixed z-50 grid max-h-conversation-menu min-w-48 max-w-message-menu gap-0.5 overflow-y-auto rounded-card border border-border bg-raised/85 p-1.5 shadow-lg backdrop-blur-xl`}
+              className={`openchat-dropdown-surface openchat-popover-enter ${menuPosition?.placement === 'above' ? 'openchat-popover-enter--bottom-right' : 'openchat-popover-enter--right'} fixed z-50 grid max-h-conversation-menu min-w-48 max-w-message-menu gap-0.5 overflow-y-auto p-1.5`}
               data-state={menuOpen ? 'open' : 'closed'}
               inert={!menuOpen}
               onContextMenu={(event) => event.preventDefault()}
               onKeyDown={moveMenuFocus}
               ref={menuRef}
               role="menu"
-              style={{ top: menuPosition.top, left: menuPosition.left }}
+              style={{
+                top: menuPosition?.top ?? 0,
+                left: menuPosition?.left ?? 0,
+                minWidth: menuPosition?.minWidth,
+                maxWidth: menuPosition?.maxWidth,
+                maxHeight: menuPosition?.maxHeight,
+                visibility: menuPosition === null ? 'hidden' : 'visible',
+              }}
             >
               {trashed ? (
                 <>
@@ -724,18 +757,6 @@ export function ConversationSidebarRow({
                       onClick={() => runAction(onDuplicate)}
                     />
                   ) : null}
-                  <MenuAction
-                    disabled={disabled}
-                    icon={conversation.isBookmarked ? BookmarkCheck : Bookmark}
-                    label={conversation.isBookmarked ? t('removeConversationBookmark') : t('bookmarkConversation')}
-                    onClick={() => runAction(onToggleBookmark)}
-                  />
-                  <MenuAction
-                    disabled={disabled}
-                    icon={Tags}
-                    label={t('editConversationTags')}
-                    onClick={() => runAction(onEditTags)}
-                  />
                   <div aria-hidden="true" className="my-0.5 border-t border-border" />
                   {allowMove && currentProjectId ? (
                     <MenuAction
