@@ -68,6 +68,7 @@ pub struct ChatGptService {
     copilot_oauth: Arc<CopilotOAuthService>,
     http: Client,
     refresh_locks: Arc<Mutex<HashMap<String, Arc<Mutex<()>>>>>,
+    credential_cleanup_lock: Arc<Mutex<()>>,
 }
 
 pub(super) struct StreamRequest<'a> {
@@ -128,6 +129,7 @@ impl ChatGptService {
             copilot_oauth: Arc::new(CopilotOAuthService::new()?),
             http,
             refresh_locks: Arc::new(Mutex::new(HashMap::new())),
+            credential_cleanup_lock: Arc::new(Mutex::new(())),
         })
     }
 
@@ -163,8 +165,17 @@ impl ChatGptService {
         self.copilot_oauth.status(&self.storage)
     }
 
-    pub async fn copilot_oauth_disconnect(&self) -> Result<Value, ServiceError> {
-        self.copilot_oauth.disconnect(&self.storage).await
+    pub fn copilot_oauth_select(&self, connection_id: &str) -> Result<Value, ServiceError> {
+        self.copilot_oauth.select(&self.storage, connection_id)
+    }
+
+    pub async fn copilot_oauth_disconnect(
+        &self,
+        connection_id: &str,
+    ) -> Result<Value, ServiceError> {
+        self.copilot_oauth
+            .disconnect(&self.storage, connection_id)
+            .await
     }
 
     pub(crate) async fn copilot_access_token(&self) -> Result<Zeroizing<String>, ServiceError> {
@@ -407,6 +418,7 @@ impl ChatGptService {
             &workspace.external_id,
             &model,
             provider_request.last_message_id.as_deref(),
+            provider_request.tools.clone(),
             payload,
         )
         .await
