@@ -38,9 +38,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             chat_storage::list_model_favorites,
             chat_storage::set_model_favorite,
             chat_storage::list_saved_output_message_keys,
+            chat_storage::list_saved_outputs,
             chat_storage::search_saved_outputs,
             chat_storage::search_messages,
             chat_storage::set_saved_output,
+            chat_storage::list_saved_output_versions,
+            chat_storage::get_saved_output_version,
+            chat_storage::save_saved_output_version,
+            chat_storage::select_saved_output_version,
             local_data::export_support_diagnostics,
             notifications::read_windows_notification_status,
             notifications::open_windows_notification_settings,
@@ -51,19 +56,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             notifications::set_notification_frontend_unready,
             chat_storage::get_conversation,
             chat_storage::get_messages,
+            chat_storage::list_conversation_attachments,
             chat_storage::read_message_attachment,
+            chat_storage::get_attachment_text_index_status,
+            chat_storage::rebuild_attachment_text_index,
+            chat_storage::clear_attachment_text_index,
             chat_storage::create_conversation,
             chat_storage::rename_conversation,
             chat_storage::set_conversation_route,
             chat_storage::set_conversation_pinned,
-            chat_storage::set_conversation_bookmarked,
-            chat_storage::set_conversation_tags,
             chat_storage::move_conversations,
             chat_storage::set_conversations_archived,
             chat_storage::delete_conversation,
             chat_storage::save_conversation_markdown,
             chat_storage::save_conversation_export,
             chat_storage::save_message,
+            chat_storage::record_chat_request_failure,
+            chat_storage::record_connection_removal_diagnostic,
+            chat_storage::record_context_usage_failure,
             mcp_storage::load_global_mcp_servers,
             mcp_storage::save_global_mcp_server,
             mcp_storage::set_global_mcp_enabled,
@@ -91,6 +101,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             chat_storage::list_personal_memory_facts,
             chat_storage::save_personal_memory_fact,
             chat_storage::delete_personal_memory_fact,
+            chat_storage::clear_personal_memory_facts,
             chat_storage::get_cache_entry,
             chat_storage::set_cache_entry,
             chat_storage::migrate_localstorage_to_db,
@@ -101,6 +112,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             chat_storage::prepare_chat_database().map_err(|error| {
                 std::io::Error::other(format!("Database initialization failed: {error:?}"))
             })?;
+            let main_window = app
+                .get_webview_window("main")
+                .ok_or_else(|| std::io::Error::other("Main window is unavailable"))?;
+            window_state::restore_window_state(&main_window);
             notifications::initialize(app.handle()).map_err(std::io::Error::other)?;
             Ok(())
         })

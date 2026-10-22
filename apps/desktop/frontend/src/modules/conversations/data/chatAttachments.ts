@@ -191,6 +191,35 @@ export async function readAttachmentFile(file: File): Promise<PendingChatAttachm
   };
 }
 
+export function restoreStoredAttachment(
+  metadata: ChatAttachmentMetadata,
+  bytes: Uint8Array,
+): PendingChatAttachment {
+  const validated = parseAttachmentMetadata(metadata);
+  if (bytes.length !== validated.sizeBytes) throw new ChatAttachmentInputError('attachmentReadFailed');
+  if (validated.kind === 'image' && !hasValidImageSignature(validated.mimeType, bytes)) {
+    throw new ChatAttachmentInputError('attachmentInvalidImage');
+  }
+  if (validated.kind === 'text') {
+    try {
+      new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch {
+      throw new ChatAttachmentInputError('attachmentMustBeUtf8');
+    }
+  }
+  const file = new File([new Uint8Array(bytes)], validated.name, {
+    lastModified: Date.now(),
+    type: validated.mimeType,
+  });
+  return {
+    ...validated,
+    id: crypto.randomUUID().replaceAll('-', ''),
+    file,
+    bytes: new Uint8Array(bytes),
+    previewUrl: null,
+  };
+}
+
 export function validateAttachmentSelection(
   current: readonly ChatAttachmentMetadata[],
   added: readonly ChatAttachmentMetadata[],

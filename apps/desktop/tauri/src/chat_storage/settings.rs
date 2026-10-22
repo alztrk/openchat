@@ -264,6 +264,49 @@ pub fn delete_personal_memory_fact(
 }
 
 #[tauri::command]
+/// Clears AI-saved personal memories and disables future personalization.
+///
+/// # Errors
+/// Returns a storage error if the local memory store cannot be cleared.
+pub fn clear_personal_memory_facts(app: tauri::AppHandle) -> Result<(), ChatStorageError> {
+    let now = unix_time_milliseconds()?;
+    let mut connection = open_database()?;
+    let transaction = connection
+        .transaction()
+        .map_err(|_| ChatStorageError::unavailable())?;
+    transaction
+        .execute("DELETE FROM personal_memory_facts", [])
+        .map_err(|_| ChatStorageError::unavailable())?;
+    transaction
+        .execute(
+            "DELETE FROM app_settings WHERE key = 'privacy.personal_memory_facts'",
+            [],
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    transaction
+        .execute(
+            "INSERT INTO app_settings (key, value_json, updated_at) VALUES ('privacy.personal_memory_enabled', 'false', ?1)
+             ON CONFLICT(key) DO UPDATE SET value_json = 'false', updated_at = excluded.updated_at",
+            [now],
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    transaction
+        .commit()
+        .map_err(|_| ChatStorageError::unavailable())?;
+    let _ = crate::window_broadcast::broadcast_app_setting_change(
+        &app,
+        "privacy.personal_memory_enabled",
+        "false",
+    );
+    let _ = crate::window_broadcast::broadcast_app_setting_change(
+        &app,
+        "privacy.personal_memory_facts",
+        "null",
+    );
+    Ok(())
+}
+
+#[tauri::command]
 /// Retrieves an unexpired ephemeral cache entry by key.
 ///
 /// # Errors

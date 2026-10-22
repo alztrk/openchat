@@ -7,11 +7,17 @@ use crate::request_bounds::BoundedText;
 use super::{
     is_safe_identifier, is_valid_route_model_id, open_database, parse_stored_message_content,
     unix_time_milliseconds, ChatStorageError, SavedOutputMessageKey, SavedOutputSearchInput,
-    SavedOutputSearchResult, SavedOutputSearchSortOrder, MAXIMUM_CONVERSATION_TAG_CHARS,
-    MAXIMUM_CONVERSATION_TITLE_CHARS, MAXIMUM_HISTORY_SEARCH_EXCERPT_BYTES,
-    MAXIMUM_HISTORY_SEARCH_QUERY_CHARS, MAXIMUM_HISTORY_SEARCH_RESULTS,
-    MAXIMUM_HISTORY_SEARCH_TIMESTAMP, MAXIMUM_SAFE_IDENTIFIER_BYTES, MESSAGE_CONTENT_PREFIX,
+    SavedOutputSearchResult, SavedOutputSearchSortOrder, SavedOutputSummary, SavedOutputVersion,
+    SavedOutputVersionSummary, MAXIMUM_CONVERSATION_TITLE_CHARS,
+    MAXIMUM_HISTORY_SEARCH_EXCERPT_BYTES, MAXIMUM_HISTORY_SEARCH_QUERY_CHARS,
+    MAXIMUM_HISTORY_SEARCH_RESULTS, MAXIMUM_HISTORY_SEARCH_TIMESTAMP,
+    MAXIMUM_SAFE_IDENTIFIER_BYTES, MESSAGE_CONTENT_PREFIX,
 };
+
+const MAXIMUM_SAVED_OUTPUT_CONTENT_BYTES: usize = 2 * 1024 * 1024;
+const MAXIMUM_SAVED_OUTPUT_VERSIONS: u32 = 1_000;
+const MAXIMUM_SAVED_OUTPUT_OFFSET: u32 = 100_000;
+const MAXIMUM_SAVED_OUTPUT_PAGE_SIZE: u32 = 50;
 
 #[tauri::command]
 /// Returns message keys for outputs that are saved outside normal transcript rendering.
@@ -73,11 +79,6 @@ pub(crate) fn search_saved_outputs_from_connection(
             .project_id
             .as_deref()
             .is_some_and(|value| !is_safe_identifier(value))
-        || input.tag.as_deref().is_some_and(|value| {
-            value.trim().is_empty()
-                || value.chars().count() > MAXIMUM_CONVERSATION_TAG_CHARS
-                || value.chars().any(char::is_control)
-        })
         || input
             .from_unix_ms
             .is_some_and(|value| !(0..=MAXIMUM_HISTORY_SEARCH_TIMESTAMP).contains(&value))
@@ -102,7 +103,7 @@ pub(crate) fn search_saved_outputs_from_connection(
         }
     };
     let sql = format!(
-        "SELECT c.id, c.title, c.project_id, c.tags, c.is_archived, c.updated_at,
+        "SELECT c.id, c.title, c.project_id, c.is_archived, c.updated_at,
                 m.id, m.role, m.content, m.created_at, m.provider_id, m.model_id
          FROM saved_outputs s
          JOIN conversations c ON c.id = s.conversation_id
@@ -140,37 +141,28 @@ pub(crate) fn search_saved_outputs_from_connection(
         let project_id = row
             .get::<_, Option<String>>(2)
             .map_err(|_| ChatStorageError::unavailable())?;
-        let tags_json = row
-            .get::<_, String>(3)
-            .map_err(|_| ChatStorageError::unavailable())?;
         let is_archived = row
-            .get::<_, bool>(4)
+            .get::<_, bool>(3)
             .map_err(|_| ChatStorageError::unavailable())?;
         let conversation_updated_at = row
-            .get::<_, i64>(5)
+            .get::<_, i64>(4)
             .map_err(|_| ChatStorageError::unavailable())?;
         let message_id = row
-            .get::<_, String>(6)
+            .get::<_, String>(5)
             .map_err(|_| ChatStorageError::unavailable())?;
         let role = row
-            .get::<_, String>(7)
+            .get::<_, String>(6)
             .map_err(|_| ChatStorageError::unavailable())?;
         let stored_content = row
-            .get::<_, String>(8)
+            .get::<_, String>(7)
             .map_err(|_| ChatStorageError::unavailable())?;
         let message_created_at = row
-            .get::<_, Option<i64>>(9)
-            .map_err(|_| ChatStorageError::unavailable())?;
-        let tags = serde_json::from_str::<Vec<String>>(&tags_json)
+            .get::<_, Option<i64>>(8)
             .map_err(|_| ChatStorageError::unavailable())?;
 
         if input
             .is_archived
             .is_some_and(|expected| expected != is_archived)
-            || input
-                .tag
-                .as_deref()
-                .is_some_and(|expected| !tags.iter().any(|tag| tag == expected))
         {
             continue;
         }
@@ -317,6 +309,309 @@ pub fn set_saved_output(
         .map_err(|_| ChatStorageError::unavailable())
 }
 
+#[tauri::command]
+/// Returns one bounded page of saved assistant responses.
+pub fn list_saved_outputs(
+    offset: u32,
+    limit: u32,
+) -> Result<Vec<SavedOutputSummary>, ChatStorageError> {
+    if offset > MAXIMUM_SAVED_OUTPUT_OFFSET || limit == 0 || limit > MAXIMUM_SAVED_OUTPUT_PAGE_SIZE
+    {
+        return Err(ChatStorageError::invalid_input());
+    }
+    let connection = open_database()?;
+    let mut statement = connection
+        .prepare(
+            "SELECT s.conversation_id, c.title, s.message_id, s.content, s.saved_at,
+                    s.selected_version, COUNT(v.version_number)
+             FROM saved_outputs s
+             INNER JOIN conversations c ON c.id = s.conversation_id
+             LEFT JOIN saved_output_versions v
+               ON v.conversation_id = s.conversation_id AND v.message_id = s.message_id
+             GROUP BY s.conversation_id, s.message_id
+             ORDER BY s.saved_at DESC, s.conversation_id ASC, s.message_id ASC
+             LIMIT ?1 OFFSET ?2",
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    let mut rows = statement
+        .query(rusqlite::params![i64::from(limit), i64::from(offset)])
+        .map_err(|_| ChatStorageError::unavailable())?;
+    let mut results = Vec::with_capacity(limit as usize);
+    while let Some(row) = rows.next().map_err(|_| ChatStorageError::unavailable())? {
+        let conversation_id = row
+            .get::<_, String>(0)
+            .map_err(|_| ChatStorageError::unavailable())?;
+        let conversation_title = row
+            .get::<_, String>(1)
+            .map_err(|_| ChatStorageError::unavailable())?;
+        let message_id = row
+            .get::<_, String>(2)
+            .map_err(|_| ChatStorageError::unavailable())?;
+        let stored_content = row
+            .get::<_, String>(3)
+            .map_err(|_| ChatStorageError::unavailable())?;
+        let created_at_unix_ms = row
+            .get::<_, i64>(4)
+            .map_err(|_| ChatStorageError::unavailable())?;
+        let selected_version = row
+            .get::<_, i64>(5)
+            .map_err(|_| ChatStorageError::unavailable())?;
+        let version_count = row
+            .get::<_, i64>(6)
+            .map_err(|_| ChatStorageError::unavailable())?;
+        if !is_safe_identifier(&conversation_id)
+            || !is_safe_identifier(&message_id)
+            || conversation_title.trim().is_empty()
+            || conversation_title.chars().count() > MAXIMUM_CONVERSATION_TITLE_CHARS
+            || !(0..=MAXIMUM_HISTORY_SEARCH_TIMESTAMP).contains(&created_at_unix_ms)
+            || !(1..=i64::from(MAXIMUM_SAVED_OUTPUT_VERSIONS)).contains(&selected_version)
+            || !(1..=i64::from(MAXIMUM_SAVED_OUTPUT_VERSIONS)).contains(&version_count)
+        {
+            return Err(ChatStorageError::unavailable());
+        }
+        let content = decode_saved_output_content(&stored_content)?;
+        results.push(SavedOutputSummary {
+            conversation_id,
+            conversation_title,
+            message_id,
+            excerpt: bounded_history_search_excerpt(&content),
+            created_at_unix_ms,
+            selected_version: selected_version as u32,
+            version_count: version_count as u32,
+        });
+    }
+    Ok(results)
+}
+
+#[tauri::command]
+/// Lists version metadata without loading every saved response body.
+pub fn list_saved_output_versions(
+    conversation_id: BoundedText<MAXIMUM_SAFE_IDENTIFIER_BYTES>,
+    message_id: BoundedText<MAXIMUM_SAFE_IDENTIFIER_BYTES>,
+) -> Result<Vec<SavedOutputVersionSummary>, ChatStorageError> {
+    let conversation_id = conversation_id.into_inner();
+    let message_id = message_id.into_inner();
+    validate_saved_output_key(&conversation_id, &message_id)?;
+    let connection = open_database()?;
+    ensure_saved_output_exists(&connection, &conversation_id, &message_id)?;
+    let mut statement = connection
+        .prepare(
+            "SELECT version_number, created_at
+             FROM saved_output_versions
+             WHERE conversation_id = ?1 AND message_id = ?2
+             ORDER BY version_number ASC
+             LIMIT ?3",
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    let mut rows = statement
+        .query(rusqlite::params![
+            conversation_id,
+            message_id,
+            i64::from(MAXIMUM_SAVED_OUTPUT_VERSIONS) + 1,
+        ])
+        .map_err(|_| ChatStorageError::unavailable())?;
+    let mut versions = Vec::new();
+    while let Some(row) = rows.next().map_err(|_| ChatStorageError::unavailable())? {
+        let version_number = row
+            .get::<_, i64>(0)
+            .map_err(|_| ChatStorageError::unavailable())?;
+        let created_at_unix_ms = row
+            .get::<_, i64>(1)
+            .map_err(|_| ChatStorageError::unavailable())?;
+        if !(1..=i64::from(MAXIMUM_SAVED_OUTPUT_VERSIONS)).contains(&version_number)
+            || !(0..=MAXIMUM_HISTORY_SEARCH_TIMESTAMP).contains(&created_at_unix_ms)
+            || versions.len() >= MAXIMUM_SAVED_OUTPUT_VERSIONS as usize
+        {
+            return Err(ChatStorageError::unavailable());
+        }
+        versions.push(SavedOutputVersionSummary {
+            version_number: version_number as u32,
+            created_at_unix_ms,
+        });
+    }
+    if versions.is_empty() {
+        return Err(ChatStorageError::unavailable());
+    }
+    Ok(versions)
+}
+
+#[tauri::command]
+/// Loads one saved response version after confirming it belongs to a saved output.
+pub fn get_saved_output_version(
+    conversation_id: BoundedText<MAXIMUM_SAFE_IDENTIFIER_BYTES>,
+    message_id: BoundedText<MAXIMUM_SAFE_IDENTIFIER_BYTES>,
+    version_number: u32,
+) -> Result<SavedOutputVersion, ChatStorageError> {
+    let conversation_id = conversation_id.into_inner();
+    let message_id = message_id.into_inner();
+    validate_saved_output_key(&conversation_id, &message_id)?;
+    if !(1..=MAXIMUM_SAVED_OUTPUT_VERSIONS).contains(&version_number) {
+        return Err(ChatStorageError::invalid_input());
+    }
+    let connection = open_database()?;
+    ensure_saved_output_exists(&connection, &conversation_id, &message_id)?;
+    let (stored_content, created_at_unix_ms) = connection
+        .query_row(
+            "SELECT content, created_at
+             FROM saved_output_versions
+             WHERE conversation_id = ?1 AND message_id = ?2 AND version_number = ?3",
+            rusqlite::params![conversation_id, message_id, i64::from(version_number)],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    if !(0..=MAXIMUM_HISTORY_SEARCH_TIMESTAMP).contains(&created_at_unix_ms) {
+        return Err(ChatStorageError::unavailable());
+    }
+    Ok(SavedOutputVersion {
+        version_number,
+        created_at_unix_ms,
+        content: decode_saved_output_content(&stored_content)?,
+    })
+}
+
+#[tauri::command]
+/// Stores an edited response as a new version and selects it without changing the transcript.
+pub fn save_saved_output_version(
+    conversation_id: BoundedText<MAXIMUM_SAFE_IDENTIFIER_BYTES>,
+    message_id: BoundedText<MAXIMUM_SAFE_IDENTIFIER_BYTES>,
+    content: BoundedText<MAXIMUM_SAVED_OUTPUT_CONTENT_BYTES>,
+) -> Result<SavedOutputVersion, ChatStorageError> {
+    let conversation_id = conversation_id.into_inner();
+    let message_id = message_id.into_inner();
+    let content = content.into_inner();
+    validate_saved_output_key(&conversation_id, &message_id)?;
+    if content.trim().is_empty() || content.contains('\0') {
+        return Err(ChatStorageError::invalid_input());
+    }
+    let mut connection = open_database()?;
+    let transaction = connection
+        .transaction()
+        .map_err(|_| ChatStorageError::unavailable())?;
+    ensure_saved_output_exists(&transaction, &conversation_id, &message_id)?;
+    let maximum_version = transaction
+        .query_row(
+            "SELECT COALESCE(MAX(version_number), 0)
+             FROM saved_output_versions
+             WHERE conversation_id = ?1 AND message_id = ?2",
+            rusqlite::params![conversation_id, message_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    let next_version = maximum_version
+        .checked_add(1)
+        .ok_or_else(ChatStorageError::unavailable)?;
+    if !(1..=i64::from(MAXIMUM_SAVED_OUTPUT_VERSIONS)).contains(&next_version) {
+        return Err(ChatStorageError::invalid_input());
+    }
+    let created_at_unix_ms = unix_time_milliseconds()?;
+    transaction
+        .execute(
+            "INSERT INTO saved_output_versions
+             (conversation_id, message_id, version_number, content, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![
+                conversation_id,
+                message_id,
+                next_version,
+                content,
+                created_at_unix_ms
+            ],
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    transaction
+        .execute(
+            "UPDATE saved_outputs
+             SET content = ?1, selected_version = ?2
+             WHERE conversation_id = ?3 AND message_id = ?4",
+            rusqlite::params![content, next_version, conversation_id, message_id],
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    transaction
+        .commit()
+        .map_err(|_| ChatStorageError::unavailable())?;
+    Ok(SavedOutputVersion {
+        version_number: next_version as u32,
+        created_at_unix_ms,
+        content,
+    })
+}
+
+#[tauri::command]
+/// Changes the selected saved response version without editing conversation history.
+pub fn select_saved_output_version(
+    conversation_id: BoundedText<MAXIMUM_SAFE_IDENTIFIER_BYTES>,
+    message_id: BoundedText<MAXIMUM_SAFE_IDENTIFIER_BYTES>,
+    version_number: u32,
+) -> Result<(), ChatStorageError> {
+    let conversation_id = conversation_id.into_inner();
+    let message_id = message_id.into_inner();
+    validate_saved_output_key(&conversation_id, &message_id)?;
+    if !(1..=MAXIMUM_SAVED_OUTPUT_VERSIONS).contains(&version_number) {
+        return Err(ChatStorageError::invalid_input());
+    }
+    let connection = open_database()?;
+    let updated_rows = connection
+        .execute(
+            "UPDATE saved_outputs
+             SET selected_version = ?1,
+                 content = (
+                   SELECT content FROM saved_output_versions
+                   WHERE conversation_id = ?2 AND message_id = ?3 AND version_number = ?1
+                 )
+             WHERE conversation_id = ?2 AND message_id = ?3
+               AND EXISTS (
+                 SELECT 1 FROM saved_output_versions
+                 WHERE conversation_id = ?2 AND message_id = ?3 AND version_number = ?1
+               )",
+            rusqlite::params![i64::from(version_number), conversation_id, message_id],
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    if updated_rows != 1 {
+        return Err(ChatStorageError::invalid_input());
+    }
+    Ok(())
+}
+
+fn validate_saved_output_key(
+    conversation_id: &str,
+    message_id: &str,
+) -> Result<(), ChatStorageError> {
+    if is_safe_identifier(conversation_id) && is_safe_identifier(message_id) {
+        Ok(())
+    } else {
+        Err(ChatStorageError::invalid_input())
+    }
+}
+
+fn ensure_saved_output_exists(
+    connection: &Connection,
+    conversation_id: &str,
+    message_id: &str,
+) -> Result<(), ChatStorageError> {
+    let exists = connection
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM saved_outputs WHERE conversation_id = ?1 AND message_id = ?2
+             )",
+            rusqlite::params![conversation_id, message_id],
+            |row| row.get::<_, bool>(0),
+        )
+        .map_err(|_| ChatStorageError::unavailable())?;
+    if exists {
+        Ok(())
+    } else {
+        Err(ChatStorageError::invalid_input())
+    }
+}
+
+fn decode_saved_output_content(content: &str) -> Result<String, ChatStorageError> {
+    if content.starts_with(MESSAGE_CONTENT_PREFIX) {
+        Ok(parse_stored_message_content(content)?._content)
+    } else {
+        Ok(content.to_owned())
+    }
+}
+
 #[cfg(test)]
 mod saved_output_search_benchmarks {
     use std::{
@@ -363,7 +658,6 @@ mod saved_output_search_benchmarks {
             model_id: None,
             project_id: None,
             is_archived: None,
-            tag: None,
             sort_order: SavedOutputSearchSortOrder::Relevance,
             from_unix_ms: None,
             through_unix_ms: None,
@@ -565,10 +859,10 @@ mod saved_output_search_benchmarks {
             let mut statement = connection
                 .prepare(
                     "SELECT id, title, title_source, provider_id, model_id, connection_id,
-                            workspace_id, api_key_connection_id, project_id, tags,
-                            is_pinned, is_archived, is_bookmarked, created_at, updated_at
+                    workspace_id, api_key_connection_id, project_id,
+                            is_pinned, is_archived, created_at, updated_at
                      FROM conversations
-                     ORDER BY is_bookmarked DESC, is_pinned DESC, updated_at DESC, id ASC",
+                     ORDER BY is_pinned DESC, updated_at DESC, id ASC",
                 )
                 .expect("conversation list query should prepare");
             let rows = statement
@@ -776,7 +1070,6 @@ mod saved_output_search_benchmarks {
         input.model_id = Some("fixture-model".to_owned());
         input.project_id = Some("project-1".to_owned());
         input.is_archived = Some(true);
-        input.tag = Some("work".to_owned());
         input.sort_order = SavedOutputSearchSortOrder::Newest;
         input.from_unix_ms = Some(20);
         input.through_unix_ms = Some(50);
@@ -819,12 +1112,6 @@ mod saved_output_search_benchmarks {
         input.is_archived = Some(false);
         assert!(search_saved_outputs_from_connection(&connection, input)
             .expect("archive filter should complete")
-            .is_empty());
-
-        let mut input = search_input("needle");
-        input.tag = Some("another-tag".to_owned());
-        assert!(search_saved_outputs_from_connection(&connection, input)
-            .expect("tag filter should complete")
             .is_empty());
 
         let mut input = search_input("needle");

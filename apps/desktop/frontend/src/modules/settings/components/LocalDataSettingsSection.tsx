@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Button, Dialog } from '@/design-system';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
 import { historyStorageStatusForInitialization } from '@/modules/settings/data/historyStorageStatus';
+import { AttachmentIndexSettingsSection } from './AttachmentIndexSettingsSection';
 import { ConversationArchiveSettingsSection } from './ConversationArchiveSettingsSection';
 import { ProfileArchiveSettingsSection } from './ProfileArchiveSettingsSection';
 import { SupportDiagnosticsSettingsSection } from './SupportDiagnosticsSettingsSection';
@@ -72,6 +73,7 @@ export function LocalDataSettingsSection() {
 
       <ConversationArchiveSettingsSection enabled={available} />
       <ProfileArchiveSettingsSection enabled={available} />
+      <AttachmentIndexSettingsSection />
       <SupportDiagnosticsSettingsSection />
 
       <div className="@container">

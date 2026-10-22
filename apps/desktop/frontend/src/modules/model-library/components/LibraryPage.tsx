@@ -1,12 +1,14 @@
-import { Blocks, Cpu } from 'lucide-react';
+import { Blocks, BookmarkCheck, Cpu, Files } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/design-system';
 import { McpCatalogTab } from './McpCatalogTab';
 import { ModelCatalogTab } from './ModelCatalogTab';
+import { SavedResponsesTab } from './SavedResponsesTab';
+import { AttachmentLibraryTab } from './AttachmentLibraryTab';
 
-type LibraryPageTab = 'models' | 'mcp';
+type LibraryPageTab = 'models' | 'mcp' | 'outputs' | 'files';
 
 export function LibraryPage() {
   const { t } = useTranslation();
@@ -48,6 +50,24 @@ export function LibraryPage() {
             {t('libraryTabModels')}
           </Button>
           <Button
+            aria-current={page === 'outputs' ? 'page' : undefined}
+            className={page === 'outputs' ? 'library-page-nav-item is-active' : 'library-page-nav-item'}
+            onClick={() => selectPage('outputs')}
+            variant="ghost"
+          >
+            <BookmarkCheck aria-hidden="true" size={16} />
+            {t('outputs')}
+          </Button>
+          <Button
+            aria-current={page === 'files' ? 'page' : undefined}
+            className={page === 'files' ? 'library-page-nav-item is-active' : 'library-page-nav-item'}
+            onClick={() => selectPage('files')}
+            variant="ghost"
+          >
+            <Files aria-hidden="true" size={16} />
+            {t('attachmentLibraryTitle')}
+          </Button>
+          <Button
             aria-current={page === 'mcp' ? 'page' : undefined}
             className={page === 'mcp' ? 'library-page-nav-item is-active' : 'library-page-nav-item'}
             onClick={() => selectPage('mcp')}
@@ -73,6 +93,22 @@ export function LibraryPage() {
           className={page === 'mcp' ? 'library-page-panel min-h-0 min-w-0 flex-1 overflow-y-auto' : 'hidden'}
         >
           <McpCatalogTab />
+        </div>
+      ) : null}
+      {visitedPages.has('outputs') ? (
+        <div
+          aria-hidden={page !== 'outputs'}
+          className={page === 'outputs' ? 'library-page-panel min-h-0 min-w-0 flex-1 overflow-y-auto' : 'hidden'}
+        >
+          <SavedResponsesTab />
+        </div>
+      ) : null}
+      {visitedPages.has('files') ? (
+        <div
+          aria-hidden={page !== 'files'}
+          className={page === 'files' ? 'library-page-panel min-h-0 min-w-0 flex-1 overflow-y-auto' : 'hidden'}
+        >
+          <AttachmentLibraryTab />
         </div>
       ) : null}
     </div>

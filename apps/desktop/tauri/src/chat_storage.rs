@@ -6,7 +6,10 @@
 
 use std::{
     env, fs,
+    fs::OpenOptions,
+    io::Write,
     path::{Path, PathBuf},
+    sync::Mutex,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -17,6 +20,9 @@ use crate::{
     project_folder::consume_project_folder_selection,
     request_bounds::{BoundedText, BoundedVec},
 };
+
+const MAX_CHAT_STORAGE_DIAGNOSTIC_BYTES: u64 = 512 * 1024;
+static CHAT_STORAGE_DIAGNOSTIC_LOCK: Mutex<()> = Mutex::new(());
 
 mod attachments;
 mod maintenance;
@@ -119,10 +125,10 @@ pub fn list_conversations() -> Result<Vec<StoredConversation>, ChatStorageError>
     let mut statement = connection
         .prepare(
             "SELECT id, title, title_source, provider_id, model_id, connection_id,
-                    workspace_id, api_key_connection_id, project_id, tags,
-                    is_pinned, is_archived, is_bookmarked, created_at, updated_at
+                    workspace_id, api_key_connection_id, project_id,
+                    is_pinned, is_archived, created_at, updated_at
              FROM conversations
-             ORDER BY is_bookmarked DESC, is_pinned DESC, updated_at DESC, id ASC
+             ORDER BY is_pinned DESC, updated_at DESC, id ASC
             ",
         )
         .map_err(|_| ChatStorageError::unavailable())?;
@@ -309,8 +315,8 @@ pub fn get_conversation(
     connection
         .query_row(
             "SELECT id, title, title_source, provider_id, model_id, connection_id,
-                    workspace_id, api_key_connection_id, project_id, tags,
-                    is_pinned, is_archived, is_bookmarked, created_at, updated_at
+                    workspace_id, api_key_connection_id, project_id,
+                    is_pinned, is_archived, created_at, updated_at
              FROM conversations WHERE id = ?1",
             [conversation_id],
             stored_conversation_from_row,
@@ -322,10 +328,6 @@ pub fn get_conversation(
 pub(crate) fn stored_conversation_from_row(
     row: &rusqlite::Row<'_>,
 ) -> rusqlite::Result<StoredConversation> {
-    let tags_json = row.get::<_, String>(9)?;
-    let tags = serde_json::from_str::<Vec<String>>(&tags_json).map_err(|error| {
-        rusqlite::Error::FromSqlConversionFailure(9, rusqlite::types::Type::Text, Box::new(error))
-    })?;
     Ok(StoredConversation {
         id: row.get(0)?,
         title: row.get(1)?,
@@ -336,12 +338,10 @@ pub(crate) fn stored_conversation_from_row(
         workspace_id: row.get(6)?,
         api_key_connection_id: row.get(7)?,
         project_id: row.get(8)?,
-        tags,
-        is_pinned: row.get(10)?,
-        is_archived: row.get(11)?,
-        is_bookmarked: row.get(12)?,
-        created_at: row.get(13)?,
-        updated_at: row.get(14)?,
+        is_pinned: row.get(9)?,
+        is_archived: row.get(10)?,
+        created_at: row.get(11)?,
+        updated_at: row.get(12)?,
     })
 }
 
@@ -429,28 +429,12 @@ pub fn set_conversation_pinned(
     set_conversation_flag(&conversation_id.into_inner(), "is_pinned", is_pinned)
 }
 
-#[tauri::command]
-/// Sets whether a conversation is bookmarked.
-///
-/// # Errors
-/// Returns a validation or storage error.
-pub fn set_conversation_bookmarked(
-    conversation_id: BoundedText<MAXIMUM_SAFE_IDENTIFIER_BYTES>,
-    is_bookmarked: bool,
-) -> Result<(), ChatStorageError> {
-    set_conversation_flag(
-        &conversation_id.into_inner(),
-        "is_bookmarked",
-        is_bookmarked,
-    )
-}
-
 fn set_conversation_flag(
     conversation_id: &str,
     column: &str,
     value: bool,
 ) -> Result<(), ChatStorageError> {
-    if !is_safe_identifier(conversation_id) || !matches!(column, "is_pinned" | "is_bookmarked") {
+    if !is_safe_identifier(conversation_id) || column != "is_pinned" {
         return Err(ChatStorageError::invalid_input());
     }
     let connection = open_database()?;
@@ -458,55 +442,6 @@ fn set_conversation_flag(
         .execute(
             &format!("UPDATE conversations SET {column} = ?1 WHERE id = ?2"),
             params![value, conversation_id],
-        )
-        .map_err(|_| ChatStorageError::unavailable())?;
-    if updated_rows != 1 {
-        return Err(ChatStorageError::invalid_input());
-    }
-    Ok(())
-}
-
-#[tauri::command]
-/// Replaces a conversation's bounded set of searchable tags.
-///
-/// # Errors
-/// Returns a validation or storage error.
-pub fn set_conversation_tags(
-    conversation_id: BoundedText<MAXIMUM_SAFE_IDENTIFIER_BYTES>,
-    tags: BoundedVec<
-        BoundedText<MAXIMUM_CONVERSATION_TAG_BYTES>,
-        MAXIMUM_CONVERSATION_TAG_INPUT_ITEMS,
-    >,
-) -> Result<(), ChatStorageError> {
-    let conversation_id = conversation_id.into_inner();
-    if !is_safe_identifier(&conversation_id) {
-        return Err(ChatStorageError::invalid_input());
-    }
-    let mut normalized = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    for tag in tags.into_strings() {
-        let tag = tag.trim();
-        if tag.is_empty() {
-            continue;
-        }
-        if tag.chars().count() > MAXIMUM_CONVERSATION_TAG_CHARS || tag.chars().any(char::is_control)
-        {
-            return Err(ChatStorageError::invalid_input());
-        }
-        if seen.insert(tag.to_lowercase()) {
-            normalized.push(tag.to_owned());
-        }
-    }
-    if normalized.len() > MAXIMUM_CONVERSATION_TAGS {
-        return Err(ChatStorageError::invalid_input());
-    }
-    let tags_json =
-        serde_json::to_string(&normalized).map_err(|_| ChatStorageError::invalid_input())?;
-    let connection = open_database()?;
-    let updated_rows = connection
-        .execute(
-            "UPDATE conversations SET tags = ?1 WHERE id = ?2",
-            params![tags_json, conversation_id],
         )
         .map_err(|_| ChatStorageError::unavailable())?;
     if updated_rows != 1 {
@@ -889,23 +824,28 @@ pub fn save_message(input: SaveMessageInput) -> Result<(), ChatStorageError> {
     if content.chars().count() > MAX_MESSAGE_CHARS {
         return Err(ChatStorageError::invalid_input());
     }
-    let connection = open_database()?;
+    let connection = open_database().map_err(|error| {
+        record_chat_storage_failure("database_open", None);
+        error
+    })?;
     let created_at = input.created_at.unwrap_or(unix_time_milliseconds()?);
-    let transaction = connection
-        .unchecked_transaction()
-        .map_err(|_| ChatStorageError::unavailable())?;
+    let transaction = connection.unchecked_transaction().map_err(|error| {
+        record_chat_storage_failure("transaction_begin", Some(&error));
+        ChatStorageError::unavailable()
+    })?;
     let staged_attachments = if validated_attachments.is_empty() {
         None
     } else {
-        Some(stage_message_attachments(
-            &input.conversation_id,
-            &input.id,
-            &validated_attachments,
-        )?)
+        match stage_message_attachments(&input.conversation_id, &input.id, &validated_attachments) {
+            Ok(staged) => Some(staged),
+            Err(error) => {
+                record_chat_storage_failure("attachment_stage", None);
+                return Err(error);
+            }
+        }
     };
-    if transaction
-        .execute(
-            "INSERT INTO messages (
+    if let Err(error) = transaction.execute(
+        "INSERT INTO messages (
                 id, conversation_id, role, content, created_at, output_tokens,
                 tokens_per_second, elapsed_microseconds, provider_id, model_id,
                 citation_sources, personal_memory_fact_ids, reasoning_summaries,
@@ -928,42 +868,39 @@ pub fn save_message(input: SaveMessageInput) -> Result<(), ChatStorageError> {
                 tool_activities = excluded.tool_activities,
                 status = excluded.status,
                 failure_code = excluded.failure_code",
-            params![
-                input.id.trim(),
-                input.conversation_id.trim(),
-                input.role,
-                content,
-                created_at,
-                input.output_tokens,
-                input.tokens_per_second,
-                input.elapsed_microseconds,
-                input.provider_id,
-                input.model_id,
-                input.citation_sources.unwrap_or_else(|| "[]".to_owned()),
-                input
-                    .personal_memory_fact_ids
-                    .unwrap_or_else(|| "[]".to_owned()),
-                input.reasoning_summaries.unwrap_or_else(|| "[]".to_owned()),
-                input.tool_activities.unwrap_or_else(|| "[]".to_owned()),
-                input.status,
-                input.failure_code,
-            ],
-        )
-        .is_err()
-    {
+        params![
+            input.id.trim(),
+            input.conversation_id.trim(),
+            input.role,
+            content,
+            created_at,
+            input.output_tokens,
+            input.tokens_per_second,
+            input.elapsed_microseconds,
+            input.provider_id,
+            input.model_id,
+            input.citation_sources.unwrap_or_else(|| "[]".to_owned()),
+            input
+                .personal_memory_fact_ids
+                .unwrap_or_else(|| "[]".to_owned()),
+            input.reasoning_summaries.unwrap_or_else(|| "[]".to_owned()),
+            input.tool_activities.unwrap_or_else(|| "[]".to_owned()),
+            input.status,
+            input.failure_code,
+        ],
+    ) {
+        record_chat_storage_failure("message_insert", Some(&error));
         drop(transaction);
         if let Some((staging, _)) = staged_attachments {
             cleanup_attachment_directory(&staging)?;
         }
         return Err(ChatStorageError::unavailable());
     }
-    if transaction
-        .execute(
-            "UPDATE conversations SET updated_at = MAX(updated_at, ?1) WHERE id = ?2",
-            params![created_at, input.conversation_id.trim()],
-        )
-        .is_err()
-    {
+    if let Err(error) = transaction.execute(
+        "UPDATE conversations SET updated_at = MAX(updated_at, ?1) WHERE id = ?2",
+        params![created_at, input.conversation_id.trim()],
+    ) {
+        record_chat_storage_failure("conversation_update", Some(&error));
         drop(transaction);
         if let Some((staging, _)) = staged_attachments {
             cleanup_attachment_directory(&staging)?;
@@ -973,19 +910,367 @@ pub fn save_message(input: SaveMessageInput) -> Result<(), ChatStorageError> {
     let mut published_attachments = None;
     if let Some((staging, destination)) = staged_attachments {
         if fs::rename(&staging, &destination).is_err() {
+            record_chat_storage_failure("attachment_publish", None);
             drop(transaction);
             cleanup_attachment_directory(&staging)?;
             return Err(ChatStorageError::unavailable());
         }
         published_attachments = Some(destination);
     }
-    if transaction.commit().is_err() {
+    if let Err(error) = transaction.commit() {
+        record_chat_storage_failure("transaction_commit", Some(&error));
         if let Some(destination) = published_attachments {
             cleanup_attachment_directory(&destination)?;
         }
         return Err(ChatStorageError::unavailable());
     }
     Ok(())
+}
+
+/// Records a failed renderer chat request using only a fixed stage and error code.
+#[tauri::command]
+pub fn record_chat_request_failure(stage: String, code: String) -> Result<(), ChatStorageError> {
+    let stage = match stage.as_str() {
+        "conversationCreation" => "conversation_creation",
+        "userMessagePersistence" => "user_message_persistence",
+        "requestExecution" => "request_execution",
+        _ => return Err(ChatStorageError::invalid_input()),
+    };
+    if code.is_empty()
+        || code.len() > 96
+        || !code
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+    {
+        return Err(ChatStorageError::invalid_input());
+    }
+    let local_app_data = env::var_os("LOCALAPPDATA").ok_or_else(ChatStorageError::unavailable)?;
+    let logs_directory = PathBuf::from(local_app_data).join("OpenChat").join("logs");
+    let _guard = CHAT_STORAGE_DIAGNOSTIC_LOCK
+        .lock()
+        .map_err(|_| ChatStorageError::unavailable())?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| ChatStorageError::unavailable())?
+        .as_millis();
+    append_chat_request_failure_at(&logs_directory, timestamp, stage, &code)
+        .map_err(|_| ChatStorageError::unavailable())
+}
+
+/// Records a ChatGPT connection-removal stage using only fixed labels and a stable error code.
+#[tauri::command]
+pub fn record_connection_removal_diagnostic(
+    stage: String,
+    code: Option<String>,
+) -> Result<(), ChatStorageError> {
+    let stage = match stage.as_str() {
+        "request_started" => "request_started",
+        "operation_accepted" => "operation_accepted",
+        "operation_completed" => "operation_completed",
+        "operation_failed" => "operation_failed",
+        "reconcile_present" => "reconcile_present",
+        "reconcile_absent" => "reconcile_absent",
+        "reconcile_check_failed" => "reconcile_check_failed",
+        "ui_failed" => "ui_failed",
+        "ui_unknown" => "ui_unknown",
+        "ui_succeeded" => "ui_succeeded",
+        _ => return Err(ChatStorageError::invalid_input()),
+    };
+    let code = code.unwrap_or_default();
+    if code.len() > 96
+        || !code
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+    {
+        return Err(ChatStorageError::invalid_input());
+    }
+    let local_app_data = env::var_os("LOCALAPPDATA").ok_or_else(ChatStorageError::unavailable)?;
+    let logs_directory = PathBuf::from(local_app_data).join("OpenChat").join("logs");
+    let _guard = CHAT_STORAGE_DIAGNOSTIC_LOCK
+        .lock()
+        .map_err(|_| ChatStorageError::unavailable())?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| ChatStorageError::unavailable())?
+        .as_millis();
+    append_connection_removal_diagnostic_at(&logs_directory, timestamp, stage, &code)
+        .map_err(|_| ChatStorageError::unavailable())
+}
+
+/// Records context-usage failures using only a fixed operation label and stable error code.
+#[tauri::command]
+pub fn record_context_usage_failure(
+    operation: String,
+    code: String,
+) -> Result<(), ChatStorageError> {
+    let operation = match operation.as_str() {
+        "contextConfiguration" => "context_configuration",
+        "memoryInspection" => "memory_inspection",
+        _ => return Err(ChatStorageError::invalid_input()),
+    };
+    if code.is_empty()
+        || code.len() > 96
+        || !code
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+    {
+        return Err(ChatStorageError::invalid_input());
+    }
+    let local_app_data = env::var_os("LOCALAPPDATA").ok_or_else(ChatStorageError::unavailable)?;
+    let logs_directory = PathBuf::from(local_app_data).join("OpenChat").join("logs");
+    let _guard = CHAT_STORAGE_DIAGNOSTIC_LOCK
+        .lock()
+        .map_err(|_| ChatStorageError::unavailable())?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| ChatStorageError::unavailable())?
+        .as_millis();
+    append_context_usage_failure_at(&logs_directory, timestamp, operation, &code)
+        .map_err(|_| ChatStorageError::unavailable())
+}
+
+fn record_chat_storage_failure(stage: &'static str, error: Option<&rusqlite::Error>) {
+    let category = match error {
+        Some(rusqlite::Error::SqliteFailure(error, _)) => {
+            format!("sqlite_{}", error.extended_code)
+        }
+        Some(_) => "storage_failure".to_owned(),
+        None => "storage_unavailable".to_owned(),
+    };
+    let Some(local_app_data) = env::var_os("LOCALAPPDATA") else {
+        eprintln!("chat_storage_diagnostic_write_failed");
+        return;
+    };
+    let logs_directory = PathBuf::from(local_app_data).join("OpenChat").join("logs");
+    let result = CHAT_STORAGE_DIAGNOSTIC_LOCK
+        .lock()
+        .map_err(|_| std::io::Error::other("chat storage diagnostic lock is unavailable"))
+        .and_then(|_guard| {
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_err(std::io::Error::other)?
+                .as_millis();
+            append_chat_storage_failure_at(&logs_directory, timestamp, stage, category.as_str())
+        });
+    if result.is_err() {
+        eprintln!("chat_storage_diagnostic_write_failed");
+    }
+}
+
+fn append_chat_storage_failure_at(
+    logs_directory: &Path,
+    timestamp_unix_ms: u128,
+    stage: &'static str,
+    category: &str,
+) -> std::io::Result<()> {
+    fs::create_dir_all(logs_directory)?;
+    let log_path = logs_directory.join("openchat-app.log");
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)?;
+    let line = format!(
+        "timestamp_unix_ms={timestamp_unix_ms} component=app event=chat_storage_failed operation=save_message stage={stage} code={category}\n"
+    );
+    if file.metadata()?.len().saturating_add(line.len() as u64) > MAX_CHAT_STORAGE_DIAGNOSTIC_BYTES
+    {
+        drop(file);
+        return fs::write(log_path, line.as_bytes());
+    }
+    let mut file = file;
+    file.write_all(line.as_bytes())
+}
+
+fn append_chat_request_failure_at(
+    logs_directory: &Path,
+    timestamp_unix_ms: u128,
+    stage: &'static str,
+    code: &str,
+) -> std::io::Result<()> {
+    fs::create_dir_all(logs_directory)?;
+    let log_path = logs_directory.join("openchat-app.log");
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)?;
+    let line = format!(
+        "timestamp_unix_ms={timestamp_unix_ms} component=app event=chat_request_failed stage={stage} code={code}\n"
+    );
+    if file.metadata()?.len().saturating_add(line.len() as u64) > MAX_CHAT_STORAGE_DIAGNOSTIC_BYTES
+    {
+        drop(file);
+        return fs::write(log_path, line.as_bytes());
+    }
+    let mut file = file;
+    file.write_all(line.as_bytes())
+}
+
+fn append_connection_removal_diagnostic_at(
+    logs_directory: &Path,
+    timestamp_unix_ms: u128,
+    stage: &'static str,
+    code: &str,
+) -> std::io::Result<()> {
+    fs::create_dir_all(logs_directory)?;
+    let log_path = logs_directory.join("openchat-app.log");
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)?;
+    let code_field = if code.is_empty() {
+        String::new()
+    } else {
+        format!(" code={code}")
+    };
+    let line = format!(
+        "timestamp_unix_ms={timestamp_unix_ms} component=app event=connection_removal stage={stage}{code_field}\n"
+    );
+    if file.metadata()?.len().saturating_add(line.len() as u64) > MAX_CHAT_STORAGE_DIAGNOSTIC_BYTES
+    {
+        drop(file);
+        return fs::write(log_path, line.as_bytes());
+    }
+    file.write_all(line.as_bytes())
+}
+
+fn append_context_usage_failure_at(
+    logs_directory: &Path,
+    timestamp_unix_ms: u128,
+    operation: &'static str,
+    code: &str,
+) -> std::io::Result<()> {
+    fs::create_dir_all(logs_directory)?;
+    let log_path = logs_directory.join("openchat-app.log");
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_path)?;
+    let line = format!(
+        "timestamp_unix_ms={timestamp_unix_ms} component=context_usage event=request_failed operation={operation} code={code}\n"
+    );
+    if file.metadata()?.len().saturating_add(line.len() as u64) > MAX_CHAT_STORAGE_DIAGNOSTIC_BYTES
+    {
+        drop(file);
+        return fs::write(log_path, line.as_bytes());
+    }
+    file.write_all(line.as_bytes())
+}
+
+#[cfg(test)]
+mod chat_storage_diagnostic_tests {
+    use std::{fs, path::PathBuf};
+
+    use super::{
+        append_chat_request_failure_at, append_chat_storage_failure_at,
+        append_connection_removal_diagnostic_at, append_context_usage_failure_at,
+        MAX_CHAT_STORAGE_DIAGNOSTIC_BYTES,
+    };
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "openchat-chat-storage-diagnostic-{}",
+                uuid::Uuid::new_v4().simple()
+            ));
+            fs::create_dir_all(&path).expect("create diagnostic test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn save_failure_diagnostics_are_safe_and_bounded() {
+        let directory = TestDirectory::new();
+        let log_directory = directory.0.join("logs");
+        fs::create_dir_all(&log_directory).expect("create log directory");
+        let log_path = log_directory.join("openchat-app.log");
+        fs::write(
+            &log_path,
+            vec![b'x'; MAX_CHAT_STORAGE_DIAGNOSTIC_BYTES as usize],
+        )
+        .expect("fill diagnostic log");
+
+        append_chat_storage_failure_at(&log_directory, 123, "message_insert", "sqlite_2067")
+            .expect("append safe diagnostic");
+
+        let contents = fs::read_to_string(&log_path).expect("read diagnostic log");
+        assert_eq!(
+            contents,
+            "timestamp_unix_ms=123 component=app event=chat_storage_failed operation=save_message stage=message_insert code=sqlite_2067\n"
+        );
+        assert!(
+            log_path.metadata().expect("read log size").len() <= MAX_CHAT_STORAGE_DIAGNOSTIC_BYTES
+        );
+        assert!(!contents.contains("private-message"));
+    }
+
+    #[test]
+    fn chat_request_failure_diagnostics_record_only_stage_and_code() {
+        let directory = TestDirectory::new();
+        append_chat_request_failure_at(
+            &directory.0,
+            456,
+            "request_execution",
+            "provider_request_failed",
+        )
+        .expect("record request failure");
+
+        let contents = fs::read_to_string(directory.0.join("openchat-app.log"))
+            .expect("read request diagnostic");
+        assert_eq!(
+            contents,
+            "timestamp_unix_ms=456 component=app event=chat_request_failed stage=request_execution code=provider_request_failed\n"
+        );
+        assert!(!contents.contains("message"));
+    }
+
+    #[test]
+    fn connection_removal_diagnostics_record_only_stage_and_safe_code() {
+        let directory = TestDirectory::new();
+        append_connection_removal_diagnostic_at(
+            &directory.0,
+            789,
+            "operation_failed",
+            "request_cancelled",
+        )
+        .expect("record connection-removal diagnostic");
+
+        let contents = fs::read_to_string(directory.0.join("openchat-app.log"))
+            .expect("read connection-removal diagnostic");
+        assert_eq!(
+            contents,
+            "timestamp_unix_ms=789 component=app event=connection_removal stage=operation_failed code=request_cancelled\n"
+        );
+        assert!(!contents.contains("connection-1"));
+    }
+
+    #[test]
+    fn context_usage_diagnostics_record_only_operation_and_safe_code() {
+        let directory = TestDirectory::new();
+        let log_directory = directory.0.join("logs");
+
+        append_context_usage_failure_at(
+            &log_directory,
+            456,
+            "memory_inspection",
+            "service_timeout",
+        )
+        .expect("append safe context usage diagnostic");
+
+        let contents = fs::read_to_string(log_directory.join("openchat-app.log"))
+            .expect("read context usage diagnostic");
+        assert_eq!(
+            contents,
+            "timestamp_unix_ms=456 component=context_usage event=request_failed operation=memory_inspection code=service_timeout\n"
+        );
+    }
 }
 
 fn validate_conversation_input(input: &CreateConversationInput) -> Result<(), ChatStorageError> {
@@ -1024,6 +1309,7 @@ fn validate_conversation_input(input: &CreateConversationInput) -> Result<(), Ch
             "deepinfra",
             "dashscope",
             "cohere",
+            "kilo",
         ]
         .contains(&provider_id);
     let local_provider = provider_id == "llama_cpp";
@@ -1050,7 +1336,7 @@ fn validate_conversation_input(input: &CreateConversationInput) -> Result<(), Ch
 }
 
 fn validate_model_favorite_input(input: &SetModelFavoriteInput) -> Result<(), ChatStorageError> {
-    const API_KEY_PROVIDERS: [&str; 16] = [
+    const API_KEY_PROVIDERS: [&str; 17] = [
         "chatgpt_api",
         "gemini",
         "groq",
@@ -1067,6 +1353,7 @@ fn validate_model_favorite_input(input: &SetModelFavoriteInput) -> Result<(), Ch
         "deepinfra",
         "dashscope",
         "cohere",
+        "kilo",
     ];
     let api_key_provider = API_KEY_PROVIDERS.contains(&input.provider_id.as_str())
         || is_custom_provider_id(&input.provider_id);
@@ -1307,9 +1594,8 @@ mod request_bound_tests {
     use super::{
         BoundedIncomingAttachments, CreateConversationInput, SaveMessageInput,
         MAXIMUM_ATTACHMENT_FILE_COUNT, MAXIMUM_ATTACHMENT_TOTAL_BASE64_BYTES,
-        MAXIMUM_CONVERSATION_IDS_PER_MUTATION, MAXIMUM_CONVERSATION_TAG_INPUT_ITEMS,
-        MAXIMUM_MESSAGE_METADATA_BYTES, MAXIMUM_NEW_CONVERSATION_TITLE_BYTES,
-        MAXIMUM_SAFE_IDENTIFIER_BYTES,
+        MAXIMUM_CONVERSATION_IDS_PER_MUTATION, MAXIMUM_MESSAGE_METADATA_BYTES,
+        MAXIMUM_NEW_CONVERSATION_TITLE_BYTES, MAXIMUM_SAFE_IDENTIFIER_BYTES,
     };
     use crate::request_bounds::{BoundedText, BoundedVec};
 
@@ -1351,16 +1637,6 @@ mod request_bound_tests {
             >,
         >(ids_over_limit)
         .is_err());
-
-        let tags_at_supported_input_limit = Value::Array(
-            (0..MAXIMUM_CONVERSATION_TAG_INPUT_ITEMS)
-                .map(|_| json!("tag"))
-                .collect(),
-        );
-        assert!(serde_json::from_value::<
-            BoundedVec<BoundedText<128>, MAXIMUM_CONVERSATION_TAG_INPUT_ITEMS>,
-        >(tags_at_supported_input_limit)
-        .is_ok());
     }
 
     #[test]

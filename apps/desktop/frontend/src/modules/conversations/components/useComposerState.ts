@@ -7,11 +7,12 @@ import {
   maximumAttachmentFileCount,
   type PendingChatAttachment,
   readAttachmentFile,
+  restoreStoredAttachment,
   validateAttachmentSelection,
 } from '@/modules/conversations/data/chatAttachments';
 import { readChatGptFastMode, writeChatGptFastMode } from '@/modules/conversations/data/chatGptFastMode';
-import type { ChatModelFavorite } from '@/modules/conversations/data/chatStorage';
-import { renameConversation } from '@/modules/conversations/data/chatStorage';
+import type { ChatModelFavorite, ConversationAttachmentSummary } from '@/modules/conversations/data/chatStorage';
+import { readMessageAttachment, renameConversation } from '@/modules/conversations/data/chatStorage';
 import {
   shouldInsertNewlineFromKeyboard,
   shouldSendFromKeyboard,
@@ -23,8 +24,9 @@ import { favoriteSourceConnection } from '@/modules/conversations/stores/chatSto
 import type { ToolPermissionMode } from '@/modules/projects/data/projectPreferences';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
+import { loadRouteParameters } from '@/modules/providers/data/modelRouteParameters';
 import { keyboardShortcutMatches, useKeyboardShortcutsStore } from '@/modules/settings/stores/keyboardShortcutsStore';
-import { localServiceClient } from '@/platform/local-service';
+import { LocalServiceError, localServiceClient, type ServiceOperation } from '@/platform/local-service';
 import { type ChatSlashCommand, matchingSlashCommands } from './ChatSlashCommandMenu';
 import {
   type ChatCommandFeedbackKey,
@@ -33,7 +35,7 @@ import {
   parseSlashCommand,
   providerNameForModel,
 } from './composerUtils';
-import { detectGhostTextSuggestion } from './ghostTextSuggestions';
+import { getGhostTextContext, parseGhostTextSuggestion } from './ghostTextSuggestions';
 
 export interface UseComposerStateOptions {
   isTemporaryChat: boolean;
@@ -83,6 +85,7 @@ export function useComposerState({
   const hiddenModelKeys = useChatStore((state) => state.hiddenModelKeys);
   const selectedModelKey = useChatStore((state) => state.selectedModelKey);
   const activeConversationId = useChatStore((state) => state.activeConversationId);
+  const temporaryChat = useChatStore((state) => state.temporaryChat);
   const pendingQuestionSendBlock = useChatStore((state) => state.pendingQuestionSendBlock);
   const compactingConversationId = useChatStore((state) => state.compactingConversationId);
   const isCreatingMessageBranch = useChatStore((state) => state.isCreatingMessageBranch);
@@ -129,31 +132,144 @@ export function useComposerState({
   const isChatGptRoute = selectedModel?.providerId === 'chatgpt' || selectedModel?.providerId === 'chatgpt_api';
   const fastModeAvailable = selectedModel?.providerId === 'chatgpt_api' || selectedModel?.supportsFastMode === true;
   const ghostTextEnabled = useComposerPreferencesStore((state) => state.ghostTextEnabled);
+  const ghostTextModelKey = useComposerPreferencesStore((state) => state.ghostTextModelKey);
   const [ghostTextDismissed, setGhostTextDismissed] = useState(false);
+  const [generatedGhostText, setGeneratedGhostText] = useState<{ requestKey: string; text: string } | null>(null);
+  const lastGhostTextRequestKeyRef = useRef<string | null>(null);
 
-  const lastCompletedMessageId = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i];
-      if (msg && msg.role === 'assistant' && msg.status === 'completed') {
-        return msg.id;
-      }
-    }
-    return null;
-  }, [messages]);
+  const ghostTextContext = useMemo(() => getGhostTextContext(messages), [messages]);
+  const ghostTextModel =
+    ghostTextModelKey === 'auto' ? selectedModel : models.find((model) => model.key === ghostTextModelKey);
+  const ghostTextConversationId = isTemporaryChat
+    ? (temporaryChat?.id ?? null)
+    : (targetConversationId ?? activeConversationId);
+  const ghostTextRequestKey =
+    ghostTextContext && ghostTextModel && ghostTextConversationId
+      ? JSON.stringify([ghostTextConversationId, ghostTextContext.assistantMessageId, ghostTextModel.key])
+      : null;
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Reset the dismissal when the conversation or latest completed message changes.
   useEffect(() => {
     setGhostTextDismissed(false);
-  }, [lastCompletedMessageId, activeConversationId]);
+  }, [ghostTextContext?.assistantMessageId, ghostTextConversationId]);
+
+  useEffect(() => {
+    if (
+      !ghostTextEnabled ||
+      !ghostTextContext ||
+      !ghostTextModel ||
+      !ghostTextRequestKey ||
+      !ghostTextConversationId ||
+      targetConversationId === null ||
+      isLoadingMessages ||
+      messageDraft.length > 0 ||
+      isSending ||
+      slashCommands.length > 0 ||
+      generatedGhostText?.requestKey === ghostTextRequestKey ||
+      lastGhostTextRequestKeyRef.current === ghostTextRequestKey
+    ) {
+      return;
+    }
+
+    lastGhostTextRequestKeyRef.current = ghostTextRequestKey;
+    let disposed = false;
+    let completed = false;
+    let cancellationRequested = false;
+    let cancellationSent = false;
+    let operation: ServiceOperation | null = null;
+    const temporaryConversationId = `tmp_${crypto.randomUUID().replaceAll('-', '')}`;
+    const cancelOperation = () => {
+      cancellationRequested = true;
+      if (!operation || cancellationSent) return;
+      cancellationSent = true;
+      void operation.cancel().catch((cause: unknown) => {
+        globalThis.reportError(new Error('The follow-up suggestion request could not be cancelled.', { cause }));
+      });
+    };
+    const timeoutId = window.setTimeout(() => {
+      if (disposed) return;
+      disposed = true;
+      setCommandFeedbackKey('ghostTextSuggestionUnavailable');
+      cancelOperation();
+    }, 20_000);
+
+    void (async () => {
+      try {
+        const routeParameters = loadRouteParameters(ghostTextModel);
+        operation = await localServiceClient.startOperation('chat.temporary.send', {
+          conversationId: temporaryConversationId,
+          providerId: ghostTextModel.providerId,
+          modelId: ghostTextModel.modelId,
+          messages: ghostTextContext.messages,
+          ...routeParameters,
+          ...(ghostTextModel.connectionId ? { connectionId: ghostTextModel.connectionId } : {}),
+          ...(ghostTextModel.workspaceId ? { workspaceId: ghostTextModel.workspaceId } : {}),
+        });
+        if (cancellationRequested || disposed) {
+          cancelOperation();
+          return;
+        }
+
+        const result = await operation.result;
+        if (disposed) return;
+        completed = true;
+        if (result.conversationId !== temporaryConversationId) {
+          setCommandFeedbackKey('ghostTextSuggestionUnavailable');
+          return;
+        }
+        const suggestion = parseGhostTextSuggestion(result.content);
+        if (!suggestion) {
+          setCommandFeedbackKey('ghostTextSuggestionUnavailable');
+          return;
+        }
+        setGeneratedGhostText({ requestKey: ghostTextRequestKey, text: suggestion });
+      } catch (error) {
+        if (disposed) return;
+        completed = true;
+        setCommandFeedbackKey('ghostTextSuggestionUnavailable');
+        if (!(error instanceof LocalServiceError)) {
+          globalThis.reportError(new Error('The follow-up suggestion request failed.', { cause: error }));
+        }
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      window.clearTimeout(timeoutId);
+      if (!completed && lastGhostTextRequestKeyRef.current === ghostTextRequestKey) {
+        lastGhostTextRequestKeyRef.current = null;
+      }
+      if (!completed) cancelOperation();
+    };
+  }, [
+    generatedGhostText?.requestKey,
+    ghostTextContext,
+    ghostTextEnabled,
+    ghostTextModel,
+    ghostTextRequestKey,
+    ghostTextConversationId,
+    isLoadingMessages,
+    isSending,
+    messageDraft.length,
+    slashCommands.length,
+    targetConversationId,
+  ]);
 
   const ghostTextSuggestion = useMemo(() => {
-    if (!ghostTextEnabled || ghostTextDismissed || messageDraft.length > 0 || isSending) {
+    if (
+      !ghostTextEnabled ||
+      ghostTextDismissed ||
+      messageDraft.length > 0 ||
+      isSending ||
+      !ghostTextRequestKey ||
+      generatedGhostText?.requestKey !== ghostTextRequestKey
+    ) {
       return null;
     }
-    const candidate = detectGhostTextSuggestion(messages);
-    if (!candidate) return null;
-    return t(candidate.key, { defaultValue: candidate.fallbackText });
-  }, [ghostTextEnabled, ghostTextDismissed, messageDraft, isSending, messages, t]);
+    return generatedGhostText.text;
+  }, [ghostTextEnabled, ghostTextDismissed, generatedGhostText, ghostTextRequestKey, messageDraft.length, isSending]);
 
   useEffect(() => {
     pendingAttachmentsRef.current = pendingAttachments;
@@ -279,6 +395,7 @@ export function useComposerState({
     attachments: readonly PendingChatAttachment[],
     clearAttachmentsOnSuccess = true,
   ) => {
+    const draftAtSubmission = inputRef.current?.value ?? messageDraft;
     if (
       isTemporaryChat &&
       onBeforeSend &&
@@ -295,10 +412,17 @@ export function useComposerState({
       ...(currentReasoningEffort ? { reasoningEffort: currentReasoningEffort } : {}),
       ...(!isTemporaryChat && isChatGptRoute && fastModeEnabled ? { fastMode: true } : {}),
       ...(targetConversationId ? { conversationId: targetConversationId } : {}),
+      onUserMessageCommitted: (conversationId: string) => {
+        const currentState = useChatStore.getState();
+        const currentConversationId = isTemporaryChat
+          ? (currentState.temporaryChat?.id ?? null)
+          : (targetConversationId ?? currentState.activeConversationId);
+        if (currentConversationId !== conversationId || inputRef.current?.value !== draftAtSubmission) return;
+        clearDraft();
+      },
     };
     const saved = await sendMessage(content, attachments, undefined, undefined, options);
     if (!saved) return false;
-    clearDraft();
     if (clearAttachmentsOnSuccess) clearPendingAttachments();
     setComposerMode('normal');
     setCommandFeedbackKey(null);
@@ -541,6 +665,26 @@ export function useComposerState({
     clearDraft();
   };
 
+  const appendAttachments = (attachments: PendingChatAttachment[]) => {
+    const existingAttachments = pendingAttachmentsRef.current;
+    validateAttachmentSelection(existingAttachments, attachments);
+    const selectedModel = models.find((model) => model.key === selectedModelKey);
+    if (attachments.some((attachment) => attachment.kind === 'image') && selectedModel?.supportsImages !== true) {
+      setAttachmentErrorKey('modelDoesNotSupportImages');
+      return false;
+    }
+    const nextAttachments = [
+      ...existingAttachments,
+      ...attachments.map((attachment) => ({
+        ...attachment,
+        previewUrl: attachment.kind === 'image' ? URL.createObjectURL(attachment.file) : null,
+      })),
+    ];
+    replacePendingAttachments(nextAttachments);
+    setAttachmentErrorKey(null);
+    return true;
+  };
+
   const addAttachments = async (files: File[]) => {
     if (isReadingAttachmentsRef.current) return;
     isReadingAttachmentsRef.current = true;
@@ -559,23 +703,43 @@ export function useComposerState({
       }
       const attachments = await Promise.all(files.map(readAttachmentFile));
       if (!isMountedRef.current) return;
-      validateAttachmentSelection(existingAttachments, attachments);
-      const selectedModel = models.find((model) => model.key === selectedModelKey);
-      if (attachments.some((attachment) => attachment.kind === 'image') && selectedModel?.supportsImages !== true) {
-        setAttachmentErrorKey('modelDoesNotSupportImages');
-        return;
-      }
-      const nextAttachments = [
-        ...existingAttachments,
-        ...attachments.map((attachment) => ({
-          ...attachment,
-          previewUrl: attachment.kind === 'image' ? URL.createObjectURL(attachment.file) : null,
-        })),
-      ];
-      replacePendingAttachments(nextAttachments);
+      appendAttachments(attachments);
     } catch (error) {
       if (!isMountedRef.current) return;
       setAttachmentErrorKey(error instanceof ChatAttachmentInputError ? error.code : 'attachmentReadFailed');
+    } finally {
+      isReadingAttachmentsRef.current = false;
+      if (isMountedRef.current) setIsReadingAttachments(false);
+    }
+  };
+
+  const addExistingAttachments = async (items: readonly ConversationAttachmentSummary[]) => {
+    if (isReadingAttachmentsRef.current || items.length === 0) return false;
+    isReadingAttachmentsRef.current = true;
+    setIsReadingAttachments(true);
+    setAttachmentErrorKey(null);
+    try {
+      const existingAttachments = pendingAttachmentsRef.current;
+      const metadata = items.map((item) => ({
+        id: item.attachmentId,
+        name: item.fileName,
+        mimeType: item.mimeType,
+        sizeBytes: item.sizeBytes,
+        kind: item.mimeType.startsWith('image/') ? 'image' as const : 'text' as const,
+      }));
+      validateAttachmentSelection(existingAttachments, metadata);
+      const attachments = await Promise.all(items.map(async (item, index) => {
+        const bytes = await readMessageAttachment(item.conversationId, item.messageId, item.attachmentId);
+        const itemMetadata = metadata[index];
+        if (!itemMetadata) throw new ChatAttachmentInputError('attachmentReadFailed');
+        return restoreStoredAttachment(itemMetadata, bytes);
+      }));
+      if (!isMountedRef.current) return false;
+      return appendAttachments(attachments);
+    } catch (error) {
+      if (!isMountedRef.current) return false;
+      setAttachmentErrorKey(error instanceof ChatAttachmentInputError ? error.code : 'attachmentReadFailed');
+      return false;
     } finally {
       isReadingAttachmentsRef.current = false;
       if (isMountedRef.current) setIsReadingAttachments(false);
@@ -716,11 +880,7 @@ export function useComposerState({
     if (ghostTextSuggestion && messageDraft.length === 0 && slashCommands.length === 0 && !slashModelMenuOpen) {
       if (event.key === 'Tab') {
         event.preventDefault();
-        setMessageDraft(ghostTextSuggestion);
-        const form = event.currentTarget.form;
-        window.requestAnimationFrame(() => {
-          form?.requestSubmit();
-        });
+        updateDraft(ghostTextSuggestion);
         return;
       }
       if (event.key === 'Escape') {
@@ -856,6 +1016,7 @@ export function useComposerState({
     fastModePreferenceState,
     toggleFastMode,
     addAttachments,
+    addExistingAttachments,
     removeAttachment,
     selectSlashCommand,
     selectSlashModel,

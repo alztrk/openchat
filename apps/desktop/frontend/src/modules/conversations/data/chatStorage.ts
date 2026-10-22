@@ -24,10 +24,8 @@ export interface ChatConversation {
   workspaceId: string | null;
   apiKeyConnectionId: string | null;
   projectId: string | null;
-  tags: string[];
   isPinned: boolean;
   isArchived: boolean;
-  isBookmarked: boolean;
   createdAt: number;
   updatedAt: number;
 }
@@ -72,13 +70,31 @@ export interface SavedOutputMessageKey {
   messageId: string;
 }
 
+export interface SavedOutputSummary {
+  conversationId: string;
+  conversationTitle: string;
+  messageId: string;
+  excerpt: string;
+  createdAtUnixMs: number;
+  selectedVersion: number;
+  versionCount: number;
+}
+
+export interface SavedOutputVersionSummary {
+  versionNumber: number;
+  createdAtUnixMs: number;
+}
+
+export interface SavedOutputVersion extends SavedOutputVersionSummary {
+  content: string;
+}
+
 export interface SavedOutputSearchInput {
   query: string;
   providerId: string | null;
   modelId: string | null;
   projectId: string | null;
   isArchived: boolean | null;
-  tag: string | null;
   sortOrder: 'relevance' | 'newest' | 'oldest';
   fromUnixMs: number | null;
   throughUnixMs: number | null;
@@ -93,6 +109,31 @@ export interface SavedOutputSearchMatch {
   excerpt: string;
   createdAtUnixMs: number;
   projectId: string | null;
+}
+
+export interface ConversationAttachmentSummary {
+  conversationId: string;
+  conversationTitle: string;
+  projectId: string | null;
+  messageId: string;
+  attachmentId: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: number;
+  isAvailable: boolean;
+}
+
+export interface ConversationAttachmentPage {
+  items: ConversationAttachmentSummary[];
+  nextOffset: number | null;
+}
+
+export interface AttachmentTextIndexStatus {
+  enabled: boolean;
+  indexedFileCount: number;
+  indexedBytes: number;
+  truncated: boolean;
 }
 
 export async function listConversations(): Promise<ChatConversation[]> {
@@ -137,14 +178,6 @@ export async function setConversationPinned(conversationId: string, isPinned: bo
   await invoke('set_conversation_pinned', { conversationId, isPinned });
 }
 
-export async function setConversationBookmarked(conversationId: string, isBookmarked: boolean): Promise<void> {
-  await invoke('set_conversation_bookmarked', { conversationId, isBookmarked });
-}
-
-export async function setConversationTags(conversationId: string, tags: string[]): Promise<void> {
-  await invoke('set_conversation_tags', { conversationId, tags });
-}
-
 export async function moveConversations(conversationIds: string[], projectId: string | null): Promise<void> {
   await invoke('move_conversations', { conversationIds, projectId });
 }
@@ -155,6 +188,13 @@ export async function setConversationsArchived(conversationIds: string[], isArch
 
 export async function deleteConversation(conversationId: string): Promise<void> {
   await invoke('delete_conversation', { conversationId });
+}
+
+export async function recordChatRequestFailure(
+  stage: 'conversationCreation' | 'userMessagePersistence' | 'requestExecution',
+  code: string,
+): Promise<void> {
+  await invoke('record_chat_request_failure', { stage, code });
 }
 
 export type ExportFormat = 'md' | 'html' | 'json';
@@ -250,6 +290,59 @@ export async function listSavedOutputMessageKeys(): Promise<SavedOutputMessageKe
     throw new Error('The saved response list is invalid.');
   }
   return value;
+}
+
+export async function listSavedOutputs(offset = 0, limit = 30): Promise<SavedOutputSummary[]> {
+  if (!Number.isInteger(offset) || offset < 0 || offset > 100_000 || !Number.isInteger(limit) || limit < 1 || limit > 50) {
+    throw new RangeError('The saved response page is invalid.');
+  }
+  const value: unknown = await invoke('list_saved_outputs', { offset, limit });
+  if (!Array.isArray(value) || value.length > limit || !value.every(isSavedOutputSummary)) {
+    throw new Error('The saved response page is invalid.');
+  }
+  return value;
+}
+
+export async function listSavedOutputVersions(
+  conversationId: string,
+  messageId: string,
+): Promise<SavedOutputVersionSummary[]> {
+  const value: unknown = await invoke('list_saved_output_versions', { conversationId, messageId });
+  if (!Array.isArray(value) || value.length === 0 || value.length > 1_000 || !value.every(isSavedOutputVersionSummary)) {
+    throw new Error('The saved response version list is invalid.');
+  }
+  return value;
+}
+
+export async function getSavedOutputVersion(
+  conversationId: string,
+  messageId: string,
+  versionNumber: number,
+): Promise<SavedOutputVersion> {
+  const value: unknown = await invoke('get_saved_output_version', { conversationId, messageId, versionNumber });
+  if (!isSavedOutputVersion(value)) throw new Error('The saved response version is invalid.');
+  return value;
+}
+
+export async function saveSavedOutputVersion(
+  conversationId: string,
+  messageId: string,
+  content: string,
+): Promise<SavedOutputVersion> {
+  if (content.trim().length === 0 || new TextEncoder().encode(content).byteLength > 2 * 1024 * 1024) {
+    throw new RangeError('The saved response version content is invalid.');
+  }
+  const value: unknown = await invoke('save_saved_output_version', { conversationId, messageId, content });
+  if (!isSavedOutputVersion(value)) throw new Error('The saved response version is invalid.');
+  return value;
+}
+
+export async function selectSavedOutputVersion(
+  conversationId: string,
+  messageId: string,
+  versionNumber: number,
+): Promise<void> {
+  await invoke('select_saved_output_version', { conversationId, messageId, versionNumber });
 }
 
 export async function searchSavedOutputs(input: SavedOutputSearchInput): Promise<SavedOutputSearchMatch[]> {
@@ -445,9 +538,6 @@ export async function duplicateConversation(
   );
 
   try {
-    if (sourceConversation.tags.length > 0) {
-      await setConversationTags(duplicateId, sourceConversation.tags);
-    }
     for (const [index, sourceMessage] of sourceMessages.entries()) {
       const copiedMessage: ChatMessage = {
         ...sourceMessage,
@@ -526,6 +616,47 @@ export async function readMessageAttachment(
   return decodeBase64(value);
 }
 
+export async function listConversationAttachments(
+  offset: number,
+  limit: number,
+  query: string,
+  availability: 'all' | 'available' | 'missing',
+): Promise<ConversationAttachmentPage> {
+  const value: unknown = await invoke('list_conversation_attachments', {
+    offset,
+    limit,
+    query: query.trim() || null,
+    availability,
+  });
+  if (
+    !isObject(value) ||
+    !Array.isArray(value.items) ||
+    !value.items.every(isConversationAttachmentSummary) ||
+    !(value.nextOffset === null || (Number.isSafeInteger(value.nextOffset) && typeof value.nextOffset === 'number'))
+  ) {
+    throw new Error('The conversation attachment library response is invalid.');
+  }
+  return { items: value.items, nextOffset: value.nextOffset };
+}
+
+export async function getAttachmentTextIndexStatus(): Promise<AttachmentTextIndexStatus> {
+  const value: unknown = await invoke('get_attachment_text_index_status');
+  if (!isAttachmentTextIndexStatus(value)) throw new Error('The attachment text index status is invalid.');
+  return value;
+}
+
+export async function rebuildAttachmentTextIndex(): Promise<AttachmentTextIndexStatus> {
+  const value: unknown = await invoke('rebuild_attachment_text_index');
+  if (!isAttachmentTextIndexStatus(value)) throw new Error('The attachment text index status is invalid.');
+  return value;
+}
+
+export async function clearAttachmentTextIndex(): Promise<AttachmentTextIndexStatus> {
+  const value: unknown = await invoke('clear_attachment_text_index');
+  if (!isAttachmentTextIndexStatus(value)) throw new Error('The attachment text index status is invalid.');
+  return value;
+}
+
 function isConversation(value: unknown): value is ChatConversation {
   if (!isObject(value)) return false;
   return (
@@ -538,11 +669,8 @@ function isConversation(value: unknown): value is ChatConversation {
     isNullableString(value.workspaceId) &&
     isNullableString(value.apiKeyConnectionId) &&
     isNullableString(value.projectId) &&
-    Array.isArray(value.tags) &&
-    value.tags.every(isString) &&
     typeof value.isPinned === 'boolean' &&
     typeof value.isArchived === 'boolean' &&
-    typeof value.isBookmarked === 'boolean' &&
     typeof value.createdAt === 'number' &&
     typeof value.updatedAt === 'number'
   );
@@ -604,6 +732,39 @@ function isSavedOutputMessageKey(value: unknown): value is SavedOutputMessageKey
   return isString(value.conversationId) && isString(value.messageId);
 }
 
+function isSavedOutputSummary(value: unknown): value is SavedOutputSummary {
+  return (
+    isObject(value) &&
+    typeof value.conversationId === 'string' &&
+    typeof value.conversationTitle === 'string' &&
+    typeof value.messageId === 'string' &&
+    typeof value.excerpt === 'string' &&
+    typeof value.createdAtUnixMs === 'number' &&
+    Number.isSafeInteger(value.createdAtUnixMs) &&
+    typeof value.selectedVersion === 'number' &&
+    Number.isInteger(value.selectedVersion) &&
+    value.selectedVersion > 0 &&
+    typeof value.versionCount === 'number' &&
+    Number.isInteger(value.versionCount) &&
+    value.versionCount > 0
+  );
+}
+
+function isSavedOutputVersionSummary(value: unknown): value is SavedOutputVersionSummary {
+  return (
+    isObject(value) &&
+    typeof value.versionNumber === 'number' &&
+    Number.isInteger(value.versionNumber) &&
+    value.versionNumber > 0 &&
+    typeof value.createdAtUnixMs === 'number' &&
+    Number.isSafeInteger(value.createdAtUnixMs)
+  );
+}
+
+function isSavedOutputVersion(value: unknown): value is SavedOutputVersion {
+  return isObject(value) && isSavedOutputVersionSummary(value) && typeof value.content === 'string';
+}
+
 function isSavedOutputSearchMatch(value: unknown): value is SavedOutputSearchMatch {
   return (
     isObject(value) &&
@@ -639,6 +800,40 @@ function isNullableNumber(value: unknown): value is number | null {
 
 function isString(value: unknown): value is string {
   return typeof value === 'string';
+}
+
+function isConversationAttachmentSummary(value: unknown): value is ConversationAttachmentSummary {
+  return (
+    isObject(value) &&
+    isString(value.conversationId) &&
+    isString(value.conversationTitle) &&
+    isNullableString(value.projectId) &&
+    isString(value.messageId) &&
+    isString(value.attachmentId) &&
+    isString(value.fileName) &&
+    isString(value.mimeType) &&
+    Number.isSafeInteger(value.sizeBytes) &&
+    typeof value.sizeBytes === 'number' &&
+    value.sizeBytes > 0 &&
+    Number.isSafeInteger(value.createdAt) &&
+    typeof value.createdAt === 'number' &&
+    value.createdAt >= 0 &&
+    typeof value.isAvailable === 'boolean'
+  );
+}
+
+function isAttachmentTextIndexStatus(value: unknown): value is AttachmentTextIndexStatus {
+  return (
+    isObject(value) &&
+    typeof value.enabled === 'boolean' &&
+    Number.isSafeInteger(value.indexedFileCount) &&
+    typeof value.indexedFileCount === 'number' &&
+    value.indexedFileCount >= 0 &&
+    Number.isSafeInteger(value.indexedBytes) &&
+    typeof value.indexedBytes === 'number' &&
+    value.indexedBytes >= 0 &&
+    typeof value.truncated === 'boolean'
+  );
 }
 
 function isJsonArray(value: string): boolean {

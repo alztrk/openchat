@@ -21,10 +21,6 @@ pub const MAXIMUM_ATTACHMENT_NAME_BYTES: usize = 255 * 4;
 pub const MAXIMUM_ATTACHMENT_MIME_TYPE_BYTES: usize = 64;
 pub const MAXIMUM_ATTACHMENT_KIND_BYTES: usize = 5;
 pub const MAXIMUM_CONVERSATION_IDS_PER_MUTATION: usize = 500;
-pub const MAXIMUM_CONVERSATION_TAGS: usize = 12;
-pub const MAXIMUM_CONVERSATION_TAG_CHARS: usize = 32;
-pub const MAXIMUM_CONVERSATION_TAG_BYTES: usize = MAXIMUM_CONVERSATION_TAG_CHARS * 4;
-pub const MAXIMUM_CONVERSATION_TAG_INPUT_ITEMS: usize = 500;
 pub const MAXIMUM_CONVERSATION_TITLE_CHARS: usize = 512;
 pub const MAXIMUM_SAFE_IDENTIFIER_BYTES: usize = 128;
 pub const MAXIMUM_MESSAGE_CONTENT_BYTES: usize = MAX_MESSAGE_CHARS * 4;
@@ -122,10 +118,8 @@ pub struct StoredConversation {
     pub(crate) workspace_id: Option<String>,
     pub(crate) api_key_connection_id: Option<String>,
     pub(crate) project_id: Option<String>,
-    pub(crate) tags: Vec<String>,
     pub(crate) is_pinned: bool,
     pub(crate) is_archived: bool,
-    pub(crate) is_bookmarked: bool,
     pub(crate) created_at: i64,
     pub(crate) updated_at: i64,
 }
@@ -195,8 +189,6 @@ pub struct SavedOutputSearchInput {
     pub(crate) project_id: Option<String>,
     #[serde(default)]
     pub(crate) is_archived: Option<bool>,
-    #[serde(default, deserialize_with = "deserialize_optional_history_search_tag")]
-    pub(crate) tag: Option<String>,
     pub(crate) sort_order: SavedOutputSearchSortOrder,
     #[serde(default)]
     pub(crate) from_unix_ms: Option<i64>,
@@ -225,6 +217,36 @@ pub struct SavedOutputSearchResult {
     pub(crate) excerpt: String,
     pub(crate) created_at_unix_ms: i64,
     pub(crate) project_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+/// A saved response entry for the local response library.
+pub struct SavedOutputSummary {
+    pub(crate) conversation_id: String,
+    pub(crate) conversation_title: String,
+    pub(crate) message_id: String,
+    pub(crate) excerpt: String,
+    pub(crate) created_at_unix_ms: i64,
+    pub(crate) selected_version: u32,
+    pub(crate) version_count: u32,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+/// Metadata for one saved response version.
+pub struct SavedOutputVersionSummary {
+    pub(crate) version_number: u32,
+    pub(crate) created_at_unix_ms: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+/// Saved response version metadata and its selected content.
+pub struct SavedOutputVersion {
+    pub(crate) version_number: u32,
+    pub(crate) created_at_unix_ms: i64,
+    pub(crate) content: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -428,16 +450,6 @@ where
     deserialize_request_text::<D, MAXIMUM_HISTORY_SEARCH_QUERY_BYTES>(deserializer)
 }
 
-/// Deserializes a conversation tag within the persisted tag-size limit.
-pub(crate) fn deserialize_optional_history_search_tag<'de, D>(
-    deserializer: D,
-) -> Result<Option<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    deserialize_optional_request_text::<D, MAXIMUM_CONVERSATION_TAG_BYTES>(deserializer)
-}
-
 /// Deserializes a new conversation title within the existing 500-character limit.
 pub(crate) fn deserialize_new_conversation_title<'de, D>(
     deserializer: D,
@@ -624,6 +636,40 @@ pub(crate) struct StoredMessageContentEnvelope {
     #[serde(rename = "content")]
     pub(crate) _content: String,
     pub(crate) attachments: Vec<StoredAttachmentMetadata>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+/// One saved conversation attachment and the conversation where it was added.
+pub struct ConversationAttachmentSummary {
+    pub(crate) conversation_id: String,
+    pub(crate) conversation_title: String,
+    pub(crate) project_id: Option<String>,
+    pub(crate) message_id: String,
+    pub(crate) attachment_id: String,
+    pub(crate) file_name: String,
+    pub(crate) mime_type: String,
+    pub(crate) size_bytes: usize,
+    pub(crate) created_at: i64,
+    pub(crate) is_available: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+/// A bounded page of saved conversation attachments.
+pub struct ConversationAttachmentPage {
+    pub(crate) items: Vec<ConversationAttachmentSummary>,
+    pub(crate) next_offset: Option<u32>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+/// State and storage use for the optional local attachment text index.
+pub struct AttachmentTextIndexStatus {
+    pub(crate) enabled: bool,
+    pub(crate) indexed_file_count: u32,
+    pub(crate) indexed_bytes: u64,
+    pub(crate) truncated: bool,
 }
 
 /// Decoded attachment bytes and metadata after all request and content bounds pass.

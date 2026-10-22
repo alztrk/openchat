@@ -1,7 +1,7 @@
-import { ArrowUp, Paperclip, Square, X } from 'lucide-react';
+import { ArrowUp, Brain, Files, Paperclip, Square, X } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@/design-system';
+import { Button, Select } from '@/design-system';
 import { getSidebarDraggingConversationId } from '@/modules/conversations/data/sidebarPreferences';
 import { useChatStreaming } from '@/modules/conversations/hooks/useChatStreaming';
 import { useChatStore } from '@/modules/conversations/stores/chatStore';
@@ -15,10 +15,12 @@ import {
   effectiveContextWindow,
   imageAttachmentExtensions,
   providerNameForModel,
+  reasoningLevelLabel,
   textAttachmentExtensions,
 } from './composerUtils';
 import { ModelPicker } from './ModelPicker';
 import { PendingAttachmentGallery } from './PendingAttachmentGallery';
+import { AttachmentLibraryDialog } from './AttachmentLibraryDialog';
 import { useComposerState } from './useComposerState';
 
 export interface ChatComposerProps {
@@ -74,6 +76,7 @@ export function ChatComposer({
     fastModePreferenceState,
     toggleFastMode,
     addAttachments,
+    addExistingAttachments,
     removeAttachment,
     selectSlashCommand,
     selectSlashModel,
@@ -110,6 +113,7 @@ export function ChatComposer({
   const selectedReasoningEffort = useChatStore((state) => state.selectedReasoningEffort);
   const modelStatus = useChatStore((state) => state.modelStatus);
   const modelFavorites = useChatStore((state) => state.modelFavorites);
+  const chatGptWorkspaceSelectionRequired = useChatStore((state) => state.chatGptWorkspaceSelectionRequired);
   const toggleFavoriteModel = useChatStore((state) => state.toggleFavoriteModel);
   const removeModelFavorite = useChatStore((state) => state.removeModelFavorite);
   const selectConversationModel = useChatStore((state) => state.selectConversationModel);
@@ -136,6 +140,7 @@ export function ChatComposer({
     submissionMode === 'ctrlEnter' ? t('composerSendTooltipCtrlEnter') : t('composerSendTooltipEnter');
 
   const [isComposerDraggingOver, setIsComposerDraggingOver] = useState(false);
+  const [isAttachmentLibraryOpen, setIsAttachmentLibraryOpen] = useState(false);
   const composerDragDepthRef = useRef(0);
 
   const isComposerConversationDrag = (event: React.DragEvent) => {
@@ -274,6 +279,7 @@ export function ChatComposer({
               <ChatSlashModelMenu
                 canSelect={!isSending && !isUpdatingConversationModel}
                 isLoading={modelStatus === 'loading'}
+                chatGptWorkspaceSelectionRequired={chatGptWorkspaceSelectionRequired}
                 models={slashModelCandidates}
                 onSelect={(model) => void selectSlashModel(model)}
                 providerLabel={(model) => providerNameForModel(model, t)}
@@ -285,26 +291,6 @@ export function ChatComposer({
                 onSelect={selectSlashCommand}
                 selectedIndex={slashCommandIndex}
               />
-            ) : null}
-            {messageDraft.length === 0 ? (
-              ghostTextSuggestion ? (
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute left-0 top-0 flex items-center gap-1.5 text-composer-input text-secondary-text/80 select-none"
-                >
-                  <kbd className="rounded border border-border bg-surface px-1.5 py-0.5 text-2xs font-semibold text-text shadow-sm">
-                    Tab
-                  </kbd>
-                  <span className="italic">{ghostTextSuggestion}</span>
-                </span>
-              ) : (
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute left-0 top-0 text-composer-input text-secondary-text"
-                >
-                  {placeholderHint}
-                </span>
-              )
             ) : null}
             <textarea
               aria-activedescendant={
@@ -327,9 +313,10 @@ export function ChatComposer({
               role="combobox"
               aria-expanded={slashModelMenuOpen || slashCommands.length > 0}
               aria-label={placeholderHint}
-              className="composer-message-input w-full bg-transparent text-composer-input text-text outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-50"
+              className="composer-message-input w-full bg-transparent text-composer-input text-text placeholder:text-secondary-text outline-none focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0 disabled:opacity-50"
               disabled={isTargetPlaceholder || pickerModels.length === 0 || isUpdatingConversationModel}
               id="chat-message"
+              placeholder={ghostTextSuggestion ?? placeholderHint}
               onChange={(event) => {
                 const input = event.currentTarget;
                 setMessageDraft(input.value);
@@ -358,18 +345,25 @@ export function ChatComposer({
               >
                 <Paperclip aria-hidden="true" size={18} />
               </Button>
+              <Button
+                aria-label={t('attachmentLibraryOpenPicker')}
+                disabled={isTargetPlaceholder || pickerModels.length === 0 || isSending || isReadingAttachments}
+                onClick={() => setIsAttachmentLibraryOpen(true)}
+                size="icon"
+                type="button"
+                variant="ghost"
+              >
+                <Files aria-hidden="true" size={18} />
+              </Button>
               <ModelPicker
-                canSelectProvider={activeConversationId === null}
+                canSelectProvider
                 showFastModeControl={!isTemporaryChat}
                 fastModeAvailable={fastModeAvailable}
                 fastModeEnabled={fastModeEnabled}
                 fastModeLoading={fastModePreferenceState === 'loading'}
                 fastModeSaving={fastModePreferenceState === 'saving'}
-                showReasoningSelector={!isTemporaryChat && (selectedModel?.supportsReasoning ?? false)}
-                reasoningDisabled={isSending || isUpdatingConversationModel}
-                reasoningEffort={selectedReasoningEffort}
-                reasoningLevels={selectedModel?.reasoningLevels ?? []}
                 emptyModelsLabel={t(modelError ? 'modelsUnavailable' : 'noModelsAvailable')}
+                chatGptWorkspaceSelectionRequired={chatGptWorkspaceSelectionRequired}
                 hiddenModelKeys={hiddenModelKeys}
                 isOpen={modelPickerOpen}
                 knownModels={models}
@@ -399,13 +393,38 @@ export function ChatComposer({
                   setModelQuery('');
                 }}
                 onFastModeToggle={toggleFastMode}
-                onSelectReasoningEffort={(value) => void selectReasoningEffort(value)}
                 onToggleFavorite={(model) => {
                   void toggleFavoriteModel(model);
                 }}
                 query={modelQuery}
                 selectedModel={selectedModel ?? null}
               />
+              {!isTemporaryChat && selectedModel?.supportsReasoning ? (
+                <div className="w-fit min-w-0 max-w-full">
+                  <Select
+                    aria-label={t('reasoning')}
+                    className="openchat-dropdown-trigger--subtle min-w-0 max-w-full py-2 pl-2.5 pr-2 text-sm"
+                    disabled={isTargetPlaceholder || isSending || isUpdatingConversationModel}
+                    label={t('reasoning')}
+                    leadingIcon={<Brain aria-hidden="true" size={16} />}
+                    onChange={(event) => void selectReasoningEffort(event.currentTarget.value || null)}
+                    options={[
+                      {
+                        value: '',
+                        label: t('reasoningDefault'),
+                        icon: <Brain aria-hidden="true" size={16} />,
+                      },
+                      ...(selectedModel.reasoningLevels ?? []).map((level) => ({
+                        value: level,
+                        label: reasoningLevelLabel(level, t),
+                        icon: <Brain aria-hidden="true" size={16} />,
+                      })),
+                    ]}
+                    value={selectedReasoningEffort ?? ''}
+                    visuallyHiddenLabel
+                  />
+                </div>
+              ) : null}
               <ToolPermissionModeSelector onModeChange={setSelectedPermissionMode} />
             </div>
             {isSending && messageDraft.trim().length === 0 ? (
@@ -441,6 +460,13 @@ export function ChatComposer({
             )}
           </div>
         </form>
+
+        <AttachmentLibraryDialog
+          disabled={isTargetPlaceholder || isSending || isReadingAttachments}
+          onOpenChange={setIsAttachmentLibraryOpen}
+          onSelect={(item) => addExistingAttachments([item])}
+          open={isAttachmentLibraryOpen}
+        />
 
         <ComposerFeedbackList
           attachmentErrorKey={attachmentErrorKey}
