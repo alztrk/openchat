@@ -55,6 +55,7 @@ export interface ChatSendOptions {
   excludedAssistantMessageId?: string;
   userMessageAlreadySaved?: boolean;
   conversationId?: string | null;
+  onUserMessageCommitted?: (conversationId: string) => void;
 }
 
 export interface ChatToolPermissionRequest {
@@ -68,11 +69,13 @@ export interface ChatToolPermissionRequest {
 export type ChatErrorCode =
   | 'messageHistoryLoadFailed'
   | 'messageSaveFailed'
+  | 'conversationCreateFailed'
   | 'chatRequestFailed'
   | 'providerLastRequestSaveFailed'
   | 'modelRequired'
   | 'modelDoesNotSupportImages'
   | 'providerCredentialMissing'
+  | 'providerConnectionUnavailable'
   | 'personalMemoryLoadFailed'
   | 'attachmentSaveFailed'
   | 'userQuestionUnavailable'
@@ -134,6 +137,7 @@ export interface ChatState {
   isRespondingToToolPermission: boolean;
   toolPermissionError: 'toolPermissionRequestExpired' | 'toolPermissionResponseFailed' | null;
   hasConfiguredProvider: boolean;
+  chatGptWorkspaceSelectionRequired: boolean;
   hasCompletedAssistantResponse: boolean | null;
   favoriteStatus: FavoriteStatus;
   hiddenModelKeys: string[];
@@ -244,6 +248,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   isRespondingToToolPermission: false,
   toolPermissionError: null,
   hasConfiguredProvider: false,
+  chatGptWorkspaceSelectionRequired: false,
   hasCompletedAssistantResponse: null,
   favoriteStatus: 'idle',
   hiddenModelKeys: [],

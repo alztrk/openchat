@@ -9,6 +9,7 @@ interface ConversationEmptyStateProps {
   isLoading: boolean;
   modelCatalogFailed: boolean;
   modelCatalogStale: boolean;
+  chatGptWorkspaceSelectionRequired: boolean;
   onOpenConnections(): void;
   onRetryModels(): void;
   selectedModel: boolean;
@@ -28,34 +29,40 @@ export function ConversationEmptyState({
   isLoading,
   modelCatalogFailed,
   modelCatalogStale,
+  chatGptWorkspaceSelectionRequired,
   onOpenConnections,
   onRetryModels,
   selectedModel,
   showSetupSteps,
 }: ConversationEmptyStateProps) {
   const { t } = useTranslation();
+  const workspaceSelectionRequired = chatGptWorkspaceSelectionRequired && !hasAvailableModels;
   const title = isLoading
     ? t('modelsLoading')
-    : !hasAvailableModels
-      ? modelCatalogFailed
-        ? t('modelsUnavailable')
-        : hasConfiguredProvider
-          ? t('providerNeedsVerificationTitle')
-          : t('noModelConnected')
-      : selectedModel
-        ? t('emptyChatWelcomeTitle')
-        : t('emptyChatSelectModelTitle');
+    : workspaceSelectionRequired
+      ? t('chatGptWorkspaceSelectionTitle')
+      : !hasAvailableModels
+        ? modelCatalogFailed
+          ? t('modelsUnavailable')
+          : hasConfiguredProvider
+            ? t('providerNeedsVerificationTitle')
+            : t('noModelConnected')
+        : selectedModel
+          ? t('emptyChatWelcomeTitle')
+          : t('emptyChatSelectModelTitle');
   const description = isLoading
     ? null
-    : !hasAvailableModels
-      ? modelCatalogFailed
-        ? t('modelCatalogUnavailable')
-        : hasConfiguredProvider
-          ? t('providerNeedsVerificationBody')
-          : t('noModelConnectedBody')
-      : selectedModel
-        ? t('emptyChatWelcomeBody')
-        : t('emptyChatSelectModelBody');
+    : workspaceSelectionRequired
+      ? t('chatGptWorkspaceSelectionRequired')
+      : !hasAvailableModels
+        ? modelCatalogFailed
+          ? t('modelCatalogUnavailable')
+          : hasConfiguredProvider
+            ? t('providerNeedsVerificationBody')
+            : t('noModelConnectedBody')
+        : selectedModel
+          ? t('emptyChatWelcomeBody')
+          : t('emptyChatSelectModelBody');
   const activeSetupStep = modelCatalogStale
     ? 1
     : selectedModel

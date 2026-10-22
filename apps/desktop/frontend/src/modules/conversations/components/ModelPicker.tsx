@@ -1,9 +1,9 @@
 import type { TFunction } from 'i18next';
-import { Bot, Brain, ChevronDown, LoaderCircle, LogIn, LogOut, Search, Star, Text } from 'lucide-react';
+import { Bot, ChevronDown, LoaderCircle, LogIn, LogOut, Search, Star, Text } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Select } from '@/design-system';
+import { Button } from '@/design-system';
 import type { ChatModelFavorite } from '@/modules/conversations/data/chatStorage';
 import { favoriteSourceConnection } from '@/modules/conversations/stores/chatStoreUtils';
 import { ProviderIcon } from '@/modules/providers/components/ProviderIcon';
@@ -35,11 +35,8 @@ export interface ModelPickerProps {
   fastModeEnabled: boolean;
   fastModeLoading: boolean;
   fastModeSaving: boolean;
-  showReasoningSelector: boolean;
-  reasoningDisabled: boolean;
-  reasoningEffort: string | null;
-  reasoningLevels: readonly string[];
   emptyModelsLabel: string;
+  chatGptWorkspaceSelectionRequired: boolean;
   disabled: boolean;
   isOpen: boolean;
   query: string;
@@ -49,7 +46,6 @@ export interface ModelPickerProps {
   onSelectFavorite(favorite: ChatModelFavorite): Promise<boolean>;
   onSelectProvider(providerId: string): void;
   onFastModeToggle(): void;
-  onSelectReasoningEffort(value: string | null): void;
   onToggleFavorite(model: ChatModel): void;
   onRemoveFavorite(favorite: ChatModelFavorite): void;
 }
@@ -63,11 +59,8 @@ export function ModelPicker({
   fastModeEnabled,
   fastModeLoading,
   fastModeSaving,
-  showReasoningSelector,
-  reasoningDisabled,
-  reasoningEffort,
-  reasoningLevels,
   emptyModelsLabel,
+  chatGptWorkspaceSelectionRequired,
   hiddenModelKeys,
   knownModels,
   modelFavorites,
@@ -79,7 +72,6 @@ export function ModelPicker({
   onSelectFavorite,
   onFastModeToggle,
   onSelect,
-  onSelectReasoningEffort,
   onSelectProvider,
   onToggleFavorite,
   query,
@@ -120,6 +112,11 @@ export function ModelPicker({
   useEffect(() => {
     if (selectedModelProviderId) setSelectedProviderId(providerFamily(selectedModelProviderId));
   }, [selectedModelProviderId]);
+  useEffect(() => {
+    if (chatGptWorkspaceSelectionRequired && selectedModel === null) {
+      setSelectedProviderId('chatgpt');
+    }
+  }, [chatGptWorkspaceSelectionRequired, selectedModel]);
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const providerSource = modelProviders.find((provider) => providerFamily(provider.providerId) === selectedProviderId);
   const providerOptions = buildProviderOptions(modelProviders, models);
@@ -241,13 +238,15 @@ export function ModelPicker({
     ? selectedModel.displayName
     : models.length > 0
       ? t('modelPickerSelectModel')
-      : emptyModelsLabel;
+      : chatGptWorkspaceSelectionRequired && selectedProviderId === 'chatgpt'
+        ? t('chatGptWorkspaceSelectionRequired')
+        : emptyModelsLabel;
   return (
     <div className="relative min-w-0 max-w-full" ref={rootRef}>
       <Button
         aria-expanded={isOpen}
         aria-haspopup="dialog"
-        className="chat-control-trigger max-w-full justify-start"
+        className="openchat-dropdown-trigger openchat-dropdown-trigger--subtle max-w-full justify-start"
         disabled={disabled}
         onClick={() => onOpenChange(!isOpen)}
         type="button"
@@ -265,7 +264,7 @@ export function ModelPicker({
         <div
           aria-hidden={!isOpen}
           aria-label={t('connectedProvidersModels')}
-          className="openchat-popover-enter openchat-popover-enter--bottom model-picker-popover absolute bottom-full left-0 z-20 mb-2 flex overflow-hidden rounded-card border border-border bg-raised shadow-lg"
+          className="openchat-dropdown-surface openchat-popover-enter openchat-popover-enter--bottom model-picker-popover absolute bottom-full left-0 z-20 mb-2 flex overflow-hidden"
           data-state={isOpen ? 'open' : 'closed'}
           inert={!isOpen}
           role="dialog"
@@ -315,28 +314,6 @@ export function ModelPicker({
             className="model-picker-models flex min-w-0 flex-1 flex-col p-3"
           >
             <div className="flex min-w-0 items-center gap-1">
-              {showReasoningSelector ? (
-                <div className="model-picker-reasoning relative min-w-0 shrink-0">
-                  <Brain
-                    aria-hidden="true"
-                    className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-secondary-icon"
-                    size={16}
-                  />
-                  <Select
-                    aria-label={t('reasoning')}
-                    className="py-2 pl-8 pr-1 text-xs"
-                    disabled={reasoningDisabled}
-                    label={t('reasoning')}
-                    onChange={(event) => onSelectReasoningEffort(event.currentTarget.value || null)}
-                    options={[
-                      { value: '', label: t('reasoningDefault') },
-                      ...reasoningLevels.map((level) => ({ value: level, label: reasoningLabel(level, t) })),
-                    ]}
-                    value={reasoningEffort ?? ''}
-                    visuallyHiddenLabel
-                  />
-                </div>
-              ) : null}
               <div className="relative min-w-0 flex-1">
                 <Search
                   aria-hidden="true"
@@ -462,9 +439,11 @@ export function ModelPicker({
                 ))
               ) : (
                 <p className="px-2 py-3 text-sm text-secondary-text">
-                  {models.some((model) => providerFamily(model.providerId) === selectedProviderId)
-                    ? t('searchMessagesNoResults')
-                    : t('noModelsAvailable')}
+                  {chatGptWorkspaceSelectionRequired && selectedProviderId === 'chatgpt'
+                    ? t('chatGptWorkspaceSelectionRequired')
+                    : models.some((model) => providerFamily(model.providerId) === selectedProviderId)
+                      ? t('searchMessagesNoResults')
+                      : emptyModelsLabel}
                 </p>
               )}
             </div>
@@ -691,24 +670,6 @@ function formatModelTokenCount(value: number): string {
   if (value >= 1_000_000) return `${(value / 1_000_000).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`;
   if (value >= 1_000) return `${Math.round(value / 1_000).toLocaleString()}K`;
   return value.toLocaleString();
-}
-
-const reasoningTranslationKeys: Partial<Record<string, TranslationKey>> = {
-  minimal: 'reasoningMinimal',
-  low: 'reasoningLow',
-  medium: 'reasoningMedium',
-  high: 'reasoningHigh',
-  xhigh: 'reasoningExtraHigh',
-  extra_high: 'reasoningExtraHigh',
-  'extra-high': 'reasoningExtraHigh',
-  max: 'reasoningMax',
-  maximum: 'reasoningMax',
-  ultra: 'reasoningUltra',
-};
-
-function reasoningLabel(level: string, t: (key: TranslationKey) => string): string {
-  const key = reasoningTranslationKeys[level.toLocaleLowerCase('en')];
-  return key ? t(key) : level;
 }
 
 function groupModels(

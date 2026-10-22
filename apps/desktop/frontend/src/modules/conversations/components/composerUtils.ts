@@ -8,6 +8,7 @@ export type ChatCommandFeedbackKey =
   | 'chatGptFastModeSettingsSaveFailed'
   | 'conversationModelSaveFailed'
   | 'conversationTitleSaveFailed'
+  | 'ghostTextSuggestionUnavailable'
   | 'messageHistoryLoadFailed'
   | 'slashCommandCompactBusy'
   | 'slashCommandCompactFailed'
@@ -77,6 +78,24 @@ export function providerNameForModel(model: ChatModel, t: (key: TranslationKey) 
 export function providerNameForId(providerId: string, t: (key: TranslationKey) => string): string {
   const key = providerTranslationKeys[providerId];
   return key ? t(key) : providerId;
+}
+
+const reasoningTranslationKeys: Partial<Record<string, TranslationKey>> = {
+  minimal: 'reasoningMinimal',
+  low: 'reasoningLow',
+  medium: 'reasoningMedium',
+  high: 'reasoningHigh',
+  xhigh: 'reasoningExtraHigh',
+  extra_high: 'reasoningExtraHigh',
+  'extra-high': 'reasoningExtraHigh',
+  max: 'reasoningMax',
+  maximum: 'reasoningMax',
+  ultra: 'reasoningUltra',
+};
+
+export function reasoningLevelLabel(level: string, t: (key: TranslationKey) => string): string {
+  const key = reasoningTranslationKeys[level.toLocaleLowerCase('en')];
+  return key ? t(key) : level;
 }
 
 export function isObject(value: unknown): value is Record<string, unknown> {

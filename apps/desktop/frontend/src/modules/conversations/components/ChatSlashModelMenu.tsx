@@ -10,6 +10,7 @@ interface ChatSlashModelMenuProps {
   models: readonly ChatModel[];
   selectedIndex: number;
   isLoading: boolean;
+  chatGptWorkspaceSelectionRequired: boolean;
   canSelect: boolean;
   providerLabel(model: ChatModel): string;
   onSelect(model: ChatModel): void;
@@ -17,6 +18,7 @@ interface ChatSlashModelMenuProps {
 
 export function ChatSlashModelMenu({
   canSelect,
+  chatGptWorkspaceSelectionRequired,
   isLoading,
   models,
   onSelect,
@@ -46,7 +48,7 @@ export function ChatSlashModelMenu({
   return (
     <div
       aria-label={t('connectedProvidersModels')}
-      className="chat-slash-model-menu absolute bottom-full left-0 z-30 mb-2 w-full overflow-y-auto rounded-card border border-border bg-raised p-1 shadow-lg"
+      className="openchat-dropdown-surface chat-slash-model-menu absolute bottom-full left-0 z-30 mb-2 w-full overflow-y-auto p-1"
       id="chat-slash-model-list"
       role="listbox"
       ref={listRef}
@@ -57,7 +59,9 @@ export function ChatSlashModelMenu({
           <span className="sr-only">{t('modelsLoading')}</span>
         </div>
       ) : models.length === 0 ? (
-        <p className="px-3 py-3 text-sm text-secondary-text">{t('noModelsAvailable')}</p>
+        <p className="px-3 py-3 text-sm text-secondary-text">
+          {chatGptWorkspaceSelectionRequired ? t('chatGptWorkspaceSelectionRequired') : t('noModelsAvailable')}
+        </p>
       ) : (
         <div className="grid gap-1">
           {orderedGroups.map((group) => (
