@@ -16,6 +16,7 @@ use reqwest::{Client, StatusCode, header::ACCEPT, redirect::Policy};
 use rusqlite::{Error as DatabaseError, OptionalExtension};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, watch};
 use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
@@ -28,11 +29,12 @@ use crate::{
     storage::AppStorage,
 };
 
-const CLIENT_ID: &str = "Ov23ctDVkRmgkPke0Mmmsco";
+const CLIENT_ID: &str = "Ov23ctr1Udn5GokVCVJf";
 const DEVICE_CODE_URL: &str = "https://github.com/login/device/code";
 const TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
 const USER_URL: &str = "https://api.github.com/user";
-const COPILOT_CONNECTION_ID: &str = "copilot";
+const COPILOT_PROVIDER_ID: &str = "copilot";
+const LEGACY_COPILOT_CONNECTION_ID: &str = "copilot";
 const ACCESS_REFRESH_WINDOW: Duration = Duration::from_secs(5 * 60);
 const MAX_DEVICE_CODE_BYTES: usize = 1024;
 const MAX_USER_CODE_BYTES: usize = 32;
@@ -431,21 +433,51 @@ impl CopilotOAuthService {
     }
 
     pub fn status(&self, storage: &AppStorage) -> Result<Value, ServiceError> {
-        let connection = load_connection(storage)?;
+        let connections = load_connections(storage)?;
+        let selected = connections.iter().find(|connection| connection.is_selected);
+        let public_connections = connections
+            .iter()
+            .map(|connection| connection.to_public_json())
+            .collect::<Vec<_>>();
         Ok(json!({
-            "connected": connection.is_some(),
-            "connection": connection.map(|item| json!({
-                "login": item.login,
-                "name": item.name,
-                "authStatus": item.auth_status,
-            })),
+            "connected": selected.is_some(),
+            "connection": selected.map(StoredConnection::to_public_json),
+            "connections": public_connections,
+            "selectedConnectionId": selected.map(|connection| connection.id.as_str()),
         }))
     }
 
-    pub async fn disconnect(&self, storage: &AppStorage) -> Result<Value, ServiceError> {
+    pub fn select(&self, storage: &AppStorage, connection_id: &str) -> Result<Value, ServiceError> {
+        validate_connection_id(connection_id)?;
+        let connection = storage.connect().map_err(database_error)?;
+        let tx = connection.unchecked_transaction().map_err(database_error)?;
+        tx.execute(
+            "UPDATE copilot_oauth_connection SET is_selected = 0 WHERE is_selected = 1",
+            [],
+        )
+        .map_err(database_error)?;
+        let changed = tx
+            .execute(
+                "UPDATE copilot_oauth_connection SET is_selected = 1 WHERE id = ?1",
+                [connection_id],
+            )
+            .map_err(database_error)?;
+        if changed != 1 {
+            return Err(connection_not_found());
+        }
+        tx.commit().map_err(database_error)?;
+        Ok(json!({ "selectedConnectionId": connection_id }))
+    }
+
+    pub async fn disconnect(
+        &self,
+        storage: &AppStorage,
+        connection_id: &str,
+    ) -> Result<Value, ServiceError> {
+        validate_connection_id(connection_id)?;
         let _guard = self.connection_lock.lock().await;
         let mut connection = storage.connect().map_err(database_error)?;
-        disconnect_connection(&mut connection, |reference| {
+        disconnect_connection(&mut connection, connection_id, |reference| {
             self.credentials
                 .delete_token_pair(reference)
                 .map_err(credential_error)
@@ -469,7 +501,8 @@ impl CopilotOAuthService {
             return Ok(Zeroizing::new(tokens.access_token().to_owned()));
         }
         let _guard = self.connection_lock.lock().await;
-        let current = load_connection(storage)?.ok_or_else(authentication_required)?;
+        let current =
+            load_connection_by_id(storage, &connection.id)?.ok_or_else(authentication_required)?;
         if current.auth_status != "active" {
             return Err(authentication_required());
         }
@@ -504,7 +537,7 @@ impl CopilotOAuthService {
         let response = match response {
             Ok(response) => response,
             Err(_) => {
-                set_auth_status(storage, "reauth_required")?;
+                set_auth_status(storage, &connection.id, "reauth_required")?;
                 return Err(network_error());
             }
         };
@@ -512,14 +545,14 @@ impl CopilotOAuthService {
         let body = match read_oauth_body(response, MAX_OAUTH_RESPONSE_BYTES).await {
             Ok(body) => body,
             Err(_) => {
-                set_auth_status(storage, "reauth_required")?;
+                set_auth_status(storage, &connection.id, "reauth_required")?;
                 return Err(network_error());
             }
         };
         let mut result: TokenResponse = match serde_json::from_slice(body.as_slice()) {
             Ok(result) => result,
             Err(_) => {
-                set_auth_status(storage, "reauth_required")?;
+                set_auth_status(storage, &connection.id, "reauth_required")?;
                 return Err(invalid_oauth_response());
             }
         };
@@ -528,13 +561,13 @@ impl CopilotOAuthService {
                 error,
                 "invalid_grant" | "bad_refresh_token" | "expired_token"
             ) {
-                set_auth_status(storage, "reauth_required")?;
+                set_auth_status(storage, &connection.id, "reauth_required")?;
                 return Err(authentication_required());
             }
             if matches!(error, "temporarily_unavailable" | "server_error") {
                 return Err(temporary_oauth_error());
             }
-            set_auth_status(storage, "reauth_required")?;
+            set_auth_status(storage, &connection.id, "reauth_required")?;
             return Err(oauth_http_error(status));
         }
         if !status.is_success() {
@@ -542,17 +575,17 @@ impl CopilotOAuthService {
                 || status == StatusCode::FORBIDDEN
                 || status == StatusCode::BAD_REQUEST
             {
-                set_auth_status(storage, "reauth_required")?;
+                set_auth_status(storage, &connection.id, "reauth_required")?;
                 return Err(authentication_required());
             }
             return Err(oauth_http_error(status));
         }
         let Some(access_token) = result.access_token.take() else {
-            set_auth_status(storage, "reauth_required")?;
+            set_auth_status(storage, &connection.id, "reauth_required")?;
             return Err(invalid_oauth_response());
         };
         let Some(refresh_token) = result.refresh_token.take() else {
-            set_auth_status(storage, "reauth_required")?;
+            set_auth_status(storage, &connection.id, "reauth_required")?;
             return Err(ServiceError::new(
                 "oauth_refresh_unavailable",
                 "GitHub did not rotate the refresh token. Reconnect your account before continuing.",
@@ -563,19 +596,20 @@ impl CopilotOAuthService {
             .expires_in
             .filter(|seconds| (60..=31_536_000).contains(seconds))
         else {
-            set_auth_status(storage, "reauth_required")?;
+            set_auth_status(storage, &connection.id, "reauth_required")?;
             return Err(invalid_oauth_response());
         };
         let refresh_expires_in = result
             .refresh_token_expires_in
             .filter(|seconds| (60..=31_536_000).contains(seconds));
         let new_tokens = expiring_tokens(access_token, refresh_token, expires_in)?;
-        let new_reference = new_credential_reference()?;
+        let new_reference = new_credential_reference(&connection.id)?;
         self.credentials
             .store_new_token_pair(&new_reference, &new_tokens)
             .map_err(credential_error)?;
         let previous_reference = match replace_credential_reference(
             storage,
+            &connection.id,
             &connection.credential_reference,
             &new_reference,
             new_tokens
@@ -652,7 +686,7 @@ impl CopilotOAuthService {
         {
             return Err(invalid_oauth_response());
         }
-        let reference = new_credential_reference()?;
+        let reference = new_credential_reference(&identity.id)?;
         self.credentials
             .store_new_token_pair(&reference, &tokens)
             .map_err(credential_error)?;
@@ -661,8 +695,8 @@ impl CopilotOAuthService {
             let tx = connection.unchecked_transaction().map_err(database_error)?;
             let previous_reference: Option<String> = tx
                 .query_row(
-                    "SELECT credential_reference FROM copilot_oauth_connection WHERE id = ?1",
-                    [COPILOT_CONNECTION_ID],
+                    "SELECT credential_reference FROM copilot_oauth_connection WHERE github_user_id = ?1",
+                    [&identity.id],
                     |row| row.get(0),
                 )
                 .optional()
@@ -677,21 +711,25 @@ impl CopilotOAuthService {
                 "INSERT INTO copilot_oauth_connection (
                     id, github_user_id, login, display_name, credential_reference,
                     auth_status, access_expires_at_unix_seconds, refresh_expires_at_unix_seconds,
-                    connected_at_unix_ms, updated_at_unix_ms
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6, ?7, ?8, ?8)
-                 ON CONFLICT(id) DO UPDATE SET
-                    github_user_id = excluded.github_user_id,
+                    connected_at_unix_ms, updated_at_unix_ms, is_selected
+                 ) VALUES (?1, ?1, ?2, ?3, ?4, 'active', ?5, ?6, ?7, ?7,
+                    CASE WHEN EXISTS (
+                        SELECT 1 FROM copilot_oauth_connection WHERE is_selected = 1
+                    ) THEN 0 ELSE 1 END)
+                 ON CONFLICT(github_user_id) DO UPDATE SET
                     login = excluded.login,
                     display_name = excluded.display_name,
                     credential_reference = excluded.credential_reference,
                     auth_status = 'active',
                     access_expires_at_unix_seconds = excluded.access_expires_at_unix_seconds,
                     refresh_expires_at_unix_seconds = excluded.refresh_expires_at_unix_seconds,
-                    connected_at_unix_ms = excluded.connected_at_unix_ms,
+                    is_selected = CASE WHEN EXISTS (
+                        SELECT 1 FROM copilot_oauth_connection
+                        WHERE is_selected = 1 AND id <> excluded.id
+                    ) THEN copilot_oauth_connection.is_selected ELSE 1 END,
                     updated_at_unix_ms = excluded.updated_at_unix_ms",
                 rusqlite::params![
-                    COPILOT_CONNECTION_ID,
-                    identity.id.to_string(),
+                    identity.id,
                     identity.login,
                     identity.name,
                     reference_name(&reference),
@@ -726,6 +764,7 @@ impl CopilotOAuthService {
             }
         }
         Ok(json!({
+            "id": identity.id,
             "login": identity.login,
             "name": identity.name,
             "authStatus": "active",
@@ -750,10 +789,12 @@ struct GitHubIdentity {
 }
 
 struct StoredConnection {
+    id: String,
     login: String,
     name: Option<String>,
     credential_reference: String,
     auth_status: String,
+    is_selected: bool,
 }
 
 fn load_connection(storage: &AppStorage) -> Result<Option<StoredConnection>, ServiceError> {
@@ -761,20 +802,71 @@ fn load_connection(storage: &AppStorage) -> Result<Option<StoredConnection>, Ser
         .connect()
         .map_err(database_error)?
         .query_row(
-            "SELECT login, display_name, credential_reference, auth_status
-             FROM copilot_oauth_connection WHERE id = ?1",
-            [COPILOT_CONNECTION_ID],
-            |row| {
-                Ok(StoredConnection {
-                    login: row.get(0)?,
-                    name: row.get(1)?,
-                    credential_reference: row.get(2)?,
-                    auth_status: row.get(3)?,
-                })
-            },
+            "SELECT id, login, display_name, credential_reference,
+                    auth_status, is_selected
+             FROM copilot_oauth_connection WHERE is_selected = 1",
+            [],
+            stored_connection_from_row,
         )
         .optional()
         .map_err(database_error)
+}
+
+fn load_connection_by_id(
+    storage: &AppStorage,
+    connection_id: &str,
+) -> Result<Option<StoredConnection>, ServiceError> {
+    storage
+        .connect()
+        .map_err(database_error)?
+        .query_row(
+            "SELECT id, login, display_name, credential_reference,
+                    auth_status, is_selected
+             FROM copilot_oauth_connection WHERE id = ?1",
+            [connection_id],
+            stored_connection_from_row,
+        )
+        .optional()
+        .map_err(database_error)
+}
+
+fn load_connections(storage: &AppStorage) -> Result<Vec<StoredConnection>, ServiceError> {
+    let connection = storage.connect().map_err(database_error)?;
+    let mut statement = connection
+        .prepare(
+            "SELECT id, login, display_name, credential_reference,
+                    auth_status, is_selected
+             FROM copilot_oauth_connection
+             ORDER BY connected_at_unix_ms DESC, id",
+        )
+        .map_err(database_error)?;
+    let rows = statement
+        .query_map([], stored_connection_from_row)
+        .map_err(database_error)?;
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(database_error)
+}
+
+fn stored_connection_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<StoredConnection> {
+    Ok(StoredConnection {
+        id: row.get(0)?,
+        login: row.get(1)?,
+        name: row.get(2)?,
+        credential_reference: row.get(3)?,
+        auth_status: row.get(4)?,
+        is_selected: row.get::<_, i64>(5)? == 1,
+    })
+}
+
+impl StoredConnection {
+    fn to_public_json(&self) -> Value {
+        json!({
+            "id": self.id,
+            "login": self.login,
+            "name": self.name,
+            "authStatus": self.auth_status,
+        })
+    }
 }
 
 /// Removes the keyring pair before committing its database reference deletion.
@@ -783,19 +875,22 @@ fn load_connection(storage: &AppStorage) -> Result<Option<StoredConnection>, Ser
 /// partially completed Windows Credential Manager cleanup.
 fn disconnect_connection(
     connection: &mut rusqlite::Connection,
+    connection_id: &str,
     remove_credentials: impl FnOnce(&OAuthCredentialReference) -> Result<(), ServiceError>,
 ) -> Result<Value, ServiceError> {
     let transaction = connection.transaction().map_err(database_error)?;
-    let stored_reference: Option<String> = transaction
+    let stored_account: Option<(String, String, bool)> = transaction
         .query_row(
-            "SELECT credential_reference FROM copilot_oauth_connection WHERE id = ?1",
-            [COPILOT_CONNECTION_ID],
-            |row| row.get(0),
+            "SELECT credential_reference, github_user_id, is_selected
+             FROM copilot_oauth_connection WHERE id = ?1",
+            [connection_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get::<_, i64>(2)? == 1)),
         )
         .optional()
         .map_err(database_error)?;
-    let reference = stored_reference
-        .as_deref()
+    let reference = stored_account
+        .as_ref()
+        .map(|(reference, _, _)| reference.as_str())
         .map(parse_reference)
         .transpose()?;
 
@@ -803,13 +898,13 @@ fn disconnect_connection(
         remove_credentials(reference)?;
     }
 
-    let removed = if let Some(stored_reference) = stored_reference.as_deref() {
+    let removed = if let Some((stored_reference, github_user_id, was_selected)) = stored_account {
         let deleted_reference: Option<String> = transaction
             .query_row(
                 "DELETE FROM copilot_oauth_connection
                  WHERE id = ?1 AND credential_reference = ?2
                  RETURNING credential_reference",
-                rusqlite::params![COPILOT_CONNECTION_ID, stored_reference],
+                rusqlite::params![connection_id, stored_reference],
                 |row| row.get(0),
             )
             .optional()
@@ -821,23 +916,37 @@ fn disconnect_connection(
                 true,
             ));
         }
+        if was_selected {
+            transaction
+                .execute(
+                    "UPDATE copilot_oauth_connection SET is_selected = 1
+                     WHERE id = (
+                        SELECT id FROM copilot_oauth_connection
+                        ORDER BY (auth_status = 'active') DESC, connected_at_unix_ms DESC, id
+                        LIMIT 1
+                     )",
+                    [],
+                )
+                .map_err(database_error)?;
+        }
+        transaction
+            .execute(
+                "DELETE FROM compatible_provider_model_catalog
+                 WHERE provider_id = ?1 AND api_key_hash = ?2",
+                rusqlite::params![COPILOT_PROVIDER_ID, account_hash(&github_user_id)],
+            )
+            .map_err(database_error)?;
         true
     } else {
         false
     };
-
-    transaction
-        .execute(
-            "DELETE FROM compatible_provider_model_catalog WHERE provider_id = ?1",
-            [COPILOT_CONNECTION_ID],
-        )
-        .map_err(database_error)?;
     transaction.commit().map_err(database_error)?;
     Ok(json!({ "removed": removed }))
 }
 
 fn replace_credential_reference(
     storage: &AppStorage,
+    connection_id: &str,
     old_reference: &str,
     new_reference: &OAuthCredentialReference,
     access_expires_at: u64,
@@ -848,7 +957,7 @@ fn replace_credential_reference(
     let previous: Option<String> = tx
         .query_row(
             "SELECT credential_reference FROM copilot_oauth_connection WHERE id = ?1 AND credential_reference = ?2 AND auth_status = 'active'",
-            rusqlite::params![COPILOT_CONNECTION_ID, old_reference],
+            rusqlite::params![connection_id, old_reference],
             |row| row.get(0),
         )
         .optional()
@@ -869,7 +978,7 @@ fn replace_credential_reference(
                 access_expires_at,
                 refresh_expires_at,
                 unix_time_millis()?,
-                COPILOT_CONNECTION_ID,
+                connection_id,
                 old_reference,
             ],
         )
@@ -882,13 +991,17 @@ fn replace_credential_reference(
     }
 }
 
-fn set_auth_status(storage: &AppStorage, status: &str) -> Result<(), ServiceError> {
+fn set_auth_status(
+    storage: &AppStorage,
+    connection_id: &str,
+    status: &str,
+) -> Result<(), ServiceError> {
     storage
         .connect()
         .map_err(database_error)?
         .execute(
             "UPDATE copilot_oauth_connection SET auth_status = ?1, updated_at_unix_ms = ?2 WHERE id = ?3",
-            rusqlite::params![status, unix_time_millis()?, COPILOT_CONNECTION_ID],
+            rusqlite::params![status, unix_time_millis()?, connection_id],
         )
         .map_err(database_error)?;
     Ok(())
@@ -898,11 +1011,39 @@ fn parse_reference(value: &str) -> Result<OAuthCredentialReference, ServiceError
     let Some((connection_id, generation_id)) = value.split_once(':') else {
         return Err(authentication_required());
     };
-    if connection_id != COPILOT_CONNECTION_ID || generation_id.contains(':') {
+    if !valid_credential_connection_id(connection_id) || generation_id.contains(':') {
         return Err(authentication_required());
     }
     OAuthCredentialReference::new_for_github_copilot(connection_id, generation_id)
         .map_err(credential_error)
+}
+
+fn valid_credential_connection_id(value: &str) -> bool {
+    value == LEGACY_COPILOT_CONNECTION_ID
+        || (!value.is_empty()
+            && value.len() <= 20
+            && value.bytes().all(|byte| byte.is_ascii_digit()))
+}
+
+fn validate_connection_id(value: &str) -> Result<(), ServiceError> {
+    if !value.is_empty() && value.len() <= 20 && value.bytes().all(|byte| byte.is_ascii_digit()) {
+        Ok(())
+    } else {
+        Err(connection_not_found())
+    }
+}
+
+fn connection_not_found() -> ServiceError {
+    ServiceError::new(
+        "copilot_connection_not_found",
+        "The selected GitHub Copilot account is no longer connected.",
+        false,
+    )
+}
+
+fn account_hash(github_user_id: &str) -> String {
+    let digest = Sha256::digest(github_user_id.as_bytes());
+    digest.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 fn reference_name(reference: &OAuthCredentialReference) -> String {
@@ -913,9 +1054,9 @@ fn reference_name(reference: &OAuthCredentialReference) -> String {
     )
 }
 
-fn new_credential_reference() -> Result<OAuthCredentialReference, ServiceError> {
+fn new_credential_reference(connection_id: &str) -> Result<OAuthCredentialReference, ServiceError> {
     OAuthCredentialReference::new_for_github_copilot(
-        COPILOT_CONNECTION_ID,
+        connection_id,
         Uuid::new_v4().simple().to_string(),
     )
     .map_err(credential_error)
@@ -1200,9 +1341,9 @@ mod tests {
     use crate::protocol::ServiceError;
 
     use super::{
-        COPILOT_CONNECTION_ID, DeviceCodeResponse, DeviceFlow, MAX_ACTIVE_DEVICE_FLOWS, PollState,
-        TokenResponse, disconnect_connection, ensure_device_flow_capacity, invalid_oauth_response,
-        refresh_expiration_for_storage, unix_seconds_for_storage,
+        COPILOT_PROVIDER_ID, DeviceCodeResponse, DeviceFlow, MAX_ACTIVE_DEVICE_FLOWS, PollState,
+        TokenResponse, account_hash, disconnect_connection, ensure_device_flow_capacity,
+        invalid_oauth_response, refresh_expiration_for_storage, unix_seconds_for_storage,
     };
 
     fn test_connection() -> Connection {
@@ -1211,7 +1352,11 @@ mod tests {
             .execute_batch(
                 "CREATE TABLE copilot_oauth_connection (
                     id TEXT PRIMARY KEY NOT NULL,
-                    credential_reference TEXT NOT NULL UNIQUE
+                    github_user_id TEXT NOT NULL,
+                    credential_reference TEXT NOT NULL UNIQUE,
+                    is_selected INTEGER NOT NULL DEFAULT 0,
+                    auth_status TEXT NOT NULL DEFAULT 'active',
+                    connected_at_unix_ms INTEGER NOT NULL DEFAULT 1
                  );
                  CREATE TABLE compatible_provider_model_catalog (
                     provider_id TEXT NOT NULL,
@@ -1229,17 +1374,17 @@ mod tests {
         connection
             .execute(
                 "INSERT INTO copilot_oauth_connection (
-                    id, credential_reference
-                ) VALUES (?1, ?2)",
-                rusqlite::params![COPILOT_CONNECTION_ID, credential_reference],
+                    id, github_user_id, credential_reference, is_selected
+                ) VALUES ('123', '123', ?1, 1)",
+                [credential_reference],
             )
             .expect("insert test Copilot connection");
         connection
             .execute(
                 "INSERT INTO compatible_provider_model_catalog (
                     provider_id, api_key_hash, fetched_at_unix_ms, models_json
-                ) VALUES (?1, 'test-key', 1, '[]')",
-                [COPILOT_CONNECTION_ID],
+                ) VALUES (?1, ?2, 1, '[]')",
+                rusqlite::params![COPILOT_PROVIDER_ID, account_hash("123")],
             )
             .expect("insert test model catalog");
     }
@@ -1254,9 +1399,9 @@ mod tests {
     #[test]
     fn disconnect_keeps_connection_and_catalog_when_credential_removal_fails() {
         let mut connection = test_connection();
-        insert_connection(&connection, "copilot:0123456789abcdef0123456789abcdef");
+        insert_connection(&connection, "123:0123456789abcdef0123456789abcdef");
 
-        let error = disconnect_connection(&mut connection, |_| {
+        let error = disconnect_connection(&mut connection, "123", |_| {
             Err(ServiceError::new(
                 "secure_storage_unavailable",
                 "Credential cleanup failed.",
@@ -1272,7 +1417,7 @@ mod tests {
             1
         );
 
-        let result = disconnect_connection(&mut connection, |_| Ok(()))
+        let result = disconnect_connection(&mut connection, "123", |_| Ok(()))
             .expect("a later disconnect should retry credential cleanup");
 
         assert_eq!(result["removed"], true);
@@ -1288,7 +1433,7 @@ mod tests {
         let mut connection = test_connection();
         insert_connection(&connection, "invalid-reference");
 
-        let error = disconnect_connection(&mut connection, |_| {
+        let error = disconnect_connection(&mut connection, "123", |_| {
             Err(ServiceError::new(
                 "unexpected_cleanup",
                 "Credential cleanup should not run for an invalid reference.",
@@ -1308,10 +1453,10 @@ mod tests {
     #[test]
     fn disconnect_removes_connection_and_catalog_after_credential_cleanup() {
         let mut connection = test_connection();
-        insert_connection(&connection, "copilot:0123456789abcdef0123456789abcdef");
+        insert_connection(&connection, "123:0123456789abcdef0123456789abcdef");
 
-        let result = disconnect_connection(&mut connection, |reference| {
-            assert_eq!(reference.connection_id(), COPILOT_CONNECTION_ID);
+        let result = disconnect_connection(&mut connection, "123", |reference| {
+            assert_eq!(reference.connection_id(), "123");
             Ok(())
         })
         .expect("successful credential cleanup should permit disconnect");

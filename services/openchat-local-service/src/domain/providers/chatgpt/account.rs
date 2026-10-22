@@ -8,10 +8,12 @@ use super::{
     MODEL_CATALOG_CACHE_AGE, RESET_CREDIT_CONSUME_TIMEOUT, connection_unavailable, database_error,
     invalid_response_error, provider_timeout, request_cancelled, serialization_error,
 };
-use crate::{chatgpt_store, oauth::parse_reference, protocol::ServiceError};
+use crate::{
+    chatgpt_store, oauth::parse_reference, protocol::ServiceError, service::OperationGate,
+};
 use reqwest::Method;
 use serde_json::{Value, json};
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 use tokio::{sync::watch, time::timeout};
 use uuid::Uuid;
 
@@ -21,33 +23,169 @@ impl ChatGptService {
         serde_json::to_value(json!({"connections": connections})).map_err(|_| serialization_error())
     }
 
-    pub async fn delete_connection(&self, connection_id: &str) -> Result<Value, ServiceError> {
-        let lock = self.connection_refresh_lock(connection_id).await;
-        let _guard = lock.lock().await;
-        let credential_reference =
-            chatgpt_store::credential_reference(&self.storage, connection_id)
-                .map_err(database_error)?
-                .ok_or_else(|| {
-                    ServiceError::new(
-                        "connection_not_found",
-                        "The ChatGPT connection could not be found.",
-                        false,
-                    )
-                })?;
-        let reference = parse_reference(connection_id, &credential_reference)?;
-        self.oauth.delete_token_pair(&reference)?;
-
-        if !chatgpt_store::delete_connection(&self.storage, connection_id)
-            .map_err(database_error)?
-        {
-            return Err(ServiceError::new(
-                "connection_not_found",
-                "The ChatGPT connection could not be found.",
-                false,
-            ));
+    pub async fn delete_connection(
+        &self,
+        connection_id: &str,
+        cancellation: &mut watch::Receiver<bool>,
+        cancellation_gate: &OperationGate,
+    ) -> Result<Value, ServiceError> {
+        let started = Instant::now();
+        log_connection_delete_event(&self.storage, "connection_delete_started", None, None);
+        if *cancellation.borrow() {
+            return Err(request_cancelled());
         }
+        // A refresh commits only while the connection exists and discards its new credential otherwise.
+        // Removing the row first avoids holding the UI operation open for an OAuth network request.
+        if !cancellation_gate.try_begin_commit() {
+            return Err(request_cancelled());
+        }
+        log_connection_delete_event(
+            &self.storage,
+            "connection_delete_commit_started",
+            None,
+            Some(started.elapsed().as_millis()),
+        );
+        let storage = Arc::clone(&self.storage);
+        let connection_id = connection_id.to_owned();
+        let deletion = tokio::task::spawn_blocking(move || {
+            chatgpt_store::delete_connection(&storage, &connection_id).map_err(database_error)
+        })
+        .await
+        .map_err(|_| {
+            ServiceError::new(
+                "connection_remove_worker_failed",
+                "The ChatGPT connection could not be removed. Try again.",
+                true,
+            )
+        })?;
+        if let Err(error) = deletion {
+            log_connection_delete_event(
+                &self.storage,
+                "connection_delete_failed",
+                Some(error.code),
+                Some(started.elapsed().as_millis()),
+            );
+            return Err(error);
+        }
+        self.schedule_pending_credential_cleanup();
+        log_connection_delete_event(
+            &self.storage,
+            "connection_delete_queued",
+            None,
+            Some(started.elapsed().as_millis()),
+        );
 
-        self.list_connections()
+        Ok(json!({"removed": true}))
+    }
+
+    pub(crate) fn schedule_pending_credential_cleanup(&self) {
+        let storage = Arc::clone(&self.storage);
+        let oauth = Arc::clone(&self.oauth);
+        let cleanup_lock = Arc::clone(&self.credential_cleanup_lock);
+        tokio::spawn(async move {
+            let _guard = cleanup_lock.lock().await;
+            let cleanup_storage = Arc::clone(&storage);
+            let result = tokio::task::spawn_blocking(move || {
+                let pending = chatgpt_store::pending_credential_deletions(&cleanup_storage)
+                    .map_err(|_| "database_read_failed")?;
+                for (connection_id, credential_reference) in pending {
+                    let reference = match parse_reference(&connection_id, &credential_reference) {
+                        Ok(reference) => reference,
+                        Err(error) => {
+                            log_connection_delete_event(
+                                &cleanup_storage,
+                                "connection_credentials_delete_failed",
+                                Some(error.code),
+                                None,
+                            );
+                            continue;
+                        }
+                    };
+                    log_connection_delete_event(
+                        &cleanup_storage,
+                        "connection_credentials_delete_started",
+                        None,
+                        None,
+                    );
+                    let mut deletion_error = None;
+                    for attempt in 0..3 {
+                        match oauth.delete_token_pair(&reference) {
+                            Ok(()) => {
+                                deletion_error = None;
+                                break;
+                            }
+                            Err(error) => {
+                                deletion_error = Some(error.code);
+                                if attempt < 2 {
+                                    std::thread::sleep(std::time::Duration::from_millis(
+                                        250 * (attempt + 1),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    if let Some(code) = deletion_error {
+                        log_connection_delete_event(
+                            &cleanup_storage,
+                            "connection_credentials_delete_failed",
+                            Some(code),
+                            None,
+                        );
+                        continue;
+                    }
+                    let mut queue_update_failed = true;
+                    for attempt in 0..3 {
+                        if chatgpt_store::complete_credential_deletion(
+                            &cleanup_storage,
+                            &connection_id,
+                            &credential_reference,
+                        )
+                        .is_ok()
+                        {
+                            queue_update_failed = false;
+                            break;
+                        }
+                        if attempt < 2 {
+                            std::thread::sleep(std::time::Duration::from_millis(
+                                250 * (attempt + 1),
+                            ));
+                        }
+                    }
+                    if queue_update_failed {
+                        log_connection_delete_event(
+                            &cleanup_storage,
+                            "connection_credentials_queue_update_failed",
+                            Some("database_write_failed"),
+                            None,
+                        );
+                    } else {
+                        log_connection_delete_event(
+                            &cleanup_storage,
+                            "connection_credentials_deleted",
+                            None,
+                            None,
+                        );
+                    }
+                }
+                Ok::<(), &'static str>(())
+            })
+            .await;
+            match result {
+                Ok(Ok(())) => {}
+                Ok(Err(code)) => log_connection_delete_event(
+                    &storage,
+                    "connection_credentials_cleanup_worker_failed",
+                    Some(code),
+                    None,
+                ),
+                Err(_) => log_connection_delete_event(
+                    &storage,
+                    "connection_credentials_cleanup_worker_failed",
+                    Some("worker_failed"),
+                    None,
+                ),
+            }
+        });
     }
 
     pub fn select_connection(&self, connection_id: &str) -> Result<Value, ServiceError> {
@@ -490,5 +628,188 @@ impl ChatGptService {
             None,
         );
         Ok(json!({"outcome": outcome}))
+    }
+}
+
+fn log_connection_delete_event(
+    storage: &crate::storage::AppStorage,
+    event: &'static str,
+    code: Option<&'static str>,
+    duration_ms: Option<u128>,
+) {
+    if storage
+        .log_chatgpt_event(event, "connection_delete", None, code, duration_ms, None)
+        .is_err()
+    {
+        eprintln!("chatgpt_connection_delete_diagnostic_write_failed");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::{
+            Arc,
+            atomic::{AtomicU64, Ordering},
+        },
+    };
+
+    use super::{ChatGptService, OperationGate};
+    use crate::storage::AppStorage;
+    use tokio::sync::watch;
+
+    static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let id = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "openchat-chatgpt-account-delete-test-{}-{id}",
+                std::process::id()
+            ));
+            fs::create_dir_all(&path).expect("create test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[tokio::test]
+    async fn deleting_an_already_removed_connection_confirms_completion() {
+        let directory = TestDirectory::new();
+        let storage = Arc::new(AppStorage::open_at(directory.0.clone()).expect("open storage"));
+        storage
+            .connect()
+            .expect("connect storage")
+            .execute_batch(
+                "CREATE TABLE pending_chatgpt_credential_deletions (
+                    credential_reference TEXT PRIMARY KEY NOT NULL,
+                    connection_id TEXT NOT NULL,
+                    requested_at_unix_ms INTEGER NOT NULL
+                );",
+            )
+            .expect("create cleanup queue");
+        let service = ChatGptService::new(Arc::clone(&storage)).expect("create provider service");
+
+        let (_cancellation_sender, mut cancellation) = watch::channel(false);
+        let cancellation_gate = OperationGate::default();
+        let result = service
+            .delete_connection("already-removed", &mut cancellation, &cancellation_gate)
+            .await
+            .expect("confirm idempotent removal");
+
+        assert_eq!(result["removed"], true);
+    }
+
+    #[tokio::test]
+    async fn connection_removal_does_not_wait_for_an_inflight_token_refresh() {
+        let directory = TestDirectory::new();
+        let storage = Arc::new(AppStorage::open_at(directory.0.clone()).expect("open storage"));
+        let connection = storage.connect().expect("connect storage");
+        connection
+            .execute_batch(
+                "CREATE TABLE pending_chatgpt_credential_deletions (
+                    credential_reference TEXT PRIMARY KEY NOT NULL,
+                    connection_id TEXT NOT NULL,
+                    requested_at_unix_ms INTEGER NOT NULL
+                );
+                CREATE TABLE conversations (
+                    id TEXT PRIMARY KEY NOT NULL
+                );",
+            )
+            .expect("create credential cleanup queue");
+        connection
+            .execute(
+                "INSERT INTO chatgpt_connections (
+                    id, credential_reference, auth_status, created_at_unix_ms,
+                    updated_at_unix_ms, is_selected
+                 ) VALUES (?1, ?2, 'active', 1, 1, 0)",
+                rusqlite::params!["connection-1", "credential-1"],
+            )
+            .expect("insert ChatGPT connection");
+        drop(connection);
+        let service =
+            Arc::new(ChatGptService::new(Arc::clone(&storage)).expect("create provider service"));
+        let lock = service.connection_refresh_lock("connection-1").await;
+        let _refresh_guard = lock.lock().await;
+        let (_cancellation_sender, mut cancellation) = watch::channel(false);
+        let cancellation_gate = OperationGate::default();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            service.delete_connection("connection-1", &mut cancellation, &cancellation_gate),
+        )
+        .await
+        .expect("removal should not wait for a network refresh to release its lock")
+        .expect("remove connection while token refresh is in flight");
+        assert_eq!(result["removed"], true);
+        let remaining = storage
+            .connect()
+            .expect("reconnect storage")
+            .query_row(
+                "SELECT count(*) FROM chatgpt_connections WHERE id = 'connection-1'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("check connection row");
+        assert_eq!(remaining, 0);
+        assert_eq!(
+            crate::chatgpt_store::pending_credential_deletions(&storage)
+                .expect("load queued credential cleanup"),
+            vec![("connection-1".to_owned(), "credential-1".to_owned())]
+        );
+    }
+
+    #[tokio::test]
+    async fn cancelled_connection_removal_keeps_the_connection_row() {
+        let directory = TestDirectory::new();
+        let storage = Arc::new(AppStorage::open_at(directory.0.clone()).expect("open storage"));
+        let connection = storage.connect().expect("connect storage");
+        connection
+            .execute_batch(
+                "CREATE TABLE pending_chatgpt_credential_deletions (
+                    credential_reference TEXT PRIMARY KEY NOT NULL,
+                    connection_id TEXT NOT NULL,
+                    requested_at_unix_ms INTEGER NOT NULL
+                );",
+            )
+            .expect("create credential cleanup queue");
+        connection
+            .execute(
+                "INSERT INTO chatgpt_connections (
+                    id, credential_reference, auth_status, created_at_unix_ms,
+                    updated_at_unix_ms, is_selected
+                 ) VALUES (?1, ?2, 'active', 1, 1, 0)",
+                rusqlite::params!["connection-1", "credential-1"],
+            )
+            .expect("insert ChatGPT connection");
+        drop(connection);
+        let service = ChatGptService::new(Arc::clone(&storage)).expect("create provider service");
+        let (_cancellation_sender, mut cancellation) = watch::channel(false);
+        let cancellation_gate = OperationGate::default();
+        assert!(cancellation_gate.request_cancellation());
+
+        let error = service
+            .delete_connection("connection-1", &mut cancellation, &cancellation_gate)
+            .await
+            .expect_err("cancelled removal must not commit");
+        assert_eq!(error.code, "request_cancelled");
+        let remaining = storage
+            .connect()
+            .expect("reconnect storage")
+            .query_row(
+                "SELECT count(*) FROM chatgpt_connections WHERE id = 'connection-1'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .expect("check connection row");
+        assert_eq!(remaining, 1);
     }
 }

@@ -8,6 +8,7 @@ export const OAUTH_PLAN_FOCUS_COOLDOWN_MS = 3 * 60 * 1000;
 
 export interface OAuthPlanRefreshSummary {
   readonly chatGptConnections: readonly unknown[];
+  readonly copilotConnectionId: string | null;
   readonly copilotPlanType: string | null;
   readonly planOrAuthChanged: boolean;
 }
@@ -15,6 +16,7 @@ export interface OAuthPlanRefreshSummary {
 let inFlightRefresh: Promise<OAuthPlanRefreshSummary> | null = null;
 let lastCompletedCheckAtUnixMs = 0;
 let cachedCopilotPlanType: string | null = null;
+let cachedCopilotConnectionId: string | null = null;
 let hasObservedCopilotPlan = false;
 
 export function getCachedCopilotPlanType(): string | null {
@@ -56,6 +58,7 @@ async function performOAuthPlanRefresh(): Promise<OAuthPlanRefreshSummary> {
   lastCompletedCheckAtUnixMs = Date.now();
   const summary: OAuthPlanRefreshSummary = {
     chatGptConnections: chatGptResult.connections,
+    copilotConnectionId: copilotResult.connectionId,
     copilotPlanType: copilotResult.planType,
     planOrAuthChanged: chatGptResult.changed || copilotResult.changed,
   };
@@ -88,23 +91,34 @@ async function refreshChatGptPlans(): Promise<{ connections: readonly unknown[];
   }
 }
 
-async function refreshCopilotPlan(): Promise<{ planType: string | null; changed: boolean }> {
+async function refreshCopilotPlan(): Promise<{
+  connectionId: string | null;
+  planType: string | null;
+  changed: boolean;
+}> {
   try {
     const status = await loadCopilotOAuthStatus();
     if (!status.connected || status.connection === null || status.connection.authStatus !== 'active') {
-      const changed = hasObservedCopilotPlan && cachedCopilotPlanType !== null;
+      const changed = hasObservedCopilotPlan && (cachedCopilotConnectionId !== null || cachedCopilotPlanType !== null);
+      cachedCopilotConnectionId = null;
       cachedCopilotPlanType = null;
       hasObservedCopilotPlan = true;
-      return { planType: null, changed };
+      return { connectionId: null, planType: null, changed };
     }
     const usage = await loadCopilotUsage();
+    const connectionChanged = cachedCopilotConnectionId !== status.connection.id;
     const nextPlanType = usage.planType;
-    const changed = hasObservedCopilotPlan && cachedCopilotPlanType !== nextPlanType;
+    const changed = hasObservedCopilotPlan && (connectionChanged || cachedCopilotPlanType !== nextPlanType);
+    cachedCopilotConnectionId = status.connection.id;
     cachedCopilotPlanType = nextPlanType;
     hasObservedCopilotPlan = true;
-    return { planType: nextPlanType, changed };
+    return { connectionId: status.connection.id, planType: nextPlanType, changed };
   } catch {
-    return { planType: cachedCopilotPlanType, changed: false };
+    return {
+      connectionId: cachedCopilotConnectionId,
+      planType: cachedCopilotPlanType,
+      changed: false,
+    };
   }
 }
 
@@ -128,6 +142,7 @@ function isRefreshSummary(value: unknown): value is OAuthPlanRefreshSummary {
   return (
     isObject(value) &&
     Array.isArray(value.chatGptConnections) &&
+    (value.copilotConnectionId === null || typeof value.copilotConnectionId === 'string') &&
     (value.copilotPlanType === null || typeof value.copilotPlanType === 'string') &&
     typeof value.planOrAuthChanged === 'boolean'
   );

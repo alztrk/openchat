@@ -20,7 +20,7 @@ use crate::{
     protocol::{EventSink, ServiceError},
     provider_schema::{ChatStreamEvent, ChatStreamSnapshot, ProviderMessage},
     response_budget::ProviderResponseBudget,
-    storage::AppStorage,
+    storage::{AppStorage, sqlite_error_code},
     tools::{self, ToolExecutor},
     usage_statistics::{
         RequestAttachmentSource, RequestDataSources, UsageRequestDetails, UsageRequestTracker,
@@ -28,8 +28,8 @@ use crate::{
 };
 
 use super::{
-    opencode_session_id_for_conversation, protocol_error, request, route, route_error,
-    save_message, storage_error, terminal_result,
+    log_send_storage_failure, opencode_session_id_for_conversation, protocol_error, request, route,
+    route_error, save_message, storage_error, terminal_result,
 };
 
 mod response_stream;
@@ -121,7 +121,13 @@ pub(crate) async fn send_temporary_message(
         },
         cancellation,
     )
-    .await?;
+    .await
+    .map_err(|error| {
+        if error.code == "storage_unavailable" {
+            log_send_storage_failure(storage, "chat.temporary.send.compatible_route", error.code);
+        }
+        error
+    })?;
     let provider_id = route.provider_id.as_deref().ok_or_else(route_error)?;
     if !route.supports_images
         && provider_messages
@@ -264,6 +270,7 @@ pub async fn send_message(
         permission_mode,
         tool_permission_rules,
         profile_tool_allowlist,
+        available_subagent_models,
         #[cfg(windows)]
         mcp_configs,
         #[cfg(windows)]
@@ -298,7 +305,13 @@ pub async fn send_message(
         },
         cancellation,
     )
-    .await?;
+    .await
+    .map_err(|error| {
+        if error.code == "storage_unavailable" {
+            log_send_storage_failure(storage, "chat.send.compatible_route", error.code);
+        }
+        error
+    })?;
     let provider_id = route.provider_id.as_deref().ok_or_else(route_error)?;
     #[cfg(windows)]
     let mcp_registry = if route.supports_tool_calls != Some(false)
@@ -326,8 +339,16 @@ pub async fn send_message(
         None
     };
     let mut context_state =
-        chatgpt_store::load_conversation_context_state(storage, conversation_id)
-            .map_err(|_| storage_error())?;
+        chatgpt_store::load_conversation_context_state(storage, conversation_id).map_err(
+            |error| {
+                log_send_storage_failure(
+                    storage,
+                    "chat.send.compatible_context_state_read",
+                    sqlite_error_code(&error),
+                );
+                storage_error()
+            },
+        )?;
     let active_compaction_route_matches = context_state.as_ref().is_some_and(|state| {
         context_compaction::compaction_payload_matches_route(
             state,
@@ -347,15 +368,35 @@ pub async fn send_message(
             conversation_id,
             boundary_id,
         )
-        .map_err(|_| storage_error())?
-        {
+        .map_err(|error| {
+            log_send_storage_failure(
+                storage,
+                "chat.send.compatible_history_read",
+                sqlite_error_code(&error),
+            );
+            storage_error()
+        })? {
             Some(messages) => messages,
-            None => chatgpt_store::conversation_messages(storage, conversation_id)
-                .map_err(|_| storage_error())?,
+            None => {
+                chatgpt_store::conversation_messages(storage, conversation_id).map_err(|error| {
+                    log_send_storage_failure(
+                        storage,
+                        "chat.send.compatible_history_read",
+                        sqlite_error_code(&error),
+                    );
+                    storage_error()
+                })?
+            }
         }
     } else {
-        chatgpt_store::conversation_messages(storage, conversation_id)
-            .map_err(|_| storage_error())?
+        chatgpt_store::conversation_messages(storage, conversation_id).map_err(|error| {
+            log_send_storage_failure(
+                storage,
+                "chat.send.compatible_history_read",
+                sqlite_error_code(&error),
+            );
+            storage_error()
+        })?
     };
     crate::history::validate_model_attachments(&stored_messages, route.supports_images)?;
     let project_task_ids = if permission_mode == crate::tools::ToolPermissionMode::Plan {
@@ -444,9 +485,23 @@ pub async fn send_message(
     let started = Instant::now();
     let created_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|_| storage_error())?
+        .map_err(|_| {
+            log_send_storage_failure(
+                storage,
+                "chat.send.compatible_timestamp",
+                "system_clock_before_epoch",
+            );
+            storage_error()
+        })?
         .as_millis();
-    let created_at = i64::try_from(created_at).map_err(|_| storage_error())?;
+    let created_at = i64::try_from(created_at).map_err(|_| {
+        log_send_storage_failure(
+            storage,
+            "chat.send.compatible_timestamp",
+            "timestamp_out_of_range",
+        );
+        storage_error()
+    })?;
     let message_id = Uuid::new_v4().simple().to_string();
 
     if context_compaction::should_compact(context_compaction::CompactionCheck {
@@ -504,8 +559,16 @@ pub async fn send_message(
             last_prompt_connection_id: None,
             last_prompt_workspace_id: None,
         };
-        chatgpt_store::save_compaction_state(storage, conversation_id, &summary_state)
-            .map_err(|_| storage_error())?;
+        chatgpt_store::save_compaction_state(storage, conversation_id, &summary_state).map_err(
+            |error| {
+                log_send_storage_failure(
+                    storage,
+                    "chat.send.compatible_compaction_write",
+                    sqlite_error_code(&error),
+                );
+                storage_error()
+            },
+        )?;
         history_start = compacted_through_index + 1;
         context_state = Some(summary_state);
     }
@@ -593,7 +656,14 @@ pub async fn send_message(
             archive_context_limit,
         )
         .await
-        .map_err(|_| storage_error())?;
+        .map_err(|error| {
+            log_send_storage_failure(
+                storage,
+                "chat.send.compatible_archive_read",
+                sqlite_error_code(&error),
+            );
+            storage_error()
+        })?;
         archived_message_ids = excerpts
             .iter()
             .map(|excerpt| excerpt.message_id.clone())
@@ -698,7 +768,10 @@ pub async fn send_message(
             .iter()
             .map(|tool| tool.name.to_owned()),
         tool_permission_rules,
-    );
+    )
+    .with_chat_service(image_service.as_ref().clone())
+    .with_subagent_models(available_subagent_models)
+    .with_subagent_tool_definitions(provider_request.tools.clone());
     #[cfg(windows)]
     {
         tool_executor = tool_executor
@@ -782,7 +855,7 @@ pub async fn send_message(
     if status == "completed"
         && let Some(input_tokens) = input_tokens
     {
-        chatgpt_store::save_prompt_usage(
+        if chatgpt_store::save_prompt_usage(
             storage,
             conversation_id,
             chatgpt_store::PromptUsage {
@@ -794,7 +867,11 @@ pub async fn send_message(
                 workspace_id: None,
             },
         )
-        .map_err(|_| storage_error())?;
+        .is_err()
+            && storage.log_context_usage_save_failure().is_err()
+        {
+            eprintln!("context_usage_diagnostic_write_failed");
+        }
     }
     if status == "completed"
         && chatgpt_store::should_generate_automatic_title(storage, conversation_id).unwrap_or(false)
@@ -968,10 +1045,24 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
                 run_id: None,
             },
         )
-        .map_err(|_| storage_error())?;
+        .map_err(|error| {
+            log_send_storage_failure(
+                context.storage,
+                "chat.send.compatible_usage_start",
+                sqlite_error_code(&error),
+            );
+            storage_error()
+        })?;
         usage_request
             .record_request_manifest(&body, Some(context.request_sources))
-            .map_err(|_| storage_error())?;
+            .map_err(|error| {
+                log_send_storage_failure(
+                    context.storage,
+                    "chat.send.compatible_usage_manifest",
+                    sqlite_error_code(&error),
+                );
+                storage_error()
+            })?;
         let turn = match response_stream::receive(ResponseStreamRequest {
             route,
             api_key,
@@ -994,7 +1085,14 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
         {
             Ok(turn) => turn,
             Err(error) if is_cancelled(&error) => {
-                usage_request.cancel().map_err(|_| storage_error())?;
+                usage_request.cancel().map_err(|error| {
+                    log_send_storage_failure(
+                        context.storage,
+                        "chat.send.compatible_usage_cancel",
+                        sqlite_error_code(&error),
+                    );
+                    storage_error()
+                })?;
                 return Err(error);
             }
             Err(error) => return Err(error),
@@ -1004,9 +1102,14 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
             .clone()
             .unwrap_or_default()
             .usage_data();
-        usage_request
-            .complete(&usage)
-            .map_err(|_| storage_error())?;
+        usage_request.complete(&usage).map_err(|error| {
+            log_send_storage_failure(
+                context.storage,
+                "chat.send.compatible_usage_complete",
+                sqlite_error_code(&error),
+            );
+            storage_error()
+        })?;
         if matches!(provider_id, "cerebras" | "mistral" | "openrouter") {
             let diagnostic_usage = turn.provider_request_usage.clone().unwrap_or_default();
             if context
@@ -1104,7 +1207,6 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
                 })
             } else if provider_id == "llama_cpp" && route.supports_tool_calls != Some(false) {
                 Some(crate::tools::ImageGenerationContext::LocalEndpoint {
-                    service: image_service,
                     api_key: route.local_api_key.as_deref().map(|key| key.as_str()),
                     provider_id,
                     endpoint: &route.chat_url,
@@ -1116,7 +1218,6 @@ async fn stream_conversation(context: StreamConversationContext<'_>) -> Result<(
                     (api_key, super::api_compatible_provider(provider_id))
             {
                 Some(crate::tools::ImageGenerationContext::CompatibleApiKey {
-                    service: image_service,
                     api_key,
                     provider_id: provider.id,
                     endpoint: &route.chat_url,

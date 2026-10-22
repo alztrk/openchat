@@ -1,5 +1,6 @@
 import type { JsonObject, LocalServiceClient } from '@/platform/local-service';
 import { isObject, numberOrNull } from '@/shared/utils/json';
+import { requiresChatGptWorkspaceSelection } from './chatGptWorkspaceSelection';
 import type { ChatModel, ChatModelProvider } from './chatModels';
 import { parseProviderCatalog } from './modelCatalogParser';
 import {
@@ -10,11 +11,14 @@ import {
 } from './providerCredentials';
 import type { ChatRoute } from './routes';
 
+const copilotModelCatalogTimeoutMs = 95_000;
+
 export interface ModelCatalogBatch {
   models: ChatModel[];
   providers: ChatModelProvider[];
   hasUnavailableSources: boolean;
   hasConfiguredProvider: boolean;
+  needsChatGptWorkspaceSelection: boolean;
 }
 
 export async function loadChatGptModels(client: LocalServiceClient, forceRefresh: boolean): Promise<ModelCatalogBatch> {
@@ -22,21 +26,46 @@ export async function loadChatGptModels(client: LocalServiceClient, forceRefresh
   try {
     connectionResult = await client.call('chatgpt.connections.list');
   } catch {
-    return { models: [], providers: [], hasUnavailableSources: true, hasConfiguredProvider: false };
+    return {
+      models: [],
+      providers: [],
+      hasUnavailableSources: true,
+      hasConfiguredProvider: false,
+      needsChatGptWorkspaceSelection: false,
+    };
   }
   if (!Array.isArray(connectionResult.connections)) {
-    return { models: [], providers: [], hasUnavailableSources: true, hasConfiguredProvider: false };
+    return {
+      models: [],
+      providers: [],
+      hasUnavailableSources: true,
+      hasConfiguredProvider: false,
+      needsChatGptWorkspaceSelection: false,
+    };
   }
   const connections = connectionResult.connections.filter(isObject);
   const connection = connections.find((item) => item.authStatus === 'active' && item.isSelected === true);
   if (!connection || typeof connection.id !== 'string' || !Array.isArray(connection.workspaces)) {
-    return { models: [], providers: [], hasUnavailableSources: false, hasConfiguredProvider: false };
+    return {
+      models: [],
+      providers: [],
+      hasUnavailableSources: false,
+      hasConfiguredProvider: false,
+      needsChatGptWorkspaceSelection: false,
+    };
   }
   const providers: ChatModelProvider[] = [{ providerId: 'chatgpt', name: null, available: true }];
   const connectionId = connection.id;
-  const workspace = connection.workspaces.filter(isObject).find((item) => item.isSelected === true);
+  const workspaces = connection.workspaces.filter(isObject);
+  const workspace = workspaces.find((item) => item.isSelected === true);
   if (!workspace || typeof workspace.id !== 'string') {
-    return { models: [], providers, hasUnavailableSources: false, hasConfiguredProvider: true };
+    return {
+      models: [],
+      providers,
+      hasUnavailableSources: false,
+      hasConfiguredProvider: true,
+      needsChatGptWorkspaceSelection: requiresChatGptWorkspaceSelection(workspaces),
+    };
   }
   const workspaceId = workspace.id;
 
@@ -48,13 +77,25 @@ export async function loadChatGptModels(client: LocalServiceClient, forceRefresh
       ...(forceRefresh ? { forceRefresh: true } : {}),
     });
   } catch {
-    return { models: [], providers, hasUnavailableSources: true, hasConfiguredProvider: true };
+    return {
+      models: [],
+      providers,
+      hasUnavailableSources: true,
+      hasConfiguredProvider: true,
+      needsChatGptWorkspaceSelection: false,
+    };
   }
   if (
     !Array.isArray(modelResult.models) ||
     (modelResult.freshness !== 'current' && modelResult.freshness !== 'stale')
   ) {
-    return { models: [], providers, hasUnavailableSources: true, hasConfiguredProvider: true };
+    return {
+      models: [],
+      providers,
+      hasUnavailableSources: true,
+      hasConfiguredProvider: true,
+      needsChatGptWorkspaceSelection: false,
+    };
   }
 
   const catalogStale = modelResult.freshness === 'stale';
@@ -82,7 +123,7 @@ export async function loadChatGptModels(client: LocalServiceClient, forceRefresh
           key: `${route.providerId}:${route.connectionId}:${route.workspaceId}:${route.modelId}`,
           displayName: model.displayName,
           description: typeof model.description === 'string' ? model.description : null,
-          supportsReasoning: model.supportsReasoning === true,
+          supportsReasoning: model.reasoningLevels.length > 0,
           supportsImages: model.supportsImages === true,
           supportsTools: typeof model.supportsTools === 'boolean' ? model.supportsTools : null,
           supportsFastMode: model.supportsFastMode === true,
@@ -92,7 +133,13 @@ export async function loadChatGptModels(client: LocalServiceClient, forceRefresh
         },
       ];
     });
-  return { models, providers, hasUnavailableSources: false, hasConfiguredProvider: true };
+  return {
+    models,
+    providers,
+    hasUnavailableSources: false,
+    hasConfiguredProvider: true,
+    needsChatGptWorkspaceSelection: false,
+  };
 }
 
 export async function loadLocalModels(client: LocalServiceClient): Promise<ChatModel[]> {
@@ -136,6 +183,7 @@ export async function loadApiKeyModels(client: LocalServiceClient, forceRefresh:
       providers: [],
       hasUnavailableSources: true,
       hasConfiguredProvider: false,
+      needsChatGptWorkspaceSelection: false,
     };
   }
   const hasConfiguredProvider =
@@ -234,6 +282,7 @@ export async function loadApiKeyModels(client: LocalServiceClient, forceRefresh:
     providers,
     hasUnavailableSources: copilotStatusFailed || results.some((result) => result.failed),
     hasConfiguredProvider: hasConfiguredProvider || copilotConnected,
+    needsChatGptWorkspaceSelection: false,
   };
 }
 
@@ -249,10 +298,14 @@ async function loadProviderCatalog(
   try {
     let response: JsonObject;
     if (route.providerId === 'copilot') {
-      response = await client.call('compatible.models.list', {
-        providerId: route.providerId,
-        ...(forceRefresh ? { forceRefresh: true } : {}),
-      });
+      response = await client.call(
+        'compatible.models.list',
+        {
+          providerId: route.providerId,
+          ...(forceRefresh ? { forceRefresh: true } : {}),
+        },
+        copilotModelCatalogTimeoutMs,
+      );
     } else {
       response =
         route.providerId === 'chatgpt_api'

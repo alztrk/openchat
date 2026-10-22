@@ -22,7 +22,8 @@ use crate::{
 };
 
 use super::{
-    CustomProviderConfig, OPENAI_CHAT_URL, RESPONSES_URL, api_compatible_provider, client, copilot,
+    CustomProviderConfig, OPENAI_RESPONSES_URL, RESPONSES_URL, api_compatible_provider, client,
+    copilot,
 };
 
 struct TitleRoute {
@@ -123,11 +124,11 @@ async fn resolve_target(
             }
             Ok(TitleRoute {
                 model_id: target.model_id,
-                url: OPENAI_CHAT_URL.to_owned(),
+                url: OPENAI_RESPONSES_URL.to_owned(),
                 api_key,
                 anthropic: false,
                 copilot: false,
-                responses_api: false,
+                responses_api: true,
             })
         }
         "opencode" => {

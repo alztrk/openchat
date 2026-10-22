@@ -17,7 +17,7 @@ use crate::{
     protocol::ServiceError,
     provider_schema::ToolDefinition,
     provider_schema::{ProviderChatRequest, ProviderMessage},
-    storage::AppStorage,
+    storage::{AppStorage, sqlite_error_code},
     tools,
 };
 
@@ -48,6 +48,21 @@ pub(crate) async fn copilot_usage(
     cancellation: &mut tokio::sync::watch::Receiver<bool>,
 ) -> Result<Value, ServiceError> {
     copilot::usage(access_token, cancellation).await
+}
+
+pub(crate) fn copilot_child_model_route(
+    storage: &AppStorage,
+    connection_id: &str,
+    model_id: &str,
+) -> Result<Option<copilot::ChildModelRoute>, ServiceError> {
+    copilot::child_model_route(storage, connection_id, model_id)
+}
+
+pub(crate) fn authorize_copilot_child_inference(
+    request: reqwest::RequestBuilder,
+    access_token: &str,
+) -> reqwest::RequestBuilder {
+    copilot::authorize_child_inference(request, access_token)
 }
 
 pub(crate) fn temporary_chatgpt_responses_body(
@@ -221,7 +236,7 @@ pub(crate) fn context_usage_tool_definitions(
 }
 const CHAT_URL: &str = "https://opencode.ai/zen/v1/chat/completions";
 const RESPONSES_URL: &str = "https://opencode.ai/zen/v1/responses";
-const OPENAI_CHAT_URL: &str = "https://api.openai.com/v1/chat/completions";
+const OPENAI_RESPONSES_URL: &str = "https://api.openai.com/v1/responses";
 const MAX_EVENT_BYTES: usize = 1024 * 1024;
 const MAX_PROVIDER_ERROR_BYTES: usize = 16 * 1024;
 
@@ -459,7 +474,24 @@ fn save_message(
     storage: &AppStorage,
     message: AssistantMessageWrite<'_>,
 ) -> Result<(), ServiceError> {
-    crate::chatgpt_store::save_assistant_message(storage, message).map_err(|_| storage_error())
+    crate::chatgpt_store::save_assistant_message(storage, message).map_err(|error| {
+        log_send_storage_failure(
+            storage,
+            "chat.send.compatible_assistant_persist",
+            sqlite_error_code(&error),
+        );
+        storage_error()
+    })
+}
+
+pub(super) fn log_send_storage_failure(
+    storage: &AppStorage,
+    operation: &'static str,
+    code: &'static str,
+) {
+    if storage.log_rpc_failure(operation, code).is_err() {
+        eprintln!("chat_storage_diagnostic_write_failed");
+    }
 }
 
 fn terminal_result(

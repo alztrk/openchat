@@ -912,5 +912,66 @@ pub(super) fn apply_agent_migrations(
         current_version = 31;
     }
 
+    if current_version < 32 && target_version >= 32 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "ALTER TABLE copilot_oauth_connection RENAME TO copilot_oauth_connection_v31;
+            CREATE TABLE copilot_oauth_connection (
+                id TEXT PRIMARY KEY NOT NULL
+                    CHECK (length(id) BETWEEN 1 AND 20 AND id NOT GLOB '*[^0-9]*'),
+                github_user_id TEXT NOT NULL UNIQUE
+                    CHECK (length(github_user_id) BETWEEN 1 AND 20 AND github_user_id NOT GLOB '*[^0-9]*'),
+                login TEXT NOT NULL,
+                display_name TEXT,
+                credential_reference TEXT NOT NULL UNIQUE,
+                auth_status TEXT NOT NULL CHECK (auth_status IN ('active', 'reauth_required')),
+                access_expires_at_unix_seconds INTEGER NOT NULL CHECK (access_expires_at_unix_seconds > 0),
+                refresh_expires_at_unix_seconds INTEGER,
+                connected_at_unix_ms INTEGER NOT NULL,
+                updated_at_unix_ms INTEGER NOT NULL,
+                is_selected INTEGER NOT NULL DEFAULT 0 CHECK (is_selected IN (0, 1))
+            );
+            INSERT INTO copilot_oauth_connection (
+                id, github_user_id, login, display_name, credential_reference,
+                auth_status, access_expires_at_unix_seconds, refresh_expires_at_unix_seconds,
+                connected_at_unix_ms, updated_at_unix_ms, is_selected
+            )
+            SELECT github_user_id, github_user_id, login, display_name, credential_reference,
+                auth_status, access_expires_at_unix_seconds, refresh_expires_at_unix_seconds,
+                connected_at_unix_ms, updated_at_unix_ms, 1
+            FROM copilot_oauth_connection_v31;
+            DROP TABLE copilot_oauth_connection_v31;
+            CREATE UNIQUE INDEX copilot_oauth_connection_single_selected
+                ON copilot_oauth_connection(is_selected) WHERE is_selected = 1;
+            CREATE INDEX copilot_oauth_connection_order
+                ON copilot_oauth_connection(connected_at_unix_ms DESC, id);",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (32, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 32;
+    }
+
+    if current_version < 33 && target_version >= 33 {
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute_batch(
+            "CREATE TABLE pending_chatgpt_credential_deletions (
+                credential_reference TEXT PRIMARY KEY NOT NULL
+                    CHECK (length(credential_reference) BETWEEN 1 AND 256),
+                connection_id TEXT NOT NULL
+                    CHECK (length(connection_id) BETWEEN 1 AND 128),
+                requested_at_unix_ms INTEGER NOT NULL
+            );",
+        )?;
+        transaction.execute(
+            "INSERT INTO openchat_backend_migrations (version, applied_at_unix_ms) VALUES (33, ?1)",
+            [unix_time_millis()?],
+        )?;
+        transaction.commit()?;
+        current_version = 33;
+    }
+
     Ok(current_version)
 }

@@ -222,6 +222,7 @@ async fn receive_with_client(
                     .unwrap_or_default()
                 {
                     "message_start" => {
+                        let usage = value.pointer("/message/usage");
                         if let Some(tokens) = value
                             .pointer("/message/usage/input_tokens")
                             .and_then(Value::as_i64)
@@ -231,6 +232,24 @@ async fn receive_with_client(
                             provider_request_usage
                                 .get_or_insert_with(ProviderRequestUsage::default)
                                 .prompt_tokens = Some(tokens);
+                        }
+                        if let Some(usage) = usage {
+                            let request_usage = provider_request_usage
+                                .get_or_insert_with(ProviderRequestUsage::default);
+                            if let Some(tokens) = usage
+                                .get("cache_read_input_tokens")
+                                .and_then(Value::as_i64)
+                                .filter(|tokens| *tokens >= 0)
+                            {
+                                request_usage.cached_tokens = Some(tokens);
+                            }
+                            if let Some(tokens) = usage
+                                .get("cache_creation_input_tokens")
+                                .and_then(Value::as_i64)
+                                .filter(|tokens| *tokens >= 0)
+                            {
+                                request_usage.cache_write_tokens = Some(tokens);
+                            }
                         }
                     }
                     "content_block_start" => {
@@ -325,6 +344,15 @@ async fn receive_with_client(
                             provider_request_usage
                                 .get_or_insert_with(ProviderRequestUsage::default)
                                 .completion_tokens = Some(tokens);
+                        }
+                        if let Some(tokens) = value
+                            .pointer("/usage/output_tokens_details/thinking_tokens")
+                            .and_then(Value::as_i64)
+                            .filter(|tokens| *tokens >= 0)
+                        {
+                            provider_request_usage
+                                .get_or_insert_with(ProviderRequestUsage::default)
+                                .reasoning_tokens = Some(tokens);
                         }
                         saw_finish_reason |= value
                             .pointer("/delta/stop_reason")

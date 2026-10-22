@@ -245,6 +245,9 @@ pub(super) fn chat_completion_body(
     ) {
         body["stream_options"] = json!({"include_usage": true});
     }
+    if provider_id == "openrouter" {
+        body["usage"] = json!({"include": true});
+    }
     if provider_id == "opencode" {
         if !request.tools.is_empty() {
             body["tools"] = json!(tools::opencode_wire_tools(&request.tools));
@@ -604,6 +607,10 @@ pub(super) fn responses_api_body(
         "input": responses_input_items(messages),
         "stream": true,
     });
+    if provider_id == "chatgpt_api" {
+        // Keep conversation state in OpenChat's local history.
+        body["store"] = json!(false);
+    }
     if !request.tools.is_empty() {
         body["tools"] = json!(if provider_id == "opencode" {
             tools::opencode_responses_wire_tools(&request.tools)

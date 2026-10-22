@@ -6,11 +6,14 @@
 use rusqlite::OptionalExtension;
 use zeroize::Zeroizing;
 
-use crate::{protocol::ServiceError, storage::AppStorage};
+use crate::{
+    protocol::ServiceError,
+    storage::{AppStorage, sqlite_error_code},
+};
 
 use super::{
-    CHAT_URL, OPENAI_CHAT_URL, RESPONSES_URL, api_compatible_provider,
-    authentication_required_error, model_error,
+    CHAT_URL, OPENAI_RESPONSES_URL, RESPONSES_URL, api_compatible_provider,
+    authentication_required_error, log_send_storage_failure, model_error,
     models::{is_supported_free_chat_model, is_supported_paid_chat_model},
     openai_authentication_required_error, provider_authentication_required_error, route_error,
     storage_error,
@@ -89,9 +92,15 @@ pub(super) async fn resolve_chat_route(
     options: ChatRouteOptions<'_>,
     cancellation: &mut tokio::sync::watch::Receiver<bool>,
 ) -> Result<ChatRoute, ServiceError> {
-    let (provider_id, model_id) = storage
-        .connect()
-        .map_err(|_| storage_error())?
+    let connection = storage.connect().map_err(|error| {
+        log_send_storage_failure(
+            storage,
+            "chat.send.compatible_route_open",
+            sqlite_error_code(&error),
+        );
+        storage_error()
+    })?;
+    let (provider_id, model_id) = connection
         .query_row(
             "SELECT provider_id, model_id FROM conversations WHERE id = ?1",
             [conversation_id],
@@ -103,9 +112,27 @@ pub(super) async fn resolve_chat_route(
             },
         )
         .optional()
-        .map_err(|_| storage_error())?
+        .map_err(|error| {
+            log_send_storage_failure(
+                storage,
+                "chat.send.compatible_route_read",
+                sqlite_error_code(&error),
+            );
+            storage_error()
+        })?
         .ok_or_else(route_error)?;
-    resolve_chat_route_for_model(storage, provider_id, model_id, options, cancellation).await
+    resolve_chat_route_for_model(storage, provider_id, model_id, options, cancellation)
+        .await
+        .map_err(|error| {
+            if error.code == "storage_unavailable" {
+                log_send_storage_failure(
+                    storage,
+                    "chat.send.compatible_route_metadata",
+                    error.code,
+                );
+            }
+            error
+        })
 }
 
 pub(super) async fn resolve_temporary_chat_route(
@@ -130,6 +157,16 @@ pub(super) async fn resolve_temporary_chat_route(
         cancellation,
     )
     .await
+    .map_err(|error| {
+        if error.code == "storage_unavailable" {
+            log_send_storage_failure(
+                storage,
+                "chat.temporary.send.compatible_route_metadata",
+                error.code,
+            );
+        }
+        error
+    })
 }
 
 async fn resolve_chat_route_for_model(
@@ -216,9 +253,9 @@ async fn resolve_chat_route_for_model(
             }
             ResolvedProviderRoute {
                 provider_model_id: model_id.clone(),
-                chat_url: OPENAI_CHAT_URL.to_owned(),
+                chat_url: OPENAI_RESPONSES_URL.to_owned(),
                 is_free: false,
-                uses_responses_api: false,
+                uses_responses_api: true,
                 limits: super::ModelContextLimits::default(),
                 supports_images: crate::openai_api::supports_image_input(&model_id),
                 supports_tool_calls: None,

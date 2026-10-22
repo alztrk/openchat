@@ -340,16 +340,25 @@ pub fn credential_reference(
 pub fn delete_connection(storage: &AppStorage, connection_id: &str) -> rusqlite::Result<bool> {
     let mut database = storage.connect()?;
     let transaction = database.transaction()?;
-    let is_selected = transaction
+    let connection = transaction
         .query_row(
-            "SELECT is_selected FROM chatgpt_connections WHERE id = ?1",
+            "SELECT credential_reference, is_selected
+             FROM chatgpt_connections WHERE id = ?1",
             [connection_id],
-            |row| row.get::<_, bool>(0),
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?)),
         )
         .optional()?;
-    let Some(is_selected) = is_selected else {
-        return Ok(false);
+    let Some((credential_reference, is_selected)) = connection else {
+        return Ok(true);
     };
+
+    transaction.execute(
+        "INSERT INTO pending_chatgpt_credential_deletions (
+            connection_id, credential_reference, requested_at_unix_ms
+         ) VALUES (?1, ?2, ?3)
+         ON CONFLICT(credential_reference) DO NOTHING",
+        params![connection_id, credential_reference, unix_time_millis()?],
+    )?;
 
     transaction.execute(
         "DELETE FROM title_generation_jobs WHERE connection_id = ?1",
@@ -381,6 +390,217 @@ pub fn delete_connection(storage: &AppStorage, connection_id: &str) -> rusqlite:
 
     transaction.commit()?;
     Ok(true)
+}
+
+pub fn pending_credential_deletions(
+    storage: &AppStorage,
+) -> rusqlite::Result<Vec<(String, String)>> {
+    let connection = storage.connect()?;
+    let mut statement = connection.prepare(
+        "SELECT connection_id, credential_reference
+         FROM pending_chatgpt_credential_deletions
+         ORDER BY requested_at_unix_ms ASC, connection_id ASC",
+    )?;
+    let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+    rows.collect()
+}
+
+pub fn complete_credential_deletion(
+    storage: &AppStorage,
+    connection_id: &str,
+    credential_reference: &str,
+) -> rusqlite::Result<()> {
+    storage.connect()?.execute(
+        "DELETE FROM pending_chatgpt_credential_deletions
+         WHERE connection_id = ?1 AND credential_reference = ?2",
+        params![connection_id, credential_reference],
+    )?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::atomic::{AtomicU64, Ordering},
+    };
+
+    use crate::storage::AppStorage;
+
+    use super::super::{NewChatGptConnection, NewChatGptWorkspace};
+    use super::{
+        complete_credential_deletion, create_connection, delete_connection, list_connections,
+        pending_credential_deletions,
+    };
+
+    static NEXT_DIRECTORY: AtomicU64 = AtomicU64::new(0);
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let id = NEXT_DIRECTORY.fetch_add(1, Ordering::Relaxed);
+            let path = std::env::temp_dir().join(format!(
+                "openchat-chatgpt-delete-test-{}-{id}",
+                std::process::id()
+            ));
+            fs::create_dir_all(&path).expect("create test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn deleting_a_connection_twice_is_idempotent() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open storage");
+        storage
+            .connect()
+            .expect("connect storage")
+            .execute_batch(
+                "CREATE TABLE conversations (id TEXT PRIMARY KEY NOT NULL);
+             CREATE TABLE pending_chatgpt_credential_deletions (
+                credential_reference TEXT PRIMARY KEY NOT NULL
+                    CHECK (length(credential_reference) BETWEEN 1 AND 256),
+                connection_id TEXT NOT NULL
+                    CHECK (length(connection_id) BETWEEN 1 AND 128),
+                requested_at_unix_ms INTEGER NOT NULL
+             );",
+            )
+            .expect("create test tables");
+        create_connection(
+            &storage,
+            NewChatGptConnection {
+                id: "connection-1".to_owned(),
+                external_user_id: None,
+                email: None,
+                display_name: None,
+                plan_type: None,
+                credential_reference: "credential-reference".to_owned(),
+                workspaces: vec![NewChatGptWorkspace {
+                    id: "workspace-1".to_owned(),
+                    external_id: "workspace-external-1".to_owned(),
+                    display_name: None,
+                    plan_type: None,
+                    is_selected: true,
+                }],
+            },
+        )
+        .expect("create connection");
+
+        let database = storage.connect().expect("connect storage");
+        database
+            .execute(
+                "INSERT INTO conversations (id) VALUES ('conversation-1')",
+                [],
+            )
+            .expect("create conversation for the title job");
+        database
+            .execute(
+                "INSERT INTO title_generation_jobs (
+                    id, conversation_id, connection_id, workspace_id, model_id,
+                    status, created_at_unix_ms
+                 ) VALUES ('title-job-1', 'conversation-1', 'connection-1', 'workspace-1',
+                    'model-1', 'queued', 1)",
+                [],
+            )
+            .expect("create a restricted dependent title job");
+        database
+            .execute(
+                "INSERT INTO chatgpt_models (
+                    connection_id, workspace_id, model_id, display_name,
+                    is_available, fetched_at_unix_ms, client_version
+                 ) VALUES ('connection-1', 'workspace-1', 'model-1', 'Model', 1, 1, 'test')",
+                [],
+            )
+            .expect("create a cascading dependent model");
+        database
+            .execute(
+                "INSERT INTO chatgpt_usage_snapshots (
+                    id, connection_id, workspace_id, fetched_at_unix_ms,
+                    freshness, reset_credit_details_state
+                 ) VALUES ('snapshot-1', 'connection-1', 'workspace-1', 1, 'current', 'available')",
+                [],
+            )
+            .expect("create a cascading usage snapshot");
+        database
+            .execute(
+                "INSERT INTO chatgpt_usage_buckets (snapshot_id, limit_id)
+                 VALUES ('snapshot-1', 'chat')",
+                [],
+            )
+            .expect("create a cascading usage bucket");
+        database
+            .execute(
+                "INSERT INTO chatgpt_reset_credits (snapshot_id, external_credit_id)
+                 VALUES ('snapshot-1', 'credit-1')",
+                [],
+            )
+            .expect("create a cascading reset credit");
+        drop(database);
+
+        assert!(delete_connection(&storage, "connection-1").expect("delete connection"));
+        assert!(delete_connection(&storage, "connection-1").expect("repeat deletion"));
+        assert!(
+            list_connections(&storage)
+                .expect("list connections")
+                .is_empty()
+        );
+        assert_eq!(
+            pending_credential_deletions(&storage).expect("list pending cleanup"),
+            vec![("connection-1".to_owned(), "credential-reference".to_owned())]
+        );
+        let database = storage.connect().expect("connect storage");
+        for table in [
+            "chatgpt_connections",
+            "chatgpt_workspaces",
+            "chatgpt_models",
+            "chatgpt_usage_snapshots",
+            "chatgpt_usage_buckets",
+            "chatgpt_reset_credits",
+            "title_generation_jobs",
+        ] {
+            let count: i64 = database
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("count dependent rows");
+            assert_eq!(count, 0, "expected {table} rows to be removed");
+        }
+        let foreign_key_violations: i64 = database
+            .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+                row.get(0)
+            })
+            .expect("check foreign keys");
+        assert_eq!(foreign_key_violations, 0);
+        drop(database);
+        drop(storage);
+
+        let reopened_storage = AppStorage::open_at(directory.0.clone()).expect("reopen storage");
+        assert!(
+            list_connections(&reopened_storage)
+                .expect("list connections after reopening storage")
+                .is_empty()
+        );
+        assert!(
+            pending_credential_deletions(&reopened_storage)
+                .expect("list credential cleanup after reopening storage")
+                == vec![("connection-1".to_owned(), "credential-reference".to_owned())]
+        );
+        complete_credential_deletion(&reopened_storage, "connection-1", "credential-reference")
+            .expect("complete credential cleanup after reopening storage");
+        assert!(
+            pending_credential_deletions(&reopened_storage)
+                .expect("list completed credential cleanup")
+                .is_empty()
+        );
+    }
 }
 
 pub fn connection_workspace(

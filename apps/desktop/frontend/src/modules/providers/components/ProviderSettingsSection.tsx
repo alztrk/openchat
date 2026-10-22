@@ -18,6 +18,15 @@ import { useTranslation } from 'react-i18next';
 
 import { Button, Card, Dialog, Select } from '@/design-system';
 import type { ChatModel } from '@/modules/providers/data/chatModels';
+import {
+  type ChatGptConnectionPlanState,
+  type ChatGptWorkspacePlanState,
+  mergeConnectionPlanUpdates,
+} from '@/modules/providers/data/connectionPlanState';
+import {
+  isRetryableConnectionRemovalFailure,
+  waitForConnectionRemoval,
+} from '@/modules/providers/data/connectionRemoval';
 import { formatModelRouteKey, modelRouteKey } from '@/modules/providers/data/modelPreferences';
 import { refreshOAuthPlans, subscribeToOAuthPlanUpdates } from '@/modules/providers/data/oauthPlanMonitor';
 import {
@@ -36,27 +45,11 @@ import {
   writeTitleGenerationPreference,
 } from '@/modules/providers/data/titleGenerationPreferences';
 import { LocalServiceError, localServiceClient, type ServiceOperation } from '@/platform/local-service';
+import { invoke } from '@/platform/tauri';
 import { ApiKeyProvidersSection } from './ApiKeyProvidersSection';
 import { CopilotOAuthCard } from './CopilotOAuthCard';
 import { ProviderIcon } from './ProviderIcon';
 import { ProviderVerificationStatus, providerVerificationStateForOutcome } from './ProviderVerificationStatus';
-
-interface AccountWorkspace {
-  id: string;
-  displayName: string | null;
-  planType: string | null;
-  isSelected: boolean;
-}
-
-interface AccountConnection {
-  id: string;
-  authStatus: string;
-  displayName: string | null;
-  email: string | null;
-  planType: string | null;
-  isSelected: boolean;
-  workspaces: AccountWorkspace[];
-}
 
 type ConnectionRequest = 'idle' | 'loading' | 'signingIn' | 'error';
 type VerificationState =
@@ -74,7 +67,11 @@ type ConnectionErrorCode =
   | 'oauthSignInFailed'
   | 'connectionSelectionFailed'
   | 'workspaceSelectionFailed'
-  | 'connectionRemoveFailed';
+  | 'connectionRemoveFailed'
+  | 'connectionRemoveStatusUnknown';
+
+const CONNECTION_REMOVE_RECONCILE_INTERVAL_MS = 1_000;
+const CONNECTION_REMOVE_FAILURE_RECONCILIATION_MS = 10_000;
 
 interface ProviderSettingsSectionProps {
   serviceStatus: 'idle' | 'loading' | 'ready' | 'error';
@@ -95,12 +92,12 @@ export function ProviderSettingsSection({
   const [request, setRequest] = useState<ConnectionRequest>('loading');
   const [oauthOperation, setOauthOperation] = useState<ServiceOperation | null>(null);
   const [isCancellingOAuth, setIsCancellingOAuth] = useState(false);
-  const [connections, setConnections] = useState<AccountConnection[]>([]);
+  const [connections, setConnections] = useState<ChatGptConnectionPlanState[]>([]);
   const isMountedRef = useRef(true);
   const oauthOperationRef = useRef<ServiceOperation | null>(null);
   const [errorCode, setErrorCode] = useState<ConnectionErrorCode | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [removeTarget, setRemoveTarget] = useState<AccountConnection | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<ChatGptConnectionPlanState | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [verificationState, setVerificationState] = useState<VerificationState>('notChecked');
   const [verificationCheckedAt, setVerificationCheckedAt] = useState<number | null>(null);
@@ -128,13 +125,13 @@ export function ProviderSettingsSection({
     };
   }, []);
 
-  const loadConnections = useCallback(async () => {
+  const loadConnections = useCallback(async (): Promise<ChatGptConnectionPlanState[] | null> => {
     setRequest('loading');
     try {
       const response = await localServiceClient.call('chatgpt.connections.list');
       if (!Array.isArray(response.connections)) throw new Error('Invalid account response.');
-      const items = response.connections.flatMap(parseConnection);
-      if (!isMountedRef.current) return;
+      const items = parseConnectionList(response.connections);
+      if (!isMountedRef.current) return null;
       const selectedConnection = items.find((connection) => connection.isSelected);
       const selectedWorkspace = selectedConnection?.workspaces.find((workspace) => workspace.isSelected);
       let verificationRecord: ProviderVerificationRecord | null = null;
@@ -173,10 +170,12 @@ export function ProviderSettingsSection({
       if (items.some((connection) => connection.authStatus === 'active')) {
         void refreshOAuthPlans();
       }
+      return items;
     } catch {
-      if (!isMountedRef.current) return;
+      if (!isMountedRef.current) return null;
       setErrorCode('oauthConnectionsLoadFailed');
       setRequest('error');
+      return null;
     }
   }, []);
 
@@ -185,9 +184,7 @@ export function ProviderSettingsSection({
       if (!isMountedRef.current || summary.chatGptConnections.length === 0) return;
       const items = summary.chatGptConnections.flatMap(parseConnection);
       if (items.length === 0) return;
-      const selectedConnection = items.find((connection) => connection.isSelected);
-      setConnections(items);
-      setSelectedId(selectedConnection?.id ?? null);
+      setConnections((current) => mergeConnectionPlanUpdates(current, items));
     });
   }, []);
 
@@ -306,19 +303,86 @@ export function ProviderSettingsSection({
     setRemovingId(target.id);
     setErrorCode(null);
     setNotice(null);
+    recordConnectionRemovalDiagnostic('request_started');
+
     try {
-      const response = await localServiceClient.call('chatgpt.connections.delete', {
-        connectionId: target.id,
+      let lastObservedPresence: boolean | null = null;
+      const operationResult = localServiceClient
+        .startOperation('chatgpt.connections.delete', { connectionId: target.id })
+        .then((operation) => {
+          recordConnectionRemovalDiagnostic('operation_accepted');
+          return operation.result;
+        });
+      const tracedOperationResult = operationResult.then(
+        (response) => {
+          recordConnectionRemovalDiagnostic('operation_completed');
+          return response;
+        },
+        (cause: unknown) => {
+          recordConnectionRemovalDiagnostic('operation_failed', safeServiceErrorCode(cause));
+          throw cause;
+        },
+      );
+      await waitForConnectionRemoval(target.id, tracedOperationResult, async (connectionId) => {
+        const exists = await chatGptConnectionExists(connectionId);
+        if (lastObservedPresence !== exists) {
+          recordConnectionRemovalDiagnostic(exists ? 'reconcile_present' : 'reconcile_absent');
+          lastObservedPresence = exists;
+        }
+        return exists;
+      }, {
+        intervalMs: CONNECTION_REMOVE_RECONCILE_INTERVAL_MS,
+        failedOperationReconciliationMs: CONNECTION_REMOVE_FAILURE_RECONCILIATION_MS,
+        onCheckFailure: (cause) => {
+          recordConnectionRemovalDiagnostic('reconcile_check_failed', safeServiceErrorCode(cause));
+          globalThis.reportError(new Error('The ChatGPT connection removal state could not be checked.', { cause }));
+        },
       });
-      if (response.removed !== true) throw new Error('The connection was not removed.');
-      setRemoveTarget(null);
-      setNotice('connectionRemoveSucceeded');
+    } catch (cause) {
+      const latestConnections = await loadConnections();
+      if (!isMountedRef.current) return;
+      if (latestConnections && !latestConnections.some((connection) => connection.id === target.id)) {
+        recordConnectionRemovalDiagnostic('ui_succeeded');
+        setRemoveTarget(null);
+        setNotice('connectionRemoveSucceeded');
+        setRemovingId(null);
+        try {
+          await refreshModels();
+        } catch (refreshCause) {
+          globalThis.reportError(new Error('Provider models did not refresh after connection removal.', { cause: refreshCause }));
+        }
+        return;
+      }
+      if (!latestConnections) {
+        recordConnectionRemovalDiagnostic('ui_unknown', safeServiceErrorCode(cause));
+        globalThis.reportError(new Error('The ChatGPT connection removal state could not be confirmed.', { cause }));
+        setErrorCode('connectionRemoveStatusUnknown');
+        setRemovingId(null);
+        return;
+      }
+      if (isRetryableConnectionRemovalFailure(cause)) {
+        recordConnectionRemovalDiagnostic('ui_unknown', safeServiceErrorCode(cause));
+        globalThis.reportError(new Error('The ChatGPT connection removal result is still uncertain.', { cause }));
+        setErrorCode('connectionRemoveStatusUnknown');
+        setRemovingId(null);
+        return;
+      }
+      recordConnectionRemovalDiagnostic('ui_failed', safeServiceErrorCode(cause));
+      globalThis.reportError(new Error('The ChatGPT connection deletion did not complete.', { cause }));
+      setErrorCode('connectionRemoveFailed');
+      setRemovingId(null);
+      return;
+    }
+
+    recordConnectionRemovalDiagnostic('ui_succeeded');
+    setRemoveTarget(null);
+    setNotice('connectionRemoveSucceeded');
+    setRemovingId(null);
+    try {
       await loadConnections();
       await refreshModels();
-    } catch {
-      setErrorCode('connectionRemoveFailed');
-    } finally {
-      setRemovingId(null);
+    } catch (cause) {
+      globalThis.reportError(new Error('Provider models did not refresh after connection removal.', { cause }));
     }
   };
 
@@ -414,7 +478,9 @@ export function ProviderSettingsSection({
           </div>
         ) : request === 'error' ? (
           <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-4">
-            <p className="text-sm text-secondary-text">{t('oauthConnectionsLoadFailed')}</p>
+            <p className="text-sm text-secondary-text">
+              {t(errorCode === 'connectionRemoveStatusUnknown' ? errorCode : 'oauthConnectionsLoadFailed')}
+            </p>
             <Button onClick={() => void loadConnections()} size="small" variant="secondary">
               <RefreshCw aria-hidden="true" size={15} />
               {t('retry')}
@@ -458,7 +524,17 @@ export function ProviderSettingsSection({
           </div>
         ) : null}
 
-        {errorCode && request !== 'error' ? (
+        {errorCode === 'connectionRemoveStatusUnknown' && request !== 'error' ? (
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 pb-4 pt-1">
+            <p className="text-sm text-destructive" role="alert">
+              {t(errorCode)}
+            </p>
+            <Button onClick={() => void loadConnections()} size="small" variant="secondary">
+              <RefreshCw aria-hidden="true" size={15} />
+              {t('retry')}
+            </Button>
+          </div>
+        ) : errorCode && request !== 'error' ? (
           <p className="px-5 pb-4 pt-1 text-sm text-destructive" role="alert">
             {t(errorCode)}
           </p>
@@ -540,7 +616,7 @@ export function ProviderSettingsSection({
 }
 
 interface ConnectionRowProps {
-  connection: AccountConnection;
+  connection: ChatGptConnectionPlanState;
   isRemoving: boolean;
   isSigningIn: boolean;
   onRemove(): void;
@@ -611,6 +687,7 @@ function ConnectionRow({
               value: workspace.id,
               label: workspace.displayName ?? t('workspaceWithoutName'),
             }))}
+            placeholder={selectedWorkspace ? undefined : t('selectWorkspace')}
             visuallyHiddenLabel
             value={selectedWorkspace?.id ?? ''}
           />
@@ -891,7 +968,31 @@ function parameterCountBillions(model: ChatModel): number | null {
   return null;
 }
 
-function parseConnection(value: unknown): AccountConnection[] {
+function recordConnectionRemovalDiagnostic(
+  stage:
+    | 'request_started'
+    | 'operation_accepted'
+    | 'operation_completed'
+    | 'operation_failed'
+    | 'reconcile_present'
+    | 'reconcile_absent'
+    | 'reconcile_check_failed'
+    | 'ui_failed'
+    | 'ui_unknown'
+    | 'ui_succeeded',
+  code?: string,
+): void {
+  void invoke('record_connection_removal_diagnostic', { stage, code: code ?? null }).catch((cause: unknown) => {
+    globalThis.reportError(new Error('The connection-removal diagnostic could not be recorded.', { cause }));
+  });
+}
+
+function safeServiceErrorCode(error: unknown): string | undefined {
+  if (!(error instanceof LocalServiceError)) return undefined;
+  return /^[a-z0-9_]{1,96}$/.test(error.code) ? error.code : undefined;
+}
+
+function parseConnection(value: unknown): ChatGptConnectionPlanState[] {
   if (
     !isObject(value) ||
     typeof value.id !== 'string' ||
@@ -913,7 +1014,27 @@ function parseConnection(value: unknown): AccountConnection[] {
   ];
 }
 
-function parseWorkspace(value: unknown): AccountWorkspace[] {
+function parseConnectionList(value: unknown[]): ChatGptConnectionPlanState[] {
+  return value.map((item) => {
+    const [connection] = parseConnection(item);
+    if (!connection) throw new Error('The ChatGPT connection list contains an invalid item.');
+    return connection;
+  });
+}
+
+async function chatGptConnectionExists(connectionId: string): Promise<boolean> {
+  const response = await localServiceClient.call('chatgpt.connections.list');
+  if (!Array.isArray(response.connections)) throw new Error('The ChatGPT connection list is invalid.');
+  const connectionIds = response.connections.map((connection) => {
+    if (!isObject(connection) || typeof connection.id !== 'string') {
+      throw new Error('The ChatGPT connection list contains an invalid item.');
+    }
+    return connection.id;
+  });
+  return connectionIds.includes(connectionId);
+}
+
+function parseWorkspace(value: unknown): ChatGptWorkspacePlanState[] {
   if (!isObject(value) || typeof value.id !== 'string') return [];
   return [
     {

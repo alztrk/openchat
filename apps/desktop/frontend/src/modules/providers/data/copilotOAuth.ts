@@ -2,6 +2,7 @@ import { LocalServiceError, localServiceClient } from '@/platform/local-service'
 import { containsAsciiControlCharacters } from '@/shared/utils/textValidation';
 
 export interface CopilotOAuthConnection {
+  id: string;
   login: string;
   name: string | null;
   authStatus: 'active' | 'reauth_required';
@@ -9,7 +10,9 @@ export interface CopilotOAuthConnection {
 
 export interface CopilotOAuthStatus {
   connected: boolean;
+  connections: CopilotOAuthConnection[];
   connection: CopilotOAuthConnection | null;
+  selectedConnectionId: string | null;
 }
 
 export type CopilotQuotaKind = 'chat' | 'completions' | 'premiumInteractions' | 'other';
@@ -46,12 +49,30 @@ export type CopilotDevicePoll =
 
 export async function loadCopilotOAuthStatus(): Promise<CopilotOAuthStatus> {
   const response = await localServiceClient.call('copilot.oauth.status');
-  if (typeof response.connected !== 'boolean') throw invalidResponse();
-  if (!response.connected) return { connected: false, connection: null };
-  if (!isRecord(response.connection)) throw invalidResponse();
+  if (
+    typeof response.connected !== 'boolean' ||
+    !Array.isArray(response.connections) ||
+    (response.selectedConnectionId !== null && typeof response.selectedConnectionId !== 'string')
+  ) {
+    throw invalidResponse();
+  }
+  const connections = response.connections.map((connection) => {
+    if (!isRecord(connection)) throw invalidResponse();
+    return parseConnection(connection);
+  });
+  const ids = new Set(connections.map((connection) => connection.id));
+  if (ids.size !== connections.length) throw invalidResponse();
+  const selectedConnectionId = response.selectedConnectionId;
+  const connection =
+    selectedConnectionId === null ? null : connections.find((item) => item.id === selectedConnectionId);
+  if (response.connected !== (connection !== null) || (selectedConnectionId !== null && connection === undefined)) {
+    throw invalidResponse();
+  }
   return {
-    connected: true,
-    connection: parseConnection(response.connection),
+    connected: connection !== null,
+    connections,
+    connection: connection ?? null,
+    selectedConnectionId,
   };
 }
 
@@ -112,8 +133,13 @@ export async function cancelCopilotOAuth(flowId: string): Promise<boolean> {
   return response.cancelled;
 }
 
-export async function disconnectCopilotOAuth(): Promise<void> {
-  const response = await localServiceClient.call('copilot.oauth.disconnect');
+export async function selectCopilotOAuthConnection(connectionId: string): Promise<void> {
+  const response = await localServiceClient.call('copilot.oauth.select', { connectionId });
+  if (response.selectedConnectionId !== connectionId) throw invalidResponse();
+}
+
+export async function disconnectCopilotOAuth(connectionId: string): Promise<void> {
+  const response = await localServiceClient.call('copilot.oauth.disconnect', { connectionId });
   if (response.removed !== true) throw invalidResponse();
 }
 
@@ -136,6 +162,8 @@ export async function loadCopilotUsage(): Promise<CopilotUsageSnapshot> {
 
 function parseConnection(value: Record<string, unknown>): CopilotOAuthConnection {
   if (
+    typeof value.id !== 'string' ||
+    !/^\d{1,20}$/.test(value.id) ||
     typeof value.login !== 'string' ||
     value.login.length === 0 ||
     (value.name !== null && typeof value.name !== 'string') ||
@@ -144,6 +172,7 @@ function parseConnection(value: Record<string, unknown>): CopilotOAuthConnection
     throw invalidResponse();
   }
   return {
+    id: value.id,
     login: value.login,
     name: value.name,
     authStatus: value.authStatus,

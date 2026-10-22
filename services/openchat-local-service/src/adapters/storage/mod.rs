@@ -27,6 +27,28 @@ pub(crate) mod tool_index_redaction;
 pub(crate) mod user_questions;
 use schema::{INITIAL_SCHEMA_VERSION, SCHEMA_VERSION, initialize_schema};
 
+pub(crate) fn sqlite_error_code(error: &rusqlite::Error) -> &'static str {
+    match error {
+        rusqlite::Error::SqliteFailure(failure, _) => match failure.code {
+            rusqlite::ErrorCode::DatabaseBusy => "sqlite_busy",
+            rusqlite::ErrorCode::DatabaseLocked => "sqlite_locked",
+            rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase => {
+                "sqlite_corrupt"
+            }
+            rusqlite::ErrorCode::CannotOpen => "sqlite_cannot_open",
+            rusqlite::ErrorCode::PermissionDenied => "sqlite_permission_denied",
+            rusqlite::ErrorCode::SystemIoFailure => "sqlite_io_error",
+            rusqlite::ErrorCode::DiskFull => "sqlite_disk_full",
+            rusqlite::ErrorCode::SchemaChanged => "sqlite_schema_changed",
+            _ => "sqlite_failure",
+        },
+        rusqlite::Error::InvalidQuery => "invalid_query",
+        rusqlite::Error::FromSqlConversionFailure(_, _, _) => "stored_value_invalid",
+        rusqlite::Error::ToSqlConversionFailure(_) => "storage_conversion_failed",
+        _ => "storage_operation_failed",
+    }
+}
+
 /// Carries the bounded usage fields permitted in a provider diagnostic entry.
 pub(crate) struct ProviderUsageDiagnostic<'a> {
     pub(crate) provider_id: &'a str,
@@ -39,6 +61,16 @@ pub(crate) struct ProviderUsageDiagnostic<'a> {
     pub(crate) cache_discount: Option<f64>,
     pub(crate) estimated_prompt_tokens: i64,
     pub(crate) image_inputs: i64,
+}
+
+/// Contains aggregate Copilot model-catalog filter counts without provider payload data.
+pub(crate) struct CopilotCatalogFilterSummary {
+    pub(crate) total: usize,
+    pub(crate) policy_blocked: usize,
+    pub(crate) non_chat: usize,
+    pub(crate) picker_disabled: usize,
+    pub(crate) invalid_id: usize,
+    pub(crate) auto_candidates: usize,
 }
 
 /// Owns a user's local OpenChat database and its verified migration/restore state.
@@ -224,6 +256,94 @@ impl AppStorage {
                 write!(file, " item_count={item_count}")?;
             }
             Ok(())
+        })
+    }
+
+    /// Records a failed RPC using only a fixed operation label and stable error code.
+    ///
+    /// # Errors
+    /// Returns an I/O error if the diagnostic log cannot be updated.
+    pub(crate) fn log_rpc_failure(
+        &self,
+        operation: &'static str,
+        code: &'static str,
+    ) -> io::Result<()> {
+        self.append_diagnostic("rpc", "request_failed", |entry| {
+            write!(entry, " operation={operation} code={code}")
+        })
+    }
+
+    /// Records that non-critical token metadata could not be saved after a completed response.
+    ///
+    /// # Errors
+    /// Returns an I/O error if the diagnostic log cannot be updated.
+    pub(crate) fn log_context_usage_save_failure(&self) -> io::Result<()> {
+        self.append_diagnostic("context_usage", "metadata_save_failed", |entry| {
+            write!(entry, " code=context_metadata_write_failed")
+        })
+    }
+
+    /// Records the fixed failure stage for Copilot catalog parsing without response contents.
+    ///
+    /// # Errors
+    /// Returns an I/O error if the diagnostic log cannot be updated.
+    pub(crate) fn log_copilot_catalog_failure(
+        &self,
+        stage: &'static str,
+        code: &'static str,
+    ) -> io::Result<()> {
+        if !matches!(
+            stage,
+            "user_metadata"
+                | "api_endpoint"
+                | "model_http"
+                | "model_body"
+                | "model_data"
+                | "model_filter"
+        ) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Copilot catalog diagnostic stage is invalid",
+            ));
+        }
+        self.append_diagnostic("copilot", "model_catalog_failed", |entry| {
+            write!(entry, " stage={stage} code={code}")
+        })
+    }
+
+    /// Records bounded aggregate model-filter counts without model names or response contents.
+    ///
+    /// # Errors
+    /// Returns an I/O error if the counts are out of bounds or the diagnostic log cannot be updated.
+    pub(crate) fn log_copilot_catalog_filter_summary(
+        &self,
+        summary: &CopilotCatalogFilterSummary,
+    ) -> io::Result<()> {
+        let counts = [
+            summary.total,
+            summary.policy_blocked,
+            summary.non_chat,
+            summary.picker_disabled,
+            summary.invalid_id,
+            summary.auto_candidates,
+        ];
+        if counts.iter().any(|count| *count > 1024) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Copilot catalog filter counts are out of bounds",
+            ));
+        }
+        self.append_diagnostic("copilot", "model_catalog_filter_summary", |entry| {
+            write!(
+                entry,
+                " total={} policy_blocked={} non_chat={} picker_disabled={} invalid_id={} auto_candidates={}",
+                summary.total,
+                summary.policy_blocked,
+                summary.non_chat,
+                summary.picker_disabled,
+                summary.invalid_id,
+                summary.auto_candidates,
+            )
         })
     }
 
@@ -597,8 +717,9 @@ mod tests {
     use uuid::Uuid;
 
     use super::{
-        AppStorage, MAX_DIAGNOSTIC_LOG_BYTES, MINIMUM_SQLITE_VERSION_NUMBER, database_guard,
-        disable_trusted_schema, validate_sqlite_runtime,
+        AppStorage, CopilotCatalogFilterSummary, MAX_DIAGNOSTIC_LOG_BYTES,
+        MINIMUM_SQLITE_VERSION_NUMBER, database_guard, disable_trusted_schema, sqlite_error_code,
+        validate_sqlite_runtime,
     };
 
     #[test]
@@ -739,6 +860,95 @@ mod tests {
         assert!(entry.contains("duration_ms=25"));
         assert!(!entry.contains("modelPath"));
         assert!(!entry.contains("prompt"));
+    }
+
+    #[test]
+    fn rpc_failure_diagnostic_records_only_operation_and_error_code() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");
+
+        storage
+            .log_rpc_failure("chat.send", "provider_credentials_missing")
+            .expect("write RPC failure diagnostic");
+
+        let log_path = directory.0.join("logs").join("openchat-service.log");
+        let entry = fs::read_to_string(log_path).expect("read diagnostic log");
+        assert!(entry.contains("component=rpc event=request_failed"));
+        assert!(entry.contains("operation=chat.send code=provider_credentials_missing"));
+        assert!(!entry.contains("prompt"));
+        assert!(!entry.contains("apiKey"));
+    }
+
+    #[test]
+    fn sqlite_error_diagnostics_use_stable_codes_without_error_details() {
+        let busy_error = rusqlite::Error::SqliteFailure(
+            rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_BUSY),
+            Some("private database detail".to_owned()),
+        );
+
+        assert_eq!(sqlite_error_code(&busy_error), "sqlite_busy");
+        assert_eq!(
+            sqlite_error_code(&rusqlite::Error::InvalidQuery),
+            "invalid_query"
+        );
+    }
+
+    #[test]
+    fn copilot_catalog_diagnostic_rejects_unbounded_stage_values() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");
+
+        assert!(
+            storage
+                .log_copilot_catalog_failure("model_data", "invalid_provider_response")
+                .is_ok()
+        );
+        assert!(
+            storage
+                .log_copilot_catalog_failure("private user data", "invalid_provider_response")
+                .is_err()
+        );
+
+        let log_path = directory.0.join("logs").join("openchat-service.log");
+        let entry = fs::read_to_string(log_path).expect("read diagnostic log");
+        assert!(entry.contains("component=copilot event=model_catalog_failed"));
+        assert!(entry.contains("stage=model_data code=invalid_provider_response"));
+        assert!(!entry.contains("private user data"));
+    }
+
+    #[test]
+    fn copilot_catalog_filter_diagnostic_records_only_bounded_aggregate_counts() {
+        let directory = TestDirectory::new();
+        let storage = AppStorage::open_at(directory.0.clone()).expect("open test storage");
+        let summary = CopilotCatalogFilterSummary {
+            total: 8,
+            policy_blocked: 1,
+            non_chat: 2,
+            picker_disabled: 3,
+            invalid_id: 1,
+            auto_candidates: 1,
+        };
+
+        storage
+            .log_copilot_catalog_filter_summary(&summary)
+            .expect("write bounded catalog summary");
+        let log_path = directory.0.join("logs").join("openchat-service.log");
+        let entry = fs::read_to_string(&log_path).expect("read diagnostic log");
+        assert!(entry.contains(
+            "component=copilot event=model_catalog_filter_summary total=8 policy_blocked=1 non_chat=2 picker_disabled=3 invalid_id=1 auto_candidates=1"
+        ));
+        assert!(
+            storage
+                .log_copilot_catalog_filter_summary(&CopilotCatalogFilterSummary {
+                    total: 1025,
+                    policy_blocked: 0,
+                    non_chat: 0,
+                    picker_disabled: 0,
+                    invalid_id: 0,
+                    auto_candidates: 0,
+                })
+                .is_err()
+        );
     }
 
     #[test]

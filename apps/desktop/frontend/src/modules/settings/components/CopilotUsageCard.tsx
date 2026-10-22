@@ -31,6 +31,7 @@ export function CopilotUsageCard({ onNavigateToConnections, refreshSequence }: C
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const latestRequest = useRef(0);
   const snapshotRef = useRef<CopilotUsageSnapshot | null>(null);
+  const connectionRef = useRef<CopilotOAuthConnection | null>(null);
 
   const load = useCallback(async () => {
     const request = ++latestRequest.current;
@@ -44,12 +45,14 @@ export function CopilotUsageCard({ onNavigateToConnections, refreshSequence }: C
       const status = await loadCopilotOAuthStatus();
       if (!isCurrent()) return;
       if (!status.connected || status.connection === null) {
+        connectionRef.current = null;
         setConnection(null);
         setSnapshot(null);
         snapshotRef.current = null;
         setLoadedAt(null);
         return;
       }
+      connectionRef.current = status.connection;
       setConnection(status.connection);
       if (status.connection.authStatus !== 'active') {
         setSnapshot(null);
@@ -80,6 +83,10 @@ export function CopilotUsageCard({ onNavigateToConnections, refreshSequence }: C
   useEffect(() => {
     void load();
     const unsubscribe = subscribeToOAuthPlanUpdates((summary) => {
+      if (connectionRef.current?.id !== summary.copilotConnectionId) {
+        void load();
+        return;
+      }
       if (snapshotRef.current && snapshotRef.current.planType !== summary.copilotPlanType) {
         const nextSnapshot = { ...snapshotRef.current, planType: summary.copilotPlanType };
         snapshotRef.current = nextSnapshot;

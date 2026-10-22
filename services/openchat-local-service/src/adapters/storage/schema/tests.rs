@@ -5,6 +5,75 @@ use rusqlite::Connection;
 
 const BOOKMARK_COLUMN_MIGRATION_VERSION: i64 = 29;
 
+#[test]
+fn migration_33_adds_durable_chatgpt_credential_cleanup_queue() {
+    let connection = memory_index_repair_fixture(32);
+
+    assert_eq!(
+        initialize_schema(&connection, 33).expect("add credential cleanup queue"),
+        33
+    );
+    connection
+        .execute(
+            "INSERT INTO pending_chatgpt_credential_deletions (
+                connection_id, credential_reference, requested_at_unix_ms
+             ) VALUES ('connection-1', 'credential-reference', 1)",
+            [],
+        )
+        .expect("persist pending credential cleanup");
+    assert_eq!(
+        connection
+            .query_row(
+                "SELECT credential_reference FROM pending_chatgpt_credential_deletions
+                 WHERE connection_id = 'connection-1'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("read pending cleanup"),
+        "credential-reference"
+    );
+}
+
+#[test]
+fn latest_schema_recreates_missing_conversation_context_state() {
+    let connection = memory_index_repair_fixture(SCHEMA_VERSION);
+    connection
+        .execute_batch("DROP TABLE conversation_context_state")
+        .expect("simulate a missing migration table");
+
+    assert_eq!(
+        initialize_schema(&connection, SCHEMA_VERSION).expect("repair current schema"),
+        SCHEMA_VERSION
+    );
+    connection
+        .execute(
+            "INSERT INTO conversation_context_state (
+                conversation_id, last_prompt_tokens, last_prompt_message_id,
+                last_prompt_provider_id, last_prompt_model_id,
+                last_prompt_connection_id, last_prompt_workspace_id, updated_at_unix_ms
+             ) VALUES ('conversation', 17, 'assistant-message', 'chatgpt', 'model',
+                       'connection', 'workspace', 1)",
+            [],
+        )
+        .expect("write usage metadata into repaired table");
+
+    let route = connection
+        .query_row(
+            "SELECT last_prompt_tokens, last_prompt_connection_id, last_prompt_workspace_id
+             FROM conversation_context_state WHERE conversation_id = 'conversation'",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .expect("read usage metadata from repaired table");
+    assert_eq!(route, (17, "connection".to_owned(), "workspace".to_owned()));
+}
+
 fn memory_index_repair_fixture(version: i64) -> Connection {
     let connection = Connection::open_in_memory().expect("open in-memory database");
     connection
@@ -73,7 +142,7 @@ fn drop_memory_triggers(connection: &Connection) {
 #[test]
 fn migration_31_adds_service_owned_tool_permission_settings() {
     let connection = memory_index_repair_fixture(30);
-    initialize_schema(&connection, SCHEMA_VERSION).expect("add tool permission settings");
+    initialize_schema(&connection, 31).expect("add tool permission settings");
 
     let migrated_version = connection
         .query_row(
@@ -107,6 +176,52 @@ fn migration_31_adds_service_owned_tool_permission_settings() {
                 [],
             )
             .is_err()
+    );
+}
+
+#[test]
+fn migration_32_preserves_and_selects_the_existing_copilot_connection() {
+    let connection = memory_index_repair_fixture(31);
+    connection
+        .execute(
+            "INSERT INTO copilot_oauth_connection (
+                id, github_user_id, login, display_name, credential_reference, auth_status,
+                access_expires_at_unix_seconds, refresh_expires_at_unix_seconds,
+                connected_at_unix_ms, updated_at_unix_ms
+             ) VALUES ('copilot', '123456', 'migration-user', NULL, '123456:generation', 'active',
+                       1_800_000_000, NULL, 100, 200)",
+            [],
+        )
+        .expect("insert the pre-migration Copilot connection");
+
+    initialize_schema(&connection, SCHEMA_VERSION).expect("upgrade the Copilot connection schema");
+
+    let migrated_connection = connection
+        .query_row(
+            "SELECT id, github_user_id, login, auth_status, is_selected
+             FROM copilot_oauth_connection",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, i64>(4)?,
+                ))
+            },
+        )
+        .expect("read the migrated Copilot connection");
+
+    assert_eq!(
+        migrated_connection,
+        (
+            "123456".to_owned(),
+            "123456".to_owned(),
+            "migration-user".to_owned(),
+            "active".to_owned(),
+            1,
+        )
     );
 }
 

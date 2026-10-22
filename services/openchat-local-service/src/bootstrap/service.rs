@@ -17,7 +17,7 @@ use std::{
 use crate::{
     chatgpt::ChatGptService,
     permissions::ToolPermissionBroker,
-    protocol::{EventSink, Response, ServiceError},
+    protocol::{EventSink, Request, Response, ServiceError},
     rpc,
     storage::AppStorage,
     user_question_broker::UserQuestionBroker,
@@ -429,6 +429,7 @@ async fn run_protocol(
         let operation_map = Arc::clone(&active_operations);
         tokio::spawn(async move {
             let id = request.id.clone();
+            let diagnostic_operation = rpc_failure_diagnostic_operation(&request);
             let response = match rpc::dispatch(rpc::RpcDispatchContext {
                 storage: &operation_storage,
                 service: &operation_service,
@@ -444,7 +445,17 @@ async fn run_protocol(
             .await
             {
                 Ok(result) => Response::success(id, result),
-                Err(error) => Response::failure(id, error),
+                Err(error) => {
+                    if let Some(operation) = diagnostic_operation {
+                        if operation_storage
+                            .log_rpc_failure(operation, error.code)
+                            .is_err()
+                        {
+                            eprintln!("rpc_failure_diagnostic_write_failed");
+                        }
+                    }
+                    Response::failure(id, error)
+                }
             };
             cancellation_gate.complete();
             let _ = operation_output.send(&response).await;
@@ -454,6 +465,22 @@ async fn run_protocol(
 
     finish_service_shutdown(&storage, &active_operations).await;
     Ok(())
+}
+
+fn rpc_failure_diagnostic_operation(request: &Request) -> Option<&'static str> {
+    match request.method.as_str() {
+        "chat.send" => Some("chat.send"),
+        "chat.temporary.send" => Some("chat.temporary.send"),
+        "chat.memory.inspect" => Some("chat.memory.inspect"),
+        "chatgpt.connections.delete" => Some("chatgpt.connections.delete"),
+        "chat.context.usage.estimate" => Some("chat.context.usage.estimate"),
+        "compatible.models.list"
+            if request.params.get("providerId").and_then(Value::as_str) == Some("copilot") =>
+        {
+            Some("copilot.models.list")
+        }
+        _ => None,
+    }
 }
 
 /// Reads one newline-delimited request while bounding retained input memory.
@@ -620,8 +647,62 @@ mod tests {
         ActiveOperations, BoundedRequestLine, MAX_ACTIVE_OPERATIONS, MAX_ACTIVE_REQUEST_BYTES,
         MAX_ACTIVE_REQUEST_PARAMETER_NODES, MAX_REQUEST_BYTES, MAX_REQUEST_ID_BYTES,
         OperationAdmissionError, OperationGate, is_valid_request_id, parse_data_root,
-        read_bounded_request_line, zeroize_passphrase,
+        read_bounded_request_line, rpc_failure_diagnostic_operation, zeroize_passphrase,
     };
+    use crate::protocol::Request;
+
+    #[test]
+    fn rpc_failure_diagnostics_use_fixed_labels_for_chat_and_connection_deletion() {
+        let chat_request = Request {
+            id: json!(1),
+            method: "chat.send".to_owned(),
+            params: json!({"message": "private user content"}),
+        };
+        assert_eq!(
+            rpc_failure_diagnostic_operation(&chat_request),
+            Some("chat.send")
+        );
+
+        let memory_inspect_request = Request {
+            id: json!(2),
+            method: "chat.memory.inspect".to_owned(),
+            params: json!({"conversationId": "private conversation id"}),
+        };
+        assert_eq!(
+            rpc_failure_diagnostic_operation(&memory_inspect_request),
+            Some("chat.memory.inspect")
+        );
+
+        let connection_delete_request = Request {
+            id: json!(3),
+            method: "chatgpt.connections.delete".to_owned(),
+            params: json!({"connectionId": "private connection id"}),
+        };
+        assert_eq!(
+            rpc_failure_diagnostic_operation(&connection_delete_request),
+            Some("chatgpt.connections.delete")
+        );
+
+        let copilot_catalog_request = Request {
+            id: json!(4),
+            method: "compatible.models.list".to_owned(),
+            params: json!({"providerId": "copilot", "apiKey": "private credential"}),
+        };
+        assert_eq!(
+            rpc_failure_diagnostic_operation(&copilot_catalog_request),
+            Some("copilot.models.list")
+        );
+
+        let other_catalog_request = Request {
+            id: json!(5),
+            method: "compatible.models.list".to_owned(),
+            params: json!({"providerId": "kilo"}),
+        };
+        assert_eq!(
+            rpc_failure_diagnostic_operation(&other_catalog_request),
+            None
+        );
+    }
 
     #[test]
     #[ignore = "manual debug service bootstrap component benchmark"]

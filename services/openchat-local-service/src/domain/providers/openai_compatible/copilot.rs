@@ -15,7 +15,10 @@ use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 use url::Url;
 
-use crate::{protocol::ServiceError, storage::AppStorage};
+use crate::{
+    protocol::ServiceError,
+    storage::{AppStorage, CopilotCatalogFilterSummary},
+};
 
 use super::{cancelled_error, http_error, invalid_response_error, network_error, storage_error};
 
@@ -106,6 +109,39 @@ pub(super) struct ModelRoute {
     pub(super) supports_tool_calls: Option<bool>,
 }
 
+pub(crate) struct ChildModelRoute {
+    pub(crate) chat_url: String,
+    pub(crate) protocol: &'static str,
+    pub(crate) reasoning_levels: Vec<String>,
+}
+
+pub(crate) fn child_model_route(
+    storage: &AppStorage,
+    connection_id: &str,
+    model_id: &str,
+) -> Result<Option<ChildModelRoute>, ServiceError> {
+    Ok(
+        model_route(storage, connection_id, model_id)?.map(|route| ChildModelRoute {
+            protocol: if route.uses_responses_api {
+                "responses"
+            } else if route.chat_url.ends_with("/v1/messages") {
+                "messages"
+            } else {
+                "chatCompletions"
+            },
+            chat_url: route.chat_url,
+            reasoning_levels: route.reasoning_levels,
+        }),
+    )
+}
+
+pub(crate) fn authorize_child_inference(
+    request: RequestBuilder,
+    access_token: &str,
+) -> RequestBuilder {
+    authorize_inference(request, access_token, RequestIntent::Background)
+}
+
 pub(super) async fn models(
     storage: &AppStorage,
     access_token: &str,
@@ -129,19 +165,31 @@ pub(super) async fn models(
             let _ = changed;
             return Err(cancelled_error());
         }
-        result = fetch_models(access_token) => result,
+        result = fetch_models(storage, access_token) => result,
     };
     match fetched {
         Ok(models) => {
             save_catalog(storage, &key_hash, &models)?;
             Ok(response(&models, "current"))
         }
-        Err(error) if error.retryable => match cached {
-            Some((models, _)) => Ok(response(&models, "stale")),
-            None => Err(error),
-        },
-        Err(error) => Err(error),
+        Err(error) => catalog_after_fetch_failure(error, cached),
     }
+}
+
+fn can_use_stale_catalog(error: &ServiceError) -> bool {
+    error.retryable || error.code == "invalid_provider_response"
+}
+
+fn catalog_after_fetch_failure(
+    error: ServiceError,
+    cached: Option<(Vec<Value>, i64)>,
+) -> Result<Value, ServiceError> {
+    if can_use_stale_catalog(&error)
+        && let Some((models, _)) = cached
+    {
+        return Ok(response(&models, "stale"));
+    }
+    Err(error)
 }
 
 pub(super) async fn usage(
@@ -271,14 +319,26 @@ fn catalog_client() -> Result<Client, ServiceError> {
         .map_err(|_| network_error())
 }
 
-async fn fetch_models(access_token: &str) -> Result<Vec<Value>, ServiceError> {
+async fn fetch_models(
+    storage: &AppStorage,
+    access_token: &str,
+) -> Result<Vec<Value>, ServiceError> {
     let client = catalog_client()?;
-    let user = fetch_user_with_client(&client, access_token).await?;
-    let api_base = user
+    let user = fetch_user_with_client(&client, access_token)
+        .await
+        .map_err(|error| {
+            log_catalog_failure(storage, "user_metadata", error.code);
+            error
+        })?;
+    let Some(api_base) = user
         .pointer("/endpoints/api")
         .and_then(Value::as_str)
         .and_then(validated_api_base)
-        .ok_or_else(invalid_response_error)?;
+    else {
+        let error = invalid_response_error();
+        log_catalog_failure(storage, "api_endpoint", error.code);
+        return Err(error);
+    };
 
     let response = authorize_catalog(
         client
@@ -288,21 +348,96 @@ async fn fetch_models(access_token: &str) -> Result<Vec<Value>, ServiceError> {
     )
     .send()
     .await
-    .map_err(|_| network_error())?;
+    .map_err(|_| {
+        let error = network_error();
+        log_catalog_failure(storage, "model_http", error.code);
+        error
+    })?;
     if !response.status().is_success() {
-        return Err(http_error(response.status(), Some(PROVIDER_ID)));
+        let error = http_error(response.status(), Some(PROVIDER_ID));
+        log_catalog_failure(storage, "model_http", error.code);
+        return Err(error);
     }
-    let value = read_json_response(response, MAX_MODEL_RESPONSE_BYTES).await?;
+    let value = read_json_response(response, MAX_MODEL_RESPONSE_BYTES)
+        .await
+        .map_err(|error| {
+            log_catalog_failure(storage, "model_body", error.code);
+            error
+        })?;
     let items = value
         .get("data")
         .and_then(Value::as_array)
         .filter(|items| !items.is_empty() && items.len() <= MAX_MODELS)
-        .ok_or_else(invalid_response_error)?;
-    let models = parse_models(items, &api_base);
+        .ok_or_else(|| {
+            let error = invalid_response_error();
+            log_catalog_failure(storage, "model_data", error.code);
+            error
+        })?;
+    let mut models = parse_models(items, &api_base);
     if models.is_empty() {
-        return Err(invalid_response_error());
+        if let Some(model) = parse_auto_model(items, &api_base) {
+            models.push(model);
+        }
+    }
+    if models.is_empty() {
+        log_catalog_filter_summary(storage, items);
+        let error = invalid_response_error();
+        log_catalog_failure(storage, "model_filter", error.code);
+        return Err(error);
     }
     Ok(models)
+}
+
+fn log_catalog_failure(storage: &AppStorage, stage: &'static str, code: &'static str) {
+    if storage.log_copilot_catalog_failure(stage, code).is_err() {
+        eprintln!("copilot_catalog_diagnostic_write_failed");
+    }
+}
+
+fn catalog_filter_summary(items: &[Value]) -> CopilotCatalogFilterSummary {
+    let is_chat_model =
+        |item: &Value| item.pointer("/capabilities/type").and_then(Value::as_str) == Some("chat");
+    let valid_id = |item: &Value| {
+        item.get("id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .is_some_and(|id| {
+                !id.is_empty() && id.len() <= 512 && !id.chars().any(char::is_control)
+            })
+    };
+    CopilotCatalogFilterSummary {
+        total: items.len(),
+        policy_blocked: items.iter().filter(|item| is_policy_blocked(item)).count(),
+        non_chat: items.iter().filter(|item| !is_chat_model(item)).count(),
+        picker_disabled: items
+            .iter()
+            .filter(|item| item.get("model_picker_enabled").and_then(Value::as_bool) == Some(false))
+            .count(),
+        invalid_id: items.iter().filter(|item| !valid_id(item)).count(),
+        auto_candidates: items
+            .iter()
+            .filter(|item| {
+                !is_policy_blocked(item)
+                    && is_chat_model(item)
+                    && valid_id(item)
+                    && item
+                        .pointer("/capabilities/supports/streaming")
+                        .and_then(Value::as_bool)
+                        == Some(true)
+                    && ModelEndpoint::from_metadata(item).is_some()
+            })
+            .count(),
+    }
+}
+
+fn log_catalog_filter_summary(storage: &AppStorage, items: &[Value]) {
+    let summary = catalog_filter_summary(items);
+    if storage
+        .log_copilot_catalog_filter_summary(&summary)
+        .is_err()
+    {
+        eprintln!("copilot_catalog_diagnostic_write_failed");
+    }
 }
 
 async fn fetch_user(access_token: &str) -> Result<Value, ServiceError> {
@@ -468,6 +603,9 @@ fn parse_models(items: &[Value], api_base: &str) -> Vec<Value> {
     items
         .iter()
         .filter_map(|item| {
+            if is_policy_blocked(item) {
+                return None;
+            }
             if item.pointer("/capabilities/type").and_then(Value::as_str) != Some("chat")
                 || item.get("model_picker_enabled").and_then(Value::as_bool) == Some(false)
             {
@@ -546,6 +684,46 @@ fn parse_models(items: &[Value], api_base: &str) -> Vec<Value> {
         })
         .take(MAX_MODELS)
         .collect()
+}
+
+fn parse_auto_model(items: &[Value], api_base: &str) -> Option<Value> {
+    for item in items {
+        if is_policy_blocked(item)
+            || item.pointer("/capabilities/type").and_then(Value::as_str) != Some("chat")
+            || item
+                .pointer("/capabilities/supports/streaming")
+                .and_then(Value::as_bool)
+                != Some(true)
+        {
+            continue;
+        }
+        let Some(endpoint) = ModelEndpoint::from_metadata(item) else {
+            continue;
+        };
+        let mut selectable_item = item.clone();
+        selectable_item["model_picker_enabled"] = json!(true);
+        let Some(mut model) = parse_models(&[selectable_item], api_base)
+            .into_iter()
+            .next()
+        else {
+            continue;
+        };
+        model["id"] = json!("auto");
+        model["displayName"] = json!("Auto");
+        model["description"] = Value::Null;
+        model["groupId"] = json!("models");
+        model["requestProtocol"] = json!(endpoint.protocol());
+        model["_copilotEndpoint"] = json!(endpoint.path());
+        return Some(model);
+    }
+    None
+}
+
+fn is_policy_blocked(item: &Value) -> bool {
+    matches!(
+        item.pointer("/policy/state").and_then(Value::as_str),
+        Some("disabled" | "unconfigured")
+    )
 }
 
 fn validate_access_token(access_token: &str) -> Result<(), ServiceError> {
@@ -643,7 +821,8 @@ fn account_hash(storage: &AppStorage) -> Result<String, ServiceError> {
         .connect()
         .map_err(|_| storage_error())?
         .query_row(
-            "SELECT github_user_id FROM copilot_oauth_connection WHERE id = 'copilot' AND auth_status = 'active'",
+            "SELECT github_user_id FROM copilot_oauth_connection
+             WHERE is_selected = 1 AND auth_status = 'active'",
             [],
             |row| row.get::<_, String>(0),
         )
@@ -713,9 +892,78 @@ mod tests {
     use serde_json::{Value, json};
 
     use super::{
-        ModelEndpoint, RequestIntent, authorize_inference, is_allowed_api_host, parse_models,
+        ModelEndpoint, RequestIntent, authorize_inference, catalog_after_fetch_failure,
+        catalog_filter_summary, is_allowed_api_host, parse_auto_model, parse_models,
         parse_usage_snapshot, validated_api_base,
     };
+    use crate::protocol::ServiceError;
+
+    #[test]
+    fn catalog_filter_summary_counts_rejection_reasons_without_model_contents() {
+        let summary = catalog_filter_summary(&[
+            json!({
+                "id": "candidate-model",
+                "capabilities": {"type": "chat", "supports": {"streaming": true}},
+                "supported_endpoints": ["/responses"],
+            }),
+            json!({
+                "id": "blocked-model",
+                "policy": {"state": "disabled"},
+                "capabilities": {"type": "chat"},
+            }),
+            json!({"id": "embedding-model", "capabilities": {"type": "embedding"}}),
+            json!({
+                "id": "hidden-model",
+                "model_picker_enabled": false,
+                "capabilities": {"type": "chat"},
+            }),
+            json!({"id": null, "capabilities": {"type": "chat"}}),
+        ]);
+
+        assert_eq!(summary.total, 5);
+        assert_eq!(summary.policy_blocked, 1);
+        assert_eq!(summary.non_chat, 1);
+        assert_eq!(summary.picker_disabled, 1);
+        assert_eq!(summary.invalid_id, 1);
+        assert_eq!(summary.auto_candidates, 1);
+    }
+
+    #[test]
+    fn malformed_model_catalog_uses_a_known_stale_catalog_but_auth_errors_do_not() {
+        let stale = catalog_after_fetch_failure(
+            ServiceError::new(
+                "invalid_provider_response",
+                "The provider model catalog is invalid.",
+                false,
+            ),
+            Some((vec![json!({"id": "auto"})], 1)),
+        )
+        .expect("serve the known cached catalog");
+        assert_eq!(stale["freshness"], "stale");
+        assert_eq!(stale["models"][0]["id"], "auto");
+
+        let auth_error = catalog_after_fetch_failure(
+            ServiceError::new(
+                "provider_authentication_required",
+                "The provider account needs authentication.",
+                false,
+            ),
+            Some((vec![json!({"id": "auto"})], 1)),
+        )
+        .expect_err("do not mask authentication errors with cached models");
+        assert_eq!(auth_error.code, "provider_authentication_required");
+
+        let no_cached_catalog = catalog_after_fetch_failure(
+            ServiceError::new(
+                "invalid_provider_response",
+                "The provider model catalog is invalid.",
+                false,
+            ),
+            None,
+        )
+        .expect_err("report malformed responses when no catalog is cached");
+        assert_eq!(no_cached_catalog.code, "invalid_provider_response");
+    }
 
     #[test]
     fn inference_auth_uses_capi_headers_and_conversation_intent() {
@@ -822,6 +1070,69 @@ mod tests {
         assert_eq!(models[0]["reasoningLevels"], json!(["low", "high"]));
         assert_eq!(models[1]["isAvailable"], false);
         assert_eq!(models[2]["isAvailable"], false);
+    }
+
+    #[test]
+    fn auto_model_is_available_when_the_picker_hides_every_eligible_chat_model() {
+        let items = [json!({
+            "id": "hidden-model",
+            "name": "Hidden model",
+            "model_picker_enabled": false,
+            "policy": {"state": "enabled"},
+            "supported_endpoints": ["/responses"],
+            "capabilities": {
+                "type": "chat",
+                "limits": {"max_prompt_tokens": 12000, "max_output_tokens": 2000},
+                "supports": {"streaming": true, "vision": true, "tool_calls": true}
+            }
+        })];
+
+        assert!(parse_models(&items, "https://api.githubcopilot.com").is_empty());
+        let auto = parse_auto_model(&items, "https://api.githubcopilot.com").expect("Auto model");
+        assert_eq!(auto["id"], "auto");
+        assert_eq!(auto["displayName"], "Auto");
+        assert_eq!(auto["_copilotEndpoint"], "/responses");
+        assert_eq!(auto["isAvailable"], true);
+    }
+
+    #[test]
+    fn auto_model_does_not_use_models_blocked_by_policy() {
+        let disabled_model = json!({
+            "id": "blocked-model",
+            "model_picker_enabled": false,
+            "policy": {"state": "disabled"},
+            "supported_endpoints": ["/responses"],
+            "capabilities": {"type": "chat", "supports": {"streaming": true}}
+        });
+        let unconfigured_model = json!({
+            "id": "unconfigured-model",
+            "model_picker_enabled": false,
+            "policy": {"state": "unconfigured"},
+            "supported_endpoints": ["/responses"],
+            "capabilities": {"type": "chat", "supports": {"streaming": true}}
+        });
+
+        assert!(parse_auto_model(&[disabled_model], "https://api.githubcopilot.com").is_none());
+        assert!(parse_auto_model(&[unconfigured_model], "https://api.githubcopilot.com").is_none());
+    }
+
+    #[test]
+    fn model_picker_excludes_disabled_and_unconfigured_policy_models() {
+        let items = ["disabled", "unconfigured"].map(|state| {
+            json!({
+                "id": format!("{state}-model"),
+                "model_picker_enabled": true,
+                "policy": {"state": state},
+                "supported_endpoints": ["/responses"],
+                "capabilities": {
+                    "type": "chat",
+                    "limits": {"max_prompt_tokens": 12000},
+                    "supports": {"streaming": true}
+                }
+            })
+        });
+
+        assert!(parse_models(&items, "https://api.githubcopilot.com").is_empty());
     }
 
     #[test]

@@ -11,6 +11,7 @@ import {
 import type { LocalServiceClient } from '@/platform/local-service';
 import type { ChatState } from './chatStore';
 import { isSameRoute } from './chatStoreUtils';
+import { createModelCatalogRefreshGuard } from './modelCatalogRefreshGuard';
 
 type ChatStoreSetState = StoreApi<ChatState>['setState'];
 type ChatStoreGetState = StoreApi<ChatState>['getState'];
@@ -20,13 +21,17 @@ export function createRefreshModelsAction(
   get: ChatStoreGetState,
   localServiceClient: LocalServiceClient,
 ): ChatState['refreshModels'] {
+  const refreshGuard = createModelCatalogRefreshGuard();
+
   return async (forceRefresh = false) => {
-    set({ modelStatus: 'loading', modelError: false });
+    const refreshRevision = refreshGuard.begin();
+    set({ modelStatus: 'loading', modelError: false, chatGptWorkspaceSelectionRequired: false });
     const [chatGptCatalogResult, localCatalogResult, apiKeyCatalogResult] = await Promise.allSettled([
       loadChatGptModels(localServiceClient, forceRefresh),
       loadLocalModels(localServiceClient),
       loadApiKeyModels(localServiceClient, forceRefresh),
     ]);
+    if (!refreshGuard.isCurrent(refreshRevision)) return;
     const chatGptCatalog = chatGptCatalogResult.status === 'fulfilled' ? chatGptCatalogResult.value : null;
     const localModels = localCatalogResult.status === 'fulfilled' ? localCatalogResult.value : [];
     const apiKeyCatalog = apiKeyCatalogResult.status === 'fulfilled' ? apiKeyCatalogResult.value : null;
@@ -98,6 +103,7 @@ export function createRefreshModelsAction(
       modelError: hasUnavailableSources,
       hasConfiguredProvider:
         chatGptCatalog?.hasConfiguredProvider === true || apiKeyCatalog?.hasConfiguredProvider === true,
+      chatGptWorkspaceSelectionRequired: chatGptCatalog?.needsChatGptWorkspaceSelection === true,
       selectedModelKey:
         routeModel?.key ??
         currentSelection?.key ??

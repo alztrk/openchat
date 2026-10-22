@@ -35,13 +35,24 @@ pub(super) async fn dispatch(
                 .await
         }
         "copilot.oauth.status" => service.copilot_oauth_status(),
-        "copilot.oauth.disconnect" => service.copilot_oauth_disconnect().await,
+        "copilot.oauth.select" => {
+            service.copilot_oauth_select(required_string(params, "connectionId")?)
+        }
+        "copilot.oauth.disconnect" => {
+            service
+                .copilot_oauth_disconnect(required_string(params, "connectionId")?)
+                .await
+        }
         "copilot.usage.get" => service.copilot_usage(cancellation).await,
         "chatgpt.connections.list" => service.list_connections(),
         "chatgpt.connections.refresh_plans" => service.refresh_connection_plans(cancellation).await,
         "chatgpt.connections.delete" => {
             service
-                .delete_connection(required_string(params, "connectionId")?)
+                .delete_connection(
+                    required_string(params, "connectionId")?,
+                    cancellation,
+                    cancellation_gate,
+                )
                 .await
         }
         "chatgpt.titles.get" => service.title_preference(),

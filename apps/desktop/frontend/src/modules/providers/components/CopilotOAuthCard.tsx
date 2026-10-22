@@ -1,8 +1,8 @@
-import { CircleAlert, LoaderCircle, LogIn, LogOut, RefreshCw } from 'lucide-react';
+import { CircleAlert, CircleCheck, CircleUserRound, LoaderCircle, LogIn, RefreshCw, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Button, Card } from '@/design-system';
+import { Button, Card, Dialog } from '@/design-system';
 import {
   type CopilotDeviceFlow,
   type CopilotOAuthConnection,
@@ -11,9 +11,14 @@ import {
   loadCopilotOAuthStatus,
   loadCopilotUsage,
   pollCopilotOAuth,
+  selectCopilotOAuthConnection,
   startCopilotOAuth,
 } from '@/modules/providers/data/copilotOAuth';
-import { getCachedCopilotPlanType, subscribeToOAuthPlanUpdates } from '@/modules/providers/data/oauthPlanMonitor';
+import {
+  getCachedCopilotPlanType,
+  refreshOAuthPlans,
+  subscribeToOAuthPlanUpdates,
+} from '@/modules/providers/data/oauthPlanMonitor';
 import { LocalServiceError } from '@/platform/local-service';
 import { ProviderIcon } from './ProviderIcon';
 
@@ -34,19 +39,26 @@ type CardError =
   | 'copilotOAuthDenied'
   | 'copilotOAuthCancelFailed'
   | 'copilotOAuthDisconnectFailed'
-  | 'copilotOAuthRefreshRequired';
+  | 'copilotOAuthRefreshRequired'
+  | 'copilotOAuthSelectionFailed'
+  | { message: string };
 
 export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardProps) {
   const { t } = useTranslation();
-  const [connection, setConnection] = useState<CopilotOAuthConnection | null>(null);
+  const [connections, setConnections] = useState<CopilotOAuthConnection[]>([]);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<CopilotOAuthConnection | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
   const [planType, setPlanType] = useState<string | null>(() => getCachedCopilotPlanType());
   const [loading, setLoading] = useState(true);
   const [working, setWorking] = useState(false);
   const [flow, setFlow] = useState<ActiveFlow | null>(null);
   const [pollPaused, setPollPaused] = useState(false);
   const [error, setError] = useState<CardError | null>(null);
+  const [notice, setNotice] = useState(false);
   const flowGenerationRef = useRef(0);
   const isMountedRef = useRef(false);
+  const selectedConnectionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -58,7 +70,7 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
 
   useEffect(() => {
     return subscribeToOAuthPlanUpdates((summary) => {
-      if (isMountedRef.current) {
+      if (isMountedRef.current && selectedConnectionIdRef.current === summary.copilotConnectionId) {
         setPlanType(summary.copilotPlanType);
       }
     });
@@ -69,7 +81,9 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
     try {
       const status = await loadCopilotOAuthStatus();
       if (!isMountedRef.current) return;
-      setConnection(status.connection);
+      setConnections(status.connections);
+      selectedConnectionIdRef.current = status.selectedConnectionId;
+      setSelectedConnectionId(status.selectedConnectionId);
       setError(null);
       if (status.connected && status.connection?.authStatus === 'active') {
         void loadCopilotUsage()
@@ -110,7 +124,9 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
               try {
                 const status = await loadCopilotOAuthStatus();
                 if (!isCurrentFlow()) return;
-                setConnection(status.connection);
+                setConnections(status.connections);
+                selectedConnectionIdRef.current = status.selectedConnectionId;
+                setSelectedConnectionId(status.selectedConnectionId);
                 setError(status.connected ? null : 'copilotOAuthExpired');
               } catch {
                 if (isCurrentFlow()) setError('copilotOAuthLoadFailed');
@@ -125,19 +141,22 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
           const result = await pollCopilotOAuth(flow.flowId);
           if (!isCurrentFlow()) return;
           if (result.status === 'connected') {
-            setConnection(result.connection);
             setFlow(null);
             setPollPaused(false);
             setError(null);
-            void loadCopilotUsage()
-              .then((usage) => {
-                if (isMountedRef.current) setPlanType(usage.planType);
-              })
-              .catch((error) => {
-                globalThis.reportError(new Error('Failed to load Copilot plan usage.', { cause: error }));
-              });
             try {
-              await onChanged();
+              const status = await loadCopilotOAuthStatus();
+              if (!isCurrentFlow()) return;
+              setConnections(status.connections);
+              selectedConnectionIdRef.current = status.selectedConnectionId;
+              setSelectedConnectionId(status.selectedConnectionId);
+              if (status.connected) {
+                const usage = await loadCopilotUsage();
+                if (isCurrentFlow()) setPlanType(usage.planType);
+              } else {
+                setPlanType(null);
+              }
+              await Promise.all([onChanged(), refreshOAuthPlans()]);
             } catch {
               if (isCurrentFlow()) setError('copilotOAuthLoadFailed');
             }
@@ -176,6 +195,7 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
     const generation = ++flowGenerationRef.current;
     setWorking(true);
     setError(null);
+    setNotice(false);
     try {
       const next = await startCopilotOAuth();
       if (generation !== flowGenerationRef.current || !isMountedRef.current) {
@@ -188,8 +208,10 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
       }
       setPollPaused(false);
       setFlow({ ...next, retryAfterSeconds: next.intervalSeconds });
-    } catch {
-      if (generation === flowGenerationRef.current && isMountedRef.current) setError('copilotOAuthStartFailed');
+    } catch (cause) {
+      if (generation === flowGenerationRef.current && isMountedRef.current) {
+        setError(cause instanceof LocalServiceError ? { message: cause.message } : 'copilotOAuthStartFailed');
+      }
     } finally {
       if (generation === flowGenerationRef.current && isMountedRef.current) setWorking(false);
     }
@@ -203,12 +225,15 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
     setFlow(null);
     setPollPaused(false);
     setError(null);
+    setNotice(false);
     try {
       const cancelled = await cancelCopilotOAuth(activeFlow.flowId);
       if (!cancelled) {
         const status = await loadCopilotOAuthStatus();
         if (generation !== flowGenerationRef.current || !isMountedRef.current) return;
-        setConnection(status.connection);
+        setConnections(status.connections);
+        selectedConnectionIdRef.current = status.selectedConnectionId;
+        setSelectedConnectionId(status.selectedConnectionId);
         setError(status.connected ? null : 'copilotOAuthCancelFailed');
       }
     } catch {
@@ -223,22 +248,60 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
   };
 
   const disconnect = async () => {
-    if (working) return;
+    if (!removeTarget || working) return;
+    const target = removeTarget;
     const generation = ++flowGenerationRef.current;
+    setRemovingId(target.id);
     setWorking(true);
     setError(null);
+    setNotice(false);
+    let removed = false;
     try {
-      await disconnectCopilotOAuth();
-      if (generation !== flowGenerationRef.current || !isMountedRef.current) return;
-      setConnection(null);
-      setPlanType(null);
-      await onChanged();
+      await disconnectCopilotOAuth(target.id);
+      removed = true;
     } catch {
-      if (generation !== flowGenerationRef.current || !isMountedRef.current) return;
-      setError('copilotOAuthDisconnectFailed');
+      try {
+        const status = await loadCopilotOAuthStatus();
+        removed = !status.connections.some((connection) => connection.id === target.id);
+      } catch {
+        removed = false;
+      }
+    }
+
+    if (generation !== flowGenerationRef.current || !isMountedRef.current) return;
+    if (!removed) {
       await loadStatus();
+      setError('copilotOAuthDisconnectFailed');
+      setWorking(false);
+      setRemovingId(null);
+      return;
+    }
+
+    setRemoveTarget(null);
+    setNotice(true);
+    setWorking(false);
+    setRemovingId(null);
+    await loadStatus();
+    try {
+      await Promise.all([onChanged(), refreshOAuthPlans()]);
+    } catch (cause) {
+      globalThis.reportError(new Error('Provider state did not refresh after Copilot disconnect.', { cause }));
+    }
+  };
+
+  const selectConnection = async (connectionId: string) => {
+    if (working || flow !== null || connectionId === selectedConnectionId) return;
+    setWorking(true);
+    setError(null);
+    setNotice(false);
+    try {
+      await selectCopilotOAuthConnection(connectionId);
+      await loadStatus();
+      await Promise.all([onChanged(), refreshOAuthPlans()]);
+    } catch {
+      setError('copilotOAuthSelectionFailed');
     } finally {
-      if (generation === flowGenerationRef.current && isMountedRef.current) setWorking(false);
+      if (isMountedRef.current) setWorking(false);
     }
   };
 
@@ -247,8 +310,6 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
     setPollPaused(false);
     setFlow((current) => (current ? { ...current, retryAfterSeconds: current.intervalSeconds } : null));
   };
-
-  const isReauthRequired = connection?.authStatus === 'reauth_required';
 
   return (
     <Card className="overflow-hidden">
@@ -261,39 +322,18 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          {connection ? (
-            <Button disabled={working || flow !== null} onClick={() => void connect()} variant="secondary">
-              {working ? (
-                <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
-              ) : (
-                <RefreshCw aria-hidden="true" size={16} />
-              )}
-              {t('copilotOAuthReconnect')}
-            </Button>
-          ) : (
-            <Button
-              disabled={!serviceReady || loading || working || flow !== null}
-              onClick={() => void connect()}
-              variant="primary"
-            >
-              {working ? (
-                <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
-              ) : (
-                <LogIn aria-hidden="true" size={16} />
-              )}
-              {t('copilotOAuthConnect')}
-            </Button>
-          )}
-          {connection ? (
-            <Button disabled={working} onClick={() => void disconnect()} variant="secondary">
-              {working ? (
-                <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
-              ) : (
-                <LogOut aria-hidden="true" size={16} />
-              )}
-              {t('copilotOAuthDisconnect')}
-            </Button>
-          ) : null}
+          <Button
+            disabled={!serviceReady || loading || working || flow !== null}
+            onClick={() => void connect()}
+            variant={connections.length === 0 ? 'primary' : 'secondary'}
+          >
+            {working ? (
+              <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
+            ) : (
+              <LogIn aria-hidden="true" size={16} />
+            )}
+            {t(connections.length === 0 ? 'copilotOAuthConnect' : 'copilotOAuthAddAccount')}
+          </Button>
         </div>
       </div>
 
@@ -301,23 +341,81 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
         <div className="border-t border-border px-5 py-4" role="status">
           <p className="text-sm text-secondary-text">{t('copilotOAuthLoading')}</p>
         </div>
-      ) : connection ? (
-        <div className="flex flex-wrap items-center gap-2 border-t border-border px-5 py-4" role="status">
-          <span className="text-sm font-medium">{connection.name ?? connection.login}</span>
-          <span className="text-sm text-secondary-text">@{connection.login}</span>
-          {!isReauthRequired && planType ? (
-            <span className="text-sm text-secondary-text">· {t('accountPlan', { plan: planType })}</span>
-          ) : null}
-          {isReauthRequired ? (
-            <span className="inline-flex items-center gap-1 text-sm text-destructive">
-              <CircleAlert aria-hidden="true" size={15} />
-              {t('copilotOAuthRefreshRequired')}
-            </span>
-          ) : (
-            <span className="text-sm text-success">{t('copilotOAuthConnected')}</span>
-          )}
-        </div>
-      ) : null}
+      ) : connections.length > 0 ? (
+        <ul className="grid gap-3 border-t border-border px-5 py-3">
+          {connections.map((item) => {
+            const selected = item.id === selectedConnectionId;
+            const needsSignIn = item.authStatus === 'reauth_required';
+            return (
+              <li
+                className={`rounded-card border p-3 ${selected ? 'border-accent bg-selected' : 'border-border bg-raised'}`}
+                key={item.id}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <CircleUserRound aria-hidden="true" className="mt-0.5 shrink-0 text-secondary-icon" size={20} />
+                    <div className="min-w-0">
+                      <p className="truncate font-medium">{item.name?.trim() || item.login}</p>
+                      <p className="mt-1 truncate text-sm text-secondary-text">
+                        @{item.login}
+                        {selected && !needsSignIn && planType ? ` · ${t('accountPlan', { plan: planType })}` : null}
+                      </p>
+                      {needsSignIn ? (
+                        <p className="mt-1 flex items-center gap-1 text-sm text-destructive">
+                          <CircleAlert aria-hidden="true" size={15} />
+                          {t('copilotOAuthRefreshRequired')}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {needsSignIn ? (
+                      <Button
+                        disabled={working || flow !== null}
+                        onClick={() => void connect()}
+                        size="small"
+                        variant="secondary"
+                      >
+                        <RefreshCw aria-hidden="true" size={15} />
+                        {t('copilotOAuthReconnect')}
+                      </Button>
+                    ) : selected ? (
+                      <span className="flex items-center gap-1 text-sm text-accent">
+                        <CircleCheck aria-hidden="true" size={16} />
+                        {t('connectionSelected')}
+                      </span>
+                    ) : (
+                      <Button
+                        disabled={working || flow !== null}
+                        onClick={() => void selectConnection(item.id)}
+                        size="small"
+                        variant="secondary"
+                      >
+                        {t('useConnection')}
+                      </Button>
+                    )}
+                    <Button
+                      aria-label={t('copilotOAuthRemoveAccountLabel', { login: item.login })}
+                      disabled={working || flow !== null}
+                      onClick={() => setRemoveTarget(item)}
+                      size="icon"
+                      variant="ghost"
+                    >
+                      {removingId === item.id ? (
+                        <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
+                      ) : (
+                        <Trash2 aria-hidden="true" size={16} />
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      ) : loading ? null : (
+        <p className="border-t border-border px-5 py-5 text-sm text-secondary-text">{t('copilotOAuthNoAccounts')}</p>
+      )}
 
       {flow ? (
         <div className="grid gap-3 border-t border-border px-5 py-4">
@@ -358,9 +456,45 @@ export function CopilotOAuthCard({ serviceReady, onChanged }: CopilotOAuthCardPr
 
       {error ? (
         <p className="border-t border-border px-5 py-3 text-sm text-destructive" role="alert">
-          {t(error)}
+          {typeof error === 'string' ? t(error) : error.message}
         </p>
       ) : null}
+      {notice ? (
+        <p className="border-t border-border px-5 py-3 text-sm text-success" role="status">
+          {t('copilotOAuthConnectionRemoved')}
+        </p>
+      ) : null}
+
+      <Dialog
+        onOpenChange={(open) => {
+          if (!open && removingId === null) setRemoveTarget(null);
+        }}
+        open={removeTarget !== null}
+        title={t('copilotOAuthRemoveAccount')}
+      >
+        {removeTarget ? (
+          <div className="grid gap-4">
+            <p className="text-sm text-secondary-text">
+              {t('copilotOAuthRemoveConfirmation', {
+                name: removeTarget.name?.trim() || `@${removeTarget.login}`,
+              })}
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button disabled={working} onClick={() => setRemoveTarget(null)}>
+                {t('cancel')}
+              </Button>
+              <Button disabled={working} onClick={() => void disconnect()} variant="destructive">
+                {working ? (
+                  <LoaderCircle aria-hidden="true" className="animate-spin" size={16} />
+                ) : (
+                  <Trash2 aria-hidden="true" size={16} />
+                )}
+                {t('removeConnectionAction')}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Dialog>
     </Card>
   );
 }
