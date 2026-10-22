@@ -5,7 +5,7 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use tauri::{PhysicalPosition, PhysicalSize, Position, Size, Window};
+use tauri::{PhysicalPosition, PhysicalSize, Position, Size, WebviewWindow, Window};
 
 const WINDOW_STATE_SETTING_KEY: &str = "window.state";
 
@@ -37,8 +37,7 @@ impl Default for WindowStateRecord {
 }
 
 /// Restores window size, position, and maximized state from the database.
-#[allow(dead_code)]
-pub fn restore_window_state(window: &Window) {
+pub fn restore_window_state(window: &WebviewWindow) {
     migrate_legacy_window_state_file();
 
     if let Some(state) = load_window_state() {

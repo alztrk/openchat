@@ -26,18 +26,25 @@ pub(crate) fn start_local_service(
         .next_generation
         .checked_add(1)
         .ok_or("The local service generation limit was reached.")?;
-    let command = app
+    let (mut events, child) = app
         .shell()
         .sidecar("binaries/openchat-local-service")
-        .or_else(|_| app.shell().sidecar("openchat-local-service"))
+        .and_then(|command| command.spawn())
+        .or_else(|primary_error| {
+            app.shell()
+                .sidecar("openchat-local-service")
+                .and_then(|command| command.spawn())
+                .map_err(|fallback_error| {
+                    eprintln!(
+                        "OpenChat sidecar launch paths failed; primary: {primary_error:?}; fallback: {fallback_error:?}"
+                    );
+                    fallback_error
+                })
+        })
         .map_err(|err| {
-            eprintln!("OpenChat sidecar locate error: {err:?}");
-            "The packaged local service could not be located."
+            eprintln!("OpenChat sidecar spawn error: {err:?}");
+            "The local service could not be started."
         })?;
-    let (mut events, child) = command.spawn().map_err(|err| {
-        eprintln!("OpenChat sidecar spawn error: {err:?}");
-        "The local service could not be started."
-    })?;
     process.next_generation = generation;
     process.current = Some(RunningProcess { generation, child });
 
