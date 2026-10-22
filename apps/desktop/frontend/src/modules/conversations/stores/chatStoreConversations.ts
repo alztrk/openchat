@@ -8,6 +8,7 @@ import {
   renameConversation as renameConversationStorage,
 } from '@/modules/conversations/data/chatStorage';
 import { readProjectDefaultModelPreference } from '@/modules/projects/data/projectPreferences';
+import { useAssistantProfilesStore } from '@/modules/settings/stores/assistantProfilesStore';
 import {
   type DefaultModelPreference,
   formatModelRouteKey,
@@ -282,9 +283,12 @@ export function createConversationsActions(set: StoreSet, get: StoreGet) {
       } catch (cause) {
         globalThis.reportError(new Error('The last selected model preference could not be read.', { cause }));
       }
+      const profilesStore = useAssistantProfilesStore.getState();
+      if (profilesStore.loadState !== 'ready') profilesStore.initialize();
+      const profilePreference = useAssistantProfilesStore.getState().getActiveProfile()?.preferredModel ?? null;
       const defaultPreference = projectPreferenceInvalid
         ? null
-        : (projectPreference ?? lastSelectedPreference ?? current.defaultModel);
+        : (projectPreference ?? profilePreference ?? lastSelectedPreference ?? current.defaultModel);
       const defaultModel = defaultPreference
         ? current.models.find(
             (model) =>
