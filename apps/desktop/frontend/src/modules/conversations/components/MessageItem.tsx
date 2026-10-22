@@ -108,10 +108,10 @@ export function MessageItem({
     resetTimer.current = window.setTimeout(() => setCopyResult('idle'), 2000);
   };
 
-  const viewMemorySources = () => {
+  const viewMemorySources = async () => {
     if (personalMemoryFactIds.length === 0) return;
     try {
-      const facts = readPersonalMemoryFacts();
+      const facts = await readPersonalMemoryFacts();
       setMemorySources(
         personalMemoryFactIds.map((id) => ({
           id,
