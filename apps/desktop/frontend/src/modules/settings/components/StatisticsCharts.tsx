@@ -240,14 +240,12 @@ export function BreakdownRow({
 }) {
   const tokens = item.inputTokens + item.outputTokens;
   const width = maxTokens === 0 ? 0 : Math.min(100, (tokens / maxTokens) * 100);
-  const costLabels = [
-    item.costReportedRequests > 0
-      ? `${t('statisticsProviderReportedCost')}: ${formatCost(item.providerReportedCostUsd, language)} · ${t('statisticsCostCoverage', { reported: formatNumber(item.costReportedRequests, language) })}`
-      : null,
-    item.modelsDevCatalogCostRequests > 0
-      ? `${t('statisticsModelsDevCatalogCost')}: ${formatCost(item.modelsDevCatalogCostUsd, language)} · ${t('statisticsModelsDevCatalogCostCoverage', { priced: formatNumber(item.modelsDevCatalogCostRequests, language) })}`
-      : null,
-  ].filter((value): value is string => value !== null);
+  const costLabels =
+    item.estimatedCostRequests > 0
+      ? [
+          `${t('statisticsEstimatedCost')}: ${formatCost(item.estimatedCostUsd, language)} · ${t('statisticsEstimatedCostCoverage', { priced: formatNumber(item.estimatedCostRequests, language), total: formatNumber(item.requests, language) })}`,
+        ]
+      : [];
   return (
     <li
       className="grid gap-1 px-4 py-3"

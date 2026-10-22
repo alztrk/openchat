@@ -86,6 +86,24 @@ impl UsageData {
         }
     }
 
+    /// Extracts usage fields from an Anthropic Messages response.
+    pub(crate) fn from_messages_event(value: &Value, provider_id: &str) -> Self {
+        let usage = value.get("usage");
+        Self {
+            input_tokens: nonnegative_token(usage.and_then(|usage| usage.get("input_tokens"))),
+            output_tokens: nonnegative_token(usage.and_then(|usage| usage.get("output_tokens"))),
+            reasoning_tokens: None,
+            cached_input_tokens: nonnegative_token(
+                usage.and_then(|usage| usage.get("cache_read_input_tokens")),
+            ),
+            cache_write_tokens: nonnegative_token(
+                usage.and_then(|usage| usage.get("cache_creation_input_tokens")),
+            ),
+            reported_cost_usd: reported_cost(usage, provider_id),
+            service_tier: None,
+        }
+    }
+
     fn has_reported_usage(&self) -> bool {
         self.input_tokens.is_some()
             || self.output_tokens.is_some()
@@ -101,16 +119,20 @@ fn nonnegative_token(value: Option<&Value>) -> Option<i64> {
 }
 
 fn reported_cost(usage: Option<&Value>, provider_id: &str) -> Option<f64> {
+    let usage = usage?;
+    if provider_id == "xai"
+        && let Some(ticks) = usage.get("cost_in_usd_ticks").and_then(Value::as_i64)
+        && ticks >= 0
+    {
+        return Some(ticks as f64 / 10_000_000_000.0);
+    }
     usage
-        .and_then(|usage| {
-            usage
-                .get("cost_usd")
-                .or_else(|| usage.get("total_cost_usd"))
-                .or_else(|| {
-                    (provider_id == "openrouter")
-                        .then(|| usage.get("cost"))
-                        .flatten()
-                })
+        .get("cost_usd")
+        .or_else(|| usage.get("total_cost_usd"))
+        .or_else(|| {
+            (provider_id == "openrouter")
+                .then(|| usage.get("cost"))
+                .flatten()
         })
         .and_then(Value::as_f64)
         .filter(|cost| cost.is_finite() && *cost >= 0.0)
@@ -651,10 +673,8 @@ fn get_statistics_from_database(
             "reasoningTokens": row.get::<_, i64>(2)?,
             "cachedInputTokens": row.get::<_, i64>(3)?,
             "cacheWriteTokens": row.get::<_, i64>(4)?,
-            "providerReportedCostUsd": row.get::<_, f64>(5)?,
-            "costReportedRequests": row.get::<_, i64>(6)?,
-            "modelsDevCatalogCostUsd": row.get::<_, f64>(7)?,
-            "modelsDevCatalogCostRequests": row.get::<_, i64>(8)?,
+            "estimatedCostUsd": row.get::<_, f64>(7)?,
+            "estimatedCostRequests": row.get::<_, i64>(8)?,
             "totalRequests": row.get::<_, i64>(9)?,
             "successfulRequests": row.get::<_, i64>(10)?,
             "failedRequests": row.get::<_, i64>(11)?,
@@ -755,10 +775,8 @@ fn breakdown(
                 "reasoningTokens": row.get::<_, i64>(4)?,
                 "cachedInputTokens": row.get::<_, i64>(5)?,
                 "cacheWriteTokens": row.get::<_, i64>(6)?,
-                "providerReportedCostUsd": row.get::<_, f64>(7)?,
-                "costReportedRequests": row.get::<_, i64>(8)?,
-                "modelsDevCatalogCostUsd": row.get::<_, f64>(9)?,
-                "modelsDevCatalogCostRequests": row.get::<_, i64>(10)?,
+                "estimatedCostUsd": row.get::<_, f64>(9)?,
+                "estimatedCostRequests": row.get::<_, i64>(10)?,
             }))
         })?
         .collect()
@@ -788,10 +806,8 @@ fn fast_mode_breakdown(
                 "requests": row.get::<_, i64>(1)?,
                 "inputTokens": row.get::<_, i64>(2)?,
                 "outputTokens": row.get::<_, i64>(3)?,
-                "providerReportedCostUsd": row.get::<_, f64>(4)?,
-                "costReportedRequests": row.get::<_, i64>(5)?,
-                "modelsDevCatalogCostUsd": row.get::<_, f64>(6)?,
-                "modelsDevCatalogCostRequests": row.get::<_, i64>(7)?,
+                "estimatedCostUsd": row.get::<_, f64>(6)?,
+                "estimatedCostRequests": row.get::<_, i64>(7)?,
             }))
         })?
         .collect()
@@ -828,10 +844,8 @@ fn service_tier_breakdown(
                 "reasoningTokens": row.get::<_, i64>(4)?,
                 "cachedInputTokens": row.get::<_, i64>(5)?,
                 "cacheWriteTokens": row.get::<_, i64>(6)?,
-                "providerReportedCostUsd": row.get::<_, f64>(7)?,
-                "costReportedRequests": row.get::<_, i64>(8)?,
-                "modelsDevCatalogCostUsd": row.get::<_, f64>(9)?,
-                "modelsDevCatalogCostRequests": row.get::<_, i64>(10)?,
+                "estimatedCostUsd": row.get::<_, f64>(9)?,
+                "estimatedCostRequests": row.get::<_, i64>(10)?,
             }))
         })?
         .collect()
@@ -861,8 +875,8 @@ fn trend(
                 key: row.get::<_, Option<String>>(0)?,
                 "inputTokens": row.get::<_, i64>(1)?,
                 "outputTokens": row.get::<_, i64>(2)?,
-                "modelsDevCatalogCostUsd": row.get::<_, f64>(3)?,
-                "modelsDevCatalogCostRequests": row.get::<_, i64>(4)?,
+                "estimatedCostUsd": row.get::<_, f64>(3)?,
+                "estimatedCostRequests": row.get::<_, i64>(4)?,
                 "requests": row.get::<_, i64>(5)?,
             }))
         })?
@@ -900,8 +914,8 @@ fn conversation_ranking(
                 "requests": row.get::<_, i64>(2)?,
                 "inputTokens": row.get::<_, i64>(3)?,
                 "outputTokens": row.get::<_, i64>(4)?,
-                "modelsDevCatalogCostUsd": row.get::<_, f64>(5)?,
-                "modelsDevCatalogCostRequests": row.get::<_, i64>(6)?,
+                "estimatedCostUsd": row.get::<_, f64>(5)?,
+                "estimatedCostRequests": row.get::<_, i64>(6)?,
                 "lastRequestAtUnixMs": row.get::<_, i64>(7)?,
             }))
         })?
@@ -941,7 +955,6 @@ fn request_details(
     let mut statement = database.prepare(&sql)?;
     statement
         .query_map(params_from_iter(values.iter()), |row| {
-            let cost_nano_usd = row.get::<_, Option<i64>>(17)?;
             let manifest_json = row.get::<_, Option<String>>(23)?;
             let request_manifest: Option<Value> = manifest_json
                 .as_deref()
@@ -972,12 +985,10 @@ fn request_details(
                 "reasoningTokens": row.get::<_, Option<i64>>(14)?,
                 "cachedInputTokens": row.get::<_, Option<i64>>(15)?,
                 "cacheWriteTokens": row.get::<_, Option<i64>>(16)?,
-                "providerReportedCostUsd": cost_nano_usd.map(|cost| cost as f64 / 1_000_000_000.0),
-                "costSource": row.get::<_, Option<String>>(18)?,
                 "usageSource": row.get::<_, String>(19)?,
                 "startedAtUnixMs": row.get::<_, i64>(20)?,
                 "finishedAtUnixMs": row.get::<_, Option<i64>>(21)?,
-                "modelsDevCatalogCostUsd": row.get::<_, Option<f64>>(22)?,
+                "estimatedCostUsd": row.get::<_, Option<f64>>(22)?,
                 "requestManifest": request_manifest,
                 "runId": row.get::<_, Option<String>>(24)?,
             }))

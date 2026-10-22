@@ -190,7 +190,7 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
                 {activeFilterCount > 0 ? ` · ${activeFilterCount}` : ''}
               </span>
             </summary>
-            <div className="statistics-filter-popover absolute right-0 top-full z-20 mt-2 grid w-statistics-filter gap-4 rounded-control border border-border bg-raised p-4 shadow-lg">
+            <div className="openchat-dropdown-surface statistics-filter-popover absolute right-0 top-full z-20 mt-2 grid w-statistics-filter gap-4 p-4">
               <fieldset className="grid gap-3 sm:grid-cols-2">
                 <legend className="text-sm font-semibold">{t('statisticsDateRange')}</legend>
                 <Input
@@ -341,12 +341,25 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
               </Button>
             </div>
           ) : null}
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <MetricCard
-              icon={Coins}
+              icon={ChartNoAxesCombined}
               label={t('statisticsTotalTokens')}
               value={formatNumber(snapshot.summary.totalTokens, i18n.language)}
               detail={`${t('statisticsInputTokens')}: ${formatNumber(snapshot.summary.inputTokens, i18n.language)} · ${t('statisticsOutputTokens')}: ${formatNumber(snapshot.summary.outputTokens, i18n.language)}`}
+            />
+            <MetricCard
+              icon={Coins}
+              label={t('statisticsEstimatedCost')}
+              value={
+                snapshot.summary.estimatedCostRequests === 0
+                  ? t('unavailableValue')
+                  : formatCost(snapshot.summary.estimatedCostUsd, i18n.language)
+              }
+              detail={t('statisticsEstimatedCostCoverage', {
+                priced: formatNumber(snapshot.summary.estimatedCostRequests, i18n.language),
+                total: formatNumber(snapshot.summary.totalRequests, i18n.language),
+              })}
             />
             <MetricCard
               icon={Activity}
@@ -406,9 +419,9 @@ export function StatisticsSettingsSection({ onOpenConversation }: StatisticsSett
                   const requestCount = formatNumber(conversation.requests, i18n.language);
                   const tokensLabel = formatNumber(totalTokens, i18n.language);
                   const costLabel =
-                    conversation.modelsDevCatalogCostRequests === 0
+                    conversation.estimatedCostRequests === 0
                       ? null
-                      : `${t('statisticsModelsDevCatalogCost')}: ${formatCost(conversation.modelsDevCatalogCostUsd, i18n.language)}`;
+                      : `${t('statisticsEstimatedCost')}: ${formatCost(conversation.estimatedCostUsd, i18n.language)}`;
                   const accessibleLabel = [
                     conversation.title,
                     `${tokensLabel} ${t('statisticsTotalTokens')}`,

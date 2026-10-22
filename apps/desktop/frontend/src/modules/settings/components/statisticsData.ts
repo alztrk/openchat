@@ -9,8 +9,8 @@ export interface StatisticsSummary {
   successfulRequests: number;
   failedRequests: number;
   conversationCount: number;
-  providerReportedCostUsd: number;
-  modelsDevCatalogCostUsd: number;
+  estimatedCostUsd: number;
+  estimatedCostRequests: number;
 }
 
 export interface StatisticsBreakdown {
@@ -21,10 +21,8 @@ export interface StatisticsBreakdown {
   reasoningTokens: number;
   cachedInputTokens: number;
   cacheWriteTokens: number;
-  providerReportedCostUsd: number;
-  costReportedRequests: number;
-  modelsDevCatalogCostUsd: number;
-  modelsDevCatalogCostRequests: number;
+  estimatedCostUsd: number;
+  estimatedCostRequests: number;
 }
 
 export interface StatisticsTrend {
@@ -32,6 +30,8 @@ export interface StatisticsTrend {
   requests: number;
   inputTokens: number;
   outputTokens: number;
+  estimatedCostUsd: number;
+  estimatedCostRequests: number;
 }
 
 export interface StatisticsConversation {
@@ -40,8 +40,8 @@ export interface StatisticsConversation {
   requests: number;
   inputTokens: number;
   outputTokens: number;
-  modelsDevCatalogCostUsd: number;
-  modelsDevCatalogCostRequests: number;
+  estimatedCostUsd: number;
+  estimatedCostRequests: number;
   lastRequestAtUnixMs: number;
 }
 
@@ -60,8 +60,7 @@ export interface StatisticsRequest {
   reasoningTokens: number | null;
   cachedInputTokens: number | null;
   cacheWriteTokens: number | null;
-  providerReportedCostUsd: number | null;
-  modelsDevCatalogCostUsd: number | null;
+  estimatedCostUsd: number | null;
   usageSource: string;
   runId: string | null;
 }
@@ -120,8 +119,8 @@ export function parseStatistics(value: JsonObject): StatisticsSnapshot {
       successfulRequests: requiredInteger(summary, 'successfulRequests'),
       failedRequests: requiredInteger(summary, 'failedRequests'),
       conversationCount: requiredInteger(summary, 'conversationCount'),
-      providerReportedCostUsd: requiredNumber(summary, 'providerReportedCostUsd'),
-      modelsDevCatalogCostUsd: requiredNumber(summary, 'modelsDevCatalogCostUsd'),
+      estimatedCostUsd: requiredNumber(summary, 'estimatedCostUsd'),
+      estimatedCostRequests: requiredInteger(summary, 'estimatedCostRequests'),
     },
     providers: parseBreakdowns(value.providerBreakdown, 'providerId'),
     models: parseBreakdowns(value.modelBreakdown, 'modelId'),
@@ -143,13 +142,11 @@ export function parseBreakdowns(value: unknown, keyName: string): StatisticsBrea
       requests: requiredInteger(item, 'requests'),
       inputTokens: requiredInteger(item, 'inputTokens'),
       outputTokens: requiredInteger(item, 'outputTokens'),
+      estimatedCostUsd: requiredNumber(item, 'estimatedCostUsd'),
+      estimatedCostRequests: requiredInteger(item, 'estimatedCostRequests'),
       reasoningTokens: requiredInteger(item, 'reasoningTokens'),
       cachedInputTokens: requiredInteger(item, 'cachedInputTokens'),
       cacheWriteTokens: requiredInteger(item, 'cacheWriteTokens'),
-      providerReportedCostUsd: requiredNumber(item, 'providerReportedCostUsd'),
-      costReportedRequests: requiredInteger(item, 'costReportedRequests'),
-      modelsDevCatalogCostUsd: requiredNumber(item, 'modelsDevCatalogCostUsd'),
-      modelsDevCatalogCostRequests: requiredInteger(item, 'modelsDevCatalogCostRequests'),
     };
   });
 }
@@ -163,6 +160,8 @@ export function parseTrends(value: unknown, bucketKey: string): StatisticsTrend[
       requests: requiredInteger(item, 'requests'),
       inputTokens: requiredInteger(item, 'inputTokens'),
       outputTokens: requiredInteger(item, 'outputTokens'),
+      estimatedCostUsd: requiredNumber(item, 'estimatedCostUsd'),
+      estimatedCostRequests: requiredInteger(item, 'estimatedCostRequests'),
     };
   });
 }
@@ -181,8 +180,8 @@ export function parseConversations(value: unknown): StatisticsConversation[] {
       requests: requiredInteger(item, 'requests'),
       inputTokens: requiredInteger(item, 'inputTokens'),
       outputTokens: requiredInteger(item, 'outputTokens'),
-      modelsDevCatalogCostUsd: requiredNumber(item, 'modelsDevCatalogCostUsd'),
-      modelsDevCatalogCostRequests: requiredInteger(item, 'modelsDevCatalogCostRequests'),
+      estimatedCostUsd: requiredNumber(item, 'estimatedCostUsd'),
+      estimatedCostRequests: requiredInteger(item, 'estimatedCostRequests'),
       lastRequestAtUnixMs,
     };
   });
@@ -207,8 +206,7 @@ export function parseRequests(value: unknown): StatisticsRequest[] {
       reasoningTokens: nullableInteger(item.reasoningTokens),
       cachedInputTokens: nullableInteger(item.cachedInputTokens),
       cacheWriteTokens: nullableInteger(item.cacheWriteTokens),
-      providerReportedCostUsd: nullableNumber(item.providerReportedCostUsd),
-      modelsDevCatalogCostUsd: nullableNumber(item.modelsDevCatalogCostUsd),
+      estimatedCostUsd: nullableNumber(item.estimatedCostUsd),
       usageSource: requiredString(item, 'usageSource'),
       runId: nullableString(item.runId),
     };
@@ -244,8 +242,7 @@ export function createStatisticsCsv(requests: readonly StatisticsRequest[], t: T
       t('statisticsReasoningTokens'),
       t('statisticsCachedInputTokens'),
       t('statisticsCacheWriteTokens'),
-      t('statisticsProviderReportedCost'),
-      t('statisticsModelsDevCatalogCost'),
+      t('statisticsEstimatedCost'),
       t('statisticsUsageSource'),
       t('statisticsRunId'),
     ],
@@ -273,8 +270,7 @@ export function createStatisticsCsv(requests: readonly StatisticsRequest[], t: T
       request.reasoningTokens === null ? '' : String(request.reasoningTokens),
       request.cachedInputTokens === null ? '' : String(request.cachedInputTokens),
       request.cacheWriteTokens === null ? '' : String(request.cacheWriteTokens),
-      request.providerReportedCostUsd === null ? '' : request.providerReportedCostUsd.toFixed(9),
-      request.modelsDevCatalogCostUsd === null ? '' : request.modelsDevCatalogCostUsd.toFixed(9),
+      request.estimatedCostUsd === null ? '' : request.estimatedCostUsd.toFixed(9),
       request.usageSource,
       request.runId ?? '',
     ]);
