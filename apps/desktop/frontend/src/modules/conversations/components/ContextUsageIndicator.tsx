@@ -22,6 +22,7 @@ interface ContextUsageIndicatorProps {
   model: ChatModel;
   contextWindow: number | null;
   conversationId: string | null;
+  isTemporaryChat: boolean;
   isSending: boolean;
   projectId: string | null;
   toolPermissionMode: ToolPermissionMode | 'plan';
@@ -41,6 +42,7 @@ interface UsageCategory {
 export function ContextUsageIndicator({
   contextWindow,
   conversationId,
+  isTemporaryChat,
   draft,
   isSending,
   messages,
@@ -73,7 +75,7 @@ export function ContextUsageIndicator({
     let current = true;
     setConfiguration(null);
     setConfigurationState('loading');
-    void loadContextUsageConfiguration(model, conversationId, projectId, toolPermissionMode)
+    void loadContextUsageConfiguration(model, conversationId, projectId, toolPermissionMode, isTemporaryChat)
       .then((nextConfiguration) => {
         if (!current) return;
         setConfiguration(nextConfiguration);
@@ -88,7 +90,7 @@ export function ContextUsageIndicator({
     return () => {
       current = false;
     };
-  }, [conversationId, model, projectId, toolPermissionMode]);
+  }, [conversationId, isTemporaryChat, model, projectId, toolPermissionMode]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Sending starts and finishes a turn, so it refreshes saved memory.
   useEffect(() => {
@@ -108,8 +110,9 @@ export function ContextUsageIndicator({
         setMemory(nextMemory);
         setMemoryState('ready');
       })
-      .catch(() => {
+      .catch((cause: unknown) => {
         if (!current) return;
+        globalThis.reportError(new Error('Conversation memory inspection failed.', { cause }));
         setMemory(null);
         setMemoryState('error');
       });
@@ -316,7 +319,7 @@ export function ContextUsageIndicator({
       </summary>
       <section
         aria-label={t('contextUsageTitle')}
-        className="context-usage-popover openchat-popover-enter openchat-popover-enter--bottom-right"
+        className="context-usage-popover openchat-dropdown-surface openchat-popover-enter openchat-popover-enter--bottom-right"
       >
         <header className="grid gap-1">
           <h2 className="font-semibold text-text">{t('contextUsageTitle')}</h2>

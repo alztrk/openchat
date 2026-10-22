@@ -101,7 +101,7 @@ export function ChatSlashCommandMenu({ commands, selectedIndex, onSelect }: Chat
   return (
     <div
       aria-label={t('slashCommandSuggestions')}
-      className="chat-slash-command-menu absolute bottom-full left-0 z-30 mb-2 w-full overflow-y-auto rounded-card border border-border bg-raised p-1 shadow-lg"
+      className="openchat-dropdown-surface chat-slash-command-menu absolute bottom-full left-0 z-30 mb-2 w-full overflow-y-auto p-1"
       id="chat-slash-command-list"
       ref={listRef}
       role="listbox"

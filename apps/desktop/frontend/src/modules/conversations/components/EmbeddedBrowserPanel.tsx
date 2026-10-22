@@ -106,7 +106,7 @@ export function EmbeddedBrowserPanel({ initialUrl }: EmbeddedBrowserPanelProps) 
             <Globe aria-hidden="true" className="pointer-events-none absolute left-2.5 text-secondary-icon" size={13} />
             <input
               aria-label={t('browserPanelAddressLabel')}
-              className="h-8 w-full rounded-control border border-border bg-composer pl-7 pr-2.5 text-xs text-text focus:border-accent focus:outline-none"
+              className="h-8 w-full rounded-control border border-border bg-composer pl-7 pr-2.5 text-xs text-text focus:outline-none"
               onChange={(event) => setAddressInput(event.currentTarget.value)}
               placeholder="https://"
               type="text"
