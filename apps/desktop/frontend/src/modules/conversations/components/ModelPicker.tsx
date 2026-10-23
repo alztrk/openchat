@@ -9,6 +9,7 @@ import { favoriteSourceConnection } from '@/modules/conversations/stores/chatSto
 import { ProviderIcon } from '@/modules/providers/components/ProviderIcon';
 import type { ChatModel, ChatModelProvider } from '@/modules/providers/data/chatModels';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
+import { useOAuthRateLimits, rateLimitForModel } from '@/modules/providers/data/oauthRateLimits';
 import {
   type CachedModelPricing,
   isModelPricingCacheFresh,
@@ -78,6 +79,7 @@ export function ModelPicker({
   selectedModel,
 }: ModelPickerProps) {
   const { t } = useTranslation();
+  const rateLimits = useOAuthRateLimits();
   const [selectedProviderId, setSelectedProviderId] = useState(() =>
     providerFamily(selectedModel?.providerId ?? 'opencode'),
   );
@@ -366,6 +368,7 @@ export function ModelPicker({
                           }}
                           onRemoveFavorite={() => onRemoveFavorite(favorite)}
                           pricingLoad={pricingByModelKey[model.key]}
+                          disabledReason={rateLimitForModel(model, rateLimits)?.reason ?? null}
                         />
                       ) : (
                         <div
@@ -432,6 +435,7 @@ export function ModelPicker({
                           }}
                           onRemoveFavorite={() => onToggleFavorite(model)}
                           pricingLoad={pricingByModelKey[model.key]}
+                          disabledReason={rateLimitForModel(model, rateLimits)?.reason ?? null}
                         />
                       );
                     })}
@@ -459,11 +463,12 @@ interface ModelOptionProps {
   isSelected: boolean;
   isFavorite: boolean;
   pricingLoad: PricingLoadState | undefined;
+  disabledReason: string | null;
   onSelect(): void;
   onRemoveFavorite(): void;
 }
 
-function ModelOption({ isFavorite, isSelected, model, onRemoveFavorite, onSelect, pricingLoad }: ModelOptionProps) {
+function ModelOption({ disabledReason, isFavorite, isSelected, model, onRemoveFavorite, onSelect, pricingLoad }: ModelOptionProps) {
   const { i18n, t } = useTranslation();
   const pricing = pricingLoad?.snapshot?.model?.pricing;
   const inputPrice = pricing ? `$${formatPriceAmount(pricing.input, i18n.language)}` : '—';
@@ -475,7 +480,9 @@ function ModelOption({ isFavorite, isSelected, model, onRemoveFavorite, onSelect
     <div className="flex min-w-0 items-center gap-1 rounded-control hover:bg-hover">
       <button
         aria-pressed={isSelected}
-        className="flex min-h-14 min-w-0 flex-1 items-center gap-2.5 rounded-control px-2 text-left text-sm text-text"
+        className="flex min-h-14 min-w-0 flex-1 items-center gap-2.5 rounded-control px-2 text-left text-sm text-text disabled:opacity-50"
+        disabled={disabledReason !== null}
+        title={disabledReason ?? undefined}
         onClick={onSelect}
         type="button"
       >

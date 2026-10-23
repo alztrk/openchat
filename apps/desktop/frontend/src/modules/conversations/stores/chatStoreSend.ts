@@ -15,6 +15,7 @@ import {
 } from '@/modules/projects/data/projectPermissionSettings';
 import { readProjectSkillIds } from '@/modules/projects/data/projectPreferences';
 import { modelRouteKey } from '@/modules/providers/data/modelPreferences';
+import { recordOAuthRateLimit } from '@/modules/providers/data/oauthRateLimits';
 import { loadRouteParameters } from '@/modules/providers/data/modelRouteParameters';
 import {
   type ProviderRequestOutcome,
@@ -494,6 +495,9 @@ export function createSendMessageAction(
         );
       }
       requestOutcome ??= providerRequestOutcomeForError(error);
+      if ((selectedModel.providerId === 'chatgpt' || selectedModel.providerId === 'copilot') && requestOutcome === 'rateLimited') {
+        void recordOAuthRateLimit(selectedModel, state.models, error);
+      }
       if (requestOutcome !== 'stopped') {
         void playAssistantResponseAudio('failed');
       }
