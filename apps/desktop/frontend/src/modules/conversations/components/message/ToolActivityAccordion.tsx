@@ -80,7 +80,8 @@ export function ToolActivityAccordion({ activity, onOpenFile }: ToolActivityAcco
   const { t } = useTranslation();
   const statusLabel = t(statusKeys[activity.status]);
   const toolLabel = toolName(activity.name, t);
-  const requestedPath = isTerminalTool(activity.name) ? null : getRequestedToolPath(activity);
+  const requestedPath =
+    isTerminalTool(activity.name) || activity.name === 'computer_use' ? null : getRequestedToolPath(activity);
   const StatusIcon = statusIcon(activity.status);
   const ToolIcon = toolIcon(activity.name);
   const isOpen =

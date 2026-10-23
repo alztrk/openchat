@@ -41,9 +41,7 @@ export function ConversationActionsHeader({
 
   const isActiveConversationAiWorking = Boolean(
     activeConversation &&
-      (sendingConversationId === activeConversation.id ||
-        compactingConversationId === activeConversation.id ||
-        (isSending && activeConversationId === activeConversation.id)),
+      (sendingConversationId === activeConversation.id || compactingConversationId === activeConversation.id),
   );
 
   return (

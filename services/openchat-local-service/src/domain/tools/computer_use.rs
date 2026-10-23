@@ -158,7 +158,7 @@ impl ComputerUseSession {
                     image: None,
                 })
             }
-            "screenshot" => {
+            "screenshot" | "desktop" => {
                 require_only(arguments, &["action", "displayId"])?;
                 let display_id = arguments.get("displayId").and_then(Value::as_str);
                 let capture = capture_desktop(display_id)?;
@@ -320,7 +320,7 @@ impl ComputerUseSession {
             }
             _ => Err((
                 "invalid_tool_input",
-                "The requested Computer Use action is not supported.",
+                "Unsupported Computer Use action. Use screenshot (or desktop) to view all displays, and use hotkey with keys [\"alt\", \"tab\"] for Alt+Tab.",
             )),
         }
     }

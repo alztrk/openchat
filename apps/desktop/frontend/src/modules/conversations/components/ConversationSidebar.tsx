@@ -194,7 +194,6 @@ export function ConversationSidebar({
   const serviceStatus = useChatStore((state) => state.serviceStatus);
   const serviceErrorMessage = useChatStore((state) => state.errorMessage);
   const activeConversationId = useChatStore((state) => state.activeConversationId);
-  const isSending = useChatStore((state) => state.isSending);
   const sendingConversationId = useChatStore((state) => state.sendingConversationId);
   const compactingConversationId = useChatStore((state) => state.compactingConversationId);
   const selectConversation = useChatStore((state) => state.selectConversation);
@@ -226,9 +225,8 @@ export function ConversationSidebar({
   const isConversationAiWorking = useCallback(
     (conversationId: string) =>
       sendingConversationId === conversationId ||
-      compactingConversationId === conversationId ||
-      (isSending && activeConversationId === conversationId),
-    [activeConversationId, compactingConversationId, isSending, sendingConversationId],
+      compactingConversationId === conversationId,
+    [compactingConversationId, sendingConversationId],
   );
 
   useEffect(() => {
